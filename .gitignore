@@ -1,0 +1,35 @@
+# Build
+/tmp/
+/dist/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Xcode
+*.xcuserdata/
+xcuserdata/
+DerivedData/
+
+# Python (legacy, not used in native app)
+__pycache__/
+*.pyc
+.venv/
+
+# Config
+.aimaccleaner_ignore.json
+.aimaccleaner_ai.json
+
+# Legacy Python files (superseded by native Swift app)
+ai_scanner.py
+app.py
+scanner.py
+build.sh
+project.yml
+static/
+Info.plist
+build/MacOS/
+build/Info.plist
+build/create_icon.py
+build/icon.png
