@@ -134,4 +134,51 @@ let SCAN_RULES: [ScanRule] = [
     ScanRule(id: "cache_xmind", name: "XMind 缓存", category: "办公", app: "XMind", risk: "safe", riskDesc: "XMind 临时缓存，删除后不影响思维导图文件。", paths: [
         "~/Library/Application Support/Xmind",
     ]),
+
+    ScanRule(id: "cache_npm", name: "npm 缓存", category: "开发", app: "Node.js / npm", risk: "safe", riskDesc: "npm 包缓存，删除后下次安装包时会重新下载。", paths: [
+        "~/.npm/_cacache",
+    ]),
+    ScanRule(id: "cache_pnpm", name: "pnpm 缓存", category: "开发", app: "pnpm", risk: "safe", riskDesc: "pnpm 包缓存，删除后下次安装包时会重新下载。", paths: [
+        "~/.pnpm-store",
+    ]),
+    ScanRule(id: "cache_yarn", name: "Yarn 缓存", category: "开发", app: "Yarn", risk: "safe", riskDesc: "Yarn 包缓存，删除后下次安装包时会重新下载。", paths: [
+        "~/Library/Caches/Yarn",
+    ]),
+    ScanRule(id: "cache_pip", name: "pip 缓存", category: "开发", app: "Python / pip", risk: "safe", riskDesc: "pip 包缓存，删除后下次安装包时会重新下载。", paths: [
+        "~/.cache/pip",
+        "~/Library/Caches/pip",
+    ]),
+    ScanRule(id: "cache_cargo", name: "Cargo 缓存", category: "开发", app: "Rust / Cargo", risk: "safe", riskDesc: "Cargo 包缓存和编译产物，删除后下次编译会重新下载。", paths: [
+        "~/.cargo/registry",
+    ]),
+    ScanRule(id: "cache_gradle", name: "Gradle 缓存", category: "开发", app: "Gradle", risk: "safe", riskDesc: "Gradle 构建缓存和下载的依赖，删除后下次构建会重新下载。", paths: [
+        "~/.gradle/caches",
+        "~/.gradle/wrapper/dists",
+    ]),
+    ScanRule(id: "cache_maven", name: "Maven 缓存", category: "开发", app: "Maven", risk: "caution", riskDesc: "Maven 本地仓库，删除后需重新下载所有依赖。", paths: [
+        "~/.m2/repository",
+    ]),
+    ScanRule(id: "cache_cocoapods", name: "CocoaPods 缓存", category: "开发", app: "CocoaPods", risk: "safe", riskDesc: "CocoaPods 仓库缓存，删除后下次 pod install 会重新下载。", paths: [
+        "~/Library/Caches/CocoaPods",
+        "~/.cocoapods/repos",
+    ]),
+    ScanRule(id: "cache_go_build", name: "Go 构建缓存", category: "开发", app: "Go", risk: "safe", riskDesc: "Go 编译缓存，删除后下次编译会稍慢。", paths: [
+        "~/Library/Caches/go-build",
+        "~/go/pkg/mod/cache",
+    ]),
+    ScanRule(id: "cache_docker", name: "Docker 镜像和容器", category: "开发", app: "Docker", risk: "caution", riskDesc: "Docker 镜像、容器和构建缓存，删除后需重新拉取镜像。", paths: [
+        "~/Library/Containers/com.docker.docker/Data/vms",
+    ]),
+    ScanRule(id: "cache_xcode_derived", name: "Xcode DerivedData", category: "开发", app: "Xcode", risk: "safe", riskDesc: "Xcode 编译产物和索引缓存，删除后下次编译会重新生成。", paths: [
+        "~/Library/Developer/Xcode/DerivedData",
+    ]),
+    ScanRule(id: "cache_xcode_archives", name: "Xcode Archives", category: "开发", app: "Xcode", risk: "caution", riskDesc: "Xcode 打包归档，删除后无法回溯历史版本。", paths: [
+        "~/Library/Developer/Xcode/Archives",
+    ]),
+    ScanRule(id: "cache_android", name: "Android SDK 缓存", category: "开发", app: "Android Studio", risk: "safe", riskDesc: "Android SDK 临时缓存，删除后不影响 SDK 本身。", paths: [
+        "~/Library/Android/sdk/.temp",
+    ]),
+    ScanRule(id: "cache_unity", name: "Unity 缓存", category: "开发", app: "Unity", risk: "safe", riskDesc: "Unity 编辑器缓存，删除后首次打开项目会重新导入。", paths: [
+        "~/Library/Unity",
+    ]),
 ]

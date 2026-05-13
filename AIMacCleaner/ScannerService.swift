@@ -272,78 +272,27 @@ class ScannerService: ObservableObject {
         let apps = await Task.detached(priority: .userInitiated) {
             var results: [AppInfo] = []
             let fm = FileManager.default
+            var seenIds = Set<String>()
 
-            let appDirs = ["/Applications", NSHomeDirectory() + "/Applications"]
-            var seenBundleIds = Set<String>()
+            let appDirs = [
+                "/Applications",
+                "/Applications/Utilities",
+                NSHomeDirectory() + "/Applications",
+            ]
 
             for appDir in appDirs {
+                self.scanAppDir(appDir, fm: fm, results: &results, seen: &seenIds)
                 guard let contents = try? fm.contentsOfDirectory(atPath: appDir) else { continue }
-
-                for name in contents where name.hasSuffix(".app") {
-                    let appPath = (appDir as NSString).appendingPathComponent(name)
-                    let plistPath = (appPath as NSString).appendingPathComponent("Contents/Info.plist")
-
-                    guard let plistData = fm.contents(atPath: plistPath),
-                          let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any] else { continue }
-
-                    let bundleId = plist["CFBundleIdentifier"] as? String ?? ""
-                    guard !bundleId.isEmpty, !seenBundleIds.contains(bundleId) else { continue }
-                    seenBundleIds.insert(bundleId)
-
-                    let appName = plist["CFBundleDisplayName"] as? String ?? plist["CFBundleName"] as? String ?? name.replacingOccurrences(of: ".app", with: "")
-                    let version = plist["CFBundleShortVersionString"] as? String
-
-                    var iconPath: String? = nil
-                    if let iconDict = plist["CFBundleIconFile"] as? String {
-                        iconPath = (appPath as NSString).appendingPathComponent("Contents/Resources/\(iconPath)")
-                    } else if let iconDicts = plist["CFBundleIconFiles"] as? [String], let first = iconDicts.first {
-                        iconPath = (appPath as NSString).appendingPathComponent("Contents/Resources/\(first)")
+                for name in contents {
+                    let subPath = (appDir as NSString).appendingPathComponent(name)
+                    var isDir: ObjCBool = false
+                    if fm.fileExists(atPath: subPath, isDirectory: &isDir), isDir.boolValue, !name.hasSuffix(".app") && !name.hasPrefix(".") {
+                        self.scanAppDir(subPath, fm: fm, results: &results, seen: &seenIds)
                     }
-
-                    let (appSize, _) = Self.calculateDirectorySizeStatic(at: appPath)
-
-                    let home = NSHomeDirectory()
-                    var cacheSize: Int64 = 0
-                    var dataSize: Int64 = 0
-
-                    let cachePaths = [
-                        "\(home)/Library/Caches/\(bundleId)",
-                        "\(home)/Library/HTTPStorages/\(bundleId)",
-                        "\(home)/Library/WebKit/\(bundleId)",
-                    ]
-                    for p in cachePaths {
-                        let (s, _) = Self.calculateDirectorySizeStatic(at: p)
-                        cacheSize += s
-                    }
-
-                    let dataPaths = [
-                        "\(home)/Library/Application Support/\(bundleId)",
-                        "\(home)/Library/Preferences/\(bundleId).plist",
-                        "\(home)/Library/Saved Application State/\(bundleId).savedState",
-                        "\(home)/Library/Containers/\(bundleId)",
-                        "\(home)/Library/Logs/\(bundleId)",
-                        "\(home)/Library/Cookies/\(bundleId).binarycookies",
-                        "\(home)/Library/Group Containers/\(bundleId)",
-                    ]
-                    for p in dataPaths {
-                        let (s, _) = Self.calculateDirectorySizeStatic(at: p)
-                        dataSize += s
-                    }
-
-                    results.append(AppInfo(
-                        id: bundleId,
-                        name: appName,
-                        bundleId: bundleId,
-                        appPath: appPath,
-                        iconPath: iconPath,
-                        version: version,
-                        appSize: appSize,
-                        cacheSize: cacheSize,
-                        dataSize: dataSize,
-                        totalSize: appSize + cacheSize + dataSize
-                    ))
                 }
             }
+
+            self.scanCLIAndAgents(fm: fm, results: &results, seen: &seenIds)
 
             results.sort { $0.name.lowercased() < $1.name.lowercased() }
             return results
@@ -351,6 +300,138 @@ class ScannerService: ObservableObject {
 
         installedApps = apps
         isScanningApps = false
+    }
+
+    nonisolated private func scanAppDir(_ dir: String, fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
+        guard let contents = try? fm.contentsOfDirectory(atPath: dir) else { return }
+
+        for name in contents where name.hasSuffix(".app") {
+            let appPath = (dir as NSString).appendingPathComponent(name)
+            let plistPath = (appPath as NSString).appendingPathComponent("Contents/Info.plist")
+
+            guard let plistData = fm.contents(atPath: plistPath),
+                  let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any] else { continue }
+
+            let bundleId = plist["CFBundleIdentifier"] as? String ?? ""
+            guard !bundleId.isEmpty, !seen.contains(bundleId) else { continue }
+            seen.insert(bundleId)
+
+            let appName = plist["CFBundleDisplayName"] as? String ?? plist["CFBundleName"] as? String ?? name.replacingOccurrences(of: ".app", with: "")
+            let version = plist["CFBundleShortVersionString"] as? String
+
+            var iconPath: String? = nil
+            if let iconFile = plist["CFBundleIconFile"] as? String {
+                let candidate = (appPath as NSString).appendingPathComponent("Contents/Resources/\(iconFile)")
+                if fm.fileExists(atPath: candidate) { iconPath = candidate }
+            } else if let iconDicts = plist["CFBundleIconFiles"] as? [String], let first = iconDicts.first {
+                let candidate = (appPath as NSString).appendingPathComponent("Contents/Resources/\(first)")
+                if fm.fileExists(atPath: candidate) { iconPath = candidate }
+            }
+            if iconPath == nil {
+                let icns = (appPath as NSString).appendingPathComponent("Contents/Resources/AppIcon.icns")
+                if fm.fileExists(atPath: icns) { iconPath = icns }
+            }
+
+            let (appSize, _) = Self.calculateDirectorySizeStatic(at: appPath)
+            let home = NSHomeDirectory()
+            var cacheSize: Int64 = 0
+            var dataSize: Int64 = 0
+
+            let cachePaths = [
+                "\(home)/Library/Caches/\(bundleId)",
+                "\(home)/Library/HTTPStorages/\(bundleId)",
+                "\(home)/Library/WebKit/\(bundleId)",
+            ]
+            for p in cachePaths { let (s, _) = Self.calculateDirectorySizeStatic(at: p); cacheSize += s }
+
+            let dataPaths = [
+                "\(home)/Library/Application Support/\(bundleId)",
+                "\(home)/Library/Preferences/\(bundleId).plist",
+                "\(home)/Library/Saved Application State/\(bundleId).savedState",
+                "\(home)/Library/Containers/\(bundleId)",
+                "\(home)/Library/Logs/\(bundleId)",
+                "\(home)/Library/Cookies/\(bundleId).binarycookies",
+                "\(home)/Library/Group Containers/\(bundleId)",
+            ]
+            for p in dataPaths { let (s, _) = Self.calculateDirectorySizeStatic(at: p); dataSize += s }
+
+            results.append(AppInfo(
+                id: bundleId,
+                name: appName,
+                bundleId: bundleId,
+                appPath: appPath,
+                iconPath: iconPath,
+                version: version,
+                appSize: appSize,
+                cacheSize: cacheSize,
+                dataSize: dataSize,
+                totalSize: appSize + cacheSize + dataSize
+            ))
+        }
+    }
+
+    nonisolated private func scanCLIAndAgents(fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
+        let home = NSHomeDirectory()
+
+        struct CLITool {
+            let name: String
+            let id: String
+            let paths: [String]
+        }
+
+        let cliTools: [CLITool] = [
+            CLITool(name: "Homebrew", id: "cli.homebrew", paths: ["/opt/homebrew", "/usr/local/Cellar"]),
+            CLITool(name: "Node.js / npm", id: "cli.nodejs", paths: ["\(home)/.nvm", "\(home)/.npm", "\(home)/.pnpm-store", "\(home)/.yarn"]),
+            CLITool(name: "Python (pyenv)", id: "cli.pyenv", paths: ["\(home)/.pyenv", "\(home)/.cache/pip"]),
+            CLITool(name: "Rust (rustup)", id: "cli.rustup", paths: ["\(home)/.rustup", "\(home)/.cargo"]),
+            CLITool(name: "Go", id: "cli.go", paths: ["\(home)/go", "\(home)/.cache/go-build"]),
+            CLITool(name: "Docker", id: "cli.docker", paths: ["\(home)/Library/Containers/com.docker.docker", "\(home)/.docker"]),
+            CLITool(name: "Trae", id: "agent.trae", paths: ["/Applications/Trae.app", "\(home)/Library/Application Support/TraeCN"]),
+            CLITool(name: "CodeBuddy", id: "agent.codebuddy", paths: ["/Applications/CodeBuddy.app", "\(home)/Library/Application Support/CodeBuddyCN"]),
+            CLITool(name: "Claude Code", id: "agent.claude", paths: ["/Applications/Claude.app", "\(home)/Library/Application Support/Claude-3p", "\(home)/.claude"]),
+            CLITool(name: "Cursor", id: "agent.cursor", paths: ["/Applications/Cursor.app", "\(home)/Library/Application Support/Cursor"]),
+            CLITool(name: "Windsurf", id: "agent.windsurf", paths: ["/Applications/Windsurf.app", "\(home)/Library/Application Support/Windsurf"]),
+            CLITool(name: "豆包", id: "agent.doubao", paths: ["/Applications/豆包.app"]),
+            CLITool(name: "通义千问", id: "agent.qwen", paths: ["/Applications/通义千问.app"]),
+            CLITool(name: "Xcode Developer", id: "dev.xcode-dev", paths: ["\(home)/Library/Developer"]),
+            CLITool(name: "Android SDK", id: "dev.android", paths: ["\(home)/Library/Android"]),
+            CLITool(name: "Unity", id: "dev.unity", paths: ["\(home)/Library/Unity"]),
+            CLITool(name: "Gradle", id: "cli.gradle", paths: ["\(home)/.gradle"]),
+            CLITool(name: "Maven", id: "cli.maven", paths: ["\(home)/.m2"]),
+            CLITool(name: "CocoaPods", id: "cli.cocoapods", paths: ["\(home)/.cocoapods"]),
+        ]
+
+        for tool in cliTools {
+            guard !seen.contains(tool.id) else { continue }
+
+            var totalSize: Int64 = 0
+            var realPath = ""
+
+            for path in tool.paths {
+                let expanded = NSString(string: path).expandingTildeInPath
+                let (s, _) = Self.calculateDirectorySizeStatic(at: expanded)
+                if s > 0 {
+                    totalSize += s
+                    if realPath.isEmpty { realPath = expanded }
+                }
+            }
+
+            guard totalSize > 0 else { continue }
+            seen.insert(tool.id)
+
+            results.append(AppInfo(
+                id: tool.id,
+                name: tool.name,
+                bundleId: tool.id,
+                appPath: realPath,
+                iconPath: nil,
+                version: nil,
+                appSize: totalSize,
+                cacheSize: 0,
+                dataSize: 0,
+                totalSize: totalSize
+            ))
+        }
     }
 
     func basicUninstall(app: AppInfo) async -> Bool {
