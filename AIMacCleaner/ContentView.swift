@@ -387,6 +387,7 @@ struct AppManagerTab: View {
         case "包管理": .orange
         case "开发": .green
         case "应用": .cyan
+        case "其它": .gray
         default: .gray
         }
     }
@@ -619,6 +620,7 @@ struct SubCategoryChip: View {
         case "包管理": "cube.box"
         case "开发": "hammer"
         case "应用": "app.fill"
+        case "其它": "questionmark.folder"
         default: "folder"
         }
     }

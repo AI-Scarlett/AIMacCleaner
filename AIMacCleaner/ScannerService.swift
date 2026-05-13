@@ -510,9 +510,8 @@ class ScannerService: ObservableObject {
 
     nonisolated private func scanDynamicAgents(fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
         let home = NSHomeDirectory()
-        let appSupport = "\(home)/Library/Application Support"
 
-        let knownAgentKeywords: [(String, String, String)] = [
+        let agentKeywords: [(String, String, String)] = [
             ("trae", "Trae AI 编程助手", "字节跳动AI编程IDE"),
             ("codebuddy", "CodeBuddy 编程助手", "AI编程助手"),
             ("claude", "Claude Code", "Anthropic AI编程助手"),
@@ -523,8 +522,8 @@ class ScannerService: ObservableObject {
             ("yi-code", "yi-code", "零一万物AI编程助手"),
             ("yi.agent", "yi-agent", "零一万物AI Agent"),
             ("hermes", "Hermes", "AI编程助手"),
-            ("cherry studio", "Cherry Studio", "AI大模型客户端"),
-            ("lm studio", "LM Studio", "本地大模型运行环境"),
+            ("cherrystudio", "Cherry Studio", "AI大模型客户端"),
+            ("lmstudio", "LM Studio", "本地大模型运行环境"),
             ("openclaw", "OpenClaw", "AI编程助手"),
             ("qclaw", "QClaw", "AI编程助手"),
             ("doubao", "豆包 AI 助手", "字节跳动AI助手"),
@@ -543,54 +542,122 @@ class ScannerService: ObservableObject {
             ("zhipu", "智谱AI", "智谱清言AI助手"),
             ("spark", "讯飞星火", "科大讯飞AI助手"),
             ("tongyi", "通义灵码", "阿里云AI编程助手"),
+            ("cline", "Cline", "AI编程助手"),
+            ("minimax", "MiniMax Agent", "MiniMax AI编程助手"),
+            ("stepfun", "阶跃星辰", "阶跃星辰AI助手"),
+            ("whitzard", "Whitzard", "AI编程助手"),
+            ("ai_completion", "AI Completion", "AI代码补全工具"),
+            ("agent-browser", "Agent Browser", "AI浏览器自动化"),
+            ("evomorph", "EvoMorph", "易衍编程系统"),
+            ("skillhub", "SkillHub", "AI技能平台"),
+            ("cloudbase-mcp", "CloudBase MCP", "腾讯云MCP工具"),
         ]
 
-        let knownAppPaths = Set(results.filter { $0.appType == .other && $0.appPath.hasSuffix(".app") }.map { $0.appPath.lowercased() })
-        let knownBundleIds = Set(results.map { $0.bundleId }.filter { $0.contains("agent.") || $0.contains("cli.") })
+        let systemDotdirs: Set<String> = [
+            ".DS_Store", ".Trash", ".bash_history", ".bash_profile", ".bash_sessions",
+            ".CFUserTextEncoding", ".cups", ".gitconfig", ".gitignore", ".profile",
+            ".ssh", ".viminfo", ".zsh_history", ".zshrc", ".npmrc",
+            ".bash_profile.swk", ".bash_profile.swl", ".bash_profile.swm",
+            ".bash_profile.swn", ".bash_profile.swo", ".bash_profile.swp",
+            ".swiftpm", ".mono", ".gem", ".config", ".cups", ".EventSDK",
+            ".aimaccleaner_ai.json", ".aimaccleaner_ignore.json", ".aimaccleaner_last_response.txt",
+            ".maccleaner_ai.json", ".pcr-stats.json", ".claude.json",
+        ]
 
-        guard let appSupportDirs = try? fm.contentsOfDirectory(atPath: appSupport) else { return }
+        let devToolDotdirs: [String: (String, String, String)] = [
+            ".nvm": ("NVM (Node版本管理)", "包管理", "Node.js多版本管理工具，删除后Node.js版本切换将不可用"),
+            ".npm": ("npm 全局缓存", "包管理", "npm包缓存，删除后下次安装包时会重新下载"),
+            ".pnpm-store": ("pnpm 存储", "包管理", "pnpm包管理器的存储目录，删除后需重新安装依赖"),
+            ".yarn": ("Yarn", "包管理", "Yarn包管理器缓存，删除后需重新下载"),
+            ".pyenv": ("pyenv (Python版本管理)", "包管理", "Python多版本管理工具，删除后Python版本切换将不可用"),
+            ".rustup": ("rustup (Rust工具链)", "包管理", "Rust编程语言工具链，删除后Rust项目将无法编译"),
+            ".cargo": ("Cargo (Rust包管理)", "包管理", "Rust包管理器和编译缓存，删除后Rust项目需重新编译"),
+            ".gradle": ("Gradle 构建工具", "包管理", "Java/Android项目构建缓存，删除后下次构建会重新下载"),
+            ".m2": ("Maven 构建工具", "包管理", "Java项目本地仓库，删除后需重新下载所有依赖"),
+            ".cocoapods": ("CocoaPods 依赖管理", "包管理", "iOS/macOS依赖仓库缓存，删除后下次pod install会重新下载"),
+            ".conda": ("Conda (Python环境)", "包管理", "Python环境和包管理器，删除后所有Conda环境将丢失"),
+            ".julia": ("Julia", "包管理", "Julia编程语言和包，删除后Julia项目将无法运行"),
+            ".local": ("用户本地安装", "CLI", "用户本地安装的工具和库，删除后相关工具将不可用"),
+            ".cache": ("用户缓存目录", "CLI", "各种工具的缓存数据，删除后工具需重新生成缓存"),
+            ".docker": ("Docker 配置", "CLI", "Docker容器平台配置，删除后Docker需重新配置"),
+            ".android": ("Android SDK 配置", "开发", "Android开发配置和AVD，删除后Android模拟器数据将丢失"),
+            ".idea": ("IntelliJ IDEA 配置", "开发", "JetBrains IDE配置和缓存，删除后IDE需重新配置"),
+            ".ohos": ("OpenHarmony SDK", "开发", "鸿蒙/OpenHarmony开发工具配置，删除后鸿蒙项目将无法编译"),
+            ".ohpm": ("ohpm 包管理", "包管理", "鸿蒙包管理器缓存，删除后需重新下载依赖"),
+            ".hvigor": ("Hvigor 构建工具", "包管理", "鸿蒙项目构建工具缓存，删除后需重新构建"),
+            ".harmony": ("HarmonyOS SDK", "开发", "HarmonyOS开发工具配置，删除后鸿蒙项目将无法编译"),
+            ".vscode": ("VS Code 配置", "开发", "VS Code编辑器扩展和数据，删除后需重新安装扩展"),
+            ".pm2": ("PM2 进程管理", "CLI", "Node.js进程管理器，删除后PM2管理的进程配置将丢失"),
+            ".Huawei": ("华为开发工具", "开发", "华为开发工具配置，删除后相关开发工具需重新配置"),
+            ".sogouinput": ("搜狗输入法", "应用", "搜狗输入法用户词库和配置，删除后需重新配置输入法"),
+            ".downloader": ("下载器", "应用", "下载工具缓存，删除后下载记录将丢失"),
+            ".chromium-browser-snapshots": ("Chromium 快照", "开发", "Chromium浏览器测试快照，删除后需重新下载"),
+        ]
 
-        for dirName in appSupportDirs {
-            let dirLower = dirName.lowercased()
-            var matched = false
-            var agentName = dirName
+        guard let homeDirs = try? fm.contentsOfDirectory(atPath: home) else { return }
+
+        for dirName in homeDirs {
+            guard dirName.hasPrefix(".") else { continue }
+            guard !systemDotdirs.contains(dirName) else { continue }
+
+            let dirPath = (home as NSString).appendingPathComponent(dirName)
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: dirPath, isDirectory: &isDir), isDir.boolValue else { continue }
+
+            let (size, _) = Self.calculateDirectorySizeStatic(at: dirPath)
+            guard size > 1048576 else { continue }
+
+            let dirLower = dirName.lowercased().replacingOccurrences(of: ".", with: "")
+
+            if let (name, subCat, riskDesc) = devToolDotdirs[dirName] {
+                let id = "dotdir.\(dirName)"
+                guard !seen.contains(id) else { continue }
+                seen.insert(id)
+                let risk = subCat == "包管理" ? "caution" : "safe"
+                results.append(AppInfo(
+                    id: id, name: name, displayName: name, desc: riskDesc,
+                    bundleId: id, appPath: dirPath, iconPath: nil, version: nil,
+                    appSize: size, cacheSize: 0, dataSize: 0, totalSize: size,
+                    appType: subCat == "应用" ? .other : (subCat == "开发" ? .dependency : .dependency),
+                    subCategory: subCat, risk: risk, riskDesc: riskDesc,
+                    canUninstall: true, canClean: true, canReset: true
+                ))
+                continue
+            }
+
+            var matchedAgent = false
+            var agentName = dirName.replacingOccurrences(of: ".", with: "")
             var agentDesc = "AI编程助手"
-            var agentId = "agent.dynamic.\(dirName.lowercased().replacingOccurrences(of: " ", with: "-"))"
+            var agentId = "agent.dotdir.\(dirLower)"
 
-            for (keyword, name, desc) in knownAgentKeywords {
+            for (keyword, name, desc) in agentKeywords {
                 if dirLower.contains(keyword) {
                     agentName = name
                     agentDesc = desc
                     agentId = "agent.\(keyword.replacingOccurrences(of: " ", with: "-"))"
-                    matched = true
+                    matchedAgent = true
                     break
                 }
             }
 
-            guard matched else { continue }
-            guard !seen.contains(agentId) else { continue }
+            if matchedAgent {
+                guard !seen.contains(agentId) else { continue }
+                seen.insert(agentId)
 
-            let dirPath = (appSupport as NSString).appendingPathComponent(dirName)
-            let (size, _) = Self.calculateDirectorySizeStatic(at: dirPath)
-            guard size > 1048576 else { continue }
+                var appPath = dirPath
+                var iconPath: String? = nil
+                var appSize: Int64 = 0
+                var cacheSize: Int64 = 0
+                var dataSize: Int64 = size
+                var bundleId = agentId
 
-            var appPath = dirPath
-            var iconPath: String? = nil
-            var appSize: Int64 = 0
-            var cacheSize: Int64 = 0
-            var dataSize: Int64 = size
-            var bundleId = agentId
-
-            let possibleAppNames = [
-                "\(agentName).app",
-                "\(dirName).app",
-            ]
-            let appDirs = ["/Applications", "\(home)/Applications"]
-            for appDir in appDirs {
-                for appName in possibleAppNames {
-                    let candidate = (appDir as NSString).appendingPathComponent(appName)
-                    if fm.fileExists(atPath: candidate) {
-                        if !knownAppPaths.contains(candidate.lowercased()) {
+                let knownAppPaths = Set(results.filter { $0.appType == .other && $0.appPath.hasSuffix(".app") }.map { $0.appPath.lowercased() })
+                let possibleAppNames = ["\(agentName).app", "\(dirName).app"]
+                let appDirs = ["/Applications", "\(home)/Applications"]
+                outerLoop: for appDir in appDirs {
+                    for appName in possibleAppNames {
+                        let candidate = (appDir as NSString).appendingPathComponent(appName)
+                        if fm.fileExists(atPath: candidate) && !knownAppPaths.contains(candidate.lowercased()) {
                             appPath = candidate
                             appSize = Self.calculateDirectorySizeStatic(at: candidate).0
                             let plistPath = (candidate as NSString).appendingPathComponent("Contents/Info.plist")
@@ -606,41 +673,35 @@ class ScannerService: ObservableObject {
                                     if fm.fileExists(atPath: icns) { iconPath = icns }
                                 }
                             }
-                            let cp = [
-                                "\(home)/Library/Caches/\(bundleId)",
-                                "\(home)/Library/HTTPStorages/\(bundleId)",
-                                "\(home)/Library/WebKit/\(bundleId)",
-                            ]
+                            let cp = ["\(home)/Library/Caches/\(bundleId)", "\(home)/Library/HTTPStorages/\(bundleId)", "\(home)/Library/WebKit/\(bundleId)"]
                             for p in cp { cacheSize += Self.calculateDirectorySizeStatic(at: p).0 }
+                            break outerLoop
                         }
-                        break
                     }
                 }
+
+                let totalSize = appSize + cacheSize + dataSize
+                results.append(AppInfo(
+                    id: agentId, name: agentName, displayName: agentName, desc: agentDesc,
+                    bundleId: bundleId, appPath: appPath, iconPath: iconPath, version: nil,
+                    appSize: appSize, cacheSize: cacheSize, dataSize: dataSize, totalSize: totalSize,
+                    appType: .other, subCategory: "AI Agent", risk: "safe",
+                    riskDesc: "可安全卸载，重新安装后需重新配置",
+                    canUninstall: appSize > 0, canClean: cacheSize > 0, canReset: dataSize > 0
+                ))
+                continue
             }
 
-            seen.insert(agentId)
-            let totalSize = appSize + cacheSize + dataSize
-
+            let id = "dotdir.unknown.\(dirLower)"
+            guard !seen.contains(id) else { continue }
+            seen.insert(id)
             results.append(AppInfo(
-                id: agentId,
-                name: agentName,
-                displayName: agentName,
-                desc: agentDesc,
-                bundleId: bundleId,
-                appPath: appPath,
-                iconPath: iconPath,
-                version: nil,
-                appSize: appSize,
-                cacheSize: cacheSize,
-                dataSize: dataSize,
-                totalSize: totalSize,
-                appType: .other,
-                subCategory: "AI Agent",
-                risk: "safe",
-                riskDesc: "可安全卸载，重新安装后需重新配置",
-                canUninstall: appSize > 0,
-                canClean: cacheSize > 0,
-                canReset: dataSize > 0
+                id: id, name: dirName, displayName: dirName, desc: "用户目录 \(dirName)",
+                bundleId: id, appPath: dirPath, iconPath: nil, version: nil,
+                appSize: size, cacheSize: 0, dataSize: 0, totalSize: size,
+                appType: .other, subCategory: "其它", risk: "caution",
+                riskDesc: "未知目录，删除前请确认其用途",
+                canUninstall: true, canClean: false, canReset: false
             ))
         }
 
@@ -651,7 +712,7 @@ class ScannerService: ObservableObject {
             var isAgent = false
             var agentDesc = "AI编程助手"
 
-            for (keyword, _, desc) in knownAgentKeywords {
+            for (keyword, _, desc) in agentKeywords {
                 if nameLower.contains(keyword) || bundleLower.contains(keyword) {
                     isAgent = true
                     agentDesc = desc
@@ -663,24 +724,12 @@ class ScannerService: ObservableObject {
                 seen.insert("agent.fromapp.\(app.bundleId)")
                 results.append(AppInfo(
                     id: "agent.fromapp.\(app.bundleId)",
-                    name: app.displayName,
-                    displayName: app.displayName,
-                    desc: agentDesc,
-                    bundleId: app.bundleId,
-                    appPath: app.appPath,
-                    iconPath: app.iconPath,
-                    version: app.version,
-                    appSize: app.appSize,
-                    cacheSize: app.cacheSize,
-                    dataSize: app.dataSize,
-                    totalSize: app.totalSize,
-                    appType: .other,
-                    subCategory: "AI Agent",
-                    risk: "safe",
+                    name: app.displayName, displayName: app.displayName, desc: agentDesc,
+                    bundleId: app.bundleId, appPath: app.appPath, iconPath: app.iconPath, version: app.version,
+                    appSize: app.appSize, cacheSize: app.cacheSize, dataSize: app.dataSize, totalSize: app.totalSize,
+                    appType: .other, subCategory: "AI Agent", risk: "safe",
                     riskDesc: "可安全卸载，重新安装后需重新配置",
-                    canUninstall: true,
-                    canClean: app.cacheSize > 0,
-                    canReset: app.dataSize > 0
+                    canUninstall: true, canClean: app.cacheSize > 0, canReset: app.dataSize > 0
                 ))
             }
         }
@@ -739,41 +788,6 @@ class ScannerService: ObservableObject {
                 let sitePackages = (expanded as NSString).appendingPathComponent(ver + "/lib/python/site-packages")
                 self.scanPipPackages(at: sitePackages, fm: fm, results: &results, seen: &seen)
             }
-        }
-
-        let dotDirs: [(String, String, String, String, String)] = [
-            ("\(home)/.nvm", "NVM (Node版本管理)", "Node.js多版本管理工具", "包管理", "safe"),
-            ("\(home)/.npm", "npm 全局缓存", "npm包管理器的缓存目录", "包管理", "safe"),
-            ("\(home)/.pnpm-store", "pnpm 存储", "pnpm包管理器的存储目录", "包管理", "safe"),
-            ("\(home)/.yarn", "Yarn", "Yarn包管理器", "包管理", "safe"),
-            ("\(home)/.pyenv", "pyenv (Python版本管理)", "Python多版本管理工具", "包管理", "caution"),
-            ("\(home)/.rustup", "rustup (Rust工具链)", "Rust编程语言工具链管理", "包管理", "caution"),
-            ("\(home)/.cargo", "Cargo (Rust包管理)", "Rust包管理器和编译缓存", "包管理", "caution"),
-            ("\(home)/.gradle", "Gradle 构建工具", "Java/Android项目构建工具", "包管理", "safe"),
-            ("\(home)/.m2", "Maven 构建工具", "Java项目构建工具和本地仓库", "包管理", "caution"),
-            ("\(home)/.cocoapods", "CocoaPods 依赖管理", "iOS/macOS依赖管理工具", "包管理", "safe"),
-            ("\(home)/.docker", "Docker 配置", "Docker容器平台配置", "CLI", "caution"),
-            ("\(home)/.claude", "Claude Code 配置", "Claude Code AI编程助手配置", "AI Agent", "safe"),
-            ("\(home)/.cache", "用户缓存目录", "各种工具的缓存数据", "CLI", "safe"),
-            ("\(home)/.conda", "Conda (Python环境)", "Python环境和包管理器", "包管理", "caution"),
-            ("\(home)/.julia", "Julia", "Julia编程语言", "包管理", "caution"),
-            ("\(home)/.local", "用户本地安装", "用户本地安装的工具和库", "CLI", "caution"),
-        ]
-        for (path, label, desc, subCat, risk) in dotDirs {
-            let id = "dotdir.\(label)"
-            guard !seen.contains(id) else { continue }
-            let expanded = NSString(string: path).expandingTildeInPath
-            let (size, _) = Self.calculateDirectorySizeStatic(at: expanded)
-            guard size > 1048576 else { continue }
-            seen.insert(id)
-            results.append(AppInfo(
-                id: id, name: label, displayName: label, desc: desc,
-                bundleId: id,
-                appPath: expanded, iconPath: nil, version: nil,
-                appSize: size, cacheSize: 0, dataSize: 0, totalSize: size,
-                appType: .dependency, subCategory: subCat, risk: risk, riskDesc: "删除后相关开发工具可能需要重新安装或配置",
-                canUninstall: true, canClean: true, canReset: true
-            ))
         }
     }
 
