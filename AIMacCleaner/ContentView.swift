@@ -413,6 +413,16 @@ struct AppManagerTab: View {
                     if !selectedAppIds.isEmpty { Text("已选 \(selectedAppIds.count) 项 · \(service.formatSize(selectedTotalSize))").font(.caption).foregroundColor(.blue).fontWeight(.medium) }
                 }
                 Spacer()
+                Button {
+                    let apps = service.installedApps.filter { selectedAppIds.contains($0.id) }
+                    if !apps.isEmpty {
+                        Task { await service.analyzeImpactWithAI(apps: apps) }
+                    }
+                } label: {
+                    HStack(spacing: 4) { Image(systemName: "sparkles"); Text("AI 分析") }
+                }
+                .buttonStyle(.bordered).controlSize(.small).tint(.purple)
+                .disabled(selectedAppIds.isEmpty || service.isAnalyzingImpact)
                 ForEach(AppAction.allCases, id: \.self) { action in
                     Button { pendingAction = action; pendingAppIds = Array(selectedAppIds); showActionConfirm = true } label: {
                         HStack(spacing: 4) { Image(systemName: action.icon); Text(action.rawValue) }
@@ -483,8 +493,15 @@ struct AppManagerTab: View {
             }.width(60)
 
             TableColumn("影响说明") { app in
-                Text(app.riskDesc).font(.caption2).foregroundColor(.orange).lineLimit(2)
-            }.width(min: 120)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.riskDesc).font(.caption2).foregroundColor(.orange).lineLimit(2)
+                    if let aiResult = service.aiAnalysisMap[app.id] {
+                        Text(aiResult).font(.caption2).fontWeight(.medium)
+                            .foregroundColor(aiResult.hasPrefix("🤖") ? .purple : aiResult.hasPrefix("❌") ? .red : aiResult.hasPrefix("⚠️") ? .yellow : .secondary)
+                            .lineLimit(2)
+                    }
+                }
+            }.width(min: 140)
 
             TableColumn("大小") { app in
                 Text(service.formatSize(app.totalSize)).fontWeight(.bold).monospacedDigit().foregroundColor(.cyan)

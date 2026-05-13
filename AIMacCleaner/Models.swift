@@ -129,7 +129,11 @@ struct AppInfo: Identifiable, Hashable {
 
     var relatedPaths: [String] {
         let home = NSHomeDirectory()
-        return [
+        var paths: [String] = []
+        if !appPath.hasSuffix(".app") && appPath.hasPrefix(home) {
+            paths.append(appPath)
+        }
+        paths += [
             "\(home)/Library/Caches/\(bundleId)",
             "\(home)/Library/Application Support/\(bundleId)",
             "\(home)/Library/Preferences/\(bundleId).plist",
@@ -141,6 +145,7 @@ struct AppInfo: Identifiable, Hashable {
             "\(home)/Library/Cookies/\(bundleId).binarycookies",
             "\(home)/Library/Group Containers/\(bundleId)",
         ]
+        return paths
     }
 
     var cachePaths: [String] {
@@ -154,7 +159,11 @@ struct AppInfo: Identifiable, Hashable {
 
     var dataPaths: [String] {
         let home = NSHomeDirectory()
-        return [
+        var paths: [String] = []
+        if !appPath.hasSuffix(".app") && appPath.hasPrefix(home) {
+            paths.append(appPath)
+        }
+        paths += [
             "\(home)/Library/Application Support/\(bundleId)",
             "\(home)/Library/Preferences/\(bundleId).plist",
             "\(home)/Library/Saved Application State/\(bundleId).savedState",
@@ -163,5 +172,6 @@ struct AppInfo: Identifiable, Hashable {
             "\(home)/Library/Cookies/\(bundleId).binarycookies",
             "\(home)/Library/Group Containers/\(bundleId)",
         ]
+        return paths
     }
 }

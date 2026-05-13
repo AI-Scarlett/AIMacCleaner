@@ -687,7 +687,7 @@ class ScannerService: ObservableObject {
                     appSize: appSize, cacheSize: cacheSize, dataSize: dataSize, totalSize: totalSize,
                     appType: .other, subCategory: "AI Agent", risk: "safe",
                     riskDesc: "可安全卸载，重新安装后需重新配置",
-                    canUninstall: appSize > 0, canClean: cacheSize > 0, canReset: dataSize > 0
+                    canUninstall: true, canClean: cacheSize > 0, canReset: dataSize > 0
                 ))
                 continue
             }
@@ -834,6 +834,134 @@ class ScannerService: ObservableObject {
                 ))
             }
         }
+    }
+
+    @Published var aiAnalysisResult: String = ""
+    @Published var isAnalyzingImpact: Bool = false
+    @Published var aiAnalysisMap: [String: String] = [:]
+
+    func analyzeImpactWithAI(apps: [AppInfo]) async {
+        guard let config = aiConfig, config.hasKey == true, let apiKey = config.apiKey, !apiKey.isEmpty else {
+            for app in apps { aiAnalysisMap[app.id] = "⚠️ 请先配置大模型 API Key" }
+            return
+        }
+
+        isAnalyzingImpact = true
+        for app in apps { aiAnalysisMap[app.id] = "🔄 分析中..." }
+
+        let itemsDesc = apps.map { app in
+            """
+            - 名称: \(app.displayName)
+              类型: \(app.appType.label) / \(app.subCategory)
+              大小: \(formatSize(app.totalSize))
+              路径: \(app.appPath)
+              当前风险: \(app.risk) - \(app.riskDesc)
+            """
+        }.joined(separator: "\n")
+
+        let prompt = """
+        你是一个 macOS 系统管理专家。用户想要删除/清理以下项目，请分析每个项目删除后的影响。
+
+        对于每个项目，请用一句话（不超过30字）说明删除后的主要影响。
+
+        请严格按照以下 JSON 格式返回结果，不要包含任何其他文字：
+        [
+          {
+            "name": "项目名称",
+            "impact": "一句话影响说明"
+          }
+        ]
+        只返回JSON数组，不要包含markdown代码块标记。
+        以下是要分析的项目：
+        \(itemsDesc)
+        """
+
+        let apiBase = (config.apiBase ?? "https://api.deepseek.com").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: "\(apiBase)/v1/chat/completions") else {
+            for app in apps { aiAnalysisMap[app.id] = "❌ 无效的 API 地址" }
+            isAnalyzingImpact = false
+            return
+        }
+
+        let body: [String: Any] = [
+            "model": config.model ?? "deepseek-chat",
+            "messages": [
+                ["role": "user", "content": prompt]
+            ],
+            "temperature": 0.3,
+            "max_tokens": 4096,
+        ]
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 120
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                for app in apps { aiAnalysisMap[app.id] = "❌ 无效的 HTTP 响应" }
+                isAnalyzingImpact = false
+                return
+            }
+
+            if http.statusCode != 200 {
+                let bodyStr = String(data: data, encoding: .utf8) ?? ""
+                for app in apps { aiAnalysisMap[app.id] = "❌ API 错误 (\(http.statusCode))" }
+                isAnalyzingImpact = false
+                return
+            }
+
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let message = choices.first?["message"] as? [String: Any] else {
+                for app in apps { aiAnalysisMap[app.id] = "❌ 大模型返回格式错误" }
+                isAnalyzingImpact = false
+                return
+            }
+
+            var content = message["content"] as? String ?? ""
+            if content.isEmpty {
+                content = message["reasoning_content"] as? String ?? ""
+            }
+
+            if content.hasPrefix("```") {
+                if let start = content.range(of: "["), let end = content.range(of: "]", options: .backwards) {
+                    content = String(content[start.lowerBound...end.upperBound])
+                }
+            }
+
+            if let jsonData = content.data(using: .utf8),
+               let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: String]] {
+                for item in items {
+                    let name = item["name"] ?? ""
+                    let impact = item["impact"] ?? ""
+                    for app in apps {
+                        if app.displayName == name || name.contains(app.displayName) || app.displayName.contains(name) {
+                            aiAnalysisMap[app.id] = "🤖 \(impact)"
+                        }
+                    }
+                }
+                for app in apps {
+                    if aiAnalysisMap[app.id]?.hasPrefix("🤖") != true {
+                        aiAnalysisMap[app.id] = "🤖 分析完成（详见原说明）"
+                    }
+                }
+            } else {
+                let lines = content.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                for (i, app) in apps.enumerated() {
+                    if i < lines.count {
+                        aiAnalysisMap[app.id] = "🤖 \(lines[i].trimmingCharacters(in: .whitespacesAndNewlines))"
+                    }
+                }
+            }
+        } catch {
+            for app in apps { aiAnalysisMap[app.id] = "❌ 网络错误" }
+        }
+
+        isAnalyzingImpact = false
     }
 
     func basicUninstall(app: AppInfo) async -> Bool {

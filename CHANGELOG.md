@@ -2,6 +2,21 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.1.1] - 2025-05-13
+
+### Added
+- AI 影响分析：勾选项后点击"AI 分析"按钮，调用大模型分析删除影响，结果直接显示在列表中
+- 全面扫描用户主目录 dotdir，智能分类（AI Agent/CLI/包管理/开发/其它）
+- 30+ 种 AI Agent 关键词匹配（Hermes/yi-code/Cline/MiniMax/CodeArts 等）
+- 25+ 种开发工具 dotdir 分类（.nvm/.pyenv/.conda/.android/.ohos 等）
+- 未识别的 dotdir 归入"其它"分类，标注风险提示
+- 所有 Agent/工具均支持卸载操作（包括无 .app 包的 dotdir 类型）
+
+### Fixed
+- 修复 Hermes/OpenClaw 等无 .app 包的 Agent 无法卸载的问题
+- 修复 dotdir 类型 Agent 的 relatedPaths/dataPaths 不包含实际路径的问题
+- 移除 scanDynamicCLITools 中与 scanDynamicAgents 重复的 dotdir 扫描
+
 ## [1.1.0] - 2025-05-13
 
 ### Added
