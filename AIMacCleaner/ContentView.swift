@@ -326,8 +326,30 @@ struct ContentView: View {
     private var searchAndFilterBar: some View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundColor(.secondary).font(.caption)
-                TextField("搜索项目...", text: $searchText)
+                Button { Task { await service.scanLocal() } } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "magnifyingglass")
+                        Text("重新扫描")
+                    }
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+                .disabled(service.isScanning)
+
+                Button { Task { await performAiScan() } } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "brain")
+                        Text("AI 扫描")
+                    }
+                }
+                .buttonStyle(.bordered).controlSize(.small).tint(.purple)
+                .disabled(service.isAiScanning)
+            }
+
+            Divider().frame(height: 16)
+
+            HStack(spacing: 6) {
+                Image(systemName: "line.3.horizontal.decrease").foregroundColor(.secondary).font(.caption)
+                TextField("搜索...", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.caption)
                 if !searchText.isEmpty {
@@ -339,7 +361,7 @@ struct ContentView: View {
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color(nsColor: .controlBackgroundColor))
             .cornerRadius(6)
-            .frame(width: 160)
+            .frame(width: 140)
 
             Divider().frame(height: 16)
 
@@ -534,9 +556,9 @@ struct ContentView: View {
         let countBefore = deleteTargetIds.count
         Task {
             let _ = await service.deleteItems(ids: deleteTargetIds)
+            service.removeScannedItems(ids: deleteTargetIds)
             selectedIds.subtract(deleteTargetIds)
             deleteTargetIds = []
-            await service.scanLocal()
             service.refreshDiskInfo()
             cleanedSize = sizeBefore
             cleanedCount = countBefore

@@ -136,26 +136,38 @@ class ScannerService: ObservableObject {
         var failCount = 0
 
         let fm = FileManager.default
+        let itemsToDelete = scanItems.filter { ids.contains($0.id) }
 
-        for id in ids {
-            guard let rule = SCAN_RULES.first(where: { $0.id == id }) else { continue }
+        for item in itemsToDelete {
+            var pathsToDelete: [String] = []
 
-            for path in rule.paths {
-                let expanded = NSString(string: path).expandingTildeInPath
+            if let rule = SCAN_RULES.first(where: { $0.id == item.id }) {
+                pathsToDelete = rule.paths.map { NSString(string: $0).expandingTildeInPath }
+            } else if let realPath = item.realPath, !realPath.isEmpty {
+                pathsToDelete = [realPath]
+            } else {
+                pathsToDelete = [NSString(string: item.path).expandingTildeInPath]
+            }
+
+            for expanded in pathsToDelete {
                 do {
                     if fm.fileExists(atPath: expanded) {
                         try fm.removeItem(atPath: expanded)
                         successCount += 1
-                        deleteResults.append(DeleteItemResult(id: id, path: expanded, success: true, message: "已删除"))
+                        deleteResults.append(DeleteItemResult(id: item.id, path: expanded, success: true, message: "已删除"))
                     }
                 } catch {
                     failCount += 1
-                    deleteResults.append(DeleteItemResult(id: id, path: expanded, success: false, message: error.localizedDescription))
+                    deleteResults.append(DeleteItemResult(id: item.id, path: expanded, success: false, message: error.localizedDescription))
                 }
             }
         }
 
         return DeleteResult(success: true, results: deleteResults, deleted: successCount, failed: failCount)
+    }
+
+    func removeScannedItems(ids: [String]) {
+        scanItems.removeAll { ids.contains($0.id) }
     }
 
     // MARK: - Ignore
