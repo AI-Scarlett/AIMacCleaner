@@ -66,6 +66,8 @@ struct MenuBarMonitor: View {
     private var overviewContent: some View {
         ScrollView {
             VStack(spacing: 0) {
+                hardwareOverview
+                Divider()
                 diskOverview
                 Divider()
                 monitoringSettings
@@ -91,6 +93,139 @@ struct MenuBarMonitor: View {
                 operationControlBar
             }
         }
+    }
+
+    private var hardwareOverview: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Text("硬件监控")
+                    .font(.headline)
+                Spacer()
+                if let hw = service.hardwareInfo {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(hw.cpuUsage > 80 ? .red : hw.cpuUsage > 50 ? .orange : .green)
+                            .frame(width: 6, height: 6)
+                        Text("运行中")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            if let hw = service.hardwareInfo {
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        HardwareStatCard(
+                            icon: "cpu",
+                            label: "CPU",
+                            value: String(format: "%.0f%%", hw.cpuUsage),
+                            detail: "\(hw.cpuCoreCount) 核",
+                            color: hw.cpuUsage > 80 ? .red : hw.cpuUsage > 50 ? .orange : .green,
+                            progress: hw.cpuUsage / 100.0
+                        )
+
+                        HardwareStatCard(
+                            icon: "memorychip",
+                            label: "内存",
+                            value: String(format: "%.0f%%", hw.memoryPressurePct),
+                            detail: String(format: "%.1f/%.0fG", hw.memoryUsedGb, hw.memoryTotalGb),
+                            color: hw.memoryPressurePct > 85 ? .red : hw.memoryPressurePct > 70 ? .orange : .blue,
+                            progress: hw.memoryPressurePct / 100.0
+                        )
+                    }
+
+                    if let temp = hw.cpuTemperature {
+                        HStack(spacing: 8) {
+                            HardwareStatCard(
+                                icon: "thermometer.medium",
+                                label: "CPU 温度",
+                                value: String(format: "%.0f°C", temp),
+                                detail: temp > 80 ? "过热" : temp > 60 ? "偏高" : "正常",
+                                color: temp > 80 ? .red : temp > 60 ? .orange : .green,
+                                progress: min(temp / 100.0, 1.0)
+                            )
+
+                            if let battery = hw.batteryPercent {
+                                HardwareStatCard(
+                                    icon: hw.batteryCharging ? "battery.100.bolt" : "battery.75",
+                                    label: "电池",
+                                    value: String(format: "%.0f%%", battery),
+                                    detail: hw.batteryCharging ? "充电中" : (hw.batteryTimeRemaining.map { "\($0)分钟" } ?? "使用中"),
+                                    color: battery < 20 ? .red : battery < 50 ? .orange : .green,
+                                    progress: battery / 100.0
+                                )
+                            } else {
+                                HardwareStatCard(
+                                    icon: "arrow.up.arrow.down",
+                                    label: "网络",
+                                    value: "↓\(hw.networkInFormatted)",
+                                    detail: "↑\(hw.networkOutFormatted)",
+                                    color: .teal,
+                                    progress: nil
+                                )
+                            }
+                        }
+                    } else {
+                        HStack(spacing: 8) {
+                            if let battery = hw.batteryPercent {
+                                HardwareStatCard(
+                                    icon: hw.batteryCharging ? "battery.100.bolt" : "battery.75",
+                                    label: "电池",
+                                    value: String(format: "%.0f%%", battery),
+                                    detail: hw.batteryCharging ? "充电中" : (hw.batteryTimeRemaining.map { "\($0)分钟" } ?? "使用中"),
+                                    color: battery < 20 ? .red : battery < 50 ? .orange : .green,
+                                    progress: battery / 100.0
+                                )
+                            }
+
+                            HardwareStatCard(
+                                icon: "arrow.up.arrow.down",
+                                label: "网络",
+                                value: "↓\(hw.networkInFormatted)",
+                                detail: "↑\(hw.networkOutFormatted)",
+                                color: .teal,
+                                progress: nil
+                            )
+                        }
+                    }
+
+                    HStack(spacing: 12) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "app.badge")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                            Text("\(hw.processCount) 进程")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                        }
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.up.arrow.down.circle")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                            Text("\(hw.threadCount) 线程")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                            Text("运行 \(hw.uptimeFormatted)")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+            } else {
+                Text("正在获取硬件信息...")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(14)
     }
 
     private var diskOverview: some View {
@@ -859,6 +994,49 @@ private struct StatCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
+        .background(color.opacity(0.06))
+        .cornerRadius(8)
+    }
+}
+
+private struct HardwareStatCard: View {
+    let icon: String
+    let label: String
+    let value: String
+    let detail: String
+    let color: Color
+    let progress: Double?
+
+    var body: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                    .foregroundColor(color)
+                Text(label)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            Text(value)
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundColor(color)
+
+            if let progress = progress {
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .tint(color)
+                    .scaleEffect(y: 1.5)
+            }
+
+            Text(detail)
+                .font(.system(size: 9))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 6)
         .background(color.opacity(0.06))
         .cornerRadius(8)
     }

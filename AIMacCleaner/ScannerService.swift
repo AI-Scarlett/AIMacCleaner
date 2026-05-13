@@ -2,11 +2,14 @@ import Foundation
 import Combine
 import UserNotifications
 import AppKit
+import IOKit
+import IOKit.ps
 
 @MainActor
 class ScannerService: ObservableObject {
     @Published var scanItems: [ScanItem] = []
     @Published var diskInfo: DiskInfo?
+    @Published var hardwareInfo: HardwareInfo?
     @Published var isScanning = false
     @Published var isAiScanning = false
     @Published var isEnhancedScanning = false
@@ -24,6 +27,7 @@ class ScannerService: ObservableObject {
         loadIgnores()
         loadAIConfigFromDisk()
         diskInfo = getDiskInfoNative()
+        hardwareInfo = getHardwareInfo()
     }
 
     // MARK: - Disk Info
@@ -48,6 +52,265 @@ class ScannerService: ObservableObject {
 
     func refreshDiskInfo() {
         diskInfo = getDiskInfoNative()
+    }
+
+    // MARK: - Hardware Info
+
+    func refreshHardwareInfo() {
+        hardwareInfo = getHardwareInfo()
+    }
+
+    private func getHardwareInfo() -> HardwareInfo {
+        var info = HardwareInfo(
+            cpuUsage: 0,
+            cpuCoreCount: 0,
+            cpuTemperature: nil,
+            memoryTotal: 0,
+            memoryUsed: 0,
+            memoryFree: 0,
+            memoryPressure: 0,
+            swapUsed: 0,
+            batteryPercent: nil,
+            batteryCharging: false,
+            batteryTimeRemaining: nil,
+            processCount: 0,
+            threadCount: 0,
+            uptimeSeconds: 0,
+            networkInRate: 0,
+            networkOutRate: 0
+        )
+
+        info.cpuCoreCount = getCPUCoreCount()
+        info.cpuUsage = getCPUUsage()
+        info.cpuTemperature = getCPUTemperature()
+        getMemoryInfo(&info)
+        getBatteryInfo(&info)
+        getSystemStats(&info)
+        getNetworkInfo(&info)
+
+        return info
+    }
+
+    private func getCPUCoreCount() -> Int {
+        var count: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        sysctlbyname("hw.ncpu", &count, &size, nil, 0)
+        return Int(count)
+    }
+
+    private func getCPUUsage() -> Double {
+        var numCPU: natural_t = 0
+        var cpuInfo: processor_info_array_t?
+        var numCPUInfo: mach_msg_type_number_t = 0
+
+        let result = host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &numCPU, &cpuInfo, &numCPUInfo)
+
+        guard result == KERN_SUCCESS, let cpuInfo = cpuInfo else { return 0 }
+        defer { vm_deallocate(mach_task_self_, vm_address_t(bitPattern: cpuInfo), vm_size_t(numCPUInfo) * 4) }
+
+        var totalUser: Double = 0
+        var totalSystem: Double = 0
+        var totalIdle: Double = 0
+        var totalNice: Double = 0
+
+        for i in 0..<Int(numCPU) {
+            let offset = i * Int(CPU_STATE_MAX)
+            totalUser += Double(cpuInfo[offset + Int(CPU_STATE_USER)])
+            totalSystem += Double(cpuInfo[offset + Int(CPU_STATE_SYSTEM)])
+            totalIdle += Double(cpuInfo[offset + Int(CPU_STATE_IDLE)])
+            totalNice += Double(cpuInfo[offset + Int(CPU_STATE_NICE)])
+        }
+
+        let total = totalUser + totalSystem + totalIdle + totalNice
+        if total > 0 {
+            return ((totalUser + totalSystem + totalNice) / total) * 100.0
+        }
+        return 0
+    }
+
+    private func getCPUTemperature() -> Double? {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
+        defer { IOObjectRelease(service) }
+        guard service != 0 else { return nil }
+
+        var properties: Unmanaged<CFMutableDictionary>?
+        let result = IORegistryEntryCreateCFProperties(service, &properties, kCFAllocatorDefault, 0)
+        guard result == KERN_SUCCESS, let dict = properties?.takeRetainedValue() as? [String: Any] else {
+            return readTemperatureFromAppleARMIO()
+        }
+
+        for key in ["TC0P", "TC0c", "TC0d", "TC0e", "TCXC", "TCXc"] {
+            if let tempData = dict[key] as? Data, tempData.count >= 2 {
+                let bytes = [UInt8](tempData)
+                let rawValue = Double(bytes[0])
+                if rawValue > 0 && rawValue < 150 {
+                    return rawValue
+                }
+            }
+        }
+
+        return readTemperatureFromAppleARMIO()
+    }
+
+    private func readTemperatureFromAppleARMIO() -> Double? {
+        let matching = IOServiceMatching("AppleARMIODevice")
+        var iterator: io_iterator_t = 0
+        let result = IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator)
+        guard result == KERN_SUCCESS else { return nil }
+        defer { IOObjectRelease(iterator) }
+
+        var service: io_object_t = IOIteratorNext(iterator)
+        while service != 0 {
+            defer { IOObjectRelease(service) }
+
+            var name = [CChar](repeating: 0, count: 256)
+            IORegistryEntryGetName(service, &name)
+            let nameStr = String(cString: name)
+
+            if nameStr.contains("pmgr") || nameStr.contains("temp") || nameStr.contains("smc") {
+                var properties: Unmanaged<CFMutableDictionary>?
+                if IORegistryEntryCreateCFProperties(service, &properties, kCFAllocatorDefault, 0) == KERN_SUCCESS,
+                   let dict = properties?.takeRetainedValue() as? [String: Any] {
+
+                    for (key, value) in dict {
+                        if key.lowercased().contains("temp") || key.lowercased().contains("temperature") {
+                            if let num = value as? Int64, num > 0 && num < 150000 {
+                                return num > 1000 ? Double(num) / 1000.0 : Double(num)
+                            }
+                            if let num = value as? Double, num > 0 && num < 150 {
+                                return num
+                            }
+                            if let data = value as? Data, data.count >= 4 {
+                                let rawValue = data.withUnsafeBytes { $0.load(as: UInt32.self) }
+                                let temp = Double(rawValue) / 65536.0
+                                if temp > 0 && temp < 150 { return temp }
+                            }
+                        }
+                    }
+                }
+            }
+            service = IOIteratorNext(iterator)
+        }
+        return nil
+    }
+
+    private func getMemoryInfo(_ info: inout HardwareInfo) {
+        var total: Int64 = 0
+        var size = MemoryLayout<Int64>.size
+        sysctlbyname("hw.memsize", &total, &size, nil, 0)
+        info.memoryTotal = total
+
+        var vmStats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &vmStats) { ptr in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { reboundPtr in
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, reboundPtr, &count)
+            }
+        }
+
+        if result == KERN_SUCCESS {
+            let pageSize = Int64(vm_kernel_page_size)
+            let active = Int64(vmStats.active_count) * pageSize
+            let inactive = Int64(vmStats.inactive_count) * pageSize
+            let wired = Int64(vmStats.wire_count) * pageSize
+            let compressed = Int64(vmStats.compressor_page_count) * pageSize
+            let free = Int64(vmStats.free_count) * pageSize
+            let speculative = Int64(vmStats.speculative_count) * pageSize
+
+            info.memoryUsed = active + wired + compressed
+            info.memoryFree = free + speculative + inactive
+            info.swapUsed = Int64(vmStats.swapouts) * pageSize
+
+            let usedPct = total > 0 ? Double(info.memoryUsed) / Double(total) * 100.0 : 0
+            info.memoryPressure = usedPct
+        }
+    }
+
+    private func getBatteryInfo(_ info: inout HardwareInfo) {
+        guard let powerSourcesInfo = IOPSCopyPowerSourcesInfo() else { return }
+        let powerSources = powerSourcesInfo.takeRetainedValue()
+        guard let powerSourcesList = IOPSCopyPowerSourcesList(powerSources) else { return }
+        let list = powerSourcesList.takeRetainedValue() as? [CFTypeRef] ?? []
+
+        for ps in list {
+            guard let desc = IOPSGetPowerSourceDescription(powerSources, ps)?.takeUnretainedValue() as? [String: Any] else { continue }
+
+            if let capacity = desc[kIOPSCurrentCapacityKey as String] as? Int {
+                info.batteryPercent = Double(capacity)
+            }
+            if let charging = desc[kIOPSIsChargingKey as String] as? Bool {
+                info.batteryCharging = charging
+            }
+            if let time = desc[kIOPSTimeToEmptyKey as String] as? Int, time > 0 {
+                info.batteryTimeRemaining = time
+            } else if let time = desc[kIOPSTimeToFullChargeKey as String] as? Int, time > 0 {
+                info.batteryTimeRemaining = time
+            }
+            break
+        }
+    }
+
+    private func getSystemStats(_ info: inout HardwareInfo) {
+        var procCount: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        sysctlbyname("kern.num_processes", &procCount, &size, nil, 0)
+        info.processCount = Int(procCount)
+
+        var threadCount: Int32 = 0
+        size = MemoryLayout<Int32>.size
+        sysctlbyname("kern.num_threads", &threadCount, &size, nil, 0)
+        if threadCount > 0 {
+            info.threadCount = Int(threadCount)
+        }
+
+        var tv = timeval()
+        size = MemoryLayout<timeval>.size
+        sysctlbyname("kern.boottime", &tv, &size, nil, 0)
+        let bootTime = Int64(tv.tv_sec)
+        let now = Int64(Date().timeIntervalSince1970)
+        info.uptimeSeconds = now - bootTime
+    }
+
+    private var lastNetInBytes: Int64 = 0
+    private var lastNetOutBytes: Int64 = 0
+    private var lastNetTime: Date = .distantPast
+
+    private func getNetworkInfo(_ info: inout HardwareInfo) {
+        var interfaceAddresses: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&interfaceAddresses) == 0, let firstAddr = interfaceAddresses else { return }
+        defer { freeifaddrs(interfaceAddresses) }
+
+        var totalIn: Int64 = 0
+        var totalOut: Int64 = 0
+
+        var ptr = firstAddr
+        while ptr != nil {
+            let addr = ptr.pointee
+            let name = String(cString: addr.ifa_name)
+
+            if name != "lo0" && addr.ifa_addr.pointee.sa_family == UInt8(AF_LINK) {
+                if let data = addr.ifa_data {
+                    let networkData = data.assumingMemoryBound(to: if_data.self)
+                    totalIn += Int64(networkData.pointee.ifi_ibytes)
+                    totalOut += Int64(networkData.pointee.ifi_obytes)
+                }
+            }
+            ptr = addr.ifa_next
+        }
+
+        let now = Date()
+        let elapsed = now.timeIntervalSince(lastNetTime)
+
+        if elapsed > 0.5 && lastNetTime != .distantPast {
+            let inDiff = Double(max(totalIn - lastNetInBytes, 0))
+            let outDiff = Double(max(totalOut - lastNetOutBytes, 0))
+            info.networkInRate = inDiff / elapsed
+            info.networkOutRate = outDiff / elapsed
+        }
+
+        lastNetInBytes = totalIn
+        lastNetOutBytes = totalOut
+        lastNetTime = now
     }
 
     // MARK: - Local Scan
@@ -845,6 +1108,7 @@ class ScannerService: ObservableObject {
     var trashInsteadOfDelete: Bool = true
     var preventAutoEmptyTrash: Bool = true
     private var monitorTimer: Timer?
+    private var hardwareTimer: Timer?
     private var lastAlertTime: Date = .distantPast
     private let operationMonitor = OperationMonitor()
 
@@ -886,6 +1150,7 @@ class ScannerService: ObservableObject {
     func startMonitoring() {
         stopMonitoring()
         refreshDiskInfo()
+        refreshHardwareInfo()
         checkAndAlert()
         monitorTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -893,11 +1158,18 @@ class ScannerService: ObservableObject {
                 self?.checkAndAlert()
             }
         }
+        hardwareTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshHardwareInfo()
+            }
+        }
     }
 
     func stopMonitoring() {
         monitorTimer?.invalidate()
         monitorTimer = nil
+        hardwareTimer?.invalidate()
+        hardwareTimer = nil
     }
 
     private func checkAndAlert() {
@@ -936,7 +1208,7 @@ class ScannerService: ObservableObject {
     @Published var updateReadyToInstall: Bool = false
     @Published var updateErrorMessage: String = ""
 
-    let currentVersion = "1.5.0"
+    let currentVersion = "1.6.0"
 
     func checkForUpdates() async {
         isCheckingUpdate = true

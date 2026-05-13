@@ -213,3 +213,44 @@ struct OperationRecord: Identifiable, Codable {
         }
     }
 }
+
+struct HardwareInfo {
+    var cpuUsage: Double
+    var cpuCoreCount: Int
+    var cpuTemperature: Double?
+    var memoryTotal: Int64
+    var memoryUsed: Int64
+    var memoryFree: Int64
+    var memoryPressure: Double
+    var swapUsed: Int64
+    var batteryPercent: Double?
+    var batteryCharging: Bool
+    var batteryTimeRemaining: Int?
+    var processCount: Int
+    var threadCount: Int
+    var uptimeSeconds: Int64
+    var networkInRate: Double
+    var networkOutRate: Double
+
+    var memoryTotalGb: Double { Double(memoryTotal) / 1073741824.0 }
+    var memoryUsedGb: Double { Double(memoryUsed) / 1073741824.0 }
+    var memoryFreeGb: Double { Double(memoryFree) / 1073741824.0 }
+    var swapUsedGb: Double { Double(swapUsed) / 1073741824.0 }
+    var memoryPressurePct: Double { memoryTotal > 0 ? Double(memoryUsed) / Double(memoryTotal) * 100.0 : 0 }
+    var uptimeFormatted: String {
+        let days = uptimeSeconds / 86400
+        let hours = (uptimeSeconds % 86400) / 3600
+        let mins = (uptimeSeconds % 3600) / 60
+        if days > 0 { return "\(days)d \(hours)h" }
+        if hours > 0 { return "\(hours)h \(mins)m" }
+        return "\(mins)m"
+    }
+    var networkInFormatted: String { formatRate(networkInRate) }
+    var networkOutFormatted: String { formatRate(networkOutRate) }
+
+    private func formatRate(_ bytesPerSec: Double) -> String {
+        if bytesPerSec < 1024 { return String(format: "%.0f B/s", bytesPerSec) }
+        if bytesPerSec < 1048576 { return String(format: "%.1f KB/s", bytesPerSec / 1024) }
+        return String(format: "%.1f MB/s", bytesPerSec / 1048576)
+    }
+}
