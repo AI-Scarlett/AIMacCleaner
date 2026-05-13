@@ -345,16 +345,46 @@ class ScannerService: ObservableObject {
             }
 
             var content = message["content"] as? String ?? ""
-
-            if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-               let reasoning = message["reasoning_content"] as? String,
-               !reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                content = reasoning
-            }
+            let reasoningContent = message["reasoning_content"] as? String ?? ""
 
             if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                let rawJson = String(data: data, encoding: .utf8) ?? ""
-                return (success: false, items: nil, error: "大模型返回内容为空（可能是推理模型token不足，建议使用 deepseek-chat 模型）\n原始响应: \(rawJson.prefix(300))")
+                if !reasoningContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let retryBody: [String: Any] = [
+                        "model": config.model ?? "deepseek-chat",
+                        "messages": [
+                            ["role": "system", "content": systemPrompt],
+                            ["role": "user", "content": "以下是我的 Mac 目录结构和大小说明，请分析哪些可以清理：\n\(dirInfo)"],
+                            ["role": "assistant", "content": reasoningContent],
+                            ["role": "user", "content": "请根据以上分析，直接输出JSON数组结果，不要包含任何其他文字。"]
+                        ],
+                        "temperature": 0.1,
+                        "max_tokens": 8192
+                    ]
+
+                    var retryRequest = URLRequest(url: url)
+                    retryRequest.httpMethod = "POST"
+                    retryRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    retryRequest.setValue("Bearer \(config.apiKey ?? "")", forHTTPHeaderField: "Authorization")
+                    retryRequest.timeoutInterval = 120
+                    retryRequest.httpBody = try? JSONSerialization.data(withJSONObject: retryBody)
+
+                    do {
+                        let (retryData, retryResponse) = try await URLSession.shared.data(for: retryRequest)
+                        if let retryHttp = retryResponse as? HTTPURLResponse, retryHttp.statusCode == 200,
+                           let retryJson = try? JSONSerialization.jsonObject(with: retryData) as? [String: Any],
+                           let retryChoices = retryJson["choices"] as? [[String: Any]],
+                           let retryMessage = retryChoices.first?["message"] as? [String: Any] {
+                            let retryContent = retryMessage["content"] as? String ?? ""
+                            if !retryContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                content = retryContent
+                            }
+                        }
+                    } catch {}
+                }
+
+                if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return (success: false, items: nil, error: "大模型返回内容为空，推理模型思考过程消耗了所有token。请在AI设置中将模型改为 deepseek-chat 后重试。")
+                }
             }
 
             let rawContent = content
