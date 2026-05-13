@@ -846,6 +846,42 @@ class ScannerService: ObservableObject {
     var preventAutoEmptyTrash: Bool = true
     private var monitorTimer: Timer?
     private var lastAlertTime: Date = .distantPast
+    private let operationMonitor = OperationMonitor()
+
+    @Published var operationRecords: [OperationRecord] = []
+
+    func startOperationMonitor() {
+        operationMonitor.start()
+        operationRecords = operationMonitor.records
+        startOperationPolling()
+    }
+
+    func stopOperationMonitor() {
+        operationMonitor.stop()
+        stopOperationPolling()
+    }
+
+    func clearOperationRecords() {
+        operationMonitor.clearRecords()
+        operationRecords = []
+    }
+
+    private var operationPollTimer: Timer?
+
+    private func startOperationPolling() {
+        stopOperationPolling()
+        operationPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.operationRecords = self.operationMonitor.records
+            }
+        }
+    }
+
+    private func stopOperationPolling() {
+        operationPollTimer?.invalidate()
+        operationPollTimer = nil
+    }
 
     func startMonitoring() {
         stopMonitoring()
@@ -900,7 +936,7 @@ class ScannerService: ObservableObject {
     @Published var updateReadyToInstall: Bool = false
     @Published var updateErrorMessage: String = ""
 
-    let currentVersion = "1.4.0"
+    let currentVersion = "1.5.0"
 
     func checkForUpdates() async {
         isCheckingUpdate = true

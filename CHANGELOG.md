@@ -2,6 +2,17 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.5.0] - 2025-05-13
+
+### Added
+- **菜单栏 Tab 切换** - 菜单栏面板新增"监控"和"操作"两个 Tab 页
+- **操作统计概览** - 显示总操作数、今日操作数、1小时内操作数三个统计卡片
+- **Agent 活跃度排行** - 按 Agent 分组统计操作数量，横向条形图展示 Top 5
+- **操作类型分布** - 按创建/修改/删除/移动/重命名分类统计，图标+数字展示
+- **最近操作列表** - 显示最近 5 条操作记录，包含 Agent、操作类型、路径和时间
+- **操作监控控制** - 操作 Tab 底部可开始/暂停监控、清空记录、查看完整记录
+- **ScannerService 桥接** - 通过 ScannerService 桥接 OperationMonitor 数据到菜单栏
+
 ## [1.4.0] - 2025-05-13
 
 ### Added

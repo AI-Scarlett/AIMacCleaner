@@ -2,26 +2,94 @@ import SwiftUI
 
 struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
+    @State private var selectedTab: MonitorTab = .overview
     @State private var alertThreshold: Double = 10.0
     @State private var monitoringEnabled: Bool = true
     @State private var operationMonitorEnabled: Bool = false
     @State private var trashInsteadOfDelete: Bool = true
     @State private var preventAutoEmptyTrash: Bool = true
 
+    enum MonitorTab: String, CaseIterable {
+        case overview = "监控"
+        case operations = "操作"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            diskOverview
+            tabBar
             Divider()
-            monitoringSettings
-            Divider()
-            safetySettings
-            Divider()
-            quickActions
+
+            switch selectedTab {
+            case .overview:
+                overviewContent
+            case .operations:
+                operationsContent
+            }
         }
         .frame(width: 300)
         .onAppear {
             loadSettings()
             if monitoringEnabled { service.startMonitoring() }
+        }
+    }
+
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            ForEach(MonitorTab.allCases, id: \.self) { tab in
+                Button {
+                    selectedTab = tab
+                } label: {
+                    VStack(spacing: 3) {
+                        HStack(spacing: 4) {
+                            Image(systemName: tab == .overview ? "gauge.open.with.lines.needle.84percent" : "chart.bar")
+                                .font(.caption2)
+                            Text(tab.rawValue)
+                                .font(.caption)
+                                .fontWeight(selectedTab == tab ? .semibold : .regular)
+                        }
+                        .foregroundColor(selectedTab == tab ? .accentColor : .secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+
+                        Rectangle()
+                            .fill(selectedTab == tab ? Color.accentColor : Color.clear)
+                            .frame(height: 2)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+    }
+
+    private var overviewContent: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                diskOverview
+                Divider()
+                monitoringSettings
+                Divider()
+                safetySettings
+                Divider()
+                quickActions
+            }
+        }
+    }
+
+    private var operationsContent: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                operationStatsHeader
+                Divider()
+                operationAgentStats
+                Divider()
+                operationTypeStats
+                Divider()
+                recentOperations
+                Divider()
+                operationControlBar
+            }
         }
     }
 
@@ -375,10 +443,368 @@ struct MenuBarMonitor: View {
         }
     }
 
+    // MARK: - Operation Monitor Tab
+
+    private var operationStatsHeader: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Text("操作统计")
+                    .font(.headline)
+                Spacer()
+                if operationMonitorEnabled {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 6, height: 6)
+                        Text("监控中")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                    }
+                } else {
+                    Text("未启用")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            HStack(spacing: 10) {
+                StatCard(
+                    icon: "list.bullet",
+                    value: "\(service.operationRecords.count)",
+                    label: "总操作",
+                    color: .blue
+                )
+                StatCard(
+                    icon: "clock",
+                    value: "\(todayOperationCount)",
+                    label: "今日",
+                    color: .green
+                )
+                StatCard(
+                    icon: "flame.fill",
+                    value: "\(hourOperationCount)",
+                    label: "1小时",
+                    color: .orange
+                )
+            }
+        }
+        .padding(14)
+    }
+
+    private var operationAgentStats: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Image(systemName: "cpu")
+                    .font(.caption)
+                    .foregroundColor(.purple)
+                Text("Agent 活跃度")
+                    .font(.caption)
+                    .fontWeight(.medium)
+            }
+
+            if agentStats.isEmpty {
+                Text("暂无操作记录")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 4) {
+                    ForEach(agentStats.prefix(5), id: \.name) { stat in
+                        HStack(spacing: 6) {
+                            Text(stat.name)
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+                                .frame(width: 80, alignment: .leading)
+
+                            GeometryReader { geo in
+                                let maxCount = agentStats.first?.count ?? 1
+                                let ratio = CGFloat(stat.count) / CGFloat(max(maxCount, 1))
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(agentStatColor(index: stat.index))
+                                    .frame(width: geo.size.width * ratio, height: 10)
+                            }
+                            .frame(height: 10)
+
+                            Text("\(stat.count)")
+                                .font(.caption2)
+                                .monospacedDigit()
+                                .fontWeight(.medium)
+                                .foregroundColor(.secondary)
+                                .frame(width: 30, alignment: .trailing)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+    }
+
+    private var operationTypeStats: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Image(systemName: "chart.pie")
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                Text("操作类型分布")
+                    .font(.caption)
+                    .fontWeight(.medium)
+            }
+
+            if service.operationRecords.isEmpty {
+                Text("暂无数据")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 8)
+            } else {
+                HStack(spacing: 6) {
+                    ForEach(Array(typeStats.enumerated()), id: \.offset) { index, stat in
+                        VStack(spacing: 3) {
+                            Image(systemName: stat.icon)
+                                .font(.caption2)
+                                .foregroundColor(stat.color)
+                            Text("\(stat.count)")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .monospacedDigit()
+                            Text(stat.label)
+                                .font(.system(size: 8))
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background(stat.color.opacity(0.06))
+                        .cornerRadius(6)
+                    }
+                }
+            }
+        }
+        .padding(14)
+    }
+
+    private var recentOperations: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.caption)
+                    .foregroundColor(.green)
+                Text("最近操作")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+                if !service.operationRecords.isEmpty {
+                    Text("\(service.operationRecords.count) 条")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            if service.operationRecords.isEmpty {
+                VStack(spacing: 6) {
+                    Image(systemName: "tray")
+                        .font(.title3)
+                        .foregroundColor(.secondary.opacity(0.4))
+                    Text("暂无操作记录")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text("开启监控后将自动记录 Agent 操作")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary.opacity(0.6))
+                }
+                .padding(.vertical, 12)
+            } else {
+                VStack(spacing: 4) {
+                    ForEach(recentRecords, id: \.id) { record in
+                        HStack(spacing: 6) {
+                            Image(systemName: record.operationType.icon)
+                                .font(.system(size: 9))
+                                .foregroundColor(opTypeColor(record.operationType))
+                                .frame(width: 14)
+
+                            Text(record.agentName)
+                                .font(.system(size: 10))
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+                                .frame(width: 60, alignment: .leading)
+
+                            Text(record.operationType.rawValue)
+                                .font(.system(size: 9))
+                                .fontWeight(.medium)
+                                .foregroundColor(opTypeColor(record.operationType))
+                                .frame(width: 24, alignment: .center)
+
+                            Text(record.targetPath)
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+
+                            Spacer()
+
+                            Text(record.timestamp, style: .time)
+                                .font(.system(size: 9))
+                                .monospacedDigit()
+                                .foregroundColor(.secondary.opacity(0.7))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                        .cornerRadius(4)
+                    }
+                }
+            }
+        }
+        .padding(14)
+    }
+
+    private var operationControlBar: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Button {
+                    operationMonitorEnabled.toggle()
+                    saveSettings()
+                    if operationMonitorEnabled {
+                        service.startOperationMonitor()
+                    } else {
+                        service.stopOperationMonitor()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: operationMonitorEnabled ? "pause.circle" : "play.circle")
+                        Text(operationMonitorEnabled ? "暂停监控" : "开始监控")
+                    }
+                    .font(.caption2)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .tint(operationMonitorEnabled ? .orange : .green)
+
+                Spacer()
+
+                if !service.operationRecords.isEmpty {
+                    Button {
+                        service.clearOperationRecords()
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "trash")
+                            Text("清空")
+                        }
+                        .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .tint(.red)
+                }
+            }
+
+            HStack {
+                Button {
+                    NSApp.activate(ignoringOtherApps: true)
+                    if let window = NSApp.windows.first(where: { $0.isVisible }) {
+                        window.makeKeyAndOrderFront(nil)
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.up.right.and.arrow.down.left")
+                        Text("查看完整记录")
+                    }
+                    .font(.caption2)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+
+                Spacer()
+
+                Button {
+                    NSApp.terminate(nil)
+                } label: {
+                    HStack {
+                        Image(systemName: "power")
+                        Text("退出")
+                    }
+                    .font(.caption2)
+                    .foregroundColor(.red)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    // MARK: - Computed Properties
+
+    private var todayOperationCount: Int {
+        let start = Calendar.current.startOfDay(for: Date())
+        return service.operationRecords.filter { $0.timestamp >= start }.count
+    }
+
+    private var hourOperationCount: Int {
+        service.operationRecords.filter { Date().timeIntervalSince($0.timestamp) < 3600 }.count
+    }
+
+    private struct AgentStat {
+        let name: String
+        let count: Int
+        let index: Int
+    }
+
+    private var agentStats: [AgentStat] {
+        var counts: [String: Int] = [:]
+        for record in service.operationRecords {
+            counts[record.agentName, default: 0] += 1
+        }
+        return counts.sorted { $0.value > $1.value }.enumerated().map { index, entry in
+            AgentStat(name: entry.key, count: entry.value, index: index)
+        }
+    }
+
+    private struct TypeStat {
+        let label: String
+        let icon: String
+        let color: Color
+        let count: Int
+    }
+
+    private var typeStats: [TypeStat] {
+        var counts: [OperationRecord.OperationType: Int] = [:]
+        for record in service.operationRecords {
+            counts[record.operationType, default: 0] += 1
+        }
+        return OperationRecord.OperationType.allCases.compactMap { type in
+            let count = counts[type] ?? 0
+            if count > 0 {
+                return TypeStat(label: type.rawValue, icon: type.icon, color: opTypeColor(type), count: count)
+            }
+            return nil
+        }
+    }
+
+    private var recentRecords: [OperationRecord] {
+        Array(service.operationRecords.prefix(5))
+    }
+
+    // MARK: - Helper Functions
+
     private func diskColor(pct: Double) -> Color {
         if pct > 90 { return .red }
         if pct > 80 { return .orange }
         return .green
+    }
+
+    private func opTypeColor(_ type: OperationRecord.OperationType) -> Color {
+        switch type {
+        case .create: .green
+        case .modify: .blue
+        case .delete: .red
+        case .move: .orange
+        case .rename: .purple
+        }
+    }
+
+    private func agentStatColor(index: Int) -> Color {
+        let colors: [Color] = [.blue, .purple, .green, .orange, .cyan, .pink, .indigo, .teal]
+        return colors[index % colors.count]
     }
 
     private func settingsPath() -> String {
@@ -408,5 +834,32 @@ struct MenuBarMonitor: View {
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: obj, options: .prettyPrinted) else { return }
         try? data.write(to: URL(fileURLWithPath: settingsPath()))
+    }
+}
+
+private struct StatCard: View {
+    let icon: String
+    let value: String
+    let label: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundColor(color)
+            Text(value)
+                .font(.title3)
+                .fontWeight(.bold)
+                .monospacedDigit()
+                .foregroundColor(color)
+            Text(label)
+                .font(.system(size: 9))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(color.opacity(0.06))
+        .cornerRadius(8)
     }
 }
