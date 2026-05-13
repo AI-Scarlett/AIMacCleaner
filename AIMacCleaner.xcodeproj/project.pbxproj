@@ -159,16 +159,16 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = NO;
-				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = AIMacCleaner;
-				INFOPLIST_KEY_LSMinimumSystemVersion = 13.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.6.0;
-				OPTIMIZATION_LEVEL = "-O";
+				INFOPLIST_FILE = AIMacCleaner/Info.plist;
+			INFOPLIST_KEY_CFBundleDisplayName = AIMacCleaner;
+			INFOPLIST_KEY_LSMinimumSystemVersion = 13.0;
+			LD_RUNPATH_SEARCH_PATHS = (
+				"$(inherited)",
+				"@executable_path/../Frameworks",
+			);
+			MACOSX_DEPLOYMENT_TARGET = 13.0;
+			MARKETING_VERSION = 1.6.0;
+			OPTIMIZATION_LEVEL = "-O";
 				PRODUCT_BUNDLE_IDENTIFIER = com.aimaccleaner.app;
 				PRODUCT_NAME = AIMacCleaner;
 				SDKROOT = macosx;
@@ -304,16 +304,16 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = NO;
-				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = AIMacCleaner;
-				INFOPLIST_KEY_LSMinimumSystemVersion = 13.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.6.0;
-				OPTIMIZATION_LEVEL = "-Onone";
+				INFOPLIST_FILE = AIMacCleaner/Info.plist;
+			INFOPLIST_KEY_CFBundleDisplayName = AIMacCleaner;
+			INFOPLIST_KEY_LSMinimumSystemVersion = 13.0;
+			LD_RUNPATH_SEARCH_PATHS = (
+				"$(inherited)",
+				"@executable_path/../Frameworks",
+			);
+			MACOSX_DEPLOYMENT_TARGET = 13.0;
+			MARKETING_VERSION = 1.6.0;
+			OPTIMIZATION_LEVEL = "-Onone";
 				PRODUCT_BUNDLE_IDENTIFIER = com.aimaccleaner.app;
 				PRODUCT_NAME = AIMacCleaner;
 				SDKROOT = macosx;

@@ -3,123 +3,83 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="AIMacCleaner"
+VERSION="1.6.0"
 BUILD_DIR="/tmp/AIMacCleaner_build"
-APP_BUNDLE="$BUILD_DIR/build/$APP_NAME.app"
-SWIFT_SOURCES="$PROJECT_DIR/AIMacCleaner"
+DMG_NAME="AIMacCleaner-v${VERSION}-arm64"
+STAGING_DIR="/tmp/AIMacCleaner_dmg_staging"
 
 echo "========================================="
-echo "  Building $APP_NAME (Native SwiftUI)"
+echo "  Building $APP_NAME v${VERSION}"
 echo "========================================="
 
 rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR/build"
+rm -rf "$STAGING_DIR"
+mkdir -p "$BUILD_DIR"
 
-SDK_PATH=$(xcrun --show-sdk-path 2>/dev/null)
-if [ -z "$SDK_PATH" ]; then
-    echo "Error: Xcode Command Line Tools not found."
-    echo "Please install: xcode-select --install"
+echo "[1/5] Building with xcodebuild..."
+xcodebuild \
+    -project "$PROJECT_DIR/AIMacCleaner.xcodeproj" \
+    -scheme "$APP_NAME" \
+    -configuration Release \
+    -arch arm64 \
+    CONFIGURATION_BUILD_DIR="$BUILD_DIR" \
+    MARKETING_VERSION="$VERSION" \
+    CFBundleShortVersionString="$VERSION" \
+    CODE_SIGN_IDENTITY="-" \
+    CODE_SIGN_STYLE=Manual \
+    ENABLE_HARDENED_RUNTIME=NO \
+    clean build \
+    2>&1 | tail -5
+
+APP_PATH="$BUILD_DIR/$APP_NAME.app"
+
+if [ ! -d "$APP_PATH" ]; then
+    echo "Error: Build failed - $APP_PATH not found"
     exit 1
 fi
 
-echo "[1/6] Checking Xcode..."
-XCODEBUILD=$(which xcodebuild 2>/dev/null || true)
-if [ -z "$XCODEBUILD" ]; then
-    echo "Error: xcodebuild not found. Please install Xcode from App Store."
-    exit 1
-fi
-echo "  SDK: $SDK_PATH"
+echo "  Build successful: $APP_PATH"
 
-echo "[2/6] Preparing Swift sources..."
-echo "  Using swiftc direct compilation..."
+BUILT_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Contents/Info.plist" 2>/dev/null || echo "unknown")
+echo "  Built version: $BUILT_VERSION"
 
-echo "[3/6] Compiling Swift sources..."
-mkdir -p "$BUILD_DIR/objects"
-
-SWIFT_FILES=$(find "$SWIFT_SOURCES" -name "*.swift" -type f)
-
-xcrun swiftc \
-    -o "$BUILD_DIR/AIMacCleaner" \
-    -target arm64-apple-macosx13.0 \
-    -sdk "$SDK_PATH" \
-    -F "$SDK_PATH/System/Library/Frameworks" \
-    -framework SwiftUI \
-    -framework Foundation \
-    -framework Combine \
-    -framework CoreServices \
-    -framework IOKit \
-    -framework UserNotifications \
-    -O \
-    $SWIFT_FILES
-
-echo "  Compilation successful."
-
-echo "[4/6] Creating .app bundle..."
-mkdir -p "$APP_BUNDLE/Contents/MacOS"
-mkdir -p "$APP_BUNDLE/Contents/Resources"
-
-cp "$BUILD_DIR/AIMacCleaner" "$APP_BUNDLE/Contents/MacOS/AIMacCleaner"
-chmod +x "$APP_BUNDLE/Contents/MacOS/AIMacCleaner"
-
-echo "[5/6] Copying resources..."
-
-cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>zh_CN</string>
-    <key>CFBundleExecutable</key>
-    <string>AIMacCleaner</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.aimaccleaner.app</string>
-    <key>CFBundleName</key>
-    <string>AIMacCleaner</string>
-    <key>CFBundleDisplayName</key>
-    <string>AIMacCleaner</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.6.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSAllowsLocalNetworking</key>
-        <true/>
-    </dict>
-</dict>
-</plist>
-PLIST
-
-if [ -f "$PROJECT_DIR/build/AppIcon.icns" ]; then
-    cp "$PROJECT_DIR/build/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
-    /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || \
-    /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || true
+echo "[2/5] Verifying Info.plist version..."
+if [ "$BUILT_VERSION" != "$VERSION" ]; then
+    echo "  Version mismatch! Fixing to $VERSION..."
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_PATH/Contents/Info.plist"
 fi
 
-echo "[6/6] Copying Assets..."
-if [ -d "$SWIFT_SOURCES/Assets.xcassets" ]; then
-    cp -R "$SWIFT_SOURCES/Assets.xcassets" "$APP_BUNDLE/Contents/Resources/Assets.xcassets"
-fi
+echo "[3/5] Code signing (ad-hoc)..."
+codesign --force --deep --sign - "$APP_PATH"
+echo "  Code signed successfully."
+
+echo "[4/5] Verifying signature..."
+codesign --verify --deep --strict "$APP_PATH" 2>&1 && echo "  Signature valid ✓" || echo "  WARNING: Signature verification failed!"
+
+echo "[5/5] Creating DMG..."
+mkdir -p "$STAGING_DIR"
+cp -R "$APP_PATH" "$STAGING_DIR/"
+ln -s /Applications "$STAGING_DIR/Applications"
+
+hdiutil create \
+    -volname "$APP_NAME" \
+    -srcfolder "$STAGING_DIR" \
+    -ov \
+    -format UDZO \
+    "/tmp/${DMG_NAME}.dmg"
+
+rm -rf "$STAGING_DIR"
+
+DMG_PATH="/tmp/${DMG_NAME}.dmg"
+DMG_SIZE=$(du -sh "$DMG_PATH" | cut -f1)
 
 echo ""
 echo "========================================="
 echo "  Build Complete!"
 echo "========================================="
 echo ""
-echo "  App: $APP_BUNDLE"
-echo "  Size: $(du -sh "$APP_BUNDLE" | cut -f1)"
-echo ""
-echo "  Install:"
-echo "    cp -r \"$APP_BUNDLE\" /Applications/"
-echo ""
-echo "  Run:"
-echo "    open \"$APP_BUNDLE\""
+echo "  App:  $APP_PATH"
+echo "  DMG:  $DMG_PATH"
+echo "  Size: $DMG_SIZE"
+echo "  Version: $VERSION"
 echo ""
