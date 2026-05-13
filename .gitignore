@@ -29,7 +29,6 @@ scanner.py
 build.sh
 project.yml
 static/
-Info.plist
 build/MacOS/
 build/Info.plist
 build/create_icon.py

@@ -1233,7 +1233,7 @@ class ScannerService: ObservableObject {
                 updateAvailable = true
                 if let assets = json["assets"] as? [[String: Any]] {
                     for asset in assets {
-                        if let name = asset["name"] as? String, name.hasSuffix("-arm64.dmg"),
+                        if let name = asset["name"] as? String, name.hasSuffix(".dmg"),
                            let downloadURL = asset["browser_download_url"] as? String {
                             updateDownloadURL = downloadURL
                             break

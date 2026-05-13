@@ -29,6 +29,7 @@
 		F15EC33FFB79FB101CE80521 /* ScannerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerService.swift; sourceTree = "<group>"; };
 		F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIConfigView.swift; sourceTree = "<group>"; };
 		FD0E8A971151EDD2952E2662 /* AIMacCleaner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIMacCleaner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AABBCCDDEEFF001122334455 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -51,6 +52,7 @@
 		F3F2C11399EB7BDCDF6667DE /* AIMacCleaner */ = {
 			isa = PBXGroup;
 			children = (
+				AABBCCDDEEFF001122334455 /* Info.plist */,
 				F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */,
 				9838AA1A28FA8BA67862CC0F /* AIMacCleanerApp.swift */,
 				6E3B64BE60289E69F30C340F /* Assets.xcassets */,

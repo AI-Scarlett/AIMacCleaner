@@ -66,7 +66,7 @@
 
 ### 方式一：下载 DMG（推荐）
 
-1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.3.0-arm64.dmg`
+1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner.dmg`
 2. 双击打开 DMG 文件
 3. 将 AIMacCleaner 拖入 Applications 文件夹
 4. 首次打开时，右键点击应用 → 选择「打开」（需绕过 Gatekeeper 验证）
