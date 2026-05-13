@@ -99,6 +99,7 @@ PLIST
 
 if [ -f "$PROJECT_DIR/build/AppIcon.icns" ]; then
     cp "$PROJECT_DIR/build/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+    /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || true
 fi
 

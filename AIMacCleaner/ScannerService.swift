@@ -21,7 +21,7 @@ class ScannerService: ObservableObject {
         diskInfo = getDiskInfoNative()
     }
 
-    // MARK: - Disk Info (Native)
+    // MARK: - Disk Info
 
     func getDiskInfoNative() -> DiskInfo? {
         var fs = statfs()
@@ -45,7 +45,7 @@ class ScannerService: ObservableObject {
         diskInfo = getDiskInfoNative()
     }
 
-    // MARK: - Local Scan (Native)
+    // MARK: - Local Scan
 
     func scanLocal() async {
         isScanning = true
@@ -128,7 +128,7 @@ class ScannerService: ObservableObject {
         return (totalSize, fileCount)
     }
 
-    // MARK: - Delete (Native)
+    // MARK: - Delete
 
     func deleteItems(ids: [String]) async -> DeleteResult {
         var deleteResults: [DeleteItemResult] = []
@@ -158,7 +158,7 @@ class ScannerService: ObservableObject {
         return DeleteResult(success: true, results: deleteResults, deleted: successCount, failed: failCount)
     }
 
-    // MARK: - Ignore (Native)
+    // MARK: - Ignore
 
     func ignoreItems(ids: [String]) {
         ignoredIds.formUnion(ids)
@@ -192,7 +192,7 @@ class ScannerService: ObservableObject {
         try? data.write(to: URL(fileURLWithPath: ignoreFilePath))
     }
 
-    // MARK: - AI Config (Native)
+    // MARK: - AI Config
 
     func loadAIConfigFromDisk() {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: aiConfigFilePath)),
@@ -210,7 +210,7 @@ class ScannerService: ObservableObject {
         aiConfig = config
     }
 
-    // MARK: - AI Scan (Native HTTP)
+    // MARK: - AI Scan
 
     func startAiScan() async {
         guard let config = aiConfig, config.hasKey == true, let apiKey = config.apiKey, !apiKey.isEmpty else {
@@ -290,7 +290,6 @@ class ScannerService: ObservableObject {
         你是一个 macOS 存储空间清理专家。根据用户提供的目录列表和大小信息，分析哪些目录可以安全清理。
 
         请严格按照以下 JSON 格式返回结果，不要包含任何其他文字：
-        ```json
         [
           {
             "name": "清理项名称",
@@ -302,10 +301,10 @@ class ScannerService: ObservableObject {
             "reason": "为什么可以清理"
           }
         ]
-        ```
 
         风险等级：safe=纯缓存可安全删除; caution=删除后可能需重新登录/配置; dangerous=可能丢失数据。
         只返回确定可以清理的项目，按大小从大到小排序。
+        只返回JSON数组，不要包含markdown代码块标记。
         """
 
         let body: [String: Any] = [
@@ -346,22 +345,12 @@ class ScannerService: ObservableObject {
                 return (success: false, items: nil, error: "大模型返回格式错误")
             }
 
-            var jsonStr = content
-            if let range = jsonStr.range(of: "```json") {
-                jsonStr = String(jsonStr[range.upperBound...])
-                if let endRange = jsonStr.range(of: "```") {
-                    jsonStr = String(jsonStr[..<endRange.lowerBound])
-                }
-            } else if let range = jsonStr.range(of: "```") {
-                jsonStr = String(jsonStr[range.upperBound...])
-                if let endRange = jsonStr.range(of: "```") {
-                    jsonStr = String(jsonStr[..<endRange.lowerBound])
-                }
-            }
+            let jsonStr = extractJSON(from: content)
 
-            guard let jsonData = jsonStr.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
+            guard let jsonData = jsonStr.data(using: .utf8),
                   let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] else {
-                return (success: false, items: nil, error: "无法解析大模型返回的 JSON")
+                let preview = String(jsonStr.prefix(100))
+                return (success: false, items: nil, error: "无法解析大模型返回的 JSON（预览: \(preview)）")
             }
 
             var results: [ScanItem] = []
@@ -401,6 +390,37 @@ class ScannerService: ObservableObject {
         } catch {
             return (success: false, items: nil, error: error.localizedDescription)
         }
+    }
+
+    private func extractJSON(from content: String) -> String {
+        var str = content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if str.hasPrefix("```json") {
+            str = String(str.dropFirst(7))
+        } else if str.hasPrefix("```") {
+            str = String(str.dropFirst(3))
+        }
+
+        if str.hasSuffix("```") {
+            str = String(str.dropLast(3))
+        }
+
+        str = str.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if str.hasPrefix("[") {
+            if let endIdx = str.lastIndex(of: "]") {
+                return String(str[...endIdx])
+            }
+        }
+
+        if let startIdx = str.range(of: "[") {
+            let remaining = String(str[startIdx.lowerBound...])
+            if let endIdx = remaining.lastIndex(of: "]") {
+                return String(remaining[...endIdx])
+            }
+        }
+
+        return str
     }
 
     // MARK: - Utility

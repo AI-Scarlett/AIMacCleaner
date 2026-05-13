@@ -177,8 +177,6 @@ struct ContentView: View {
                 scanningOverlay
             } else if service.scanItems.isEmpty {
                 welcomeCenter
-            } else if filteredItems.isEmpty {
-                noResultView
             } else {
                 searchAndFilterBar
                 Divider()
@@ -188,7 +186,11 @@ struct ContentView: View {
                     Divider()
                 }
 
-                resultList
+                if filteredItems.isEmpty {
+                    noResultView
+                } else {
+                    resultList
+                }
             }
         }
     }

@@ -94,6 +94,7 @@ struct AIConfigView: View {
     private func loadConfig() {
         if let config = service.aiConfig {
             apiBase = config.apiBase ?? "https://api.deepseek.com"
+            apiKey = config.apiKey ?? ""
             model = config.model ?? "deepseek-chat"
         }
     }
