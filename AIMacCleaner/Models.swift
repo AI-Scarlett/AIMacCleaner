@@ -175,3 +175,41 @@ struct AppInfo: Identifiable, Hashable {
         return paths
     }
 }
+
+struct OperationRecord: Identifiable, Codable {
+    let id: String
+    let timestamp: Date
+    let agentName: String
+    let operationType: OperationType
+    let targetPath: String
+    let detail: String
+    let fileSize: Int64
+
+    enum OperationType: String, Codable, CaseIterable {
+        case create = "创建"
+        case modify = "修改"
+        case delete = "删除"
+        case move = "移动"
+        case rename = "重命名"
+
+        var icon: String {
+            switch self {
+            case .create: "plus.circle.fill"
+            case .modify: "pencil.circle.fill"
+            case .delete: "trash.circle.fill"
+            case .move: "arrow.right.circle.fill"
+            case .rename: "text.cursor.input"
+            }
+        }
+
+        var color: String {
+            switch self {
+            case .create: "green"
+            case .modify: "blue"
+            case .delete: "red"
+            case .move: "orange"
+            case .rename: "purple"
+            }
+        }
+    }
+}

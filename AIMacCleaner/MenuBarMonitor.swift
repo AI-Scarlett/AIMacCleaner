@@ -4,7 +4,9 @@ struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
     @State private var alertThreshold: Double = 10.0
     @State private var monitoringEnabled: Bool = true
-    @State private var alertTriggered: Bool = false
+    @State private var operationMonitorEnabled: Bool = false
+    @State private var trashInsteadOfDelete: Bool = true
+    @State private var preventAutoEmptyTrash: Bool = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -12,9 +14,11 @@ struct MenuBarMonitor: View {
             Divider()
             monitoringSettings
             Divider()
+            safetySettings
+            Divider()
             quickActions
         }
-        .frame(width: 280)
+        .frame(width: 300)
         .onAppear {
             loadSettings()
             if monitoringEnabled { service.startMonitoring() }
@@ -132,6 +136,59 @@ struct MenuBarMonitor: View {
         .padding(14)
     }
 
+    private var safetySettings: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Image(systemName: "eye.fill")
+                    .font(.caption)
+                    .foregroundColor(.purple)
+                Text("操作监控")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+                Toggle("", isOn: $operationMonitorEnabled)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .onChange(of: operationMonitorEnabled) { _ in saveSettings() }
+            }
+
+            HStack {
+                Image(systemName: "trash")
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                Text("删除移入回收站")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+                Toggle("", isOn: $trashInsteadOfDelete)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .onChange(of: trashInsteadOfDelete) { _ in
+                        service.trashInsteadOfDelete = trashInsteadOfDelete
+                        saveSettings()
+                    }
+            }
+
+            HStack {
+                Image(systemName: "trash.slash")
+                    .font(.caption)
+                    .foregroundColor(.red)
+                Text("禁止自动清空回收站")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+                Toggle("", isOn: $preventAutoEmptyTrash)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .onChange(of: preventAutoEmptyTrash) { _ in
+                        service.preventAutoEmptyTrash = preventAutoEmptyTrash
+                        saveSettings()
+                    }
+            }
+        }
+        .padding(14)
+    }
+
     private var quickActions: some View {
         VStack(spacing: 0) {
             if service.updateAvailable {
@@ -226,11 +283,22 @@ struct MenuBarMonitor: View {
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
         monitoringEnabled = obj["enabled"] as? Bool ?? true
         alertThreshold = obj["threshold"] as? Double ?? 10.0
+        operationMonitorEnabled = obj["operationMonitor"] as? Bool ?? false
+        trashInsteadOfDelete = obj["trashInsteadOfDelete"] as? Bool ?? true
+        preventAutoEmptyTrash = obj["preventAutoEmptyTrash"] as? Bool ?? true
         service.alertThreshold = alertThreshold
+        service.trashInsteadOfDelete = trashInsteadOfDelete
+        service.preventAutoEmptyTrash = preventAutoEmptyTrash
     }
 
     private func saveSettings() {
-        let obj: [String: Any] = ["enabled": monitoringEnabled, "threshold": alertThreshold]
+        let obj: [String: Any] = [
+            "enabled": monitoringEnabled,
+            "threshold": alertThreshold,
+            "operationMonitor": operationMonitorEnabled,
+            "trashInsteadOfDelete": trashInsteadOfDelete,
+            "preventAutoEmptyTrash": preventAutoEmptyTrash,
+        ]
         guard let data = try? JSONSerialization.data(withJSONObject: obj, options: .prettyPrinted) else { return }
         try? data.write(to: URL(fileURLWithPath: settingsPath()))
     }

@@ -44,6 +44,17 @@
 - **AI 影响分析**：勾选项后点击「AI 分析」，调用大模型分析删除影响，结果直接显示在列表中
 - 未识别的 dotdir 归入「其它」分类，标注风险提示
 
+### 🕐 操作记录
+- **自动操作监控** - 记录 AI Agent 的文件操作（创建/删除等），需手动开启
+- **筛选功能** - 按 Agent 名称、操作类型、时间范围筛选
+- **20+ 种 Agent 监控** - Hermes/Claude/CodeBuddy/Codex/Cline/Trae/Cursor 等
+- 操作记录自动保存，最多保留 5000 条
+
+### 🛡️ 安全设置（菜单栏面板）
+- **删除移入回收站** - 所有删除操作默认移入回收站，可手动开关
+- **禁止自动清空回收站** - 可手动开关，防止自动清理回收站
+- **操作监控开关** - 操作监控需手动开启，默认关闭
+
 ### 📊 磁盘信息 & 菜单栏监控
 - 实时显示磁盘使用率、总容量、已用、可用空间
 - **菜单栏常驻图标**：实时显示磁盘剩余百分比
@@ -55,7 +66,7 @@
 
 ### 方式一：下载 DMG（推荐）
 
-1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.2.0-arm64.dmg`
+1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.3.0-arm64.dmg`
 2. 双击打开 DMG 文件
 3. 将 AIMacCleaner 拖入 Applications 文件夹
 4. 首次打开时，右键点击应用 → 选择「打开」（需绕过 Gatekeeper 验证）
@@ -78,7 +89,14 @@ cp -r /tmp/AIMacCleaner_build/build/AIMacCleaner.app /Applications/
 | 🧹 Mac 清理 | 扫描可清理的缓存/日志/临时文件 | 本地扫描 + AI 扫描 |
 | 📱 APP 管理 | 管理本机 .app 应用 | 卸载/清理缓存/重置 |
 | 📦 依赖管理 | 管理 Homebrew/npm/pip 包 | 卸载/清理 |
-| 🔧 其它工具 | 管理 AI Agent/CLI/开发工具 | 分类筛选 + AI 分析 |
+| 🕐 操作记录 | 记录 AI Agent 自动操作 | 筛选 + 监控 |
+
+### 🛡️ 安全设置
+
+在菜单栏面板中可配置：
+- **删除移入回收站**：开启后所有删除操作移入回收站而非永久删除（默认开启）
+- **禁止自动清空回收站**：防止自动清理回收站（默认开启）
+- **操作监控**：开启后记录 AI Agent 的文件操作（默认关闭）
 
 ### AI 影响分析
 
@@ -144,8 +162,9 @@ rm -rf "$DMG_STAGING"
 AIMacCleaner/
 ├── AIMacCleaner/
 │   ├── AIMacCleanerApp.swift    # 应用入口
-│   ├── ContentView.swift        # 主界面（4 Tab + 分类筛选 + AI 分析）
+│   ├── ContentView.swift        # 主界面（5 Tab + 分类筛选 + AI 分析）
 │   ├── MenuBarMonitor.swift     # 菜单栏常驻监控视图
+│   ├── OperationMonitor.swift   # AI Agent 操作监控服务
 │   ├── ScannerService.swift     # 核心服务（扫描、删除、AI 调用、监控、更新检测）
 │   ├── ScanRules.swift          # 35+ 条本地扫描规则
 │   ├── Models.swift             # 数据模型（AppInfo/ScanItem/AIConfig）
@@ -180,6 +199,13 @@ AIMacCleaner/
 ## 更新日志
 
 详见 [CHANGELOG.md](CHANGELOG.md)
+
+### v1.3.0 (2025-05-13)
+- 操作记录 Tab：记录 AI Agent 自动操作
+- 删除移入回收站（可手动开关）
+- 禁止自动清空回收站（可手动开关）
+- 操作监控需手动开启（默认关闭）
+- 20+ 种 Agent 目录监控
 
 ### v1.2.0 (2025-05-13)
 - 菜单栏常驻监控：实时显示磁盘剩余百分比

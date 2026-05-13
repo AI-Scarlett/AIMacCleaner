@@ -140,7 +140,6 @@ class ScannerService: ObservableObject {
         var successCount = 0
         var failCount = 0
 
-        let fm = FileManager.default
         let itemsToDelete = scanItems.filter { ids.contains($0.id) }
 
         for item in itemsToDelete {
@@ -156,10 +155,10 @@ class ScannerService: ObservableObject {
 
             for expanded in pathsToDelete {
                 do {
-                    if fm.fileExists(atPath: expanded) {
-                        try fm.removeItem(atPath: expanded)
+                    if FileManager.default.fileExists(atPath: expanded) {
+                        try moveToTrash(atPath: expanded)
                         successCount += 1
-                        deleteResults.append(DeleteItemResult(id: item.id, path: expanded, success: true, message: "已删除"))
+                        deleteResults.append(DeleteItemResult(id: item.id, path: expanded, success: true, message: "已移入回收站"))
                     }
                 } catch {
                     failCount += 1
@@ -843,6 +842,8 @@ class ScannerService: ObservableObject {
     @Published var aiAnalysisMap: [String: String] = [:]
 
     var alertThreshold: Double = 10.0
+    var trashInsteadOfDelete: Bool = true
+    var preventAutoEmptyTrash: Bool = true
     private var monitorTimer: Timer?
     private var lastAlertTime: Date = .distantPast
 
@@ -895,7 +896,7 @@ class ScannerService: ObservableObject {
     @Published var updateAvailable: Bool = false
     @Published var updateDownloadURL: String = ""
 
-    let currentVersion = "1.2.0"
+    let currentVersion = "1.3.0"
 
     func checkForUpdates() async {
         isCheckingUpdate = true
@@ -1079,11 +1080,22 @@ class ScannerService: ObservableObject {
         isAnalyzingImpact = false
     }
 
-    func basicUninstall(app: AppInfo) async -> Bool {
+    private func moveToTrash(atPath path: String) throws {
         let fm = FileManager.default
+        guard fm.fileExists(atPath: path) else { return }
+        if trashInsteadOfDelete {
+            let url = URL(fileURLWithPath: path)
+            var resultURL: NSURL?
+            try fm.trashItem(at: url, resultingItemURL: &resultURL)
+        } else {
+            try fm.removeItem(atPath: path)
+        }
+    }
+
+    func basicUninstall(app: AppInfo) async -> Bool {
         do {
-            if fm.fileExists(atPath: app.appPath) {
-                try fm.removeItem(atPath: app.appPath)
+            if FileManager.default.fileExists(atPath: app.appPath) {
+                try moveToTrash(atPath: app.appPath)
             }
             return true
         } catch {
@@ -1093,14 +1105,13 @@ class ScannerService: ObservableObject {
     }
 
     func fullUninstall(app: AppInfo) async -> Bool {
-        let fm = FileManager.default
         do {
-            if fm.fileExists(atPath: app.appPath) {
-                try fm.removeItem(atPath: app.appPath)
+            if FileManager.default.fileExists(atPath: app.appPath) {
+                try moveToTrash(atPath: app.appPath)
             }
             for path in app.relatedPaths {
-                if fm.fileExists(atPath: path) {
-                    try fm.removeItem(atPath: path)
+                if FileManager.default.fileExists(atPath: path) {
+                    try moveToTrash(atPath: path)
                 }
             }
             return true
@@ -1111,11 +1122,10 @@ class ScannerService: ObservableObject {
     }
 
     func resetApp(app: AppInfo) async -> Bool {
-        let fm = FileManager.default
         do {
             for path in app.cachePaths + app.dataPaths {
-                if fm.fileExists(atPath: path) {
-                    try fm.removeItem(atPath: path)
+                if FileManager.default.fileExists(atPath: path) {
+                    try moveToTrash(atPath: path)
                 }
             }
             return true

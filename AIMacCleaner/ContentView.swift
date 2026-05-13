@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var selectedTab = 0
+    @StateObject private var operationMonitor = OperationMonitor()
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -20,6 +21,231 @@ struct ContentView: View {
             AppManagerTab(filterType: .other)
                 .tabItem { Label("其它工具", systemImage: "terminal") }
                 .tag(3)
+
+            OperationLogTab(monitor: operationMonitor)
+                .tabItem { Label("操作记录", systemImage: "clock.arrow.circlepath") }
+                .tag(4)
+        }
+    }
+}
+
+struct OperationLogTab: View {
+    @ObservedObject var monitor: OperationMonitor
+    @State private var searchText = ""
+    @State private var filterAgent = ""
+    @State private var filterOpType: OperationRecord.OperationType?
+    @State private var filterTimeRange: TimeRange = .all
+
+    enum TimeRange: String, CaseIterable {
+        case all = "全部"
+        case today = "今天"
+        case hour1 = "1小时"
+        case hour6 = "6小时"
+        case day1 = "24小时"
+        case day7 = "7天"
+    }
+
+    var agentNames: [String] {
+        Array(Set(monitor.records.map(\.agentName))).sorted()
+    }
+
+    var filteredRecords: [OperationRecord] {
+        var result = monitor.records
+
+        if !filterAgent.isEmpty {
+            result = result.filter { $0.agentName == filterAgent }
+        }
+        if let opType = filterOpType {
+            result = result.filter { $0.operationType == opType }
+        }
+        switch filterTimeRange {
+        case .today:
+            let start = Calendar.current.startOfDay(for: Date())
+            result = result.filter { $0.timestamp >= start }
+        case .hour1:
+            result = result.filter { Date().timeIntervalSince($0.timestamp) < 3600 }
+        case .hour6:
+            result = result.filter { Date().timeIntervalSince($0.timestamp) < 21600 }
+        case .day1:
+            result = result.filter { Date().timeIntervalSince($0.timestamp) < 86400 }
+        case .day7:
+            result = result.filter { Date().timeIntervalSince($0.timestamp) < 604800 }
+        case .all:
+            break
+        }
+        if !searchText.isEmpty {
+            let q = searchText.lowercased()
+            result = result.filter {
+                $0.targetPath.lowercased().contains(q) ||
+                $0.agentName.lowercased().contains(q) ||
+                $0.detail.lowercased().contains(q)
+            }
+        }
+        return result
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            filterBar
+            Divider()
+            if monitor.isMonitoring {
+                statusBanner
+            }
+            if filteredRecords.isEmpty {
+                emptyView
+            } else {
+                recordTable
+            }
+        }
+        .onAppear {
+            if !monitor.isMonitoring { monitor.start() }
+        }
+    }
+
+    private var statusBanner: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Color.green)
+                .frame(width: 6, height: 6)
+            Text("监控中")
+                .font(.caption2)
+                .foregroundColor(.green)
+            Text("·")
+                .foregroundColor(.secondary)
+            Text("\(monitor.records.count) 条记录")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+        .background(Color.green.opacity(0.05))
+    }
+
+    private var filterBar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundColor(.secondary).font(.caption)
+                    TextField("搜索路径、Agent...", text: $searchText).textFieldStyle(.plain).font(.caption)
+                    if !searchText.isEmpty {
+                        Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill").font(.caption).foregroundColor(.secondary) }.buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(Color(nsColor: .controlBackgroundColor)).cornerRadius(6)
+                .frame(width: 220)
+
+                Picker("Agent", selection: $filterAgent) {
+                    Text("全部 Agent").tag("")
+                    ForEach(agentNames, id: \.self) { name in
+                        Text(name).tag(name)
+                    }
+                }
+                .frame(width: 140)
+
+                Picker("操作类型", selection: $filterOpType) {
+                    Text("全部类型").tag(nil as OperationRecord.OperationType?)
+                    ForEach(OperationRecord.OperationType.allCases, id: \.self) { type in
+                        Text(type.rawValue).tag(type as OperationRecord.OperationType?)
+                    }
+                }
+                .frame(width: 100)
+
+                Picker("时间", selection: $filterTimeRange) {
+                    ForEach(TimeRange.allCases, id: \.self) { range in
+                        Text(range.rawValue).tag(range)
+                    }
+                }
+                .frame(width: 90)
+
+                Spacer()
+
+                Text("\(filteredRecords.count) 条").font(.caption).foregroundColor(.secondary)
+
+                Button { monitor.start() } label: { HStack(spacing: 3) { Image(systemName: monitor.isMonitoring ? "record.circle.fill" : "record.circle"); Text(monitor.isMonitoring ? "监控中" : "开始监控") } }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    .tint(monitor.isMonitoring ? .green : .blue)
+                    .disabled(monitor.isMonitoring)
+
+                Button { monitor.clearRecords() } label: { HStack(spacing: 3) { Image(systemName: "trash"); Text("清空") } }
+                    .buttonStyle(.bordered).controlSize(.small).tint(.red)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+        }
+    }
+
+    private var emptyView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 40)).foregroundColor(.secondary.opacity(0.5))
+            Text("暂无操作记录").font(.title3).fontWeight(.medium)
+            Text("启动监控后将自动记录 AI Agent 的文件操作").font(.caption).foregroundColor(.secondary)
+            if !monitor.isMonitoring {
+                Button("开始监控") { monitor.start() }
+                    .buttonStyle(.bordered).controlSize(.regular)
+            }
+            Spacer()
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var recordTable: some View {
+        Table(filteredRecords) {
+            TableColumn("时间") { record in
+                Text(record.timestamp, style: .time)
+                    .font(.caption).monospacedDigit()
+            }.width(65)
+
+            TableColumn("Agent") { record in
+                HStack(spacing: 4) {
+                    Image(systemName: "cpu")
+                        .font(.caption2)
+                        .foregroundColor(.purple)
+                    Text(record.agentName)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                }
+            }.width(min: 100)
+
+            TableColumn("操作") { record in
+                HStack(spacing: 3) {
+                    Image(systemName: record.operationType.icon)
+                        .font(.caption)
+                        .foregroundColor(opTypeColor(record.operationType))
+                    Text(record.operationType.rawValue)
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundColor(opTypeColor(record.operationType))
+                }
+            }.width(60)
+
+            TableColumn("目标路径") { record in
+                Text(record.targetPath)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(record.targetPath)
+            }
+
+            TableColumn("大小") { record in
+                if record.fileSize > 0 {
+                    Text(ByteCountFormatter.string(fromByteCount: record.fileSize, countStyle: .file))
+                        .font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                }
+            }.width(70)
+        }
+        .tableStyle(.inset(alternatesRowBackgrounds: true))
+    }
+
+    private func opTypeColor(_ type: OperationRecord.OperationType) -> Color {
+        switch type {
+        case .create: .green
+        case .modify: .blue
+        case .delete: .red
+        case .move: .orange
+        case .rename: .purple
         }
     }
 }
