@@ -314,7 +314,7 @@ class ScannerService: ObservableObject {
                 ["role": "user", "content": "以下是我的 Mac 目录结构和大小说明，请分析哪些可以清理：\n\(dirInfo)"],
             ],
             "temperature": 0.1,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
         ]
 
         var request = URLRequest(url: url)
@@ -340,52 +340,55 @@ class ScannerService: ObservableObject {
 
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let choices = json["choices"] as? [[String: Any]],
-                  let message = choices.first?["message"] as? [String: Any],
-                  let content = message["content"] as? String else {
+                  let message = choices.first?["message"] as? [String: Any] else {
                 return (success: false, items: nil, error: "大模型返回格式错误")
             }
 
-            let jsonStr = extractJSON(from: content)
+            var content = message["content"] as? String ?? ""
 
-            guard let jsonData = jsonStr.data(using: .utf8),
-                  let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] else {
-                let preview = String(jsonStr.prefix(100))
-                return (success: false, items: nil, error: "无法解析大模型返回的 JSON（预览: \(preview)）")
+            if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let reasoning = message["reasoning_content"] as? String,
+               !reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                content = reasoning
             }
 
-            var results: [ScanItem] = []
-            let fm = FileManager.default
+            if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let rawJson = String(data: data, encoding: .utf8) ?? ""
+                return (success: false, items: nil, error: "大模型返回内容为空（可能是推理模型token不足，建议使用 deepseek-chat 模型）\n原始响应: \(rawJson.prefix(300))")
+            }
 
-            for (i, item) in items.enumerated() {
-                let path = (item["path"] as? String ?? "").replacingOccurrences(of: "~", with: NSHomeDirectory())
-                let expanded = NSString(string: path).expandingTildeInPath
-                var size: Int64 = 0
-                var fileCount = 0
+            let rawContent = content
+            let logPath = NSHomeDirectory() + "/.aimaccleaner_last_response.txt"
+            try? rawContent.write(toFile: logPath, atomically: true, encoding: .utf8)
 
-                var isDir: ObjCBool = false
-                if fm.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue {
-                    (size, fileCount) = Self.calculateDirectorySizeStatic(at: expanded)
+            let jsonStr = extractJSON(from: rawContent)
+
+            var parseError = ""
+            if let jsonData = jsonStr.data(using: .utf8),
+               let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
+                return buildScanItems(from: items)
+            }
+
+            parseError = "直接解析失败，尝试修复..."
+
+            if let fixed = tryFixJSON(jsonStr),
+               let jsonData = fixed.data(using: .utf8),
+               let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
+                return buildScanItems(from: items)
+            }
+
+            if let fixed = tryFixJSON(jsonStr),
+               let jsonData = fixed.data(using: .utf8),
+               let wrapper = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+                for key in ["items", "data", "results", "list"] {
+                    if let items = wrapper[key] as? [[String: Any]] {
+                        return buildScanItems(from: items)
+                    }
                 }
-
-                results.append(ScanItem(
-                    id: "ai_\(i)",
-                    name: item["name"] as? String ?? "Unknown",
-                    category: item["category"] as? String ?? "其他",
-                    app: item["app"] as? String ?? "Unknown",
-                    risk: item["risk"] as? String ?? "caution",
-                    riskDesc: item["risk_desc"] as? String ?? "",
-                    path: item["path"] as? String ?? "",
-                    realPath: expanded,
-                    size: size,
-                    fileCount: fileCount,
-                    ignored: false,
-                    reason: item["reason"] as? String,
-                    source: "ai"
-                ))
             }
 
-            results.sort { $0.size > $1.size }
-            return (success: true, items: results, error: nil)
+            let preview = String(rawContent.prefix(300))
+            return (success: false, items: nil, error: "无法解析大模型返回的 JSON\n原始返回已保存到: \(logPath)\n预览: \(preview)")
 
         } catch {
             return (success: false, items: nil, error: error.localizedDescription)
@@ -395,23 +398,17 @@ class ScannerService: ObservableObject {
     private func extractJSON(from content: String) -> String {
         var str = content.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if str.hasPrefix("```json") {
-            str = String(str.dropFirst(7))
-        } else if str.hasPrefix("```") {
-            str = String(str.dropFirst(3))
+        if let range = str.range(of: "```json") {
+            str = String(str[range.upperBound...])
+        } else if let range = str.range(of: "```") {
+            str = String(str[range.upperBound...])
         }
 
-        if str.hasSuffix("```") {
-            str = String(str.dropLast(3))
+        if let range = str.range(of: "```", options: .backwards) {
+            str = String(str[..<range.lowerBound])
         }
 
         str = str.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if str.hasPrefix("[") {
-            if let endIdx = str.lastIndex(of: "]") {
-                return String(str[...endIdx])
-            }
-        }
 
         if let startIdx = str.range(of: "[") {
             let remaining = String(str[startIdx.lowerBound...])
@@ -421,6 +418,64 @@ class ScannerService: ObservableObject {
         }
 
         return str
+    }
+
+    private func tryFixJSON(_ str: String) -> String? {
+        var fixed = str
+
+        fixed = fixed.replacingOccurrences(of: "\u{201C}", with: "\"")
+        fixed = fixed.replacingOccurrences(of: "\u{201D}", with: "\"")
+        fixed = fixed.replacingOccurrences(of: "\u{2018}", with: "'")
+        fixed = fixed.replacingOccurrences(of: "\u{2019}", with: "'")
+
+        fixed = fixed.replacingOccurrences(of: ",\\s*]", with: "]", options: .regularExpression)
+        fixed = fixed.replacingOccurrences(of: ",\\s*}", with: "}", options: .regularExpression)
+
+        fixed = fixed.replacingOccurrences(of: "//[^\n]*", with: "", options: .regularExpression)
+
+        fixed = fixed.replacingOccurrences(of: ",\n", with: "\n")
+
+        if fixed.contains("\"") || fixed.contains("[") {
+            return fixed
+        }
+
+        return nil
+    }
+
+    private func buildScanItems(from items: [[String: Any]]) -> (success: Bool, items: [ScanItem]?, error: String?) {
+        var results: [ScanItem] = []
+        let fm = FileManager.default
+
+        for (i, item) in items.enumerated() {
+            let path = (item["path"] as? String ?? "").replacingOccurrences(of: "~", with: NSHomeDirectory())
+            let expanded = NSString(string: path).expandingTildeInPath
+            var size: Int64 = 0
+            var fileCount = 0
+
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue {
+                (size, fileCount) = Self.calculateDirectorySizeStatic(at: expanded)
+            }
+
+            results.append(ScanItem(
+                id: "ai_\(i)",
+                name: item["name"] as? String ?? "Unknown",
+                category: item["category"] as? String ?? "其他",
+                app: item["app"] as? String ?? "Unknown",
+                risk: item["risk"] as? String ?? "caution",
+                riskDesc: item["risk_desc"] as? String ?? "",
+                path: item["path"] as? String ?? "",
+                realPath: expanded,
+                size: size,
+                fileCount: fileCount,
+                ignored: false,
+                reason: item["reason"] as? String,
+                source: "ai"
+            ))
+        }
+
+        results.sort { $0.size > $1.size }
+        return (success: true, items: results, error: nil)
     }
 
     // MARK: - Utility
