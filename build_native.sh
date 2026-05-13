@@ -46,7 +46,8 @@ xcrun swiftc \
     -framework Foundation \
     -framework Combine \
     -framework CoreServices \
-    -parse-as-library \
+    -framework IOKit \
+    -framework UserNotifications \
     -O \
     $SWIFT_FILES
 
@@ -55,8 +56,6 @@ echo "  Compilation successful."
 echo "[4/6] Creating .app bundle..."
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
-mkdir -p "$APP_BUNDLE/Contents/Resources/static"
-mkdir -p "$APP_BUNDLE/Contents/Resources/AIMacCleaner.bundle"
 
 cp "$BUILD_DIR/AIMacCleaner" "$APP_BUNDLE/Contents/MacOS/AIMacCleaner"
 chmod +x "$APP_BUNDLE/Contents/MacOS/AIMacCleaner"
@@ -81,11 +80,13 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.6.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
+    <key>LSUIElement</key>
+    <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSAppTransportSecurity</key>
