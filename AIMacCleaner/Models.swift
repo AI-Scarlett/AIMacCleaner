@@ -75,3 +75,54 @@ struct IgnoreResult: Codable {
     let success: Bool
     let ignored: [String]?
 }
+
+struct AppInfo: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let bundleId: String
+    let appPath: String
+    let iconPath: String?
+    let version: String?
+    let appSize: Int64
+    let cacheSize: Int64
+    let dataSize: Int64
+    let totalSize: Int64
+
+    var relatedPaths: [String] {
+        let home = NSHomeDirectory()
+        return [
+            "\(home)/Library/Caches/\(bundleId)",
+            "\(home)/Library/Application Support/\(bundleId)",
+            "\(home)/Library/Preferences/\(bundleId).plist",
+            "\(home)/Library/Saved Application State/\(bundleId).savedState",
+            "\(home)/Library/Containers/\(bundleId)",
+            "\(home)/Library/Logs/\(bundleId)",
+            "\(home)/Library/HTTPStorages/\(bundleId)",
+            "\(home)/Library/WebKit/\(bundleId)",
+            "\(home)/Library/Cookies/\(bundleId).binarycookies",
+            "\(home)/Library/Group Containers/\(bundleId)",
+        ]
+    }
+
+    var cachePaths: [String] {
+        let home = NSHomeDirectory()
+        return [
+            "\(home)/Library/Caches/\(bundleId)",
+            "\(home)/Library/HTTPStorages/\(bundleId)",
+            "\(home)/Library/WebKit/\(bundleId)",
+        ]
+    }
+
+    var dataPaths: [String] {
+        let home = NSHomeDirectory()
+        return [
+            "\(home)/Library/Application Support/\(bundleId)",
+            "\(home)/Library/Preferences/\(bundleId).plist",
+            "\(home)/Library/Saved Application State/\(bundleId).savedState",
+            "\(home)/Library/Containers/\(bundleId)",
+            "\(home)/Library/Logs/\(bundleId)",
+            "\(home)/Library/Cookies/\(bundleId).binarycookies",
+            "\(home)/Library/Group Containers/\(bundleId)",
+        ]
+    }
+}

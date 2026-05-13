@@ -15,11 +15,33 @@ struct ContentView: View {
     @State private var cleanedCount = 0
     @State private var searchText = ""
     @State private var sidebarSelection: SidebarItem? = .all
+    @State private var showAppManager = false
+    @State private var showUninstallConfirm = false
+    @State private var uninstallAction: AppAction?
+    @State private var targetApp: AppInfo?
 
     enum SidebarItem: Hashable {
         case all
         case category(String)
         case app(String)
+    }
+
+    enum AppAction {
+        case basicUninstall, fullUninstall, reset
+        var label: String {
+            switch self {
+            case .basicUninstall: "基础卸载"
+            case .fullUninstall: "完全卸载"
+            case .reset: "重置"
+            }
+        }
+        var description: String {
+            switch self {
+            case .basicUninstall: "仅卸载 APP 安装文件，保留缓存和历史数据"
+            case .fullUninstall: "卸载 APP 并清除所有缓存、历史数据和配置"
+            case .reset: "清除缓存和历史数据，恢复为全新安装状态"
+            }
+        }
     }
 
     var filteredItems: [ScanItem] {
@@ -63,6 +85,9 @@ struct ContentView: View {
         .sheet(isPresented: $showAIConfig) {
             AIConfigView().environmentObject(service)
         }
+        .sheet(isPresented: $showAppManager) {
+            AppManagerView().environmentObject(service)
+        }
         .alert("确认删除", isPresented: $showDeleteConfirm) {
             Button("取消", role: .cancel) {}
             Button("删除", role: .destructive) { performDelete() }
@@ -74,6 +99,14 @@ struct ContentView: View {
             Button("确定") {}
         } message: {
             Text("本次清理释放了 \(service.formatSize(cleanedSize))，共清理 \(cleanedCount) 项。")
+        }
+        .alert("确认\(uninstallAction?.label ?? "操作")", isPresented: $showUninstallConfirm) {
+            Button("取消", role: .cancel) {}
+            Button("确认", role: .destructive) { performAppAction() }
+        } message: {
+            if let app = targetApp, let action = uninstallAction {
+                Text("\(action.description)\n\nAPP: \(app.name)\n\(action == .basicUninstall ? "APP大小: \(service.formatSize(app.appSize))" : "总大小: \(service.formatSize(app.totalSize))")")
+            }
         }
     }
 
@@ -115,10 +148,20 @@ struct ContentView: View {
                     .tag(SidebarItem.app(app))
                 }
             }
+
+            Section("工具") {
+                Label("APP 管理", systemImage: "app.badge")
+                    .tag(SidebarItem.category("__app_manager__"))
+            }
         }
         .listStyle(.sidebar)
         .frame(minWidth: 200)
         .onChange(of: sidebarSelection) { newValue in
+            if case .category("__app_manager__") = newValue {
+                showAppManager = true
+                sidebarSelection = .all
+                return
+            }
             filterCategory = ""
             filterApp = ""
             filterRisk = ""
@@ -150,10 +193,11 @@ struct ContentView: View {
             diskCard
             Divider()
 
-            if service.isAiScanning {
+            if service.isAiScanning || service.isEnhancedScanning {
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
-                    Text(service.aiStatusMessage).foregroundColor(.purple)
+                    Text(service.isEnhancedScanning ? "增强扫描中..." : service.aiStatusMessage)
+                        .foregroundColor(.purple)
                     Spacer()
                 }
                 .padding(12).background(Color.purple.opacity(0.05))
@@ -163,7 +207,7 @@ struct ContentView: View {
             if let error = service.errorMessage {
                 HStack(spacing: 10) {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
-                    Text(error).font(.caption).foregroundColor(.secondary)
+                    Text(error).font(.caption).foregroundColor(.secondary).lineLimit(3)
                     Spacer()
                     Button { service.errorMessage = nil } label: {
                         Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
@@ -238,7 +282,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Welcome Center (仅本地扫描 + AI扫描)
+    // MARK: - Welcome Center
 
     private var welcomeCenter: some View {
         VStack(spacing: 40) {
@@ -253,7 +297,7 @@ struct ContentView: View {
                     .foregroundColor(.secondary).font(.callout)
             }
 
-            HStack(spacing: 28) {
+            HStack(spacing: 24) {
                 ActionCard(
                     icon: "magnifyingglass",
                     title: "本地扫描",
@@ -273,6 +317,28 @@ struct ContentView: View {
                 ) {
                     Task { await performAiScan() }
                 }
+
+                ActionCard(
+                    icon: "bolt.fill",
+                    title: "增强扫描",
+                    subtitle: "本地 + AI 同时扫描，最全面",
+                    color: .orange,
+                    isDisabled: service.isEnhancedScanning
+                ) {
+                    Task { await service.startEnhancedScan() }
+                }
+            }
+
+            HStack(spacing: 24) {
+                ActionCard(
+                    icon: "app.badge",
+                    title: "APP 管理",
+                    subtitle: "卸载应用、重置应用数据",
+                    color: .indigo,
+                    isDisabled: false
+                ) {
+                    showAppManager = true
+                }
             }
 
             Spacer()
@@ -281,7 +347,7 @@ struct ContentView: View {
         .padding(40)
     }
 
-    // MARK: - No Result View (筛选无结果)
+    // MARK: - No Result View
 
     private var noResultView: some View {
         VStack(spacing: 16) {
@@ -292,28 +358,20 @@ struct ContentView: View {
                 .font(.title3).fontWeight(.medium)
             HStack(spacing: 10) {
                 if !filterRisk.isEmpty {
-                    Button { filterRisk = "" } label: {
-                        Text("清除风险筛选")
-                    }
-                    .buttonStyle(.bordered).controlSize(.small)
+                    Button { filterRisk = "" } label: { Text("清除风险筛选") }
+                        .buttonStyle(.bordered).controlSize(.small)
                 }
                 if !filterCategory.isEmpty {
-                    Button { filterCategory = ""; sidebarSelection = .all } label: {
-                        Text("清除分类筛选")
-                    }
-                    .buttonStyle(.bordered).controlSize(.small)
+                    Button { filterCategory = ""; sidebarSelection = .all } label: { Text("清除分类筛选") }
+                        .buttonStyle(.bordered).controlSize(.small)
                 }
                 if !filterApp.isEmpty {
-                    Button { filterApp = ""; sidebarSelection = .all } label: {
-                        Text("清除应用筛选")
-                    }
-                    .buttonStyle(.bordered).controlSize(.small)
+                    Button { filterApp = ""; sidebarSelection = .all } label: { Text("清除应用筛选") }
+                        .buttonStyle(.bordered).controlSize(.small)
                 }
                 if !searchText.isEmpty {
-                    Button { searchText = "" } label: {
-                        Text("清除搜索")
-                    }
-                    .buttonStyle(.bordered).controlSize(.small)
+                    Button { searchText = "" } label: { Text("清除搜索") }
+                        .buttonStyle(.bordered).controlSize(.small)
                 }
             }
             Spacer()
@@ -321,7 +379,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Search & Filter Bar (含风险筛选 + 智能清理大按钮)
+    // MARK: - Search & Filter Bar
 
     private var searchAndFilterBar: some View {
         HStack(spacing: 10) {
@@ -575,6 +633,204 @@ struct ContentView: View {
         if item.ignored { service.unignoreItems(ids: [item.id]) }
         else { service.ignoreItems(ids: [item.id]) }
     }
+
+    private func performAppAction() {
+        guard let app = targetApp, let action = uninstallAction else { return }
+        Task {
+            var success = false
+            switch action {
+            case .basicUninstall: success = await service.basicUninstall(app: app)
+            case .fullUninstall: success = await service.fullUninstall(app: app)
+            case .reset: success = await service.resetApp(app: app)
+            }
+            if success {
+                await service.scanInstalledApps()
+                service.refreshDiskInfo()
+                cleanedSize = action == .basicUninstall ? app.appSize : app.totalSize
+                cleanedCount = 1
+                showCleanResult = true
+            }
+        }
+    }
+}
+
+// MARK: - App Manager View
+
+struct AppManagerView: View {
+    @EnvironmentObject var service: ScannerService
+    @Environment(\.dismiss) var dismiss
+    @State private var searchText = ""
+    @State private var selectedApp: AppInfo?
+    @State private var showActionConfirm = false
+    @State private var pendingAction: ContentView.AppAction?
+    @State private var pendingApp: AppInfo?
+
+    var filteredApps: [AppInfo] {
+        if searchText.isEmpty { return service.installedApps }
+        let q = searchText.lowercased()
+        return service.installedApps.filter { $0.name.lowercased().contains(q) || $0.bundleId.lowercased().contains(q) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("APP 管理")
+                    .font(.title2).fontWeight(.bold)
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(20)
+
+            Divider()
+
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundColor(.secondary).font(.caption)
+                    TextField("搜索应用...", text: $searchText)
+                        .textFieldStyle(.plain).font(.caption)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(6)
+                .frame(width: 200)
+
+                Spacer()
+
+                Text("\(service.installedApps.count) 个应用")
+                    .font(.caption).foregroundColor(.secondary)
+
+                Button { Task { await service.scanInstalledApps() } } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("刷新")
+                    }
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+                .disabled(service.isScanningApps)
+            }
+            .padding(.horizontal, 20).padding(.vertical, 8)
+
+            Divider()
+
+            if service.isScanningApps {
+                VStack(spacing: 16) {
+                    ProgressView().controlSize(.large)
+                    Text("正在扫描已安装应用...")
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if filteredApps.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "app.dashed")
+                        .font(.system(size: 40)).foregroundColor(.secondary.opacity(0.5))
+                    Text("未找到应用")
+                        .font(.title3).fontWeight(.medium)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(filteredApps, selection: Binding(
+                    get: { selectedApp?.id },
+                    set: { newId in
+                        selectedApp = filteredApps.first { $0.id == newId }
+                    }
+                )) { app in
+                    appRow(app)
+                }
+                .listStyle(.inset(alternatesRowBackgrounds: true))
+            }
+        }
+        .frame(minWidth: 700, minHeight: 500)
+        .onAppear {
+            if service.installedApps.isEmpty {
+                Task { await service.scanInstalledApps() }
+            }
+        }
+        .alert("确认操作", isPresented: $showActionConfirm) {
+            Button("取消", role: .cancel) {}
+            Button("确认", role: .destructive) {
+                if let app = pendingApp, let action = pendingAction {
+                    Task {
+                        var success = false
+                        switch action {
+                        case .basicUninstall: success = await service.basicUninstall(app: app)
+                        case .fullUninstall: success = await service.fullUninstall(app: app)
+                        case .reset: success = await service.resetApp(app: app)
+                        }
+                        if success {
+                            await service.scanInstalledApps()
+                        }
+                    }
+                }
+            }
+        } message: {
+            if let app = pendingApp, let action = pendingAction {
+                Text("\(action.description)\n\nAPP: \(app.name)\n\(action == .basicUninstall ? "APP大小: \(service.formatSize(app.appSize))" : "总大小: \(service.formatSize(app.totalSize))")")
+            }
+        }
+    }
+
+    private func appRow(_ app: AppInfo) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(app.name)
+                    .fontWeight(.semibold)
+                Text(app.bundleId)
+                    .font(.caption2).foregroundColor(.secondary)
+                if let v = app.version {
+                    Text("v\(v)")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(service.formatSize(app.appSize))
+                    .fontWeight(.bold).monospacedDigit()
+                if app.cacheSize > 0 || app.dataSize > 0 {
+                    Text("缓存 \(service.formatSize(app.cacheSize)) · 数据 \(service.formatSize(app.dataSize))")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+            }
+
+            Divider().frame(height: 24)
+
+            Button {
+                pendingAction = .reset
+                pendingApp = app
+                showActionConfirm = true
+            } label: {
+                Label("重置", systemImage: "arrow.counterclockwise")
+            }
+            .buttonStyle(.bordered).controlSize(.small).tint(.orange)
+            .help("清除缓存和历史数据，恢复为全新状态")
+
+            Button {
+                pendingAction = .basicUninstall
+                pendingApp = app
+                showActionConfirm = true
+            } label: {
+                Label("卸载", systemImage: "xmark.circle")
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .help("仅卸载APP，保留数据")
+
+            Button {
+                pendingAction = .fullUninstall
+                pendingApp = app
+                showActionConfirm = true
+            } label: {
+                Label("完全卸载", systemImage: "trash")
+            }
+            .buttonStyle(.bordered).controlSize(.small).tint(.red)
+            .help("卸载APP并清除所有数据")
+        }
+        .padding(.vertical, 4)
+        .tag(app.id)
+    }
 }
 
 // MARK: - Action Card
@@ -607,7 +863,7 @@ struct ActionCard: View {
                         .lineLimit(2)
                 }
             }
-            .frame(width: 160, height: 150)
+            .frame(width: 150, height: 140)
             .padding()
             .background(
                 RoundedRectangle(cornerRadius: 12)

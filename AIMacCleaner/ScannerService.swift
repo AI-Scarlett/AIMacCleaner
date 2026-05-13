@@ -7,9 +7,12 @@ class ScannerService: ObservableObject {
     @Published var diskInfo: DiskInfo?
     @Published var isScanning = false
     @Published var isAiScanning = false
+    @Published var isEnhancedScanning = false
     @Published var aiStatusMessage = ""
     @Published var errorMessage: String?
     @Published var aiConfig: AIConfig?
+    @Published var installedApps: [AppInfo] = []
+    @Published var isScanningApps = false
 
     private var ignoredIds: Set<String> = []
     private let ignoreFilePath = NSHomeDirectory() + "/.aimaccleaner_ignore.json"
@@ -248,6 +251,151 @@ class ScannerService: ObservableObject {
             aiStatusMessage = "AI 扫描完成，发现 \(newItems.count) 项"
         } else {
             errorMessage = "AI 扫描失败: \(result.error ?? "未知错误")\n建议使用本地扫描。"
+        }
+    }
+
+    // MARK: - Enhanced Scan
+
+    func startEnhancedScan() async {
+        isEnhancedScanning = true
+        await scanLocal()
+        if aiConfig?.hasKey == true, let apiKey = aiConfig?.apiKey, !apiKey.isEmpty {
+            await startAiScan()
+        }
+        isEnhancedScanning = false
+    }
+
+    // MARK: - App Management
+
+    func scanInstalledApps() async {
+        isScanningApps = true
+        let apps = await Task.detached(priority: .userInitiated) {
+            var results: [AppInfo] = []
+            let fm = FileManager.default
+
+            let appDirs = ["/Applications", NSHomeDirectory() + "/Applications"]
+            var seenBundleIds = Set<String>()
+
+            for appDir in appDirs {
+                guard let contents = try? fm.contentsOfDirectory(atPath: appDir) else { continue }
+
+                for name in contents where name.hasSuffix(".app") {
+                    let appPath = (appDir as NSString).appendingPathComponent(name)
+                    let plistPath = (appPath as NSString).appendingPathComponent("Contents/Info.plist")
+
+                    guard let plistData = fm.contents(atPath: plistPath),
+                          let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any] else { continue }
+
+                    let bundleId = plist["CFBundleIdentifier"] as? String ?? ""
+                    guard !bundleId.isEmpty, !seenBundleIds.contains(bundleId) else { continue }
+                    seenBundleIds.insert(bundleId)
+
+                    let appName = plist["CFBundleDisplayName"] as? String ?? plist["CFBundleName"] as? String ?? name.replacingOccurrences(of: ".app", with: "")
+                    let version = plist["CFBundleShortVersionString"] as? String
+
+                    var iconPath: String? = nil
+                    if let iconDict = plist["CFBundleIconFile"] as? String {
+                        iconPath = (appPath as NSString).appendingPathComponent("Contents/Resources/\(iconPath)")
+                    } else if let iconDicts = plist["CFBundleIconFiles"] as? [String], let first = iconDicts.first {
+                        iconPath = (appPath as NSString).appendingPathComponent("Contents/Resources/\(first)")
+                    }
+
+                    let (appSize, _) = Self.calculateDirectorySizeStatic(at: appPath)
+
+                    let home = NSHomeDirectory()
+                    var cacheSize: Int64 = 0
+                    var dataSize: Int64 = 0
+
+                    let cachePaths = [
+                        "\(home)/Library/Caches/\(bundleId)",
+                        "\(home)/Library/HTTPStorages/\(bundleId)",
+                        "\(home)/Library/WebKit/\(bundleId)",
+                    ]
+                    for p in cachePaths {
+                        let (s, _) = Self.calculateDirectorySizeStatic(at: p)
+                        cacheSize += s
+                    }
+
+                    let dataPaths = [
+                        "\(home)/Library/Application Support/\(bundleId)",
+                        "\(home)/Library/Preferences/\(bundleId).plist",
+                        "\(home)/Library/Saved Application State/\(bundleId).savedState",
+                        "\(home)/Library/Containers/\(bundleId)",
+                        "\(home)/Library/Logs/\(bundleId)",
+                        "\(home)/Library/Cookies/\(bundleId).binarycookies",
+                        "\(home)/Library/Group Containers/\(bundleId)",
+                    ]
+                    for p in dataPaths {
+                        let (s, _) = Self.calculateDirectorySizeStatic(at: p)
+                        dataSize += s
+                    }
+
+                    results.append(AppInfo(
+                        id: bundleId,
+                        name: appName,
+                        bundleId: bundleId,
+                        appPath: appPath,
+                        iconPath: iconPath,
+                        version: version,
+                        appSize: appSize,
+                        cacheSize: cacheSize,
+                        dataSize: dataSize,
+                        totalSize: appSize + cacheSize + dataSize
+                    ))
+                }
+            }
+
+            results.sort { $0.name.lowercased() < $1.name.lowercased() }
+            return results
+        }.value
+
+        installedApps = apps
+        isScanningApps = false
+    }
+
+    func basicUninstall(app: AppInfo) async -> Bool {
+        let fm = FileManager.default
+        do {
+            if fm.fileExists(atPath: app.appPath) {
+                try fm.removeItem(atPath: app.appPath)
+            }
+            return true
+        } catch {
+            errorMessage = "卸载失败: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    func fullUninstall(app: AppInfo) async -> Bool {
+        let fm = FileManager.default
+        do {
+            if fm.fileExists(atPath: app.appPath) {
+                try fm.removeItem(atPath: app.appPath)
+            }
+            for path in app.relatedPaths {
+                if fm.fileExists(atPath: path) {
+                    try fm.removeItem(atPath: path)
+                }
+            }
+            return true
+        } catch {
+            errorMessage = "卸载失败: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    func resetApp(app: AppInfo) async -> Bool {
+        let fm = FileManager.default
+        do {
+            for path in app.cachePaths + app.dataPaths {
+                if fm.fileExists(atPath: path) {
+                    try fm.removeItem(atPath: path)
+                }
+            }
+            return true
+        } catch {
+            errorMessage = "重置失败: \(error.localizedDescription)"
+            return false
         }
     }
 
