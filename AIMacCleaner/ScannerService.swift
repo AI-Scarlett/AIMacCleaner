@@ -359,6 +359,8 @@ class ScannerService: ObservableObject {
             results.append(AppInfo(
                 id: bundleId,
                 name: appName,
+                displayName: appName,
+                desc: "\(appName) 应用程序",
                 bundleId: bundleId,
                 appPath: appPath,
                 iconPath: iconPath,
@@ -366,7 +368,13 @@ class ScannerService: ObservableObject {
                 appSize: appSize,
                 cacheSize: cacheSize,
                 dataSize: dataSize,
-                totalSize: appSize + cacheSize + dataSize
+                totalSize: appSize + cacheSize + dataSize,
+                appType: .app,
+                risk: "safe",
+                riskDesc: "已安装的应用程序",
+                canUninstall: true,
+                canClean: cacheSize > 0,
+                canReset: cacheSize > 0 || dataSize > 0
             ))
         }
     }
@@ -376,30 +384,38 @@ class ScannerService: ObservableObject {
 
         struct CLITool {
             let name: String
+            let displayName: String
+            let desc: String
             let id: String
             let paths: [String]
+            let appType: AppInfo.AppType
+            let risk: String
+            let riskDesc: String
+            let canUninstall: Bool
+            let canClean: Bool
+            let canReset: Bool
         }
 
         let cliTools: [CLITool] = [
-            CLITool(name: "Homebrew", id: "cli.homebrew", paths: ["/opt/homebrew", "/usr/local/Cellar"]),
-            CLITool(name: "Node.js / npm", id: "cli.nodejs", paths: ["\(home)/.nvm", "\(home)/.npm", "\(home)/.pnpm-store", "\(home)/.yarn"]),
-            CLITool(name: "Python (pyenv)", id: "cli.pyenv", paths: ["\(home)/.pyenv", "\(home)/.cache/pip"]),
-            CLITool(name: "Rust (rustup)", id: "cli.rustup", paths: ["\(home)/.rustup", "\(home)/.cargo"]),
-            CLITool(name: "Go", id: "cli.go", paths: ["\(home)/go", "\(home)/.cache/go-build"]),
-            CLITool(name: "Docker", id: "cli.docker", paths: ["\(home)/Library/Containers/com.docker.docker", "\(home)/.docker"]),
-            CLITool(name: "Trae", id: "agent.trae", paths: ["/Applications/Trae.app", "\(home)/Library/Application Support/TraeCN"]),
-            CLITool(name: "CodeBuddy", id: "agent.codebuddy", paths: ["/Applications/CodeBuddy.app", "\(home)/Library/Application Support/CodeBuddyCN"]),
-            CLITool(name: "Claude Code", id: "agent.claude", paths: ["/Applications/Claude.app", "\(home)/Library/Application Support/Claude-3p", "\(home)/.claude"]),
-            CLITool(name: "Cursor", id: "agent.cursor", paths: ["/Applications/Cursor.app", "\(home)/Library/Application Support/Cursor"]),
-            CLITool(name: "Windsurf", id: "agent.windsurf", paths: ["/Applications/Windsurf.app", "\(home)/Library/Application Support/Windsurf"]),
-            CLITool(name: "豆包", id: "agent.doubao", paths: ["/Applications/豆包.app"]),
-            CLITool(name: "通义千问", id: "agent.qwen", paths: ["/Applications/通义千问.app"]),
-            CLITool(name: "Xcode Developer", id: "dev.xcode-dev", paths: ["\(home)/Library/Developer"]),
-            CLITool(name: "Android SDK", id: "dev.android", paths: ["\(home)/Library/Android"]),
-            CLITool(name: "Unity", id: "dev.unity", paths: ["\(home)/Library/Unity"]),
-            CLITool(name: "Gradle", id: "cli.gradle", paths: ["\(home)/.gradle"]),
-            CLITool(name: "Maven", id: "cli.maven", paths: ["\(home)/.m2"]),
-            CLITool(name: "CocoaPods", id: "cli.cocoapods", paths: ["\(home)/.cocoapods"]),
+            CLITool(name: "Homebrew", displayName: "Homebrew 包管理器", desc: "macOS/Linux 包管理工具，通过终端安装软件", id: "cli.homebrew", paths: ["/opt/homebrew", "/usr/local/Cellar"], appType: .other, risk: "caution", riskDesc: "卸载后所有通过brew安装的工具将不可用", canUninstall: true, canClean: true, canReset: false),
+            CLITool(name: "Node.js / npm", displayName: "Node.js 运行环境", desc: "JavaScript 运行时和包管理器", id: "cli.nodejs", paths: ["\(home)/.nvm", "\(home)/.npm", "\(home)/.pnpm-store", "\(home)/.yarn"], appType: .dependency, risk: "caution", riskDesc: "卸载后Node.js项目将无法运行", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "Python (pyenv)", displayName: "Python 版本管理", desc: "Python 多版本管理工具和pip缓存", id: "cli.pyenv", paths: ["\(home)/.pyenv", "\(home)/.cache/pip"], appType: .dependency, risk: "caution", riskDesc: "卸载后Python项目将无法运行", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "Rust (rustup)", displayName: "Rust 工具链", desc: "Rust 编程语言和Cargo包管理器", id: "cli.rustup", paths: ["\(home)/.rustup", "\(home)/.cargo"], appType: .dependency, risk: "caution", riskDesc: "卸载后Rust项目将无法编译", canUninstall: true, canClean: true, canReset: false),
+            CLITool(name: "Go", displayName: "Go 语言环境", desc: "Go 编程语言和构建缓存", id: "cli.go", paths: ["\(home)/go", "\(home)/.cache/go-build"], appType: .dependency, risk: "caution", riskDesc: "卸载后Go项目将无法编译", canUninstall: true, canClean: true, canReset: false),
+            CLITool(name: "Docker", displayName: "Docker 容器", desc: "容器化平台，包含镜像和容器数据", id: "cli.docker", paths: ["\(home)/Library/Containers/com.docker.docker", "\(home)/.docker"], appType: .other, risk: "caution", riskDesc: "卸载后所有Docker容器和镜像将丢失", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "Trae", displayName: "Trae AI 编程助手", desc: "字节跳动AI编程IDE", id: "agent.trae", paths: ["/Applications/Trae.app", "\(home)/Library/Application Support/TraeCN"], appType: .other, risk: "safe", riskDesc: "可安全卸载，重新安装后需重新配置", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "CodeBuddy", displayName: "CodeBuddy 编程助手", desc: "AI编程助手", id: "agent.codebuddy", paths: ["/Applications/CodeBuddy.app", "\(home)/Library/Application Support/CodeBuddyCN"], appType: .other, risk: "safe", riskDesc: "可安全卸载", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "Claude Code", displayName: "Claude Code", desc: "Anthropic AI编程助手", id: "agent.claude", paths: ["/Applications/Claude.app", "\(home)/Library/Application Support/Claude-3p", "\(home)/.claude"], appType: .other, risk: "safe", riskDesc: "可安全卸载", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "Cursor", displayName: "Cursor AI 编辑器", desc: "AI代码编辑器", id: "agent.cursor", paths: ["/Applications/Cursor.app", "\(home)/Library/Application Support/Cursor"], appType: .other, risk: "safe", riskDesc: "可安全卸载", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "Windsurf", displayName: "Windsurf 编辑器", desc: "AI代码编辑器", id: "agent.windsurf", paths: ["/Applications/Windsurf.app", "\(home)/Library/Application Support/Windsurf"], appType: .other, risk: "safe", riskDesc: "可安全卸载", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "豆包", displayName: "豆包 AI 助手", desc: "字节跳动AI助手", id: "agent.doubao", paths: ["/Applications/豆包.app"], appType: .other, risk: "safe", riskDesc: "可安全卸载", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "通义千问", displayName: "通义千问 AI", desc: "阿里云AI助手", id: "agent.qwen", paths: ["/Applications/通义千问.app"], appType: .other, risk: "safe", riskDesc: "可安全卸载", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "Xcode Developer", displayName: "Xcode 开发者数据", desc: "Xcode编译缓存、派生数据和归档", id: "dev.xcode-dev", paths: ["\(home)/Library/Developer"], appType: .dependency, risk: "caution", riskDesc: "删除后Xcode需重新编译项目", canUninstall: false, canClean: true, canReset: true),
+            CLITool(name: "Android SDK", displayName: "Android SDK", desc: "Android开发工具包", id: "dev.android", paths: ["\(home)/Library/Android"], appType: .dependency, risk: "caution", riskDesc: "卸载后Android项目将无法编译", canUninstall: true, canClean: true, canReset: false),
+            CLITool(name: "Unity", displayName: "Unity 引擎", desc: "游戏开发引擎缓存", id: "dev.unity", paths: ["\(home)/Library/Unity"], appType: .dependency, risk: "safe", riskDesc: "Unity编辑器缓存，可安全清理", canUninstall: false, canClean: true, canReset: true),
+            CLITool(name: "Gradle", displayName: "Gradle 构建工具", desc: "Java/Android项目构建工具和缓存", id: "cli.gradle", paths: ["\(home)/.gradle"], appType: .dependency, risk: "safe", riskDesc: "构建缓存可安全清理，下次构建会重新下载", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "Maven", displayName: "Maven 构建工具", desc: "Java项目构建工具和本地仓库", id: "cli.maven", paths: ["\(home)/.m2"], appType: .dependency, risk: "caution", riskDesc: "本地仓库删除后需重新下载所有依赖", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "CocoaPods", displayName: "CocoaPods 依赖管理", desc: "iOS/macOS依赖管理工具和仓库缓存", id: "cli.cocoapods", paths: ["\(home)/.cocoapods"], appType: .dependency, risk: "safe", riskDesc: "仓库缓存可安全清理", canUninstall: true, canClean: true, canReset: true),
         ]
 
         for tool in cliTools {
@@ -423,6 +439,8 @@ class ScannerService: ObservableObject {
             results.append(AppInfo(
                 id: tool.id,
                 name: tool.name,
+                displayName: tool.displayName,
+                desc: tool.desc,
                 bundleId: tool.id,
                 appPath: realPath,
                 iconPath: nil,
@@ -430,7 +448,13 @@ class ScannerService: ObservableObject {
                 appSize: totalSize,
                 cacheSize: 0,
                 dataSize: 0,
-                totalSize: totalSize
+                totalSize: totalSize,
+                appType: tool.appType,
+                risk: tool.risk,
+                riskDesc: tool.riskDesc,
+                canUninstall: tool.canUninstall,
+                canClean: tool.canClean,
+                canReset: tool.canReset
             ))
         }
     }
@@ -449,9 +473,12 @@ class ScannerService: ObservableObject {
                 guard size > 0 else { continue }
                 seen.insert(id)
                 results.append(AppInfo(
-                    id: id, name: pkg, bundleId: id,
+                    id: id, name: pkg, displayName: pkg, desc: "通过 Homebrew 安装的 \(pkg)",
+                    bundleId: id,
                     appPath: pkgPath, iconPath: nil, version: nil,
-                    appSize: size, cacheSize: 0, dataSize: 0, totalSize: size
+                    appSize: size, cacheSize: 0, dataSize: 0, totalSize: size,
+                    appType: .other, risk: "caution", riskDesc: "卸载后通过brew安装的\(pkg)将不可用",
+                    canUninstall: true, canClean: false, canReset: false
                 ))
             }
         }
@@ -502,9 +529,12 @@ class ScannerService: ObservableObject {
                 guard size > 1048576 else { continue }
                 seen.insert(id)
                 results.append(AppInfo(
-                    id: id, name: dirName, bundleId: id,
+                    id: id, name: dirName, displayName: dirName, desc: "\(dirName) 的应用数据",
+                    bundleId: id,
                     appPath: dirPath, iconPath: nil, version: nil,
-                    appSize: size, cacheSize: 0, dataSize: 0, totalSize: size
+                    appSize: size, cacheSize: 0, dataSize: 0, totalSize: size,
+                    appType: .app, risk: "caution", riskDesc: "删除后对应应用可能需要重新配置或登录",
+                    canUninstall: false, canClean: true, canReset: true
                 ))
             }
         }
@@ -522,9 +552,12 @@ class ScannerService: ObservableObject {
                 guard size > 1048576 else { continue }
                 seen.insert(id)
                 results.append(AppInfo(
-                    id: id, name: "\(dirName) (缓存)", bundleId: id,
+                    id: id, name: "\(dirName) (缓存)", displayName: "\(dirName) 缓存", desc: "\(dirName) 的缓存数据",
+                    bundleId: id,
                     appPath: dirPath, iconPath: nil, version: nil,
-                    appSize: 0, cacheSize: size, dataSize: 0, totalSize: size
+                    appSize: 0, cacheSize: size, dataSize: 0, totalSize: size,
+                    appType: .app, risk: "safe", riskDesc: "缓存可安全清理，应用首次启动会稍慢",
+                    canUninstall: false, canClean: true, canReset: false
                 ))
             }
         }
@@ -556,9 +589,12 @@ class ScannerService: ObservableObject {
             guard size > 1048576 else { continue }
             seen.insert(id)
             results.append(AppInfo(
-                id: id, name: label, bundleId: id,
+                id: id, name: label, displayName: label, desc: "\(label) 的数据和缓存",
+                bundleId: id,
                 appPath: expanded, iconPath: nil, version: nil,
-                appSize: size, cacheSize: 0, dataSize: 0, totalSize: size
+                appSize: size, cacheSize: 0, dataSize: 0, totalSize: size,
+                appType: .dependency, risk: "caution", riskDesc: "删除后相关开发工具可能需要重新安装或配置",
+                canUninstall: true, canClean: true, canReset: true
             ))
         }
     }
@@ -575,9 +611,12 @@ class ScannerService: ObservableObject {
             guard size > 0 else { continue }
             seen.insert(id)
             results.append(AppInfo(
-                id: id, name: mod, bundleId: id,
+                id: id, name: mod, displayName: mod, desc: "npm 全局安装的 \(mod) 包",
+                bundleId: id,
                 appPath: modPath, iconPath: nil, version: nil,
-                appSize: size, cacheSize: 0, dataSize: 0, totalSize: size
+                appSize: size, cacheSize: 0, dataSize: 0, totalSize: size,
+                appType: .dependency, risk: "caution", riskDesc: "卸载后依赖此包的项目将无法运行",
+                canUninstall: true, canClean: false, canReset: false
             ))
         }
     }
@@ -594,9 +633,12 @@ class ScannerService: ObservableObject {
                 guard size > 0 else { continue }
                 seen.insert(id)
                 results.append(AppInfo(
-                    id: id, name: pkg, bundleId: id,
+                    id: id, name: pkg, displayName: pkg, desc: "pip 安装的 \(pkg) 包",
+                    bundleId: id,
                     appPath: pkgPath, iconPath: nil, version: nil,
-                    appSize: size, cacheSize: 0, dataSize: 0, totalSize: size
+                    appSize: size, cacheSize: 0, dataSize: 0, totalSize: size,
+                    appType: .dependency, risk: "caution", riskDesc: "卸载后依赖此包的Python项目将无法运行",
+                    canUninstall: true, canClean: false, canReset: false
                 ))
             }
         }

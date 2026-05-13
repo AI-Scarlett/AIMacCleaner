@@ -79,6 +79,8 @@ struct IgnoreResult: Codable {
 struct AppInfo: Identifiable, Hashable {
     let id: String
     let name: String
+    let displayName: String
+    let desc: String
     let bundleId: String
     let appPath: String
     let iconPath: String?
@@ -87,6 +89,42 @@ struct AppInfo: Identifiable, Hashable {
     let cacheSize: Int64
     let dataSize: Int64
     let totalSize: Int64
+    let appType: AppType
+    let risk: String
+    let riskDesc: String
+    let canUninstall: Bool
+    let canClean: Bool
+    let canReset: Bool
+
+    enum AppType: String, Codable, CaseIterable {
+        case app = "app"
+        case dependency = "dependency"
+        case other = "other"
+
+        var label: String {
+            switch self {
+            case .app: "应用"
+            case .dependency: "依赖"
+            case .other: "其它"
+            }
+        }
+
+        var tabLabel: String {
+            switch self {
+            case .app: "APP 管理"
+            case .dependency: "依赖管理"
+            case .other: "其它工具"
+            }
+        }
+
+        var tabIcon: String {
+            switch self {
+            case .app: "app.badge"
+            case .dependency: "cube.box"
+            case .other: "terminal"
+            }
+        }
+    }
 
     var relatedPaths: [String] {
         let home = NSHomeDirectory()
