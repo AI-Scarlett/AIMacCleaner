@@ -326,7 +326,7 @@ class ScannerService: ObservableObject {
                 ["role": "user", "content": "以下是我的 Mac 目录结构和大小说明，请分析哪些可以清理：\n\(dirInfo)"],
             ],
             "temperature": 0.1,
-            "max_tokens": 8192,
+            "max_tokens": 16384,
         ]
 
         var request = URLRequest(url: url)
@@ -405,15 +405,18 @@ class ScannerService: ObservableObject {
 
             let jsonStr = extractJSON(from: rawContent)
 
-            var parseError = ""
             if let jsonData = jsonStr.data(using: .utf8),
                let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
                 return buildScanItems(from: items)
             }
 
-            parseError = "直接解析失败，尝试修复..."
-
             if let fixed = tryFixJSON(jsonStr),
+               let jsonData = fixed.data(using: .utf8),
+               let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
+                return buildScanItems(from: items)
+            }
+
+            if let fixed = tryFixTruncatedJSON(jsonStr),
                let jsonData = fixed.data(using: .utf8),
                let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
                 return buildScanItems(from: items)
@@ -475,13 +478,49 @@ class ScannerService: ObservableObject {
 
         fixed = fixed.replacingOccurrences(of: "//[^\n]*", with: "", options: .regularExpression)
 
-        fixed = fixed.replacingOccurrences(of: ",\n", with: "\n")
-
         if fixed.contains("\"") || fixed.contains("[") {
             return fixed
         }
 
         return nil
+    }
+
+    private func tryFixTruncatedJSON(_ str: String) -> String? {
+        var fixed = str.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard fixed.hasPrefix("[") else { return nil }
+
+        var openBraces = 0
+        var openBrackets = 1
+        var inString = false
+        var escape = false
+
+        for char in fixed {
+            if escape { escape = false; continue }
+            if char == "\\" { escape = true; continue }
+            if char == "\"" { inString = !inString; continue }
+            if inString { continue }
+            if char == "{" { openBraces += 1 }
+            if char == "}" { openBraces -= 1 }
+            if char == "[" { openBrackets += 1 }
+            if char == "]" { openBrackets -= 1 }
+        }
+
+        if inString {
+            fixed += "\""
+        }
+
+        let lastCompleteObj = fixed.lastIndex(of: "}")
+        if let lastIdx = lastCompleteObj {
+            fixed = String(fixed[...lastIdx])
+        }
+
+        for _ in 0..<openBraces {
+            fixed += "}"
+        }
+        fixed += "]"
+
+        return fixed
     }
 
     private func buildScanItems(from items: [[String: Any]]) -> (success: Bool, items: [ScanItem]?, error: String?) {
