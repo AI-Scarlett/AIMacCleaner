@@ -253,21 +253,29 @@ class ScannerService: ObservableObject {
 
     private func collectDirInfo() -> String {
         var lines: [String] = []
-        let scanDirs: [(String, String)] = [
-            ("~/Library/Caches", "User Caches"),
-            ("~/Library/Application Support", "App Support"),
-            ("~/Library/Logs", "User Logs"),
-            ("~/Library/Containers", "App Containers"),
-            ("~/Library/Developer", "Developer"),
-            ("~/.cache", "Dot Cache"),
-            ("~/.npm", "npm"),
+        let scanDirs: [(String, String, Int)] = [
+            ("~/Library/Caches", "User Caches", 100),
+            ("~/Library/Application Support", "App Support", 80),
+            ("~/Library/Logs", "User Logs", 50),
+            ("~/Library/Containers", "App Containers", 50),
+            ("~/Library/Developer", "Developer", 50),
+            ("~/.cache", "Dot Cache", 50),
+            ("~/.npm", "npm", 20),
+            ("~/Library/Application Support/Google/Chrome/Default", "Chrome Default Profile", 30),
+            ("~/Library/Application Support/LarkShell", "Lark/飞书", 20),
+            ("~/Library/Application Support/Claude-3p", "Claude Code", 20),
         ]
 
         let fm = FileManager.default
 
-        for (dirPath, label) in scanDirs {
+        for (dirPath, label, maxEntries) in scanDirs {
             let expanded = NSString(string: dirPath).expandingTildeInPath
             lines.append("\n## \(label) (\(dirPath))")
+
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue else {
+                continue
+            }
 
             guard let contents = try? fm.contentsOfDirectory(atPath: expanded) else {
                 lines.append("  [无法访问]")
@@ -275,10 +283,12 @@ class ScannerService: ObservableObject {
             }
 
             var entries: [(String, Int64)] = []
-            for name in contents.prefix(50) {
+            for name in contents.prefix(maxEntries) {
                 let fullPath = (expanded as NSString).appendingPathComponent(name)
                 let (size, _) = Self.calculateDirectorySizeStatic(at: fullPath)
-                entries.append((name, size))
+                if size > 0 {
+                    entries.append((name, size))
+                }
             }
             entries.sort { $0.1 > $1.1 }
 

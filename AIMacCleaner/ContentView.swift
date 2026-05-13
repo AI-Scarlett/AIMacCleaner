@@ -329,7 +329,7 @@ struct ContentView: View {
                 Button { Task { await service.scanLocal() } } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "magnifyingglass")
-                        Text("重新扫描")
+                        Text("本地扫描")
                     }
                 }
                 .buttonStyle(.bordered).controlSize(.small)
