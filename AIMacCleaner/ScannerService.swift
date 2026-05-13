@@ -504,6 +504,186 @@ class ScannerService: ObservableObject {
                 canReset: tool.canReset
             ))
         }
+
+        self.scanDynamicAgents(fm: fm, results: &results, seen: &seen)
+    }
+
+    nonisolated private func scanDynamicAgents(fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
+        let home = NSHomeDirectory()
+        let appSupport = "\(home)/Library/Application Support"
+
+        let knownAgentKeywords: [(String, String, String)] = [
+            ("trae", "Trae AI 编程助手", "字节跳动AI编程IDE"),
+            ("codebuddy", "CodeBuddy 编程助手", "AI编程助手"),
+            ("claude", "Claude Code", "Anthropic AI编程助手"),
+            ("cursor", "Cursor AI 编辑器", "AI代码编辑器"),
+            ("windsurf", "Windsurf 编辑器", "AI代码编辑器"),
+            ("codex", "Codex", "OpenAI AI编程助手"),
+            ("codearts", "CodeArts Agent", "华为AI编程助手"),
+            ("yi-code", "yi-code", "零一万物AI编程助手"),
+            ("yi.agent", "yi-agent", "零一万物AI Agent"),
+            ("hermes", "Hermes", "AI编程助手"),
+            ("cherry studio", "Cherry Studio", "AI大模型客户端"),
+            ("lm studio", "LM Studio", "本地大模型运行环境"),
+            ("openclaw", "OpenClaw", "AI编程助手"),
+            ("qclaw", "QClaw", "AI编程助手"),
+            ("doubao", "豆包 AI 助手", "字节跳动AI助手"),
+            ("qwen", "通义千问 AI", "阿里云AI助手"),
+            ("augment", "Augment Code", "AI编程助手"),
+            ("copilot", "GitHub Copilot", "GitHub AI编程助手"),
+            ("aider", "Aider", "AI终端编程助手"),
+            ("continue", "Continue", "AI代码补全扩展"),
+            ("cody", "Cody", "Sourcegraph AI编程助手"),
+            ("tabby", "Tabby", "AI代码补全"),
+            ("warp", "Warp", "AI终端"),
+            ("chatgpt", "ChatGPT", "OpenAI AI助手"),
+            ("gemini", "Gemini", "Google AI助手"),
+            ("deepseek", "DeepSeek", "深度求索AI助手"),
+            ("kimi", "Kimi", "月之暗面AI助手"),
+            ("zhipu", "智谱AI", "智谱清言AI助手"),
+            ("spark", "讯飞星火", "科大讯飞AI助手"),
+            ("tongyi", "通义灵码", "阿里云AI编程助手"),
+        ]
+
+        let knownAppPaths = Set(results.filter { $0.appType == .other && $0.appPath.hasSuffix(".app") }.map { $0.appPath.lowercased() })
+        let knownBundleIds = Set(results.map { $0.bundleId }.filter { $0.contains("agent.") || $0.contains("cli.") })
+
+        guard let appSupportDirs = try? fm.contentsOfDirectory(atPath: appSupport) else { return }
+
+        for dirName in appSupportDirs {
+            let dirLower = dirName.lowercased()
+            var matched = false
+            var agentName = dirName
+            var agentDesc = "AI编程助手"
+            var agentId = "agent.dynamic.\(dirName.lowercased().replacingOccurrences(of: " ", with: "-"))"
+
+            for (keyword, name, desc) in knownAgentKeywords {
+                if dirLower.contains(keyword) {
+                    agentName = name
+                    agentDesc = desc
+                    agentId = "agent.\(keyword.replacingOccurrences(of: " ", with: "-"))"
+                    matched = true
+                    break
+                }
+            }
+
+            guard matched else { continue }
+            guard !seen.contains(agentId) else { continue }
+
+            let dirPath = (appSupport as NSString).appendingPathComponent(dirName)
+            let (size, _) = Self.calculateDirectorySizeStatic(at: dirPath)
+            guard size > 1048576 else { continue }
+
+            var appPath = dirPath
+            var iconPath: String? = nil
+            var appSize: Int64 = 0
+            var cacheSize: Int64 = 0
+            var dataSize: Int64 = size
+            var bundleId = agentId
+
+            let possibleAppNames = [
+                "\(agentName).app",
+                "\(dirName).app",
+            ]
+            let appDirs = ["/Applications", "\(home)/Applications"]
+            for appDir in appDirs {
+                for appName in possibleAppNames {
+                    let candidate = (appDir as NSString).appendingPathComponent(appName)
+                    if fm.fileExists(atPath: candidate) {
+                        if !knownAppPaths.contains(candidate.lowercased()) {
+                            appPath = candidate
+                            appSize = Self.calculateDirectorySizeStatic(at: candidate).0
+                            let plistPath = (candidate as NSString).appendingPathComponent("Contents/Info.plist")
+                            if let plistData = fm.contents(atPath: plistPath),
+                               let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any] {
+                                bundleId = plist["CFBundleIdentifier"] as? String ?? agentId
+                                if let iconFile = plist["CFBundleIconFile"] as? String {
+                                    let ic = (candidate as NSString).appendingPathComponent("Contents/Resources/\(iconFile)")
+                                    if fm.fileExists(atPath: ic) { iconPath = ic }
+                                }
+                                if iconPath == nil {
+                                    let icns = (candidate as NSString).appendingPathComponent("Contents/Resources/AppIcon.icns")
+                                    if fm.fileExists(atPath: icns) { iconPath = icns }
+                                }
+                            }
+                            let cp = [
+                                "\(home)/Library/Caches/\(bundleId)",
+                                "\(home)/Library/HTTPStorages/\(bundleId)",
+                                "\(home)/Library/WebKit/\(bundleId)",
+                            ]
+                            for p in cp { cacheSize += Self.calculateDirectorySizeStatic(at: p).0 }
+                        }
+                        break
+                    }
+                }
+            }
+
+            seen.insert(agentId)
+            let totalSize = appSize + cacheSize + dataSize
+
+            results.append(AppInfo(
+                id: agentId,
+                name: agentName,
+                displayName: agentName,
+                desc: agentDesc,
+                bundleId: bundleId,
+                appPath: appPath,
+                iconPath: iconPath,
+                version: nil,
+                appSize: appSize,
+                cacheSize: cacheSize,
+                dataSize: dataSize,
+                totalSize: totalSize,
+                appType: .other,
+                subCategory: "AI Agent",
+                risk: "safe",
+                riskDesc: "可安全卸载，重新安装后需重新配置",
+                canUninstall: appSize > 0,
+                canClean: cacheSize > 0,
+                canReset: dataSize > 0
+            ))
+        }
+
+        let allApps = results.filter { $0.appType == .app }
+        for app in allApps {
+            let nameLower = app.displayName.lowercased()
+            let bundleLower = app.bundleId.lowercased()
+            var isAgent = false
+            var agentDesc = "AI编程助手"
+
+            for (keyword, _, desc) in knownAgentKeywords {
+                if nameLower.contains(keyword) || bundleLower.contains(keyword) {
+                    isAgent = true
+                    agentDesc = desc
+                    break
+                }
+            }
+
+            if isAgent && !seen.contains("agent.fromapp.\(app.bundleId)") {
+                seen.insert("agent.fromapp.\(app.bundleId)")
+                results.append(AppInfo(
+                    id: "agent.fromapp.\(app.bundleId)",
+                    name: app.displayName,
+                    displayName: app.displayName,
+                    desc: agentDesc,
+                    bundleId: app.bundleId,
+                    appPath: app.appPath,
+                    iconPath: app.iconPath,
+                    version: app.version,
+                    appSize: app.appSize,
+                    cacheSize: app.cacheSize,
+                    dataSize: app.dataSize,
+                    totalSize: app.totalSize,
+                    appType: .other,
+                    subCategory: "AI Agent",
+                    risk: "safe",
+                    riskDesc: "可安全卸载，重新安装后需重新配置",
+                    canUninstall: true,
+                    canClean: app.cacheSize > 0,
+                    canReset: app.dataSize > 0
+                ))
+            }
+        }
     }
 
     nonisolated private func scanDynamicCLITools(fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
