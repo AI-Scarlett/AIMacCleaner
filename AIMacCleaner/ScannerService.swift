@@ -293,6 +293,7 @@ class ScannerService: ObservableObject {
             }
 
             self.scanCLIAndAgents(fm: fm, results: &results, seen: &seenIds)
+            self.scanDynamicCLITools(fm: fm, results: &results, seen: &seenIds)
 
             results.sort { $0.name.lowercased() < $1.name.lowercased() }
             return results
@@ -431,6 +432,173 @@ class ScannerService: ObservableObject {
                 dataSize: 0,
                 totalSize: totalSize
             ))
+        }
+    }
+
+    nonisolated private func scanDynamicCLITools(fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
+        let home = NSHomeDirectory()
+
+        let brewDirs = ["/opt/homebrew/Cellar", "/usr/local/Cellar"]
+        for brewDir in brewDirs {
+            guard let packages = try? fm.contentsOfDirectory(atPath: brewDir) else { continue }
+            for pkg in packages {
+                let id = "brew.\(pkg)"
+                guard !seen.contains(id) else { continue }
+                let pkgPath = (brewDir as NSString).appendingPathComponent(pkg)
+                let (size, _) = Self.calculateDirectorySizeStatic(at: pkgPath)
+                guard size > 0 else { continue }
+                seen.insert(id)
+                results.append(AppInfo(
+                    id: id, name: pkg, bundleId: id,
+                    appPath: pkgPath, iconPath: nil, version: nil,
+                    appSize: size, cacheSize: 0, dataSize: 0, totalSize: size
+                ))
+            }
+        }
+
+        let npmGlobalPaths = [
+            "\(home)/.nvm/versions/node",
+            "/opt/homebrew/lib/node_modules",
+            "/usr/local/lib/node_modules",
+        ]
+        for npmBase in npmGlobalPaths {
+            let expanded = NSString(string: npmBase).expandingTildeInPath
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue else { continue }
+
+            if npmBase.contains("/node") {
+                guard let nodeVersions = try? fm.contentsOfDirectory(atPath: expanded) else { continue }
+                for nodeVer in nodeVersions {
+                    let libPath = (expanded as NSString).appendingPathComponent(nodeVer + "/lib/node_modules")
+                    self.scanNpmModules(at: libPath, fm: fm, results: &results, seen: &seen)
+                }
+            } else {
+                self.scanNpmModules(at: expanded, fm: fm, results: &results, seen: &seen)
+            }
+        }
+
+        let pipPaths = [
+            "\(home)/Library/Python",
+        ]
+        for pipBase in pipPaths {
+            let expanded = NSString(string: pipBase).expandingTildeInPath
+            guard let versions = try? fm.contentsOfDirectory(atPath: expanded) else { continue }
+            for ver in versions {
+                let sitePackages = (expanded as NSString).appendingPathComponent(ver + "/lib/python/site-packages")
+                self.scanPipPackages(at: sitePackages, fm: fm, results: &results, seen: &seen)
+            }
+        }
+
+        let appSupportDir = "\(home)/Library/Application Support"
+        let expandedAppSupport = NSString(string: appSupportDir).expandingTildeInPath
+        if let appSupportContents = try? fm.contentsOfDirectory(atPath: expandedAppSupport) {
+            for dirName in appSupportContents {
+                let id = "appsupport.\(dirName)"
+                guard !seen.contains(id) else { continue }
+                let dirPath = (expandedAppSupport as NSString).appendingPathComponent(dirName)
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: dirPath, isDirectory: &isDir), isDir.boolValue else { continue }
+                let (size, _) = Self.calculateDirectorySizeStatic(at: dirPath)
+                guard size > 1048576 else { continue }
+                seen.insert(id)
+                results.append(AppInfo(
+                    id: id, name: dirName, bundleId: id,
+                    appPath: dirPath, iconPath: nil, version: nil,
+                    appSize: size, cacheSize: 0, dataSize: 0, totalSize: size
+                ))
+            }
+        }
+
+        let cachesDir = "\(home)/Library/Caches"
+        let expandedCaches = NSString(string: cachesDir).expandingTildeInPath
+        if let cachesContents = try? fm.contentsOfDirectory(atPath: expandedCaches) {
+            for dirName in cachesContents {
+                let id = "cache.\(dirName)"
+                guard !seen.contains(id) else { continue }
+                let dirPath = (expandedCaches as NSString).appendingPathComponent(dirName)
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: dirPath, isDirectory: &isDir), isDir.boolValue else { continue }
+                let (size, _) = Self.calculateDirectorySizeStatic(at: dirPath)
+                guard size > 1048576 else { continue }
+                seen.insert(id)
+                results.append(AppInfo(
+                    id: id, name: "\(dirName) (缓存)", bundleId: id,
+                    appPath: dirPath, iconPath: nil, version: nil,
+                    appSize: 0, cacheSize: size, dataSize: 0, totalSize: size
+                ))
+            }
+        }
+
+        let dotDirs: [(String, String)] = [
+            ("\(home)/.nvm", "NVM (Node Version Manager)"),
+            ("\(home)/.npm", "npm 全局缓存"),
+            ("\(home)/.pnpm-store", "pnpm 存储"),
+            ("\(home)/.yarn", "Yarn"),
+            ("\(home)/.pyenv", "pyenv (Python 版本管理)"),
+            ("\(home)/.rustup", "rustup (Rust 工具链)"),
+            ("\(home)/.cargo", "Cargo (Rust 包管理)"),
+            ("\(home)/.gradle", "Gradle"),
+            ("\(home)/.m2", "Maven"),
+            ("\(home)/.cocoapods", "CocoaPods"),
+            ("\(home)/.docker", "Docker 配置"),
+            ("\(home)/.claude", "Claude Code 配置"),
+            ("\(home)/.cache", "用户缓存目录"),
+            ("\(home)/.conda", "Conda (Python 环境)"),
+            ("\(home)/.julia", "Julia"),
+            ("\(home)/.rustup", "Rust 工具链"),
+            ("\(home)/.local", "用户本地安装"),
+        ]
+        for (path, label) in dotDirs {
+            let id = "dotdir.\(label)"
+            guard !seen.contains(id) else { continue }
+            let expanded = NSString(string: path).expandingTildeInPath
+            let (size, _) = Self.calculateDirectorySizeStatic(at: expanded)
+            guard size > 1048576 else { continue }
+            seen.insert(id)
+            results.append(AppInfo(
+                id: id, name: label, bundleId: id,
+                appPath: expanded, iconPath: nil, version: nil,
+                appSize: size, cacheSize: 0, dataSize: 0, totalSize: size
+            ))
+        }
+    }
+
+    nonisolated private func scanNpmModules(at path: String, fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
+        guard let modules = try? fm.contentsOfDirectory(atPath: path) else { return }
+        for mod in modules {
+            let id = "npm.\(mod)"
+            guard !seen.contains(id) else { continue }
+            let modPath = (path as NSString).appendingPathComponent(mod)
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: modPath, isDirectory: &isDir), isDir.boolValue else { continue }
+            let (size, _) = Self.calculateDirectorySizeStatic(at: modPath)
+            guard size > 0 else { continue }
+            seen.insert(id)
+            results.append(AppInfo(
+                id: id, name: mod, bundleId: id,
+                appPath: modPath, iconPath: nil, version: nil,
+                appSize: size, cacheSize: 0, dataSize: 0, totalSize: size
+            ))
+        }
+    }
+
+    nonisolated private func scanPipPackages(at path: String, fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
+        guard let packages = try? fm.contentsOfDirectory(atPath: path) else { return }
+        for pkg in packages {
+            let id = "pip.\(pkg)"
+            guard !seen.contains(id) else { continue }
+            let pkgPath = (path as NSString).appendingPathComponent(pkg)
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: pkgPath, isDirectory: &isDir), isDir.boolValue {
+                let (size, _) = Self.calculateDirectorySizeStatic(at: pkgPath)
+                guard size > 0 else { continue }
+                seen.insert(id)
+                results.append(AppInfo(
+                    id: id, name: pkg, bundleId: id,
+                    appPath: pkgPath, iconPath: nil, version: nil,
+                    appSize: size, cacheSize: 0, dataSize: 0, totalSize: size
+                ))
+            }
         }
     }
 
