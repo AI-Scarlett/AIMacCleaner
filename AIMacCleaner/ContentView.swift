@@ -289,6 +289,7 @@ struct AppManagerTab: View {
     @EnvironmentObject var service: ScannerService
     let filterType: AppInfo.AppType
     @State private var searchText = ""
+    @State private var filterSubCategory = ""
     @State private var selectedAppIds = Set<String>()
     @State private var showActionConfirm = false
     @State private var pendingAction: AppAction = .reset
@@ -307,8 +308,16 @@ struct AppManagerTab: View {
         } }
     }
 
-    var filteredApps: [AppInfo] {
+    var subCategories: [String] {
         let base = service.installedApps.filter { $0.appType == filterType }
+        return Array(Set(base.map(\.subCategory))).sorted()
+    }
+
+    var filteredApps: [AppInfo] {
+        var base = service.installedApps.filter { $0.appType == filterType }
+        if !filterSubCategory.isEmpty {
+            base = base.filter { $0.subCategory == filterSubCategory }
+        }
         if searchText.isEmpty { return base }
         let q = searchText.lowercased()
         return base.filter { $0.displayName.lowercased().contains(q) || $0.name.lowercased().contains(q) || $0.bundleId.lowercased().contains(q) || $0.desc.lowercased().contains(q) }
@@ -320,6 +329,10 @@ struct AppManagerTab: View {
     var body: some View {
         VStack(spacing: 0) {
             actionBar
+            if subCategories.count > 1 {
+                subCategoryFilterBar
+                Divider()
+            }
             Divider()
             if service.isScanningApps {
                 VStack(spacing: 16) { ProgressView().controlSize(.large); Text("正在扫描...").foregroundColor(.secondary) }
@@ -342,6 +355,40 @@ struct AppManagerTab: View {
         .alert("操作完成", isPresented: $showActionResult) {
             Button("确定") {}
         } message: { Text(actionResultMsg) }
+    }
+
+    private var subCategoryFilterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                SubCategoryChip(
+                    label: "全部",
+                    count: service.installedApps.filter { $0.appType == filterType }.count,
+                    isActive: filterSubCategory.isEmpty,
+                    color: .accentColor
+                ) { filterSubCategory = "" }
+
+                ForEach(subCategories, id: \.self) { cat in
+                    let count = service.installedApps.filter { $0.appType == filterType && $0.subCategory == cat }.count
+                    SubCategoryChip(
+                        label: cat,
+                        count: count,
+                        isActive: filterSubCategory == cat,
+                        color: subCategoryColor(cat)
+                    ) { filterSubCategory = filterSubCategory == cat ? "" : cat }
+                }
+            }.padding(.horizontal, 20).padding(.vertical, 8)
+        }.background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+    }
+
+    private func subCategoryColor(_ cat: String) -> Color {
+        switch cat {
+        case "AI Agent": .purple
+        case "CLI": .blue
+        case "包管理": .orange
+        case "开发": .green
+        case "应用": .cyan
+        default: .gray
+        }
     }
 
     private var actionBar: some View {
@@ -414,6 +461,11 @@ struct AppManagerTab: View {
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         Text(app.displayName).fontWeight(.semibold)
+                        if filterType != .app {
+                            Text(app.subCategory).font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(subCategoryColor(app.subCategory).opacity(0.12)).cornerRadius(4)
+                                .foregroundColor(subCategoryColor(app.subCategory))
+                        }
                         Text(app.desc).font(.caption2).foregroundColor(.secondary).lineLimit(1)
                     }
                 }
@@ -517,5 +569,57 @@ struct FilterChip: View {
     var body: some View {
         HStack(spacing: 4) { Text(label).font(.caption2).fontWeight(.medium); Button(action: onRemove) { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundColor(.secondary) }.buttonStyle(.plain) }
             .padding(.horizontal, 8).padding(.vertical, 3).background(Color.accentColor.opacity(0.1)).cornerRadius(10)
+    }
+}
+
+struct SubCategoryChip: View {
+    let label: String
+    let count: Int
+    let isActive: Bool
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: subCategoryIcon(label))
+                    .font(.caption2)
+                    .foregroundColor(isActive ? .white : color)
+                Text(label)
+                    .font(.caption)
+                    .fontWeight(isActive ? .semibold : .regular)
+                    .foregroundColor(isActive ? .white : .primary)
+                Text("\(count)")
+                    .font(.caption2)
+                    .fontWeight(.medium)
+                    .foregroundColor(isActive ? .white.opacity(0.8) : .secondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(isActive ? Color.white.opacity(0.2) : color.opacity(0.1))
+                    .cornerRadius(6)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isActive ? color : Color(nsColor: .controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isActive ? color.opacity(0.6) : color.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func subCategoryIcon(_ cat: String) -> String {
+        switch cat {
+        case "AI Agent": "cpu"
+        case "CLI": "terminal"
+        case "包管理": "cube.box"
+        case "开发": "hammer"
+        case "应用": "app.fill"
+        default: "folder"
+        }
     }
 }

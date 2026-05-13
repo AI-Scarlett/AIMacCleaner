@@ -90,6 +90,7 @@ struct AppInfo: Identifiable, Hashable {
     let dataSize: Int64
     let totalSize: Int64
     let appType: AppType
+    let subCategory: String
     let risk: String
     let riskDesc: String
     let canUninstall: Bool

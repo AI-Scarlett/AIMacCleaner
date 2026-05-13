@@ -1,6 +1,7 @@
 # Build
 /tmp/
 /dist/
+build/
 
 # macOS
 .DS_Store
