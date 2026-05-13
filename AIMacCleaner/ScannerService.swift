@@ -288,7 +288,7 @@ class ScannerService: ObservableObject {
             let addr = ptr.pointee
             let name = String(cString: addr.ifa_name)
 
-            if name != "lo0" && addr.ifa_addr.pointee.sa_family == UInt8(AF_LINK) {
+            if name != "lo0", let ifaAddr = addr.ifa_addr, ifaAddr.pointee.sa_family == UInt8(AF_LINK) {
                 if let data = addr.ifa_data {
                     let networkData = data.assumingMemoryBound(to: if_data.self)
                     totalIn += Int64(networkData.pointee.ifi_ibytes)
