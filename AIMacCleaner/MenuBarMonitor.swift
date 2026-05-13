@@ -191,24 +191,7 @@ struct MenuBarMonitor: View {
 
     private var quickActions: some View {
         VStack(spacing: 0) {
-            if service.updateAvailable {
-                Button {
-                    service.openDownloadPage()
-                } label: {
-                    HStack {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .foregroundColor(.green)
-                        Text("更新到 v\(service.latestVersion)")
-                            .foregroundColor(.green)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(.green)
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-            }
+            updateSection
 
             HStack(spacing: 8) {
                 Button {
@@ -239,10 +222,10 @@ struct MenuBarMonitor: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(service.isCheckingUpdate)
+                .disabled(service.isCheckingUpdate || service.isDownloadingUpdate)
             }
             .padding(.horizontal, 14)
-            .padding(.top, service.updateAvailable ? 6 : 10)
+            .padding(.top, service.updateAvailable || service.isDownloadingUpdate || service.updateReadyToInstall ? 6 : 10)
 
             Text("v\(service.currentVersion)")
                 .font(.system(size: 9))
@@ -265,6 +248,130 @@ struct MenuBarMonitor: View {
             .controlSize(.small)
             .padding(.horizontal, 14)
             .padding(.bottom, 10)
+        }
+    }
+
+    private var updateSection: some View {
+        VStack(spacing: 0) {
+            if service.isDownloadingUpdate {
+                VStack(spacing: 6) {
+                    HStack {
+                        Image(systemName: "arrow.down.circle")
+                            .foregroundColor(.blue)
+                            .font(.caption)
+                        Text(String(format: "正在下载更新 %.0f%%", service.updateDownloadProgress * 100))
+                            .font(.caption)
+                            .fontWeight(.medium)
+                        Spacer()
+                        Button {
+                            service.cancelUpdateDownload()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    ProgressView(value: service.updateDownloadProgress)
+                        .progressViewStyle(.linear)
+                        .tint(.blue)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color.blue.opacity(0.05))
+            } else if service.updateReadyToInstall {
+                VStack(spacing: 8) {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("更新已下载完成")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+
+                    Button {
+                        Task {
+                            let alert = NSAlert()
+                            alert.messageText = "安装更新"
+                            alert.informativeText = "应用将退出并安装新版本 v\(service.latestVersion)，安装完成后会自动重新启动。"
+                            alert.addButton(withTitle: "退出并安装")
+                            alert.addButton(withTitle: "稍后安装")
+                            alert.alertStyle = .informational
+                            let response = alert.runModal()
+                            if response == .alertFirstButtonReturn {
+                                await service.installUpdate()
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .foregroundColor(.white)
+                            Text("退出并安装 v\(service.latestVersion)")
+                                .foregroundColor(.white)
+                                .fontWeight(.medium)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background(Color.green)
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color.green.opacity(0.05))
+            } else if !service.updateErrorMessage.isEmpty {
+                VStack(spacing: 6) {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text(service.updateErrorMessage)
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                        Spacer()
+                        Button {
+                            service.updateErrorMessage = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Button {
+                        Task { await service.downloadUpdate() }
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.clockwise")
+                            Text("重试下载")
+                        }
+                        .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color.orange.opacity(0.05))
+            } else if service.updateAvailable {
+                Button {
+                    Task { await service.downloadUpdate() }
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .foregroundColor(.green)
+                        Text("更新到 v\(service.latestVersion)")
+                            .foregroundColor(.green)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(.green)
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
+            }
         }
     }
 

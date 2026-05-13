@@ -895,8 +895,12 @@ class ScannerService: ObservableObject {
     @Published var isCheckingUpdate: Bool = false
     @Published var updateAvailable: Bool = false
     @Published var updateDownloadURL: String = ""
+    @Published var updateDownloadProgress: Double = 0.0
+    @Published var isDownloadingUpdate: Bool = false
+    @Published var updateReadyToInstall: Bool = false
+    @Published var updateErrorMessage: String = ""
 
-    let currentVersion = "1.3.0"
+    let currentVersion = "1.4.0"
 
     func checkForUpdates() async {
         isCheckingUpdate = true
@@ -954,6 +958,194 @@ class ScannerService: ObservableObject {
         } else {
             if let url = URL(string: "https://github.com/AI-Scarlett/AIMacCleaner/releases") { NSWorkspace.shared.open(url) }
         }
+    }
+
+    func downloadUpdate() async {
+        guard !updateDownloadURL.isEmpty, let url = URL(string: updateDownloadURL) else {
+            DispatchQueue.main.async { self.updateErrorMessage = "下载链接无效" }
+            return
+        }
+
+        isDownloadingUpdate = true
+        updateDownloadProgress = 0.0
+        updateErrorMessage = ""
+        updateReadyToInstall = false
+
+        let tempDir = NSTemporaryDirectory() + "AIMacCleanerUpdate"
+        try? FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+        let dmgPath = tempDir + "/AIMacCleaner-update.dmg"
+
+        do {
+            let (asyncBytes, response) = try await URLSession.shared.bytes(from: url)
+            guard let http = response as? HTTPURLResponse,
+                  let contentLength = http.value(forHTTPHeaderField: "Content-Length"),
+                  let totalBytes = Double(contentLength) else {
+                let (tempURL, _) = try await URLSession.shared.download(from: url)
+                try FileManager.default.moveItem(atPath: tempURL.path, toPath: dmgPath)
+                DispatchQueue.main.async {
+                    self.updateDownloadProgress = 1.0
+                    self.isDownloadingUpdate = false
+                    self.updateReadyToInstall = true
+                }
+                return
+            }
+
+            if FileManager.default.fileExists(atPath: dmgPath) {
+                try FileManager.default.removeItem(atPath: dmgPath)
+            }
+            FileManager.default.createFile(atPath: dmgPath, contents: nil)
+            let fileHandle = try FileHandle(forWritingTo: URL(fileURLWithPath: dmgPath))
+
+            var receivedBytes: Double = 0
+            var buffer = Data()
+            let bufferSize = 65536
+
+            for try await byte in asyncBytes {
+                buffer.append(byte)
+                receivedBytes += 1
+
+                if buffer.count >= bufferSize {
+                    fileHandle.write(buffer)
+                    buffer.removeAll(keepingCapacity: true)
+                }
+
+                let progress = receivedBytes / totalBytes
+                DispatchQueue.main.async {
+                    self.updateDownloadProgress = min(progress, 0.99)
+                }
+            }
+
+            if !buffer.isEmpty {
+                fileHandle.write(buffer)
+            }
+
+            try fileHandle.close()
+
+            DispatchQueue.main.async {
+                self.updateDownloadProgress = 1.0
+                self.isDownloadingUpdate = false
+                self.updateReadyToInstall = true
+            }
+        } catch {
+            DispatchQueue.main.async {
+                self.isDownloadingUpdate = false
+                self.updateErrorMessage = "下载失败: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func installUpdate() async {
+        let tempDir = NSTemporaryDirectory() + "AIMacCleanerUpdate"
+        let dmgPath = tempDir + "/AIMacCleaner-update.dmg"
+
+        guard FileManager.default.fileExists(atPath: dmgPath) else {
+            DispatchQueue.main.async { self.updateErrorMessage = "安装文件不存在，请重新下载" }
+            return
+        }
+
+        let mountPoint = "/Volumes/AIMacCleanerUpdate"
+        let currentAppPath = Bundle.main.bundlePath
+        let appName = Bundle.main.bundleURL.lastPathComponent
+        let installedAppPath = "/Applications/\(appName)"
+
+        let targetPath: String
+        if currentAppPath.hasPrefix("/Applications/") {
+            targetPath = currentAppPath
+        } else {
+            targetPath = installedAppPath
+        }
+
+        let scriptContent = """
+        #!/bin/bash
+        # AIMacCleaner Auto-Update Script
+
+        MOUNT_POINT="\(mountPoint)"
+        DMG_PATH="\(dmgPath)"
+        TARGET_PATH="\(targetPath)"
+        APP_NAME="\(appName)"
+        TEMP_DIR="\(tempDir)"
+
+        # Wait for the app to quit
+        while pgrep -x "AIMacCleaner" > /dev/null 2>&1; do
+            sleep 0.5
+        done
+
+        sleep 1
+
+        # Mount DMG
+        /usr/bin/hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -nobrowse -quiet
+
+        if [ $? -ne 0 ]; then
+            osascript -e 'display notification "更新安装失败：无法挂载安装包" with title "AIMacCleaner"'
+            rm -rf "$TEMP_DIR"
+            exit 1
+        fi
+
+        # Find the .app inside the mounted DMG
+        UPDATE_APP=$(find "$MOUNT_POINT" -maxdepth 1 -name "*.app" -type d | head -1)
+
+        if [ -z "$UPDATE_APP" ]; then
+            /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet
+            osascript -e 'display notification "更新安装失败：安装包中未找到应用" with title "AIMacCleaner"'
+            rm -rf "$TEMP_DIR"
+            exit 1
+        fi
+
+        # Remove old version and copy new version
+        if [ -d "$TARGET_PATH" ]; then
+            rm -rf "$TARGET_PATH"
+        fi
+
+        cp -R "$UPDATE_APP" "$TARGET_PATH"
+
+        if [ $? -ne 0 ]; then
+            osascript -e 'display notification "更新安装失败：无法复制应用" with title "AIMacCleaner"'
+            /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet
+            rm -rf "$TEMP_DIR"
+            exit 1
+        fi
+
+        # Detach DMG
+        /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet
+
+        # Clean up
+        rm -rf "$TEMP_DIR"
+
+        # Launch the new version
+        open "$TARGET_PATH"
+
+        osascript -e 'display notification "已成功更新到最新版本" with title "AIMacCleaner"'
+        """
+
+        let scriptPath = tempDir + "/update_install.sh"
+        do {
+            try scriptContent.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
+        } catch {
+            DispatchQueue.main.async { self.updateErrorMessage = "创建安装脚本失败: \(error.localizedDescription)" }
+            return
+        }
+
+        let task = Process()
+        task.launchPath = "/bin/bash"
+        task.arguments = [scriptPath]
+
+        do {
+            try task.run()
+
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
+            }
+        } catch {
+            DispatchQueue.main.async { self.updateErrorMessage = "启动安装失败: \(error.localizedDescription)" }
+        }
+    }
+
+    func cancelUpdateDownload() {
+        isDownloadingUpdate = false
+        updateDownloadProgress = 0.0
+        let tempDir = NSTemporaryDirectory() + "AIMacCleanerUpdate"
+        try? FileManager.default.removeItem(atPath: tempDir)
     }
 
     func analyzeImpactWithAI(apps: [AppInfo]) async {

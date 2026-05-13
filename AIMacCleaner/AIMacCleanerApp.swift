@@ -17,6 +17,23 @@ struct AIMacCleanerApp: App {
                 .frame(minWidth: 960, minHeight: 640)
                 .onAppear {
                     NSApp.setActivationPolicy(.regular)
+                    Task {
+                        await service.checkForUpdates()
+                        if service.updateAvailable {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                                let alert = NSAlert()
+                                alert.messageText = "发现新版本 v\(service.latestVersion)"
+                                alert.informativeText = "是否立即下载更新？下载完成后将提示您退出应用进行安装。"
+                                alert.addButton(withTitle: "立即下载")
+                                alert.addButton(withTitle: "稍后提醒")
+                                alert.alertStyle = .informational
+                                let response = alert.runModal()
+                                if response == .alertFirstButtonReturn {
+                                    Task { await service.downloadUpdate() }
+                                }
+                            }
+                        }
+                    }
                 }
         }
         .windowStyle(.titleBar)
