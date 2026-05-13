@@ -44,15 +44,18 @@
 - **AI 影响分析**：勾选项后点击「AI 分析」，调用大模型分析删除影响，结果直接显示在列表中
 - 未识别的 dotdir 归入「其它」分类，标注风险提示
 
-### 📊 磁盘信息
+### 📊 磁盘信息 & 菜单栏监控
 - 实时显示磁盘使用率、总容量、已用、可用空间
-- 显示当前可释放的存储空间大小
+- **菜单栏常驻图标**：实时显示磁盘剩余百分比
+- **存储空间警报**：磁盘剩余低于阈值（默认10%）时发送系统通知
+- **警报阈值设置**：5%~30% 可调
+- **检测更新**：手动检查 GitHub 最新版本，有更新时一键下载
 
 ## 安装
 
 ### 方式一：下载 DMG（推荐）
 
-1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.1.1-arm64.dmg`
+1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.2.0-arm64.dmg`
 2. 双击打开 DMG 文件
 3. 将 AIMacCleaner 拖入 Applications 文件夹
 4. 首次打开时，右键点击应用 → 选择「打开」（需绕过 Gatekeeper 验证）
@@ -142,7 +145,8 @@ AIMacCleaner/
 ├── AIMacCleaner/
 │   ├── AIMacCleanerApp.swift    # 应用入口
 │   ├── ContentView.swift        # 主界面（4 Tab + 分类筛选 + AI 分析）
-│   ├── ScannerService.swift     # 核心服务（扫描、删除、AI 调用、影响分析）
+│   ├── MenuBarMonitor.swift     # 菜单栏常驻监控视图
+│   ├── ScannerService.swift     # 核心服务（扫描、删除、AI 调用、监控、更新检测）
 │   ├── ScanRules.swift          # 35+ 条本地扫描规则
 │   ├── Models.swift             # 数据模型（AppInfo/ScanItem/AIConfig）
 │   ├── AIConfigView.swift       # AI 配置弹窗
@@ -176,6 +180,12 @@ AIMacCleaner/
 ## 更新日志
 
 详见 [CHANGELOG.md](CHANGELOG.md)
+
+### v1.2.0 (2025-05-13)
+- 菜单栏常驻监控：实时显示磁盘剩余百分比
+- 存储空间警报：磁盘剩余低于阈值时发送系统通知
+- 检测更新：手动检查 GitHub 最新版本
+- 警报阈值设置（5%~30%）
 
 ### v1.1.1 (2025-05-13)
 - AI 影响分析：勾选项后调用大模型分析删除影响，结果直接显示在列表中

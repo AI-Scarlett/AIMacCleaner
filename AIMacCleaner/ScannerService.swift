@@ -1,5 +1,7 @@
 import Foundation
 import Combine
+import UserNotifications
+import AppKit
 
 @MainActor
 class ScannerService: ObservableObject {
@@ -839,6 +841,119 @@ class ScannerService: ObservableObject {
     @Published var aiAnalysisResult: String = ""
     @Published var isAnalyzingImpact: Bool = false
     @Published var aiAnalysisMap: [String: String] = [:]
+
+    var alertThreshold: Double = 10.0
+    private var monitorTimer: Timer?
+    private var lastAlertTime: Date = .distantPast
+
+    func startMonitoring() {
+        stopMonitoring()
+        refreshDiskInfo()
+        checkAndAlert()
+        monitorTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshDiskInfo()
+                self?.checkAndAlert()
+            }
+        }
+    }
+
+    func stopMonitoring() {
+        monitorTimer?.invalidate()
+        monitorTimer = nil
+    }
+
+    private func checkAndAlert() {
+        guard let disk = diskInfo else { return }
+        let freePct = 100.0 - disk.usedPct
+        guard freePct <= alertThreshold else { return }
+
+        let now = Date()
+        guard now.timeIntervalSince(lastAlertTime) > 3600 else { return }
+        lastAlertTime = now
+
+        let content = UNMutableNotificationContent()
+        content.title = "⚠️ 存储空间不足"
+        content.body = "磁盘剩余 \(String(format: "%.1f", disk.freeGb)) GB（\(String(format: "%.0f", freePct))%），建议立即清理"
+        content.sound = .defaultCritical
+
+        let request = UNNotificationRequest(
+            identifier: "aimaccleaner.storage.alert",
+            content: content,
+            trigger: nil
+        )
+
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Notification error: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    @Published var latestVersion: String = ""
+    @Published var isCheckingUpdate: Bool = false
+    @Published var updateAvailable: Bool = false
+    @Published var updateDownloadURL: String = ""
+
+    let currentVersion = "1.2.0"
+
+    func checkForUpdates() async {
+        isCheckingUpdate = true
+        defer { isCheckingUpdate = false }
+
+        guard let url = URL(string: "https://api.github.com/repos/AI-Scarlett/AIMacCleaner/releases/latest") else { return }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return }
+
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let tagName = json["tag_name"] as? String else { return }
+
+            let remoteVersion = tagName.trimmingCharacters(in: CharacterSet(charactersIn: "v"))
+            latestVersion = remoteVersion
+
+            if compareVersions(remoteVersion, currentVersion) > 0 {
+                updateAvailable = true
+                if let assets = json["assets"] as? [[String: Any]] {
+                    for asset in assets {
+                        if let name = asset["name"] as? String, name.hasSuffix("-arm64.dmg"),
+                           let downloadURL = asset["browser_download_url"] as? String {
+                            updateDownloadURL = downloadURL
+                            break
+                        }
+                    }
+                }
+            } else {
+                updateAvailable = false
+            }
+        } catch {
+            return
+        }
+    }
+
+    private func compareVersions(_ v1: String, _ v2: String) -> Int {
+        let parts1 = v1.split(separator: ".").compactMap { Int($0) }
+        let parts2 = v2.split(separator: ".").compactMap { Int($0) }
+        for i in 0..<max(parts1.count, parts2.count) {
+            let p1 = i < parts1.count ? parts1[i] : 0
+            let p2 = i < parts2.count ? parts2[i] : 0
+            if p1 > p2 { return 1 }
+            if p1 < p2 { return -1 }
+        }
+        return 0
+    }
+
+    func openDownloadPage() {
+        if !updateDownloadURL.isEmpty {
+            if let url = URL(string: updateDownloadURL) { NSWorkspace.shared.open(url) }
+        } else {
+            if let url = URL(string: "https://github.com/AI-Scarlett/AIMacCleaner/releases") { NSWorkspace.shared.open(url) }
+        }
+    }
 
     func analyzeImpactWithAI(apps: [AppInfo]) async {
         guard let config = aiConfig, config.hasKey == true, let apiKey = config.apiKey, !apiKey.isEmpty else {
