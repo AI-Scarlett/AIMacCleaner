@@ -12,7 +12,9 @@ struct AIMacCleanerApp: App {
     @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
 
     init() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        DispatchQueue.global(qos: .background).async {
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        }
     }
 
     var body: some Scene {
@@ -23,24 +25,13 @@ struct AIMacCleanerApp: App {
                 .frame(minWidth: 960, minHeight: 640)
                 .onAppear {
                     NSApp.setActivationPolicy(.regular)
-                    if monitorEnabled { service.startMonitoring() }
-                    if operationMonitorEnabled { service.startOperationMonitor() }
+                    DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.5) { [service] in
+                        if monitorEnabled { service.startMonitoring() }
+                        if operationMonitorEnabled { service.startOperationMonitor() }
+                    }
                     Task {
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
                         await service.checkForUpdates()
-                        if service.updateAvailable {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                                let alert = NSAlert()
-                                alert.messageText = "发现新版本 v\(service.latestVersion)"
-                                alert.informativeText = "是否立即下载更新？下载完成后将提示您退出应用进行安装。"
-                                alert.addButton(withTitle: "立即下载")
-                                alert.addButton(withTitle: "稍后提醒")
-                                alert.alertStyle = .informational
-                                let response = alert.runModal()
-                                if response == .alertFirstButtonReturn {
-                                    Task { await service.downloadUpdate() }
-                                }
-                            }
-                        }
                     }
                 }
         }

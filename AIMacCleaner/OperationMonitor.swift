@@ -119,7 +119,7 @@ class OperationMonitor: ObservableObject {
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
-                    agentName: activeAgents.first ?? "文件操作",
+                    agentName: activeAgents.first ?? "系统",
                     operationType: .delete,
                     targetPath: eventPath,
                     detail: formatDeleteDetail(eventPath),
@@ -135,12 +135,12 @@ class OperationMonitor: ObservableObject {
             if isDir.boolValue { continue }
 
             let attrs = try? fm.attributesOfItem(atPath: expanded)
-            let size = (attrs?[.size] as? Int64) ?? 0
+            let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
             let modDate = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
 
             if let existing = fileSnapshots[eventPath] {
                 guard abs(modDate - existing.modDate) > 1.0 || size != existing.size else { continue }
-                let agentName = activeAgents.first ?? existing.agentName ?? "文件操作"
+                let agentName = activeAgents.first ?? existing.agentName ?? "系统"
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
@@ -152,7 +152,7 @@ class OperationMonitor: ObservableObject {
                 )
                 DispatchQueue.main.async { self.addRecord(record) }
             } else {
-                let agentName = activeAgents.first ?? "文件操作"
+                let agentName = activeAgents.first ?? "系统"
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
@@ -180,7 +180,7 @@ class OperationMonitor: ObservableObject {
     private func detectActiveAgents() -> [String] {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/ps")
-        task.arguments = ["-eo", "comm="]
+        task.arguments = ["-eo", "pid,comm="]
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
@@ -194,15 +194,17 @@ class OperationMonitor: ObservableObject {
         guard let data = try? pipe.fileHandleForReading.readToEnd(),
               let output = String(data: data, encoding: .utf8) else { return [] }
 
-        let lines = output.components(separatedBy: .newlines)
         var activeAgents: [String] = []
 
-        for line in lines {
-            let processName = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        for line in output.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let parts = trimmed.split(separator: " ", maxSplits: 1)
+            let processName = parts.count > 1 ? String(parts[1]).lowercased() : String(parts[0]).lowercased()
             guard !processName.isEmpty else { continue }
 
             for agent in agentProcessNames {
-                if processName == agent || processName.hasSuffix("/\(agent)") {
+                if processName == agent || processName.hasSuffix("/\(agent)") || processName.contains(agent) {
                     let displayName = agent.capitalized
                     if !activeAgents.contains(displayName) {
                         activeAgents.append(displayName)
@@ -227,7 +229,7 @@ class OperationMonitor: ObservableObject {
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
-                    agentName: newAgents.first ?? "文件操作",
+                    agentName: newAgents.first ?? "系统",
                     operationType: .modify,
                     targetPath: "系统进程",
                     detail: "🤖 新启动的 AI Agent: \(agentList)",

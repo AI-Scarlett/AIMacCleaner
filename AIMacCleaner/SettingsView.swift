@@ -117,8 +117,10 @@ struct SettingsView: View {
                         case .language: languageSection
                         case .version: versionSection
                         }
+                        Spacer(minLength: 0)
                     }
                     .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 

@@ -10,11 +10,11 @@ struct ContentView: View {
 
     enum NavItem: String, CaseIterable {
         case cleaner = "Mac 清理"
+        case operations = "Agent 监控"
         case storage = "存储分析"
         case app = "APP 管理"
         case dependency = "依赖管理"
         case other = "其它工具"
-        case operations = "Agent 监控"
 
         var icon: String {
             switch self {
@@ -196,7 +196,7 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
 
-                    Text("v1.6.6")
+                    Text("v1.6.9")
                         .font(.system(size: 8))
                         .foregroundColor(.secondary)
                 }
@@ -232,7 +232,7 @@ struct ContentView: View {
                         Circle()
                             .fill(Color.green)
                             .frame(width: 5, height: 5)
-                        Text("v1.6.6")
+                        Text("v1.6.9")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }
