@@ -57,24 +57,33 @@ class OperationMonitor: ObservableObject {
     private func startFSEventStream() {
         guard !watchPaths.isEmpty else { return }
 
-        var context = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-        let callback: FSEventStreamCallback = { _, clientCallBackInfo, numEvents, eventPaths, _, _ in
-            let monitor = Unmanaged<OperationMonitor>.fromOpaque(clientCallBackInfo!).takeUnretainedValue()
-            let paths = unsafeBitCast(eventPaths, to: NSArray.self) as! [String]
-            DispatchQueue.global(qos: .utility).async {
-                monitor.processEvents(paths: paths)
+        let weakRef = Unmanaged.passUnretained(self).toOpaque()
+        let callback: FSEventStreamCallback = { _, info, numEvents, eventPaths, _, _ in
+            guard let info = info else { return }
+            let monitor = Unmanaged<OperationMonitor>.fromOpaque(info).takeUnretainedValue()
+            let cPaths = eventPaths.bindMemory(to: UnsafePointer<Int8>.self, capacity: Int(numEvents))
+            var pathList: [String] = []
+            for i in 0..<Int(numEvents) {
+                let cStr = cPaths[i]
+                pathList.append(String(cString: cStr))
             }
-            return
+            DispatchQueue.global(qos: .utility).async {
+                monitor.processEvents(paths: pathList)
+            }
         }
 
-        var streamContext = FSEventStreamContext(
-            version: 0, info: context, retain: nil, release: nil, copyDescription: nil
+        var context = FSEventStreamContext(
+            version: 0,
+            info: weakRef,
+            retain: nil,
+            release: nil,
+            copyDescription: nil
         )
 
         streamRef = FSEventStreamCreate(
             nil,
             callback,
-            &streamContext,
+            &context,
             watchPaths as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             3.0,

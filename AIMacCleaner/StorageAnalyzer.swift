@@ -172,20 +172,34 @@ class StorageAnalyzer: ObservableObject {
         var totalSize: Int64 = 0
         var files: [StorageFile] = []
         guard maxDepth > 0 else { return (0, []) }
-        guard let contents = try? fm.contentsOfDirectory(atPath: path) else {
+
+        let contents: [String]
+        do {
+            contents = try fm.contentsOfDirectory(atPath: path)
+        } catch {
             if let attrs = try? fm.attributesOfItem(atPath: path) {
-                return ((attrs[.size] as? Int64) ?? 0, [])
+                return ((attrs[.size] as? NSNumber)?.int64Value ?? 0, [])
             }
             return (0, [])
         }
+
         for name in contents {
             let fullPath = (path as NSString).appendingPathComponent(name)
+
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
-            let attrs = try? fm.attributesOfItem(atPath: fullPath)
-            let size = (attrs?[.size] as? Int64) ?? 0
+
+            var attrs: [FileAttributeKey: Any]?
+            do {
+                attrs = try fm.attributesOfItem(atPath: fullPath)
+            } catch {
+                continue
+            }
+
+            let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
             let created = attrs?[.creationDate] as? Date
             let modified = attrs?[.modificationDate] as? Date
+
             if isDir.boolValue {
                 let (subSize, subFiles) = scanDirectory(at: fullPath, maxDepth: maxDepth - 1, maxFiles: maxFiles - files.count, fm: fm)
                 totalSize += subSize
