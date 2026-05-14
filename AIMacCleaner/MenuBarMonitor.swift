@@ -4,6 +4,7 @@ struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
     @State private var selectedTab: MonitorTab = .overview
+    @AppStorage("networkMode") private var networkMode = "internet"
     @State private var alertThreshold: Double = 10.0
     @State private var monitoringEnabled: Bool = true
     @State private var operationMonitorEnabled: Bool = false
@@ -444,6 +445,17 @@ struct MenuBarMonitor: View {
                 .font(.system(size: 9))
                 .foregroundColor(.secondary.opacity(0.5))
                 .padding(.vertical, 6)
+
+            Divider()
+
+            HStack(spacing: 4) {
+                Image(systemName: networkMode == "internet" ? "globe" : "lock.shield")
+                    .font(.system(size: 9))
+                Text(networkMode == "internet" ? "Internet Mode" : "Offline Mode")
+                    .font(.system(size: 9))
+            }
+            .foregroundColor(networkMode == "internet" ? .blue : .orange)
+            .padding(.vertical, 4)
 
             Divider()
 

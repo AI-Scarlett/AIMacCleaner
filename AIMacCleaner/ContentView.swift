@@ -5,7 +5,9 @@ struct ContentView: View {
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
     @State private var showSettings = false
+    @StateObject private var storageAnalyzer = StorageAnalyzer()
     @State private var sidebarCollapsed = false
+    @AppStorage("networkMode") private var networkMode = "internet"
 
     enum NavItem: String, CaseIterable {
         case cleaner = "Mac 清理"
@@ -117,7 +119,7 @@ struct ContentView: View {
                         .padding(.bottom, 4)
                 }
 
-                ForEach(NavItem.allCases.filter { $0 != .storage }, id: \.self) { item in
+                ForEach(NavItem.allCases, id: \.self) { item in
                     Button {
                         selectedTab = item
                     } label: {
@@ -195,6 +197,15 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
 
+                    HStack(spacing: 4) {
+                        Image(systemName: networkMode == "internet" ? "globe" : "lock.shield")
+                            .font(.system(size: 10))
+                            .foregroundColor(networkMode == "internet" ? .blue : .orange)
+                        Text(networkMode == "internet" ? "Internet" : "Offline")
+                            .font(.system(size: 9))
+                            .foregroundColor(networkMode == "internet" ? .blue : .orange)
+                    }
+
                     Text("v1.7.0")
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
@@ -254,9 +265,8 @@ struct ContentView: View {
             MacCleanerTab()
                 .environmentObject(localizer)
         case .storage:
-            Text("Storage Analysis (Temporarily Disabled)")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .foregroundColor(.secondary)
+            StorageAnalysisTab(analyzer: storageAnalyzer, service: service)
+                .environmentObject(localizer)
         case .app:
             AppManagerTab(filterType: .app)
                 .environmentObject(localizer)
@@ -859,6 +869,12 @@ struct AppManagerTab: View {
                         HStack(spacing: 4) { Image(systemName: "arrow.clockwise"); Text(localizer.refresh) }
                     }
                     .buttonStyle(.bordered).controlSize(.small).disabled(service.isScanningApps)
+
+                    Button { service.checkAppUpdates() } label: {
+                        HStack(spacing: 4) { Image(systemName: "arrow.up.circle"); Text("Check Updates") }
+                    }
+                    .buttonStyle(.bordered).controlSize(.small).tint(.green)
+                    .disabled(service.isCheckingAppUpdates)
 
                     Button {
                         let apps = service.installedApps.filter { selectedAppIds.contains($0.id) }

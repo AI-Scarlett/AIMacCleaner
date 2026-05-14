@@ -41,54 +41,6 @@ class OperationMonitor: ObservableObject {
         restoreAccessFromBookmarks()
     }
 
-    private let aiAgentMap: [String: String] = [
-        "claude": "Claude",
-        "claude-code": "Claude Code",
-        "codebuddy": "CodeBuddy",
-        "cline": "Cline",
-        "codex": "Codex",
-        "hermes": "Hermes",
-        "trae": "Trae",
-        "trae-agent": "Trae Agent",
-        "cursor": "Cursor",
-        "windsurf": "Windsurf",
-        "codearts": "CodeArts",
-        "kimi": "Kimi",
-        "deepseek": "DeepSeek",
-        "qwen": "Qwen",
-        "doubao": "Doubao",
-        "minimax": "MiniMax",
-        "copilot": "Copilot",
-        "aider": "Aider",
-        "cody": "Cody",
-        "tabby": "Tabby",
-        "warp": "Warp",
-        "chatgpt": "ChatGPT",
-        "gemini": "Gemini",
-        "augment": "Augment",
-    ]
-
-    private let devToolMap: [String: String] = [
-        "node": "Node.js",
-        "python": "Python",
-        "python3": "Python3",
-        "bun": "Bun",
-        "deno": "Deno",
-        "npm": "npm",
-        "yarn": "Yarn",
-        "pnpm": "pnpm",
-        "cargo": "Cargo",
-        "go": "Go",
-        "swift": "Swift",
-        "ruby": "Ruby",
-        "java": "Java",
-        "gradle": "Gradle",
-        "mvn": "Maven",
-        "xcodebuild": "Xcode",
-        "make": "Make",
-        "cmake": "CMake",
-    ]
-
     func start() {
         guard !isMonitoring else { return }
         isMonitoring = true
@@ -309,7 +261,7 @@ class OperationMonitor: ObservableObject {
     private func detectActiveAgents() -> [String] {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/ps")
-        task.arguments = ["-eo", "comm="]
+        task.arguments = ["-eo", "command="]
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
@@ -324,32 +276,66 @@ class OperationMonitor: ObservableObject {
               let output = String(data: data, encoding: .utf8) else { return [] }
 
         var activeAgents: [String] = []
+        var seenApps: Set<String> = []
         let lines = output.components(separatedBy: .newlines)
 
+        let knownAgentApps: [String: String] = [
+            "Claude": "Claude",
+            "CodeBuddy": "CodeBuddy",
+            "Trae": "Trae",
+            "Cursor": "Cursor",
+            "Windsurf": "Windsurf",
+            "Doubao": "Doubao",
+            "Kimi": "Kimi",
+            "DeepSeek": "DeepSeek",
+            "ChatGPT": "ChatGPT",
+            "Gemini": "Gemini",
+            "Copilot": "Copilot",
+            "Augment": "Augment",
+            "Cline": "Cline",
+            "CodeArts": "CodeArts",
+        ]
+
         for line in lines {
-            let processName = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            guard !processName.isEmpty else { continue }
-
-            let basename = processName.contains("/")
-                ? (processName as NSString).lastPathComponent.lowercased()
-                : processName
-
-            if let displayName = aiAgentMap[basename] {
-                if !activeAgents.contains(displayName) {
+            guard line.contains(".app/Contents/MacOS/") else { continue }
+            for (keyword, displayName) in knownAgentApps {
+                if line.contains(keyword) && !seenApps.contains(keyword) {
                     activeAgents.append(displayName)
+                    seenApps.insert(keyword)
+                    break
                 }
             }
         }
 
+        let knownCLINames: [String: String] = [
+            "node": "Node.js",
+            "python3": "Python3",
+            "python": "Python",
+            "npm": "npm",
+            "yarn": "Yarn",
+            "pnpm": "pnpm",
+            "cargo": "Cargo",
+            "deno": "Deno",
+            "bun": "Bun",
+            "go": "Go",
+            "swift": "Swift",
+            "java": "Java",
+            "gradle": "Gradle",
+            "mvn": "Maven",
+            "make": "Make",
+            "cmake": "CMake",
+            "xcodebuild": "Xcode",
+            "git": "Git",
+        ]
+
         for line in lines {
-            let processName = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            guard !processName.isEmpty else { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+            let parts = trimmed.split(separator: " ", maxSplits: 1)
+            let execPath = String(parts[0])
+            let execName = (execPath as NSString).lastPathComponent.lowercased()
 
-            let basename = processName.contains("/")
-                ? (processName as NSString).lastPathComponent.lowercased()
-                : processName
-
-            if let displayName = devToolMap[basename] {
+            if let displayName = knownCLINames[execName] {
                 if !activeAgents.contains(displayName) {
                     activeAgents.append(displayName)
                 }
