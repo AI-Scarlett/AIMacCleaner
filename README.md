@@ -44,10 +44,10 @@
 - **AI 影响分析**：勾选项后点击「AI 分析」，调用大模型分析删除影响，结果直接显示在列表中
 - 未识别的 dotdir 归入「其它」分类，标注风险提示
 
-### 🕐 操作记录
+### 🖥️ Agent 监控
 - **自动操作监控** - 记录 AI Agent 的文件操作（创建/删除等），需手动开启
 - **筛选功能** - 按 Agent 名称、操作类型、时间范围筛选
-- **20+ 种 Agent 监控** - Hermes/Claude/CodeBuddy/Codex/Cline/Trae/Cursor 等
+- **30+ 种 Agent 监控** - Hermes/Claude/CodeBuddy/Codex/Cline/Trae/Cursor/Doubao/Kimi 等
 - 操作记录自动保存，最多保留 5000 条
 
 ### ⚙️ 设置
@@ -61,7 +61,7 @@
 ### 📊 存储分析
 
 点击左侧「存储分析」Tab，全面分析磁盘存储占用：
-- **系统文件**：/System、/Library、/usr 等系统目录
+- **系统数据**：/Library、/usr、/var、/tmp 等系统目录
 - **应用程序**：/Applications 等所有 .app 应用
 - **应用数据**：缓存、容器、偏好设置等
 - **文稿**：文档、桌面、下载、电影、音乐、图片
@@ -107,7 +107,7 @@ cp -r /tmp/AIMacCleaner_build/build/AIMacCleaner.app /Applications/
 | 📊 存储分析 | 全盘存储分析与AI建议 | 系统文件/应用/文稿/Agent |
 | 📱 APP 管理 | 管理本机 .app 应用 | 卸载/清理缓存/重置 |
 | 📦 依赖管理 | 管理 Homebrew/npm/pip 包 | 卸载/清理 |
-| 🕐 操作记录 | 记录 AI Agent 自动操作 | 筛选 + 监控 |
+| 🖥️ Agent 监控 | 记录 AI Agent 自动操作 | 筛选 + 监控 |
 | ⚙️ 设置 | AI配置/功能开关/监控/版本更新 | 集中设置面板 |
 
 ### 🛡️ 安全设置
@@ -222,7 +222,17 @@ AIMacCleaner/
 
 详见 [CHANGELOG.md](CHANGELOG.md)
 
-### v1.6.3 (2026-05-14)
+### v1.6.6 (2026-05-14)
+- 中英文切换全面生效：SettingsView/Agent监控/Mac清理 全面接入 Localizer
+- 语言 Tab 点击布局修复：固定按钮宽度，消除切换动画
+- 操作记录正式更名为 Agent 监控：侧边栏/页面标题/菜单栏统一更名
+- 菜单栏 Tab 优化："监控"→"硬件监控"，"操作"→"Agent监控"
+- 存储扫描优化：移除 /System，新增 /Users/Shared、/private/var、/private/tmp
+- Agent 检测精确匹配：仅在 Agent 新启动时生成记录，避免误报
+- FSEventStream 线程安全修复
+- 废弃 Process API 修复
+
+### v1.6.5 (2026-05-14)
 - 设置页整合：AI设置/功能开关/监控/版本更新检测
 - 存储分析全面升级：全盘扫描系统文件、应用程序、文稿等
 - 存储分析新增"目录"列：显示完整路径，可一键复制

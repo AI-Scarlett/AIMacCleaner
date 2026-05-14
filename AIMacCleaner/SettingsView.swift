@@ -34,10 +34,20 @@ struct SettingsView: View {
         var label: String {
             switch self {
             case .ai: "AI"
-            case .features: "功能"
-            case .monitor: "监控"
-            case .language: "语言"
-            case .version: "版本"
+            case .features: "Features"
+            case .monitor: "Monitor"
+            case .language: "Language"
+            case .version: "Version"
+            }
+        }
+
+        func localizedLabel(_ localizer: Localizer) -> String {
+            switch self {
+            case .ai: localizer.settingsTabAI
+            case .features: localizer.settingsTabFeatures
+            case .monitor: localizer.settingsTabMonitor
+            case .language: localizer.settingsTabLanguage
+            case .version: localizer.settingsTabVersion
             }
         }
     }
@@ -69,14 +79,14 @@ struct SettingsView: View {
                 VStack(spacing: 0) {
                     ForEach(SettingsTab.allCases, id: \.self) { tab in
                         Button {
-                            withAnimation(.easeInOut(duration: 0.15)) { selectedTab = tab }
+                            selectedTab = tab
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: tab.icon)
                                     .font(.system(size: 12))
                                     .foregroundColor(selectedTab == tab ? .accentColor : .secondary)
                                     .frame(width: 16)
-                                Text(tab.label)
+                                Text(tab.localizedLabel(localizer))
                                     .font(.system(size: 12))
                                     .fontWeight(selectedTab == tab ? .semibold : .regular)
                                     .foregroundColor(selectedTab == tab ? .primary : .secondary)

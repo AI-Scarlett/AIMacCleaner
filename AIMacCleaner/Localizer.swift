@@ -134,4 +134,67 @@ extension Localizer {
     var collapseSidebar: String { t("收起侧边栏", en: "Collapse sidebar") }
     var expandSidebar: String { t("展开侧边栏", en: "Expand sidebar") }
     var features: String { t("功能", en: "Features") }
+
+    var settingsTabAI: String { t("AI", en: "AI") }
+    var settingsTabFeatures: String { t("功能", en: "Features") }
+    var settingsTabMonitor: String { t("监控", en: "Monitor") }
+    var settingsTabLanguage: String { t("语言", en: "Language") }
+    var settingsTabVersion: String { t("版本", en: "Version") }
+
+    var navCleaner: String { t("Mac 清理", en: "Mac Clean") }
+    var navStorage: String { t("存储分析", en: "Storage Analysis") }
+    var navApp: String { t("APP 管理", en: "App Manager") }
+    var navDependency: String { t("依赖管理", en: "Dependency") }
+    var navOther: String { t("其它工具", en: "Other Tools") }
+    var navOperations: String { t("Agent 监控", en: "Agent Monitor") }
+
+    var subCleaner: String { t("扫描并清理存储空间", en: "Scan and clean storage") }
+    var subStorage: String { t("存储空间分析与AI建议", en: "Storage analysis with AI") }
+    var subApp: String { t("管理已安装的应用", en: "Manage installed apps") }
+    var subDependency: String { t("管理开发依赖", en: "Manage dev dependencies") }
+    var subOther: String { t("管理命令行工具", en: "Manage CLI tools") }
+    var subOperations: String { t("监控 AI Agent 的文件操作", en: "Monitor AI Agent file operations") }
+
+    var searching: String { t("正在扫描...", en: "Scanning...") }
+    var notFound: String { t("未发现", en: "Not found") }
+    var selected: String { t("已选", en: "Selected") }
+    var selectAllBtn: String { t("全选", en: "Select All") }
+    var cancelBtn: String { t("取消", en: "Cancel") }
+    var resetAction: String { t("重置", en: "Reset") }
+    var basicUninstall: String { t("基础卸载", en: "Basic Uninstall") }
+    var fullUninstall: String { t("完全卸载", en: "Full Uninstall") }
+    var resetDesc: String { t("清除缓存和历史数据，恢复为全新安装状态（APP本身保留）", en: "Clear cache and data, restore to fresh install state") }
+    var basicUninstallDesc: String { t("仅卸载安装文件，保留缓存和历史数据（重新安装后可恢复）", en: "Uninstall only, keep cache and data") }
+    var fullUninstallDesc: String { t("卸载并清除所有缓存、历史数据和配置（彻底清除，不可恢复）", en: "Uninstall and clear all data (permanent)") }
+    var confirmAction: String { t("确认操作", en: "Confirm Action") }
+    var actionDone: String { t("操作完成", en: "Action Done") }
+    var confirmBtn: String { t("确认", en: "Confirm") }
+    var willAction: String { t("将", en: "Will") }
+    var total: String { t("共", en: "Total") }
+
+    var nameCol: String { t("名称", en: "Name") }
+    var riskCol: String { t("风险", en: "Risk") }
+    var impactCol: String { t("影响说明", en: "Impact") }
+    var sizeCol: String { t("大小", en: "Size") }
+    var actionCol: String { t("操作", en: "Action") }
+    var safe: String { t("安全", en: "Safe") }
+    var dangerous: String { t("危险", en: "Dangerous") }
+    var warning: String { t("注意", en: "Warning") }
+
+    var timeCol: String { t("时间", en: "Time") }
+    var agentCol: String { t("Agent", en: "Agent") }
+    var opCol: String { t("操作", en: "Operation") }
+    var pathCol: String { t("目标路径", en: "Target Path") }
+    var fileSizeCol: String { t("大小", en: "Size") }
+    var allAgents: String { t("全部 Agent", en: "All Agents") }
+    var allTypes: String { t("全部类型", en: "All Types") }
+    var timeRange: String { t("时间范围", en: "Time Range") }
+    var opTypeLabel: String { t("操作类型", en: "Operation Type") }
+    var agentLabel: String { t("Agent", en: "Agent") }
+    var recordsCount: String { t("条", en: "records") }
+
+    var allCats: String { t("全部分类", en: "All Categories") }
+    var startScanBtn: String { t("开始扫描", en: "Start Scan") }
+    var storageCats: String { t("存储分类", en: "Storage Categories") }
+    var selectCatView: String { t("选择左侧分类查看文件列表", en: "Select a category to view files") }
 }

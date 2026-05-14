@@ -38,14 +38,25 @@ struct ContentView: View {
             }
         }
 
-        var subtitle: String {
+        func label(_ localizer: Localizer) -> String {
             switch self {
-            case .cleaner: "扫描并清理存储空间"
-            case .storage: "存储空间分析与AI建议"
-            case .app: "管理已安装的应用"
-            case .dependency: "管理开发依赖"
-            case .other: "管理命令行工具"
-            case .operations: "监控 AI Agent 的文件操作"
+            case .cleaner: localizer.navCleaner
+            case .storage: localizer.navStorage
+            case .app: localizer.navApp
+            case .dependency: localizer.navDependency
+            case .other: localizer.navOther
+            case .operations: localizer.navOperations
+            }
+        }
+
+        func subtitle(_ localizer: Localizer) -> String {
+            switch self {
+            case .cleaner: localizer.subCleaner
+            case .storage: localizer.subStorage
+            case .app: localizer.subApp
+            case .dependency: localizer.subDependency
+            case .other: localizer.subOther
+            case .operations: localizer.subOperations
             }
         }
     }
@@ -109,9 +120,7 @@ struct ContentView: View {
 
                 ForEach(NavItem.allCases, id: \.self) { item in
                     Button {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            selectedTab = item
-                        }
+                        selectedTab = item
                     } label: {
                         Group {
                             if sidebarCollapsed {
@@ -120,7 +129,7 @@ struct ContentView: View {
                                         .font(.system(size: 15, weight: .medium))
                                         .foregroundColor(selectedTab == item ? item.color : .secondary)
                                         .frame(width: 24, height: 24)
-                                    Text(item.rawValue.split(separator: " ").first.map(String.init) ?? "")
+                                    Text(item.label(localizer).split(separator: " ").first.map(String.init) ?? "")
                                         .font(.system(size: 8))
                                         .foregroundColor(selectedTab == item ? .primary : .secondary)
                                         .lineLimit(1)
@@ -138,7 +147,7 @@ struct ContentView: View {
                                         .foregroundColor(selectedTab == item ? item.color : .secondary)
                                         .frame(width: 18)
 
-                                    Text(item.rawValue)
+                                    Text(item.label(localizer))
                                         .font(.system(size: 13))
                                         .fontWeight(selectedTab == item ? .semibold : .regular)
                                         .foregroundColor(selectedTab == item ? .primary : .secondary)
@@ -241,14 +250,19 @@ struct ContentView: View {
         switch selectedTab {
         case .cleaner:
             MacCleanerTab()
+                .environmentObject(localizer)
         case .storage:
             StorageAnalysisTab(analyzer: storageAnalyzer, service: service)
+                .environmentObject(localizer)
         case .app:
             AppManagerTab(filterType: .app)
+                .environmentObject(localizer)
         case .dependency:
             AppManagerTab(filterType: .dependency)
+                .environmentObject(localizer)
         case .other:
             AppManagerTab(filterType: .other)
+                .environmentObject(localizer)
         case .operations:
             OperationLogTab(monitor: service.operationMonitor)
                 .environmentObject(localizer)
@@ -777,6 +791,7 @@ struct MacCleanerTab: View {
 
 struct AppManagerTab: View {
     @EnvironmentObject var service: ScannerService
+    @EnvironmentObject var localizer: Localizer
     let filterType: AppInfo.AppType
     @State private var searchText = ""
     @State private var filterSubCategory = ""
@@ -821,12 +836,12 @@ struct AppManagerTab: View {
             PageHeader(
                 icon: filterType.tabIcon,
                 title: filterType.tabLabel,
-                subtitle: filterType == .app ? "管理已安装的应用" : filterType == .dependency ? "管理开发依赖" : "管理命令行工具",
+                subtitle: filterType == .app ? localizer.appManagerSubtitle : filterType == .dependency ? localizer.dependencySubtitle : localizer.otherToolsSubtitle,
                 color: filterType.tabColor
             ) {
                 HStack(spacing: 8) {
                     Button { Task { await service.scanInstalledApps() } } label: {
-                        HStack(spacing: 4) { Image(systemName: "arrow.clockwise"); Text("刷新") }
+                        HStack(spacing: 4) { Image(systemName: "arrow.clockwise"); Text(localizer.refresh) }
                     }
                     .buttonStyle(.bordered).controlSize(.small).disabled(service.isScanningApps)
 
@@ -834,7 +849,7 @@ struct AppManagerTab: View {
                         let apps = service.installedApps.filter { selectedAppIds.contains($0.id) }
                         if !apps.isEmpty { Task { await service.analyzeImpactWithAI(apps: apps) } }
                     } label: {
-                        HStack(spacing: 4) { Image(systemName: "sparkles"); Text("AI 分析") }
+                        HStack(spacing: 4) { Image(systemName: "sparkles"); Text(localizer.aiAnalysis) }
                     }
                     .buttonStyle(.bordered).controlSize(.small).tint(.purple)
                     .disabled(selectedAppIds.isEmpty || service.isAnalyzingImpact)
@@ -844,7 +859,7 @@ struct AppManagerTab: View {
             if subCategories.count > 1 {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        SubCategoryChip(label: "全部", count: service.installedApps.filter { $0.appType == filterType }.count, isActive: filterSubCategory.isEmpty, color: .accentColor) { filterSubCategory = "" }
+                        SubCategoryChip(label: localizer.all, count: service.installedApps.filter { $0.appType == filterType }.count, isActive: filterSubCategory.isEmpty, color: .accentColor) { filterSubCategory = "" }
                         ForEach(subCategories, id: \.self) { cat in
                             let count = service.installedApps.filter { $0.appType == filterType && $0.subCategory == cat }.count
                             SubCategoryChip(label: cat, count: count, isActive: filterSubCategory == cat, color: subCategoryColor(cat)) { filterSubCategory = filterSubCategory == cat ? "" : cat }

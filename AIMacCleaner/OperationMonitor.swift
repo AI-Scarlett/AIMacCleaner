@@ -24,14 +24,17 @@ class OperationMonitor: ObservableObject {
             "\(home)/Desktop",
             "\(home)/Documents",
             "\(home)/Downloads",
+            "\(home)/Library/Caches",
+            "\(home)/Library/Application Support",
         ].filter { FileManager.default.fileExists(atPath: $0) }
     }()
 
     private let agentProcessNames = [
-        "claude", "codebuddy", "cline", "codex", "hermes", "trae",
-        "cursor", "windsurf", "codearts", "kimi", "deepseek", "qwen",
+        "claude", "claude-code", "codebuddy", "cline", "codex", "hermes", "trae", "trae-agent",
+        "cursor", "windsurf", "codearts", "kimi", "deepseek", "qwen", "doubao",
         "minimax", "copilot", "aider", "cody", "tabby", "warp",
-        "chatgpt", "gemini", "augment",
+        "chatgpt", "gemini", "augment", "node", "python", "python3",
+        "bun", "deno",
     ]
 
     func start() {
@@ -241,8 +244,8 @@ class OperationMonitor: ObservableObject {
                     let attrs = try? fm.attributesOfItem(atPath: fullPath)
                     let size = (attrs?[.size] as? Int64) ?? 0
                     let modDate = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-                    fileSnapshots[file] = FileSnapshot(
-                        path: file, modDate: modDate, size: size, isDir: isDir.boolValue, agentName: nil
+                    fileSnapshots[fullPath] = FileSnapshot(
+                        path: fullPath, modDate: modDate, size: size, isDir: isDir.boolValue, agentName: nil
                     )
                     count += 1
                 }
