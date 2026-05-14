@@ -3,9 +3,11 @@ import SwiftUI
 struct ContentView: View {
     @State private var selectedTab: NavItem = .cleaner
     @EnvironmentObject var service: ScannerService
+    @EnvironmentObject var localizer: Localizer
     @State private var showSettings = false
     @StateObject private var sensorMonitor = SensorMonitor()
     @StateObject private var storageAnalyzer = StorageAnalyzer()
+    @State private var sidebarCollapsed = false
 
     enum NavItem: String, CaseIterable {
         case cleaner = "Mac 清理"
@@ -67,27 +69,57 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(spacing: 8) {
-                Image(systemName: "arrow.down.doc.fill")
-                    .font(.system(size: 28, weight: .medium))
-                    .foregroundColor(.accentColor)
-                Text("AIMacCleaner")
-                    .font(.system(size: 14, weight: .bold))
+            HStack(spacing: 8) {
+                if !sidebarCollapsed {
+                    VStack(spacing: 4) {
+                        Image(systemName: "arrow.down.doc.fill")
+                            .font(.system(size: 28, weight: .medium))
+                            .foregroundColor(.accentColor)
+                        Text("AIMacCleaner")
+                            .font(.system(size: 14, weight: .bold))
+                    }
+                    .padding(.top, 16)
+                } else {
+                    Image(systemName: "arrow.down.doc.fill")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundColor(.accentColor)
+                        .padding(.top, 16)
+                }
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        sidebarCollapsed.toggle()
+                    }
+                } label: {
+                    Image(systemName: sidebarCollapsed ? "chevron.right" : "chevron.left")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .padding(4)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 16)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
+            .padding(.horizontal, sidebarCollapsed ? 8 : 16)
+            .padding(.bottom, 12)
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("功能")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 4)
+            VStack(alignment: sidebarCollapsed ? .center : .leading, spacing: 4) {
+                if !sidebarCollapsed {
+                    Text("功能")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                        .padding(.bottom, 4)
+                } else {
+                    Text("功能")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .padding(.top, 12)
+                        .padding(.bottom, 4)
+                }
 
                 ForEach(NavItem.allCases, id: \.self) { item in
                     Button {
@@ -95,63 +127,101 @@ struct ContentView: View {
                             selectedTab = item
                         }
                     } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: item.icon)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(selectedTab == item ? item.color : .secondary)
-                                .frame(width: 18)
+                        Group {
+                            if sidebarCollapsed {
+                                VStack(spacing: 4) {
+                                    Image(systemName: item.icon)
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundColor(selectedTab == item ? item.color : .secondary)
+                                        .frame(width: 24, height: 24)
+                                    Text(item.rawValue.split(separator: " ").first.map(String.init) ?? "")
+                                        .font(.system(size: 8))
+                                        .foregroundColor(selectedTab == item ? .primary : .secondary)
+                                        .lineLimit(1)
+                                }
+                                .padding(.vertical, 6)
+                                .frame(maxWidth: .infinity)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(selectedTab == item ? item.color.opacity(0.12) : Color.clear)
+                                )
+                            } else {
+                                HStack(spacing: 10) {
+                                    Image(systemName: item.icon)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundColor(selectedTab == item ? item.color : .secondary)
+                                        .frame(width: 18)
 
-                            Text(item.rawValue)
-                                .font(.system(size: 13))
-                                .fontWeight(selectedTab == item ? .semibold : .regular)
-                                .foregroundColor(selectedTab == item ? .primary : .secondary)
+                                    Text(item.rawValue)
+                                        .font(.system(size: 13))
+                                        .fontWeight(selectedTab == item ? .semibold : .regular)
+                                        .foregroundColor(selectedTab == item ? .primary : .secondary)
 
-                            Spacer()
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(selectedTab == item ? item.color.opacity(0.12) : Color.clear)
+                                )
+                            }
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(selectedTab == item ? item.color.opacity(0.12) : Color.clear)
-                        )
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, sidebarCollapsed ? 4 : 8)
 
             Spacer()
 
             Divider()
 
-            HStack(spacing: 8) {
-                Button { showSettings = true } label: {
-                    HStack(spacing: 4) {
+            if sidebarCollapsed {
+                VStack(spacing: 8) {
+                    Button { showSettings = true } label: {
                         Image(systemName: "gearshape")
-                            .font(.system(size: 10))
-                        Text("设置")
-                            .font(.system(size: 10))
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                            .frame(width: 28, height: 28)
                     }
-                    .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
+                    .buttonStyle(.plain)
 
-                Spacer()
-
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 5, height: 5)
-                    Text("v1.6.3")
-                        .font(.system(size: 10))
+                    Text("v1.6.4")
+                        .font(.system(size: 8))
                         .foregroundColor(.secondary)
                 }
+                .padding(.vertical, 10)
+            } else {
+                HStack(spacing: 8) {
+                    Button { showSettings = true } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 10))
+                            Text("设置")
+                                .font(.system(size: 10))
+                        }
+                        .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer()
+
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 5, height: 5)
+                        Text("v1.6.4")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
         }
-        .frame(width: 180)
+        .frame(width: sidebarCollapsed ? 60 : 180)
         .background(Color(nsColor: .controlBackgroundColor))
     }
 
@@ -1226,15 +1296,8 @@ struct StorageAnalysisTab: View {
                 subtitle: "存储空间分析与AI建议",
                 color: .indigo
             ) {
-                HStack(spacing: 8) {
-                    Button { Task { await analyzer.scanStorage() } } label: {
-                        HStack(spacing: 4) { Image(systemName: "arrow.clockwise"); Text(analyzer.isScanning ? analyzer.scanProgress : "扫描") }
-                    }
-                    .buttonStyle(.bordered).controlSize(.small).disabled(analyzer.isScanning)
-
-                    if analyzer.categories.isEmpty {
-                        EmptyView()
-                    } else {
+                if !analyzer.isScanning && !analyzer.categories.isEmpty {
+                    HStack(spacing: 8) {
                         Button {
                             Task { await analyzeCategory() }
                         } label: {
@@ -1280,8 +1343,15 @@ struct StorageAnalysisTab: View {
                     Image(systemName: "chart.pie").font(.system(size: 48)).foregroundColor(.secondary.opacity(0.5))
                     Text("存储分析").font(.title3).fontWeight(.medium)
                     Text("点击扫描分析存储空间使用情况").font(.caption).foregroundColor(.secondary)
-                    Button("开始扫描") { Task { await analyzer.scanStorage() } }
-                        .buttonStyle(.borderedProminent).tint(.indigo).controlSize(.regular)
+                    if !analyzer.isScanning {
+                        Button("开始扫描") { Task { await analyzer.scanStorage() } }
+                            .buttonStyle(.borderedProminent).tint(.indigo).controlSize(.regular)
+                    } else {
+                        VStack(spacing: 12) {
+                            ProgressView().controlSize(.large)
+                            Text(analyzer.scanProgress).font(.caption).foregroundColor(.secondary)
+                        }
+                    }
                     Spacer()
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -1425,6 +1495,18 @@ struct StorageAnalysisTab: View {
                                 .monospacedDigit()
                                 .foregroundColor(.cyan)
                         }.width(80)
+
+                        TableColumn("风险") { file in
+                            HStack(spacing: 3) {
+                                Image(systemName: file.riskLevel.icon)
+                                    .foregroundColor(file.riskLevel.color)
+                                    .font(.caption)
+                                Text(file.riskLevel.rawValue)
+                                    .font(.caption2)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(file.riskLevel.color)
+                            }
+                        }.width(70)
 
                         TableColumn("目录") { file in
                             HStack(spacing: 4) {

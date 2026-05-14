@@ -313,6 +313,7 @@ struct StorageFile: Identifiable {
     let modifiedDate: Date?
     let isDirectory: Bool
     var aiAnalysis: String?
+    var riskLevel: FileRiskLevel = .unknown
 
     var sizeFormatted: String { ByteCountFormatter.string(fromByteCount: size, countStyle: .file) }
 

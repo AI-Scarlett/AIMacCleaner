@@ -4,6 +4,7 @@ import UserNotifications
 @main
 struct AIMacCleanerApp: App {
     @StateObject private var service = ScannerService()
+    @StateObject private var localizer = Localizer()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @AppStorage("monitorEnabled") private var monitorEnabled = true
     @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = true
@@ -18,6 +19,7 @@ struct AIMacCleanerApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(service)
+                .environmentObject(localizer)
                 .frame(minWidth: 960, minHeight: 640)
                 .onAppear {
                     NSApp.setActivationPolicy(.regular)
