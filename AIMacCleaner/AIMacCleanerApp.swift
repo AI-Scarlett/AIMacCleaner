@@ -42,6 +42,7 @@ struct AIMacCleanerApp: App {
         MenuBarExtra {
             if menuBarMonitorEnabled {
                 MenuBarMonitor(service: service)
+                    .environmentObject(localizer)
             } else {
                 Text("菜单栏监控已关闭")
                     .padding()
