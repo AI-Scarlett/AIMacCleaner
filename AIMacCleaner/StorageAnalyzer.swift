@@ -10,41 +10,87 @@ class StorageAnalyzer: ObservableObject {
     @Published var aiAnalysisResult: String?
 
     private let home = NSHomeDirectory()
+    private var volumePath: String = "/"
 
     func scanStorage() async {
         await MainActor.run {
             isScanning = true
-            scanProgress = "正在扫描存储空间..."
+            scanProgress = "正在扫描磁盘..."
             categories.removeAll()
         }
 
         let fm = FileManager.default
         var results: [StorageCategory] = []
 
+        let systemPaths = [
+            "/System",
+            "/Library",
+            "/usr",
+            "/sbin",
+            "/bin",
+            "/etc",
+            "/var",
+            "/tmp",
+        ]
+
+        await MainActor.run { scanProgress = "扫描系统文件..." }
         let systemSize = await scanCategory(
             id: "system", name: "系统文件", icon: "gear", color: .gray,
-            paths: ["/System", "/Library", "/private/var", "/usr"],
+            paths: systemPaths,
             fm: fm
         )
         results.append(systemSize)
 
-        await MainActor.run { scanProgress = "扫描应用文件..." }
+        await MainActor.run { scanProgress = "扫描应用..." }
+        let appPaths = [
+            "/Applications",
+            "\(home)/Applications",
+            "/Applications/Utilities",
+            "/Applications/Xcode.app",
+        ]
         let appSize = await scanCategory(
-            id: "apps", name: "APP 文件", icon: "app.fill", color: .cyan,
-            paths: ["/Applications", "\(home)/Applications", "\(home)/Library/Application Support", "\(home)/Library/Caches"],
+            id: "apps", name: "应用程序", icon: "app.fill", color: .cyan,
+            paths: appPaths,
             fm: fm
         )
         results.append(appSize)
 
+        await MainActor.run { scanProgress = "扫描应用数据..." }
+        let appDataPaths = [
+            "\(home)/Library/Application Support",
+            "\(home)/Library/Caches",
+            "\(home)/Library/Containers",
+            "\(home)/Library/Group Containers",
+            "\(home)/Library/HTTPStorages",
+            "\(home)/Library/WebKit",
+            "\(home)/Library/Saved Application State",
+            "\(home)/Library/Preferences",
+        ]
+        let appDataSize = await scanCategory(
+            id: "appdata", name: "应用数据", icon: "archivebox", color: .teal,
+            paths: appDataPaths,
+            fm: fm
+        )
+        results.append(appDataSize)
+
         await MainActor.run { scanProgress = "扫描文稿..." }
+        let docsPaths = [
+            "\(home)/Documents",
+            "\(home)/Desktop",
+            "\(home)/Downloads",
+            "\(home)/Movies",
+            "\(home)/Music",
+            "\(home)/Pictures",
+            "\(home)/Library/Mobile Documents",
+        ]
         let docsSize = await scanCategory(
             id: "documents", name: "文稿", icon: "doc.fill", color: .blue,
-            paths: ["\(home)/Documents", "\(home)/Desktop", "\(home)/Downloads", "\(home)/Movies", "\(home)/Music", "\(home)/Pictures"],
+            paths: docsPaths,
             fm: fm
         )
         results.append(docsSize)
 
-        await MainActor.run { scanProgress = "扫描 Agent 文件..." }
+        await MainActor.run { scanProgress = "扫描 Agent..." }
         let agentDirs = getAgentDirs()
         let agentSize = await scanCategory(
             id: "agents", name: "Agent", icon: "cpu", color: .purple,
@@ -62,14 +108,29 @@ class StorageAnalyzer: ObservableObject {
         )
         results.append(depSize)
 
-        await MainActor.run { scanProgress = "扫描其它..." }
-        let otherPaths = getOtherDirs(exclude: agentDirs + depDirs)
-        let otherSize = await scanCategory(
-            id: "other", name: "其它", icon: "folder.fill", color: .brown,
-            paths: otherPaths,
+        await MainActor.run { scanProgress = "扫描日志与缓存..." }
+        let logsPaths = [
+            "\(home)/Library/Logs",
+            "/Library/Logs",
+            "/private/var/log",
+        ]
+        let logsSize = await scanCategory(
+            id: "logs", name: "日志与缓存", icon: "doc.text.fill", color: .brown,
+            paths: logsPaths,
             fm: fm
         )
-        results.append(otherSize)
+        results.append(logsSize)
+
+        await MainActor.run { scanProgress = "扫描其它..." }
+        let otherDirs = await findOtherDirs(exclude: systemPaths + appPaths + appDataPaths + docsPaths + agentDirs + depDirs + logsPaths, fm: fm)
+        let otherSize = await scanCategory(
+            id: "other", name: "其它", icon: "folder.fill", color: .indigo,
+            paths: otherDirs,
+            fm: fm
+        )
+        if otherSize.size > 0 {
+            results.append(otherSize)
+        }
 
         let total = results.reduce(Int64(0)) { $0 + $1.size }
 
@@ -85,12 +146,13 @@ class StorageAnalyzer: ObservableObject {
         let result = await Task.detached(priority: .userInitiated) {
             var totalSize: Int64 = 0
             var files: [StorageFile] = []
-            let maxFiles = 200
+            let maxFiles = 300
 
             for path in paths {
+                let expanded = NSString(string: path).expandingTildeInPath
                 var isDir: ObjCBool = false
-                guard fm.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else { continue }
-                let (size, items) = self.scanDirectory(at: path, maxDepth: 3, maxFiles: maxFiles - files.count, fm: fm)
+                guard fm.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue else { continue }
+                let (size, items) = self.scanDirectory(at: expanded, maxDepth: 4, maxFiles: maxFiles - files.count, fm: fm)
                 totalSize += size
                 files.append(contentsOf: items)
             }
@@ -112,20 +174,23 @@ class StorageAnalyzer: ObservableObject {
 
         guard maxDepth > 0, maxFiles > 0 else { return (0, []) }
 
-        let contents: [String]
-        do {
-            contents = try fm.contentsOfDirectory(atPath: path)
-        } catch {
-            let attrs = try? fm.attributesOfItem(atPath: path)
-            let size = (attrs?[.size] as? Int64) ?? 0
-            return (size, [])
+        guard let contents = try? fm.contentsOfDirectory(atPath: path) else {
+            if let attrs = try? fm.attributesOfItem(atPath: path) {
+                let size = (attrs[.size] as? Int64) ?? 0
+                return (size, [])
+            }
+            return (0, [])
         }
 
         for name in contents {
             guard files.count < maxFiles else { break }
-            let fullPath = (path as NSString).appendingPathComponent(name)
-            var isDir: ObjCBool = false
+            if name.hasPrefix(".") && name != ".localized" {
+                continue
+            }
 
+            let fullPath = (path as NSString).appendingPathComponent(name)
+
+            var isDir: ObjCBool = false
             guard fm.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
 
             let attrs = try? fm.attributesOfItem(atPath: fullPath)
@@ -137,7 +202,7 @@ class StorageAnalyzer: ObservableObject {
                 let (subSize, subFiles) = scanDirectory(at: fullPath, maxDepth: maxDepth - 1, maxFiles: maxFiles - files.count, fm: fm)
                 totalSize += subSize
                 files.append(contentsOf: subFiles)
-                if size > 1048576 {
+                if subSize > 1048576 {
                     files.append(StorageFile(
                         id: fullPath,
                         name: name,
@@ -167,21 +232,49 @@ class StorageAnalyzer: ObservableObject {
         return (totalSize, files)
     }
 
+    private func findOtherDirs(exclude: [String], fm: FileManager) async -> [String] {
+        var dirs: [String] = []
+        let excludeSet = Set(exclude)
+
+        await Task.detached {
+            var localDirs: [String] = []
+
+            if let homeContents = try? fm.contentsOfDirectory(atPath: self.home) {
+                for name in homeContents {
+                    guard name.hasPrefix(".") else { continue }
+                    let fullPath = "\(self.home)/\(name)"
+                    var isDir: ObjCBool = false
+                    guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue else { continue }
+                    guard !excludeSet.contains(fullPath) else { continue }
+                    localDirs.append(fullPath)
+                }
+            }
+
+            let systemDirs = [
+                "/private",
+            ].filter { !excludeSet.contains($0) }
+
+            return localDirs + systemDirs
+        }.value
+    }
+
     private func getAgentDirs() -> [String] {
         let fm = FileManager.default
         var dirs: [String] = []
         let agentNames = [
-            "Trae", "CodeBuddy", "Claude", "Codex", "Hermes", "yi-code", "Cline",
-            "MiniMax", "Cherry Studio", "LM Studio", "OpenClaw", "QClaw",
-            "CodeArts", "Kimi", "DeepSeek", "Augment", "Copilot", "Aider",
-            "Cody", "Tabby", "Warp", "ChatGPT", "Cursor", "Whitzard",
-            "豆包", "通义千问", "通义灵码", "智谱AI", "讯飞星火"
+            "trae", "codebuddy", "claude", "codex", "hermes", "yi-code", "cline",
+            "minimax", "cherrystudio", "lmstudio", "openclaw", "qclaw",
+            "codearts", "kimi", "deepseek", "augment", "copilot", "aider",
+            "cody", "tabby", "warp", "chatgpt", "cursor", "whitzard",
+            "doubao", "qwen", "zhipu", "spark", "tongyi",
         ]
         for name in agentNames {
-            let dotDir = "\(home)/.\(name.lowercased())"
+            let dotDir = "\(home)/.\(name)"
             if fm.fileExists(atPath: dotDir) { dirs.append(dotDir) }
-            let configDir = "\(home)/.config/\(name.lowercased())"
+            let configDir = "\(home)/.config/\(name)"
             if fm.fileExists(atPath: configDir) { dirs.append(configDir) }
+            let supportDir = "\(home)/Library/Application Support/\(name.capitalized)"
+            if fm.fileExists(atPath: supportDir) { dirs.append(supportDir) }
         }
         return dirs
     }
@@ -194,34 +287,14 @@ class StorageAnalyzer: ObservableObject {
             "\(home)/.android", "\(home)/.ohos", "\(home)/.harmony",
             "\(home)/.gradle", "\(home)/.m2", "\(home)/.npm", "\(home)/.pnpm-store",
             "\(home)/.cocoapods", "\(home)/.local", "\(home)/.go",
-            "\(home)/.julia", "\(home)/.rustup"
+            "\(home)/.julia", "\(home)/.rustup", "\(home)/.gem",
+            "\(home)/Library/Developer",
+            "/opt/homebrew", "/usr/local/Cellar",
         ]
         for path in depPaths {
-            if fm.fileExists(atPath: path) { dirs.append(path) }
+            let expanded = NSString(string: path).expandingTildeInPath
+            if fm.fileExists(atPath: expanded) { dirs.append(expanded) }
         }
-
-        if fm.fileExists(atPath: "/opt/homebrew") { dirs.append("/opt/homebrew") }
-        if fm.fileExists(atPath: "/usr/local/Cellar") { dirs.append("/usr/local/Cellar") }
-
-        return dirs
-    }
-
-    private func getOtherDirs(exclude excludedPaths: [String]) -> [String] {
-        let fm = FileManager.default
-        var dirs: [String] = []
-        let excludeSet = Set(excludedPaths)
-
-        guard let contents = try? fm.contentsOfDirectory(atPath: home) else { return dirs }
-
-        for name in contents {
-            guard name.hasPrefix(".") else { continue }
-            let fullPath = "\(home)/\(name)"
-            var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue else { continue }
-            guard !excludeSet.contains(fullPath) else { continue }
-            dirs.append(fullPath)
-        }
-
         return dirs
     }
 
@@ -251,7 +324,10 @@ class StorageAnalyzer: ObservableObject {
 
         guard let bodyData = try? JSONSerialization.data(withJSONObject: requestBody) else { return nil }
 
-        var request = URLRequest(url: URL(string: apiBase + "/chat/completions")!)
+        let urlString = apiBase.hasSuffix("/v1") ? "\(apiBase)/chat/completions" : "\(apiBase)/v1/chat/completions"
+        guard let url = URL(string: urlString) else { return nil }
+
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -274,7 +350,7 @@ class StorageAnalyzer: ObservableObject {
     func analyzeCategoryWithAI(category: StorageCategory, config: AIConfig) async -> String? {
         guard let apiKey = config.apiKey, !apiKey.isEmpty, let apiBase = config.apiBase else { return nil }
 
-        let topFiles = category.files.prefix(20).map { "- \($0.name): \($0.sizeFormatted)" }.joined(separator: "\n")
+        let topFiles = category.files.prefix(20).map { "- \($0.name): \($0.sizeFormatted) (\($0.path))" }.joined(separator: "\n")
 
         let prompt = """
         分析以下「\(category.name)」类别的存储占用，判断哪些可以删除清理：
@@ -299,7 +375,10 @@ class StorageAnalyzer: ObservableObject {
 
         guard let bodyData = try? JSONSerialization.data(withJSONObject: requestBody) else { return nil }
 
-        var request = URLRequest(url: URL(string: apiBase + "/chat/completions")!)
+        let urlString = apiBase.hasSuffix("/v1") ? "\(apiBase)/chat/completions" : "\(apiBase)/v1/chat/completions"
+        guard let url = URL(string: urlString) else { return nil }
+
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

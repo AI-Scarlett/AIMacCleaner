@@ -18,6 +18,7 @@
 		DD8768E775E3FCAEE527E7C9 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3109E2D93F7928BE4CFFF2F /* Models.swift */; };
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* SensorMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6A7B8C9D0E1F2A3 /* SensorMonitor.swift */; };
 		C3D4E5F6A7B8C9D0E1F2A3B4 /* StorageAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A7B8C9D0E1F2A3B4C5 /* StorageAnalyzer.swift */; };
+		E4F5A6B7C8D9E0F1A2B3C4D5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A7B8C9D0E1F2A3B4C5D6E7 /* SettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +33,7 @@
 F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIConfigView.swift; sourceTree = "<group>"; };
 		B2C3D4E5F6A7B8C9D0E1F2A3 /* SensorMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensorMonitor.swift; sourceTree = "<group>"; };
 		D4E5F6A7B8C9D0E1F2A3B4C5 /* StorageAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageAnalyzer.swift; sourceTree = "<group>"; };
+		F6A7B8C9D0E1F2A3B4C5D6E7 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		FD0E8A971151EDD2952E2662 /* AIMacCleaner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIMacCleaner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AABBCCDDEEFF001122334455 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -65,6 +67,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				9D8F1A2B3C4D5E6F7A8B9C0E /* OperationMonitor.swift */,
 				B2C3D4E5F6A7B8C9D0E1F2A3 /* SensorMonitor.swift */,
 				D4E5F6A7B8C9D0E1F2A3B4C5 /* StorageAnalyzer.swift */,
+				F6A7B8C9D0E1F2A3B4C5D6E7 /* SettingsView.swift */,
 				C3109E2D93F7928BE4CFFF2F /* Models.swift */,
 				8B4C9D0E1F2A3B4C5D6E7F8A /* ScanRules.swift */,
 				F15EC33FFB79FB101CE80521 /* ScannerService.swift */,
@@ -145,6 +148,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				D74BCA8FAB0474471D867C7C /* AIConfigView.swift in Sources */,
 				A1B2C3D4E5F6A7B8C9D0E1F2 /* SensorMonitor.swift in Sources */,
 				C3D4E5F6A7B8C9D0E1F2A3B4 /* StorageAnalyzer.swift in Sources */,
+				E4F5A6B7C8D9E0F1A2B3C4D5 /* SettingsView.swift in Sources */,
 				848104EB233AA4D62CD15403 /* AIMacCleanerApp.swift in Sources */,
 				4FCB5CD83382DA42D96D7965 /* ContentView.swift in Sources */,
 				5A4D9E1F2B3C4D5E6F7A8B9C /* MenuBarMonitor.swift in Sources */,
@@ -175,7 +179,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 1.6.2;
+			MARKETING_VERSION = 1.6.3;
 			OPTIMIZATION_LEVEL = "-O";
 				PRODUCT_BUNDLE_IDENTIFIER = com.aimaccleaner.app;
 				PRODUCT_NAME = AIMacCleaner;

@@ -50,10 +50,27 @@
 - **20+ 种 Agent 监控** - Hermes/Claude/CodeBuddy/Codex/Cline/Trae/Cursor 等
 - 操作记录自动保存，最多保留 5000 条
 
-### 🛡️ 安全设置（菜单栏面板）
-- **删除移入回收站** - 所有删除操作默认移入回收站，可手动开关
-- **禁止自动清空回收站** - 可手动开关，防止自动清理回收站
-- **操作监控开关** - 操作监控需手动开启，默认关闭
+### ⚙️ 设置
+
+在菜单栏底部点击「设置」按钮，打开统一设置页面：
+- **AI 设置**：配置大模型 API（DeepSeek / OpenAI / 智谱 GLM / 通义千问等）
+- **功能开关**：菜单栏监控、设备监控、操作记录的开关控制
+- **监控设置**：存储警告阈值（5%~30%）、回收站删除模式
+- **版本与更新**：查看当前版本、手动检查更新、下载更新
+
+### 📊 存储分析
+
+点击左侧「存储分析」Tab，全面分析磁盘存储占用：
+- **系统文件**：/System、/Library、/usr 等系统目录
+- **应用程序**：/Applications 等所有 .app 应用
+- **应用数据**：缓存、容器、偏好设置等
+- **文稿**：文档、桌面、下载、电影、音乐、图片
+- **Agent**：AI 编程助手的配置和数据
+- **依赖**：开发工具包管理器（Homebrew/npm/pip 等）
+- **日志与缓存**：系统及应用日志
+- 每个文件显示完整目录路径，可一键复制
+- 支持按大小、名称、添加日期、修改日期排序
+- 可调用 AI 对单个文件或整个类别进行分析
 
 ### 📊 磁盘信息 & 菜单栏监控
 - 实时显示磁盘使用率、总容量、已用、可用空间
@@ -66,7 +83,7 @@
 
 ### 方式一：下载 DMG（推荐）
 
-1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.6.1-arm64.dmg`
+1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.6.3-arm64.dmg`
 2. 双击打开 DMG 文件
 3. 将 AIMacCleaner 拖入 Applications 文件夹
 4. 首次打开时，右键点击应用 → 选择「打开」（需绕过 Gatekeeper 验证）
@@ -82,14 +99,16 @@ cp -r /tmp/AIMacCleaner_build/build/AIMacCleaner.app /Applications/
 
 ## 使用方法
 
-### 四大功能 Tab
+### 六大功能 Tab
 
 | Tab | 功能 | 说明 |
 |-----|------|------|
 | 🧹 Mac 清理 | 扫描可清理的缓存/日志/临时文件 | 本地扫描 + AI 扫描 |
+| 📊 存储分析 | 全盘存储分析与AI建议 | 系统文件/应用/文稿/Agent |
 | 📱 APP 管理 | 管理本机 .app 应用 | 卸载/清理缓存/重置 |
 | 📦 依赖管理 | 管理 Homebrew/npm/pip 包 | 卸载/清理 |
 | 🕐 操作记录 | 记录 AI Agent 自动操作 | 筛选 + 监控 |
+| ⚙️ 设置 | AI配置/功能开关/监控/版本更新 | 集中设置面板 |
 
 ### 🛡️ 安全设置
 
@@ -162,12 +181,15 @@ rm -rf "$DMG_STAGING"
 AIMacCleaner/
 ├── AIMacCleaner/
 │   ├── AIMacCleanerApp.swift    # 应用入口
-│   ├── ContentView.swift        # 主界面（5 Tab + 分类筛选 + AI 分析）
+│   ├── ContentView.swift        # 主界面（左侧导航 + 右侧内容）
 │   ├── MenuBarMonitor.swift     # 菜单栏常驻监控视图
 │   ├── OperationMonitor.swift   # AI Agent 操作监控服务
-│   ├── ScannerService.swift     # 核心服务（扫描、删除、AI 调用、监控、更新检测）
+│   ├── ScannerService.swift     # 核心服务（扫描、删除、AI、监控、更新）
 │   ├── ScanRules.swift          # 35+ 条本地扫描规则
-│   ├── Models.swift             # 数据模型（AppInfo/ScanItem/AIConfig）
+│   ├── Models.swift             # 数据模型
+│   ├── SettingsView.swift       # 统一设置页面
+│   ├── StorageAnalyzer.swift    # 存储分析服务
+│   ├── SensorMonitor.swift      # 摄像头/麦克风监控
 │   ├── AIConfigView.swift       # AI 配置弹窗
 │   └── Assets.xcassets/         # 图标和资源
 ├── AIMacCleaner.xcodeproj/     # Xcode 项目
@@ -199,6 +221,14 @@ AIMacCleaner/
 ## 更新日志
 
 详见 [CHANGELOG.md](CHANGELOG.md)
+
+### v1.6.3 (2026-05-14)
+- 设置页整合：AI设置/功能开关/监控/版本更新检测
+- 存储分析全面升级：全盘扫描系统文件、应用程序、文稿等
+- 存储分析新增"目录"列：显示完整路径，可一键复制
+- 修复闪退问题
+- 修复权限持久化问题
+- 新增功能开关：菜单栏监控、设备监控、操作记录均可在设置中控制
 
 ### v1.6.1 (2025-05-13)
 - 修复 getNetworkInfo 中强制解包导致的启动崩溃

@@ -3,7 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @State private var selectedTab: NavItem = .cleaner
     @EnvironmentObject var service: ScannerService
-    @State private var showAIConfig = false
+    @State private var showSettings = false
     @StateObject private var sensorMonitor = SensorMonitor()
     @StateObject private var storageAnalyzer = StorageAnalyzer()
 
@@ -60,8 +60,8 @@ struct ContentView: View {
             detailContent
         }
         .frame(minWidth: 960, minHeight: 640)
-        .sheet(isPresented: $showAIConfig) {
-            AIConfigView().environmentObject(service)
+        .sheet(isPresented: $showSettings) {
+            SettingsView().environmentObject(service)
         }
     }
 
@@ -126,11 +126,11 @@ struct ContentView: View {
             Divider()
 
             HStack(spacing: 8) {
-                Button { showAIConfig = true } label: {
+                Button { showSettings = true } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "gearshape")
                             .font(.system(size: 10))
-                        Text("AI 设置")
+                        Text("设置")
                             .font(.system(size: 10))
                     }
                     .foregroundColor(.secondary)
@@ -143,7 +143,7 @@ struct ContentView: View {
                     Circle()
                         .fill(Color.green)
                         .frame(width: 5, height: 5)
-                    Text("v1.6.2")
+                    Text("v1.6.3")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
@@ -468,7 +468,7 @@ struct MacCleanerTab: View {
     @State private var filterApp = ""
     @State private var filterRisk = ""
     @State private var filterSource = ""
-    @State private var showAIConfig = false
+    @State private var showSettings = false
     @State private var showDeleteConfirm = false
     @State private var deleteTargetIds: [String] = []
     @State private var showCleanResult = false
@@ -593,7 +593,7 @@ struct MacCleanerTab: View {
                 if filteredItems.isEmpty { noResultView } else { resultList }
             }
         }
-        .sheet(isPresented: $showAIConfig) { AIConfigView().environmentObject(service) }
+        .sheet(isPresented: $showSettings) { SettingsView().environmentObject(service) }
         .alert("确认删除", isPresented: $showDeleteConfirm) {
             Button("取消", role: .cancel) {}
             Button("删除", role: .destructive) { performDelete() }
@@ -679,7 +679,7 @@ struct MacCleanerTab: View {
     private func selectAll() { selectedIds = Set(filteredItems.filter { !$0.ignored }.map(\.id)) }
     private func selectSafe() { selectedIds = Set(filteredItems.filter { $0.risk == "safe" && !$0.ignored }.map(\.id)) }
     private func smartClean() { let safe = service.scanItems.filter { $0.risk == "safe" && !$0.ignored }; guard !safe.isEmpty else { return }; deleteTargetIds = safe.map(\.id); showDeleteConfirm = true }
-    private func performAiScan() async { if service.aiConfig?.hasKey != true { showAIConfig = true; return }; await service.startAiScan() }
+    private func performAiScan() async { if service.aiConfig?.hasKey != true { showSettings = true; return }; await service.startAiScan() }
     private func confirmDeleteSelected() { deleteTargetIds = Array(selectedIds); showDeleteConfirm = true }
     private func confirmDeleteSingle(_ item: ScanItem) { deleteTargetIds = [item.id]; showDeleteConfirm = true }
     private func performDelete() { let s = service.scanItems.filter { deleteTargetIds.contains($0.id) }.reduce(Int64(0)) { $0 + $1.size }; let c = deleteTargetIds.count; Task { let _ = await service.deleteItems(ids: deleteTargetIds); service.removeScannedItems(ids: deleteTargetIds); selectedIds.subtract(deleteTargetIds); deleteTargetIds = []; service.refreshDiskInfo(); cleanedSize = s; cleanedCount = c; showCleanResult = true } }
@@ -1425,6 +1425,27 @@ struct StorageAnalysisTab: View {
                                 .monospacedDigit()
                                 .foregroundColor(.cyan)
                         }.width(80)
+
+                        TableColumn("目录") { file in
+                            HStack(spacing: 4) {
+                                Text(file.path)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .help(file.path)
+                                Button {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(file.path, forType: .string)
+                                } label: {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.caption2)
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundColor(.accentColor)
+                                .help("复制路径")
+                            }
+                        }.width(min: 220)
 
                         TableColumn("添加日期") { file in
                             if let date = file.createdDate {

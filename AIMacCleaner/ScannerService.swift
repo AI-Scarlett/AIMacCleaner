@@ -296,7 +296,6 @@ class ScannerService: ObservableObject {
     private func safeGetNetworkInfo(_ info: inout HardwareInfo) {
         var interfaceAddresses: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&interfaceAddresses) == 0, let firstAddr = interfaceAddresses else { return }
-        defer { freeifaddrs(interfaceAddresses) }
 
         var totalIn: Int64 = 0
         var totalOut: Int64 = 0
@@ -306,18 +305,24 @@ class ScannerService: ObservableObject {
             let addr = current.pointee
             let ifaName = addr.ifa_name
             guard let namePtr = ifaName else { ptr = addr.ifa_next; continue }
-            let name = String(cString: namePtr)
+
+            let name: String
+            do { name = String(cString: namePtr) } catch { ptr = addr.ifa_next; continue }
 
             if name != "lo0",
                let ifaAddr = addr.ifa_addr,
-               ifaAddr.pointee.sa_family == UInt8(AF_LINK),
-               let data = addr.ifa_data {
-                let networkData = data.assumingMemoryBound(to: if_data.self)
-                totalIn += Int64(networkData.pointee.ifi_ibytes)
-                totalOut += Int64(networkData.pointee.ifi_obytes)
+               ifaAddr.pointee.sa_family == UInt8(AF_LINK) {
+
+                if let data = addr.ifa_data {
+                    let networkData = data.assumingMemoryBound(to: if_data.self)
+                    totalIn += Int64(networkData.pointee.ifi_ibytes)
+                    totalOut += Int64(networkData.pointee.ifi_obytes)
+                }
             }
             ptr = addr.ifa_next
         }
+
+        freeifaddrs(interfaceAddresses)
 
         let now = Date()
         let elapsed = now.timeIntervalSince(lastNetTime)
@@ -1229,7 +1234,7 @@ class ScannerService: ObservableObject {
     @Published var updateReadyToInstall: Bool = false
     @Published var updateErrorMessage: String = ""
 
-    let currentVersion = "1.6.2"
+    let currentVersion = "1.6.3"
 
     func checkForUpdates() async {
         isCheckingUpdate = true
@@ -1348,7 +1353,9 @@ class ScannerService: ObservableObject {
                 fileHandle.write(buffer)
             }
 
-            try fileHandle.close()
+            if #available(macOS 10.15, *) {
+                try fileHandle.close()
+            }
 
             DispatchQueue.main.async {
                 self.updateDownloadProgress = 1.0

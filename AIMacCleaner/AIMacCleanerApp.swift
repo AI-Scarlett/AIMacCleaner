@@ -5,6 +5,10 @@ import UserNotifications
 struct AIMacCleanerApp: App {
     @StateObject private var service = ScannerService()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @AppStorage("monitorEnabled") private var monitorEnabled = true
+    @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = true
+    @AppStorage("sensorMonitorEnabled") private var sensorMonitorEnabled = true
+    @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
 
     init() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
@@ -17,6 +21,8 @@ struct AIMacCleanerApp: App {
                 .frame(minWidth: 960, minHeight: 640)
                 .onAppear {
                     NSApp.setActivationPolicy(.regular)
+                    if monitorEnabled { service.startMonitoring() }
+                    if operationMonitorEnabled { service.startOperationMonitor() }
                     Task {
                         await service.checkForUpdates()
                         if service.updateAvailable {
@@ -41,9 +47,18 @@ struct AIMacCleanerApp: App {
         .defaultSize(width: 1100, height: 700)
 
         MenuBarExtra {
-            MenuBarMonitor(service: service)
+            if menuBarMonitorEnabled {
+                MenuBarMonitor(service: service)
+            } else {
+                Text("菜单栏监控已关闭")
+                    .padding()
+            }
         } label: {
-            menuBarLabel
+            if menuBarMonitorEnabled {
+                menuBarLabel
+            } else {
+                Image(systemName: "internaldrive")
+            }
         }
         .menuBarExtraStyle(.window)
     }
