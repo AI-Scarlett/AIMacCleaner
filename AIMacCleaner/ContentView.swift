@@ -2,7 +2,8 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var selectedTab: NavItem = .cleaner
-    @StateObject private var operationMonitor = OperationMonitor()
+    @EnvironmentObject var service: ScannerService
+    @State private var showAIConfig = false
 
     enum NavItem: String, CaseIterable {
         case cleaner = "Mac 清理"
@@ -49,6 +50,9 @@ struct ContentView: View {
             detailContent
         }
         .frame(minWidth: 960, minHeight: 640)
+        .sheet(isPresented: $showAIConfig) {
+            AIConfigView().environmentObject(service)
+        }
     }
 
     private var sidebar: some View {
@@ -111,15 +115,30 @@ struct ContentView: View {
 
             Divider()
 
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 6, height: 6)
-                Text("v1.6.1")
-                    .font(.system(size: 10))
+            HStack(spacing: 8) {
+                Button { showAIConfig = true } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 10))
+                        Text("AI 设置")
+                            .font(.system(size: 10))
+                    }
                     .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 5, height: 5)
+                    Text("v1.6.1")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 12)
             .padding(.vertical, 10)
         }
         .frame(width: 180)
@@ -138,7 +157,7 @@ struct ContentView: View {
         case .other:
             AppManagerTab(filterType: .other)
         case .operations:
-            OperationLogTab(monitor: operationMonitor)
+            OperationLogTab(monitor: service.operationMonitor)
         }
     }
 }
@@ -485,11 +504,6 @@ struct MacCleanerTab: View {
                         HStack(spacing: 4) { Image(systemName: "bolt.fill"); Text("增强扫描") }
                     }
                     .buttonStyle(.bordered).controlSize(.small).tint(.orange).disabled(service.isEnhancedScanning)
-
-                    Button { showAIConfig = true } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .buttonStyle(.bordered).controlSize(.small)
                 }
             }
 

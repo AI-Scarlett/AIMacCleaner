@@ -1131,7 +1131,7 @@ class ScannerService: ObservableObject {
     private var monitorTimer: Timer?
     private var hardwareTimer: Timer?
     private var lastAlertTime: Date = .distantPast
-    private let operationMonitor = OperationMonitor()
+    let operationMonitor = OperationMonitor()
 
     @Published var operationRecords: [OperationRecord] = []
 

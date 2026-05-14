@@ -959,6 +959,9 @@ struct MenuBarMonitor: View {
         service.alertThreshold = alertThreshold
         service.trashInsteadOfDelete = trashInsteadOfDelete
         service.preventAutoEmptyTrash = preventAutoEmptyTrash
+        if operationMonitorEnabled {
+            service.startOperationMonitor()
+        }
     }
 
     private func saveSettings() {
