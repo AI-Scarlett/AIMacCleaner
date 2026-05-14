@@ -2,6 +2,19 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.6.6] - 2026-05-14
+
+### Fixed
+- 修复中英文切换没有效果：SettingsView/CopyLogTab/MacCleanerTab 全面接入 Localizer
+- 修复语言 Tab 点击后整体布局右移：固定语言切换按钮宽度，消除切换动画
+- 操作记录改名为 "Agent 监控"：侧边栏 Tab、页面标题、菜单栏 Tab 统一更名
+- 菜单栏 Tab 名称优化："监控" → "硬件监控"，"操作" → "Agent监控"
+- 存储扫描优化：移除不可访问的 /System，新增 /Users/Shared、/private/var、/private/tmp
+- 操作记录 Agent 检测修复：使用精确进程名匹配，仅在 Agent 新启动时生成记录
+- FSEventStream 线程安全修复：使用 CFRunLoopGetMain() 替代 CFRunLoopGetCurrent()
+- 废弃 API 修复：Process 使用 executableURL + run() 替代 launchPath + launch()
+- 版本号统一更新为 v1.6.6
+
 ## [1.6.5] - 2026-05-14
 
 ### Fixed

@@ -7,7 +7,6 @@ struct ContentView: View {
     @State private var showSettings = false
     @StateObject private var storageAnalyzer = StorageAnalyzer()
     @State private var sidebarCollapsed = false
-    @State private var isSidebarHovering = false
 
     enum NavItem: String, CaseIterable {
         case cleaner = "Mac 清理"
@@ -15,7 +14,7 @@ struct ContentView: View {
         case app = "APP 管理"
         case dependency = "依赖管理"
         case other = "其它工具"
-        case operations = "操作记录"
+        case operations = "Agent 监控"
 
         var icon: String {
             switch self {
@@ -24,7 +23,7 @@ struct ContentView: View {
             case .app: "app.badge"
             case .dependency: "cube.box"
             case .other: "terminal"
-            case .operations: "clock.arrow.circlepath"
+            case .operations: "cpu"
             }
         }
 
@@ -46,7 +45,7 @@ struct ContentView: View {
             case .app: "管理已安装的应用"
             case .dependency: "管理开发依赖"
             case .other: "管理命令行工具"
-            case .operations: "监控 AI Agent 操作"
+            case .operations: "监控 AI Agent 的文件操作"
             }
         }
     }
@@ -59,7 +58,9 @@ struct ContentView: View {
         }
         .frame(minWidth: 960, minHeight: 640)
         .sheet(isPresented: $showSettings) {
-            SettingsView().environmentObject(service)
+            SettingsView()
+                .environmentObject(service)
+                .environmentObject(localizer)
         }
     }
 
@@ -83,38 +84,15 @@ struct ContentView: View {
                         .padding(.top, 12)
                         .frame(maxWidth: .infinity)
                 }
-
-                Button {
-                    withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
-                        sidebarCollapsed.toggle()
-                    }
-                } label: {
-                    Image(systemName: sidebarCollapsed ? "chevron.right" : "chevron.left")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundColor(.secondary.opacity(isSidebarHovering ? 0.6 : 0.3))
-                }
-                .buttonStyle(.plain)
-                .frame(width: 18, height: 18)
-                .background(
-                    Circle()
-                        .fill(Color.secondary.opacity(isSidebarHovering ? 0.08 : 0))
-                )
-                .contentShape(Rectangle())
-                .padding(.top, 12)
             }
             .padding(.horizontal, sidebarCollapsed ? 6 : 12)
             .padding(.bottom, 10)
-            .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    isSidebarHovering = hovering
-                }
-            }
 
             Divider()
 
             VStack(alignment: sidebarCollapsed ? .center : .leading, spacing: 4) {
                 if !sidebarCollapsed {
-                    Text("功能")
+                    Text(localizer.features)
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(.secondary)
                         .textCase(.uppercase)
@@ -122,7 +100,7 @@ struct ContentView: View {
                         .padding(.top, 12)
                         .padding(.bottom, 4)
                 } else {
-                    Text("功能")
+                    Text(localizer.features)
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundColor(.secondary)
                         .padding(.top, 12)
@@ -188,6 +166,19 @@ struct ContentView: View {
 
             if sidebarCollapsed {
                 VStack(spacing: 8) {
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            sidebarCollapsed = false
+                        }
+                    } label: {
+                        Image(systemName: "sidebar.right")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                            .frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(.plain)
+                    .help(localizer.expandSidebar)
+
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape")
                             .font(.system(size: 14))
@@ -196,18 +187,30 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
 
-                    Text("v1.6.5")
+                    Text("v1.6.6")
                         .font(.system(size: 8))
                         .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 10)
             } else {
                 HStack(spacing: 8) {
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            sidebarCollapsed = true
+                        }
+                    } label: {
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(localizer.collapseSidebar)
+
                     Button { showSettings = true } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "gearshape")
                                 .font(.system(size: 10))
-                            Text("设置")
+                            Text(localizer.settings)
                                 .font(.system(size: 10))
                         }
                         .foregroundColor(.secondary)
@@ -220,7 +223,7 @@ struct ContentView: View {
                         Circle()
                             .fill(Color.green)
                             .frame(width: 5, height: 5)
-                        Text("v1.6.4")
+                        Text("v1.6.6")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }
@@ -248,6 +251,7 @@ struct ContentView: View {
             AppManagerTab(filterType: .other)
         case .operations:
             OperationLogTab(monitor: service.operationMonitor)
+                .environmentObject(localizer)
         }
     }
 }
@@ -330,6 +334,7 @@ struct FilterSearchBar: View {
 
 struct OperationLogTab: View {
     @ObservedObject var monitor: OperationMonitor
+    @EnvironmentObject var localizer: Localizer
     @State private var searchText = ""
     @State private var filterAgent = ""
     @State private var filterOpType: OperationRecord.OperationType?
@@ -385,16 +390,16 @@ struct OperationLogTab: View {
     var body: some View {
         VStack(spacing: 0) {
             PageHeader(
-                icon: "clock.arrow.circlepath",
-                title: "操作记录",
-                subtitle: "监控 AI Agent 的文件操作",
+                icon: "cpu",
+                title: localizer.agentMonitorTitle,
+                subtitle: localizer.agentMonitorSubtitle,
                 color: .green
             ) {
                 HStack(spacing: 8) {
                     Button { monitor.start() } label: {
                         HStack(spacing: 4) {
                             Image(systemName: monitor.isMonitoring ? "record.circle.fill" : "record.circle")
-                            Text(monitor.isMonitoring ? "监控中" : "开始监控")
+                            Text(monitor.isMonitoring ? localizer.monitoring : localizer.startMonitoring)
                         }
                     }
                     .buttonStyle(.bordered)
@@ -403,7 +408,7 @@ struct OperationLogTab: View {
                     .disabled(monitor.isMonitoring)
 
                     Button { monitor.clearRecords() } label: {
-                        HStack(spacing: 3) { Image(systemName: "trash"); Text("清空") }
+                        HStack(spacing: 3) { Image(systemName: "trash"); Text(localizer.clear) }
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -414,9 +419,9 @@ struct OperationLogTab: View {
             if monitor.isMonitoring {
                 HStack(spacing: 6) {
                     Circle().fill(Color.green).frame(width: 6, height: 6)
-                    Text("监控中").font(.caption2).foregroundColor(.green)
+                    Text(localizer.monitoring).font(.caption2).foregroundColor(.green)
                     Text("·").foregroundColor(.secondary)
-                    Text("\(monitor.records.count) 条记录").font(.caption2).foregroundColor(.secondary)
+                    Text("\(monitor.records.count) \(localizer.records)").font(.caption2).foregroundColor(.secondary)
                     Spacer()
                 }
                 .padding(.horizontal, 24)
@@ -460,12 +465,12 @@ struct OperationLogTab: View {
             if filteredRecords.isEmpty {
                 VStack(spacing: 16) {
                     Spacer()
-                    Image(systemName: "clock.arrow.circlepath")
+                    Image(systemName: "cpu")
                         .font(.system(size: 40)).foregroundColor(.secondary.opacity(0.5))
-                    Text("暂无操作记录").font(.title3).fontWeight(.medium)
-                    Text("启动监控后将自动记录 AI Agent 的文件操作").font(.caption).foregroundColor(.secondary)
+                    Text(localizer.noRecords).font(.title3).fontWeight(.medium)
+                    Text(localizer.noRecordsHint).font(.caption).foregroundColor(.secondary)
                     if !monitor.isMonitoring {
-                        Button("开始监控") { monitor.start() }
+                        Button(localizer.startMonitoring) { monitor.start() }
                             .buttonStyle(.bordered).controlSize(.regular)
                     }
                     Spacer()
@@ -539,6 +544,7 @@ struct OperationLogTab: View {
 
 struct MacCleanerTab: View {
     @EnvironmentObject var service: ScannerService
+    @EnvironmentObject var localizer: Localizer
     @State private var selectedIds = Set<String>()
     @State private var filterCategory = ""
     @State private var filterApp = ""
@@ -669,7 +675,11 @@ struct MacCleanerTab: View {
                 if filteredItems.isEmpty { noResultView } else { resultList }
             }
         }
-        .sheet(isPresented: $showSettings) { SettingsView().environmentObject(service) }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+                .environmentObject(service)
+                .environmentObject(localizer)
+        }
         .alert("确认删除", isPresented: $showDeleteConfirm) {
             Button("取消", role: .cancel) {}
             Button("删除", role: .destructive) { performDelete() }
@@ -1270,10 +1280,10 @@ struct StorageAnalysisTab: View {
     @State private var selectedCategory: StorageCategory?
     @State private var sortField: StorageFile.SortField = .size
     @State private var sortAscending = false
-    @State private var showAIAnalysis = false
-    @State private var aiAnalysisText = ""
     @State private var isAnalyzing = false
     @State private var analyzingFileName = ""
+    @State private var aiAnalysisText = ""
+    @State private var showAIAnalysis = false
 
     var sortedFiles: [StorageFile] {
         guard let cat = selectedCategory else { return [] }

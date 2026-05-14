@@ -18,7 +18,7 @@ struct SettingsView: View {
         case ai = "AI"
         case features = "Features"
         case monitor = "Monitor"
-        case general = "General"
+        case language = "Language"
         case version = "Version"
 
         var icon: String {
@@ -26,7 +26,7 @@ struct SettingsView: View {
             case .ai: "brain"
             case .features: "switch.2"
             case .monitor: "bell.badge"
-            case .general: "globe"
+            case .language: "globe"
             case .version: "arrow.up.circle"
             }
         }
@@ -36,7 +36,7 @@ struct SettingsView: View {
             case .ai: "AI"
             case .features: "功能"
             case .monitor: "监控"
-            case .general: "语言"
+            case .language: "语言"
             case .version: "版本"
             }
         }
@@ -69,7 +69,7 @@ struct SettingsView: View {
                 VStack(spacing: 0) {
                     ForEach(SettingsTab.allCases, id: \.self) { tab in
                         Button {
-                            withAnimation { selectedTab = tab }
+                            withAnimation(.easeInOut(duration: 0.15)) { selectedTab = tab }
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: tab.icon)
@@ -104,7 +104,7 @@ struct SettingsView: View {
                         case .ai: aiSection
                         case .features: featuresSection
                         case .monitor: monitorSection
-                        case .general: generalSection
+                        case .language: languageSection
                         case .version: versionSection
                         }
                     }
@@ -223,7 +223,7 @@ struct SettingsView: View {
         }
     }
 
-    private var generalSection: some View {
+    private var languageSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "globe").foregroundColor(.teal)
@@ -232,13 +232,16 @@ struct SettingsView: View {
             HStack(spacing: 8) {
                 ForEach(AppLanguage.allCases, id: \.self) { lang in
                     Button {
-                        localizer.language = lang
+                        withAnimation(.none) {
+                            localizer.language = lang
+                        }
                     } label: {
                         HStack(spacing: 4) {
                             Text(lang.flag).font(.caption)
                             Text(lang.label).font(.caption)
                                 .fontWeight(localizer.language == lang ? .semibold : .regular)
                         }
+                        .frame(minWidth: 80)
                         .padding(.horizontal, 10).padding(.vertical, 5)
                         .background(
                             RoundedRectangle(cornerRadius: 6)

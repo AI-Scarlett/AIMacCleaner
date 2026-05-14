@@ -10,8 +10,8 @@ struct MenuBarMonitor: View {
     @State private var preventAutoEmptyTrash: Bool = true
 
     enum MonitorTab: String, CaseIterable {
-        case overview = "监控"
-        case operations = "操作"
+        case overview = "硬件监控"
+        case operations = "Agent监控"
     }
 
     var body: some View {

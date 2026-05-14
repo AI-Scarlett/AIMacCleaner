@@ -79,7 +79,7 @@ class OperationMonitor: ObservableObject {
         )
 
         if let stream = streamRef {
-            FSEventStreamScheduleWithRunLoop(stream, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+            FSEventStreamScheduleWithRunLoop(stream, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
             FSEventStreamStart(stream)
         }
     }
@@ -167,12 +167,17 @@ class OperationMonitor: ObservableObject {
 
     private func detectActiveAgents() -> [String] {
         let task = Process()
-        task.launchPath = "/usr/bin/env"
-        task.arguments = ["ps", "-eo", "comm="]
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/ps")
+        task.arguments = ["-eo", "comm="]
         let pipe = Pipe()
         task.standardOutput = pipe
-        task.launch()
-        task.waitUntilExit()
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
+            task.waitUntilExit()
+        } catch {
+            return []
+        }
 
         guard let data = try? pipe.fileHandleForReading.readToEnd(),
               let output = String(data: data, encoding: .utf8) else { return [] }
@@ -185,7 +190,7 @@ class OperationMonitor: ObservableObject {
             guard !processName.isEmpty else { continue }
 
             for agent in agentProcessNames {
-                if processName == agent || processName.contains(agent) {
+                if processName == agent || processName.hasSuffix("/\(agent)") {
                     let displayName = agent.capitalized
                     if !activeAgents.contains(displayName) {
                         activeAgents.append(displayName)
@@ -198,24 +203,27 @@ class OperationMonitor: ObservableObject {
     }
 
     private var processPoller: Timer?
+    private var lastPolledAgents: [String] = []
     private func startProcessPoller() {
         processPoller?.invalidate()
         processPoller = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             let agents = self.detectActiveAgents()
-            if !agents.isEmpty {
-                let agentList = agents.joined(separator: ", ")
+            let newAgents = agents.filter { !self.lastPolledAgents.contains($0) }
+            if !newAgents.isEmpty {
+                let agentList = newAgents.joined(separator: ", ")
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
-                    agentName: agents.first ?? "文件操作",
+                    agentName: newAgents.first ?? "文件操作",
                     operationType: .modify,
                     targetPath: "系统进程",
-                    detail: "🤖 活跃的 AI Agent: \(agentList)",
+                    detail: "🤖 新启动的 AI Agent: \(agentList)",
                     fileSize: 0
                 )
                 DispatchQueue.main.async { self.addRecord(record) }
             }
+            self.lastPolledAgents = agents
         }
     }
 

@@ -66,4 +66,72 @@ extension Localizer {
     var save: String { t("保存设置", en: "Save Settings") }
 
     var languageLabel: String { t("语言", en: "Language") }
+
+    var macCleanerTitle: String { t("Mac 清理", en: "Mac Cleaner") }
+    var macCleanerSubtitle: String { t("扫描并清理存储空间", en: "Scan and clean up storage space") }
+    var localScan: String { t("本地扫描", en: "Local Scan") }
+    var aiScan: String { t("AI 扫描", en: "AI Scan") }
+    var enhancedScan: String { t("增强扫描", en: "Enhanced Scan") }
+    var diskSpace: String { t("磁盘空间", en: "Disk Space") }
+    var used: String { t("已使用", en: "Used") }
+    var scanning: String { t("正在扫描存储空间...", en: "Scanning storage space...") }
+    var scanningSubtitle: String { t("请稍候，正在分析可清理的文件", en: "Please wait, analyzing cleanable files") }
+    var searchFiles: String { t("搜索文件...", en: "Search files...") }
+    var allCategories: String { t("全部分类", en: "All Categories") }
+    var allApps: String { t("全部应用", en: "All Apps") }
+    var riskLabel: String { t("风险", en: "Risk") }
+    var smartClean: String { t("智能清理", en: "Smart Clean") }
+    var selectAll: String { t("全选", en: "Select All") }
+    var safeOnly: String { t("仅安全", en: "Safe Only") }
+    var cancelSelection: String { t("取消选择", en: "Deselect") }
+    var ignoreSelected: String { t("忽略选中", en: "Ignore Selected") }
+    var deleteSelected: String { t("删除选中", en: "Delete Selected") }
+    var noMatches: String { t("当前筛选条件下没有匹配项", en: "No matches under current filters") }
+    var clearRiskFilter: String { t("清除风险筛选", en: "Clear risk filter") }
+    var clearCategoryFilter: String { t("清除分类筛选", en: "Clear category filter") }
+    var clearSearch: String { t("清除搜索", en: "Clear search") }
+    var cleanComplete: String { t("🎉 清理完成", en: "🎉 Clean Complete") }
+    var cleanCompleteMsg: String { t("本次清理释放了", en: "This cleanup freed up") }
+    var confirmDelete: String { t("确认删除", en: "Confirm Delete") }
+    var deleteBtn: String { t("删除", en: "Delete") }
+    var ok: String { t("确定", en: "OK") }
+
+    var storageAnalysisTitle: String { t("存储分析", en: "Storage Analysis") }
+    var storageAnalysisSubtitle: String { t("存储空间分析与AI建议", en: "Storage analysis with AI recommendations") }
+    var startScan: String { t("开始扫描", en: "Start Scan") }
+    var aiAnalysis: String { t("AI 分析", en: "AI Analysis") }
+    var aiAnalysisResult: String { t("AI 分析结果", en: "AI Analysis Result") }
+    var storageCategories: String { t("存储分类", en: "Storage Categories") }
+    var usedLabel: String { t("已使用", en: "Used") }
+    var noLargeFiles: String { t("无大文件（>1MB）", en: "No large files (>1MB)") }
+    var selectCategoryToView: String { t("选择左侧分类查看文件列表", en: "Select a category on the left to view files") }
+    var sort: String { t("排序", en: "Sort") }
+    var analyze: String { t("分析", en: "Analyze") }
+    var copyPath: String { t("复制路径", en: "Copy path") }
+
+    var appManagerTitle: String { t("APP 管理", en: "App Manager") }
+    var appManagerSubtitle: String { t("管理已安装的应用", en: "Manage installed applications") }
+    var dependencyTitle: String { t("依赖管理", en: "Dependency Manager") }
+    var dependencySubtitle: String { t("管理开发依赖", en: "Manage development dependencies") }
+    var otherToolsTitle: String { t("其它工具", en: "Other Tools") }
+    var otherToolsSubtitle: String { t("管理命令行工具", en: "Manage command line tools") }
+    var refresh: String { t("刷新", en: "Refresh") }
+    var all: String { t("全部", en: "All") }
+    var actionConfirm: String { t("确认操作", en: "Confirm Action") }
+    var actionComplete: String { t("操作完成", en: "Action Complete") }
+    var searchingApps: String { t("正在扫描...", en: "Scanning...") }
+
+    var agentMonitorTitle: String { t("Agent 监控", en: "Agent Monitor") }
+    var agentMonitorSubtitle: String { t("监控 AI Agent 的文件操作", en: "Monitor AI Agent file operations") }
+    var monitoring: String { t("监控中", en: "Monitoring") }
+    var startMonitoring: String { t("开始监控", en: "Start Monitoring") }
+    var clear: String { t("清空", en: "Clear") }
+    var records: String { t("条记录", en: "records") }
+    var noRecords: String { t("暂无操作记录", en: "No operation records yet") }
+    var noRecordsHint: String { t("启动监控后将自动记录 AI Agent 的文件操作", en: "AI Agent file operations will be recorded once monitoring starts") }
+
+    var settings: String { t("设置", en: "Settings") }
+    var collapseSidebar: String { t("收起侧边栏", en: "Collapse sidebar") }
+    var expandSidebar: String { t("展开侧边栏", en: "Expand sidebar") }
+    var features: String { t("功能", en: "Features") }
 }

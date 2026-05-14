@@ -45,9 +45,9 @@ class StorageAnalyzer: ObservableObject {
         let fm = FileManager.default
         var results: [StorageCategory] = []
 
-        await MainActor.run { scanProgress = "扫描系统文件..." }
-        let systemPaths = ["/System", "/Library", "/usr", "/sbin", "/bin", "/etc", "/var", "/tmp"]
-        let systemSize = await scanCategory(id: "system", name: "系统文件", icon: "gear", color: .gray, paths: systemPaths, fm: fm)
+        await MainActor.run { scanProgress = "扫描系统数据..." }
+        let systemPaths = ["/Library", "/usr", "/sbin", "/etc", "/var", "/tmp"]
+        let systemSize = await scanCategory(id: "system", name: "系统数据", icon: "gear", color: .gray, paths: systemPaths, fm: fm)
         results.append(systemSize)
 
         await MainActor.run { scanProgress = "扫描应用..." }
@@ -68,6 +68,7 @@ class StorageAnalyzer: ObservableObject {
         let docsPaths = [
             "\(home)/Documents", "\(home)/Desktop", "\(home)/Downloads", "\(home)/Movies",
             "\(home)/Music", "\(home)/Pictures", "\(home)/Library/Mobile Documents",
+            "/Users/Shared",
         ]
         let docsSize = await scanCategory(id: "documents", name: "文稿", icon: "doc.fill", color: .blue, paths: docsPaths, fm: fm)
         results.append(docsSize)
@@ -94,9 +95,12 @@ class StorageAnalyzer: ObservableObject {
 
         let total = results.reduce(Int64(0)) { $0 + $1.size }
 
+        var fs = statfs()
+        let systemTotal = statfs("/", &fs) == 0 ? Int64(UInt64(fs.f_blocks) * UInt64(fs.f_bsize)) - Int64(UInt64(fs.f_bavail) * UInt64(fs.f_bsize)) : total
+
         await MainActor.run {
             categories = results
-            totalUsed = total
+            totalUsed = max(total, systemTotal)
             isScanning = false
             scanProgress = ""
         }
@@ -106,13 +110,13 @@ class StorageAnalyzer: ObservableObject {
         return await Task.detached(priority: .userInitiated) {
             var totalSize: Int64 = 0
             var files: [StorageFile] = []
-            let maxFiles = 3000
+            let maxFiles = 5000
 
             for path in paths {
                 let expanded = NSString(string: path).expandingTildeInPath
                 var isDir: ObjCBool = false
                 guard fm.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue else { continue }
-                let (size, items) = self.scanDirectory(at: expanded, maxDepth: 6, maxFiles: maxFiles - files.count, fm: fm)
+                let (size, items) = self.scanDirectory(at: expanded, maxDepth: 8, maxFiles: maxFiles - files.count, fm: fm)
                 totalSize += size
                 files.append(contentsOf: items)
             }
@@ -167,7 +171,7 @@ class StorageAnalyzer: ObservableObject {
     private func scanDirectory(at path: String, maxDepth: Int, maxFiles: Int, fm: FileManager) -> (Int64, [StorageFile]) {
         var totalSize: Int64 = 0
         var files: [StorageFile] = []
-        guard maxDepth > 0, maxFiles > 0 else { return (0, []) }
+        guard maxDepth > 0 else { return (0, []) }
         guard let contents = try? fm.contentsOfDirectory(atPath: path) else {
             if let attrs = try? fm.attributesOfItem(atPath: path) {
                 return ((attrs[.size] as? Int64) ?? 0, [])
@@ -175,7 +179,6 @@ class StorageAnalyzer: ObservableObject {
             return (0, [])
         }
         for name in contents {
-            guard files.count < maxFiles else { break }
             let fullPath = (path as NSString).appendingPathComponent(name)
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
@@ -187,12 +190,12 @@ class StorageAnalyzer: ObservableObject {
                 let (subSize, subFiles) = scanDirectory(at: fullPath, maxDepth: maxDepth - 1, maxFiles: maxFiles - files.count, fm: fm)
                 totalSize += subSize
                 files.append(contentsOf: subFiles)
-                if subSize > 104857600 {
+                if subSize > 52428800 {
                     files.append(StorageFile(id: fullPath, name: name, path: fullPath, size: subSize, createdDate: created, modifiedDate: modified, isDirectory: true))
                 }
             } else {
                 totalSize += size
-                if size > 102400 {
+                if size > 51200 {
                     files.append(StorageFile(id: fullPath, name: name, path: fullPath, size: size, createdDate: created, modifiedDate: modified, isDirectory: false))
                 }
             }
@@ -201,20 +204,26 @@ class StorageAnalyzer: ObservableObject {
     }
 
     private func findOtherDirs(exclude: [String], fm: FileManager) async -> [String] {
-        let excludeSet = Set(exclude)
+        let excludeSet = Set(exclude.map { NSString(string: $0).expandingTildeInPath })
         return await Task.detached {
             var localDirs: [String] = []
             if let homeContents = try? fm.contentsOfDirectory(atPath: self.home) {
                 for name in homeContents {
-                    guard name.hasPrefix(".") else { continue }
                     let fullPath = "\(self.home)/\(name)"
                     var isDir: ObjCBool = false
                     guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue else { continue }
                     guard !excludeSet.contains(fullPath) else { continue }
-                    localDirs.append(fullPath)
+                    if name.hasPrefix(".") {
+                        localDirs.append(fullPath)
+                    } else if !name.hasSuffix(".app") && !name.hasSuffix(".localized") {
+                        let knownNonDir = ["Applications", "Desktop", "Documents", "Downloads", "Movies", "Music", "Pictures", "Public", "Library"]
+                        if !knownNonDir.contains(name) {
+                            localDirs.append(fullPath)
+                        }
+                    }
                 }
             }
-            let systemDirs = ["/private"].filter { !excludeSet.contains($0) }
+            let systemDirs = ["/private/var", "/private/tmp"].filter { !excludeSet.contains($0) }
             return localDirs + systemDirs
         }.value
     }
