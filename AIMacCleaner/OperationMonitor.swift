@@ -41,17 +41,52 @@ class OperationMonitor: ObservableObject {
         restoreAccessFromBookmarks()
     }
 
-    private let agentProcessNames = [
-        "claude", "claude-code", "codebuddy", "cline", "codex", "hermes", "trae", "trae-agent",
-        "cursor", "windsurf", "codearts", "kimi", "deepseek", "qwen", "doubao",
-        "minimax", "copilot", "aider", "cody", "tabby", "warp",
-        "chatgpt", "gemini", "augment", "node", "python", "python3",
-        "bun", "deno", "npm", "yarn", "pnpm", "cargo", "go", "rustc",
-        "swift", "ruby", "php", "java", "gradle", "mvn",
-        "vim", "nvim", "emacs", "code", "subl", "atom",
-        "git", "hg", "svn", "rsync", "scp", "curl", "wget",
-        "tar", "gzip", "zip", "unzip", "docker", "podman",
-        "make", "cmake", "xcodebuild", "swiftc", "gcc", "clang",
+    private let aiAgentProcessNames: [String: String] = [
+        "claude": "Claude",
+        "claude-code": "Claude Code",
+        "codebuddy": "CodeBuddy",
+        "cline": "Cline",
+        "codex": "Codex",
+        "hermes": "Hermes",
+        "trae": "Trae",
+        "trae-agent": "Trae Agent",
+        "cursor": "Cursor",
+        "windsurf": "Windsurf",
+        "codearts": "CodeArts",
+        "kimi": "Kimi",
+        "deepseek": "DeepSeek",
+        "qwen": "Qwen",
+        "doubao": "Doubao",
+        "minimax": "MiniMax",
+        "copilot": "Copilot",
+        "aider": "Aider",
+        "cody": "Cody",
+        "tabby": "Tabby",
+        "warp": "Warp",
+        "chatgpt": "ChatGPT",
+        "gemini": "Gemini",
+        "augment": "Augment",
+    ]
+
+    private let devToolProcessNames: [String: String] = [
+        "node": "Node.js",
+        "python": "Python",
+        "python3": "Python3",
+        "bun": "Bun",
+        "deno": "Deno",
+        "npm": "npm",
+        "yarn": "Yarn",
+        "pnpm": "pnpm",
+        "cargo": "Cargo",
+        "go": "Go",
+        "swift": "Swift",
+        "ruby": "Ruby",
+        "java": "Java",
+        "gradle": "Gradle",
+        "mvn": "Maven",
+        "xcodebuild": "Xcode",
+        "make": "Make",
+        "cmake": "CMake",
     ]
 
     func start() {
@@ -94,11 +129,7 @@ class OperationMonitor: ObservableObject {
             guard !pathList.isEmpty else { return }
             DispatchQueue.global(qos: .utility).async { [weak monitor] in
                 guard let monitor = monitor else { return }
-                do {
-                    try monitor.processEvents(paths: pathList)
-                } catch {
-                    print("[OperationMonitor] Error processing events: \(error.localizedDescription)")
-                }
+                monitor.processEvents(paths: pathList)
             }
         }
 
@@ -135,36 +166,34 @@ class OperationMonitor: ObservableObject {
         }
     }
 
-    private func processEvents(paths: [String]) throws {
+    private func processEvents(paths: [String]) {
         let fm = FileManager.default
         let now = Date()
-        
+
         if now.timeIntervalSince(lastAgentDetectTime) > 5.0 {
             cachedActiveAgents = detectActiveAgents()
             lastAgentDetectTime = now
         }
-        
+
         if now.timeIntervalSince(lastCleanupTime) > 60.0 {
             cleanupOldSnapshots()
             lastCleanupTime = now
         }
-        
-        let activeAgents = cachedActiveAgents
-        let primaryAgent = activeAgents.first ?? "System"
 
         for eventPath in paths {
             guard !eventPath.isEmpty else { continue }
-            
+
             let fileName = (eventPath as NSString).lastPathComponent
             if fileName.hasPrefix(".") || fileName.hasPrefix("._") { continue }
 
             let expanded = NSString(string: eventPath).expandingTildeInPath
 
             guard fm.fileExists(atPath: expanded) else {
+                let agentName = resolveAgentName(for: eventPath)
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
-                    agentName: primaryAgent,
+                    agentName: agentName,
                     operationType: .delete,
                     targetPath: eventPath,
                     detail: formatDeleteDetail(eventPath),
@@ -180,9 +209,8 @@ class OperationMonitor: ObservableObject {
             guard fm.fileExists(atPath: expanded, isDirectory: &isDir), !isDir.boolValue else { continue }
 
             let attrs = try? fm.attributesOfItem(atPath: expanded)
-            
             guard let fileAttrs = attrs else { continue }
-            
+
             let size = (fileAttrs[.size] as? NSNumber)?.int64Value ?? 0
             let modDate = (fileAttrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
 
@@ -191,10 +219,11 @@ class OperationMonitor: ObservableObject {
                     if let lastAccess = accessTimes[eventPath] {
                         if now.timeIntervalSince(lastAccess) > 30.0 {
                             accessTimes[eventPath] = now
+                            let agentName = resolveAgentName(for: eventPath, existingAgent: existing.agentName)
                             let record = OperationRecord(
                                 id: UUID().uuidString,
                                 timestamp: Date(),
-                                agentName: primaryAgent,
+                                agentName: agentName,
                                 operationType: .read,
                                 targetPath: eventPath,
                                 detail: formatReadDetail(eventPath, size: size),
@@ -204,10 +233,11 @@ class OperationMonitor: ObservableObject {
                         }
                     } else {
                         accessTimes[eventPath] = now
+                        let agentName = resolveAgentName(for: eventPath, existingAgent: existing.agentName)
                         let record = OperationRecord(
                             id: UUID().uuidString,
                             timestamp: Date(),
-                            agentName: primaryAgent,
+                            agentName: agentName,
                             operationType: .read,
                             targetPath: eventPath,
                             detail: formatReadDetail(eventPath, size: size),
@@ -217,7 +247,7 @@ class OperationMonitor: ObservableObject {
                     }
                     continue
                 }
-                let agentName = activeAgents.first ?? existing.agentName ?? primaryAgent
+                let agentName = resolveAgentName(for: eventPath, existingAgent: existing.agentName)
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
@@ -229,7 +259,7 @@ class OperationMonitor: ObservableObject {
                 )
                 addRecord(record)
             } else {
-                let agentName = primaryAgent
+                let agentName = resolveAgentName(for: eventPath)
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
@@ -247,12 +277,58 @@ class OperationMonitor: ObservableObject {
                 modDate: modDate,
                 size: size,
                 isDir: false,
-                agentName: activeAgents.first
+                agentName: cachedActiveAgents.first
             )
             accessTimes[eventPath] = now
         }
     }
-    
+
+    private func resolveAgentName(for path: String, existingAgent: String? = nil) -> String {
+        let lsofAgent = findProcessOwningFile(path)
+        if let lsofAgent = lsofAgent {
+            return lsofAgent
+        }
+        if let first = cachedActiveAgents.first {
+            return first
+        }
+        if let existing = existingAgent {
+            return existing
+        }
+        return "System"
+    }
+
+    private func findProcessOwningFile(_ filePath: String) -> String? {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        task.arguments = ["-F", "cn", filePath]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
+            task.waitUntilExit()
+        } catch {
+            return nil
+        }
+        guard let data = try? pipe.fileHandleForReading.readToEnd(),
+              let output = String(data: data, encoding: .utf8) else { return nil }
+
+        var commandName: String?
+        for line in output.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("c") {
+                let name = String(trimmed.dropFirst()).lowercased()
+                if let displayName = aiAgentProcessNames[name] {
+                    return displayName
+                }
+                if let displayName = devToolProcessNames[name] {
+                    commandName = displayName
+                }
+            }
+        }
+        return commandName
+    }
+
     private func cleanupOldSnapshots() {
         if fileSnapshots.count > maxSnapshots {
             let excess = fileSnapshots.count - maxSnapshots
@@ -262,7 +338,7 @@ class OperationMonitor: ObservableObject {
                 accessTimes.removeValue(forKey: key)
             }
         }
-        
+
         if accessTimes.count > maxSnapshots * 2 {
             let cutoff = Date().addingTimeInterval(-300)
             accessTimes = accessTimes.filter { $0.value > cutoff }
@@ -274,7 +350,7 @@ class OperationMonitor: ObservableObject {
     private func detectActiveAgents() -> [String] {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/ps")
-        task.arguments = ["-eo", "pid,comm="]
+        task.arguments = ["-eo", "comm="]
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
@@ -291,18 +367,43 @@ class OperationMonitor: ObservableObject {
         var activeAgents: [String] = []
 
         for line in output.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { continue }
-            let parts = trimmed.split(separator: " ", maxSplits: 1)
-            let processName = parts.count > 1 ? String(parts[1]).lowercased() : String(parts[0]).lowercased()
+            let processName = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard !processName.isEmpty else { continue }
 
-            for agent in agentProcessNames {
-                if processName == agent || processName.hasSuffix("/\(agent)") || processName.contains(agent) {
-                    let displayName = agent.capitalized
+            if let displayName = aiAgentProcessNames[processName] {
+                if !activeAgents.contains(displayName) {
+                    activeAgents.append(displayName)
+                }
+                continue
+            }
+            if processName.contains("/") {
+                let basename = (processName as NSString).lastPathComponent.lowercased()
+                if let displayName = aiAgentProcessNames[basename] {
                     if !activeAgents.contains(displayName) {
                         activeAgents.append(displayName)
                     }
+                    continue
+                }
+            }
+        }
+
+        for line in output.components(separatedBy: .newlines) {
+            let processName = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !processName.isEmpty else { continue }
+
+            if let displayName = devToolProcessNames[processName] {
+                if !activeAgents.contains(displayName) {
+                    activeAgents.append(displayName)
+                }
+                continue
+            }
+            if processName.contains("/") {
+                let basename = (processName as NSString).lastPathComponent.lowercased()
+                if let displayName = devToolProcessNames[basename] {
+                    if !activeAgents.contains(displayName) {
+                        activeAgents.append(displayName)
+                    }
+                    continue
                 }
             }
         }
@@ -355,7 +456,7 @@ class OperationMonitor: ObservableObject {
                 var isDir: ObjCBool = false
                 if fm.fileExists(atPath: fullPath, isDirectory: &isDir) {
                     let attrs = try? fm.attributesOfItem(atPath: fullPath)
-                    let size = (attrs?[.size] as? Int64) ?? 0
+                    let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
                     let modDate = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
                     fileSnapshots[fullPath] = FileSnapshot(
                         path: fullPath, modDate: modDate, size: size, isDir: isDir.boolValue, agentName: nil
@@ -472,7 +573,7 @@ class OperationMonitor: ObservableObject {
             return
         }
         var restoredCount = 0
-        for (path, bookmark) in bookmarks {
+        for (_, bookmark) in bookmarks {
             do {
                 var isStale = false
                 let url = try URL(resolvingBookmarkData: bookmark, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale)
