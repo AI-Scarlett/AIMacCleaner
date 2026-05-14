@@ -2,6 +2,16 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.6.5] - 2026-05-14
+
+### Fixed
+- 修复闪退问题
+- 移除设备监控 Tab（已整合到设置页面）
+- 修复操作记录误报 doubao（移除通用进程名匹配）
+- 优化左侧 Tab 栏收缩按钮（更优雅的设计）
+- 设置页面语言 Tab 更名为"语言"
+- 存储分析改进：扫描深度提升到 6 层，最大文件数到 3000，降低文件阈值到 100KB，可扫描更多文件
+
 ## [1.6.4] - 2026-05-14
 
 ### Added

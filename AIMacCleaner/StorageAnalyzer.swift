@@ -106,13 +106,13 @@ class StorageAnalyzer: ObservableObject {
         return await Task.detached(priority: .userInitiated) {
             var totalSize: Int64 = 0
             var files: [StorageFile] = []
-            let maxFiles = 500
+            let maxFiles = 3000
 
             for path in paths {
                 let expanded = NSString(string: path).expandingTildeInPath
                 var isDir: ObjCBool = false
                 guard fm.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue else { continue }
-                let (size, items) = self.scanDirectory(at: expanded, maxDepth: 5, maxFiles: maxFiles - files.count, fm: fm)
+                let (size, items) = self.scanDirectory(at: expanded, maxDepth: 6, maxFiles: maxFiles - files.count, fm: fm)
                 totalSize += size
                 files.append(contentsOf: items)
             }
@@ -187,12 +187,12 @@ class StorageAnalyzer: ObservableObject {
                 let (subSize, subFiles) = scanDirectory(at: fullPath, maxDepth: maxDepth - 1, maxFiles: maxFiles - files.count, fm: fm)
                 totalSize += subSize
                 files.append(contentsOf: subFiles)
-                if subSize > 524288 {
+                if subSize > 104857600 {
                     files.append(StorageFile(id: fullPath, name: name, path: fullPath, size: subSize, createdDate: created, modifiedDate: modified, isDirectory: true))
                 }
             } else {
                 totalSize += size
-                if size > 524288 {
+                if size > 102400 {
                     files.append(StorageFile(id: fullPath, name: name, path: fullPath, size: size, createdDate: created, modifiedDate: modified, isDirectory: false))
                 }
             }

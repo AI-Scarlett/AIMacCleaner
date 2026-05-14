@@ -5,14 +5,13 @@ struct ContentView: View {
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
     @State private var showSettings = false
-    @StateObject private var sensorMonitor = SensorMonitor()
     @StateObject private var storageAnalyzer = StorageAnalyzer()
     @State private var sidebarCollapsed = false
+    @State private var isSidebarHovering = false
 
     enum NavItem: String, CaseIterable {
         case cleaner = "Mac 清理"
         case storage = "存储分析"
-        case sensor = "设备监控"
         case app = "APP 管理"
         case dependency = "依赖管理"
         case other = "其它工具"
@@ -22,7 +21,6 @@ struct ContentView: View {
             switch self {
             case .cleaner: "arrow.down.doc.fill"
             case .storage: "chart.pie"
-            case .sensor: "video.fill"
             case .app: "app.badge"
             case .dependency: "cube.box"
             case .other: "terminal"
@@ -34,7 +32,6 @@ struct ContentView: View {
             switch self {
             case .cleaner: .blue
             case .storage: .indigo
-            case .sensor: .red
             case .app: .cyan
             case .dependency: .orange
             case .other: .gray
@@ -46,7 +43,6 @@ struct ContentView: View {
             switch self {
             case .cleaner: "扫描并清理存储空间"
             case .storage: "存储空间分析与AI建议"
-            case .sensor: "摄像头与麦克风监控"
             case .app: "管理已安装的应用"
             case .dependency: "管理开发依赖"
             case .other: "管理命令行工具"
@@ -68,39 +64,51 @@ struct ContentView: View {
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
                 if !sidebarCollapsed {
-                    VStack(spacing: 4) {
+                    VStack(spacing: 3) {
                         Image(systemName: "arrow.down.doc.fill")
-                            .font(.system(size: 28, weight: .medium))
+                            .font(.system(size: 22, weight: .medium))
                             .foregroundColor(.accentColor)
                         Text("AIMacCleaner")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                     }
-                    .padding(.top, 16)
+                    .padding(.top, 12)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 } else {
                     Image(systemName: "arrow.down.doc.fill")
-                        .font(.system(size: 20, weight: .medium))
+                        .font(.system(size: 18, weight: .medium))
                         .foregroundColor(.accentColor)
-                        .padding(.top, 16)
+                        .padding(.top, 12)
+                        .frame(maxWidth: .infinity)
                 }
-                Spacer()
+
                 Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
                         sidebarCollapsed.toggle()
                     }
                 } label: {
                     Image(systemName: sidebarCollapsed ? "chevron.right" : "chevron.left")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                        .padding(4)
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundColor(.secondary.opacity(isSidebarHovering ? 0.6 : 0.3))
                 }
                 .buttonStyle(.plain)
-                .padding(.top, 16)
+                .frame(width: 18, height: 18)
+                .background(
+                    Circle()
+                        .fill(Color.secondary.opacity(isSidebarHovering ? 0.08 : 0))
+                )
+                .contentShape(Rectangle())
+                .padding(.top, 12)
             }
-            .padding(.horizontal, sidebarCollapsed ? 8 : 16)
-            .padding(.bottom, 12)
+            .padding(.horizontal, sidebarCollapsed ? 6 : 12)
+            .padding(.bottom, 10)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isSidebarHovering = hovering
+                }
+            }
 
             Divider()
 
@@ -188,7 +196,7 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
 
-                    Text("v1.6.4")
+                    Text("v1.6.5")
                         .font(.system(size: 8))
                         .foregroundColor(.secondary)
                 }
@@ -232,8 +240,6 @@ struct ContentView: View {
             MacCleanerTab()
         case .storage:
             StorageAnalysisTab(analyzer: storageAnalyzer, service: service)
-        case .sensor:
-            SensorMonitorTab(monitor: sensorMonitor)
         case .app:
             AppManagerTab(filterType: .app)
         case .dependency:

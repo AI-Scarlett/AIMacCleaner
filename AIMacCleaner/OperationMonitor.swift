@@ -6,9 +6,8 @@ class OperationMonitor: ObservableObject {
     @Published var isMonitoring: Bool = false
 
     private var streamRef: FSEventStreamRef?
-    private var agentProcesses: [String] = []
     private var fileSnapshots: [String: FileSnapshot] = [:]
-    private let maxRecords = 5000
+    private let maxRecords = 2000
     private let recordsPath = NSHomeDirectory() + "/.aimaccleaner_operations_v2.json"
 
     struct FileSnapshot: Codable {
@@ -25,23 +24,14 @@ class OperationMonitor: ObservableObject {
             "\(home)/Desktop",
             "\(home)/Documents",
             "\(home)/Downloads",
-            "\(home)/Projects",
-            "\(home)/Work",
-            "\(home)/Code",
-            "\(home)/workspace",
-            "\(home)/Developer",
         ].filter { FileManager.default.fileExists(atPath: $0) }
     }()
 
-    private let agentNames = [
-        "Claude Code", "claude", "CodeBuddy", "codebuddy", "Cline", "cline",
-        "Codex", "codex", "Hermes", "hermes", "Trae", "trae",
-        "Cursor", "cursor", "Windsurf", "windsurf", "CodeArts", "codearts",
-        "QClaw", "qclaw", "OpenClaw", "openclaw", "Kimi", "kimi",
-        "DeepSeek", "deepseek", "通义千问", "qwen", "豆包", "doubao",
-        "MiniMax", "minimax", "Copilot", "copilot", "Aider", "aider",
-        "GitHub", "github", "npm", "pip", "brew", "xcodebuild",
-        "node", "python3", "python", "swift", "git",
+    private let agentProcessNames = [
+        "claude", "codebuddy", "cline", "codex", "hermes", "trae",
+        "cursor", "windsurf", "codearts", "kimi", "deepseek", "qwen",
+        "minimax", "copilot", "aider", "cody", "tabby", "warp",
+        "chatgpt", "gemini", "augment",
     ]
 
     func start() {
@@ -55,6 +45,7 @@ class OperationMonitor: ObservableObject {
 
     func stop() {
         stopFSEventStream()
+        processPoller?.invalidate()
         isMonitoring = false
     }
 
@@ -64,10 +55,10 @@ class OperationMonitor: ObservableObject {
         guard !watchPaths.isEmpty else { return }
 
         var context = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-        let callback: FSEventStreamCallback = { _, clientCallBackInfo, numEvents, eventPaths, eventFlags, eventIds in
+        let callback: FSEventStreamCallback = { _, clientCallBackInfo, numEvents, eventPaths, _, _ in
             let monitor = Unmanaged<OperationMonitor>.fromOpaque(clientCallBackInfo!).takeUnretainedValue()
             let paths = unsafeBitCast(eventPaths, to: NSArray.self) as! [String]
-            DispatchQueue.global(qos: .userInitiated).async {
+            DispatchQueue.global(qos: .utility).async {
                 monitor.processEvents(paths: paths)
             }
             return
@@ -83,7 +74,7 @@ class OperationMonitor: ObservableObject {
             &streamContext,
             watchPaths as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            2.0,
+            3.0,
             UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
         )
 
@@ -107,47 +98,49 @@ class OperationMonitor: ObservableObject {
         let activeAgents = detectActiveAgents()
 
         for eventPath in paths {
+            let fileName = (eventPath as NSString).lastPathComponent
+            if fileName.hasPrefix(".") || fileName.hasPrefix("._") { continue }
+
             let expanded = NSString(string: eventPath).expandingTildeInPath
 
             if !fm.fileExists(atPath: expanded) {
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
-                    agentName: activeAgents.first ?? "系统",
+                    agentName: activeAgents.first ?? "文件操作",
                     operationType: .delete,
                     targetPath: eventPath,
                     detail: formatDeleteDetail(eventPath),
                     fileSize: 0
                 )
                 DispatchQueue.main.async { self.addRecord(record) }
+                fileSnapshots[eventPath] = nil
                 continue
             }
 
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: expanded, isDirectory: &isDir) else { continue }
+            if isDir.boolValue { continue }
 
             let attrs = try? fm.attributesOfItem(atPath: expanded)
             let size = (attrs?[.size] as? Int64) ?? 0
             let modDate = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
 
-            if isDir.boolValue { continue }
-
             if let existing = fileSnapshots[eventPath] {
-                if modDate > existing.modDate || size != existing.size {
-                    let agentName = activeAgents.first ?? existing.agentName ?? "系统"
-                    let record = OperationRecord(
-                        id: UUID().uuidString,
-                        timestamp: Date(),
-                        agentName: agentName,
-                        operationType: .modify,
-                        targetPath: eventPath,
-                        detail: formatModifyDetail(eventPath, oldSize: existing.size, newSize: size),
-                        fileSize: size
-                    )
-                    DispatchQueue.main.async { self.addRecord(record) }
-                }
+                guard abs(modDate - existing.modDate) > 1.0 || size != existing.size else { continue }
+                let agentName = activeAgents.first ?? existing.agentName ?? "文件操作"
+                let record = OperationRecord(
+                    id: UUID().uuidString,
+                    timestamp: Date(),
+                    agentName: agentName,
+                    operationType: .modify,
+                    targetPath: eventPath,
+                    detail: formatModifyDetail(eventPath, oldSize: existing.size, newSize: size),
+                    fileSize: size
+                )
+                DispatchQueue.main.async { self.addRecord(record) }
             } else {
-                let agentName = activeAgents.first ?? "系统"
+                let agentName = activeAgents.first ?? "文件操作"
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
@@ -178,7 +171,6 @@ class OperationMonitor: ObservableObject {
         task.arguments = ["ps", "-eo", "comm="]
         let pipe = Pipe()
         task.standardOutput = pipe
-        task.standardError = nil
         task.launch()
         task.waitUntilExit()
 
@@ -190,13 +182,13 @@ class OperationMonitor: ObservableObject {
 
         for line in lines {
             let processName = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if processName.isEmpty { continue }
+            guard !processName.isEmpty else { continue }
 
-            for agent in agentNames {
-                let agentLower = agent.lowercased()
-                if processName.contains(agentLower) || agentLower.contains(processName) {
-                    if !activeAgents.contains(agent) {
-                        activeAgents.append(agent)
+            for agent in agentProcessNames {
+                if processName == agent || processName.contains(agent) {
+                    let displayName = agent.capitalized
+                    if !activeAgents.contains(displayName) {
+                        activeAgents.append(displayName)
                     }
                 }
             }
@@ -208,7 +200,7 @@ class OperationMonitor: ObservableObject {
     private var processPoller: Timer?
     private func startProcessPoller() {
         processPoller?.invalidate()
-        processPoller = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        processPoller = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             let agents = self.detectActiveAgents()
             if !agents.isEmpty {
@@ -216,7 +208,7 @@ class OperationMonitor: ObservableObject {
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
-                    agentName: agents.first ?? "系统",
+                    agentName: agents.first ?? "文件操作",
                     operationType: .modify,
                     targetPath: "系统进程",
                     detail: "🤖 活跃的 AI Agent: \(agentList)",
@@ -234,7 +226,7 @@ class OperationMonitor: ObservableObject {
         for dirPath in watchPaths {
             let enumerator = fm.enumerator(atPath: dirPath)
             var count = 0
-            while let file = enumerator?.nextObject() as? String, count < 10000 {
+            while let file = enumerator?.nextObject() as? String, count < 50000 {
                 let fullPath = "\(dirPath)/\(file)"
                 var isDir: ObjCBool = false
                 if fm.fileExists(atPath: fullPath, isDirectory: &isDir) {
@@ -269,7 +261,7 @@ class OperationMonitor: ObservableObject {
         } else if diff < 0 {
             diffStr = ByteCountFormatter.string(fromByteCount: abs(diff), countStyle: .file)
         } else {
-            diffStr = "大小不变"
+            diffStr = "内容变更"
         }
         return "✏️ 修改文件: \(fileName)\n📊 大小变化: \(diffStr)\n📁 位置: \(dirName)"
     }
@@ -295,7 +287,7 @@ class OperationMonitor: ObservableObject {
         if records.count > maxRecords {
             records = Array(records.prefix(maxRecords))
         }
-        if records.count % 50 == 0 {
+        if records.count % 20 == 0 {
             saveRecords()
         }
     }

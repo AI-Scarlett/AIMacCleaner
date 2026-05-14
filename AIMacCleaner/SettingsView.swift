@@ -36,7 +36,7 @@ struct SettingsView: View {
             case .ai: "AI"
             case .features: "功能"
             case .monitor: "监控"
-            case .general: "通用"
+            case .general: "语言"
             case .version: "版本"
             }
         }

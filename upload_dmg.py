@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "1.6.4"
+VERSION = "1.6.5"
 DMG_PATH = f"/tmp/AIMacCleaner-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -35,21 +35,14 @@ if response.status_code == 200:
 else:
     # Create new release
     print(f"Creating new release {TAG}...")
-    body_text = """## 新功能
+    body_text = """## 修复
 
-- **设置页整合** - 将 AI 设置、功能开关、监控设置、版本更新检测整合到统一的设置页面
-- **功能开关** - 菜单栏监控、设备监控、操作记录均可在设置中一键开关
-- **监控设置** - 存储警告阈值可调、回收站删除模式开关
-- **版本检测** - 设置页内置版本更新检测功能，显示当前版本号
-- **全盘扫描** - 存储分析全面升级，扫描整个磁盘包括系统文件、应用程序、应用数据、文稿、Agent、依赖、日志缓存等
-- **目录复制** - 存储分析文件列表新增"目录"列，显示完整路径，点击复制按钮可直接复制路径
-- **应用数据分类** - 存储分析新增"应用数据"和"日志与缓存"分类
-
-## 修复
-
-- 修复闪退问题：安全处理网络接口遍历和文件句柄关闭操作
-- 修复权限持久化：添加系统权限描述，重启后无需重新授权
-- 修复存储分析不准确：扫描范围从用户目录扩展到整个磁盘
+- 修复闪退问题
+- 移除设备监控 Tab（已整合到设置页面）
+- 修复操作记录误报 doubao
+- 优化左侧 Tab 栏收缩按钮（更优雅的设计）
+- 设置页面语言 Tab 更名为"语言"
+- 存储分析改进：扫描深度提升到 6 层，最大文件数到 3000，降低文件阈值到 100KB
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',
