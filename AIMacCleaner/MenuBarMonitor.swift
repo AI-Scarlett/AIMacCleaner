@@ -77,7 +77,7 @@ struct MenuBarMonitor: View {
                 quickActions
             }
         }
-        .frame(maxHeight: 520)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var operationsContent: some View {
@@ -94,7 +94,7 @@ struct MenuBarMonitor: View {
                 operationControlBar
             }
         }
-        .frame(maxHeight: 520)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var hardwareOverview: some View {

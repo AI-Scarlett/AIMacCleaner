@@ -1229,7 +1229,7 @@ class ScannerService: ObservableObject {
     @Published var updateReadyToInstall: Bool = false
     @Published var updateErrorMessage: String = ""
 
-    let currentVersion = "1.6.0"
+    let currentVersion = "1.6.1"
 
     func checkForUpdates() async {
         isCheckingUpdate = true

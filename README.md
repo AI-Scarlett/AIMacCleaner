@@ -66,7 +66,7 @@
 
 ### 方式一：下载 DMG（推荐）
 
-1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.6.0-arm64.dmg`
+1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.6.1-arm64.dmg`
 2. 双击打开 DMG 文件
 3. 将 AIMacCleaner 拖入 Applications 文件夹
 4. 首次打开时，右键点击应用 → 选择「打开」（需绕过 Gatekeeper 验证）
@@ -199,6 +199,20 @@ AIMacCleaner/
 ## 更新日志
 
 详见 [CHANGELOG.md](CHANGELOG.md)
+
+### v1.6.1 (2025-05-13)
+- 修复 getNetworkInfo 中强制解包导致的启动崩溃
+- 修复菜单栏 popover 内容不显示（高度自适应）
+- 桌面端 UI 重构：左侧导航栏 + 右侧内容区
+- 统一各功能页面布局（PageHeader + FilterBar + Content）
+- 修复操作记录筛选框宽度问题
+- 修复代码签名缺失导致"已损坏"提示
+- 修复图标丢失问题（使用 xcodebuild 编译 Assets.xcassets）
+
+### v1.6.0 (2025-05-13)
+- 菜单栏硬件监控：CPU、内存、温度、电池、网络
+- 自动操作监控 Tab
+- 操作记录筛选和统计
 
 ### v1.3.0 (2025-05-13)
 - 操作记录 Tab：记录 AI Agent 自动操作
