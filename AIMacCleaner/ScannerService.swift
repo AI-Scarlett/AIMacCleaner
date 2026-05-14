@@ -1236,6 +1236,25 @@ class ScannerService: ObservableObject {
 
     let currentVersion = "1.7.0"
 
+    @Published var appUpdates: [UpdateItem] = []
+    @Published var isCheckingAppUpdates: Bool = false
+
+    struct UpdateItem: Identifiable {
+        let id = UUID().uuidString
+        let name: String
+        let currentVersion: String
+        let latestVersion: String
+        let type: UpdateType
+        let updateCommand: String?
+        
+        enum UpdateType: String {
+            case app = "App"
+            case agent = "Agent"
+            case cli = "CLI"
+            case dependency = "Dependency"
+        }
+    }
+
     func checkForUpdates() async {
         isCheckingUpdate = true
         defer { isCheckingUpdate = false }
@@ -1988,5 +2007,120 @@ class ScannerService: ObservableObject {
         if bytes >= 1048576 { return String(format: "%.1f MB", Double(bytes) / 1048576.0) }
         if bytes >= 1024 { return String(format: "%.1f KB", Double(bytes) / 1024.0) }
         return "\(bytes) B"
+    }
+
+    // MARK: - App & Tool Update Checker
+
+    func checkAppUpdates() {
+        let mode = UserDefaults.standard.string(forKey: "networkMode") ?? "internet"
+        guard mode == "internet" else { return }
+        
+        isCheckingAppUpdates = true
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+            var updates: [UpdateItem] = []
+            
+            updates.append(contentsOf: self.checkCLIUpdates())
+            updates.append(contentsOf: self.checkHomebrewUpdates())
+            updates.append(contentsOf: self.checkNodeUpdates())
+            
+            DispatchQueue.main.async {
+                self.appUpdates = updates
+                self.isCheckingAppUpdates = false
+            }
+        }
+    }
+
+    private func checkCLIUpdates() -> [UpdateItem] {
+        var updates: [UpdateItem] = []
+        let checks: [(String, String, String, UpdateItem.UpdateType, String?)] = [
+            ("claude --version 2>&1", "Claude", "cli/claude", .agent, "npm update -g @anthropic-ai/claude-code"),
+            ("cursor --version 2>&1", "Cursor", "cli/cursor", .agent, nil),
+            ("gh --version 2>&1", "GitHub CLI", "cli/gh", .cli, "brew upgrade gh"),
+            ("git --version 2>&1", "Git", "cli/git", .cli, "brew upgrade git"),
+            ("python3 --version 2>&1", "Python3", "cli/python3", .cli, "brew upgrade python3"),
+            ("node --version 2>&1", "Node.js", "cli/node", .cli, "brew upgrade node"),
+            ("cargo --version 2>&1", "Cargo", "cli/cargo", .cli, "rustup update"),
+            ("go version 2>&1", "Go", "cli/go", .cli, "brew upgrade go"),
+            ("deno --version 2>&1", "Deno", "cli/deno", .cli, "deno upgrade"),
+        ]
+        
+        for (cmd, name, _, type, updateCmd) in checks {
+            let current = runShellCommand(cmd)
+            guard !current.isEmpty else { continue }
+            let version = extractVersion(from: current)
+            guard !version.isEmpty else { continue }
+        }
+        
+        return updates
+    }
+
+    private func checkHomebrewUpdates() -> [UpdateItem] {
+        var updates: [UpdateItem] = []
+        let output = runShellCommand("brew outdated 2>/dev/null")
+        guard !output.isEmpty else { return updates }
+        
+        for line in output.components(separatedBy: .newlines) {
+            let parts = line.split(separator: " ")
+            guard parts.count >= 1 else { continue }
+            let name = String(parts[0])
+            let currentVer = parts.count >= 2 ? String(parts[1]).trimmingCharacters(in: CharacterSet(charactersIn: "()")) : "?"
+            let latestVer = parts.count >= 3 ? String(parts[2]).trimmingCharacters(in: CharacterSet(charactersIn: "<")) : "?"
+            updates.append(UpdateItem(
+                name: name,
+                currentVersion: currentVer,
+                latestVersion: latestVer,
+                type: .dependency,
+                updateCommand: "brew upgrade \(name)"
+            ))
+        }
+        return updates
+    }
+
+    private func checkNodeUpdates() -> [UpdateItem] {
+        var updates: [UpdateItem] = []
+        let output = runShellCommand("npm outdated -g 2>/dev/null")
+        guard !output.isEmpty else { return updates }
+        
+        for line in output.components(separatedBy: .newlines).dropFirst() {
+            let parts = line.split(separator: " ")
+            guard parts.count >= 3 else { continue }
+            let name = String(parts[0])
+            let current = String(parts[1])
+            let latest = String(parts[2])
+            if current != latest {
+                updates.append(UpdateItem(
+                    name: name,
+                    currentVersion: current,
+                    latestVersion: latest,
+                    type: .dependency,
+                    updateCommand: "npm update -g \(name)"
+                ))
+            }
+        }
+        return updates
+    }
+
+    private func runShellCommand(_ command: String) -> String {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/bash")
+        task.arguments = ["-c", command]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = pipe
+        do {
+            try task.run()
+            task.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        } catch {
+            return ""
+        }
+    }
+
+    private func extractVersion(from output: String) -> String {
+        let pattern = "[0-9]+\\.[0-9]+(\\.[0-9]+)?"
+        guard let range = output.range(of: pattern, options: .regularExpression) else { return "" }
+        return String(output[range])
     }
 }

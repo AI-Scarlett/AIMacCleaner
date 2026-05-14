@@ -13,11 +13,13 @@ struct SettingsView: View {
     @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
     @AppStorage("sensorMonitorEnabled") private var sensorMonitorEnabled = true
     @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = true
+    @AppStorage("networkMode") private var networkMode = "internet"
 
     enum SettingsTab: String, CaseIterable {
         case ai = "AI"
         case features = "Features"
         case monitor = "Monitor"
+        case network = "Network"
         case language = "Language"
         case version = "Version"
 
@@ -26,6 +28,7 @@ struct SettingsView: View {
             case .ai: "brain"
             case .features: "switch.2"
             case .monitor: "bell.badge"
+            case .network: "network"
             case .language: "globe"
             case .version: "arrow.up.circle"
             }
@@ -36,6 +39,7 @@ struct SettingsView: View {
             case .ai: "AI"
             case .features: "Features"
             case .monitor: "Monitor"
+            case .network: "Network"
             case .language: "Language"
             case .version: "Version"
             }
@@ -46,6 +50,7 @@ struct SettingsView: View {
             case .ai: localizer.settingsTabAI
             case .features: localizer.settingsTabFeatures
             case .monitor: localizer.settingsTabMonitor
+            case .network: "Network"
             case .language: localizer.settingsTabLanguage
             case .version: localizer.settingsTabVersion
             }
@@ -114,6 +119,7 @@ struct SettingsView: View {
                         case .ai: aiSection
                         case .features: featuresSection
                         case .monitor: monitorSection
+                        case .network: networkSection
                         case .language: languageSection
                         case .version: versionSection
                         }
@@ -232,6 +238,69 @@ struct SettingsView: View {
                     set: { service.trashInsteadOfDelete = $0 }
                 )
             )
+        }
+    }
+
+    private var networkSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "network").foregroundColor(.blue)
+                Text("Network Mode").font(.headline)
+            }
+            Text("Choose network mode for update checking and AI features")
+                .font(.callout).foregroundColor(.secondary)
+
+            VStack(spacing: 10) {
+                HStack(spacing: 12) {
+                    Image(systemName: networkMode == "internet" ? "globe" : "globe")
+                        .font(.title2)
+                        .foregroundColor(networkMode == "internet" ? .blue : .secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Internet Mode").font(.body).fontWeight(.medium)
+                        Text("Full internet access for updates, AI scanning, and version checking")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    if networkMode == "internet" {
+                        Image(systemName: "checkmark.circle.fill").foregroundColor(.blue)
+                    }
+                }
+                .padding(10)
+                .background(networkMode == "internet" ? Color.blue.opacity(0.08) : Color.clear)
+                .cornerRadius(8)
+                .contentShape(Rectangle())
+                .onTapGesture { networkMode = "internet" }
+
+                HStack(spacing: 12) {
+                    Image(systemName: "lock.shield")
+                        .font(.title2)
+                        .foregroundColor(networkMode == "intranet" ? .orange : .secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Intranet Mode (Offline)").font(.body).fontWeight(.medium)
+                        Text("No internet access. Local scanning only, no update checks")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    if networkMode == "intranet" {
+                        Image(systemName: "checkmark.circle.fill").foregroundColor(.orange)
+                    }
+                }
+                .padding(10)
+                .background(networkMode == "intranet" ? Color.orange.opacity(0.08) : Color.clear)
+                .cornerRadius(8)
+                .contentShape(Rectangle())
+                .onTapGesture { networkMode = "intranet" }
+            }
+
+            if networkMode == "internet" {
+                Divider()
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.up.circle").foregroundColor(.green)
+                    Text("Update Checking").font(.subheadline).fontWeight(.medium)
+                }
+                Text("In internet mode, the app can check for updates of installed apps, AI agents, CLI tools, and dependencies.")
+                    .font(.caption).foregroundColor(.secondary)
+            }
         }
     }
 

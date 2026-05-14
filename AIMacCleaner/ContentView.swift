@@ -5,7 +5,6 @@ struct ContentView: View {
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
     @State private var showSettings = false
-    @StateObject private var storageAnalyzer = StorageAnalyzer()
     @State private var sidebarCollapsed = false
 
     enum NavItem: String, CaseIterable {
@@ -118,7 +117,7 @@ struct ContentView: View {
                         .padding(.bottom, 4)
                 }
 
-                ForEach(NavItem.allCases, id: \.self) { item in
+                ForEach(NavItem.allCases.filter { $0 != .storage }, id: \.self) { item in
                     Button {
                         selectedTab = item
                     } label: {
@@ -255,8 +254,9 @@ struct ContentView: View {
             MacCleanerTab()
                 .environmentObject(localizer)
         case .storage:
-            StorageAnalysisTab(analyzer: storageAnalyzer, service: service)
-                .environmentObject(localizer)
+            Text("Storage Analysis (Temporarily Disabled)")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .foregroundColor(.secondary)
         case .app:
             AppManagerTab(filterType: .app)
                 .environmentObject(localizer)
