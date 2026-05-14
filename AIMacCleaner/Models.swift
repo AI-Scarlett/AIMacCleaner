@@ -263,3 +263,72 @@ struct HardwareInfo {
         return String(format: "%.1f MB/s", bytesPerSec / 1048576)
     }
 }
+
+struct SensorEvent: Identifiable {
+    let id = UUID()
+    let timestamp: Date
+    let sensorType: SensorType
+    let processName: String
+    let pid: Int32
+    let bundleId: String?
+
+    enum SensorType: String, CaseIterable {
+        case camera = "摄像头"
+        case microphone = "麦克风"
+
+        var icon: String {
+            switch self {
+            case .camera: "video.fill"
+            case .microphone: "mic.fill"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .camera: .red
+            case .microphone: .blue
+            }
+        }
+    }
+}
+
+struct StorageCategory: Identifiable {
+    let id: String
+    let name: String
+    let icon: String
+    let color: Color
+    let size: Int64
+    let path: String
+    var files: [StorageFile]
+
+    var sizeFormatted: String { ByteCountFormatter.string(fromByteCount: size, countStyle: .file) }
+}
+
+struct StorageFile: Identifiable {
+    let id: String
+    let name: String
+    let path: String
+    let size: Int64
+    let createdDate: Date?
+    let modifiedDate: Date?
+    let isDirectory: Bool
+    var aiAnalysis: String?
+
+    var sizeFormatted: String { ByteCountFormatter.string(fromByteCount: size, countStyle: .file) }
+
+    enum SortField: String, CaseIterable {
+        case size = "大小"
+        case created = "添加日期"
+        case modified = "修改日期"
+        case name = "名称"
+
+        var icon: String {
+            switch self {
+            case .size: "arrow.up.arrow.down.circle"
+            case .created: "calendar.badge.plus"
+            case .modified: "calendar.badge.clock"
+            case .name: "textformat"
+            }
+        }
+    }
+}
