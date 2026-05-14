@@ -1,33 +1,145 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var selectedTab = 0
+    @State private var selectedTab: NavItem = .cleaner
     @StateObject private var operationMonitor = OperationMonitor()
 
+    enum NavItem: String, CaseIterable {
+        case cleaner = "Mac 清理"
+        case app = "APP 管理"
+        case dependency = "依赖管理"
+        case other = "其它工具"
+        case operations = "操作记录"
+
+        var icon: String {
+            switch self {
+            case .cleaner: "arrow.down.doc.fill"
+            case .app: "app.badge"
+            case .dependency: "cube.box"
+            case .other: "terminal"
+            case .operations: "clock.arrow.circlepath"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .cleaner: .blue
+            case .app: .cyan
+            case .dependency: .orange
+            case .other: .gray
+            case .operations: .green
+            }
+        }
+    }
+
     var body: some View {
-        TabView(selection: $selectedTab) {
+        HStack(spacing: 0) {
+            sidebar
+            Divider()
+            detailContent
+        }
+        .frame(minWidth: 960, minHeight: 640)
+    }
+
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            appHeader
+            Divider()
+            navList
+            Divider()
+            sidebarFooter
+        }
+        .frame(width: 200)
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var appHeader: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "arrow.down.doc.fill")
+                .font(.system(size: 24))
+                .foregroundColor(.accentColor)
+            Text("AIMacCleaner")
+                .font(.headline)
+                .fontWeight(.bold)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(Color.accentColor.opacity(0.05))
+    }
+
+    private var navList: some View {
+        VStack(spacing: 2) {
+            ForEach(NavItem.allCases, id: \.self) { item in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        selectedTab = item
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: item.icon)
+                            .font(.system(size: 14))
+                            .foregroundColor(selectedTab == item ? item.color : .secondary)
+                            .frame(width: 20)
+
+                        Text(item.rawValue)
+                            .font(.system(size: 13))
+                            .fontWeight(selectedTab == item ? .semibold : .regular)
+                            .foregroundColor(selectedTab == item ? .primary : .secondary)
+
+                        Spacer()
+
+                        if selectedTab == item {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(item.color)
+                                .frame(width: 3, height: 16)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(selectedTab == item ? item.color.opacity(0.1) : Color.clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 12)
+    }
+
+    private var sidebarFooter: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "info.circle")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            Text("v1.6.0")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        switch selectedTab {
+        case .cleaner:
             MacCleanerTab()
-                .tabItem { Label("Mac 清理", systemImage: "arrow.down.doc.fill") }
-                .tag(0)
-
+        case .app:
             AppManagerTab(filterType: .app)
-                .tabItem { Label("APP 管理", systemImage: "app.badge") }
-                .tag(1)
-
+        case .dependency:
             AppManagerTab(filterType: .dependency)
-                .tabItem { Label("依赖管理", systemImage: "cube.box") }
-                .tag(2)
-
+        case .other:
             AppManagerTab(filterType: .other)
-                .tabItem { Label("其它工具", systemImage: "terminal") }
-                .tag(3)
-
+        case .operations:
             OperationLogTab(monitor: operationMonitor)
-                .tabItem { Label("操作记录", systemImage: "clock.arrow.circlepath") }
-                .tag(4)
         }
     }
 }
+
+// MARK: - Operation Log Tab
 
 struct OperationLogTab: View {
     @ObservedObject var monitor: OperationMonitor
@@ -86,6 +198,7 @@ struct OperationLogTab: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            pageHeader
             filterBar
             Divider()
             if monitor.isMonitoring {
@@ -100,6 +213,43 @@ struct OperationLogTab: View {
         .onAppear {
             if !monitor.isMonitoring { monitor.start() }
         }
+    }
+
+    private var pageHeader: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.title2)
+                .foregroundColor(.green)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("操作记录")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Text("监控 AI Agent 的文件操作")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Button { monitor.start() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: monitor.isMonitoring ? "record.circle.fill" : "record.circle")
+                    Text(monitor.isMonitoring ? "监控中" : "开始监控")
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(monitor.isMonitoring ? .green : .blue)
+            .disabled(monitor.isMonitoring)
+
+            Button { monitor.clearRecords() } label: {
+                HStack(spacing: 3) { Image(systemName: "trash"); Text("清空") }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(.red)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var statusBanner: some View {
@@ -123,56 +273,47 @@ struct OperationLogTab: View {
     }
 
     private var filterBar: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").foregroundColor(.secondary).font(.caption)
-                    TextField("搜索路径、Agent...", text: $searchText).textFieldStyle(.plain).font(.caption)
-                    if !searchText.isEmpty {
-                        Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill").font(.caption).foregroundColor(.secondary) }.buttonStyle(.plain)
-                    }
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundColor(.secondary).font(.caption)
+                TextField("搜索路径、Agent...", text: $searchText).textFieldStyle(.plain).font(.caption)
+                if !searchText.isEmpty {
+                    Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill").font(.caption).foregroundColor(.secondary) }.buttonStyle(.plain)
                 }
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(Color(nsColor: .controlBackgroundColor)).cornerRadius(6)
-                .frame(width: 220)
-
-                Picker("Agent", selection: $filterAgent) {
-                    Text("全部 Agent").tag("")
-                    ForEach(agentNames, id: \.self) { name in
-                        Text(name).tag(name)
-                    }
-                }
-                .frame(width: 140)
-
-                Picker("操作类型", selection: $filterOpType) {
-                    Text("全部类型").tag(nil as OperationRecord.OperationType?)
-                    ForEach(OperationRecord.OperationType.allCases, id: \.self) { type in
-                        Text(type.rawValue).tag(type as OperationRecord.OperationType?)
-                    }
-                }
-                .frame(width: 100)
-
-                Picker("时间", selection: $filterTimeRange) {
-                    ForEach(TimeRange.allCases, id: \.self) { range in
-                        Text(range.rawValue).tag(range)
-                    }
-                }
-                .frame(width: 90)
-
-                Spacer()
-
-                Text("\(filteredRecords.count) 条").font(.caption).foregroundColor(.secondary)
-
-                Button { monitor.start() } label: { HStack(spacing: 3) { Image(systemName: monitor.isMonitoring ? "record.circle.fill" : "record.circle"); Text(monitor.isMonitoring ? "监控中" : "开始监控") } }
-                    .buttonStyle(.bordered).controlSize(.small)
-                    .tint(monitor.isMonitoring ? .green : .blue)
-                    .disabled(monitor.isMonitoring)
-
-                Button { monitor.clearRecords() } label: { HStack(spacing: 3) { Image(systemName: "trash"); Text("清空") } }
-                    .buttonStyle(.bordered).controlSize(.small).tint(.red)
             }
-            .padding(.horizontal, 16).padding(.vertical, 10)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(Color(nsColor: .controlBackgroundColor)).cornerRadius(6)
+            .frame(width: 220)
+
+            Picker("Agent", selection: $filterAgent) {
+                Text("全部 Agent").tag("")
+                ForEach(agentNames, id: \.self) { name in
+                    Text(name).tag(name)
+                }
+            }
+            .frame(width: 140)
+
+            Picker("操作类型", selection: $filterOpType) {
+                Text("全部类型").tag(nil as OperationRecord.OperationType?)
+                ForEach(OperationRecord.OperationType.allCases, id: \.self) { type in
+                    Text(type.rawValue).tag(type as OperationRecord.OperationType?)
+                }
+            }
+            .frame(width: 100)
+
+            Picker("时间", selection: $filterTimeRange) {
+                ForEach(TimeRange.allCases, id: \.self) { range in
+                    Text(range.rawValue).tag(range)
+                }
+            }
+            .frame(width: 90)
+
+            Spacer()
+
+            Text("\(filteredRecords.count) 条").font(.caption).foregroundColor(.secondary)
         }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
     }
 
     private var emptyView: some View {
@@ -250,7 +391,7 @@ struct OperationLogTab: View {
     }
 }
 
-// MARK: - Mac Cleaner Tab (保持不变)
+// MARK: - Mac Cleaner Tab
 
 struct MacCleanerTab: View {
     @EnvironmentObject var service: ScannerService
@@ -266,13 +407,6 @@ struct MacCleanerTab: View {
     @State private var cleanedSize: Int64 = 0
     @State private var cleanedCount = 0
     @State private var searchText = ""
-    @State private var sidebarSelection: SidebarItem? = .all
-
-    enum SidebarItem: Hashable {
-        case all
-        case category(String)
-        case app(String)
-    }
 
     var filteredItems: [ScanItem] {
         service.scanItems.filter { item in
@@ -294,77 +428,8 @@ struct MacCleanerTab: View {
     var selectedSize: Int64 { filteredItems.filter { selectedIds.contains($0.id) }.reduce(0) { $0 + $1.size } }
 
     var body: some View {
-        NavigationSplitView {
-            sidebar
-        } detail: {
-            detailView
-        }
-        .navigationSplitViewStyle(.balanced)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { showAIConfig = true } label: {
-                    HStack(spacing: 4) { Image(systemName: "gearshape"); Text("AI 设置") }
-                }
-            }
-        }
-        .sheet(isPresented: $showAIConfig) { AIConfigView().environmentObject(service) }
-        .alert("确认删除", isPresented: $showDeleteConfirm) {
-            Button("取消", role: .cancel) {}
-            Button("删除", role: .destructive) { performDelete() }
-        } message: {
-            let items = service.scanItems.filter { deleteTargetIds.contains($0.id) }
-            Text("确定删除 \(deleteTargetIds.count) 项（共 \(service.formatSize(items.reduce(Int64(0)) { $0 + $1.size }))）？")
-        }
-        .alert("🎉 清理完成", isPresented: $showCleanResult) {
-            Button("确定") {}
-        } message: {
-            Text("本次清理释放了 \(service.formatSize(cleanedSize))，共清理 \(cleanedCount) 项。")
-        }
-    }
-
-    private var sidebar: some View {
-        List(selection: $sidebarSelection) {
-            Section("概览") {
-                Label("全部项目", systemImage: "externaldrive.fill").tag(SidebarItem.all)
-            }
-            Section("按分类") {
-                ForEach(categories, id: \.self) { cat in
-                    let size = service.scanItems.filter { $0.category == cat }.reduce(Int64(0)) { $0 + $1.size }
-                    Label {
-                        HStack { Text(cat); Spacer(); Text(service.formatSize(size)).foregroundColor(.secondary).font(.caption) }
-                    } icon: { Image(systemName: categoryIcon(cat)) }
-                    .tag(SidebarItem.category(cat))
-                }
-            }
-            Section("按应用") {
-                ForEach(apps, id: \.self) { app in
-                    let size = service.scanItems.filter { $0.app == app }.reduce(Int64(0)) { $0 + $1.size }
-                    HStack { Text(app).lineLimit(1).truncationMode(.tail); Spacer(); Text(service.formatSize(size)).foregroundColor(.secondary).font(.caption) }
-                    .tag(SidebarItem.app(app))
-                }
-            }
-        }
-        .listStyle(.sidebar).frame(minWidth: 200)
-        .onChange(of: sidebarSelection) { newValue in
-            filterCategory = ""; filterApp = ""; filterRisk = ""; filterSource = ""
-            switch newValue {
-            case .category(let cat): filterCategory = cat
-            case .app(let app): filterApp = app
-            default: break
-            }
-        }
-    }
-
-    private func categoryIcon(_ cat: String) -> String {
-        switch cat {
-        case "浏览器": "globe"; case "办公": "briefcase"; case "AI Agent": "cpu"
-        case "开发": "hammer"; case "系统": "gearshape.2"; case "社交": "bubble.left.and.bubble.right"
-        default: "folder"
-        }
-    }
-
-    private var detailView: some View {
         VStack(spacing: 0) {
+            pageHeader
             diskCard
             Divider()
             if service.isAiScanning || service.isEnhancedScanning {
@@ -384,6 +449,60 @@ struct MacCleanerTab: View {
                 if filteredItems.isEmpty { noResultView } else { resultList }
             }
         }
+        .sheet(isPresented: $showAIConfig) { AIConfigView().environmentObject(service) }
+        .alert("确认删除", isPresented: $showDeleteConfirm) {
+            Button("取消", role: .cancel) {}
+            Button("删除", role: .destructive) { performDelete() }
+        } message: {
+            let items = service.scanItems.filter { deleteTargetIds.contains($0.id) }
+            Text("确定删除 \(deleteTargetIds.count) 项（共 \(service.formatSize(items.reduce(Int64(0)) { $0 + $1.size }))）？")
+        }
+        .alert("🎉 清理完成", isPresented: $showCleanResult) {
+            Button("确定") {}
+        } message: {
+            Text("本次清理释放了 \(service.formatSize(cleanedSize))，共清理 \(cleanedCount) 项。")
+        }
+    }
+
+    private var pageHeader: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.down.doc.fill")
+                .font(.title2)
+                .foregroundColor(.blue)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Mac 清理")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Text("扫描并清理存储空间")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            HStack(spacing: 8) {
+                Button { Task { await service.scanLocal() } } label: {
+                    HStack(spacing: 4) { Image(systemName: "magnifyingglass"); Text("本地扫描") }
+                }
+                .buttonStyle(.bordered).controlSize(.small).disabled(service.isScanning)
+
+                Button { Task { await performAiScan() } } label: {
+                    HStack(spacing: 4) { Image(systemName: "brain"); Text("AI 扫描") }
+                }
+                .buttonStyle(.bordered).controlSize(.small).tint(.purple).disabled(service.isAiScanning)
+
+                Button { Task { await service.startEnhancedScan() } } label: {
+                    HStack(spacing: 4) { Image(systemName: "bolt.fill"); Text("增强扫描") }
+                }
+                .buttonStyle(.bordered).controlSize(.small).tint(.orange).disabled(service.isEnhancedScanning)
+
+                Button { showAIConfig = true } label: {
+                    HStack(spacing: 4) { Image(systemName: "gearshape"); Text("AI 设置") }
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var diskCard: some View {
@@ -430,7 +549,7 @@ struct MacCleanerTab: View {
             Text("当前筛选条件下没有匹配项").font(.title3).fontWeight(.medium)
             HStack(spacing: 10) {
                 if !filterRisk.isEmpty { Button { filterRisk = "" } label: { Text("清除风险筛选") }.buttonStyle(.bordered).controlSize(.small) }
-                if !filterCategory.isEmpty { Button { filterCategory = ""; sidebarSelection = .all } label: { Text("清除分类筛选") }.buttonStyle(.bordered).controlSize(.small) }
+                if !filterCategory.isEmpty { Button { filterCategory = "" } label: { Text("清除分类筛选") }.buttonStyle(.bordered).controlSize(.small) }
                 if !searchText.isEmpty { Button { searchText = "" } label: { Text("清除搜索") }.buttonStyle(.bordered).controlSize(.small) }
             }
             Spacer()
@@ -440,18 +559,27 @@ struct MacCleanerTab: View {
     private var searchAndFilterBar: some View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
-                Button { Task { await service.scanLocal() } } label: { HStack(spacing: 3) { Image(systemName: "magnifyingglass"); Text("本地扫描") } }
-                    .buttonStyle(.bordered).controlSize(.small).disabled(service.isScanning)
-                Button { Task { await performAiScan() } } label: { HStack(spacing: 3) { Image(systemName: "brain"); Text("AI 扫描") } }
-                    .buttonStyle(.bordered).controlSize(.small).tint(.purple).disabled(service.isAiScanning)
-            }
-            Divider().frame(height: 16)
-            HStack(spacing: 6) {
                 Image(systemName: "line.3.horizontal.decrease").foregroundColor(.secondary).font(.caption)
                 TextField("搜索...", text: $searchText).textFieldStyle(.plain).font(.caption)
                 if !searchText.isEmpty { Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill").font(.caption).foregroundColor(.secondary) }.buttonStyle(.plain) }
             }.padding(.horizontal, 8).padding(.vertical, 4).background(Color(nsColor: .controlBackgroundColor)).cornerRadius(6).frame(width: 140)
             Divider().frame(height: 16)
+
+            if !categories.isEmpty {
+                Picker("分类", selection: $filterCategory) {
+                    Text("全部分类").tag("")
+                    ForEach(categories, id: \.self) { Text($0).tag($0) }
+                }
+                .frame(width: 100)
+            }
+            if !apps.isEmpty {
+                Picker("应用", selection: $filterApp) {
+                    Text("全部应用").tag("")
+                    ForEach(apps, id: \.self) { Text($0).tag($0) }
+                }
+                .frame(width: 100)
+            }
+
             HStack(spacing: 6) {
                 Text("风险:").font(.caption).foregroundColor(.secondary)
                 RiskFilterButton(label: "安全", color: .green, isActive: filterRisk == "safe") { filterRisk = "safe" }
@@ -459,6 +587,7 @@ struct MacCleanerTab: View {
                 RiskFilterButton(label: "危险", color: .red, isActive: filterRisk == "dangerous") { filterRisk = "dangerous" }
                 if !filterRisk.isEmpty { Button { filterRisk = "" } label: { Image(systemName: "xmark.circle.fill").font(.caption).foregroundColor(.secondary) }.buttonStyle(.plain) }
             }
+
             Spacer()
             Button { smartClean() } label: { Label("智能清理", systemImage: "wand.and.stars") }
                 .buttonStyle(.borderedProminent).tint(.green).controlSize(.regular)
@@ -466,8 +595,6 @@ struct MacCleanerTab: View {
             Text("\(filteredItems.count) 项 · \(service.formatSize(totalCleanable))").font(.caption).foregroundColor(.secondary)
         }.padding(.horizontal, 20).padding(.vertical, 8).background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
     }
-
-    private var hasOtherFilters: Bool { !filterSource.isEmpty || !filterCategory.isEmpty || !filterApp.isEmpty }
 
     private var selectionActionBar: some View {
         HStack(spacing: 10) {
@@ -509,7 +636,7 @@ struct MacCleanerTab: View {
     private func toggleIgnore(_ item: ScanItem) { if item.ignored { service.unignoreItems(ids: [item.id]) } else { service.ignoreItems(ids: [item.id]) } }
 }
 
-// MARK: - App Manager Tab (通用，按类型筛选)
+// MARK: - App Manager Tab
 
 struct AppManagerTab: View {
     @EnvironmentObject var service: ScannerService
@@ -554,6 +681,7 @@ struct AppManagerTab: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            pageHeader
             actionBar
             if subCategories.count > 1 {
                 subCategoryFilterBar
@@ -581,6 +709,30 @@ struct AppManagerTab: View {
         .alert("操作完成", isPresented: $showActionResult) {
             Button("确定") {}
         } message: { Text(actionResultMsg) }
+    }
+
+    private var pageHeader: some View {
+        HStack(spacing: 12) {
+            Image(systemName: filterType.tabIcon)
+                .font(.title2)
+                .foregroundColor(filterType.tabColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(filterType.tabLabel)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Text(filterType == .app ? "管理已安装的应用" : filterType == .dependency ? "管理开发依赖" : "管理命令行工具")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Button { Task { await service.scanInstalledApps() } } label: {
+                HStack(spacing: 3) { Image(systemName: "arrow.clockwise"); Text("刷新") }
+            }
+            .buttonStyle(.bordered).controlSize(.small).disabled(service.isScanningApps)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var subCategoryFilterBar: some View {
@@ -628,8 +780,6 @@ struct AppManagerTab: View {
                 }.padding(.horizontal, 8).padding(.vertical, 4).background(Color(nsColor: .controlBackgroundColor)).cornerRadius(6).frame(width: 200)
                 Spacer()
                 Text("\(filteredApps.count) 项").font(.caption).foregroundColor(.secondary)
-                Button { Task { await service.scanInstalledApps() } } label: { HStack(spacing: 3) { Image(systemName: "arrow.clockwise"); Text("刷新") } }
-                    .buttonStyle(.bordered).controlSize(.small).disabled(service.isScanningApps)
             }.padding(.horizontal, 20).padding(.vertical, 10)
 
             HStack(spacing: 16) {
@@ -806,14 +956,6 @@ struct RiskFilterButton: View {
 struct DiskStat: View {
     let title: String; let value: String; var color: Color = .primary
     var body: some View { VStack(spacing: 2) { Text(title).font(.caption2).foregroundColor(.secondary).textCase(.uppercase); Text(value).font(.title3).fontWeight(.bold).foregroundColor(color) } }
-}
-
-struct FilterChip: View {
-    let label: String; let onRemove: () -> Void
-    var body: some View {
-        HStack(spacing: 4) { Text(label).font(.caption2).fontWeight(.medium); Button(action: onRemove) { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundColor(.secondary) }.buttonStyle(.plain) }
-            .padding(.horizontal, 8).padding(.vertical, 3).background(Color.accentColor.opacity(0.1)).cornerRadius(10)
-    }
 }
 
 struct SubCategoryChip: View {

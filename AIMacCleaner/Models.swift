@@ -1,3 +1,4 @@
+import SwiftUI
 import Foundation
 
 struct ScanItem: Identifiable, Codable, Hashable {
@@ -123,6 +124,14 @@ struct AppInfo: Identifiable, Hashable {
             case .app: "app.badge"
             case .dependency: "cube.box"
             case .other: "terminal"
+            }
+        }
+
+        var tabColor: Color {
+            switch self {
+            case .app: .cyan
+            case .dependency: .orange
+            case .other: .gray
             }
         }
     }

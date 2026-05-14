@@ -27,7 +27,7 @@ class ScannerService: ObservableObject {
         loadIgnores()
         loadAIConfigFromDisk()
         diskInfo = getDiskInfoNative()
-        hardwareInfo = getHardwareInfo()
+        hardwareInfo = safeGetHardwareInfo()
     }
 
     // MARK: - Disk Info
@@ -57,7 +57,25 @@ class ScannerService: ObservableObject {
     // MARK: - Hardware Info
 
     func refreshHardwareInfo() {
-        hardwareInfo = getHardwareInfo()
+        hardwareInfo = safeGetHardwareInfo()
+    }
+
+    private func safeGetHardwareInfo() -> HardwareInfo {
+        var info = HardwareInfo(
+            cpuUsage: 0, cpuCoreCount: 0, cpuTemperature: nil,
+            memoryTotal: 0, memoryUsed: 0, memoryFree: 0, memoryPressure: 0, swapUsed: 0,
+            batteryPercent: nil, batteryCharging: false, batteryTimeRemaining: nil,
+            processCount: 0, threadCount: 0, uptimeSeconds: 0,
+            networkInRate: 0, networkOutRate: 0
+        )
+        info.cpuCoreCount = getCPUCoreCount()
+        info.cpuUsage = getCPUUsage()
+        info.cpuTemperature = getCPUTemperature()
+        getMemoryInfo(&info)
+        getBatteryInfo(&info)
+        getSystemStats(&info)
+        safeGetNetworkInfo(&info)
+        return info
     }
 
     private func getHardwareInfo() -> HardwareInfo {
@@ -86,7 +104,7 @@ class ScannerService: ObservableObject {
         getMemoryInfo(&info)
         getBatteryInfo(&info)
         getSystemStats(&info)
-        getNetworkInfo(&info)
+        safeGetNetworkInfo(&info)
 
         return info
     }
@@ -275,7 +293,7 @@ class ScannerService: ObservableObject {
     private var lastNetOutBytes: Int64 = 0
     private var lastNetTime: Date = .distantPast
 
-    private func getNetworkInfo(_ info: inout HardwareInfo) {
+    private func safeGetNetworkInfo(_ info: inout HardwareInfo) {
         var interfaceAddresses: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&interfaceAddresses) == 0, let firstAddr = interfaceAddresses else { return }
         defer { freeifaddrs(interfaceAddresses) }
@@ -283,17 +301,20 @@ class ScannerService: ObservableObject {
         var totalIn: Int64 = 0
         var totalOut: Int64 = 0
 
-        var ptr = firstAddr
-        while ptr != nil {
-            let addr = ptr.pointee
-            let name = String(cString: addr.ifa_name)
+        var ptr: UnsafeMutablePointer<ifaddrs>? = firstAddr
+        while let current = ptr {
+            let addr = current.pointee
+            let ifaName = addr.ifa_name
+            guard let namePtr = ifaName else { ptr = addr.ifa_next; continue }
+            let name = String(cString: namePtr)
 
-            if name != "lo0", let ifaAddr = addr.ifa_addr, ifaAddr.pointee.sa_family == UInt8(AF_LINK) {
-                if let data = addr.ifa_data {
-                    let networkData = data.assumingMemoryBound(to: if_data.self)
-                    totalIn += Int64(networkData.pointee.ifi_ibytes)
-                    totalOut += Int64(networkData.pointee.ifi_obytes)
-                }
+            if name != "lo0",
+               let ifaAddr = addr.ifa_addr,
+               ifaAddr.pointee.sa_family == UInt8(AF_LINK),
+               let data = addr.ifa_data {
+                let networkData = data.assumingMemoryBound(to: if_data.self)
+                totalIn += Int64(networkData.pointee.ifi_ibytes)
+                totalOut += Int64(networkData.pointee.ifi_obytes)
             }
             ptr = addr.ifa_next
         }
