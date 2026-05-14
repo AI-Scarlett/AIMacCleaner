@@ -7,8 +7,14 @@ class OperationMonitor: ObservableObject {
 
     private var streamRef: FSEventStreamRef?
     private var fileSnapshots: [String: FileSnapshot] = [:]
+    private var accessTimes: [String: Date] = [:]
     private let maxRecords = 2000
+    private let maxSnapshots = 10000
     private let recordsPath = NSHomeDirectory() + "/.aimaccleaner_operations_v2.json"
+    private var cachedActiveAgents: [String] = []
+    private var lastAgentDetectTime: Date = .distantPast
+    private var hasRestoredBookmarks: Bool = false
+    private var lastCleanupTime: Date = .distantPast
 
     struct FileSnapshot: Codable {
         let path: String
@@ -29,21 +35,39 @@ class OperationMonitor: ObservableObject {
         ].filter { FileManager.default.fileExists(atPath: $0) }
     }()
 
+    private let bookmarksPath: String = NSHomeDirectory() + "/.aimaccleaner_bookmarks.json"
+
+    init() {
+        restoreAccessFromBookmarks()
+    }
+
     private let agentProcessNames = [
         "claude", "claude-code", "codebuddy", "cline", "codex", "hermes", "trae", "trae-agent",
         "cursor", "windsurf", "codearts", "kimi", "deepseek", "qwen", "doubao",
         "minimax", "copilot", "aider", "cody", "tabby", "warp",
         "chatgpt", "gemini", "augment", "node", "python", "python3",
-        "bun", "deno",
+        "bun", "deno", "npm", "yarn", "pnpm", "cargo", "go", "rustc",
+        "swift", "ruby", "php", "java", "gradle", "mvn",
+        "vim", "nvim", "emacs", "code", "subl", "atom",
+        "git", "hg", "svn", "rsync", "scp", "curl", "wget",
+        "tar", "gzip", "zip", "unzip", "docker", "podman",
+        "make", "cmake", "xcodebuild", "swiftc", "gcc", "clang",
     ]
 
     func start() {
         guard !isMonitoring else { return }
         isMonitoring = true
         loadRecords()
+        if !hasRestoredBookmarks {
+            restoreAccessFromBookmarks()
+        }
         buildInitialSnapshot()
+        cachedActiveAgents = detectActiveAgents()
         startFSEventStream()
         startProcessPoller()
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.saveBookmarks()
+        }
     }
 
     func stop() {
@@ -67,8 +91,14 @@ class OperationMonitor: ObservableObject {
                 let cStr = cPaths[i]
                 pathList.append(String(cString: cStr))
             }
-            DispatchQueue.global(qos: .utility).async {
-                monitor.processEvents(paths: pathList)
+            guard !pathList.isEmpty else { return }
+            DispatchQueue.global(qos: .utility).async { [weak monitor] in
+                guard let monitor = monitor else { return }
+                do {
+                    try monitor.processEvents(paths: pathList)
+                } catch {
+                    print("[OperationMonitor] Error processing events: \(error.localizedDescription)")
+                }
             }
         }
 
@@ -86,7 +116,7 @@ class OperationMonitor: ObservableObject {
             &context,
             watchPaths as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            3.0,
+            5.0,
             UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
         )
 
@@ -105,42 +135,89 @@ class OperationMonitor: ObservableObject {
         }
     }
 
-    private func processEvents(paths: [String]) {
+    private func processEvents(paths: [String]) throws {
         let fm = FileManager.default
-        let activeAgents = detectActiveAgents()
+        let now = Date()
+        
+        if now.timeIntervalSince(lastAgentDetectTime) > 5.0 {
+            cachedActiveAgents = detectActiveAgents()
+            lastAgentDetectTime = now
+        }
+        
+        if now.timeIntervalSince(lastCleanupTime) > 60.0 {
+            cleanupOldSnapshots()
+            lastCleanupTime = now
+        }
+        
+        let activeAgents = cachedActiveAgents
+        let primaryAgent = activeAgents.first ?? "System"
 
         for eventPath in paths {
+            guard !eventPath.isEmpty else { continue }
+            
             let fileName = (eventPath as NSString).lastPathComponent
             if fileName.hasPrefix(".") || fileName.hasPrefix("._") { continue }
 
             let expanded = NSString(string: eventPath).expandingTildeInPath
 
-            if !fm.fileExists(atPath: expanded) {
+            guard fm.fileExists(atPath: expanded) else {
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
-                    agentName: activeAgents.first ?? "系统",
+                    agentName: primaryAgent,
                     operationType: .delete,
                     targetPath: eventPath,
                     detail: formatDeleteDetail(eventPath),
                     fileSize: 0
                 )
-                DispatchQueue.main.async { self.addRecord(record) }
-                fileSnapshots[eventPath] = nil
+                addRecord(record)
+                fileSnapshots.removeValue(forKey: eventPath)
+                accessTimes.removeValue(forKey: eventPath)
                 continue
             }
 
             var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: expanded, isDirectory: &isDir) else { continue }
-            if isDir.boolValue { continue }
+            guard fm.fileExists(atPath: expanded, isDirectory: &isDir), !isDir.boolValue else { continue }
 
             let attrs = try? fm.attributesOfItem(atPath: expanded)
-            let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
-            let modDate = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+            
+            guard let fileAttrs = attrs else { continue }
+            
+            let size = (fileAttrs[.size] as? NSNumber)?.int64Value ?? 0
+            let modDate = (fileAttrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
 
             if let existing = fileSnapshots[eventPath] {
-                guard abs(modDate - existing.modDate) > 1.0 || size != existing.size else { continue }
-                let agentName = activeAgents.first ?? existing.agentName ?? "系统"
+                guard abs(modDate - existing.modDate) > 1.0 || size != existing.size else {
+                    if let lastAccess = accessTimes[eventPath] {
+                        if now.timeIntervalSince(lastAccess) > 30.0 {
+                            accessTimes[eventPath] = now
+                            let record = OperationRecord(
+                                id: UUID().uuidString,
+                                timestamp: Date(),
+                                agentName: primaryAgent,
+                                operationType: .read,
+                                targetPath: eventPath,
+                                detail: formatReadDetail(eventPath, size: size),
+                                fileSize: size
+                            )
+                            addRecord(record)
+                        }
+                    } else {
+                        accessTimes[eventPath] = now
+                        let record = OperationRecord(
+                            id: UUID().uuidString,
+                            timestamp: Date(),
+                            agentName: primaryAgent,
+                            operationType: .read,
+                            targetPath: eventPath,
+                            detail: formatReadDetail(eventPath, size: size),
+                            fileSize: size
+                        )
+                        addRecord(record)
+                    }
+                    continue
+                }
+                let agentName = activeAgents.first ?? existing.agentName ?? primaryAgent
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
@@ -150,9 +227,9 @@ class OperationMonitor: ObservableObject {
                     detail: formatModifyDetail(eventPath, oldSize: existing.size, newSize: size),
                     fileSize: size
                 )
-                DispatchQueue.main.async { self.addRecord(record) }
+                addRecord(record)
             } else {
-                let agentName = activeAgents.first ?? "系统"
+                let agentName = primaryAgent
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
@@ -162,16 +239,33 @@ class OperationMonitor: ObservableObject {
                     detail: formatCreateDetail(eventPath, size: size),
                     fileSize: size
                 )
-                DispatchQueue.main.async { self.addRecord(record) }
+                addRecord(record)
             }
 
             fileSnapshots[eventPath] = FileSnapshot(
                 path: eventPath,
                 modDate: modDate,
                 size: size,
-                isDir: isDir.boolValue,
+                isDir: false,
                 agentName: activeAgents.first
             )
+            accessTimes[eventPath] = now
+        }
+    }
+    
+    private func cleanupOldSnapshots() {
+        if fileSnapshots.count > maxSnapshots {
+            let excess = fileSnapshots.count - maxSnapshots
+            let keysToRemove = Array(fileSnapshots.keys.prefix(excess))
+            for key in keysToRemove {
+                fileSnapshots.removeValue(forKey: key)
+                accessTimes.removeValue(forKey: key)
+            }
+        }
+        
+        if accessTimes.count > maxSnapshots * 2 {
+            let cutoff = Date().addingTimeInterval(-300)
+            accessTimes = accessTimes.filter { $0.value > cutoff }
         }
     }
 
@@ -222,22 +316,29 @@ class OperationMonitor: ObservableObject {
         processPoller?.invalidate()
         processPoller = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            let agents = self.detectActiveAgents()
-            let newAgents = agents.filter { !self.lastPolledAgents.contains($0) }
-            if !newAgents.isEmpty {
-                let agentList = newAgents.joined(separator: ", ")
-                let record = OperationRecord(
-                    id: UUID().uuidString,
-                    timestamp: Date(),
-                    agentName: newAgents.first ?? "系统",
-                    operationType: .modify,
-                    targetPath: "系统进程",
-                    detail: "🤖 新启动的 AI Agent: \(agentList)",
-                    fileSize: 0
-                )
-                DispatchQueue.main.async { self.addRecord(record) }
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self = self else { return }
+                let agents = self.detectActiveAgents()
+                DispatchQueue.main.async {
+                    self.cachedActiveAgents = agents
+                    self.lastAgentDetectTime = Date()
+                    let newAgents = agents.filter { !self.lastPolledAgents.contains($0) }
+                    if !newAgents.isEmpty {
+                        let agentList = newAgents.joined(separator: ", ")
+                        let record = OperationRecord(
+                            id: UUID().uuidString,
+                            timestamp: Date(),
+                            agentName: newAgents.first ?? "System",
+                            operationType: .modify,
+                            targetPath: "System Process",
+                            detail: "🤖 New AI Agent Started: \(agentList)",
+                            fileSize: 0
+                        )
+                        self.addRecord(record)
+                    }
+                    self.lastPolledAgents = agents
+                }
             }
-            self.lastPolledAgents = agents
         }
     }
 
@@ -245,10 +346,11 @@ class OperationMonitor: ObservableObject {
 
     private func buildInitialSnapshot() {
         let fm = FileManager.default
+        var totalCount = 0
         for dirPath in watchPaths {
+            guard totalCount < maxSnapshots else { break }
             let enumerator = fm.enumerator(atPath: dirPath)
-            var count = 0
-            while let file = enumerator?.nextObject() as? String, count < 50000 {
+            while let file = enumerator?.nextObject() as? String, totalCount < maxSnapshots {
                 let fullPath = "\(dirPath)/\(file)"
                 var isDir: ObjCBool = false
                 if fm.fileExists(atPath: fullPath, isDirectory: &isDir) {
@@ -258,10 +360,11 @@ class OperationMonitor: ObservableObject {
                     fileSnapshots[fullPath] = FileSnapshot(
                         path: fullPath, modDate: modDate, size: size, isDir: isDir.boolValue, agentName: nil
                     )
-                    count += 1
+                    totalCount += 1
                 }
             }
         }
+        print("[OperationMonitor] Initial snapshot built with \(totalCount) files")
     }
 
     // MARK: - Detail Formatting
@@ -271,6 +374,13 @@ class OperationMonitor: ObservableObject {
         let dirName = dirName(from: path)
         let sizeStr = ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
         return "📄 创建文件: \(fileName) (\(sizeStr))\n📁 位置: \(dirName)"
+    }
+
+    private func formatReadDetail(_ path: String, size: Int64) -> String {
+        let fileName = (path as NSString).lastPathComponent
+        let dirName = dirName(from: path)
+        let sizeStr = ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+        return "👁️ 读取文件: \(fileName) (\(sizeStr))\n📁 位置: \(dirName)"
     }
 
     private func formatModifyDetail(_ path: String, oldSize: Int64, newSize: Int64) -> String {
@@ -305,12 +415,15 @@ class OperationMonitor: ObservableObject {
     // MARK: - Record Management
 
     func addRecord(_ record: OperationRecord) {
-        records.insert(record, at: 0)
-        if records.count > maxRecords {
-            records = Array(records.prefix(maxRecords))
-        }
-        if records.count % 20 == 0 {
-            saveRecords()
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.records.insert(record, at: 0)
+            if self.records.count > self.maxRecords {
+                self.records = Array(self.records.prefix(self.maxRecords))
+            }
+            if self.records.count % 50 == 0 {
+                self.saveRecords()
+            }
         }
     }
 
@@ -328,6 +441,55 @@ class OperationMonitor: ObservableObject {
     func saveRecords() {
         guard let data = try? JSONEncoder().encode(records) else { return }
         try? data.write(to: URL(fileURLWithPath: recordsPath))
+    }
+
+    private func saveBookmarks() {
+        var bookmarksData: [String: Data] = [:]
+        var savedCount = 0
+        for path in watchPaths {
+            let url = URL(fileURLWithPath: path)
+            do {
+                let bookmark = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+                bookmarksData[path] = bookmark
+                let success = url.startAccessingSecurityScopedResource()
+                if success {
+                    savedCount += 1
+                }
+            } catch {
+                continue
+            }
+        }
+        if !bookmarksData.isEmpty, let data = try? JSONEncoder().encode(bookmarksData) {
+            try? data.write(to: URL(fileURLWithPath: bookmarksPath))
+            print("[OperationMonitor] Saved bookmarks for \(savedCount) paths")
+        }
+    }
+
+    private func restoreAccessFromBookmarks() {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: bookmarksPath)),
+              let bookmarks = try? JSONDecoder().decode([String: Data].self, from: data) else {
+            hasRestoredBookmarks = true
+            return
+        }
+        var restoredCount = 0
+        for (path, bookmark) in bookmarks {
+            do {
+                var isStale = false
+                let url = try URL(resolvingBookmarkData: bookmark, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale)
+                if !isStale {
+                    let success = url.startAccessingSecurityScopedResource()
+                    if success {
+                        restoredCount += 1
+                    }
+                }
+            } catch {
+                continue
+            }
+        }
+        hasRestoredBookmarks = true
+        if restoredCount > 0 {
+            print("[OperationMonitor] Restored access for \(restoredCount) paths from bookmarks")
+        }
     }
 
     deinit {

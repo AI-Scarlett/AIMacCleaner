@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AIConfigView: View {
     @EnvironmentObject var service: ScannerService
+    @EnvironmentObject var localizer: Localizer
     @Environment(\.dismiss) var dismiss
 
     @State private var apiBase = ""
@@ -18,7 +19,7 @@ struct AIConfigView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("🤖 AI 扫描配置")
+                Text("🤖 " + localizer.aiScan + " " + localizer.settings.lowercased())
                     .font(.title2).fontWeight(.bold)
                 Spacer()
                 Button { dismiss() } label: {
@@ -31,19 +32,19 @@ struct AIConfigView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 16) {
-                Text("配置大模型 API，用于智能分析目录结构和识别可清理项")
+                Text(localizer.aiSettingsDesc)
                     .font(.callout).foregroundColor(.secondary)
 
                 Group {
-                    LabeledContent("API Base URL") {
+                    LabeledContent(localizer.apiBase) {
                         TextField("https://api.deepseek.com", text: $apiBase)
                             .textFieldStyle(.roundedBorder).frame(width: 300)
                     }
-                    LabeledContent("API Key") {
+                    LabeledContent(localizer.apiKey) {
                         SecureField("sk-...", text: $apiKey)
                             .textFieldStyle(.roundedBorder).frame(width: 300)
                     }
-                    LabeledContent("模型名称") {
+                    LabeledContent(localizer.modelName) {
                         TextField("deepseek-chat", text: $model)
                             .textFieldStyle(.roundedBorder).frame(width: 300)
                     }

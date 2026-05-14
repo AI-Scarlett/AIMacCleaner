@@ -174,43 +174,46 @@ struct ContentView: View {
             Divider()
 
             if sidebarCollapsed {
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     Button {
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                             sidebarCollapsed = false
                         }
                     } label: {
                         Image(systemName: "sidebar.right")
-                            .font(.system(size: 14))
+                            .font(.system(size: 18, weight: .medium))
                             .foregroundColor(.secondary)
-                            .frame(width: 28, height: 28)
+                            .frame(width: 36, height: 36)
                     }
                     .buttonStyle(.plain)
                     .help(localizer.expandSidebar)
 
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape")
-                            .font(.system(size: 14))
+                            .font(.system(size: 18))
                             .foregroundColor(.secondary)
-                            .frame(width: 28, height: 28)
+                            .frame(width: 36, height: 36)
                     }
                     .buttonStyle(.plain)
 
-                    Text("v1.6.9")
-                        .font(.system(size: 8))
+                    Text("v1.7.0")
+                        .font(.system(size: 9))
                         .foregroundColor(.secondary)
                 }
-                .padding(.vertical, 10)
+                .padding(.vertical, 14)
             } else {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     Button {
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                             sidebarCollapsed = true
                         }
                     } label: {
                         Image(systemName: "sidebar.left")
-                            .font(.system(size: 10))
+                            .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.secondary)
+                            .frame(width: 38, height: 38)
+                            .background(Color.secondary.opacity(0.08))
+                            .cornerRadius(10)
                     }
                     .buttonStyle(.plain)
                     .help(localizer.collapseSidebar)
@@ -218,9 +221,9 @@ struct ContentView: View {
                     Button { showSettings = true } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "gearshape")
-                                .font(.system(size: 10))
+                                .font(.system(size: 12))
                             Text(localizer.settings)
-                                .font(.system(size: 10))
+                                .font(.system(size: 11))
                         }
                         .foregroundColor(.secondary)
                     }
@@ -232,13 +235,13 @@ struct ContentView: View {
                         Circle()
                             .fill(Color.green)
                             .frame(width: 5, height: 5)
-                        Text("v1.6.9")
+                        Text("v1.7.0")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 18)
             }
         }
         .frame(width: sidebarCollapsed ? 60 : 180)
@@ -355,12 +358,23 @@ struct OperationLogTab: View {
     @State private var filterTimeRange: TimeRange = .all
 
     enum TimeRange: String, CaseIterable {
-        case all = "全部"
-        case today = "今天"
-        case hour1 = "1小时"
-        case hour6 = "6小时"
-        case day1 = "24小时"
-        case day7 = "7天"
+        case all = "all"
+        case today = "today"
+        case hour1 = "hour1"
+        case hour6 = "hour6"
+        case day1 = "day1"
+        case day7 = "day7"
+
+        func label(_ localizer: Localizer) -> String {
+            switch self {
+            case .all: return localizer.timeAll
+            case .today: return localizer.timeToday
+            case .hour1: return localizer.time1h
+            case .hour6: return localizer.time6h
+            case .day1: return localizer.time24h
+            case .day7: return localizer.time7d
+            }
+        }
     }
 
     var agentNames: [String] {
@@ -444,31 +458,31 @@ struct OperationLogTab: View {
             }
 
             HStack(spacing: 12) {
-                FilterSearchBar(placeholder: "搜索路径、Agent...", text: $searchText)
+                FilterSearchBar(placeholder: localizer.searchFiles, text: $searchText)
                     .frame(width: 200)
 
-                Picker("Agent", selection: $filterAgent) {
-                    Text("全部 Agent").tag("")
+                Picker(localizer.agentLabel, selection: $filterAgent) {
+                    Text(localizer.allAgents).tag("")
                     ForEach(agentNames, id: \.self) { Text($0).tag($0) }
                 }
                 .labelsHidden()
 
-                Picker("操作类型", selection: $filterOpType) {
-                    Text("全部类型").tag(nil as OperationRecord.OperationType?)
+                Picker(localizer.opTypeLabel, selection: $filterOpType) {
+                    Text(localizer.allTypes).tag(nil as OperationRecord.OperationType?)
                     ForEach(OperationRecord.OperationType.allCases, id: \.self) { type in
                         Text(type.rawValue).tag(type as OperationRecord.OperationType?)
                     }
                 }
                 .labelsHidden()
 
-                Picker("时间范围", selection: $filterTimeRange) {
-                    ForEach(TimeRange.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                Picker(localizer.timeRange, selection: $filterTimeRange) {
+                    ForEach(TimeRange.allCases, id: \.self) { Text($0.label(localizer)).tag($0) }
                 }
                 .labelsHidden()
 
                 Spacer()
 
-                Text("\(filteredRecords.count) 条").font(.caption).foregroundColor(.secondary)
+                Text("\(filteredRecords.count) \(localizer.recordsCount)").font(.caption).foregroundColor(.secondary)
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 10)
@@ -491,12 +505,12 @@ struct OperationLogTab: View {
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Table(filteredRecords) {
-                    TableColumn("时间") { record in
+                    TableColumn(localizer.timeCol) { record in
                         Text(record.timestamp, style: .time)
                             .font(.caption).monospacedDigit()
                     }.width(65)
 
-                    TableColumn("Agent") { record in
+                    TableColumn(localizer.agentCol) { record in
                         HStack(spacing: 4) {
                             Image(systemName: "cpu")
                                 .font(.caption2)
@@ -508,7 +522,7 @@ struct OperationLogTab: View {
                         }
                     }.width(min: 100)
 
-                    TableColumn("操作") { record in
+                    TableColumn(localizer.opCol) { record in
                         HStack(spacing: 3) {
                             Image(systemName: record.operationType.icon)
                                 .font(.caption)
@@ -520,7 +534,7 @@ struct OperationLogTab: View {
                         }
                     }.width(60)
 
-                    TableColumn("目标路径") { record in
+                    TableColumn(localizer.pathCol) { record in
                         Text(record.targetPath)
                             .font(.caption2)
                             .lineLimit(1)
@@ -528,7 +542,7 @@ struct OperationLogTab: View {
                             .help(record.targetPath)
                     }
 
-                    TableColumn("大小") { record in
+                    TableColumn(localizer.fileSizeCol) { record in
                         if record.fileSize > 0 {
                             Text(ByteCountFormatter.string(fromByteCount: record.fileSize, countStyle: .file))
                                 .font(.caption2).monospacedDigit().foregroundColor(.secondary)
@@ -550,6 +564,7 @@ struct OperationLogTab: View {
         case .delete: .red
         case .move: .orange
         case .rename: .purple
+        case .read: .cyan
         }
     }
 }
@@ -595,23 +610,23 @@ struct MacCleanerTab: View {
         VStack(spacing: 0) {
             PageHeader(
                 icon: "arrow.down.doc.fill",
-                title: "Mac 清理",
-                subtitle: "扫描并清理存储空间",
+                title: localizer.macCleanerTitle,
+                subtitle: localizer.macCleanerSubtitle,
                 color: .blue
             ) {
                 HStack(spacing: 8) {
                     Button { Task { await service.scanLocal() } } label: {
-                        HStack(spacing: 4) { Image(systemName: "magnifyingglass"); Text("本地扫描") }
+                        HStack(spacing: 4) { Image(systemName: "magnifyingglass"); Text(localizer.localScan) }
                     }
                     .buttonStyle(.bordered).controlSize(.small).disabled(service.isScanning)
 
                     Button { Task { await performAiScan() } } label: {
-                        HStack(spacing: 4) { Image(systemName: "brain"); Text("AI 扫描") }
+                        HStack(spacing: 4) { Image(systemName: "brain"); Text(localizer.aiScan) }
                     }
                     .buttonStyle(.bordered).controlSize(.small).tint(.purple).disabled(service.isAiScanning)
 
                     Button { Task { await service.startEnhancedScan() } } label: {
-                        HStack(spacing: 4) { Image(systemName: "bolt.fill"); Text("增强扫描") }
+                        HStack(spacing: 4) { Image(systemName: "bolt.fill"); Text(localizer.enhancedScan) }
                     }
                     .buttonStyle(.bordered).controlSize(.small).tint(.orange).disabled(service.isEnhancedScanning)
                 }
@@ -621,7 +636,7 @@ struct MacCleanerTab: View {
             Divider()
 
             if service.isAiScanning || service.isEnhancedScanning {
-                HStack(spacing: 10) { ProgressView().controlSize(.small); Text(service.isEnhancedScanning ? "增强扫描中..." : service.aiStatusMessage).foregroundColor(.purple); Spacer() }
+                HStack(spacing: 10) { ProgressView().controlSize(.small); Text(service.isEnhancedScanning ? localizer.enhancedScan + "..." : service.aiStatusMessage).foregroundColor(.purple); Spacer() }
                     .padding(.horizontal, 24).padding(.vertical, 8).background(Color.purple.opacity(0.05))
                 Divider()
             }
@@ -636,37 +651,37 @@ struct MacCleanerTab: View {
             else if service.scanItems.isEmpty { welcomeCenter }
             else {
                 HStack(spacing: 12) {
-                    FilterSearchBar(placeholder: "搜索文件...", text: $searchText)
+                    FilterSearchBar(placeholder: localizer.searchFiles, text: $searchText)
                         .frame(width: 180)
 
                     if !categories.isEmpty {
-                        Picker("分类", selection: $filterCategory) {
-                            Text("全部分类").tag("")
+                        Picker(localizer.allCategories, selection: $filterCategory) {
+                            Text(localizer.allCategories).tag("")
                             ForEach(categories, id: \.self) { Text($0).tag($0) }
                         }
                         .labelsHidden()
                     }
                     if !apps.isEmpty {
-                        Picker("应用", selection: $filterApp) {
-                            Text("全部应用").tag("")
+                        Picker(localizer.allApps, selection: $filterApp) {
+                            Text(localizer.allApps).tag("")
                             ForEach(apps, id: \.self) { Text($0).tag($0) }
                         }
                         .labelsHidden()
                     }
 
                     HStack(spacing: 4) {
-                        Text("风险:").font(.caption).foregroundColor(.secondary)
-                        RiskFilterButton(label: "安全", color: .green, isActive: filterRisk == "safe") { filterRisk = "safe" }
-                        RiskFilterButton(label: "注意", color: .orange, isActive: filterRisk == "caution") { filterRisk = "caution" }
-                        RiskFilterButton(label: "危险", color: .red, isActive: filterRisk == "dangerous") { filterRisk = "dangerous" }
+                        Text(localizer.riskLabel + ":").font(.caption).foregroundColor(.secondary)
+                        RiskFilterButton(label: localizer.riskSafe, color: .green, isActive: filterRisk == "safe") { filterRisk = "safe" }
+                        RiskFilterButton(label: localizer.riskCaution, color: .orange, isActive: filterRisk == "caution") { filterRisk = "caution" }
+                        RiskFilterButton(label: localizer.riskDangerous, color: .red, isActive: filterRisk == "dangerous") { filterRisk = "dangerous" }
                         if !filterRisk.isEmpty { Button { filterRisk = "" } label: { Image(systemName: "xmark.circle.fill").font(.caption).foregroundColor(.secondary) }.buttonStyle(.plain) }
                     }
 
                     Spacer()
-                    Button { smartClean() } label: { Label("智能清理", systemImage: "wand.and.stars") }
+                    Button { smartClean() } label: { Label(localizer.smartClean, systemImage: "wand.and.stars") }
                         .buttonStyle(.borderedProminent).tint(.green).controlSize(.small)
                         .disabled(service.scanItems.filter { $0.risk == "safe" && !$0.ignored }.isEmpty)
-                    Text("\(filteredItems.count) 项 · \(service.formatSize(totalCleanable))").font(.caption).foregroundColor(.secondary)
+                    Text("\(filteredItems.count) \(localizer.selected) · \(service.formatSize(totalCleanable))").font(.caption).foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 8)
@@ -675,13 +690,13 @@ struct MacCleanerTab: View {
 
                 if !selectedIds.isEmpty {
                     HStack(spacing: 10) {
-                        Button { selectAll() } label: { Text("全选") }.buttonStyle(.bordered).controlSize(.small)
-                        Button { selectSafe() } label: { Text("仅安全") }.buttonStyle(.bordered).controlSize(.small)
-                        Button { selectedIds.removeAll() } label: { Text("取消选择") }.buttonStyle(.bordered).controlSize(.small)
-                        Text("已选 \(selectedIds.count) 项 · \(service.formatSize(selectedSize))").font(.caption).foregroundColor(.blue).fontWeight(.medium)
+                        Button { selectAll() } label: { Text(localizer.selectAll) }.buttonStyle(.bordered).controlSize(.small)
+                        Button { selectSafe() } label: { Text(localizer.safeOnly) }.buttonStyle(.bordered).controlSize(.small)
+                        Button { selectedIds.removeAll() } label: { Text(localizer.cancelSelection) }.buttonStyle(.bordered).controlSize(.small)
+                        Text(localizer.selected + " \(selectedIds.count) \(localizer.selected) · \(service.formatSize(selectedSize))").font(.caption).foregroundColor(.blue).fontWeight(.medium)
                         Spacer()
-                        Button { ignoreSelected() } label: { Label("忽略选中", systemImage: "eye.slash") }.buttonStyle(.bordered).controlSize(.small).disabled(selectedIds.isEmpty)
-                        Button { confirmDeleteSelected() } label: { Label("删除选中", systemImage: "trash") }.buttonStyle(.bordered).tint(.red).controlSize(.small).disabled(selectedIds.isEmpty)
+                        Button { ignoreSelected() } label: { Label(localizer.ignoreSelected, systemImage: "eye.slash") }.buttonStyle(.bordered).controlSize(.small).disabled(selectedIds.isEmpty)
+                        Button { confirmDeleteSelected() } label: { Label(localizer.deleteSelected, systemImage: "trash") }.buttonStyle(.bordered).tint(.red).controlSize(.small).disabled(selectedIds.isEmpty)
                     }.padding(.horizontal, 24).padding(.vertical, 8).background(Color.accentColor.opacity(0.06))
                     Divider()
                 }

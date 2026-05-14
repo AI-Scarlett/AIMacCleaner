@@ -2,6 +2,7 @@
 /tmp/
 /dist/
 build/
+*.dmg
 
 # macOS
 .DS_Store

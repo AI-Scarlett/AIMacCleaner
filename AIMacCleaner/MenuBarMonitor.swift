@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
+    @EnvironmentObject var localizer: Localizer
     @State private var selectedTab: MonitorTab = .overview
     @State private var alertThreshold: Double = 10.0
     @State private var monitoringEnabled: Bool = true
@@ -10,8 +11,15 @@ struct MenuBarMonitor: View {
     @State private var preventAutoEmptyTrash: Bool = true
 
     enum MonitorTab: String, CaseIterable {
-        case overview = "硬件监控"
-        case operations = "Agent监控"
+        case overview = "overview"
+        case operations = "operations"
+
+        func label(_ localizer: Localizer) -> String {
+            switch self {
+            case .overview: return localizer.hardwareMonitor
+            case .operations: return localizer.agentMonitorTitle
+            }
+        }
     }
 
     var body: some View {
@@ -43,7 +51,7 @@ struct MenuBarMonitor: View {
                         HStack(spacing: 4) {
                             Image(systemName: tab == .overview ? "gauge.open.with.lines.needle.84percent" : "chart.bar")
                                 .font(.caption2)
-                            Text(tab.rawValue)
+                            Text(tab.label(localizer))
                                 .font(.caption)
                                 .fontWeight(selectedTab == tab ? .semibold : .regular)
                         }
@@ -100,7 +108,7 @@ struct MenuBarMonitor: View {
     private var hardwareOverview: some View {
         VStack(spacing: 10) {
             HStack {
-                Text("硬件监控")
+                Text(localizer.hardwareMonitor)
                     .font(.headline)
                 Spacer()
                 if let hw = service.hardwareInfo {
@@ -108,7 +116,7 @@ struct MenuBarMonitor: View {
                         Circle()
                             .fill(hw.cpuUsage > 80 ? .red : hw.cpuUsage > 50 ? .orange : .green)
                             .frame(width: 6, height: 6)
-                        Text("运行中")
+                        Text(localizer.running)
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
@@ -120,16 +128,16 @@ struct MenuBarMonitor: View {
                     HStack(spacing: 8) {
                         HardwareStatCard(
                             icon: "cpu",
-                            label: "CPU",
+                            label: localizer.cpuLabel,
                             value: String(format: "%.0f%%", hw.cpuUsage),
-                            detail: "\(hw.cpuCoreCount) 核",
+                            detail: "\(hw.cpuCoreCount) " + localizer.coresLabel,
                             color: hw.cpuUsage > 80 ? .red : hw.cpuUsage > 50 ? .orange : .green,
                             progress: hw.cpuUsage / 100.0
                         )
 
                         HardwareStatCard(
                             icon: "memorychip",
-                            label: "内存",
+                            label: localizer.memoryLabel,
                             value: String(format: "%.0f%%", hw.memoryPressurePct),
                             detail: String(format: "%.1f/%.0fG", hw.memoryUsedGb, hw.memoryTotalGb),
                             color: hw.memoryPressurePct > 85 ? .red : hw.memoryPressurePct > 70 ? .orange : .blue,
@@ -233,11 +241,11 @@ struct MenuBarMonitor: View {
     private var diskOverview: some View {
         VStack(spacing: 10) {
             HStack {
-                Text("磁盘空间")
+                Text(localizer.diskSpaceLabel)
                     .font(.headline)
                 Spacer()
                 if let disk = service.diskInfo {
-                    Text(String(format: "%.0f%% 已用", disk.usedPct))
+                    Text(String(format: "%.0f%% %@", disk.usedPct, localizer.usedPct))
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundColor(diskColor(pct: disk.usedPct))
@@ -252,17 +260,17 @@ struct MenuBarMonitor: View {
 
                 HStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("总容量").font(.caption2).foregroundColor(.secondary)
+                        Text(localizer.totalCapacity).font(.caption2).foregroundColor(.secondary)
                         Text(String(format: "%.0f GB", disk.totalGb)).font(.caption).fontWeight(.medium)
                     }
                     Spacer()
                     VStack(alignment: .center, spacing: 2) {
-                        Text("已使用").font(.caption2).foregroundColor(.secondary)
+                        Text(localizer.usedLabel).font(.caption2).foregroundColor(.secondary)
                         Text(String(format: "%.0f GB", disk.usedGb)).font(.caption).fontWeight(.medium)
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("可用").font(.caption2).foregroundColor(.secondary)
+                        Text(localizer.available).font(.caption2).foregroundColor(.secondary)
                         Text(String(format: "%.0f GB", disk.freeGb))
                             .font(.caption)
                             .fontWeight(.medium)
@@ -274,7 +282,7 @@ struct MenuBarMonitor: View {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundColor(.orange)
-                        Text("存储空间不足！建议立即清理")
+                        Text(localizer.storageWarning)
                             .font(.caption2)
                             .foregroundColor(.orange)
                             .fontWeight(.medium)
@@ -285,7 +293,7 @@ struct MenuBarMonitor: View {
                     .cornerRadius(6)
                 }
             } else {
-                Text("正在获取磁盘信息...")
+                Text(localizer.scanning)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -409,7 +417,7 @@ struct MenuBarMonitor: View {
                 } label: {
                     HStack {
                         Image(systemName: "arrow.down.doc.fill")
-                        Text("打开 AIMacCleaner")
+                        Text(localizer.openAIMacCleaner)
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -421,7 +429,7 @@ struct MenuBarMonitor: View {
                 } label: {
                     HStack {
                         Image(systemName: service.isCheckingUpdate ? "arrow.clockwise" : "arrow.triangle.2.circlepath")
-                        Text(service.isCheckingUpdate ? "检查中..." : "检查更新")
+                        Text(service.isCheckingUpdate ? localizer.checkingUpdate : localizer.checkForUpdate)
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -444,13 +452,14 @@ struct MenuBarMonitor: View {
             } label: {
                 HStack {
                     Image(systemName: "power")
-                    Text("退出 AIMacCleaner")
+                    Text(localizer.quitApp + " AIMacCleaner")
                 }
                 .frame(maxWidth: .infinity)
                 .foregroundColor(.red)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.bordered)
             .controlSize(.small)
+            .tint(.red)
             .padding(.horizontal, 14)
             .padding(.bottom, 10)
         }
@@ -857,12 +866,14 @@ struct MenuBarMonitor: View {
                 } label: {
                     HStack {
                         Image(systemName: "power")
-                        Text("退出")
+                        Text(localizer.quitApp + " AIMacCleaner")
                     }
                     .font(.caption2)
                     .foregroundColor(.red)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(.red)
             }
         }
         .padding(.horizontal, 14)
@@ -936,6 +947,7 @@ struct MenuBarMonitor: View {
         case .delete: .red
         case .move: .orange
         case .rename: .purple
+        case .read: .cyan
         }
     }
 

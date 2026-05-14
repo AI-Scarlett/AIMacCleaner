@@ -104,7 +104,86 @@ extension Localizer {
     var storageCategories: String { t("存储分类", en: "Storage Categories") }
     var usedLabel: String { t("已使用", en: "Used") }
     var noLargeFiles: String { t("无大文件（>1MB）", en: "No large files (>1MB)") }
-    var selectCategoryToView: String { t("选择左侧分类查看文件列表", en: "Select a category on the left to view files") }
+    var selectCatView: String { t("选择左侧分类查看文件列表", en: "Select a category on the left to view files") }
+
+    var opCreate: String { t("创建", en: "Create") }
+    var opModify: String { t("修改", en: "Modify") }
+    var opDelete: String { t("删除", en: "Delete") }
+    var opMove: String { t("移动", en: "Move") }
+    var opRename: String { t("重命名", en: "Rename") }
+    var opRead: String { t("读取", en: "Read") }
+
+    var riskSafe: String { t("安全", en: "Safe") }
+    var riskCaution: String { t("注意", en: "Caution") }
+    var riskDangerous: String { t("危险", en: "Dangerous") }
+
+    var sourceAI: String { t("AI", en: "AI") }
+    var sourceLocal: String { t("本地", en: "Local") }
+
+    var typeApp: String { t("应用", en: "Apps") }
+    var typeDependency: String { t("依赖", en: "Dependencies") }
+    var typeOther: String { t("其它", en: "Other Tools") }
+
+    var timeAll: String { t("全部", en: "All") }
+    var timeToday: String { t("今天", en: "Today") }
+    var time1h: String { t("1小时", en: "1 Hour") }
+    var time6h: String { t("6小时", en: "6 Hours") }
+    var time24h: String { t("24小时", en: "24 Hours") }
+    var time7d: String { t("7天", en: "7 Days") }
+
+    var hardwareMonitor: String { t("硬件监控", en: "Hardware Monitor") }
+    var diskSpaceLabel: String { t("磁盘空间", en: "Disk Space") }
+    var usedPct: String { t("已使用", en: "Used") }
+    var totalCapacity: String { t("总容量", en: "Total") }
+    var available: String { t("可用", en: "Available") }
+    var storageWarning: String { t("存储空间不足！建议立即清理", en: "Low storage! Clean up recommended") }
+    var alertThreshold: String { t("警报阈值", en: "Alert Threshold") }
+    var remainingPct: String { t("剩余", en: "Remaining") }
+
+    var operationSettings: String { t("操作监控", en: "Operation Monitor") }
+    var moveToTrash: String { t("删除移入回收站", en: "Move to Trash") }
+    var preventAutoEmptyTrash: String { t("禁止自动清空回收站", en: "Prevent Auto Empty Trash") }
+    var pauseMonitoring: String { t("暂停监控", en: "Pause Monitoring") }
+    var startMonitoringBtn: String { t("开始监控", en: "Start Monitoring") }
+    var clearRecords: String { t("清空", en: "Clear") }
+    var viewFullLog: String { t("查看完整记录", en: "View Full Log") }
+    var quitApp: String { t("退出", en: "Quit") }
+    var openAIMacCleaner: String { t("打开 AIMacCleaner", en: "Open AIMacCleaner") }
+    var checkForUpdate: String { t("检查更新", en: "Check for Updates") }
+    var checkingUpdate: String { t("检查中...", en: "Checking...") }
+    var running: String { t("运行中", en: "Running") }
+    var notEnabled: String { t("未启用", en: "Not Enabled") }
+    var noData: String { t("暂无数据", en: "No Data") }
+    var noOpRecords: String { t("暂无操作记录", en: "No Operation Records") }
+    var startMonitorHint: String { t("开启监控后将自动记录 Agent 操作", en: "Agent operations will be recorded once monitoring starts") }
+    var totalOps: String { t("总操作", en: "Total Ops") }
+    var todayOps: String { t("今日", en: "Today") }
+    var hourOps: String { t("1小时", en: "1 Hour") }
+    var agentActivity: String { t("Agent 活跃度", en: "Agent Activity") }
+    var noOpRecordsShort: String { t("暂无操作记录", en: "No Records") }
+    var opTypeDist: String { t("操作类型分布", en: "Operation Types") }
+    var recentOps: String { t("最近操作", en: "Recent Operations") }
+
+    var cpuLabel: String { t("CPU", en: "CPU") }
+    var memoryLabel: String { t("内存", en: "Memory") }
+    var cpuTempLabel: String { t("CPU 温度", en: "CPU Temp") }
+    var batteryLabel: String { t("电池", en: "Battery") }
+    var networkLabel: String { t("网络", en: "Network") }
+    var coresLabel: String { t("核", en: "Cores") }
+    var processesLabel: String { t("进程", en: "Processes") }
+    var threadsLabel: String { t("线程", en: "Threads") }
+    var runtimeLabel: String { t("运行", en: "Running") }
+    var overheating: String { t("过热", en: "Overheating") }
+    var high: String { t("偏高", en: "High") }
+    var normal: String { t("正常", en: "Normal") }
+    var charging: String { t("充电中", en: "Charging") }
+    var inUse: String { t("使用中", en: "In Use") }
+
+    var sortSize: String { t("大小", en: "Size") }
+    var sortCreated: String { t("添加日期", en: "Date Added") }
+    var sortModified: String { t("修改日期", en: "Modified") }
+    var sortName: String { t("名称", en: "Name") }
+
     var sort: String { t("排序", en: "Sort") }
     var analyze: String { t("分析", en: "Analyze") }
     var copyPath: String { t("复制路径", en: "Copy path") }
@@ -196,5 +275,4 @@ extension Localizer {
     var allCats: String { t("全部分类", en: "All Categories") }
     var startScanBtn: String { t("开始扫描", en: "Start Scan") }
     var storageCats: String { t("存储分类", en: "Storage Categories") }
-    var selectCatView: String { t("选择左侧分类查看文件列表", en: "Select a category to view files") }
 }

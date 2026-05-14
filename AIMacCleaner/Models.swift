@@ -200,6 +200,7 @@ struct OperationRecord: Identifiable, Codable {
         case delete = "删除"
         case move = "移动"
         case rename = "重命名"
+        case read = "读取"
 
         var icon: String {
             switch self {
@@ -208,6 +209,7 @@ struct OperationRecord: Identifiable, Codable {
             case .delete: "trash.circle.fill"
             case .move: "arrow.right.circle.fill"
             case .rename: "text.cursor.input"
+            case .read: "eye.circle.fill"
             }
         }
 
@@ -218,6 +220,7 @@ struct OperationRecord: Identifiable, Codable {
             case .delete: "red"
             case .move: "orange"
             case .rename: "purple"
+            case .read: "teal"
             }
         }
     }
