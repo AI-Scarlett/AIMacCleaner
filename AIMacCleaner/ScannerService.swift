@@ -33,142 +33,42 @@ class ScannerService: ObservableObject {
     // MARK: - Disk Info
 
     func getDiskInfoNative() -> DiskInfo? {
-        if let info = getDiskInfoFromSystemProfiler() { return info }
-        if let info = getDiskInfoFromDiskUtil() { return info }
-        return getDiskInfoFromFileManager()
-    }
+        let dataVolumeURL = URL(fileURLWithPath: "/System/Volumes/Data")
 
-    private func getDiskInfoFromSystemProfiler() -> DiskInfo? {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
-        task.arguments = ["SPStorageDataType", "-detailLevel", "full", "-json"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        do {
-            try task.run()
-            task.waitUntilExit()
-            guard let data = try? pipe.fileHandleForReading.readToEnd(),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let storages = json["SPStorageDataType"] as? [[String: Any]] else {
-                return nil
-            }
-            var totalSize: Int64 = 0
-            var freeSize: Int64 = 0
-            var volumeCount = 0
-            for storage in storages {
-                if let mountPoint = storage["mount_point"] as? String,
-                   (mountPoint == "/System/Volumes/Data" || mountPoint == "/") {
-                    if let free = parseByteString(storage["free_space"] as? String ?? ""),
-                       let capacity = parseByteString(storage["size"] as? String ?? "") {
-                        totalSize = capacity
-                        freeSize = free
-                        volumeCount += 1
-                    }
-                }
-            }
-            if totalSize > 0 && freeSize > 0 {
-                let used = totalSize - freeSize
-                let usedPct = totalSize > 0 ? Double(used) / Double(totalSize) * 100.0 : 0
-                return DiskInfo(
-                    total: totalSize, used: used, free: freeSize,
-                    totalGb: Double(totalSize) / 1073741824.0,
-                    usedGb: Double(used) / 1073741824.0,
-                    freeGb: Double(freeSize) / 1073741824.0,
-                    usedPct: usedPct
-                )
-            }
-        } catch {}
-        return nil
-    }
-
-    private func parseByteString(_ str: String) -> Int64? {
-        let cleaned = str.replacingOccurrences(of: " ", with: "")
-        if cleaned.isEmpty { return nil }
-        if cleaned.contains("KB") || cleaned.contains("kb") {
-            if let val = Double(cleaned.lowercased().replacingOccurrences(of: "kb", with: "")) {
-                return Int64(val * 1024)
-            }
-        } else if cleaned.contains("MB") || cleaned.contains("mb") {
-            if let val = Double(cleaned.lowercased().replacingOccurrences(of: "mb", with: "")) {
-                return Int64(val * 1048576)
-            }
-        } else if cleaned.contains("GB") || cleaned.contains("gb") {
-            if let val = Double(cleaned.lowercased().replacingOccurrences(of: "gb", with: "")) {
-                return Int64(val * 1073741824)
-            }
-        } else if cleaned.contains("TB") || cleaned.contains("tb") {
-            if let val = Double(cleaned.lowercased().replacingOccurrences(of: "tb", with: "")) {
-                return Int64(val * 1099511627776)
-            }
-        } else if cleaned.contains("B") || cleaned.contains("bytes") || cleaned.contains("Bytes") {
-            let numStr = cleaned.lowercased()
-                .replacingOccurrences(of: "bytes", with: "")
-                .replacingOccurrences(of: "b", with: "")
-                .trimmingCharacters(in: .whitespaces)
-            if let val = Int64(numStr) { return val }
+        guard let values = try? dataVolumeURL.resourceValues(forKeys: [
+            .volumeTotalCapacityKey,
+            .volumeAvailableCapacityKey,
+            .volumeAvailableCapacityForImportantUsageKey
+        ]),
+        let total = values.volumeTotalCapacity.map({ Int64($0) }),
+        let available = values.volumeAvailableCapacity.map({ Int64($0) }) else {
+            return getDiskInfoFallback()
         }
-        if let val = Int64(cleaned) { return val }
-        return nil
+
+        let free: Int64 = available
+        let used: Int64 = total - free
+        let usedPct = total > 0 ? Double(used) / Double(total) * 100.0 : 0
+
+        return DiskInfo(
+            total: total,
+            used: used,
+            free: free,
+            totalGb: Double(total) / 1073741824.0,
+            usedGb: Double(used) / 1073741824.0,
+            freeGb: Double(free) / 1073741824.0,
+            usedPct: usedPct
+        )
     }
 
-    private func getDiskInfoFromDiskUtil() -> DiskInfo? {
-        for mountPath in ["/System/Volumes/Data", NSHomeDirectory()] {
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
-            task.arguments = ["info", mountPath]
-            let pipe = Pipe()
-            task.standardOutput = pipe
-            task.standardError = FileHandle.nullDevice
-            do {
-                try task.run()
-                task.waitUntilExit()
-                guard let data = try? pipe.fileHandleForReading.readToEnd(),
-                      let output = String(data: data, encoding: .utf8) else { continue }
-                var totalSize: Int64 = 0
-                var freeSize: Int64 = 0
-                for line in output.components(separatedBy: .newlines) {
-                    if line.contains("Container Total Space:") {
-                        totalSize = extractBytes(from: line)
-                    } else if line.contains("Container Free Space:") || line.contains("Container Available Space:") {
-                        freeSize = extractBytes(from: line)
-                    }
-                }
-                if totalSize > 0 && freeSize > 0 {
-                    let used = totalSize - freeSize
-                    let usedPct = totalSize > 0 ? Double(used) / Double(totalSize) * 100.0 : 0
-                    return DiskInfo(
-                        total: totalSize, used: used, free: freeSize,
-                        totalGb: Double(totalSize) / 1073741824.0,
-                        usedGb: Double(used) / 1073741824.0,
-                        freeGb: Double(freeSize) / 1073741824.0,
-                        usedPct: usedPct
-                    )
-                }
-            } catch {}
-        }
-        return nil
-    }
-
-    private func extractBytes(from line: String) -> Int64 {
-        let pattern = "\\(([0-9]+)\\s*Bytes\\)"
-        if let regex = try? NSRegularExpression(pattern: pattern),
-           let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..<line.endIndex, in: line)),
-           let range = Range(match.range(at: 1), in: line) {
-            return Int64(line[range]) ?? 0
-        }
-        return 0
-    }
-
-    private func getDiskInfoFromFileManager() -> DiskInfo? {
+    private func getDiskInfoFallback() -> DiskInfo? {
         for path in ["/System/Volumes/Data", NSHomeDirectory(), "/"] {
-            if let info = try? FileManager.default.attributesOfFileSystem(forPath: path),
-               let totalSize = info[.systemSize] as? NSNumber,
-               let freeSize = info[.systemFreeSize] as? NSNumber {
-                let total = totalSize.int64Value
-                let free = freeSize.int64Value
-                let used = total - free
-                let usedPct = total > 0 ? Double(used) / Double(total) * 100.0 : 0
+            var fs = statfs()
+            guard statfs(path, &fs) == 0 else { continue }
+            let total = Int64(UInt64(fs.f_blocks) * UInt64(fs.f_bsize))
+            let free = Int64(UInt64(fs.f_bavail) * UInt64(fs.f_bsize))
+            let used = total - free
+            let usedPct = total > 0 ? Double(used) / Double(total) * 100.0 : 0
+            if total > 0 {
                 return DiskInfo(
                     total: total, used: used, free: free,
                     totalGb: Double(total) / 1073741824.0,
@@ -178,19 +78,7 @@ class ScannerService: ObservableObject {
                 )
             }
         }
-        var fs = statfs()
-        guard statfs(NSHomeDirectory(), &fs) == 0 else { return nil }
-        let total = Int64(UInt64(fs.f_blocks) * UInt64(fs.f_bsize))
-        let free = Int64(UInt64(fs.f_bavail) * UInt64(fs.f_bsize))
-        let used = total - free
-        let usedPct = total > 0 ? Double(used) / Double(total) * 100.0 : 0
-        return DiskInfo(
-            total: total, used: used, free: free,
-            totalGb: Double(total) / 1073741824.0,
-            usedGb: Double(used) / 1073741824.0,
-            freeGb: Double(free) / 1073741824.0,
-            usedPct: usedPct
-        )
+        return nil
     }
 
     func refreshDiskInfo() {

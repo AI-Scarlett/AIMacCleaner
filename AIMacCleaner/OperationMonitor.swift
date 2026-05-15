@@ -65,92 +65,56 @@ class OperationMonitor: ObservableObject {
     private func detectAgentForPath(_ path: String, agents: [String]) -> String? {
         guard !agents.isEmpty else { return nil }
 
+        let aiAgentNames: Set<String> = [
+            "Trae", "Claude", "Cursor", "Windsurf", "Doubao", "Kimi",
+            "DeepSeek", "ChatGPT", "Gemini", "Copilot", "CodeBuddy",
+            "Cline", "Hermes", "Codex", "Augment", "CodeArts"
+        ]
+
+        let activeAIAgents = agents.filter { aiAgentNames.contains($0) }
         let pathLower = path.lowercased()
 
-        let agentPathPatterns: [(String, [String])] = [
+        let pathPatterns: [(String, [String])] = [
             ("Claude", ["claude", "anthropic", ".claude"]),
             ("Trae", ["trae", "bytedance", ".trae"]),
             ("Cursor", ["cursor", ".cursor"]),
             ("Windsurf", ["windsurf", "codeium", ".windsurf"]),
-            ("Doubao", ["doubao", "bytedance", "volcengine"]),
-            ("Kimi", ["kimi", "moonshot", ".kimi"]),
-            ("DeepSeek", ["deepseek", ".deepseek"]),
-            ("ChatGPT", ["chatgpt", "openai", ".chatgpt"]),
-            ("Gemini", ["gemini", "google", ".gemini"]),
-            ("Copilot", ["copilot", "github", ".copilot"]),
+            ("Doubao", ["doubao", "volcengine"]),
+            ("Kimi", ["kimi", "moonshot"]),
+            ("DeepSeek", ["deepseek"]),
+            ("ChatGPT", ["chatgpt", "openai"]),
+            ("Gemini", ["gemini", "google"]),
+            ("Copilot", ["copilot", "github"]),
             ("CodeBuddy", ["codebuddy"]),
             ("Cline", [".cline"]),
             ("Hermes", ["hermes"]),
-            ("Codex", ["codex", ".codex"]),
-            ("Augment", ["augment", ".augment"]),
-            ("CodeArts", ["codearts", "huawei", ".codearts"]),
+            ("Codex", ["codex"]),
+            ("Augment", ["augment"]),
+            ("CodeArts", ["codearts", "huawei"]),
         ]
 
-        var matchedAgents: [(String, Int)] = []
-
-        for (agent, patterns) in agentPathPatterns {
+        for (agent, patterns) in pathPatterns {
             guard agents.contains(agent) else { continue }
-            var matchScore = 0
-            for pattern in patterns where pathLower.contains(pattern) {
-                matchScore += 1
-            }
-            if matchScore > 0 {
-                matchedAgents.append((agent, matchScore))
+            for p in patterns where pathLower.contains(p) {
+                return agent
             }
         }
 
-        if !matchedAgents.isEmpty {
-            matchedAgents.sort { $0.1 > $1.1 }
-            return matchedAgents[0].0
-        }
-
-        if agents.count == 1 { return agents.first }
-
-        let devPatterns = [
-            ("node_modules", "Node.js"),
-            (".venv", "Python"),
-            ("__pycache__", "Python"),
-            ("target/", "Cargo"),
-            ("vendor/", "Go"),
-            ("build/", "Xcode"),
-            (".gradle", "Gradle"),
-            (".m2", "Maven"),
-            (".npm", "npm"),
-            (".yarn", "Yarn"),
-            (".pnpm", "pnpm"),
-            (".cargo", "Cargo"),
-            (".deno", "Deno"),
-            (".bun", "Bun"),
-            ("Pods/", "CocoaPods"),
-            (".swift", "Swift"),
-            (".py", "Python"),
-            (".js", "Node.js"),
-            (".ts", "TypeScript"),
-            (".go", "Go"),
-            (".rs", "Rust"),
-            (".java", "Java"),
-            (".kt", "Kotlin"),
-            ("package.json", "Node.js"),
-            ("requirements.txt", "Python"),
-            ("Cargo.toml", "Cargo"),
-            ("go.mod", "Go"),
-            ("pom.xml", "Maven"),
-            ("build.gradle", "Gradle"),
-            ("Podfile", "CocoaPods"),
+        let devPatterns: [(String, String)] = [
+            ("node_modules", "Node.js"), ("__pycache__", "Python"), (".venv", "Python"),
+            ("package.json", "Node.js"), ("requirements.txt", "Python"), ("Cargo.toml", "Cargo"),
+            ("go.mod", "Go"), ("pom.xml", "Maven"), ("build.gradle", "Gradle"),
+            ("Podfile", "CocoaPods"), (".swift", "Swift"), (".py", "Python"),
+            (".js", "Node.js"), (".ts", "TypeScript"), (".go", "Go"),
+            (".rs", "Rust"), (".java", "Java"), (".kt", "Kotlin"),
         ]
 
         for (pattern, devTool) in devPatterns where pathLower.contains(pattern) {
             if agents.contains(devTool) { return devTool }
         }
 
-        let aiAgents = agents.filter { agent in
-            ["Claude", "Trae", "Cursor", "Windsurf", "Doubao", "Kimi",
-             "DeepSeek", "ChatGPT", "Gemini", "Copilot", "CodeBuddy",
-             "Cline", "Hermes", "Codex", "Augment", "CodeArts"].contains(agent)
-        }
-
-        if let firstAIAgent = aiAgents.first {
-            return firstAIAgent
+        if let ai = activeAIAgents.first {
+            return ai
         }
 
         return agents.first
@@ -380,84 +344,100 @@ class OperationMonitor: ObservableObject {
     // MARK: - Process Detection
 
     private func detectActiveAgents() -> [String] {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/ps")
-        task.arguments = ["-eo", "command="]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch {
-            return []
-        }
-
-        guard let data = try? pipe.fileHandleForReading.readToEnd(),
-              let output = String(data: data, encoding: .utf8) else { return [] }
-
         var activeAgents: [String] = []
         var seenApps: Set<String> = []
 
-        let knownAgentApps: [(String, [String])] = [
-            ("Claude", ["Claude", "claude"]),
-            ("CodeBuddy", ["CodeBuddy", "codebuddy"]),
-            ("Trae", ["Trae", "trae"]),
-            ("Cursor", ["Cursor", "cursor"]),
-            ("Windsurf", ["Windsurf", "windsurf", "codeium"]),
-            ("Doubao", ["Doubao", "doubao"]),
-            ("Kimi", ["Kimi", "kimi"]),
-            ("DeepSeek", ["DeepSeek", "deepseek"]),
-            ("ChatGPT", ["ChatGPT", "chatgpt"]),
-            ("Gemini", ["Gemini", "gemini"]),
-            ("Copilot", ["Copilot", "copilot"]),
-            ("Augment", ["Augment", "augment"]),
-            ("Cline", ["Cline", "cline"]),
-            ("CodeArts", ["CodeArts", "codearts", "huawei"]),
-            ("Hermes", ["Hermes", "hermes"]),
-            ("Codex", ["Codex", "codex"]),
-        ]
+        let workspace = NSWorkspace.shared
+        let runningApps = workspace.runningApplications
+        for app in runningApps {
+            let name = app.localizedName ?? ""
+            let bundleId = app.bundleIdentifier ?? ""
+            let execURL = app.executableURL?.path ?? ""
+            let lowerName = name.lowercased()
+            let lowerExec = execURL.lowercased()
+            let lowerBundle = bundleId.lowercased()
 
-        for line in output.components(separatedBy: .newlines) {
-            let lineLower = line.lowercased()
-            for (displayName, keywords) in knownAgentApps where !seenApps.contains(displayName) {
-                for keyword in keywords where lineLower.contains(keyword) {
+            let appsMap: [(String, [String])] = [
+                ("Trae", ["trae"]),
+                ("Claude", ["claude"]),
+                ("Cursor", ["cursor"]),
+                ("Windsurf", ["windsurf", "codeium"]),
+                ("CodeBuddy", ["codebuddy"]),
+                ("Doubao", ["doubao"]),
+                ("Kimi", ["kimi"]),
+                ("DeepSeek", ["deepseek"]),
+                ("ChatGPT", ["chatgpt"]),
+                ("Gemini", ["gemini"]),
+                ("Copilot", ["copilot"]),
+                ("Cline", ["cline"]),
+                ("Hermes", ["hermes"]),
+                ("Codex", ["codex"]),
+                ("Augment", ["augment"]),
+                ("CodeArts", ["codearts", "huawei"]),
+            ]
+
+            for (displayName, keywords) in appsMap where !seenApps.contains(displayName) {
+                for kw in keywords {
+                    if lowerName.contains(kw) || lowerExec.contains(kw) || lowerBundle.contains(kw) {
+                        activeAgents.append(displayName)
+                        seenApps.insert(displayName)
+                        break
+                    }
+                }
+            }
+        }
+
+        if activeAgents.isEmpty {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/ps")
+            task.arguments = ["-eo", "command="]
+            let pipe = Pipe()
+            task.standardOutput = pipe
+            task.standardError = FileHandle.nullDevice
+            do { try task.run(); task.waitUntilExit() } catch { return [] }
+            guard let data = try? pipe.fileHandleForReading.readToEnd(),
+                  let output = String(data: data, encoding: .utf8) else { return [] }
+
+            let psAgents: [(String, [String])] = [
+                ("Trae", ["trae"]), ("Claude", ["claude"]), ("Cursor", ["cursor"]),
+                ("Windsurf", ["windsurf", "codeium"]), ("CodeBuddy", ["codebuddy"]),
+                ("Doubao", ["doubao"]), ("Kimi", ["kimi"]), ("DeepSeek", ["deepseek"]),
+                ("ChatGPT", ["chatgpt"]), ("Gemini", ["gemini"]), ("Copilot", ["copilot"]),
+                ("Cline", ["cline"]), ("Hermes", ["hermes"]), ("Codex", ["codex"]),
+                ("Augment", ["augment"]), ("CodeArts", ["codearts", "huawei"]),
+            ]
+
+            let outputLower = output.lowercased()
+            for (displayName, keywords) in psAgents where !seenApps.contains(displayName) {
+                for kw in keywords where outputLower.contains(kw) {
                     activeAgents.append(displayName)
                     seenApps.insert(displayName)
                     break
                 }
-                if seenApps.contains(displayName) { break }
             }
         }
 
-        let knownCLINames: [String: String] = [
-            "node": "Node.js",
-            "python3": "Python",
-            "python": "Python",
-            "npm": "npm",
-            "yarn": "Yarn",
-            "pnpm": "pnpm",
-            "cargo": "Cargo",
-            "deno": "Deno",
-            "bun": "Bun",
-            "go": "Go",
-            "swift": "Swift",
-            "java": "Java",
-            "gradle": "Gradle",
-            "mvn": "Maven",
-            "make": "Make",
-            "cmake": "CMake",
-            "xcodebuild": "Xcode",
-            "git": "Git",
+        let cliNames: [String: String] = [
+            "node": "Node.js", "python3": "Python", "python": "Python",
+            "npm": "npm", "yarn": "Yarn", "pnpm": "pnpm", "cargo": "Cargo",
+            "deno": "Deno", "bun": "Bun", "go": "Go", "swift": "Swift",
+            "java": "Java", "gradle": "Gradle", "mvn": "Maven",
+            "make": "Make", "cmake": "CMake", "xcodebuild": "Xcode", "git": "Git",
         ]
 
-        for line in output.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty else { continue }
-            let parts = trimmed.split(separator: " ", maxSplits: 1)
-            let execPath = String(parts[0])
-            let execName = (execPath as NSString).lastPathComponent.lowercased()
-            if let displayName = knownCLINames[execName], !activeAgents.contains(displayName) {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/ps")
+        task.arguments = ["-eo", "comm="]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        do { try task.run(); task.waitUntilExit() } catch { return activeAgents }
+        guard let data = try? pipe.fileHandleForReading.readToEnd(),
+              let output = String(data: data, encoding: .utf8) else { return activeAgents }
+
+        let commLines = output.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        for comm in commLines where !comm.isEmpty {
+            if let displayName = cliNames[comm], !activeAgents.contains(displayName) {
                 activeAgents.append(displayName)
             }
         }
