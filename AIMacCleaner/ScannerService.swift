@@ -33,6 +33,76 @@ class ScannerService: ObservableObject {
     // MARK: - Disk Info
 
     func getDiskInfoNative() -> DiskInfo? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
+        process.arguments = ["info", "/"]
+        
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        
+        do {
+            try process.run()
+            process.waitUntilExit()
+            
+            guard let data = try? pipe.fileHandleForReading.readToEnd(),
+                  let output = String(data: data, encoding: .utf8) else {
+                return getFallbackDiskInfo()
+            }
+            
+            var totalSize: Int64 = 0
+            var usedSize: Int64 = 0
+            var freeSize: Int64 = 0
+            
+            for line in output.components(separatedBy: .newlines) {
+                if line.contains("Container Total Space:") {
+                    if let value = extractValue(from: line, unit: "Bytes") {
+                        totalSize = value
+                    }
+                } else if line.contains("Container Available Space:") || line.contains("Volume Available Space:") {
+                    if let value = extractValue(from: line, unit: "Bytes") {
+                        freeSize = max(freeSize, value)
+                    }
+                } else if line.contains("Container Used Space:") || line.contains("Volume Used Space:") {
+                    if let value = extractValue(from: line, unit: "Bytes") {
+                        usedSize = max(usedSize, value)
+                    }
+                }
+            }
+            
+            if totalSize == 0 || (usedSize == 0 && freeSize == 0) {
+                return getFallbackDiskInfo()
+            }
+            
+            if usedSize == 0 {
+                usedSize = totalSize - freeSize
+            } else if freeSize == 0 {
+                freeSize = totalSize - usedSize
+            }
+            
+            let usedPct = totalSize > 0 ? Double(usedSize) / Double(totalSize) * 100.0 : 0
+            
+            return DiskInfo(
+                total: totalSize,
+                used: usedSize,
+                free: freeSize,
+                totalGb: Double(totalSize) / 1073741824.0,
+                usedGb: Double(usedSize) / 1073741824.0,
+                freeGb: Double(freeSize) / 1073741824.0,
+                usedPct: usedPct
+            )
+        } catch {
+            return getFallbackDiskInfo()
+        }
+    }
+    
+    private func extractValue(from line: String, unit: String) -> Int64? {
+        guard let range = line.range(of: "\\d+\\.?\\d*\\s*" + unit + "$", options: .regularExpression) else { return nil }
+        let numberStr = line[range].trimmingCharacters(in: CharacterSet(charactersIn: "0123456789. "))
+        return Int64((Double(numberStr) ?? 0).rounded())
+    }
+    
+    private func getFallbackDiskInfo() -> DiskInfo? {
         let fm = FileManager.default
         
         if let attrs = try? fm.attributesOfFileSystem(forPath: NSHomeDirectory()),

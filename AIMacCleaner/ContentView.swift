@@ -244,10 +244,10 @@ struct ContentView: View {
                             }
                         } label: {
                             HStack(spacing: 5) {
-                                Text(localizer.collapseSidebar)
-                                    .font(.system(size: 10))
                                 Image(systemName: "sidebar.left")
                                     .font(.system(size: 11, weight: .medium))
+                                Text(localizer.collapseSidebar)
+                                    .font(.system(size: 10))
                             }
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 6)

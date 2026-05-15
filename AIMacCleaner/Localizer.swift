@@ -210,7 +210,7 @@ extension Localizer {
     var noRecordsHint: String { t("启动监控后将自动记录 AI Agent 的文件操作", en: "AI Agent file operations will be recorded once monitoring starts") }
 
     var settings: String { t("设置", en: "Settings") }
-    var collapseSidebar: String { t("收起侧边栏", en: "Collapse sidebar") }
+    var collapseSidebar: String { t("收起", en: "Collapse") }
     var expandSidebar: String { t("展开侧边栏", en: "Expand sidebar") }
     var features: String { t("功能", en: "Features") }
 

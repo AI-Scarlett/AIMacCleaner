@@ -68,29 +68,40 @@ class OperationMonitor: ObservableObject {
         let pathLower = path.lowercased()
 
         let agentPathPatterns: [(String, [String])] = [
-            ("Claude", ["claude", "anthropic"]),
-            ("Trae", ["trae", "bytedance"]),
+            ("Claude", ["claude", "anthropic", ".claude"]),
+            ("Trae", ["trae", "bytedance", ".trae"]),
             ("Cursor", ["cursor", ".cursor"]),
-            ("Windsurf", ["windsurf", "codeium"]),
+            ("Windsurf", ["windsurf", "codeium", ".windsurf"]),
             ("Doubao", ["doubao", "bytedance", "volcengine"]),
-            ("Kimi", ["kimi", "moonshot"]),
-            ("DeepSeek", ["deepseek"]),
-            ("ChatGPT", ["chatgpt", "openai"]),
-            ("Gemini", ["gemini", "google"]),
-            ("Copilot", ["copilot", "github"]),
+            ("Kimi", ["kimi", "moonshot", ".kimi"]),
+            ("DeepSeek", ["deepseek", ".deepseek"]),
+            ("ChatGPT", ["chatgpt", "openai", ".chatgpt"]),
+            ("Gemini", ["gemini", "google", ".gemini"]),
+            ("Copilot", ["copilot", "github", ".copilot"]),
             ("CodeBuddy", ["codebuddy"]),
             ("Cline", [".cline"]),
             ("Hermes", ["hermes"]),
-            ("Codex", ["codex"]),
-            ("Augment", ["augment"]),
-            ("CodeArts", ["codearts", "huawei"]),
+            ("Codex", ["codex", ".codex"]),
+            ("Augment", ["augment", ".augment"]),
+            ("CodeArts", ["codearts", "huawei", ".codearts"]),
         ]
+
+        var matchedAgents: [(String, Int)] = []
 
         for (agent, patterns) in agentPathPatterns {
             guard agents.contains(agent) else { continue }
+            var matchScore = 0
             for pattern in patterns where pathLower.contains(pattern) {
-                return agent
+                matchScore += 1
             }
+            if matchScore > 0 {
+                matchedAgents.append((agent, matchScore))
+            }
+        }
+
+        if !matchedAgents.isEmpty {
+            matchedAgents.sort { $0.1 > $1.1 }
+            return matchedAgents[0].0
         }
 
         if agents.count == 1 { return agents.first }
@@ -98,6 +109,7 @@ class OperationMonitor: ObservableObject {
         let devPatterns = [
             ("node_modules", "Node.js"),
             (".venv", "Python"),
+            ("__pycache__", "Python"),
             ("target/", "Cargo"),
             ("vendor/", "Go"),
             ("build/", "Xcode"),
@@ -118,10 +130,27 @@ class OperationMonitor: ObservableObject {
             (".rs", "Rust"),
             (".java", "Java"),
             (".kt", "Kotlin"),
+            ("package.json", "Node.js"),
+            ("requirements.txt", "Python"),
+            ("Cargo.toml", "Cargo"),
+            ("go.mod", "Go"),
+            ("pom.xml", "Maven"),
+            ("build.gradle", "Gradle"),
+            ("Podfile", "CocoaPods"),
         ]
 
         for (pattern, devTool) in devPatterns where pathLower.contains(pattern) {
             if agents.contains(devTool) { return devTool }
+        }
+
+        let aiAgents = agents.filter { agent in
+            ["Claude", "Trae", "Cursor", "Windsurf", "Doubao", "Kimi",
+             "DeepSeek", "ChatGPT", "Gemini", "Copilot", "CodeBuddy",
+             "Cline", "Hermes", "Codex", "Augment", "CodeArts"].contains(agent)
+        }
+
+        if let firstAIAgent = aiAgents.first {
+            return firstAIAgent
         }
 
         return agents.first
