@@ -1,13 +1,6 @@
 import Foundation
 import AppKit
 
-struct ProcessInfo {
-    let pid: pid_t
-    let comm: String
-    let args: String
-    let agentName: String?
-}
-
 class OperationMonitor: ObservableObject {
     @Published var records: [OperationRecord] = []
     @Published var isMonitoring: Bool = false
@@ -21,22 +14,33 @@ class OperationMonitor: ObservableObject {
     private var hasRestoredBookmarks: Bool = false
     private var lastCleanupTime: Date = .distantPast
 
-    private var agentPIDMap: [String: pid_t] = [:]
-    private var pidAgentMap: [pid_t: String] = [:]
-    private var pidOpenFiles: [pid_t: Set<String>] = [:]
-    private var pidCommMap: [pid_t: String] = [:]
-    private var pidArgsMap: [pid_t: String] = [:]
+    private var allPidOpenFiles: [pid_t: Set<String>] = [:]
+    private var allPidCommMap: [pid_t: String] = [:]
+    private var allPidArgsMap: [pid_t: String] = [:]
     private var ppidMap: [pid_t: pid_t] = [:]
+    private var agentComms: Set<String> = []
     private var lastLsofRefresh: Date = .distantPast
+    private var fileAgentCache: [String: (agentName: String, processName: String, toolInfo: String?, cachedAt: Date, pid: pid_t)] = [:]
+    private let cacheMaxSize = 5000
+    private let cacheTTL: TimeInterval = 15.0
 
     private let agentKeywords: [(String, [String])] = [
-        ("Trae", ["trae-cn", "trae cn", "traecn", "trae-cn.app"]), ("Claude", ["claude"]),
-        ("Cursor", ["cursor"]), ("Windsurf", ["windsurf", "codeium"]),
+        ("Trae", ["trae-cn", "trae cn", "traecn", "trae-cn.app"]),
+        ("Claude", ["claude"]),
+        ("Cursor", ["cursor"]),
+        ("Windsurf", ["windsurf", "codeium"]),
         ("CodeBuddy", ["codebuddy-cn", "codebuddy cn", "codebuddycn"]),
-        ("Doubao", ["doubao"]), ("Kimi", ["kimi"]), ("DeepSeek", ["deepseek"]),
-        ("ChatGPT", ["chatgpt"]), ("Gemini", ["gemini"]), ("Copilot", ["copilot"]),
-        ("Cline", ["cline"]), ("Hermes", ["hermes"]), ("Codex", ["codex"]),
-        ("Augment", ["augment"]), ("CodeArts", ["codearts", "huawei"]),
+        ("Doubao", ["doubao"]),
+        ("Kimi", ["kimi"]),
+        ("DeepSeek", ["deepseek"]),
+        ("ChatGPT", ["chatgpt"]),
+        ("Gemini", ["gemini"]),
+        ("Copilot", ["copilot"]),
+        ("Cline", ["cline"]),
+        ("Hermes", ["hermes"]),
+        ("Codex", ["codex"]),
+        ("Augment", ["augment"]),
+        ("CodeArts", ["codearts", "huawei"]),
     ]
 
     private let cliToolNames: [String: String] = [
@@ -49,6 +53,8 @@ class OperationMonitor: ObservableObject {
         "git": "Git", "docker": "Docker", "pip": "pip", "pip3": "pip3",
         "esbuild": "esbuild", "tsx": "tsx", "tsc": "tsc",
         "swift-frontend": "Swift", "clang": "Clang",
+        "rsync": "rsync", "cp": "cp", "mv": "mv", "rm": "rm",
+        "zip": "zip", "tar": "tar", "mkdir": "mkdir",
     ]
 
     struct FileSnapshot: Codable {
@@ -59,17 +65,47 @@ class OperationMonitor: ObservableObject {
         let agentName: String?
         let processName: String?
         let toolInfo: String?
+        let pid: pid_t
     }
 
     private let watchPaths: [String] = {
         let home = NSHomeDirectory()
-        return [
+        let uid = getuid()
+        var paths: [String] = [
             "\(home)/Desktop",
             "\(home)/Documents",
             "\(home)/Downloads",
             "\(home)/Library/Caches",
             "\(home)/Library/Application Support",
-        ].filter { FileManager.default.fileExists(atPath: $0) }
+            "\(home)/Library/Preferences",
+            "\(home)/Library/Logs",
+        ]
+
+        let fm = FileManager.default
+        let commonDirs = ["Projects", "Dev", "Developer", "Code", "workspace", "src", "repo", "repos"]
+        for dir in commonDirs {
+            let p = "\(home)/\(dir)"
+            if fm.fileExists(atPath: p) {
+                paths.append(p)
+            }
+        }
+
+        if let desktop = fm.urls(for: .desktopDirectory, in: .userDomainMask).first {
+            let parent = desktop.deletingLastPathComponent().path
+            for item in (try? fm.contentsOfDirectory(atPath: parent)) ?? [] {
+                if item.hasPrefix(".") || item == "Desktop" || item == "Documents" ||
+                   item == "Downloads" || item == "Library" || item == "Movies" ||
+                   item == "Music" || item == "Pictures" || item == "Public" ||
+                   item == "Applications" { continue }
+                let full = "\(parent)/\(item)"
+                var isDir: ObjCBool = false
+                if fm.fileExists(atPath: full, isDirectory: &isDir), isDir.boolValue {
+                    paths.append(full)
+                }
+            }
+        }
+
+        return Array(Set(paths)).filter { fm.fileExists(atPath: $0) }
     }()
 
     private let bookmarksPath: String = NSHomeDirectory() + "/.aimaccleaner_bookmarks.json"
@@ -84,13 +120,19 @@ class OperationMonitor: ObservableObject {
         guard !isMonitoring else { return }
         isMonitoring = true
         loadRecords()
+
+        print("[AIMacCleaner] === OperationMonitor starting ===")
+        print("[AIMacCleaner] Watch paths: \(watchPaths)")
+
         if !hasRestoredBookmarks {
             restoreAccessFromBookmarks()
         }
         buildInitialSnapshot()
-        refreshAllProcessInfo()
         startFSEventStream()
         startProcessPoller()
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.refreshAllProcessInfo()
+        }
         DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 2.0) { [weak self] in
             self?.saveBookmarks()
         }
@@ -99,21 +141,27 @@ class OperationMonitor: ObservableObject {
     func stop() {
         stopFSEventStream()
         processPoller?.invalidate()
+        processPoller = nil
         isMonitoring = false
     }
 
-    // MARK: - Batch Process Info Refresh
+    // MARK: - Process Info Refresh
 
     private func refreshAllProcessInfo() {
-        detectActiveAgents()
-        refreshLsofData()
-    }
+        stateLock.lock()
+        let currentPidComms = allPidCommMap
+        stateLock.unlock()
 
-    private func detectActiveAgents() {
-        var newAgentPIDMap: [String: pid_t] = [:]
         var newPidCommMap: [pid_t: String] = [:]
         var newPidArgsMap: [pid_t: String] = [:]
         var newPpidMap: [pid_t: pid_t] = [:]
+        var newAgentComms: Set<String> = []
+
+        for (_, keywords) in agentKeywords {
+            for kw in keywords {
+                newAgentComms.insert(kw)
+            }
+        }
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/ps")
@@ -144,54 +192,38 @@ class OperationMonitor: ObservableObject {
                 newPidCommMap[pid] = comm
                 newPidArgsMap[pid] = args
                 newPpidMap[pid] = ppid
-
-                let resolved = resolveAgentNameFromComm(comm: comm, args: args)
-                if let name = resolved {
-                    newAgentPIDMap[name] = pid
-                }
             }
-        } catch {}
+        } catch {
+            print("[AIMacCleaner] ps failed: \(error)")
+        }
 
         stateLock.lock()
-        agentPIDMap = newAgentPIDMap
-        pidCommMap = newPidCommMap
-        pidArgsMap = newPidArgsMap
+        allPidCommMap = newPidCommMap
+        allPidArgsMap = newPidArgsMap
         ppidMap = newPpidMap
-        pidAgentMap = [:]
-        for (name, pid) in agentPIDMap {
-            pidAgentMap[pid] = name
-        }
+        agentComms = newAgentComms
         stateLock.unlock()
-        print("[AIMacCleaner] detectActiveAgents found: \(newAgentPIDMap.keys.sorted())")
-        print("[AIMacCleaner] pidCommMap count: \(newPidCommMap.count)")
-    }
 
-    private func resolveAgentNameFromComm(comm: String, args: String) -> String? {
-        let combined = (comm + " " + args).lowercased()
-        for (displayName, keywords) in agentKeywords {
-            for kw in keywords {
-                if combined.contains(kw) {
-                    return displayName
-                }
-            }
+        refreshLsofData()
+
+        let newPids = Set(newPidCommMap.keys).subtracting(Set(currentPidComms.keys))
+        if !newPids.isEmpty {
+            print("[AIMacCleaner] New PIDs detected: \(newPids.count), total: \(newPidCommMap.count)")
         }
-        let commBase = (comm as NSString).lastPathComponent.lowercased()
-        return cliToolNames[commBase]
     }
 
     private func refreshLsofData() {
-        let pids = agentPIDMap.values
-        guard !pids.isEmpty else {
-            stateLock.lock()
-            pidOpenFiles = [:]
-            stateLock.unlock()
-            return
-        }
-        let pidList = pids.map(String.init).joined(separator: ",")
+        stateLock.lock()
+        let pidCommMap = allPidCommMap
+        stateLock.unlock()
 
+        let processCount = pidCommMap.count
+        guard processCount > 0 else { return }
+
+        let uid = getuid()
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        task.arguments = ["+c", "0", "-w", "-FpcRn", "-p", pidList]
+        task.arguments = ["+c", "0", "-w", "-FpcRn", "-u", "\(uid)"]
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
@@ -215,89 +247,148 @@ class OperationMonitor: ObservableObject {
                     }
                 } else if line.hasPrefix("n") && currentPid != 0 {
                     let path = String(line.dropFirst())
-                    guard path.hasPrefix("/"), !path.hasPrefix("/dev/"),
+                    guard path.hasPrefix("/"),
+                          !path.hasPrefix("/dev/"),
                           !path.hasPrefix("/private/var/folders/"),
-                          !path.contains(".app/Contents/MacOS/") else { continue }
+                          !path.hasPrefix("/System/"),
+                          !path.contains(".app/Contents/"),
+                          !path.hasSuffix(".nib"),
+                          !path.hasSuffix(".strings"),
+                          !path.hasSuffix(".plist") else { continue }
+
                     newPidOpenFiles[currentPid, default: []].insert(path)
+                    let expanded = NSString(string: path).expandingTildeInPath
+                    if expanded != path {
+                        newPidOpenFiles[currentPid, default: []].insert(expanded)
+                    }
                 }
             }
 
             stateLock.lock()
-            pidOpenFiles = newPidOpenFiles
+            allPidOpenFiles = newPidOpenFiles
             lastLsofRefresh = Date()
+
+            let now = Date()
+            var newCacheEntries = 0
+            for (pid, files) in newPidOpenFiles {
+                let agentName = resolveAgentNameForPid(pid)
+                let procName = allPidCommMap[pid]
+                let args = allPidArgsMap[pid] ?? ""
+                let tool = extractToolInfo(comm: procName ?? "", args: args)
+
+                for file in files {
+                    let key = file
+                    if fileAgentCache[key] == nil || fileAgentCache[key]?.pid != pid {
+                        fileAgentCache[key] = (agentName, procName ?? "PID:\(pid)", tool, now, pid)
+                        newCacheEntries += 1
+                    }
+                }
+            }
+
+            fileAgentCache = fileAgentCache.filter { now.timeIntervalSince($0.value.cachedAt) < cacheTTL }
+            if fileAgentCache.count > cacheMaxSize {
+                let sorted = fileAgentCache.sorted { $0.value.cachedAt > $1.value.cachedAt }
+                fileAgentCache = Dictionary(uniqueKeysWithValues: sorted.prefix(cacheMaxSize).map { ($0.key, $0.value) })
+            }
+
             stateLock.unlock()
-            print("[AIMacCleaner] refreshLsofData: \(newPidOpenFiles.count) PIDs, \(newPidOpenFiles.values.map { $0.count }.reduce(0, +)) total files")
+
+            print("[AIMacCleaner] lsof: \(newPidOpenFiles.count) PIDs, \(newPidOpenFiles.values.map{$0.count}.reduce(0,+)) files, cache: \(fileAgentCache.count) entries, new: \(newCacheEntries)")
         } catch {
-            print("[AIMacCleaner] refreshLsofData failed: \(error)")
+            print("[AIMacCleaner] lsof failed: \(error)")
         }
     }
 
-    // MARK: - Cached Agent Lookup (NO lsof per event!)
+    // MARK: - Agent Resolution
 
-    private func lookupAgentForPath(_ eventPath: String) -> (agentName: String, processName: String?, toolInfo: String?) {
-        let expanded = NSString(string: eventPath).expandingTildeInPath
-
+    private func resolveAgentNameForPid(_ pid: pid_t) -> String {
         stateLock.lock()
-        let localPidOpenFiles = pidOpenFiles
-        let localPidAgentMap = pidAgentMap
-        let localPidCommMap = pidCommMap
-        let localPidArgsMap = pidArgsMap
+        let comm = allPidCommMap[pid]
+        let args = allPidArgsMap[pid] ?? ""
         let localPpidMap = ppidMap
-        let localAgentPIDMap = agentPIDMap
+        let localComms = allPidCommMap
         stateLock.unlock()
 
-        for (pid, files) in localPidOpenFiles {
-            if files.contains(expanded) {
-                let agentName = localPidAgentMap[pid] ?? resolveFromTree(pid: pid, ppidMap: localPpidMap, pidAgentMap: localPidAgentMap, pidCommMap: localPidCommMap)
-                let procName = localPidCommMap[pid]
-                let args = localPidArgsMap[pid] ?? ""
-                let tool = extractToolInfo(comm: procName ?? "", args: args)
-                return (agentName ?? procName ?? "PID:\(pid)", procName, tool)
-            }
-        }
+        guard let comm = comm else { return "PID:\(pid)" }
 
-        for (pid, files) in localPidOpenFiles {
-            for file in files {
-                if expanded.hasPrefix(file) {
-                    let agentName = localPidAgentMap[pid] ?? resolveFromTree(pid: pid, ppidMap: localPpidMap, pidAgentMap: localPidAgentMap, pidCommMap: localPidCommMap)
-                    let procName = localPidCommMap[pid]
-                    let args = localPidArgsMap[pid] ?? ""
-                    let tool = extractToolInfo(comm: procName ?? "", args: args)
-                    return (agentName ?? procName ?? "PID:\(pid)", procName, tool)
+        let combined = (comm + " " + args).lowercased()
+        for (displayName, keywords) in agentKeywords {
+            for kw in keywords {
+                if combined.contains(kw) {
+                    return displayName
                 }
             }
         }
 
-        let pathLower = expanded.lowercased()
-        for (name, _) in localAgentPIDMap {
-            let kw = name.lowercased()
-            if pathLower.contains("/\(kw)/") || pathLower.contains(".\(kw)/") {
-                return (name, "path-match", nil)
-            }
+        let commBase = (comm as NSString).lastPathComponent.lowercased()
+        if let toolName = cliToolNames[commBase] {
+            return toolName
         }
 
-        return ("—", nil, nil)
-    }
-
-    private func resolveFromTree(pid: pid_t, ppidMap: [pid_t: pid_t], pidAgentMap: [pid_t: String], pidCommMap: [pid_t: String]) -> String? {
         var current = pid
         var depth = 0
         while depth < 10 {
-            if let name = pidAgentMap[current] {
-                return name
-            }
-            if let ppid = ppidMap[current], ppid > 0 {
+            if let ppid = localPpidMap[current], ppid > 0 {
                 current = ppid
                 depth += 1
+                if let parentComm = localComms[current] {
+                    let parentCombined = (parentComm + " " + (allPidArgsMap[current] ?? "")).lowercased()
+                    for (displayName, keywords) in agentKeywords {
+                        for kw in keywords {
+                            if parentCombined.contains(kw) {
+                                return displayName
+                            }
+                        }
+                    }
+                }
             } else {
                 break
             }
         }
-        if let comm = pidCommMap[current] {
-            let commBase = (comm as NSString).lastPathComponent.lowercased()
-            return cliToolNames[commBase]
+
+        return (comm as NSString).lastPathComponent
+    }
+
+    private func lookupAgentForPath(_ eventPath: String) -> (agentName: String, processName: String?, toolInfo: String?) {
+        let expanded = NSString(string: eventPath).expandingTildeInPath
+        let now = Date()
+
+        stateLock.lock()
+        if let cached = fileAgentCache[expanded], now.timeIntervalSince(cached.cachedAt) < cacheTTL {
+            stateLock.unlock()
+            return (cached.agentName, cached.processName, cached.toolInfo)
         }
-        return nil
+        if let cached = fileAgentCache[eventPath], now.timeIntervalSince(cached.cachedAt) < cacheTTL {
+            stateLock.unlock()
+            return (cached.agentName, cached.processName, cached.toolInfo)
+        }
+        stateLock.unlock()
+
+        if abs(now.timeIntervalSince(lastLsofRefresh)) > 3.0 {
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                self?.refreshAllProcessInfo()
+            }
+        }
+
+        let pathLower = expanded.lowercased()
+        for (name, _) in agentKeywords {
+            let kw = name.lowercased()
+            if pathLower.contains("/\(kw)/") || pathLower.contains(".\(kw)/") ||
+               pathLower.contains(".\(kw)-") || pathLower.contains("\(kw).app") {
+                return (name, "path-match", nil)
+            }
+        }
+
+        let dirName = (expanded as NSString).deletingLastPathComponent.lowercased()
+        for (name, keywords) in agentKeywords {
+            for kw in keywords {
+                if dirName.contains(kw) {
+                    return (name, "dir-match", nil)
+                }
+            }
+        }
+
+        return ("—", nil, nil)
     }
 
     private func extractToolInfo(comm: String, args: String) -> String? {
@@ -309,6 +400,19 @@ class OperationMonitor: ObservableObject {
             return commBase + " " + String(args.prefix(maxLen)) + "…"
         }
         return commBase + " " + args
+    }
+
+    // MARK: - Process Poller
+
+    private var processPoller: Timer?
+
+    private func startProcessPoller() {
+        processPoller?.invalidate()
+        processPoller = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                self?.refreshAllProcessInfo()
+            }
+        }
     }
 
     // MARK: - FSEvents
@@ -351,16 +455,16 @@ class OperationMonitor: ObservableObject {
             &context,
             watchPaths as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            1.0,
+            0.5,
             flags
         )
 
         if let stream = streamRef {
-            FSEventStreamScheduleWithRunLoop(stream, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+            FSEventStreamSetDispatchQueue(stream, processQueue)
             let started = FSEventStreamStart(stream)
-            print("[AIMacCleaner] FSEventStream started: \(started), paths: \(watchPaths)")
+            print("[AIMacCleaner] FSEventStream started: \(started), paths: \(watchPaths.count)")
         } else {
-            print("[AIMacCleaner] FSEventStream creation failed!")
+            print("[AIMacCleaner] FSEventStream creation FAILED!")
         }
     }
 
@@ -376,7 +480,6 @@ class OperationMonitor: ObservableObject {
     private func processEvents(paths: [String]) {
         let fm = FileManager.default
         let now = Date()
-        print("[AIMacCleaner] processEvents called with \(paths.count) paths")
 
         if now.timeIntervalSince(lastCleanupTime) > 60.0 {
             cleanupOldSnapshots()
@@ -391,15 +494,9 @@ class OperationMonitor: ObservableObject {
 
             let expanded = NSString(string: eventPath).expandingTildeInPath
 
-            let exists: Bool
-            do {
-                exists = fm.fileExists(atPath: expanded)
-            } catch {
-                continue
-            }
+            let exists = fm.fileExists(atPath: expanded)
 
             let agentInfo = lookupAgentForPath(eventPath)
-            print("[AIMacCleaner] Event: \(eventPath) exists=\(exists) agent=\(agentInfo.agentName)")
 
             guard exists else {
                 let record = OperationRecord(
@@ -408,7 +505,7 @@ class OperationMonitor: ObservableObject {
                     agentName: agentInfo.agentName,
                     operationType: .delete,
                     targetPath: eventPath,
-                    detail: formatDeleteDetail(eventPath),
+                    detail: "删除: \((eventPath as NSString).lastPathComponent)",
                     fileSize: 0,
                     processName: agentInfo.processName,
                     toolInfo: agentInfo.toolInfo
@@ -440,7 +537,9 @@ class OperationMonitor: ObservableObject {
             stateLock.unlock()
 
             if let existing = existing {
-                guard abs(modDate - existing.modDate) > 1.0 || size != existing.size else {
+                let changed = abs(modDate - existing.modDate) > 1.0 || size != existing.size
+
+                if !changed {
                     stateLock.lock()
                     let shouldRecordRead: Bool
                     if let lastAccess = accessTimes[eventPath] {
@@ -463,7 +562,7 @@ class OperationMonitor: ObservableObject {
                             agentName: readAgent,
                             operationType: .read,
                             targetPath: eventPath,
-                            detail: formatReadDetail(eventPath, size: size),
+                            detail: "读取: \((eventPath as NSString).lastPathComponent) (\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))",
                             fileSize: size,
                             processName: readProc,
                             toolInfo: readTool
@@ -492,12 +591,29 @@ class OperationMonitor: ObservableObject {
                     agentName: agentInfo.agentName,
                     operationType: .create,
                     targetPath: eventPath,
-                    detail: formatCreateDetail(eventPath, size: size),
+                    detail: "创建: \((eventPath as NSString).lastPathComponent) (\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))",
                     fileSize: size,
                     processName: agentInfo.processName,
                     toolInfo: agentInfo.toolInfo
                 )
                 addRecord(record)
+            }
+
+            let bestAgent: String
+            let bestProc: String?
+            let bestTool: String?
+            if agentInfo.agentName != "—" {
+                bestAgent = agentInfo.agentName
+                bestProc = agentInfo.processName
+                bestTool = agentInfo.toolInfo
+            } else if let existingAgent = existing?.agentName, existingAgent != "—" {
+                bestAgent = existingAgent
+                bestProc = existing?.processName
+                bestTool = existing?.toolInfo
+            } else {
+                bestAgent = "—"
+                bestProc = nil
+                bestTool = nil
             }
 
             stateLock.lock()
@@ -506,9 +622,10 @@ class OperationMonitor: ObservableObject {
                 modDate: modDate,
                 size: size,
                 isDir: false,
-                agentName: agentInfo.agentName,
-                processName: agentInfo.processName,
-                toolInfo: agentInfo.toolInfo
+                agentName: bestAgent,
+                processName: bestProc,
+                toolInfo: bestTool,
+                pid: existing?.pid ?? 0
             )
             accessTimes[eventPath] = now
             stateLock.unlock()
@@ -533,43 +650,6 @@ class OperationMonitor: ObservableObject {
         }
     }
 
-    // MARK: - Process Poller
-
-    private var processPoller: Timer?
-    private var lastPolledAgents: Set<String> = []
-
-    private func startProcessPoller() {
-        processPoller?.invalidate()
-        processPoller = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            DispatchQueue.global(qos: .utility).async { [weak self] in
-                guard let self = self else { return }
-                self.detectActiveAgents()
-                self.refreshLsofData()
-                DispatchQueue.main.async {
-                    let currentAgents = Set(self.agentPIDMap.keys)
-                    let newAgents = currentAgents.subtracting(self.lastPolledAgents)
-                    if !newAgents.isEmpty {
-                        let agentList = newAgents.sorted().joined(separator: ", ")
-                        let record = OperationRecord(
-                            id: UUID().uuidString,
-                            timestamp: Date(),
-                            agentName: newAgents.first ?? "Unknown",
-                            operationType: .modify,
-                            targetPath: "System Process",
-                            detail: "🤖 Agent detected: \(agentList)",
-                            fileSize: 0,
-                            processName: "monitor",
-                            toolInfo: "agent detection"
-                        )
-                        self.addRecord(record)
-                    }
-                    self.lastPolledAgents = currentAgents
-                }
-            }
-        }
-    }
-
     // MARK: - Snapshot
 
     private func buildInitialSnapshot() {
@@ -588,34 +668,20 @@ class OperationMonitor: ObservableObject {
                     stateLock.lock()
                     fileSnapshots[fullPath] = FileSnapshot(
                         path: fullPath, modDate: modDate, size: size, isDir: isDir.boolValue,
-                        agentName: nil, processName: nil, toolInfo: nil
+                        agentName: nil, processName: nil, toolInfo: nil, pid: 0
                     )
                     stateLock.unlock()
                     totalCount += 1
                 }
             }
         }
+        print("[AIMacCleaner] Initial snapshot: \(totalCount) files")
     }
 
     // MARK: - Detail Formatting
 
-    private func formatCreateDetail(_ path: String, size: Int64) -> String {
-        let fileName = (path as NSString).lastPathComponent
-        let dirName = dirName(from: path)
-        let sizeStr = ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
-        return "📄 Create: \(fileName) (\(sizeStr))\n📁 \(dirName)"
-    }
-
-    private func formatReadDetail(_ path: String, size: Int64) -> String {
-        let fileName = (path as NSString).lastPathComponent
-        let dirName = dirName(from: path)
-        let sizeStr = ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
-        return "👁 Read: \(fileName) (\(sizeStr))\n📁 \(dirName)"
-    }
-
     private func formatModifyDetail(_ path: String, oldSize: Int64, newSize: Int64) -> String {
         let fileName = (path as NSString).lastPathComponent
-        let dirName = dirName(from: path)
         let diff = newSize - oldSize
         let diffStr: String
         if diff > 0 {
@@ -623,23 +689,9 @@ class OperationMonitor: ObservableObject {
         } else if diff < 0 {
             diffStr = "-\(ByteCountFormatter.string(fromByteCount: abs(diff), countStyle: .file))"
         } else {
-            diffStr = "content changed"
+            diffStr = "内容已更改"
         }
-        return "✏️ Modify: \(fileName)\n📊 \(diffStr)\n📁 \(dirName)"
-    }
-
-    private func formatDeleteDetail(_ path: String) -> String {
-        let fileName = (path as NSString).lastPathComponent
-        let dirName = dirName(from: path)
-        return "🗑 Delete: \(fileName)\n📁 \(dirName)"
-    }
-
-    private func dirName(from path: String) -> String {
-        let dir = (path as NSString).deletingLastPathComponent
-        if dir.hasPrefix(NSHomeDirectory()) {
-            return "~" + String(dir.dropFirst(NSHomeDirectory().count))
-        }
-        return dir
+        return "修改: \(fileName) (\(diffStr))"
     }
 
     // MARK: - Record Management

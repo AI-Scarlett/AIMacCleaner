@@ -529,6 +529,15 @@ struct OperationLogTab: View {
                     if !monitor.isMonitoring {
                         Button(localizer.startMonitoring) { monitor.start() }
                             .buttonStyle(.bordered).controlSize(.regular)
+                    } else {
+                        VStack(spacing: 4) {
+                            Text("监控已启动，等待文件操作事件...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("请在其他应用中创建、修改或删除文件以产生记录")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary.opacity(0.7))
+                        }
                     }
                     Spacer()
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -543,21 +552,23 @@ struct OperationLogTab: View {
                         HStack(spacing: 4) {
                             Image(systemName: "cpu")
                                 .font(.caption2)
-                                .foregroundColor(.purple)
+                                .foregroundColor(record.agentName == "—" ? .secondary : .purple)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(record.agentName)
                                     .font(.caption)
                                     .fontWeight(.medium)
                                     .lineLimit(1)
-                                if let pn = record.processName, !pn.isEmpty {
+                                    .help(record.agentName)
+                                if let pn = record.processName, !pn.isEmpty, pn != "path-match", pn != "dir-match" {
                                     Text(pn)
                                         .font(.system(size: 9))
                                         .foregroundColor(.secondary)
                                         .lineLimit(1)
+                                        .help("进程: \(pn)")
                                 }
                             }
                         }
-                    }.width(min: 100)
+                    }.width(min: 110)
 
                     TableColumn(localizer.opCol) { record in
                         HStack(spacing: 3) {
@@ -572,20 +583,32 @@ struct OperationLogTab: View {
                     }.width(60)
 
                     TableColumn(localizer.pathCol) { record in
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(record.targetPath)
-                                .font(.caption2)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .help(record.targetPath)
-                            if let ti = record.toolInfo, !ti.isEmpty {
-                                Text(ti)
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.orange.opacity(0.8))
+                        HStack(spacing: 4) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(record.targetPath)
+                                    .font(.caption2)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
-                                    .help(ti)
+                                    .help(record.targetPath)
+                                if let ti = record.toolInfo, !ti.isEmpty {
+                                    Text(ti)
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.orange.opacity(0.8))
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                        .help(ti)
+                                }
                             }
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(record.targetPath, forType: .string)
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: 10))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundColor(.accentColor)
+                            .help("复制路径，可在 Finder 中搜索")
                         }
                     }
 
