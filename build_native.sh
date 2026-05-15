@@ -66,6 +66,32 @@ cp "$BUILD_DIR/$APP_NAME" "$APP_PATH/Contents/MacOS/"
 cp Info.plist "$APP_PATH/Contents/Info.plist"
 
 if [ -d Assets.xcassets ]; then
+    echo "  Processing app icon..."
+    
+    ICONSET_DIR="$BUILD_DIR/AppIcon.iconset"
+    mkdir -p "$ICONSET_DIR"
+    
+    if [ -f "Assets.xcassets/AppIcon.appiconset/icon_16.png" ]; then
+        cp "Assets.xcassets/AppIcon.appiconset/icon_16.png" "$ICONSET_DIR/icon_16x16.png"
+        cp "Assets.xcassets/AppIcon.appiconset/icon_16_2x.png" "$ICONSET_DIR/icon_16x16@2x.png"
+        cp "Assets.xcassets/AppIcon.appiconset/icon_32.png" "$ICONSET_DIR/icon_32x32.png"
+        cp "Assets.xcassets/AppIcon.appiconset/icon_32_2x.png" "$ICONSET_DIR/icon_32x32@2x.png"
+        cp "Assets.xcassets/AppIcon.appiconset/icon_128.png" "$ICONSET_DIR/icon_128x128.png"
+        cp "Assets.xcassets/AppIcon.appiconset/icon_128_2x.png" "$ICONSET_DIR/icon_128x128@2x.png"
+        cp "Assets.xcassets/AppIcon.appiconset/icon_256.png" "$ICONSET_DIR/icon_256x256.png"
+        cp "Assets.xcassets/AppIcon.appiconset/icon_256_2x.png" "$ICONSET_DIR/icon_256x256@2x.png"
+        cp "Assets.xcassets/AppIcon.appiconset/icon_512.png" "$ICONSET_DIR/icon_512x512.png"
+        cp "Assets.xcassets/AppIcon.appiconset/icon_512_2x.png" "$ICONSET_DIR/icon_512x512@2x.png"
+        
+        echo "  Creating ICNS file..."
+        iconutil -c icns "$ICONSET_DIR" -o "$APP_PATH/Contents/Resources/AppIcon.icns" 2>&1 && \
+            echo "  ✅ AppIcon.icns created successfully" || \
+            echo "  ⚠️ ICNS creation failed, using fallback"
+        
+        rm -rf "$ICONSET_DIR"
+    fi
+    
+    echo "  Copying Assets.xcassets for compatibility..."
     cp -R Assets.xcassets "$APP_PATH/Contents/Resources/"
 fi
 
@@ -112,3 +138,10 @@ echo "  DMG:  $DMG_PATH"
 echo "  Size: $DMG_SIZE"
 echo "  Version: $VERSION"
 echo ""
+
+echo "=== Verification ==="
+if [ -f "$APP_PATH/Contents/Resources/AppIcon.icns" ]; then
+    echo "✅ AppIcon.icns present"
+else
+    echo "⚠️ No AppIcon.icns (will use default icon)"
+fi
