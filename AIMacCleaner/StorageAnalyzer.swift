@@ -103,14 +103,12 @@ class StorageAnalyzer: ObservableObject {
 
         let total = results.reduce(Int64(0)) { $0 + $1.size }
 
-        let systemTotal: Int64
-        if let attrs = try? fm.attributesOfFileSystem(forPath: NSHomeDirectory()),
-           let totalSize = attrs[.systemSize] as? NSNumber,
-           let freeSize = attrs[.systemFreeSize] as? NSNumber {
-            systemTotal = totalSize.int64Value - freeSize.int64Value
-        } else {
-            var fs = statfs()
-            systemTotal = statfs(NSHomeDirectory(), &fs) == 0 ? Int64(UInt64(fs.f_blocks) * UInt64(fs.f_bsize)) - Int64(UInt64(fs.f_bavail) * UInt64(fs.f_bsize)) : total
+        var systemTotal: Int64 = total
+        var fs = statfs()
+        if statfs("/System/Volumes/Data", &fs) == 0 {
+            let totalBytes = Int64(UInt64(fs.f_blocks) * UInt64(fs.f_bsize))
+            let freeBytes = Int64(UInt64(fs.f_bavail) * UInt64(fs.f_bsize))
+            systemTotal = totalBytes - freeBytes
         }
 
         await MainActor.run {
