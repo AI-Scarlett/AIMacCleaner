@@ -43,6 +43,20 @@ class OperationMonitor: ObservableObject {
         ("CodeArts", ["codearts", "huawei"]),
     ]
 
+    private let systemProcessBlacklist: Set<String> = [
+        "cfprefsd", "ContextStoreAgent", "coreservicesd", "coreauthd",
+        "mds", "mds_stores", "fseventsd", "spotlight", "mdworker",
+        "mdworker_shared", "mdwrite", "mdimporter",
+        "launchd", "kernel_task", "syslogd", "distnoted", "notifyd",
+        "WindowServer", "Finder", "Dock", "SystemUIServer",
+        "usermanagerd", "secinitd", "trustd", "syspolicyd",
+        "sandboxd", "containermanagerd", "cfprefsd.xpc",
+        "filecoordinationd", "bird", "cloudd", "cloudpaird",
+        "nsurlsessiond", "nsurlstoraged", "photolibraryd",
+        "assetsd", "mediaserverd", "coreaudiod",
+        "com.apple.", "diagnostics_agent",
+    ]
+
     private let cliToolNames: [String: String] = [
         "node": "Node.js", "python3": "Python", "python": "Python",
         "npm": "npm", "npx": "npx", "yarn": "Yarn", "pnpm": "pnpm",
@@ -56,6 +70,36 @@ class OperationMonitor: ObservableObject {
         "rsync": "rsync", "cp": "cp", "mv": "mv", "rm": "rm",
         "zip": "zip", "tar": "tar", "mkdir": "mkdir",
     ]
+
+    private func isSystemProcess(_ comm: String) -> Bool {
+        let lower = comm.lowercased()
+        for prefix in systemProcessBlacklist {
+            if prefix.hasSuffix(".") {
+                if lower.hasPrefix(prefix) { return true }
+            } else {
+                if lower == prefix || lower.hasPrefix(prefix + ".") || lower == (prefix as NSString).lastPathComponent.lowercased() { return true }
+            }
+        }
+        return false
+    }
+
+    private func shouldSkipPath(_ path: String) -> Bool {
+        let lower = path.lowercased()
+        if lower.contains("/cache/") || lower.contains("/caches/") || lower.hasSuffix("/cache") { return true }
+        if lower.contains("/cache_") || lower.contains("_cache/") { return true }
+        if lower.contains("/index-dir") || lower.contains("/index_dir") { return true }
+        if lower.contains("/code-cache/") || lower.contains("/gpucache/") || lower.contains("/dawncache/") { return true }
+        if lower.contains("/blob_storage/") || lower.contains("/session_storage/") { return true }
+        if lower.contains("/local_storage/") || lower.contains("/service_worker/") { return true }
+        if lower.contains("/.trash/") || lower.contains("/.Trash/") { return true }
+        if lower.hasSuffix(".plist") && lower.contains("/library/preferences/") { return true }
+        if lower.hasSuffix(".plist.lockfile") { return true }
+        if lower.contains("/tmp/") && !lower.contains("/users/") { return true }
+        if lower.hasSuffix(".DS_Store") { return true }
+        if lower.contains("/thumbs/") || lower.contains("/thumbnails/") { return true }
+        if lower.hasSuffix("-journal") || lower.hasSuffix("-wal") || lower.hasSuffix("-shm") { return true }
+        return false
+    }
 
     struct FileSnapshot: Codable {
         let path: String
@@ -271,15 +315,18 @@ class OperationMonitor: ObservableObject {
             let now = Date()
             var newCacheEntries = 0
             for (pid, files) in newPidOpenFiles {
+                let procName = allPidCommMap[pid] ?? ""
+                if isSystemProcess(procName) { continue }
+
                 let agentName = resolveAgentNameForPid(pid)
-                let procName = allPidCommMap[pid]
                 let args = allPidArgsMap[pid] ?? ""
-                let tool = extractToolInfo(comm: procName ?? "", args: args)
+                let tool = extractToolInfo(comm: procName, args: args)
 
                 for file in files {
+                    if shouldSkipPath(file) { continue }
                     let key = file
                     if fileAgentCache[key] == nil || fileAgentCache[key]?.pid != pid {
-                        fileAgentCache[key] = (agentName, procName ?? "PID:\(pid)", tool, now, pid)
+                        fileAgentCache[key] = (agentName, procName, tool, now, pid)
                         newCacheEntries += 1
                     }
                 }
@@ -310,6 +357,8 @@ class OperationMonitor: ObservableObject {
         stateLock.unlock()
 
         guard let comm = comm else { return "PID:\(pid)" }
+
+        if isSystemProcess(comm) { return "系统进程" }
 
         let combined = (comm + " " + args).lowercased()
         for (displayName, keywords) in agentKeywords {
@@ -355,12 +404,16 @@ class OperationMonitor: ObservableObject {
 
         stateLock.lock()
         if let cached = fileAgentCache[expanded], now.timeIntervalSince(cached.cachedAt) < cacheTTL {
-            stateLock.unlock()
-            return (cached.agentName, cached.processName, cached.toolInfo)
+            if !isSystemProcess(cached.processName) {
+                stateLock.unlock()
+                return (cached.agentName, cached.processName, cached.toolInfo)
+            }
         }
         if let cached = fileAgentCache[eventPath], now.timeIntervalSince(cached.cachedAt) < cacheTTL {
-            stateLock.unlock()
-            return (cached.agentName, cached.processName, cached.toolInfo)
+            if !isSystemProcess(cached.processName) {
+                stateLock.unlock()
+                return (cached.agentName, cached.processName, cached.toolInfo)
+            }
         }
         stateLock.unlock()
 
@@ -489,6 +542,8 @@ class OperationMonitor: ObservableObject {
         for eventPath in paths {
             guard !eventPath.isEmpty else { continue }
 
+            if shouldSkipPath(eventPath) { continue }
+
             let fileName = (eventPath as NSString).lastPathComponent
             if fileName.hasPrefix(".") || fileName.hasPrefix("._") { continue }
 
@@ -497,6 +552,8 @@ class OperationMonitor: ObservableObject {
             let exists = fm.fileExists(atPath: expanded)
 
             let agentInfo = lookupAgentForPath(eventPath)
+
+            if agentInfo.agentName == "系统进程" { continue }
 
             guard exists else {
                 let record = OperationRecord(
