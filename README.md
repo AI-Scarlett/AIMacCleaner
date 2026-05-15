@@ -46,9 +46,14 @@
 
 ### 🖥️ Agent 监控
 - **自动操作监控** - 记录 AI Agent 的文件操作（创建/删除等），需手动开启
+- **智能 Agent 识别** - 基于路径特征的自动匹配算法，支持 15 种主流 AI 工具和 20 种开发工具
+  - **AI 工具识别**：Claude、Trae、Cursor、Windsurf、Doubao、Kimi、DeepSeek、ChatGPT、Gemini、Copilot 等
+  - **开发工具识别**：Node.js、Python、Cargo、Go、Xcode、npm、Yarn、pnpm、Deno、Bun 等
+  - **多级检测策略**：路径特征匹配 → 单一Agent模式 → 开发工具匹配 → Fallback
 - **筛选功能** - 按 Agent 名称、操作类型、时间范围筛选
 - **30+ 种 Agent 监控** - Hermes/Claude/CodeBuddy/Codex/Cline/Trae/Cursor/Doubao/Kimi 等
 - 操作记录自动保存，最多保留 5000 条
+- **扩展监控范围** - 覆盖 7 个关键目录（桌面/文档/下载/缓存/应用数据/项目/主目录）
 
 ### ⚙️ 设置
 
@@ -86,7 +91,7 @@
 
 ### 方式一：下载 DMG（推荐）
 
-1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.6.6-arm64.dmg`
+1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.7.2-arm64.dmg`
 2. 双击打开 DMG 文件
 3. 将 AIMacCleaner 拖入 Applications 文件夹
 4. 首次打开时，右键点击应用 → 选择「打开」（需绕过 Gatekeeper 验证）
