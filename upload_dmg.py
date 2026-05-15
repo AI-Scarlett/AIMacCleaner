@@ -35,11 +35,14 @@ if response.status_code == 200:
 else:
     # Create new release
     print(f"Creating new release {TAG}...")
-    body_text = """## 修复
+    body_text = """## v1.7.3 修复
 
-- **存储空间显示不一致** - 修复 AIMacCleaner 显示的剩余空间（29GB）与 macOS 系统设置（67GB）不符的问题
-- **操作监控完全失效** - 修复 OperationMonitor 监控路径字符串插值语法错误
-- **扩展监控范围** - 新增 ~/Projects 和用户主目录到监控路径
+- **磁盘空间数据与系统设置不一致** - 使用 `URL.resourceValues` API + 十进制GB，数据与macOS系统设置完全一致
+- **Agent监控无数据** - 移除per-event的lsof调用，改为批量lsof+缓存匹配架构
+- **Agent监控假数据归因** - 重写进程识别，支持进程树追溯，过滤系统进程和Finder扩展
+- **新增processName/toolInfo字段** - 显示真实操作进程名和命令行信息
+- **存储分析扫描过慢** - 减少不可访问路径，扫描深度从8降到5
+- **弹窗底部样式统一** - 版本号/网络状态/退出APP作为弹窗公共外壳
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',
