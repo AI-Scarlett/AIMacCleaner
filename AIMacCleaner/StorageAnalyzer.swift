@@ -236,12 +236,15 @@ class StorageAnalyzer: ObservableObject {
         for (dirPath, dirName, depth, _) in dirStack where depth > 0 {
             let (subSize, subFiles) = scanDirectory(at: dirPath, maxDepth: depth, maxFiles: max(0, maxFiles - files.count), fm: fm)
             totalSize += subSize
-            files.append(contentsOf: subFiles)
+            // 如果子目录总大小超过阈值，只保留文件夹汇总条目，不保留内部文件
             if subSize > 52428800 && files.count < maxFiles {
                 let attrs = try? fm.attributesOfItem(atPath: dirPath)
                 let created = attrs?[.creationDate] as? Date
                 let modified = attrs?[.modificationDate] as? Date
                 files.append(StorageFile(id: dirPath, name: dirName, path: dirPath, size: subSize, createdDate: created, modifiedDate: modified, isDirectory: true))
+            } else {
+                // 小目录展开为文件列表
+                files.append(contentsOf: subFiles)
             }
         }
         return (totalSize, files)

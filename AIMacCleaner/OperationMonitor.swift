@@ -69,8 +69,6 @@ class OperationMonitor: ObservableObject {
             "\(home)/Downloads",
             "\(home)/Library/Caches",
             "\(home)/Library/Application Support",
-            "\(home)/Projects",
-            NSHomeDirectory(),
         ].filter { FileManager.default.fileExists(atPath: $0) }
     }()
 
@@ -164,6 +162,8 @@ class OperationMonitor: ObservableObject {
             pidAgentMap[pid] = name
         }
         stateLock.unlock()
+        print("[AIMacCleaner] detectActiveAgents found: \(newAgentPIDMap.keys.sorted())")
+        print("[AIMacCleaner] pidCommMap count: \(newPidCommMap.count)")
     }
 
     private func resolveAgentNameFromComm(comm: String, args: String) -> String? {
@@ -226,7 +226,10 @@ class OperationMonitor: ObservableObject {
             pidOpenFiles = newPidOpenFiles
             lastLsofRefresh = Date()
             stateLock.unlock()
-        } catch {}
+            print("[AIMacCleaner] refreshLsofData: \(newPidOpenFiles.count) PIDs, \(newPidOpenFiles.values.map { $0.count }.reduce(0, +)) total files")
+        } catch {
+            print("[AIMacCleaner] refreshLsofData failed: \(error)")
+        }
     }
 
     // MARK: - Cached Agent Lookup (NO lsof per event!)
@@ -317,11 +320,13 @@ class OperationMonitor: ObservableObject {
         let callback: FSEventStreamCallback = { _, info, numEvents, eventPaths, _, _ in
             guard let info = info else { return }
             let monitor = Unmanaged<OperationMonitor>.fromOpaque(info).takeUnretainedValue()
-            let cPaths = eventPaths.bindMemory(to: UnsafePointer<Int8>.self, capacity: Int(numEvents))
+
             var pathList: [String] = []
-            for i in 0..<Int(numEvents) {
-                let cStr = cPaths[i]
-                pathList.append(String(cString: cStr))
+            let cfArray = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue()
+            for i in 0..<CFArrayGetCount(cfArray) {
+                let raw = CFArrayGetValueAtIndex(cfArray, i)
+                let cfStr = Unmanaged<CFString>.fromOpaque(raw!).takeUnretainedValue()
+                pathList.append(cfStr as String)
             }
             guard !pathList.isEmpty else { return }
 
@@ -339,19 +344,23 @@ class OperationMonitor: ObservableObject {
             copyDescription: nil
         )
 
+        let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagUseCFTypes)
         streamRef = FSEventStreamCreate(
-            nil,
+            kCFAllocatorDefault,
             callback,
             &context,
             watchPaths as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            5.0,
-            UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
+            1.0,
+            flags
         )
 
         if let stream = streamRef {
             FSEventStreamScheduleWithRunLoop(stream, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
-            FSEventStreamStart(stream)
+            let started = FSEventStreamStart(stream)
+            print("[AIMacCleaner] FSEventStream started: \(started), paths: \(watchPaths)")
+        } else {
+            print("[AIMacCleaner] FSEventStream creation failed!")
         }
     }
 
@@ -367,6 +376,7 @@ class OperationMonitor: ObservableObject {
     private func processEvents(paths: [String]) {
         let fm = FileManager.default
         let now = Date()
+        print("[AIMacCleaner] processEvents called with \(paths.count) paths")
 
         if now.timeIntervalSince(lastCleanupTime) > 60.0 {
             cleanupOldSnapshots()
@@ -389,6 +399,7 @@ class OperationMonitor: ObservableObject {
             }
 
             let agentInfo = lookupAgentForPath(eventPath)
+            print("[AIMacCleaner] Event: \(eventPath) exists=\(exists) agent=\(agentInfo.agentName)")
 
             guard exists else {
                 let record = OperationRecord(
