@@ -28,14 +28,17 @@ class OperationMonitor: ObservableObject {
         let home = NSHomeDirectory()
         return [
             "\(home)/Desktop",
-            "\(home)/Documents",
-            "\(home)/Downloads",
-            "\(home)/Library/Caches",
-            "\(home)/Library/Application Support",
+            "$(home)/Documents",
+            "$(home)/Downloads",
+            "$(home)/Library/Caches",
+            "$(home)/Library/Application Support",
         ].filter { FileManager.default.fileExists(atPath: $0) }
     }()
 
     private let bookmarksPath: String = NSHomeDirectory() + "/.aimaccleaner_bookmarks.json"
+    
+    private let stateLock = NSLock()
+    private let processQueue = DispatchQueue(label: "com.aimacleaner.monitor.process", qos: .userInitiated)
 
     init() {
         restoreAccessFromBookmarks()
@@ -79,7 +82,8 @@ class OperationMonitor: ObservableObject {
                 pathList.append(String(cString: cStr))
             }
             guard !pathList.isEmpty else { return }
-            DispatchQueue.global(qos: .utility).async { [weak monitor] in
+            
+            monitor.processQueue.async { [weak monitor] in
                 guard let monitor = monitor else { return }
                 monitor.processEvents(paths: pathList)
             }
@@ -124,10 +128,10 @@ class OperationMonitor: ObservableObject {
 
         if now.timeIntervalSince(lastAgentDetectTime) > 10.0 {
             let agents = detectActiveAgents()
-            DispatchQueue.main.async { [weak self] in
-                self?.cachedActiveAgents = agents
-                self?.lastAgentDetectTime = Date()
-            }
+            stateLock.lock()
+            cachedActiveAgents = agents
+            lastAgentDetectTime = Date()
+            stateLock.unlock()
         }
 
         if now.timeIntervalSince(lastCleanupTime) > 60.0 {
@@ -135,7 +139,9 @@ class OperationMonitor: ObservableObject {
             lastCleanupTime = now
         }
 
+        stateLock.lock()
         let agents = cachedActiveAgents
+        stateLock.unlock()
 
         for eventPath in paths {
             guard !eventPath.isEmpty else { continue }
@@ -145,7 +151,14 @@ class OperationMonitor: ObservableObject {
 
             let expanded = NSString(string: eventPath).expandingTildeInPath
 
-            guard fm.fileExists(atPath: expanded) else {
+            let exists: Bool
+            do {
+                exists = fm.fileExists(atPath: expanded)
+            } catch {
+                continue
+            }
+
+            guard exists else {
                 let agentName = agents.first ?? "System"
                 let record = OperationRecord(
                     id: UUID().uuidString,
@@ -157,39 +170,46 @@ class OperationMonitor: ObservableObject {
                     fileSize: 0
                 )
                 addRecord(record)
+                stateLock.lock()
                 fileSnapshots.removeValue(forKey: eventPath)
                 accessTimes.removeValue(forKey: eventPath)
+                stateLock.unlock()
                 continue
             }
 
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: expanded, isDirectory: &isDir), !isDir.boolValue else { continue }
 
-            let attrs = try? fm.attributesOfItem(atPath: expanded)
+            let attrs: [FileAttributeKey: Any]?
+            do {
+                attrs = try fm.attributesOfItem(atPath: expanded)
+            } catch {
+                continue
+            }
             guard let fileAttrs = attrs else { continue }
 
             let size = (fileAttrs[.size] as? NSNumber)?.int64Value ?? 0
             let modDate = (fileAttrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
 
-            if let existing = fileSnapshots[eventPath] {
+            stateLock.lock()
+            let existing = fileSnapshots[eventPath]
+            stateLock.unlock()
+
+            if let existing = existing {
                 guard abs(modDate - existing.modDate) > 1.0 || size != existing.size else {
+                    stateLock.lock()
+                    let shouldRecordRead: Bool
                     if let lastAccess = accessTimes[eventPath] {
-                        if now.timeIntervalSince(lastAccess) > 30.0 {
-                            accessTimes[eventPath] = now
-                            let agentName = agents.first ?? existing.agentName ?? "System"
-                            let record = OperationRecord(
-                                id: UUID().uuidString,
-                                timestamp: Date(),
-                                agentName: agentName,
-                                operationType: .read,
-                                targetPath: eventPath,
-                                detail: formatReadDetail(eventPath, size: size),
-                                fileSize: size
-                            )
-                            addRecord(record)
-                        }
+                        shouldRecordRead = now.timeIntervalSince(lastAccess) > 30.0
                     } else {
+                        shouldRecordRead = true
+                    }
+                    if shouldRecordRead {
                         accessTimes[eventPath] = now
+                    }
+                    stateLock.unlock()
+                    
+                    if shouldRecordRead {
                         let agentName = agents.first ?? existing.agentName ?? "System"
                         let record = OperationRecord(
                             id: UUID().uuidString,
@@ -204,6 +224,7 @@ class OperationMonitor: ObservableObject {
                     }
                     continue
                 }
+                
                 let agentName = agents.first ?? existing.agentName ?? "System"
                 let record = OperationRecord(
                     id: UUID().uuidString,
@@ -229,6 +250,7 @@ class OperationMonitor: ObservableObject {
                 addRecord(record)
             }
 
+            stateLock.lock()
             fileSnapshots[eventPath] = FileSnapshot(
                 path: eventPath,
                 modDate: modDate,
@@ -237,10 +259,14 @@ class OperationMonitor: ObservableObject {
                 agentName: agents.first
             )
             accessTimes[eventPath] = now
+            stateLock.unlock()
         }
     }
 
     private func cleanupOldSnapshots() {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        
         if fileSnapshots.count > maxSnapshots {
             let excess = fileSnapshots.count - maxSnapshots
             let keysToRemove = Array(fileSnapshots.keys.prefix(excess))
@@ -249,7 +275,6 @@ class OperationMonitor: ObservableObject {
                 accessTimes.removeValue(forKey: key)
             }
         }
-
         if accessTimes.count > maxSnapshots * 2 {
             let cutoff = Date().addingTimeInterval(-300)
             accessTimes = accessTimes.filter { $0.value > cutoff }
@@ -277,29 +302,28 @@ class OperationMonitor: ObservableObject {
 
         var activeAgents: [String] = []
         var seenApps: Set<String> = []
-        let lines = output.components(separatedBy: .newlines)
 
-        let knownAgentApps: [String: String] = [
-            "Claude": "Claude",
-            "CodeBuddy": "CodeBuddy",
-            "Trae": "Trae",
-            "Cursor": "Cursor",
-            "Windsurf": "Windsurf",
-            "Doubao": "Doubao",
-            "Kimi": "Kimi",
-            "DeepSeek": "DeepSeek",
-            "ChatGPT": "ChatGPT",
-            "Gemini": "Gemini",
-            "Copilot": "Copilot",
-            "Augment": "Augment",
-            "Cline": "Cline",
-            "CodeArts": "CodeArts",
+        let knownAgentApps: [(String, String)] = [
+            ("Claude", "Claude"),
+            ("CodeBuddy", "CodeBuddy"),
+            ("Trae", "Trae"),
+            ("Cursor", "Cursor"),
+            ("Windsurf", "Windsurf"),
+            ("Doubao", "Doubao"),
+            ("Kimi", "Kimi"),
+            ("DeepSeek", "DeepSeek"),
+            ("ChatGPT", "ChatGPT"),
+            ("Gemini", "Gemini"),
+            ("Copilot", "Copilot"),
+            ("Augment", "Augment"),
+            ("Cline", "Cline"),
+            ("CodeArts", "CodeArts"),
         ]
 
-        for line in lines {
+        for line in output.components(separatedBy: .newlines) {
             guard line.contains(".app/Contents/MacOS/") else { continue }
-            for (keyword, displayName) in knownAgentApps {
-                if line.contains(keyword) && !seenApps.contains(keyword) {
+            for (keyword, displayName) in knownAgentApps where !seenApps.contains(keyword) {
+                if line.contains(keyword) {
                     activeAgents.append(displayName)
                     seenApps.insert(keyword)
                     break
@@ -328,17 +352,14 @@ class OperationMonitor: ObservableObject {
             "git": "Git",
         ]
 
-        for line in lines {
+        for line in output.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
             let parts = trimmed.split(separator: " ", maxSplits: 1)
             let execPath = String(parts[0])
             let execName = (execPath as NSString).lastPathComponent.lowercased()
-
-            if let displayName = knownCLINames[execName] {
-                if !activeAgents.contains(displayName) {
-                    activeAgents.append(displayName)
-                }
+            if let displayName = knownCLINames[execName], !activeAgents.contains(displayName) {
+                activeAgents.append(displayName)
             }
         }
 
@@ -392,9 +413,11 @@ class OperationMonitor: ObservableObject {
                     let attrs = try? fm.attributesOfItem(atPath: fullPath)
                     let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
                     let modDate = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+                    stateLock.lock()
                     fileSnapshots[fullPath] = FileSnapshot(
                         path: fullPath, modDate: modDate, size: size, isDir: isDir.boolValue, agentName: nil
                     )
+                    stateLock.unlock()
                     totalCount += 1
                 }
             }
@@ -473,7 +496,10 @@ class OperationMonitor: ObservableObject {
     }
 
     func saveRecords() {
-        guard let data = try? JSONEncoder().encode(records) else { return }
+        stateLock.lock()
+        let currentRecords = records
+        stateLock.unlock()
+        guard let data = try? JSONEncoder().encode(currentRecords) else { return }
         try? data.write(to: URL(fileURLWithPath: recordsPath))
     }
 
