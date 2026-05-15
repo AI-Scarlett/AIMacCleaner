@@ -34,6 +34,9 @@ struct MenuBarMonitor: View {
             case .operations:
                 operationsContent
             }
+
+            Divider()
+            popoverFooter
         }
         .frame(width: 300)
         .onAppear {
@@ -72,6 +75,44 @@ struct MenuBarMonitor: View {
         .padding(.top, 8)
     }
 
+    private var popoverFooter: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(networkMode == "internet" ? Color.green : Color.orange)
+                        .frame(width: 5, height: 5)
+                    Text(networkMode == "internet" ? "Internet" : "Offline")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Text("v\(service.currentVersion)")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary.opacity(0.6))
+
+                Spacer()
+
+                Button {
+                    NSApp.terminate(nil)
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "power")
+                            .font(.system(size: 8))
+                        Text(localizer.quitApp)
+                            .font(.system(size: 9))
+                    }
+                    .foregroundColor(.red.opacity(0.8))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+        }
+    }
+
     private var overviewContent: some View {
         ScrollView {
             VStack(spacing: 0) {
@@ -83,7 +124,7 @@ struct MenuBarMonitor: View {
                 Divider()
                 safetySettings
                 Divider()
-                quickActions
+                overviewActions
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -403,7 +444,7 @@ struct MenuBarMonitor: View {
         .padding(14)
     }
 
-    private var quickActions: some View {
+    private var overviewActions: some View {
         VStack(spacing: 0) {
             updateSection
 
@@ -439,41 +480,7 @@ struct MenuBarMonitor: View {
                 .disabled(service.isCheckingUpdate || service.isDownloadingUpdate)
             }
             .padding(.horizontal, 14)
-            .padding(.top, service.updateAvailable || service.isDownloadingUpdate || service.updateReadyToInstall ? 6 : 10)
-
-            Text("v\(service.currentVersion)")
-                .font(.system(size: 9))
-                .foregroundColor(.secondary.opacity(0.5))
-                .padding(.vertical, 6)
-
-            Divider()
-
-            HStack(spacing: 4) {
-                Image(systemName: networkMode == "internet" ? "globe" : "lock.shield")
-                    .font(.system(size: 9))
-                Text(networkMode == "internet" ? "Internet Mode" : "Offline Mode")
-                    .font(.system(size: 9))
-            }
-            .foregroundColor(networkMode == "internet" ? .blue : .orange)
-            .padding(.vertical, 4)
-
-            Divider()
-
-            Button {
-                NSApp.terminate(nil)
-            } label: {
-                HStack {
-                    Image(systemName: "power")
-                    Text(localizer.quitApp + " AIMacCleaner")
-                }
-                .frame(maxWidth: .infinity)
-                .foregroundColor(.red)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .tint(.red)
-            .padding(.horizontal, 14)
-            .padding(.bottom, 10)
+            .padding(.vertical, 10)
         }
     }
 
@@ -784,6 +791,7 @@ struct MenuBarMonitor: View {
                                 .fontWeight(.medium)
                                 .lineLimit(1)
                                 .frame(width: 60, alignment: .leading)
+                                .help(record.processName ?? record.agentName)
 
                             Text(record.operationType.rawValue)
                                 .font(.system(size: 9))
@@ -872,20 +880,6 @@ struct MenuBarMonitor: View {
                 .controlSize(.mini)
 
                 Spacer()
-
-                Button {
-                    NSApp.terminate(nil)
-                } label: {
-                    HStack {
-                        Image(systemName: "power")
-                        Text(localizer.quitApp + " AIMacCleaner")
-                    }
-                    .font(.caption2)
-                    .foregroundColor(.red)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(.red)
             }
         }
         .padding(.horizontal, 14)

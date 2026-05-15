@@ -2,6 +2,25 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.7.3] - 2026-05-15
+
+### Fixed
+- **磁盘空间数据与系统设置不一致** - 使用 `URL.resourceValues` 的 `volumeTotalCapacityKey` + `volumeAvailableCapacityForImportantUsageKey` API 读取 APFS Container 级别数据，改用十进制GB（÷10^9）替代二进制GiB（÷2^30），现在显示数据与macOS系统设置完全一致
+- **Agent监控无数据** - 移除per-event的 `lsof` 调用（每次800ms+导致事件处理完全阻塞），改为批量lsof + 缓存匹配架构：每15秒对所有已知Agent PIDs执行一次lsof，事件处理时只查缓存
+- **Agent监控显示"System"或"Unknown"** - 重写进程识别算法，支持进程树追溯（子进程node/python等通过ppid归因到父Agent），新增processName和toolInfo字段显示真实操作进程和命令行
+- **Agent监控假数据归因** - 过滤系统进程（kernel, launchd, mds, fseventsd）和Finder扩展（.appex, FinderSyncExtension），不再将后台进程误报为AI Agent
+- **存储分析扫描过慢** - 减少系统扫描路径（移除/usr, /sbin等不可访问目录），扫描深度从8降到5，maxFiles从5000降到3000
+- **弹窗底部样式不统一** - 将版本号、网络状态、退出APP三个元素提取为弹窗公共外壳（`popoverFooter`），两个Tab共用统一底部布局
+
+### Added
+- **OperationRecord新增字段** - `processName`（实际操作进程名）和 `toolInfo`（命令行信息），UI中Agent列下方小字显示processName，路径列下方小字显示toolInfo
+- **批量lsof刷新机制** - `detectActiveAgents()` 通过 `ps -eo pid,ppid=,comm=,args=` 一次性获取所有进程，`refreshLsofData()` 对Agent PIDs执行lsof建立PID→文件集映射
+- **进程树追溯** - `resolveFromTree()` 向上追溯ppid链（最多10层），将子进程归因到父Agent
+
+### Improved
+- **Agent监控事件处理** - `processEvents` 中不再调用任何外部命令，只通过内存缓存匹配，性能从秒级降到毫秒级
+- **弹窗底部统一** - `[🟢 Internet] [v1.7.3] [⏻ 退出]` 水平排列，两个Tab样式一致
+
 ## [1.7.2] - 2026-05-15
 
 ### Fixed

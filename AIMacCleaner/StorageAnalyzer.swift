@@ -47,7 +47,7 @@ class StorageAnalyzer: ObservableObject {
         var scannedRootPaths: Set<String> = []
 
         await MainActor.run { scanProgress = "扫描系统数据..." }
-        let systemPaths = ["/Library", "/usr", "/sbin", "/etc", "/var", "/tmp"]
+        let systemPaths = ["/Library"]
         let (systemSize, systemPathsScanned) = await scanCategory(id: "system", name: "系统数据", icon: "gear", color: .gray, paths: systemPaths, fm: fm, existingScannedPaths: scannedRootPaths)
         results.append(systemSize)
         scannedRootPaths.formUnion(systemPathsScanned)
@@ -104,11 +104,12 @@ class StorageAnalyzer: ObservableObject {
         let total = results.reduce(Int64(0)) { $0 + $1.size }
 
         var systemTotal: Int64 = total
-        var fs = statfs()
-        if statfs("/System/Volumes/Data", &fs) == 0 {
-            let totalBytes = Int64(UInt64(fs.f_blocks) * UInt64(fs.f_bsize))
-            let freeBytes = Int64(UInt64(fs.f_bavail) * UInt64(fs.f_bsize))
-            systemTotal = totalBytes - freeBytes
+        let url = URL(fileURLWithPath: "/")
+        let keys: Set<URLResourceKey> = [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey]
+        if let values = try? url.resourceValues(forKeys: keys),
+           let totalCap = values.volumeTotalCapacity,
+           let available = values.volumeAvailableCapacityForImportantUsage {
+            systemTotal = Int64(totalCap) - Int64(available)
         }
 
         await MainActor.run {
@@ -134,7 +135,7 @@ class StorageAnalyzer: ObservableObject {
             var totalSize: Int64 = 0
             var files: [StorageFile] = []
             var localScannedPaths = existingScannedPaths
-            let maxFiles = 5000
+            let maxFiles = 3000
 
             for path in paths {
                 let expanded = NSString(string: path).expandingTildeInPath
@@ -142,7 +143,7 @@ class StorageAnalyzer: ObservableObject {
                 var isDir: ObjCBool = false
                 guard fm.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue else { continue }
                 localScannedPaths.insert(expanded)
-                let (size, items) = self.scanDirectory(at: expanded, maxDepth: 8, maxFiles: maxFiles - files.count, fm: fm)
+                let (size, items) = self.scanDirectory(at: expanded, maxDepth: 5, maxFiles: maxFiles - files.count, fm: fm)
                 totalSize += size
                 files.append(contentsOf: items)
             }
@@ -210,35 +211,37 @@ class StorageAnalyzer: ObservableObject {
             return (0, [])
         }
 
+        var dirStack: [(String, String, Int, Bool)] = []
+
         for name in contents {
             let fullPath = (path as NSString).appendingPathComponent(name)
 
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
 
-            var attrs: [FileAttributeKey: Any]?
-            do {
-                attrs = try fm.attributesOfItem(atPath: fullPath)
-            } catch {
-                continue
-            }
-
-            let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
-            let created = attrs?[.creationDate] as? Date
-            let modified = attrs?[.modificationDate] as? Date
-
             if isDir.boolValue {
-                let (subSize, subFiles) = scanDirectory(at: fullPath, maxDepth: maxDepth - 1, maxFiles: maxFiles - files.count, fm: fm)
-                totalSize += subSize
-                files.append(contentsOf: subFiles)
-                if subSize > 52428800 {
-                    files.append(StorageFile(id: fullPath, name: name, path: fullPath, size: subSize, createdDate: created, modifiedDate: modified, isDirectory: true))
-                }
+                dirStack.append((fullPath, name, maxDepth - 1, true))
             } else {
+                let attrs = try? fm.attributesOfItem(atPath: fullPath)
+                let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+                let created = attrs?[.creationDate] as? Date
+                let modified = attrs?[.modificationDate] as? Date
                 totalSize += size
-                if size > 51200 {
+                if size > 51200 && files.count < maxFiles {
                     files.append(StorageFile(id: fullPath, name: name, path: fullPath, size: size, createdDate: created, modifiedDate: modified, isDirectory: false))
                 }
+            }
+        }
+
+        for (dirPath, dirName, depth, _) in dirStack where depth > 0 {
+            let (subSize, subFiles) = scanDirectory(at: dirPath, maxDepth: depth, maxFiles: max(0, maxFiles - files.count), fm: fm)
+            totalSize += subSize
+            files.append(contentsOf: subFiles)
+            if subSize > 52428800 && files.count < maxFiles {
+                let attrs = try? fm.attributesOfItem(atPath: dirPath)
+                let created = attrs?[.creationDate] as? Date
+                let modified = attrs?[.modificationDate] as? Date
+                files.append(StorageFile(id: dirPath, name: dirName, path: dirPath, size: subSize, createdDate: created, modifiedDate: modified, isDirectory: true))
             }
         }
         return (totalSize, files)

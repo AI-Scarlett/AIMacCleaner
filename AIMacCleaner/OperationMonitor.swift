@@ -1,6 +1,13 @@
 import Foundation
 import AppKit
 
+struct ProcessInfo {
+    let pid: pid_t
+    let comm: String
+    let args: String
+    let agentName: String?
+}
+
 class OperationMonitor: ObservableObject {
     @Published var records: [OperationRecord] = []
     @Published var isMonitoring: Bool = false
@@ -11,13 +18,38 @@ class OperationMonitor: ObservableObject {
     private let maxRecords = 2000
     private let maxSnapshots = 10000
     private let recordsPath = NSHomeDirectory() + "/.aimaccleaner_operations_v2.json"
-    private var cachedActiveAgents: [String] = []
-    private var agentPIDMap: [String: pid_t] = [:]
-    private var agentOpenFiles: [String: Set<String>] = [:]
-    private var lastAgentDetectTime: Date = .distantPast
-    private var lastOpenFilesRefresh: Date = .distantPast
     private var hasRestoredBookmarks: Bool = false
     private var lastCleanupTime: Date = .distantPast
+
+    private var agentPIDMap: [String: pid_t] = [:]
+    private var pidAgentMap: [pid_t: String] = [:]
+    private var pidOpenFiles: [pid_t: Set<String>] = [:]
+    private var pidCommMap: [pid_t: String] = [:]
+    private var pidArgsMap: [pid_t: String] = [:]
+    private var ppidMap: [pid_t: pid_t] = [:]
+    private var lastLsofRefresh: Date = .distantPast
+
+    private let agentKeywords: [(String, [String])] = [
+        ("Trae", ["trae-cn", "trae cn", "traecn", "trae-cn.app"]), ("Claude", ["claude"]),
+        ("Cursor", ["cursor"]), ("Windsurf", ["windsurf", "codeium"]),
+        ("CodeBuddy", ["codebuddy-cn", "codebuddy cn", "codebuddycn"]),
+        ("Doubao", ["doubao"]), ("Kimi", ["kimi"]), ("DeepSeek", ["deepseek"]),
+        ("ChatGPT", ["chatgpt"]), ("Gemini", ["gemini"]), ("Copilot", ["copilot"]),
+        ("Cline", ["cline"]), ("Hermes", ["hermes"]), ("Codex", ["codex"]),
+        ("Augment", ["augment"]), ("CodeArts", ["codearts", "huawei"]),
+    ]
+
+    private let cliToolNames: [String: String] = [
+        "node": "Node.js", "python3": "Python", "python": "Python",
+        "npm": "npm", "npx": "npx", "yarn": "Yarn", "pnpm": "pnpm",
+        "cargo": "Cargo", "rustc": "Rust", "deno": "Deno", "bun": "Bun",
+        "go": "Go", "swift": "Swift", "swiftc": "Swift",
+        "java": "Java", "gradle": "Gradle", "mvn": "Maven",
+        "make": "Make", "cmake": "CMake", "xcodebuild": "Xcode",
+        "git": "Git", "docker": "Docker", "pip": "pip", "pip3": "pip3",
+        "esbuild": "esbuild", "tsx": "tsx", "tsc": "tsc",
+        "swift-frontend": "Swift", "clang": "Clang",
+    ]
 
     struct FileSnapshot: Codable {
         let path: String
@@ -25,6 +57,8 @@ class OperationMonitor: ObservableObject {
         let size: Int64
         let isDir: Bool
         let agentName: String?
+        let processName: String?
+        let toolInfo: String?
     }
 
     private let watchPaths: [String] = {
@@ -41,7 +75,6 @@ class OperationMonitor: ObservableObject {
     }()
 
     private let bookmarksPath: String = NSHomeDirectory() + "/.aimaccleaner_bookmarks.json"
-    
     private let stateLock = NSLock()
     private let processQueue = DispatchQueue(label: "com.aimacleaner.monitor.process", qos: .userInitiated)
 
@@ -57,7 +90,7 @@ class OperationMonitor: ObservableObject {
             restoreAccessFromBookmarks()
         }
         buildInitialSnapshot()
-        cachedActiveAgents = detectActiveAgents()
+        refreshAllProcessInfo()
         startFSEventStream()
         startProcessPoller()
         DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 2.0) { [weak self] in
@@ -65,30 +98,214 @@ class OperationMonitor: ObservableObject {
         }
     }
 
-    private func detectAgentForPath(_ path: String, agents: [String]) -> String? {
-        guard !agents.isEmpty else { return nil }
-
-        let expanded = NSString(string: path).expandingTildeInPath
-        for agent in agents {
-            if let files = agentOpenFiles[agent], files.contains(expanded) {
-                return agent
-            }
-        }
-
-        let pathLower = expanded.lowercased()
-        for agent in agents {
-            if pathLower.contains("/\(agent.lowercased())/") || pathLower.contains(".\(agent.lowercased())/") {
-                return agent
-            }
-        }
-
-        return nil
-    }
-
     func stop() {
         stopFSEventStream()
         processPoller?.invalidate()
         isMonitoring = false
+    }
+
+    // MARK: - Batch Process Info Refresh
+
+    private func refreshAllProcessInfo() {
+        detectActiveAgents()
+        refreshLsofData()
+    }
+
+    private func detectActiveAgents() {
+        var newAgentPIDMap: [String: pid_t] = [:]
+        var newPidCommMap: [pid_t: String] = [:]
+        var newPidArgsMap: [pid_t: String] = [:]
+        var newPpidMap: [pid_t: pid_t] = [:]
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/ps")
+        task.arguments = ["-eo", "pid=,ppid=,comm=,args="]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+
+        do {
+            try task.run()
+            task.waitUntilExit()
+            guard let data = try? pipe.fileHandleForReading.readToEnd(),
+                  let output = String(data: data, encoding: .utf8) else { return }
+
+            for line in output.components(separatedBy: .newlines) {
+                let parts = line.trimmingCharacters(in: .whitespaces).split(separator: " ", omittingEmptySubsequences: true)
+                guard parts.count >= 3,
+                      let pid = pid_t(parts[0]),
+                      let ppid = pid_t(parts[1]) else { continue }
+
+                let comm = String(parts[2])
+                let args = parts.count >= 4 ? String(parts[3...].joined(separator: " ")) : ""
+                let lowerAll = (comm + " " + args).lowercased()
+
+                if lowerAll.contains("findersyncextension") || lowerAll.hasSuffix(".appex") ||
+                   lowerAll.contains("/plugins/") { continue }
+
+                newPidCommMap[pid] = comm
+                newPidArgsMap[pid] = args
+                newPpidMap[pid] = ppid
+
+                let resolved = resolveAgentNameFromComm(comm: comm, args: args)
+                if let name = resolved {
+                    newAgentPIDMap[name] = pid
+                }
+            }
+        } catch {}
+
+        stateLock.lock()
+        agentPIDMap = newAgentPIDMap
+        pidCommMap = newPidCommMap
+        pidArgsMap = newPidArgsMap
+        ppidMap = newPpidMap
+        pidAgentMap = [:]
+        for (name, pid) in agentPIDMap {
+            pidAgentMap[pid] = name
+        }
+        stateLock.unlock()
+    }
+
+    private func resolveAgentNameFromComm(comm: String, args: String) -> String? {
+        let combined = (comm + " " + args).lowercased()
+        for (displayName, keywords) in agentKeywords {
+            for kw in keywords {
+                if combined.contains(kw) {
+                    return displayName
+                }
+            }
+        }
+        let commBase = (comm as NSString).lastPathComponent.lowercased()
+        return cliToolNames[commBase]
+    }
+
+    private func refreshLsofData() {
+        let pids = agentPIDMap.values
+        guard !pids.isEmpty else {
+            stateLock.lock()
+            pidOpenFiles = [:]
+            stateLock.unlock()
+            return
+        }
+        let pidList = pids.map(String.init).joined(separator: ",")
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        task.arguments = ["+c", "0", "-w", "-FpcRn", "-p", pidList]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+
+        do {
+            try task.run()
+            let deadline = DispatchTime.now() + .seconds(5)
+            DispatchQueue.global().asyncAfter(deadline: deadline) { task.terminate() }
+            task.waitUntilExit()
+
+            guard let data = try? pipe.fileHandleForReading.readToEnd(),
+                  let output = String(data: data, encoding: .utf8) else { return }
+
+            var newPidOpenFiles: [pid_t: Set<String>] = [:]
+            var currentPid: pid_t = 0
+
+            for line in output.components(separatedBy: .newlines) {
+                if line.hasPrefix("p") {
+                    if let pid = pid_t(String(line.dropFirst())) {
+                        currentPid = pid
+                    }
+                } else if line.hasPrefix("n") && currentPid != 0 {
+                    let path = String(line.dropFirst())
+                    guard path.hasPrefix("/"), !path.hasPrefix("/dev/"),
+                          !path.hasPrefix("/private/var/folders/"),
+                          !path.contains(".app/Contents/MacOS/") else { continue }
+                    newPidOpenFiles[currentPid, default: []].insert(path)
+                }
+            }
+
+            stateLock.lock()
+            pidOpenFiles = newPidOpenFiles
+            lastLsofRefresh = Date()
+            stateLock.unlock()
+        } catch {}
+    }
+
+    // MARK: - Cached Agent Lookup (NO lsof per event!)
+
+    private func lookupAgentForPath(_ eventPath: String) -> (agentName: String, processName: String?, toolInfo: String?) {
+        let expanded = NSString(string: eventPath).expandingTildeInPath
+
+        stateLock.lock()
+        let localPidOpenFiles = pidOpenFiles
+        let localPidAgentMap = pidAgentMap
+        let localPidCommMap = pidCommMap
+        let localPidArgsMap = pidArgsMap
+        let localPpidMap = ppidMap
+        let localAgentPIDMap = agentPIDMap
+        stateLock.unlock()
+
+        for (pid, files) in localPidOpenFiles {
+            if files.contains(expanded) {
+                let agentName = localPidAgentMap[pid] ?? resolveFromTree(pid: pid, ppidMap: localPpidMap, pidAgentMap: localPidAgentMap, pidCommMap: localPidCommMap)
+                let procName = localPidCommMap[pid]
+                let args = localPidArgsMap[pid] ?? ""
+                let tool = extractToolInfo(comm: procName ?? "", args: args)
+                return (agentName ?? procName ?? "PID:\(pid)", procName, tool)
+            }
+        }
+
+        for (pid, files) in localPidOpenFiles {
+            for file in files {
+                if expanded.hasPrefix(file) {
+                    let agentName = localPidAgentMap[pid] ?? resolveFromTree(pid: pid, ppidMap: localPpidMap, pidAgentMap: localPidAgentMap, pidCommMap: localPidCommMap)
+                    let procName = localPidCommMap[pid]
+                    let args = localPidArgsMap[pid] ?? ""
+                    let tool = extractToolInfo(comm: procName ?? "", args: args)
+                    return (agentName ?? procName ?? "PID:\(pid)", procName, tool)
+                }
+            }
+        }
+
+        let pathLower = expanded.lowercased()
+        for (name, _) in localAgentPIDMap {
+            let kw = name.lowercased()
+            if pathLower.contains("/\(kw)/") || pathLower.contains(".\(kw)/") {
+                return (name, "path-match", nil)
+            }
+        }
+
+        return ("—", nil, nil)
+    }
+
+    private func resolveFromTree(pid: pid_t, ppidMap: [pid_t: pid_t], pidAgentMap: [pid_t: String], pidCommMap: [pid_t: String]) -> String? {
+        var current = pid
+        var depth = 0
+        while depth < 10 {
+            if let name = pidAgentMap[current] {
+                return name
+            }
+            if let ppid = ppidMap[current], ppid > 0 {
+                current = ppid
+                depth += 1
+            } else {
+                break
+            }
+        }
+        if let comm = pidCommMap[current] {
+            let commBase = (comm as NSString).lastPathComponent.lowercased()
+            return cliToolNames[commBase]
+        }
+        return nil
+    }
+
+    private func extractToolInfo(comm: String, args: String) -> String? {
+        let commBase = (comm as NSString).lastPathComponent
+        guard !commBase.isEmpty else { return nil }
+        if args.isEmpty { return commBase }
+        let maxLen = 80
+        if args.count > maxLen {
+            return commBase + " " + String(args.prefix(maxLen)) + "…"
+        }
+        return commBase + " " + args
     }
 
     // MARK: - FSEvents
@@ -107,7 +324,7 @@ class OperationMonitor: ObservableObject {
                 pathList.append(String(cString: cStr))
             }
             guard !pathList.isEmpty else { return }
-            
+
             monitor.processQueue.async { [weak monitor] in
                 guard let monitor = monitor else { return }
                 monitor.processEvents(paths: pathList)
@@ -151,22 +368,10 @@ class OperationMonitor: ObservableObject {
         let fm = FileManager.default
         let now = Date()
 
-        if now.timeIntervalSince(lastAgentDetectTime) > 10.0 {
-            let agents = detectActiveAgents()
-            stateLock.lock()
-            cachedActiveAgents = agents
-            lastAgentDetectTime = Date()
-            stateLock.unlock()
-        }
-
         if now.timeIntervalSince(lastCleanupTime) > 60.0 {
             cleanupOldSnapshots()
             lastCleanupTime = now
         }
-
-        stateLock.lock()
-        let agents = cachedActiveAgents
-        stateLock.unlock()
 
         for eventPath in paths {
             guard !eventPath.isEmpty else { continue }
@@ -183,16 +388,19 @@ class OperationMonitor: ObservableObject {
                 continue
             }
 
+            let agentInfo = lookupAgentForPath(eventPath)
+
             guard exists else {
-                let agentName = detectAgentForPath(eventPath, agents: agents) ?? "System"
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
-                    agentName: agentName,
+                    agentName: agentInfo.agentName,
                     operationType: .delete,
                     targetPath: eventPath,
                     detail: formatDeleteDetail(eventPath),
-                    fileSize: 0
+                    fileSize: 0,
+                    processName: agentInfo.processName,
+                    toolInfo: agentInfo.toolInfo
                 )
                 addRecord(record)
                 stateLock.lock()
@@ -233,44 +441,50 @@ class OperationMonitor: ObservableObject {
                         accessTimes[eventPath] = now
                     }
                     stateLock.unlock()
-                    
+
                     if shouldRecordRead {
-                        let agentName = detectAgentForPath(eventPath, agents: agents) ?? existing.agentName ?? "System"
+                        let readAgent = agentInfo.agentName == "—" ? (existing.agentName ?? "—") : agentInfo.agentName
+                        let readProc = agentInfo.processName ?? existing.processName
+                        let readTool = agentInfo.toolInfo ?? existing.toolInfo
                         let record = OperationRecord(
                             id: UUID().uuidString,
                             timestamp: Date(),
-                            agentName: agentName,
+                            agentName: readAgent,
                             operationType: .read,
                             targetPath: eventPath,
                             detail: formatReadDetail(eventPath, size: size),
-                            fileSize: size
+                            fileSize: size,
+                            processName: readProc,
+                            toolInfo: readTool
                         )
                         addRecord(record)
                     }
                     continue
                 }
 
-                let agentName = detectAgentForPath(eventPath, agents: agents) ?? existing.agentName ?? "System"
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
-                    agentName: agentName,
+                    agentName: agentInfo.agentName == "—" ? (existing.agentName ?? "—") : agentInfo.agentName,
                     operationType: .modify,
                     targetPath: eventPath,
                     detail: formatModifyDetail(eventPath, oldSize: existing.size, newSize: size),
-                    fileSize: size
+                    fileSize: size,
+                    processName: agentInfo.processName ?? existing.processName,
+                    toolInfo: agentInfo.toolInfo ?? existing.toolInfo
                 )
                 addRecord(record)
             } else {
-                let agentName = detectAgentForPath(eventPath, agents: agents) ?? "System"
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
-                    agentName: agentName,
+                    agentName: agentInfo.agentName,
                     operationType: .create,
                     targetPath: eventPath,
                     detail: formatCreateDetail(eventPath, size: size),
-                    fileSize: size
+                    fileSize: size,
+                    processName: agentInfo.processName,
+                    toolInfo: agentInfo.toolInfo
                 )
                 addRecord(record)
             }
@@ -281,7 +495,9 @@ class OperationMonitor: ObservableObject {
                 modDate: modDate,
                 size: size,
                 isDir: false,
-                agentName: detectAgentForPath(eventPath, agents: agents)
+                agentName: agentInfo.agentName,
+                processName: agentInfo.processName,
+                toolInfo: agentInfo.toolInfo
             )
             accessTimes[eventPath] = now
             stateLock.unlock()
@@ -291,7 +507,7 @@ class OperationMonitor: ObservableObject {
     private func cleanupOldSnapshots() {
         stateLock.lock()
         defer { stateLock.unlock() }
-        
+
         if fileSnapshots.count > maxSnapshots {
             let excess = fileSnapshots.count - maxSnapshots
             let keysToRemove = Array(fileSnapshots.keys.prefix(excess))
@@ -306,185 +522,38 @@ class OperationMonitor: ObservableObject {
         }
     }
 
-    // MARK: - Process Detection
-
-    private func detectActiveAgents() -> [String] {
-        var activeAgents: [String] = []
-        var seenApps: Set<String> = []
-        var newPIDMap: [String: pid_t] = [:]
-
-        let workspace = NSWorkspace.shared
-        let runningApps = workspace.runningApplications
-        for app in runningApps {
-            let name = app.localizedName ?? ""
-            let bundleId = app.bundleIdentifier ?? ""
-            let execURL = app.executableURL?.path ?? ""
-            let lowerName = name.lowercased()
-            let lowerExec = execURL.lowercased()
-            let lowerBundle = bundleId.lowercased()
-
-            if lowerBundle.contains("findersyncextension") || lowerExec.contains("/plugins/") ||
-               lowerBundle.hasSuffix(".appex") || lowerExec.contains(".appex/") {
-                continue
-            }
-
-            let appsMap: [(String, [String])] = [
-                ("Trae", ["trae"]), ("Claude", ["claude"]), ("Cursor", ["cursor"]),
-                ("Windsurf", ["windsurf", "codeium"]), ("CodeBuddy", ["codebuddy"]),
-                ("Doubao", ["doubao"]), ("Kimi", ["kimi"]), ("DeepSeek", ["deepseek"]),
-                ("ChatGPT", ["chatgpt"]), ("Gemini", ["gemini"]), ("Copilot", ["copilot"]),
-                ("Cline", ["cline"]), ("Hermes", ["hermes"]), ("Codex", ["codex"]),
-                ("Augment", ["augment"]), ("CodeArts", ["codearts", "huawei"]),
-            ]
-
-            for (displayName, keywords) in appsMap where !seenApps.contains(displayName) {
-                for kw in keywords {
-                    if lowerName.contains(kw) || lowerExec.contains(kw) || lowerBundle.contains(kw) {
-                        activeAgents.append(displayName)
-                        seenApps.insert(displayName)
-                        newPIDMap[displayName] = app.processIdentifier
-                        break
-                    }
-                }
-            }
-        }
-
-        if activeAgents.isEmpty {
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/ps")
-            task.arguments = ["-eo", "pid=,command="]
-            let pipe = Pipe()
-            task.standardOutput = pipe
-            task.standardError = FileHandle.nullDevice
-            do { try task.run(); task.waitUntilExit() } catch { return [] }
-            guard let data = try? pipe.fileHandleForReading.readToEnd(),
-                  let output = String(data: data, encoding: .utf8) else { return [] }
-
-            let psAgents: [(String, [String])] = [
-                ("Trae", ["trae"]), ("Claude", ["claude"]), ("Cursor", ["cursor"]),
-                ("Windsurf", ["windsurf", "codeium"]), ("CodeBuddy", ["codebuddy"]),
-                ("Doubao", ["doubao"]), ("Kimi", ["kimi"]), ("DeepSeek", ["deepseek"]),
-                ("ChatGPT", ["chatgpt"]), ("Gemini", ["gemini"]), ("Copilot", ["copilot"]),
-                ("Cline", ["cline"]), ("Hermes", ["hermes"]), ("Codex", ["codex"]),
-                ("Augment", ["augment"]), ("CodeArts", ["codearts", "huawei"]),
-            ]
-
-            for line in output.components(separatedBy: .newlines) {
-                let ll = line.lowercased()
-                if ll.contains("/plugins/") || ll.contains(".appex/") { continue }
-                let parts = line.trimmingCharacters(in: .whitespaces).split(separator: " ", maxSplits: 1)
-                guard parts.count >= 2, let pid = pid_t(parts[0]) else { continue }
-                for (displayName, keywords) in psAgents where !seenApps.contains(displayName) {
-                    for kw in keywords where ll.contains(kw) {
-                        activeAgents.append(displayName)
-                        seenApps.insert(displayName)
-                        newPIDMap[displayName] = pid
-                        break
-                    }
-                    if seenApps.contains(displayName) { break }
-                }
-            }
-        }
-
-        let cliNames: [String: String] = [
-            "node": "Node.js", "python3": "Python", "python": "Python",
-            "npm": "npm", "yarn": "Yarn", "pnpm": "pnpm", "cargo": "Cargo",
-            "deno": "Deno", "bun": "Bun", "go": "Go", "swift": "Swift",
-            "java": "Java", "gradle": "Gradle", "mvn": "Maven",
-            "make": "Make", "cmake": "CMake", "xcodebuild": "Xcode", "git": "Git",
-        ]
-
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/ps")
-        task.arguments = ["-eo", "pid=,comm="]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        do { try task.run(); task.waitUntilExit() } catch { return activeAgents }
-        guard let data = try? pipe.fileHandleForReading.readToEnd(),
-              let output = String(data: data, encoding: .utf8) else { return activeAgents }
-
-        for line in output.components(separatedBy: .newlines) {
-            let parts = line.trimmingCharacters(in: .whitespaces).split(separator: " ", maxSplits: 1)
-            guard parts.count >= 2, let pid = pid_t(parts[0]) else { continue }
-            let comm = String(parts[1]).lowercased()
-            if let displayName = cliNames[comm], !activeAgents.contains(displayName) {
-                activeAgents.append(displayName)
-                newPIDMap[displayName] = pid
-            }
-        }
-
-        agentPIDMap = newPIDMap
-        return activeAgents
-    }
-
-    private func refreshAgentOpenFiles() {
-        let pids = agentPIDMap.values
-        guard !pids.isEmpty else { return }
-        let pidList = pids.map(String.init).joined(separator: ",")
-
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        task.arguments = ["-w", "-Fn", "-p", pidList]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-
-        do {
-            try task.run()
-            let deadline = DispatchTime.now() + .seconds(3)
-            DispatchQueue.global().asyncAfter(deadline: deadline) { task.terminate() }
-            task.waitUntilExit()
-
-            guard let data = try? pipe.fileHandleForReading.readToEnd(),
-                  let output = String(data: data, encoding: .utf8) else { return }
-
-            var filePaths: Set<String> = []
-            for line in output.components(separatedBy: .newlines) {
-                guard line.hasPrefix("n") else { continue }
-                let path = String(line.dropFirst())
-                guard path.hasPrefix("/"), !path.hasPrefix("/dev/"), !path.hasPrefix("/private/var/folders"),
-                      !path.contains(".app/Contents/"), path != "/" else { continue }
-                filePaths.insert(path)
-            }
-
-            var newOpenFiles: [String: Set<String>] = [:]
-            for agent in agentPIDMap.keys {
-                newOpenFiles[agent] = filePaths
-            }
-            agentOpenFiles = newOpenFiles
-            lastOpenFilesRefresh = Date()
-        } catch {}
-    }
+    // MARK: - Process Poller
 
     private var processPoller: Timer?
-    private var lastPolledAgents: [String] = []
+    private var lastPolledAgents: Set<String> = []
+
     private func startProcessPoller() {
         processPoller?.invalidate()
-        processPoller = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        processPoller = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 guard let self = self else { return }
-                let agents = self.detectActiveAgents()
-                self.refreshAgentOpenFiles()
+                self.detectActiveAgents()
+                self.refreshLsofData()
                 DispatchQueue.main.async {
-                    self.cachedActiveAgents = agents
-                    self.lastAgentDetectTime = Date()
-                    let newAgents = agents.filter { !self.lastPolledAgents.contains($0) }
+                    let currentAgents = Set(self.agentPIDMap.keys)
+                    let newAgents = currentAgents.subtracting(self.lastPolledAgents)
                     if !newAgents.isEmpty {
-                        let agentList = newAgents.joined(separator: ", ")
+                        let agentList = newAgents.sorted().joined(separator: ", ")
                         let record = OperationRecord(
                             id: UUID().uuidString,
                             timestamp: Date(),
-                            agentName: newAgents.first ?? "System",
+                            agentName: newAgents.first ?? "Unknown",
                             operationType: .modify,
                             targetPath: "System Process",
-                            detail: "🤖 New Agent: \(agentList)",
-                            fileSize: 0
+                            detail: "🤖 Agent detected: \(agentList)",
+                            fileSize: 0,
+                            processName: "monitor",
+                            toolInfo: "agent detection"
                         )
                         self.addRecord(record)
                     }
-                    self.lastPolledAgents = agents
+                    self.lastPolledAgents = currentAgents
                 }
             }
         }
@@ -507,7 +576,8 @@ class OperationMonitor: ObservableObject {
                     let modDate = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
                     stateLock.lock()
                     fileSnapshots[fullPath] = FileSnapshot(
-                        path: fullPath, modDate: modDate, size: size, isDir: isDir.boolValue, agentName: nil
+                        path: fullPath, modDate: modDate, size: size, isDir: isDir.boolValue,
+                        agentName: nil, processName: nil, toolInfo: nil
                     )
                     stateLock.unlock()
                     totalCount += 1

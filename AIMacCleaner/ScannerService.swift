@@ -33,37 +33,42 @@ class ScannerService: ObservableObject {
     // MARK: - Disk Info
 
     func getDiskInfoNative() -> DiskInfo? {
-        var fs = statfs()
-        guard statfs("/System/Volumes/Data", &fs) == 0 else {
-            return getDiskInfoFallback()
+        let url = URL(fileURLWithPath: "/")
+        let keys: Set<URLResourceKey> = [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey]
+        if let values = try? url.resourceValues(forKeys: keys),
+           let total = values.volumeTotalCapacity,
+           let available = values.volumeAvailableCapacityForImportantUsage {
+            let totalBytes = Int64(total)
+            let freeBytes = Int64(available)
+            let usedBytes = totalBytes - freeBytes
+            let usedPct = totalBytes > 0 ? Double(usedBytes) / Double(totalBytes) * 100.0 : 0
+            return DiskInfo(
+                total: totalBytes, used: usedBytes, free: freeBytes,
+                totalGb: Double(totalBytes) / 1_000_000_000.0,
+                usedGb: Double(usedBytes) / 1_000_000_000.0,
+                freeGb: Double(freeBytes) / 1_000_000_000.0,
+                usedPct: usedPct
+            )
         }
-        let total = Int64(UInt64(fs.f_blocks) * UInt64(fs.f_bsize))
-        let free = Int64(UInt64(fs.f_bavail) * UInt64(fs.f_bsize))
-        let used = total - free
-        let usedPct = total > 0 ? Double(used) / Double(total) * 100.0 : 0
-        return DiskInfo(
-            total: total, used: used, free: free,
-            totalGb: Double(total) / 1073741824.0,
-            usedGb: Double(used) / 1073741824.0,
-            freeGb: Double(free) / 1073741824.0,
-            usedPct: usedPct
-        )
+        return getDiskInfoFallback()
     }
 
     private func getDiskInfoFallback() -> DiskInfo? {
         for path in ["/System/Volumes/Data", NSHomeDirectory(), "/"] {
-            var fs = statfs()
-            guard statfs(path, &fs) == 0 else { continue }
-            let total = Int64(UInt64(fs.f_blocks) * UInt64(fs.f_bsize))
-            let free = Int64(UInt64(fs.f_bavail) * UInt64(fs.f_bsize))
-            let used = total - free
-            let usedPct = total > 0 ? Double(used) / Double(total) * 100.0 : 0
-            if total > 0 {
+            let url = URL(fileURLWithPath: path)
+            let keys: Set<URLResourceKey> = [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey]
+            if let values = try? url.resourceValues(forKeys: keys),
+               let total = values.volumeTotalCapacity,
+               let available = values.volumeAvailableCapacityForImportantUsage {
+                let totalBytes = Int64(total)
+                let freeBytes = Int64(available)
+                let usedBytes = totalBytes - freeBytes
+                let usedPct = totalBytes > 0 ? Double(usedBytes) / Double(totalBytes) * 100.0 : 0
                 return DiskInfo(
-                    total: total, used: used, free: free,
-                    totalGb: Double(total) / 1073741824.0,
-                    usedGb: Double(used) / 1073741824.0,
-                    freeGb: Double(free) / 1073741824.0,
+                    total: totalBytes, used: usedBytes, free: freeBytes,
+                    totalGb: Double(totalBytes) / 1_000_000_000.0,
+                    usedGb: Double(usedBytes) / 1_000_000_000.0,
+                    freeGb: Double(freeBytes) / 1_000_000_000.0,
                     usedPct: usedPct
                 )
             }
@@ -1255,7 +1260,7 @@ class ScannerService: ObservableObject {
     @Published var updateReadyToInstall: Bool = false
     @Published var updateErrorMessage: String = ""
 
-    let currentVersion = "1.7.2"
+    let currentVersion = "1.7.3"
 
     @Published var appUpdates: [UpdateItem] = []
     @Published var isCheckingAppUpdates: Bool = false

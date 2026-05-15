@@ -193,6 +193,8 @@ struct OperationRecord: Identifiable, Codable {
     let targetPath: String
     let detail: String
     let fileSize: Int64
+    let processName: String?
+    let toolInfo: String?
 
     enum OperationType: String, Codable, CaseIterable {
         case create = "创建"

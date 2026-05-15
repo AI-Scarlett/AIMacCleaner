@@ -206,7 +206,7 @@ struct ContentView: View {
                             .foregroundColor(networkMode == "internet" ? .blue : .orange)
                     }
 
-                    Text("v1.7.2")
+                    Text("v1.7.3")
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
                 }
@@ -544,10 +544,18 @@ struct OperationLogTab: View {
                             Image(systemName: "cpu")
                                 .font(.caption2)
                                 .foregroundColor(.purple)
-                            Text(record.agentName)
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .lineLimit(1)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(record.agentName)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .lineLimit(1)
+                                if let pn = record.processName, !pn.isEmpty {
+                                    Text(pn)
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
                         }
                     }.width(min: 100)
 
@@ -564,11 +572,21 @@ struct OperationLogTab: View {
                     }.width(60)
 
                     TableColumn(localizer.pathCol) { record in
-                        Text(record.targetPath)
-                            .font(.caption2)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .help(record.targetPath)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(record.targetPath)
+                                .font(.caption2)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .help(record.targetPath)
+                            if let ti = record.toolInfo, !ti.isEmpty {
+                                Text(ti)
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.orange.opacity(0.8))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .help(ti)
+                            }
+                        }
                     }
 
                     TableColumn(localizer.fileSizeCol) { record in
