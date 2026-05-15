@@ -4,6 +4,7 @@ import AppKit
 class OperationMonitor: ObservableObject {
     @Published var records: [OperationRecord] = []
     @Published var isMonitoring: Bool = false
+    @Published var aiSelfLearningEnabled: Bool = false
 
     private var streamRef: FSEventStreamRef?
     private var fileSnapshots: [String: FileSnapshot] = [:]
@@ -23,6 +24,10 @@ class OperationMonitor: ObservableObject {
     private var fileAgentCache: [String: (agentName: String, processName: String, toolInfo: String?, cachedAt: Date, pid: pid_t)] = [:]
     private let cacheMaxSize = 5000
     private let cacheTTL: TimeInterval = 15.0
+
+    private var activeAgentNames: Set<String> = []
+    private var agentSelfDirs: Set<String> = []
+    private var selfDirDiscoveryTime: Date = .distantPast
 
     private let agentKeywords: [(String, [String])] = [
         ("Trae", ["trae-cn", "trae cn", "traecn", "trae-cn.app"]),
@@ -85,42 +90,140 @@ class OperationMonitor: ObservableObject {
 
     private func shouldSkipPath(_ path: String) -> Bool {
         let lower = path.lowercased()
-        let isAppSupport = lower.contains("/application support/")
+        let expanded = NSString(string: path).expandingTildeInPath.lowercased()
+        let home = NSHomeDirectory().lowercased()
 
-        if lower.contains("/monitor/") || lower.contains("/parfait/") { return true }
-        if lower.contains("/modulardata/") { return true }
-        if lower.contains("/sdk_storage/") { return true }
-        if lower.contains("/transportsecurity") { return true }
-        if lower.contains("/crashreporter/") || lower.contains("/diagnosticreports/") { return true }
-        if lower.contains("/cachediagnostics/") { return true }
-        if lower.contains("/partitions/") { return true }
-        if lower.contains("/sharedstorage/") { return true }
-        if lower.contains("/.trash/") || lower.contains("/.Trash/") { return true }
-        if lower.contains("/tmp/") && !lower.contains("/users/") { return true }
-
-        if lower.contains("/webview/") || lower.contains("/webviews/") { return true }
-        if lower.contains("/index-dir") || lower.contains("/index_dir") { return true }
-        if lower.contains("/code-cache/") || lower.contains("/gpucache/") || lower.contains("/dawncache/") { return true }
-        if lower.contains("/blob_storage/") || lower.contains("/session_storage/") { return true }
-        if lower.contains("/local_storage/") || lower.contains("/service_worker/") { return true }
-
-        if lower.contains("/cache/") || lower.contains("/caches/") || lower.hasSuffix("/cache") { return true }
-        if lower.contains("/cache_") || lower.contains("_cache/") { return true }
-
-        if lower.contains("/log/") || lower.contains("/logs/") {
-            if isAppSupport || lower.contains("/library/logs/") { return true }
-        }
-
-        if lower.hasSuffix(".db") || lower.hasSuffix(".db-wal") || lower.hasSuffix(".db-shm") { return true }
-        if lower.hasSuffix(".sqlite") || lower.hasSuffix(".sqlite-wal") || lower.hasSuffix(".sqlite-shm") { return true }
-
-        if lower.hasSuffix(".plist") || lower.hasSuffix(".plist.lockfile") { return true }
-
+        if lower.contains("/.trash/") || lower.contains("/.trash/") { return true }
         if lower.hasSuffix(".ds_store") { return true }
         if lower.hasSuffix("-journal") || lower.hasSuffix("-wal") || lower.hasSuffix("-shm") { return true }
-        if lower.contains("/thumbs/") || lower.contains("/thumbnails/") { return true }
+
+        if expanded.hasPrefix(home + "/library/") { return true }
+
+        stateLock.lock()
+        let dirs = agentSelfDirs
+        stateLock.unlock()
+        for dir in dirs {
+            if expanded.hasPrefix(dir.lowercased() + "/") || expanded == dir.lowercased() {
+                return true
+            }
+        }
 
         return false
+    }
+
+    private func discoverAgentSelfDirs() {
+        let fm = FileManager.default
+        let home = NSHomeDirectory()
+        var discovered: Set<String> = []
+
+        let searchBases: [(String, (String) -> Bool)] = [
+            ("\(home)/Library/Application Support", { _ in true }),
+            ("\(home)/Library/Caches", { _ in true }),
+            ("\(home)/Library/Preferences", { path in path.hasSuffix(".plist") }),
+            ("\(home)/Library/Logs", { _ in true }),
+            ("\(home)/Library/Containers", { _ in true }),
+            ("\(home)/Library/Group Containers", { _ in true }),
+            ("\(home)/Library/Saved Application State", { path in path.hasSuffix(".savedState") }),
+            (home, { path in
+                let name = (path as NSString).lastPathComponent
+                return name.hasPrefix(".")
+            }),
+        ]
+
+        var agentNamesLower: [String] = []
+        stateLock.lock()
+        let agents = activeAgentNames
+        stateLock.unlock()
+        for name in agents {
+            agentNamesLower.append(name.lowercased())
+        }
+
+        for (name, keywords) in agentKeywords {
+            for kw in keywords {
+                agentNamesLower.append(kw)
+            }
+        }
+
+        let agentLowerSet = Set(agentNamesLower)
+
+        for (basePath, filter) in searchBases {
+            guard fm.fileExists(atPath: basePath) else { continue }
+            guard let contents = try? fm.contentsOfDirectory(atPath: basePath) else { continue }
+
+            for item in contents {
+                let fullPath = "\(basePath)/\(item)"
+                let itemLower = item.lowercased()
+
+                var matched = false
+                for agentLower in agentLowerSet {
+                    if itemLower.contains(agentLower) {
+                        matched = true
+                        break
+                    }
+                }
+                guard matched else { continue }
+                guard filter(fullPath) else { continue }
+
+                var isDir: ObjCBool = false
+                if fm.fileExists(atPath: fullPath, isDirectory: &isDir) {
+                    discovered.insert(fullPath)
+                }
+            }
+        }
+
+        stateLock.lock()
+        agentSelfDirs = discovered
+        selfDirDiscoveryTime = Date()
+        stateLock.unlock()
+        print("[AIMacCleaner] discoverAgentSelfDirs: found \(discovered.count) agent-owned dirs for \(Array(agents))")
+    }
+
+    func addDiscoveredAgentDir(_ dir: String) {
+        stateLock.lock()
+        agentSelfDirs.insert(dir)
+        stateLock.unlock()
+        print("[AIMacCleaner] AI learned agent dir: \(dir)")
+    }
+
+    func getUnknownAgentSamples() -> [(comm: String, args: String, paths: [String], pid: pid_t)] {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        var samples: [(comm: String, args: String, paths: [String], pid: pid_t)] = []
+        let knownNames = activeAgentNames.union(["systemd", "kernel_task"])
+
+        for (pid, files) in allPidOpenFiles {
+            guard let comm = allPidCommMap[pid] else { continue }
+            if isSystemProcess(comm) { continue }
+
+            let agentName = resolveAgentNameForPid(pid)
+            let isKnown = activeAgentNames.contains(agentName) || agentName == comm || cliToolNames[(comm as NSString).lastPathComponent.lowercased()] != nil
+
+            if !isKnown && files.count >= 3 {
+                let userFiles = files.filter { f in
+                    let fl = f.lowercased()
+                    return !fl.contains("/library/") && !fl.hasPrefix("/system/") && !fl.hasPrefix("/private/")
+                }
+                if userFiles.count >= 2 {
+                    let args = allPidArgsMap[pid] ?? ""
+                    samples.append((comm, args, Array(userFiles.prefix(10)), pid))
+                }
+            }
+        }
+
+        return Array(samples.prefix(20))
+    }
+
+    func learnAgentKeyword(displayName: String, keywords: [String], dirs: [String]) {
+        guard !displayName.isEmpty, !keywords.isEmpty else { return }
+        stateLock.lock()
+        activeAgentNames.insert(displayName)
+        for dir in dirs where !dir.isEmpty {
+            agentSelfDirs.insert(dir)
+        }
+        selfDirDiscoveryTime = Date()
+        stateLock.unlock()
+        print("[AIMacCleaner] AI learned new agent: \(displayName) keywords: \(keywords) dirs: \(dirs)")
     }
 
     struct FileSnapshot: Codable {
@@ -136,15 +239,13 @@ class OperationMonitor: ObservableObject {
 
     private let watchPaths: [String] = {
         let home = NSHomeDirectory()
-        let uid = getuid()
         var paths: [String] = [
             "\(home)/Desktop",
             "\(home)/Documents",
             "\(home)/Downloads",
-            "\(home)/Library/Caches",
-            "\(home)/Library/Application Support",
-            "\(home)/Library/Preferences",
-            "\(home)/Library/Logs",
+            "\(home)/Movies",
+            "\(home)/Music",
+            "\(home)/Pictures",
         ]
 
         let fm = FileManager.default
@@ -222,6 +323,7 @@ class OperationMonitor: ObservableObject {
         var newPidArgsMap: [pid_t: String] = [:]
         var newPpidMap: [pid_t: pid_t] = [:]
         var newAgentComms: Set<String> = []
+        var newActiveAgents: Set<String> = []
 
         for (_, keywords) in agentKeywords {
             for kw in keywords {
@@ -258,6 +360,15 @@ class OperationMonitor: ObservableObject {
                 newPidCommMap[pid] = comm
                 newPidArgsMap[pid] = args
                 newPpidMap[pid] = ppid
+
+                for (displayName, keywords) in agentKeywords {
+                    for kw in keywords {
+                        if lowerAll.contains(kw) {
+                            newActiveAgents.insert(displayName)
+                            break
+                        }
+                    }
+                }
             }
         } catch {
             print("[AIMacCleaner] ps failed: \(error)")
@@ -268,9 +379,15 @@ class OperationMonitor: ObservableObject {
         allPidArgsMap = newPidArgsMap
         ppidMap = newPpidMap
         agentComms = newAgentComms
+        let agentsChanged = activeAgentNames != newActiveAgents
+        activeAgentNames = newActiveAgents
         stateLock.unlock()
 
         refreshLsofData()
+
+        if agentsChanged || Date().timeIntervalSince(selfDirDiscoveryTime) > 30.0 {
+            discoverAgentSelfDirs()
+        }
 
         let newPids = Set(newPidCommMap.keys).subtracting(Set(currentPidComms.keys))
         if !newPids.isEmpty {

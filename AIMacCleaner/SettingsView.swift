@@ -212,6 +212,22 @@ struct SettingsView: View {
                 isOn: $operationMonitorEnabled
             )
 
+            ToggleSetting(
+                icon: "brain.head.profile",
+                title: "AI 自学习 Agent 识别",
+                desc: "调用 AI 自动分析未知进程和目录，持续优化 Agent 监控准确性",
+                isOn: Binding(
+                    get: { service.operationMonitor.aiSelfLearningEnabled },
+                    set: { newValue in
+                        if newValue {
+                            service.startAISelfLearning()
+                        } else {
+                            service.stopAISelfLearning()
+                        }
+                    }
+                )
+            )
+
             Divider().padding(.vertical, 4)
 
             HStack(spacing: 8) {

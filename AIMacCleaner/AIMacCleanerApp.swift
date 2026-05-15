@@ -74,12 +74,42 @@ struct AIMacCleanerApp: App {
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        DispatchQueue.main.async { [weak self] in
+            self?.setupWindowDelegate()
+        }
+    }
+
+    private func setupWindowDelegate() {
+        for window in NSApp.windows {
+            window.delegate = WindowDelegate.shared
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            for window in NSApp.windows where window.delegate == nil {
+                window.delegate = WindowDelegate.shared
+            }
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
+        let behavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
+        if behavior == "quitAppOnly" {
+            sender.unhide(nil)
+            sender.setActivationPolicy(.regular)
             for window in sender.windows {
-                window.makeKeyAndOrderFront(nil)
+                if window.isVisible || window.isMiniaturized {
+                    if window.isMiniaturized { window.deminiaturize(nil) }
+                    window.makeKeyAndOrderFront(nil)
+                }
+            }
+        } else {
+            if !flag || sender.windows.allSatisfy({ !$0.isVisible }) {
+                for window in sender.windows {
+                    window.makeKeyAndOrderFront(nil)
+                }
             }
             sender.setActivationPolicy(.regular)
         }
@@ -89,5 +119,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         let behavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
         return behavior == "quitAll"
+    }
+}
+
+class WindowDelegate: NSObject, NSWindowDelegate {
+    static let shared = WindowDelegate()
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        let behavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
+        if behavior == "quitAppOnly" {
+            sender.orderOut(nil)
+            NSApp.setActivationPolicy(.accessory)
+            return false
+        }
+        return true
     }
 }

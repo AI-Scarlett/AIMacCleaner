@@ -1197,6 +1197,103 @@ class ScannerService: ObservableObject {
     private func stopOperationPolling() {
         operationPollTimer?.invalidate()
         operationPollTimer = nil
+        aiLearningTimer?.invalidate()
+        aiLearningTimer = nil
+    }
+
+    private var aiLearningTimer: Timer?
+
+    func startAISelfLearning() {
+        operationMonitor.aiSelfLearningEnabled = true
+        aiLearningTimer?.invalidate()
+        aiLearningTimer = Timer.scheduledTimer(withTimeInterval: 120.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                await self?.analyzeUnknownAgentsWithAI()
+            }
+        }
+        aiLearningTimer?.fire()
+    }
+
+    func stopAISelfLearning() {
+        operationMonitor.aiSelfLearningEnabled = false
+        aiLearningTimer?.invalidate()
+        aiLearningTimer = nil
+    }
+
+    func analyzeUnknownAgentsWithAI() async {
+        guard let config = aiConfig, config.hasKey == true else { return }
+        let samples = operationMonitor.getUnknownAgentSamples()
+        guard !samples.isEmpty else { return }
+
+        var pathSummary = ""
+        for sample in samples.prefix(5) {
+            pathSummary += "进程: \(sample.comm) (\(sample.pid))\n"
+            pathSummary += "参数: \(sample.args.prefix(80))\n"
+            pathSummary += "文件: \(sample.paths.prefix(5).joined(separator: ", "))\n\n"
+        }
+
+        let prompt = """
+        你是一个Agent进程分析器。以下是未知进程及其打开的文件路径。请判断：
+        1. 这个进程是否是一个自己的内部目录（而非修改用户文件）？
+        2. 如果它是不同于已有的agent，请给出它的显示名称和关键字
+
+        已知agent: Trae, Cursor, CodeBuddy, Claude, Windsurf, Copilot, Cline, Gemini, ChatGPT, DeepSeek, Kimi, Doubao, Hermes, Codex, Augment, CodeArts
+
+        未知进程：
+        \(pathSummary)
+
+        请以JSON返回，格式：{"recognized":[],"new_agents":[{"name":"显示名","keywords":["kw1","kw2"],"dirs":["/path/to/dir"]}],"noise_dirs":["/path/to/skip"]}
+        只返回JSON，不要其他内容。
+        """
+
+        guard let apiKey = config.apiKey, !apiKey.isEmpty, let apiBase = config.apiBase?.hasSuffix("/v1") == true ? config.apiBase : (config.apiBase ?? "") + "/v1" else { return }
+        let requestBody: [String: Any] = [
+            "model": config.model ?? "deepseek-chat",
+            "messages": [["role": "user", "content": prompt]],
+            "temperature": 0.3, "max_tokens": 1000
+        ]
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: requestBody) else { return }
+        guard let url = URL(string: "\(apiBase)/chat/completions") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = bodyData
+        request.timeoutInterval = 30
+
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: request)
+            guard let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let msg = choices.first?["message"] as? [String: Any],
+                  let content = msg["content"] as? String else { return }
+
+            let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let start = trimmed.firstIndex(of: "{"),
+                  let end = trimmed.lastIndex(of: "}") else { return }
+            let jsonStr = String(trimmed[start...end])
+            guard let jsonData = jsonStr.data(using: .utf8),
+                  let result = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else { return }
+
+            if let noiseDirs = result["noise_dirs"] as? [String] {
+                for dir in noiseDirs {
+                    operationMonitor.addDiscoveredAgentDir(dir)
+                }
+            }
+            if let newAgents = result["new_agents"] as? [[String: Any]] {
+                for agent in newAgents {
+                    if let name = agent["name"] as? String,
+                       let keywords = agent["keywords"] as? [String],
+                       let dirs = agent["dirs"] as? [String] {
+                        operationMonitor.learnAgentKeyword(displayName: name, keywords: keywords, dirs: dirs)
+                    }
+                }
+            }
+            print("[AIMacCleaner] AI self-learning: \(result)")
+        } catch {
+            print("[AIMacCleaner] AI self-learning failed: \(error)")
+        }
     }
 
     func startMonitoring() {
