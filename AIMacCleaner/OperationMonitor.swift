@@ -399,37 +399,40 @@ class OperationMonitor: ObservableObject {
         var activeAgents: [String] = []
         var seenApps: Set<String> = []
 
-        let knownAgentApps: [(String, String)] = [
-            ("Claude", "Claude"),
-            ("CodeBuddy", "CodeBuddy"),
-            ("Trae", "Trae"),
-            ("Cursor", "Cursor"),
-            ("Windsurf", "Windsurf"),
-            ("Doubao", "Doubao"),
-            ("Kimi", "Kimi"),
-            ("DeepSeek", "DeepSeek"),
-            ("ChatGPT", "ChatGPT"),
-            ("Gemini", "Gemini"),
-            ("Copilot", "Copilot"),
-            ("Augment", "Augment"),
-            ("Cline", "Cline"),
-            ("CodeArts", "CodeArts"),
+        let knownAgentApps: [(String, [String])] = [
+            ("Claude", ["Claude", "claude"]),
+            ("CodeBuddy", ["CodeBuddy", "codebuddy"]),
+            ("Trae", ["Trae", "trae"]),
+            ("Cursor", ["Cursor", "cursor"]),
+            ("Windsurf", ["Windsurf", "windsurf", "codeium"]),
+            ("Doubao", ["Doubao", "doubao"]),
+            ("Kimi", ["Kimi", "kimi"]),
+            ("DeepSeek", ["DeepSeek", "deepseek"]),
+            ("ChatGPT", ["ChatGPT", "chatgpt"]),
+            ("Gemini", ["Gemini", "gemini"]),
+            ("Copilot", ["Copilot", "copilot"]),
+            ("Augment", ["Augment", "augment"]),
+            ("Cline", ["Cline", "cline"]),
+            ("CodeArts", ["CodeArts", "codearts", "huawei"]),
+            ("Hermes", ["Hermes", "hermes"]),
+            ("Codex", ["Codex", "codex"]),
         ]
 
         for line in output.components(separatedBy: .newlines) {
-            guard line.contains(".app/Contents/MacOS/") else { continue }
-            for (keyword, displayName) in knownAgentApps where !seenApps.contains(keyword) {
-                if line.contains(keyword) {
+            let lineLower = line.lowercased()
+            for (displayName, keywords) in knownAgentApps where !seenApps.contains(displayName) {
+                for keyword in keywords where lineLower.contains(keyword) {
                     activeAgents.append(displayName)
-                    seenApps.insert(keyword)
+                    seenApps.insert(displayName)
                     break
                 }
+                if seenApps.contains(displayName) { break }
             }
         }
 
         let knownCLINames: [String: String] = [
             "node": "Node.js",
-            "python3": "Python3",
+            "python3": "Python",
             "python": "Python",
             "npm": "npm",
             "yarn": "Yarn",
