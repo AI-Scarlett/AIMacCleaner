@@ -357,6 +357,11 @@ class OperationMonitor: ObservableObject {
             let lowerExec = execURL.lowercased()
             let lowerBundle = bundleId.lowercased()
 
+            if lowerBundle.contains("findersyncextension") || lowerExec.contains("/plugins/") ||
+               lowerBundle.hasSuffix(".appex") || lowerExec.contains(".appex/") {
+                continue
+            }
+
             let appsMap: [(String, [String])] = [
                 ("Trae", ["trae"]),
                 ("Claude", ["claude"]),
@@ -409,10 +414,20 @@ class OperationMonitor: ObservableObject {
 
             let outputLower = output.lowercased()
             for (displayName, keywords) in psAgents where !seenApps.contains(displayName) {
-                for kw in keywords where outputLower.contains(kw) {
-                    activeAgents.append(displayName)
-                    seenApps.insert(displayName)
-                    break
+                for kw in keywords {
+                    var found = false
+                    for line in output.components(separatedBy: .newlines) {
+                        let ll = line.lowercased()
+                        if ll.contains(kw) && !ll.contains("/plugins/") && !ll.contains(".appex/") {
+                            found = true
+                            break
+                        }
+                    }
+                    if found {
+                        activeAgents.append(displayName)
+                        seenApps.insert(displayName)
+                        break
+                    }
                 }
             }
         }
