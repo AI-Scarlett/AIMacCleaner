@@ -85,19 +85,41 @@ class OperationMonitor: ObservableObject {
 
     private func shouldSkipPath(_ path: String) -> Bool {
         let lower = path.lowercased()
-        if lower.contains("/cache/") || lower.contains("/caches/") || lower.hasSuffix("/cache") { return true }
-        if lower.contains("/cache_") || lower.contains("_cache/") { return true }
+        let isAppSupport = lower.contains("/application support/")
+
+        if lower.contains("/monitor/") || lower.contains("/parfait/") { return true }
+        if lower.contains("/modulardata/") { return true }
+        if lower.contains("/sdk_storage/") { return true }
+        if lower.contains("/transportsecurity") { return true }
+        if lower.contains("/crashreporter/") || lower.contains("/diagnosticreports/") { return true }
+        if lower.contains("/cachediagnostics/") { return true }
+        if lower.contains("/partitions/") { return true }
+        if lower.contains("/sharedstorage/") { return true }
+        if lower.contains("/.trash/") || lower.contains("/.Trash/") { return true }
+        if lower.contains("/tmp/") && !lower.contains("/users/") { return true }
+
+        if lower.contains("/webview/") || lower.contains("/webviews/") { return true }
         if lower.contains("/index-dir") || lower.contains("/index_dir") { return true }
         if lower.contains("/code-cache/") || lower.contains("/gpucache/") || lower.contains("/dawncache/") { return true }
         if lower.contains("/blob_storage/") || lower.contains("/session_storage/") { return true }
         if lower.contains("/local_storage/") || lower.contains("/service_worker/") { return true }
-        if lower.contains("/.trash/") || lower.contains("/.Trash/") { return true }
-        if lower.hasSuffix(".plist") && lower.contains("/library/preferences/") { return true }
-        if lower.hasSuffix(".plist.lockfile") { return true }
-        if lower.contains("/tmp/") && !lower.contains("/users/") { return true }
-        if lower.hasSuffix(".DS_Store") { return true }
-        if lower.contains("/thumbs/") || lower.contains("/thumbnails/") { return true }
+
+        if lower.contains("/cache/") || lower.contains("/caches/") || lower.hasSuffix("/cache") { return true }
+        if lower.contains("/cache_") || lower.contains("_cache/") { return true }
+
+        if lower.contains("/log/") || lower.contains("/logs/") {
+            if isAppSupport || lower.contains("/library/logs/") { return true }
+        }
+
+        if lower.hasSuffix(".db") || lower.hasSuffix(".db-wal") || lower.hasSuffix(".db-shm") { return true }
+        if lower.hasSuffix(".sqlite") || lower.hasSuffix(".sqlite-wal") || lower.hasSuffix(".sqlite-shm") { return true }
+
+        if lower.hasSuffix(".plist") || lower.hasSuffix(".plist.lockfile") { return true }
+
+        if lower.hasSuffix(".ds_store") { return true }
         if lower.hasSuffix("-journal") || lower.hasSuffix("-wal") || lower.hasSuffix("-shm") { return true }
+        if lower.contains("/thumbs/") || lower.contains("/thumbnails/") { return true }
+
         return false
     }
 
@@ -298,7 +320,8 @@ class OperationMonitor: ObservableObject {
                           !path.contains(".app/Contents/"),
                           !path.hasSuffix(".nib"),
                           !path.hasSuffix(".strings"),
-                          !path.hasSuffix(".plist") else { continue }
+                          !path.hasSuffix(".plist"),
+                          !shouldSkipPath(path) else { continue }
 
                     newPidOpenFiles[currentPid, default: []].insert(path)
                     let expanded = NSString(string: path).expandingTildeInPath
