@@ -12,7 +12,10 @@ class OperationMonitor: ObservableObject {
     private let maxSnapshots = 10000
     private let recordsPath = NSHomeDirectory() + "/.aimaccleaner_operations_v2.json"
     private var cachedActiveAgents: [String] = []
+    private var agentPIDMap: [String: pid_t] = [:]
+    private var agentOpenFiles: [String: Set<String>] = [:]
     private var lastAgentDetectTime: Date = .distantPast
+    private var lastOpenFilesRefresh: Date = .distantPast
     private var hasRestoredBookmarks: Bool = false
     private var lastCleanupTime: Date = .distantPast
 
@@ -65,30 +68,16 @@ class OperationMonitor: ObservableObject {
     private func detectAgentForPath(_ path: String, agents: [String]) -> String? {
         guard !agents.isEmpty else { return nil }
 
-        let pathLower = path.lowercased()
+        let expanded = NSString(string: path).expandingTildeInPath
+        for agent in agents {
+            if let files = agentOpenFiles[agent], files.contains(expanded) {
+                return agent
+            }
+        }
 
-        let pathPatterns: [(String, [String])] = [
-            ("Claude", ["/claude", ".claude/", "anthropic"]),
-            ("Trae", ["/trae", ".trae/", "trae cn"]),
-            ("Cursor", ["/cursor", ".cursor/"]),
-            ("Windsurf", ["/windsurf", ".windsurf/", "codeium"]),
-            ("Doubao", ["/doubao", ".doubao/", "volcengine"]),
-            ("Kimi", ["/kimi", ".kimi/", "moonshot"]),
-            ("DeepSeek", ["/deepseek", ".deepseek/"]),
-            ("ChatGPT", ["/chatgpt", ".chatgpt/", "openai"]),
-            ("Gemini", ["/gemini", ".gemini/", "/google"]),
-            ("Copilot", ["/copilot", ".copilot/", "/github"]),
-            ("CodeBuddy", ["/codebuddy", ".codebuddy/"]),
-            ("Cline", [".cline/"]),
-            ("Hermes", ["/hermes"]),
-            ("Codex", ["/codex", ".codex/"]),
-            ("Augment", ["/augment", ".augment/"]),
-            ("CodeArts", ["/codearts", "huawei"]),
-        ]
-
-        for (agent, patterns) in pathPatterns {
-            guard agents.contains(agent) else { continue }
-            for p in patterns where pathLower.contains(p) {
+        let pathLower = expanded.lowercased()
+        for agent in agents {
+            if pathLower.contains("/\(agent.lowercased())/") || pathLower.contains(".\(agent.lowercased())/") {
                 return agent
             }
         }
@@ -322,6 +311,7 @@ class OperationMonitor: ObservableObject {
     private func detectActiveAgents() -> [String] {
         var activeAgents: [String] = []
         var seenApps: Set<String> = []
+        var newPIDMap: [String: pid_t] = [:]
 
         let workspace = NSWorkspace.shared
         let runningApps = workspace.runningApplications
@@ -339,22 +329,12 @@ class OperationMonitor: ObservableObject {
             }
 
             let appsMap: [(String, [String])] = [
-                ("Trae", ["trae"]),
-                ("Claude", ["claude"]),
-                ("Cursor", ["cursor"]),
-                ("Windsurf", ["windsurf", "codeium"]),
-                ("CodeBuddy", ["codebuddy"]),
-                ("Doubao", ["doubao"]),
-                ("Kimi", ["kimi"]),
-                ("DeepSeek", ["deepseek"]),
-                ("ChatGPT", ["chatgpt"]),
-                ("Gemini", ["gemini"]),
-                ("Copilot", ["copilot"]),
-                ("Cline", ["cline"]),
-                ("Hermes", ["hermes"]),
-                ("Codex", ["codex"]),
-                ("Augment", ["augment"]),
-                ("CodeArts", ["codearts", "huawei"]),
+                ("Trae", ["trae"]), ("Claude", ["claude"]), ("Cursor", ["cursor"]),
+                ("Windsurf", ["windsurf", "codeium"]), ("CodeBuddy", ["codebuddy"]),
+                ("Doubao", ["doubao"]), ("Kimi", ["kimi"]), ("DeepSeek", ["deepseek"]),
+                ("ChatGPT", ["chatgpt"]), ("Gemini", ["gemini"]), ("Copilot", ["copilot"]),
+                ("Cline", ["cline"]), ("Hermes", ["hermes"]), ("Codex", ["codex"]),
+                ("Augment", ["augment"]), ("CodeArts", ["codearts", "huawei"]),
             ]
 
             for (displayName, keywords) in appsMap where !seenApps.contains(displayName) {
@@ -362,6 +342,7 @@ class OperationMonitor: ObservableObject {
                     if lowerName.contains(kw) || lowerExec.contains(kw) || lowerBundle.contains(kw) {
                         activeAgents.append(displayName)
                         seenApps.insert(displayName)
+                        newPIDMap[displayName] = app.processIdentifier
                         break
                     }
                 }
@@ -371,7 +352,7 @@ class OperationMonitor: ObservableObject {
         if activeAgents.isEmpty {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: "/usr/bin/ps")
-            task.arguments = ["-eo", "command="]
+            task.arguments = ["-eo", "pid=,command="]
             let pipe = Pipe()
             task.standardOutput = pipe
             task.standardError = FileHandle.nullDevice
@@ -388,22 +369,19 @@ class OperationMonitor: ObservableObject {
                 ("Augment", ["augment"]), ("CodeArts", ["codearts", "huawei"]),
             ]
 
-            let outputLower = output.lowercased()
-            for (displayName, keywords) in psAgents where !seenApps.contains(displayName) {
-                for kw in keywords {
-                    var found = false
-                    for line in output.components(separatedBy: .newlines) {
-                        let ll = line.lowercased()
-                        if ll.contains(kw) && !ll.contains("/plugins/") && !ll.contains(".appex/") {
-                            found = true
-                            break
-                        }
-                    }
-                    if found {
+            for line in output.components(separatedBy: .newlines) {
+                let ll = line.lowercased()
+                if ll.contains("/plugins/") || ll.contains(".appex/") { continue }
+                let parts = line.trimmingCharacters(in: .whitespaces).split(separator: " ", maxSplits: 1)
+                guard parts.count >= 2, let pid = pid_t(parts[0]) else { continue }
+                for (displayName, keywords) in psAgents where !seenApps.contains(displayName) {
+                    for kw in keywords where ll.contains(kw) {
                         activeAgents.append(displayName)
                         seenApps.insert(displayName)
+                        newPIDMap[displayName] = pid
                         break
                     }
+                    if seenApps.contains(displayName) { break }
                 }
             }
         }
@@ -418,7 +396,7 @@ class OperationMonitor: ObservableObject {
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/ps")
-        task.arguments = ["-eo", "comm="]
+        task.arguments = ["-eo", "pid=,comm="]
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
@@ -426,14 +404,57 @@ class OperationMonitor: ObservableObject {
         guard let data = try? pipe.fileHandleForReading.readToEnd(),
               let output = String(data: data, encoding: .utf8) else { return activeAgents }
 
-        let commLines = output.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
-        for comm in commLines where !comm.isEmpty {
+        for line in output.components(separatedBy: .newlines) {
+            let parts = line.trimmingCharacters(in: .whitespaces).split(separator: " ", maxSplits: 1)
+            guard parts.count >= 2, let pid = pid_t(parts[0]) else { continue }
+            let comm = String(parts[1]).lowercased()
             if let displayName = cliNames[comm], !activeAgents.contains(displayName) {
                 activeAgents.append(displayName)
+                newPIDMap[displayName] = pid
             }
         }
 
+        agentPIDMap = newPIDMap
         return activeAgents
+    }
+
+    private func refreshAgentOpenFiles() {
+        let pids = agentPIDMap.values
+        guard !pids.isEmpty else { return }
+        let pidList = pids.map(String.init).joined(separator: ",")
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        task.arguments = ["-w", "-Fn", "-p", pidList]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+
+        do {
+            try task.run()
+            let deadline = DispatchTime.now() + .seconds(3)
+            DispatchQueue.global().asyncAfter(deadline: deadline) { task.terminate() }
+            task.waitUntilExit()
+
+            guard let data = try? pipe.fileHandleForReading.readToEnd(),
+                  let output = String(data: data, encoding: .utf8) else { return }
+
+            var filePaths: Set<String> = []
+            for line in output.components(separatedBy: .newlines) {
+                guard line.hasPrefix("n") else { continue }
+                let path = String(line.dropFirst())
+                guard path.hasPrefix("/"), !path.hasPrefix("/dev/"), !path.hasPrefix("/private/var/folders"),
+                      !path.contains(".app/Contents/"), path != "/" else { continue }
+                filePaths.insert(path)
+            }
+
+            var newOpenFiles: [String: Set<String>] = [:]
+            for agent in agentPIDMap.keys {
+                newOpenFiles[agent] = filePaths
+            }
+            agentOpenFiles = newOpenFiles
+            lastOpenFilesRefresh = Date()
+        } catch {}
     }
 
     private var processPoller: Timer?
@@ -445,6 +466,7 @@ class OperationMonitor: ObservableObject {
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 guard let self = self else { return }
                 let agents = self.detectActiveAgents()
+                self.refreshAgentOpenFiles()
                 DispatchQueue.main.async {
                     self.cachedActiveAgents = agents
                     self.lastAgentDetectTime = Date()
