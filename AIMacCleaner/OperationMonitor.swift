@@ -65,32 +65,25 @@ class OperationMonitor: ObservableObject {
     private func detectAgentForPath(_ path: String, agents: [String]) -> String? {
         guard !agents.isEmpty else { return nil }
 
-        let aiAgentNames: Set<String> = [
-            "Trae", "Claude", "Cursor", "Windsurf", "Doubao", "Kimi",
-            "DeepSeek", "ChatGPT", "Gemini", "Copilot", "CodeBuddy",
-            "Cline", "Hermes", "Codex", "Augment", "CodeArts"
-        ]
-
-        let activeAIAgents = agents.filter { aiAgentNames.contains($0) }
         let pathLower = path.lowercased()
 
         let pathPatterns: [(String, [String])] = [
-            ("Claude", ["claude", "anthropic", ".claude"]),
-            ("Trae", ["trae", "bytedance", ".trae"]),
-            ("Cursor", ["cursor", ".cursor"]),
-            ("Windsurf", ["windsurf", "codeium", ".windsurf"]),
-            ("Doubao", ["doubao", "volcengine"]),
-            ("Kimi", ["kimi", "moonshot"]),
-            ("DeepSeek", ["deepseek"]),
-            ("ChatGPT", ["chatgpt", "openai"]),
-            ("Gemini", ["gemini", "google"]),
-            ("Copilot", ["copilot", "github"]),
-            ("CodeBuddy", ["codebuddy"]),
-            ("Cline", [".cline"]),
-            ("Hermes", ["hermes"]),
-            ("Codex", ["codex"]),
-            ("Augment", ["augment"]),
-            ("CodeArts", ["codearts", "huawei"]),
+            ("Claude", ["/claude", ".claude/", "anthropic"]),
+            ("Trae", ["/trae", ".trae/", "trae cn"]),
+            ("Cursor", ["/cursor", ".cursor/"]),
+            ("Windsurf", ["/windsurf", ".windsurf/", "codeium"]),
+            ("Doubao", ["/doubao", ".doubao/", "volcengine"]),
+            ("Kimi", ["/kimi", ".kimi/", "moonshot"]),
+            ("DeepSeek", ["/deepseek", ".deepseek/"]),
+            ("ChatGPT", ["/chatgpt", ".chatgpt/", "openai"]),
+            ("Gemini", ["/gemini", ".gemini/", "/google"]),
+            ("Copilot", ["/copilot", ".copilot/", "/github"]),
+            ("CodeBuddy", ["/codebuddy", ".codebuddy/"]),
+            ("Cline", [".cline/"]),
+            ("Hermes", ["/hermes"]),
+            ("Codex", ["/codex", ".codex/"]),
+            ("Augment", ["/augment", ".augment/"]),
+            ("CodeArts", ["/codearts", "huawei"]),
         ]
 
         for (agent, patterns) in pathPatterns {
@@ -100,24 +93,7 @@ class OperationMonitor: ObservableObject {
             }
         }
 
-        let devPatterns: [(String, String)] = [
-            ("node_modules", "Node.js"), ("__pycache__", "Python"), (".venv", "Python"),
-            ("package.json", "Node.js"), ("requirements.txt", "Python"), ("Cargo.toml", "Cargo"),
-            ("go.mod", "Go"), ("pom.xml", "Maven"), ("build.gradle", "Gradle"),
-            ("Podfile", "CocoaPods"), (".swift", "Swift"), (".py", "Python"),
-            (".js", "Node.js"), (".ts", "TypeScript"), (".go", "Go"),
-            (".rs", "Rust"), (".java", "Java"), (".kt", "Kotlin"),
-        ]
-
-        for (pattern, devTool) in devPatterns where pathLower.contains(pattern) {
-            if agents.contains(devTool) { return devTool }
-        }
-
-        if let ai = activeAIAgents.first {
-            return ai
-        }
-
-        return agents.first
+        return nil
     }
 
     func stop() {

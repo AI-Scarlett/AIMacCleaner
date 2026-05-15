@@ -33,58 +33,21 @@ class ScannerService: ObservableObject {
     // MARK: - Disk Info
 
     func getDiskInfoNative() -> DiskInfo? {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
-        task.arguments = ["info", "/System/Volumes/Data"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-
-        do {
-            try task.run()
-            task.waitUntilExit()
-            guard let data = try? pipe.fileHandleForReading.readToEnd(),
-                  let output = String(data: data, encoding: .utf8) else {
-                return getDiskInfoFallback()
-            }
-
-            var total: Int64 = 0
-            var free: Int64 = 0
-
-            for line in output.components(separatedBy: .newlines) {
-                if line.contains("Container Total Space:") {
-                    total = parseBytesFromDiskUtilLine(line)
-                } else if line.contains("Container Free Space:") {
-                    free = parseBytesFromDiskUtilLine(line)
-                }
-            }
-
-            guard total > 0 else { return getDiskInfoFallback() }
-
-            let used = total - free
-            let usedPct = total > 0 ? Double(used) / Double(total) * 100.0 : 0
-
-            return DiskInfo(
-                total: total,
-                used: used,
-                free: free,
-                totalGb: Double(total) / 1073741824.0,
-                usedGb: Double(used) / 1073741824.0,
-                freeGb: Double(free) / 1073741824.0,
-                usedPct: usedPct
-            )
-        } catch {
+        var fs = statfs()
+        guard statfs("/System/Volumes/Data", &fs) == 0 else {
             return getDiskInfoFallback()
         }
-    }
-
-    private func parseBytesFromDiskUtilLine(_ line: String) -> Int64 {
-        guard let regex = try? NSRegularExpression(pattern: #"\((\d+)\s*Bytes\)"#),
-              let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
-              let range = Range(match.range(at: 1), in: line) else {
-            return 0
-        }
-        return Int64(line[range]) ?? 0
+        let total = Int64(UInt64(fs.f_blocks) * UInt64(fs.f_bsize))
+        let free = Int64(UInt64(fs.f_bavail) * UInt64(fs.f_bsize))
+        let used = total - free
+        let usedPct = total > 0 ? Double(used) / Double(total) * 100.0 : 0
+        return DiskInfo(
+            total: total, used: used, free: free,
+            totalGb: Double(total) / 1073741824.0,
+            usedGb: Double(used) / 1073741824.0,
+            freeGb: Double(free) / 1073741824.0,
+            usedPct: usedPct
+        )
     }
 
     private func getDiskInfoFallback() -> DiskInfo? {
