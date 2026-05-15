@@ -33,8 +33,27 @@ class ScannerService: ObservableObject {
     // MARK: - Disk Info
 
     func getDiskInfoNative() -> DiskInfo? {
+        let fm = FileManager.default
+        
+        if let attrs = try? fm.attributesOfFileSystem(forPath: NSHomeDirectory()),
+           let totalSize = attrs[.systemSize] as? NSNumber,
+           let freeSize = attrs[.systemFreeSize] as? NSNumber {
+            let total = totalSize.int64Value
+            let free = freeSize.int64Value
+            let used = total - free
+            let usedPct = total > 0 ? Double(used) / Double(total) * 100.0 : 0
+            
+            return DiskInfo(
+                total: total, used: used, free: free,
+                totalGb: Double(total) / 1073741824.0,
+                usedGb: Double(used) / 1073741824.0,
+                freeGb: Double(free) / 1073741824.0,
+                usedPct: usedPct
+            )
+        }
+        
         var fs = statfs()
-        guard statfs("/", &fs) == 0 else { return nil }
+        guard statfs(NSHomeDirectory(), &fs) == 0 else { return nil }
 
         let total = Int64(UInt64(fs.f_blocks) * UInt64(fs.f_bsize))
         let free = Int64(UInt64(fs.f_bavail) * UInt64(fs.f_bsize))
