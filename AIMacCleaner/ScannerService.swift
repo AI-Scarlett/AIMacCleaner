@@ -1253,7 +1253,7 @@ class ScannerService: ObservableObject {
     @Published var updateReadyToInstall: Bool = false
     @Published var updateErrorMessage: String = ""
 
-    let currentVersion = "1.7.0"
+    let currentVersion = "1.7.1"
 
     @Published var appUpdates: [UpdateItem] = []
     @Published var isCheckingAppUpdates: Bool = false

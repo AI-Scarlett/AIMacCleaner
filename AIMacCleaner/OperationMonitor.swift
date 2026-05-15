@@ -28,10 +28,12 @@ class OperationMonitor: ObservableObject {
         let home = NSHomeDirectory()
         return [
             "\(home)/Desktop",
-            "$(home)/Documents",
-            "$(home)/Downloads",
-            "$(home)/Library/Caches",
-            "$(home)/Library/Application Support",
+            "\(home)/Documents",
+            "\(home)/Downloads",
+            "\(home)/Library/Caches",
+            "\(home)/Library/Application Support",
+            "\(home)/Projects",
+            NSHomeDirectory(),
         ].filter { FileManager.default.fileExists(atPath: $0) }
     }()
 

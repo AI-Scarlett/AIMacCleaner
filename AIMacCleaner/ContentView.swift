@@ -206,7 +206,7 @@ struct ContentView: View {
                             .foregroundColor(networkMode == "internet" ? .blue : .orange)
                     }
 
-                    Text("v1.7.0")
+                    Text("v1.7.1")
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
                 }
@@ -245,7 +245,7 @@ struct ContentView: View {
                         Circle()
                             .fill(Color.green)
                             .frame(width: 5, height: 5)
-                        Text("v1.7.0")
+                        Text("v1.7.1")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }

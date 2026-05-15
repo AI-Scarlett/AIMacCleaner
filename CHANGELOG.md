@@ -2,6 +2,13 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.7.1] - 2026-05-15
+
+### Fixed
+- **存储空间显示不一致** - 修复 AIMacCleaner 显示的剩余空间（29GB）与 macOS 系统设置（67GB）不符的问题，改用 `FileManager.attributesOfFileSystem(forPath:)` 获取 APFS 容器级别的准确存储信息
+- **操作监控完全失效** - 修复 OperationMonitor 监控路径字符串插值语法错误（`$(home)` → `\(home)`），导致 Documents/Downloads/Caches/Application Support 等目录无法被监控
+- **扩展监控范围** - 新增 `~/Projects` 和用户主目录 `~` 到监控路径，覆盖更多文件操作场景
+
 ## [1.6.6] - 2026-05-14
 
 ### Fixed
