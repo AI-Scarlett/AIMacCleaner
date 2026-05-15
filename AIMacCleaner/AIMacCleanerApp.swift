@@ -10,6 +10,7 @@ struct AIMacCleanerApp: App {
     @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = true
     @AppStorage("sensorMonitorEnabled") private var sensorMonitorEnabled = true
     @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
+    @AppStorage("quitBehavior") private var quitBehavior: String = "quitAll"
 
     init() {
         DispatchQueue.global(qos: .background).async {
@@ -83,5 +84,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             sender.setActivationPolicy(.regular)
         }
         return true
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        let behavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
+        return behavior == "quitAll"
     }
 }

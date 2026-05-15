@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "1.6.5"
+VERSION = "1.7.1"
 DMG_PATH = f"/tmp/AIMacCleaner-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -37,12 +37,9 @@ else:
     print(f"Creating new release {TAG}...")
     body_text = """## 修复
 
-- 修复闪退问题
-- 移除设备监控 Tab（已整合到设置页面）
-- 修复操作记录误报 doubao
-- 优化左侧 Tab 栏收缩按钮（更优雅的设计）
-- 设置页面语言 Tab 更名为"语言"
-- 存储分析改进：扫描深度提升到 6 层，最大文件数到 3000，降低文件阈值到 100KB
+- **存储空间显示不一致** - 修复 AIMacCleaner 显示的剩余空间（29GB）与 macOS 系统设置（67GB）不符的问题
+- **操作监控完全失效** - 修复 OperationMonitor 监控路径字符串插值语法错误
+- **扩展监控范围** - 新增 ~/Projects 和用户主目录到监控路径
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',

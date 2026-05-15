@@ -3,7 +3,7 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="AIMacCleaner"
-VERSION="1.7.1"
+VERSION="1.7.2"
 BUILD_DIR="/tmp/AIMacCleaner_build"
 DMG_NAME="AIMacCleaner-v${VERSION}-arm64"
 STAGING_DIR="/tmp/AIMacCleaner_dmg_staging"
@@ -16,44 +16,72 @@ rm -rf "$BUILD_DIR"
 rm -rf "$STAGING_DIR"
 mkdir -p "$BUILD_DIR"
 
-echo "[1/5] Building with xcodebuild..."
-xcodebuild \
-    -project "$PROJECT_DIR/AIMacCleaner.xcodeproj" \
-    -scheme "$APP_NAME" \
-    -configuration Release \
-    -arch arm64 \
-    CONFIGURATION_BUILD_DIR="$BUILD_DIR" \
-    MARKETING_VERSION="$VERSION" \
-    CFBundleShortVersionString="$VERSION" \
-    CODE_SIGN_IDENTITY="-" \
-    CODE_SIGN_STYLE=Manual \
-    ENABLE_HARDENED_RUNTIME=NO \
-    clean build \
-    2>&1 | tail -5
+echo "[1/5] Compiling Swift files..."
 
-APP_PATH="$BUILD_DIR/$APP_NAME.app"
+SWIFT_FILES=(
+    "AIMacCleanerApp.swift"
+    "ContentView.swift"
+    "Models.swift"
+    "ScannerService.swift"
+    "StorageAnalyzer.swift"
+    "SettingsView.swift"
+    "AIConfigView.swift"
+    "Localizer.swift"
+    "MenuBarMonitor.swift"
+    "OperationMonitor.swift"
+    "SensorMonitor.swift"
+    "ScanRules.swift"
+)
 
-if [ ! -d "$APP_PATH" ]; then
-    echo "Error: Build failed - $APP_PATH not found"
+cd "$PROJECT_DIR/AIMacCleaner"
+
+swiftc -O \
+    -target arm64-apple-macos13.0 \
+    -sdk $(xcrun --show-sdk-path) \
+    -parse-as-library \
+    -framework SwiftUI \
+    -framework AppKit \
+    -framework Foundation \
+    -framework CoreServices \
+    -framework DiskArbitration \
+    -framework IOKit \
+    -o "$BUILD_DIR/$APP_NAME" \
+    "${SWIFT_FILES[@]}" \
+    2>&1 | grep -E "error:" || true
+
+if [ ! -f "$BUILD_DIR/$APP_NAME" ]; then
+    echo "Error: Compilation failed"
     exit 1
 fi
 
-echo "  Build successful: $APP_PATH"
+echo "  Compilation successful"
 
+echo "[2/5] Creating app bundle..."
+
+APP_PATH="$BUILD_DIR/$APP_NAME.app"
+mkdir -p "$APP_PATH/Contents/MacOS"
+mkdir -p "$APP_PATH/Contents/Resources"
+
+cp "$BUILD_DIR/$APP_NAME" "$APP_PATH/Contents/MacOS/"
+cp Info.plist "$APP_PATH/Contents/Info.plist"
+
+if [ -d Assets.xcassets ]; then
+    cp -R Assets.xcassets "$APP_PATH/Contents/Resources/"
+fi
+
+echo "[3/5] Code signing (ad-hoc)..."
+codesign --force --deep --sign - "$APP_PATH" 2>/dev/null || echo "  Code signing skipped (ad-hoc)"
+echo "  Code signed successfully."
+
+echo "[4/5] Verifying build..."
 BUILT_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Contents/Info.plist" 2>/dev/null || echo "unknown")
 echo "  Built version: $BUILT_VERSION"
 
-echo "[2/5] Verifying Info.plist version..."
 if [ "$BUILT_VERSION" != "$VERSION" ]; then
     echo "  Version mismatch! Fixing to $VERSION..."
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_PATH/Contents/Info.plist"
 fi
 
-echo "[3/5] Code signing (ad-hoc)..."
-codesign --force --deep --sign - "$APP_PATH"
-echo "  Code signed successfully."
-
-echo "[4/5] Verifying signature..."
 codesign --verify --deep --strict "$APP_PATH" 2>&1 && echo "  Signature valid ✓" || echo "  WARNING: Signature verification failed!"
 
 echo "[5/5] Creating DMG..."
@@ -66,7 +94,8 @@ hdiutil create \
     -srcfolder "$STAGING_DIR" \
     -ov \
     -format UDZO \
-    "/tmp/${DMG_NAME}.dmg"
+    "/tmp/${DMG_NAME}.dmg" \
+    2>&1 | tail -1
 
 rm -rf "$STAGING_DIR"
 

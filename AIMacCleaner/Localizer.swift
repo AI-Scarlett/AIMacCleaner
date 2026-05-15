@@ -275,4 +275,12 @@ extension Localizer {
     var allCats: String { t("全部分类", en: "All Categories") }
     var startScanBtn: String { t("开始扫描", en: "Start Scan") }
     var storageCats: String { t("存储分类", en: "Storage Categories") }
+
+    var internetStatus: String { t("Internet", en: "Internet") }
+    var offlineStatus: String { t("离线", en: "Offline") }
+
+    var quitBehaviorTitle: String { t("退出行为", en: "Quit Behavior") }
+    var quitBehaviorDesc: String { t("控制点击 Dock 退出按钮或 Cmd+Q 时的行为", en: "Control behavior when clicking Dock quit or pressing Cmd+Q") }
+    var quitAppAndMenu: String { t("退出应用和菜单栏（默认）", en: "Quit App & Menu Bar (Default)") }
+    var quitAppKeepMenu: String { t("仅退出应用，保留菜单栏监控", en: "Quit App Only, Keep Menu Bar")}
 }

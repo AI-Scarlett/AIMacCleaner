@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage("sensorMonitorEnabled") private var sensorMonitorEnabled = true
     @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = true
     @AppStorage("networkMode") private var networkMode = "internet"
+    @AppStorage("quitBehavior") private var quitBehavior: String = "quitAll"
 
     enum SettingsTab: String, CaseIterable {
         case ai = "AI"
@@ -210,6 +211,22 @@ struct SettingsView: View {
                 desc: localizer.operationMonitorDesc,
                 isOn: $operationMonitorEnabled
             )
+
+            Divider().padding(.vertical, 4)
+
+            HStack(spacing: 8) {
+                Image(systemName: "rectangle.portrait.and.arrow.right").foregroundColor(.purple)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localizer.quitBehaviorTitle).font(.subheadline).fontWeight(.medium)
+                    Text(localizer.quitBehaviorDesc).font(.caption).foregroundColor(.secondary)
+                }
+            }
+            Picker("", selection: $quitBehavior) {
+                Text(localizer.quitAppAndMenu).tag("quitAll")
+                Text(localizer.quitAppKeepMenu).tag("quitAppOnly")
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 320)
         }
     }
 

@@ -201,57 +201,76 @@ struct ContentView: View {
                         Image(systemName: networkMode == "internet" ? "globe" : "lock.shield")
                             .font(.system(size: 10))
                             .foregroundColor(networkMode == "internet" ? .blue : .orange)
-                        Text(networkMode == "internet" ? "Internet" : "Offline")
+                        Text(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus)
                             .font(.system(size: 9))
                             .foregroundColor(networkMode == "internet" ? .blue : .orange)
                     }
 
-                    Text("v1.7.1")
+                    Text("v1.7.2")
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 14)
             } else {
-                HStack(spacing: 10) {
-                    Button {
-                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                            sidebarCollapsed = true
-                        }
-                    } label: {
-                        Image(systemName: "sidebar.left")
-                            .font(.system(size: 16, weight: .medium))
+                VStack(spacing: 8) {
+                    HStack(spacing: 12) {
+                        Button { showSettings = true } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "gearshape")
+                                    .font(.system(size: 12))
+                                Text(localizer.settings)
+                                    .font(.system(size: 11))
+                            }
                             .foregroundColor(.secondary)
-                            .frame(width: 38, height: 38)
-                            .background(Color.secondary.opacity(0.08))
-                            .cornerRadius(10)
-                    }
-                    .buttonStyle(.plain)
-                    .help(localizer.collapseSidebar)
+                        }
+                        .buttonStyle(.plain)
 
-                    Button { showSettings = true } label: {
+                        Spacer()
+
                         HStack(spacing: 4) {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 12))
-                            Text(localizer.settings)
-                                .font(.system(size: 11))
+                            Image(systemName: networkMode == "internet" ? "globe" : "lock.shield")
+                                .font(.system(size: 9))
+                                .foregroundColor(networkMode == "internet" ? .blue : .orange)
+                            Text(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus)
+                                .font(.system(size: 9))
+                                .foregroundColor(networkMode == "internet" ? .blue : .orange)
                         }
-                        .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain)
 
-                    Spacer()
-
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 5, height: 5)
-                        Text("v1.7.1")
-                            .font(.system(size: 10))
+                    HStack(spacing: 12) {
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                sidebarCollapsed = true
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Text(localizer.collapseSidebar)
+                                    .font(.system(size: 10))
+                                Image(systemName: "sidebar.left")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
                             .foregroundColor(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.secondary.opacity(0.08))
+                            .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+
+                        Spacer()
+
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 5, height: 5)
+                            Text("v1.7.2")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 18)
+                .padding(.vertical, 14)
             }
         }
         .frame(width: sidebarCollapsed ? 60 : 180)
@@ -828,13 +847,18 @@ struct AppManagerTab: View {
     @State private var actionResultMsg = ""
 
     enum AppAction: String, CaseIterable {
-        case reset = "重置", basicUninstall = "基础卸载", fullUninstall = "完全卸载"
+        case reset, basicUninstall, fullUninstall
         var icon: String { switch self { case .reset: "arrow.counterclockwise"; case .basicUninstall: "xmark.circle"; case .fullUninstall: "trash" } }
         var color: Color { switch self { case .reset: .orange; case .basicUninstall: .blue; case .fullUninstall: .red } }
-        var desc: String { switch self {
-        case .reset: "清除缓存和历史数据，恢复为全新安装状态（APP本身保留）"
-        case .basicUninstall: "仅卸载安装文件，保留缓存和历史数据（重新安装后可恢复）"
-        case .fullUninstall: "卸载并清除所有缓存、历史数据和配置（彻底清除，不可恢复）"
+        func label(_ localizer: Localizer) -> String { switch self {
+        case .reset: return localizer.resetAction
+        case .basicUninstall: return localizer.basicUninstall
+        case .fullUninstall: return localizer.fullUninstall
+        } }
+        func desc(_ localizer: Localizer) -> String { switch self {
+        case .reset: return localizer.resetDesc
+        case .basicUninstall: return localizer.basicUninstallDesc
+        case .fullUninstall: return localizer.fullUninstallDesc
         } }
     }
 
@@ -901,23 +925,23 @@ struct AppManagerTab: View {
             }
 
             HStack(spacing: 12) {
-                FilterSearchBar(placeholder: "搜索应用...", text: $searchText)
+                FilterSearchBar(placeholder: localizer.searchingApps, text: $searchText)
                     .frame(width: 200)
 
                 Spacer()
 
                 if !selectedAppIds.isEmpty {
-                    Text("已选 \(selectedAppIds.count) 项 · \(service.formatSize(selectedTotalSize))").font(.caption).foregroundColor(.blue).fontWeight(.medium)
+                    Text("\(localizer.selected) \(selectedAppIds.count) 项 · \(service.formatSize(selectedTotalSize))").font(.caption).foregroundColor(.blue).fontWeight(.medium)
                 }
 
                 HStack(spacing: 4) {
-                    Button { selectedAppIds = Set(filteredApps.map(\.id)) } label: { Text("全选") }.buttonStyle(.bordered).controlSize(.small)
-                    Button { selectedAppIds.removeAll() } label: { Text("取消") }.buttonStyle(.bordered).controlSize(.small)
+                    Button { selectedAppIds = Set(filteredApps.map(\.id)) } label: { Text(localizer.selectAllBtn) }.buttonStyle(.bordered).controlSize(.small)
+                    Button { selectedAppIds.removeAll() } label: { Text(localizer.cancelBtn) }.buttonStyle(.bordered).controlSize(.small)
                 }
 
                 ForEach(AppAction.allCases, id: \.self) { action in
                     Button { pendingAction = action; pendingAppIds = Array(selectedAppIds); showActionConfirm = true } label: {
-                        HStack(spacing: 4) { Image(systemName: action.icon); Text(action.rawValue) }
+                        HStack(spacing: 4) { Image(systemName: action.icon); Text(action.label(localizer)) }
                     }
                     .buttonStyle(.bordered).controlSize(.small).tint(action.color)
                     .disabled(selectedAppIds.isEmpty)
@@ -932,8 +956,8 @@ struct AppManagerTab: View {
                     HStack(spacing: 6) {
                         Image(systemName: action.icon).foregroundColor(action.color).font(.caption)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(action.rawValue).font(.caption).fontWeight(.semibold)
-                            Text(action.desc).font(.system(size: 9)).foregroundColor(.secondary).lineLimit(1)
+                            Text(action.label(localizer)).font(.caption).fontWeight(.semibold)
+                            Text(action.desc(localizer)).font(.system(size: 9)).foregroundColor(.secondary).lineLimit(1)
                         }
                     }
                 }
@@ -945,20 +969,20 @@ struct AppManagerTab: View {
             Divider()
 
             if service.isScanningApps {
-                VStack(spacing: 16) { ProgressView().controlSize(.large); Text("正在扫描...").foregroundColor(.secondary) }
+                VStack(spacing: 16) { ProgressView().controlSize(.large); Text(localizer.searching).foregroundColor(.secondary) }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if filteredApps.isEmpty {
                 VStack(spacing: 16) {
                     Spacer()
                     Image(systemName: filterType == .app ? "app.dashed" : filterType == .dependency ? "cube.box" : "terminal")
                         .font(.system(size: 40)).foregroundColor(.secondary.opacity(0.5))
-                    Text("未发现\(filterType.label)").font(.title3).fontWeight(.medium)
+                    Text("\(localizer.notFound)\(filterType.label)").font(.title3).fontWeight(.medium)
                     Spacer()
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Table(filteredApps, selection: $selectedAppIds) {
                     TableColumn("✓") { app in Toggle("", isOn: Binding(get: { selectedAppIds.contains(app.id) }, set: { _ in if selectedAppIds.contains(app.id) { selectedAppIds.remove(app.id) } else { selectedAppIds.insert(app.id) } })).toggleStyle(.checkbox).labelsHidden() }.width(36)
-                    TableColumn("名称") { app in
+                    TableColumn(localizer.nameCol) { app in
                         HStack(spacing: 8) {
                             if let iconPath = app.iconPath, let img = NSImage(contentsOfFile: iconPath) {
                                 Image(nsImage: img).resizable().frame(width: 32, height: 32).clipShape(RoundedRectangle(cornerRadius: 6))
@@ -977,16 +1001,16 @@ struct AppManagerTab: View {
                             }
                         }
                     }.width(min: 220)
-                    TableColumn("风险") { app in
+                    TableColumn(localizer.riskCol) { app in
                         HStack(spacing: 3) {
                             let rc: Color = app.risk == "safe" ? .green : app.risk == "dangerous" ? .red : .orange
-                            let rl: String = app.risk == "safe" ? "安全" : app.risk == "dangerous" ? "危险" : "注意"
+                            let rl: String = app.risk == "safe" ? localizer.safe : app.risk == "dangerous" ? localizer.dangerous : localizer.warning
                             Image(systemName: app.risk == "safe" ? "checkmark.circle.fill" : app.risk == "dangerous" ? "xmark.circle.fill" : "exclamationmark.triangle.fill")
                                 .foregroundColor(rc).font(.caption)
                             Text(rl).font(.caption2).fontWeight(.medium).foregroundColor(rc)
                         }
                     }.width(60)
-                    TableColumn("影响说明") { app in
+                    TableColumn(localizer.impactCol) { app in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(app.riskDesc).font(.caption2).foregroundColor(.orange).lineLimit(2)
                             if let aiResult = service.aiAnalysisMap[app.id] {
@@ -996,10 +1020,10 @@ struct AppManagerTab: View {
                             }
                         }
                     }.width(min: 140)
-                    TableColumn("大小") { app in
+                    TableColumn(localizer.sizeCol) { app in
                         Text(service.formatSize(app.totalSize)).fontWeight(.bold).monospacedDigit().foregroundColor(.cyan)
                     }.width(80)
-                    TableColumn("操作") { app in
+                    TableColumn(localizer.actionCol) { app in
                         HStack(spacing: 4) {
                             if app.canClean || app.canReset {
                                 Button { pendingAction = .reset; pendingAppIds = [app.id]; showActionConfirm = true } label: { Image(systemName: "arrow.counterclockwise").font(.caption) }
@@ -1018,16 +1042,16 @@ struct AppManagerTab: View {
             }
         }
         .onAppear { if service.installedApps.isEmpty { Task { await service.scanInstalledApps() } } }
-        .alert("确认操作", isPresented: $showActionConfirm) {
-            Button("取消", role: .cancel) {}
-            Button("确认", role: .destructive) { performAction() }
+        .alert(localizer.actionConfirm, isPresented: $showActionConfirm) {
+            Button(localizer.cancelBtn, role: .cancel) {}
+            Button(localizer.confirmBtn, role: .destructive) { performAction() }
         } message: {
             let apps = selectedApps
             let size = pendingAction == .basicUninstall ? apps.reduce(Int64(0)) { $0 + $1.appSize } : apps.reduce(Int64(0)) { $0 + $1.totalSize }
-            Text("\(pendingAction.desc)\n\n将\(pendingAction.rawValue) \(apps.count) 项，共 \(service.formatSize(size))")
+            Text("\(pendingAction.desc(localizer))\n\n\(localizer.willAction)\(pendingAction.label(localizer)) \(apps.count) \(localizer.total)，共 \(service.formatSize(size))")
         }
-        .alert("操作完成", isPresented: $showActionResult) {
-            Button("确定") {}
+        .alert(localizer.actionDone, isPresented: $showActionResult) {
+            Button(localizer.confirmBtn) {}
         } message: { Text(actionResultMsg) }
     }
 
@@ -1061,7 +1085,7 @@ struct AppManagerTab: View {
             await service.scanInstalledApps()
             service.refreshDiskInfo()
             selectedAppIds.removeAll()
-            actionResultMsg = "\(pendingAction.rawValue)完成：成功 \(successCount) 个" + (failCount > 0 ? "，失败 \(failCount) 个" : "")
+            actionResultMsg = "\(pendingAction.label(localizer))\(localizer.actionComplete)：成功 \(successCount) 个" + (failCount > 0 ? "，失败 \(failCount) 个" : "")
             showActionResult = true
         }
     }
@@ -1643,7 +1667,13 @@ struct StorageAnalysisTab: View {
     }
 
     private func analyzeFile(_ file: StorageFile) async {
-        guard let config = service.aiConfig, config.hasKey == true else { return }
+        guard let config = service.aiConfig, config.hasKey == true else {
+            await MainActor.run {
+                aiAnalysisText = "⚠️ 请先在 AI 设置中配置 API Key"
+                showAIAnalysis = true
+            }
+            return
+        }
         await MainActor.run {
             isAnalyzing = true
             analyzingFileName = file.name
@@ -1653,10 +1683,15 @@ struct StorageAnalysisTab: View {
             isAnalyzing = false
             analyzingFileName = ""
             if let result = result {
+                aiAnalysisText = result
+                showAIAnalysis = true
                 if let catIndex = analyzer.categories.firstIndex(where: { $0.id == selectedCategory?.id }),
                    let fileIndex = analyzer.categories[catIndex].files.firstIndex(where: { $0.id == file.id }) {
                     analyzer.categories[catIndex].files[fileIndex].aiAnalysis = result
                 }
+            } else {
+                aiAnalysisText = "❌ AI 分析失败，请检查网络连接和 API 设置"
+                showAIAnalysis = true
             }
         }
     }

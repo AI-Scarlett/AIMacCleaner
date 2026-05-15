@@ -62,6 +62,71 @@ class OperationMonitor: ObservableObject {
         }
     }
 
+    private func detectAgentForPath(_ path: String, agents: [String]) -> String? {
+        guard !agents.isEmpty else { return nil }
+
+        let pathLower = path.lowercased()
+
+        let agentPathPatterns: [(String, [String])] = [
+            ("Claude", ["claude", "anthropic"]),
+            ("Trae", ["trae", "bytedance"]),
+            ("Cursor", ["cursor", ".cursor"]),
+            ("Windsurf", ["windsurf", "codeium"]),
+            ("Doubao", ["doubao", "bytedance", "volcengine"]),
+            ("Kimi", ["kimi", "moonshot"]),
+            ("DeepSeek", ["deepseek"]),
+            ("ChatGPT", ["chatgpt", "openai"]),
+            ("Gemini", ["gemini", "google"]),
+            ("Copilot", ["copilot", "github"]),
+            ("CodeBuddy", ["codebuddy"]),
+            ("Cline", [".cline"]),
+            ("Hermes", ["hermes"]),
+            ("Codex", ["codex"]),
+            ("Augment", ["augment"]),
+            ("CodeArts", ["codearts", "huawei"]),
+        ]
+
+        for (agent, patterns) in agentPathPatterns {
+            guard agents.contains(agent) else { continue }
+            for pattern in patterns where pathLower.contains(pattern) {
+                return agent
+            }
+        }
+
+        if agents.count == 1 { return agents.first }
+
+        let devPatterns = [
+            ("node_modules", "Node.js"),
+            (".venv", "Python"),
+            ("target/", "Cargo"),
+            ("vendor/", "Go"),
+            ("build/", "Xcode"),
+            (".gradle", "Gradle"),
+            (".m2", "Maven"),
+            (".npm", "npm"),
+            (".yarn", "Yarn"),
+            (".pnpm", "pnpm"),
+            (".cargo", "Cargo"),
+            (".deno", "Deno"),
+            (".bun", "Bun"),
+            ("Pods/", "CocoaPods"),
+            (".swift", "Swift"),
+            (".py", "Python"),
+            (".js", "Node.js"),
+            (".ts", "TypeScript"),
+            (".go", "Go"),
+            (".rs", "Rust"),
+            (".java", "Java"),
+            (".kt", "Kotlin"),
+        ]
+
+        for (pattern, devTool) in devPatterns where pathLower.contains(pattern) {
+            if agents.contains(devTool) { return devTool }
+        }
+
+        return agents.first
+    }
+
     func stop() {
         stopFSEventStream()
         processPoller?.invalidate()
@@ -161,7 +226,7 @@ class OperationMonitor: ObservableObject {
             }
 
             guard exists else {
-                let agentName = agents.first ?? "System"
+                let agentName = detectAgentForPath(eventPath, agents: agents) ?? "System"
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
@@ -212,7 +277,7 @@ class OperationMonitor: ObservableObject {
                     stateLock.unlock()
                     
                     if shouldRecordRead {
-                        let agentName = agents.first ?? existing.agentName ?? "System"
+                        let agentName = detectAgentForPath(eventPath, agents: agents) ?? existing.agentName ?? "System"
                         let record = OperationRecord(
                             id: UUID().uuidString,
                             timestamp: Date(),
@@ -226,8 +291,8 @@ class OperationMonitor: ObservableObject {
                     }
                     continue
                 }
-                
-                let agentName = agents.first ?? existing.agentName ?? "System"
+
+                let agentName = detectAgentForPath(eventPath, agents: agents) ?? existing.agentName ?? "System"
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
@@ -239,7 +304,7 @@ class OperationMonitor: ObservableObject {
                 )
                 addRecord(record)
             } else {
-                let agentName = agents.first ?? "System"
+                let agentName = detectAgentForPath(eventPath, agents: agents) ?? "System"
                 let record = OperationRecord(
                     id: UUID().uuidString,
                     timestamp: Date(),
@@ -258,7 +323,7 @@ class OperationMonitor: ObservableObject {
                 modDate: modDate,
                 size: size,
                 isDir: false,
-                agentName: agents.first
+                agentName: detectAgentForPath(eventPath, agents: agents)
             )
             accessTimes[eventPath] = now
             stateLock.unlock()

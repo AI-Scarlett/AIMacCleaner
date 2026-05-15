@@ -44,16 +44,19 @@ class StorageAnalyzer: ObservableObject {
 
         let fm = FileManager.default
         var results: [StorageCategory] = []
+        var scannedRootPaths: Set<String> = []
 
         await MainActor.run { scanProgress = "扫描系统数据..." }
         let systemPaths = ["/Library", "/usr", "/sbin", "/etc", "/var", "/tmp"]
-        let systemSize = await scanCategory(id: "system", name: "系统数据", icon: "gear", color: .gray, paths: systemPaths, fm: fm)
+        let (systemSize, systemPathsScanned) = await scanCategory(id: "system", name: "系统数据", icon: "gear", color: .gray, paths: systemPaths, fm: fm, existingScannedPaths: scannedRootPaths)
         results.append(systemSize)
+        scannedRootPaths.formUnion(systemPathsScanned)
 
         await MainActor.run { scanProgress = "扫描应用..." }
         let appPaths = ["/Applications", "\(home)/Applications", "/Applications/Utilities"]
-        let appSize = await scanCategory(id: "apps", name: "应用程序", icon: "app.fill", color: .cyan, paths: appPaths, fm: fm)
+        let (appSize, appPathsScanned) = await scanCategory(id: "apps", name: "应用程序", icon: "app.fill", color: .cyan, paths: appPaths, fm: fm, existingScannedPaths: scannedRootPaths)
         results.append(appSize)
+        scannedRootPaths.formUnion(appPathsScanned)
 
         await MainActor.run { scanProgress = "扫描应用数据..." }
         let appDataPaths = [
@@ -61,8 +64,9 @@ class StorageAnalyzer: ObservableObject {
             "\(home)/Library/Group Containers", "\(home)/Library/HTTPStorages", "\(home)/Library/WebKit",
             "\(home)/Library/Saved Application State", "\(home)/Library/Preferences",
         ]
-        let appDataSize = await scanCategory(id: "appdata", name: "应用数据", icon: "archivebox", color: .teal, paths: appDataPaths, fm: fm)
+        let (appDataSize, appDataPathsScanned) = await scanCategory(id: "appdata", name: "应用数据", icon: "archivebox", color: .teal, paths: appDataPaths, fm: fm, existingScannedPaths: scannedRootPaths)
         results.append(appDataSize)
+        scannedRootPaths.formUnion(appDataPathsScanned)
 
         await MainActor.run { scanProgress = "扫描文稿..." }
         let docsPaths = [
@@ -70,27 +74,31 @@ class StorageAnalyzer: ObservableObject {
             "\(home)/Music", "\(home)/Pictures", "\(home)/Library/Mobile Documents",
             "/Users/Shared",
         ]
-        let docsSize = await scanCategory(id: "documents", name: "文稿", icon: "doc.fill", color: .blue, paths: docsPaths, fm: fm)
+        let (docsSize, docsPathsScanned) = await scanCategory(id: "documents", name: "文稿", icon: "doc.fill", color: .blue, paths: docsPaths, fm: fm, existingScannedPaths: scannedRootPaths)
         results.append(docsSize)
+        scannedRootPaths.formUnion(docsPathsScanned)
 
         await MainActor.run { scanProgress = "扫描 Agent..." }
         let agentDirs = getAgentDirs()
-        let agentSize = await scanCategory(id: "agents", name: "Agent", icon: "cpu", color: .purple, paths: agentDirs, fm: fm)
+        let (agentSize, agentPathsScanned) = await scanCategory(id: "agents", name: "Agent", icon: "cpu", color: .purple, paths: agentDirs, fm: fm, existingScannedPaths: scannedRootPaths)
         results.append(agentSize)
+        scannedRootPaths.formUnion(agentPathsScanned)
 
         await MainActor.run { scanProgress = "扫描依赖..." }
         let depDirs = getDependencyDirs()
-        let depSize = await scanCategory(id: "dependencies", name: "依赖", icon: "cube.box", color: .orange, paths: depDirs, fm: fm)
+        let (depSize, depPathsScanned) = await scanCategory(id: "dependencies", name: "依赖", icon: "cube.box", color: .orange, paths: depDirs, fm: fm, existingScannedPaths: scannedRootPaths)
         results.append(depSize)
+        scannedRootPaths.formUnion(depPathsScanned)
 
         await MainActor.run { scanProgress = "扫描日志与缓存..." }
         let logsPaths = ["\(home)/Library/Logs", "/Library/Logs", "/private/var/log"]
-        let logsSize = await scanCategory(id: "logs", name: "日志与缓存", icon: "doc.text.fill", color: .brown, paths: logsPaths, fm: fm)
+        let (logsSize, logsPathsScanned) = await scanCategory(id: "logs", name: "日志与缓存", icon: "doc.text.fill", color: .brown, paths: logsPaths, fm: fm, existingScannedPaths: scannedRootPaths)
         results.append(logsSize)
+        scannedRootPaths.formUnion(logsPathsScanned)
 
         await MainActor.run { scanProgress = "扫描其它..." }
-        let otherDirs = await findOtherDirs(exclude: systemPaths + appPaths + appDataPaths + docsPaths + agentDirs + depDirs + logsPaths, fm: fm)
-        let otherSize = await scanCategory(id: "other", name: "其它", icon: "folder.fill", color: .indigo, paths: otherDirs, fm: fm)
+        let otherDirs = await findOtherDirs(exclude: Array(scannedRootPaths), fm: fm)
+        let (otherSize, otherPathsScanned) = await scanCategory(id: "other", name: "其它", icon: "folder.fill", color: .indigo, paths: otherDirs, fm: fm, existingScannedPaths: scannedRootPaths)
         if otherSize.size > 0 { results.append(otherSize) }
 
         let total = results.reduce(Int64(0)) { $0 + $1.size }
@@ -113,16 +121,29 @@ class StorageAnalyzer: ObservableObject {
         }
     }
 
-    private func scanCategory(id: String, name: String, icon: String, color: Color, paths: [String], fm: FileManager) async -> StorageCategory {
+    private func isPathAlreadyScanned(_ path: String, scannedRootPaths: Set<String>) -> Bool {
+        let expanded = NSString(string: path).expandingTildeInPath
+        for scannedPath in scannedRootPaths {
+            if expanded.hasPrefix(scannedPath + "/") || expanded == scannedPath {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func scanCategory(id: String, name: String, icon: String, color: Color, paths: [String], fm: FileManager, existingScannedPaths: Set<String>) async -> (StorageCategory, Set<String>) {
         return await Task.detached(priority: .userInitiated) {
             var totalSize: Int64 = 0
             var files: [StorageFile] = []
+            var localScannedPaths = existingScannedPaths
             let maxFiles = 5000
 
             for path in paths {
                 let expanded = NSString(string: path).expandingTildeInPath
+                if self.isPathAlreadyScanned(expanded, scannedRootPaths: localScannedPaths) { continue }
                 var isDir: ObjCBool = false
                 guard fm.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue else { continue }
+                localScannedPaths.insert(expanded)
                 let (size, items) = self.scanDirectory(at: expanded, maxDepth: 8, maxFiles: maxFiles - files.count, fm: fm)
                 totalSize += size
                 files.append(contentsOf: items)
@@ -137,7 +158,8 @@ class StorageAnalyzer: ObservableObject {
                 files[i] = self.assessRisk(for: files[i])
             }
 
-            return StorageCategory(id: id, name: name, icon: icon, color: color, size: totalSize, path: paths.first ?? "", files: files)
+            let category = StorageCategory(id: id, name: name, icon: icon, color: color, size: totalSize, path: paths.first ?? "", files: files)
+            return (category, localScannedPaths)
         }.value
     }
 
