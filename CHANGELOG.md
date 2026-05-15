@@ -6,19 +6,22 @@ All notable changes to AIMacCleaner will be documented in this file.
 
 ### Fixed
 - **磁盘空间数据与系统设置不一致** - 使用 `URL.resourceValues` 的 `volumeTotalCapacityKey` + `volumeAvailableCapacityForImportantUsageKey` API 读取 APFS Container 级别数据，改用十进制GB（÷10^9）替代二进制GiB（÷2^30），现在显示数据与macOS系统设置完全一致
-- **Agent监控无数据** - 移除per-event的 `lsof` 调用（每次800ms+导致事件处理完全阻塞），改为批量lsof + 缓存匹配架构：每15秒对所有已知Agent PIDs执行一次lsof，事件处理时只查缓存
-- **Agent监控显示"System"或"Unknown"** - 重写进程识别算法，支持进程树追溯（子进程node/python等通过ppid归因到父Agent），新增processName和toolInfo字段显示真实操作进程和命令行
-- **Agent监控假数据归因** - 过滤系统进程（kernel, launchd, mds, fseventsd）和Finder扩展（.appex, FinderSyncExtension），不再将后台进程误报为AI Agent
+- **Agent监控无数据（根本性修复）** - 重写 OperationMonitor：lsof 从仅查 Agent PIDs 改为查所有用户进程（`lsof -u $UID`），建立全量文件→PID→进程名缓存映射，事件处理零等待直接命中
+- **Agent监控假数据归因** - 重写进程识别算法，支持进程树追溯（子进程node/python等通过ppid归因到父Agent），新增 fileAgentCache 内存缓存（15s TTL / 5000条），过滤系统进程和Finder扩展
+- **监控目录覆盖不全** - 扩展 watchPaths 自动发现用户主目录下的 Projects/Dev/Code/workspace 等常见开发目录
+- **FSEvents 延迟优化** - latency 从 1.0s 降到 0.5s，进程轮询从 15s 降到 3s
 - **存储分析扫描过慢** - 减少系统扫描路径（移除/usr, /sbin等不可访问目录），扫描深度从8降到5，maxFiles从5000降到3000
 - **弹窗底部样式不统一** - 将版本号、网络状态、退出APP三个元素提取为弹窗公共外壳（`popoverFooter`），两个Tab共用统一底部布局
 
 ### Added
+- **路径一键复制** - Agent 监控表格每条记录路径旁新增 📄 复制按钮，点击即复制完整路径，可粘贴到 Finder ⌘⇧G 直接跳转
 - **OperationRecord新增字段** - `processName`（实际操作进程名）和 `toolInfo`（命令行信息），UI中Agent列下方小字显示processName，路径列下方小字显示toolInfo
-- **批量lsof刷新机制** - `detectActiveAgents()` 通过 `ps -eo pid,ppid=,comm=,args=` 一次性获取所有进程，`refreshLsofData()` 对Agent PIDs执行lsof建立PID→文件集映射
-- **进程树追溯** - `resolveFromTree()` 向上追溯ppid链（最多10层），将子进程归因到父Agent
+- **全量lsof刷新机制** - `refreshAllProcessInfo()` 通过 `ps -eo` 获取所有进程，`refreshLsofData()` 对当前用户所有 PIDs 执行lsof建立文件→进程映射，不再仅限 Agent 进程
+- **进程树追溯** - `resolveAgentNameForPid()` 向上追溯ppid链（最多10层），将子进程归因到父Agent
 
 ### Improved
 - **Agent监控事件处理** - `processEvents` 中不再调用任何外部命令，只通过内存缓存匹配，性能从秒级降到毫秒级
+- **Agent列UI优化** - 已识别agent显示紫色图标，未识别显示灰色，进程名支持tooltip查看，过滤内部标记字符
 - **弹窗底部统一** - `[🟢 Internet] [v1.7.3] [⏻ 退出]` 水平排列，两个Tab样式一致
 
 ## [1.7.2] - 2026-05-15
