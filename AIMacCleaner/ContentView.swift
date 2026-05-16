@@ -616,6 +616,7 @@ struct OperationLogTab: View {
                 curatedView
             }
         }
+        .frame(minWidth: 600, minHeight: 400)
         .onAppear {
             if !monitor.isMonitoring { monitor.start() }
             monitor.loadCurated()
@@ -624,8 +625,7 @@ struct OperationLogTab: View {
     }
 
     private var liveView: some View {
-        Group {
-
+        VStack(spacing: 0) {
             HStack(spacing: 12) {
                 FilterSearchBar(placeholder: localizer.searchFiles, text: $searchText)
                     .frame(width: 200)
@@ -762,6 +762,7 @@ struct OperationLogTab: View {
                 .tableStyle(.inset(alternatesRowBackgrounds: true))
             }
         }
+        .frame(minHeight: 200)
     }
 
     private var curatedView: some View {
