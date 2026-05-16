@@ -1345,18 +1345,29 @@ class ScannerService: ObservableObject {
         }
 
         let selfDirs = operationMonitor.agentSelfDirs
+        let homeDir = NSHomeDirectory()
+        let knownAgentParentDirs = Set(selfDirs.map { ($0 as NSString).deletingLastPathComponent }).union(selfDirs)
+
         var eventSummary = ""
+        var externalCount = 0
         for e in events {
             let path = e.targetPath
             if path.contains("/.git/") || path.hasSuffix("/.git") || path.hasSuffix(".DS_Store") { continue }
+            if path.contains("/node_modules/") || path.contains("/.vite/") || path.contains("/.turbo/") { continue }
             if path.contains("/Library/Caches/") || path.contains("/Library/Containers/") || path.contains("/tmp/") { continue }
-            if path.contains("/node_modules/") || path.contains("/.vite/") { continue }
-            if path.contains("/.turbo/") || path.contains("/dist/") || path.contains("/build/") || path.contains("/.next/") { continue }
-            if selfDirs.contains(where: { path.hasPrefix($0) || $0.hasPrefix(path) }) { continue }
+            if path.contains("/dist/") || path.contains("/build/") || path.contains("/.next/") { continue }
+            if knownAgentParentDirs.contains(where: { path.hasPrefix($0) }) { continue }
+            externalCount += 1
             eventSummary += "\(formattedTime(e.timestamp)) | \(e.operationType.rawValue) | \(path)\n"
         }
         let lines = eventSummary.components(separatedBy: "\n").filter { !$0.isEmpty }
-        eventSummary = lines.suffix(80).joined(separator: "\n")
+        eventSummary = lines.suffix(60).joined(separator: "\n")
+
+        if eventSummary.isEmpty {
+            operationMonitor.isCurating = false
+            operationMonitor.curationMessage = "梳理完成：\(events.count) 条事件均在 agent 自身项目目录内，无对外部文件的操作"
+            return
+        }
 
         var procSummary = ""
         let systemComms: Set<String> = ["kernel_task", "launchd", "WindowServer", "Dock", "Finder", "SystemUIServer",
@@ -1383,22 +1394,22 @@ class ScannerService: ObservableObject {
         }
 
         let prompt = """
-            你是 Agent 操作归因分析器。以下是监控期间的文件操作事件和进程快照。
-            
+            你是文件操作归因分析器。判断每个文件事件是哪个 Agent 进程操作的。
+
+            【关键】只能用进程PID/PPID数据判断！禁止用目录名猜测（例如文件在 codebuddy 文件夹 ≠ CodeBuddy 的操作）！
+
             进程快照:
-            \(procSummary.isEmpty ? "无agent进程" : procSummary)
-            
-            文件操作事件:
+            \(procSummary)
+
+            文件操作事件（仅外部文件，共\(externalCount)条，取最近60条）:
             \(eventSummary)
-            
-            对每条事件判断真实操作者（Agent名）。规则：~/Library/ 路径→agent填"系统内部"；子进程通过PPID追父Agent；仅输出 create/modify/delete。
 
-            当前已知活跃的 Agent: Trae, CodeBuddy, Cursor, Claude
+            进程归因方法：找到每个文件对应的进程PID，查看该进程的comm和PPID链，确定属于哪个Agent。
+            例：node(PID=1240, PPID=1234) → trae-cn(PID=1234) → 归因Trae
 
-            【最重要】只返回JSON数组，一行解释都别写。
-            格式示例：
-            [{"path":"/...","op":"修改","agent":"Trae","confidence":0.9,"evidence":"trae-cn PID 1234"}]
-            现在返回JSON：
+            返回JSON数组。每条格式：
+            {"path":"/完整路径","op":"修改|创建|删除","agent":"Agent名","confidence":0.8,"evidence":"PID xxxx 进程 xxx 操作"}
+            只返回JSON数组。
             """
 
         guard let apiKey = config.apiKey, !apiKey.isEmpty,
