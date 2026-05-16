@@ -196,8 +196,10 @@ struct MenuBarMonitor: View {
 
             HStack(spacing: 8) {
                 Button {
+                    NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.isVisible }) {
+                    NSApp.unhide(nil)
+                    if let window = NSApp.windows.first(where: { !$0.isMiniaturized }) {
                         window.makeKeyAndOrderFront(nil)
                     }
                 } label: {
@@ -885,8 +887,10 @@ struct MenuBarMonitor: View {
 
             HStack {
                 Button {
+                    NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.isVisible }) {
+                    NSApp.unhide(nil)
+                    if let window = NSApp.windows.first(where: { !$0.isMiniaturized }) {
                         window.makeKeyAndOrderFront(nil)
                     }
                 } label: {

@@ -95,30 +95,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        let behavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
-        if behavior == "quitAppOnly" {
-            sender.unhide(nil)
-            sender.setActivationPolicy(.regular)
-            for window in sender.windows {
-                if window.isVisible || window.isMiniaturized {
-                    if window.isMiniaturized { window.deminiaturize(nil) }
-                    window.makeKeyAndOrderFront(nil)
-                }
-            }
-        } else {
-            if !flag || sender.windows.allSatisfy({ !$0.isVisible }) {
-                for window in sender.windows {
-                    window.makeKeyAndOrderFront(nil)
-                }
-            }
-            sender.setActivationPolicy(.regular)
+        sender.setActivationPolicy(.regular)
+        sender.activate(ignoringOtherApps: true)
+        sender.unhide(nil)
+        for window in sender.windows {
+            window.makeKeyAndOrderFront(nil)
+        }
+        if let window = sender.windows.first, !window.isKeyWindow {
+            window.makeKeyAndOrderFront(nil)
         }
         return true
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        let behavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
-        return behavior == "quitAll"
+        return false
     }
 }
 
@@ -126,12 +116,9 @@ class WindowDelegate: NSObject, NSWindowDelegate {
     static let shared = WindowDelegate()
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        let behavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
-        if behavior == "quitAppOnly" {
-            sender.orderOut(nil)
-            NSApp.setActivationPolicy(.accessory)
-            return false
-        }
-        return true
+        sender.orderOut(nil)
+        NSApp.setActivationPolicy(.accessory)
+        NSApp.hide(nil)
+        return false
     }
 }
