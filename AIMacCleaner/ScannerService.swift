@@ -77,6 +77,10 @@ class ScannerService: ObservableObject {
     }
 
     func refreshDiskInfo() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/sync")
+        task.launch()
+        task.waitUntilExit()
         diskInfo = getDiskInfoNative()
     }
 

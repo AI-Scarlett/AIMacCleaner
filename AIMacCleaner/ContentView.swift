@@ -1012,9 +1012,9 @@ struct MacCleanerTab: View {
             Spacer()
             VStack(spacing: 8) { Image(systemName: "arrow.down.doc.fill").font(.system(size: 48)).foregroundColor(.accentColor.opacity(0.6)); Text("AIMacCleaner").font(.title).fontWeight(.bold); Text("智能清理 Mac 存储空间").foregroundColor(.secondary).font(.callout) }
             HStack(spacing: 24) {
-                ActionCard(icon: "magnifyingglass", title: "本地扫描", subtitle: "扫描缓存、日志等可清理文件", color: .blue, isDisabled: service.isScanning) { Task { await service.scanLocal() } }
-                ActionCard(icon: "brain", title: "AI 扫描", subtitle: "大模型智能分析可清理目录", color: .purple, isDisabled: service.isAiScanning) { Task { await performAiScan() } }
-                ActionCard(icon: "bolt.fill", title: "增强扫描", subtitle: "本地 + AI 同时扫描，最全面", color: .orange, isDisabled: service.isEnhancedScanning) { Task { await service.startEnhancedScan() } }
+                ActionCard(icon: "magnifyingglass", title: "本地扫描", subtitle: "扫描系统缓存、日志等已知可清理目录", color: .blue, isDisabled: service.isScanning) { Task { await service.scanLocal() } }
+                ActionCard(icon: "brain", title: "AI 扫描", subtitle: "大模型补充发现本地规则遗漏的清理项", color: .purple, isDisabled: service.isAiScanning) { Task { await performAiScan() } }
+                ActionCard(icon: "bolt.fill", title: "增强扫描", subtitle: "本地 + AI 双重检测，覆盖最全面", color: .orange, isDisabled: service.isEnhancedScanning) { Task { await service.startEnhancedScan() } }
             }
             Spacer()
         }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(40)
@@ -1057,7 +1057,7 @@ struct MacCleanerTab: View {
     private func performAiScan() async { if service.aiConfig?.hasKey != true { showSettings = true; return }; await service.startAiScan() }
     private func confirmDeleteSelected() { deleteTargetIds = Array(selectedIds); showDeleteConfirm = true }
     private func confirmDeleteSingle(_ item: ScanItem) { deleteTargetIds = [item.id]; showDeleteConfirm = true }
-    private func performDelete() { let s = service.scanItems.filter { deleteTargetIds.contains($0.id) }.reduce(Int64(0)) { $0 + $1.size }; let c = deleteTargetIds.count; Task { let _ = await service.deleteItems(ids: deleteTargetIds); service.removeScannedItems(ids: deleteTargetIds); selectedIds.subtract(deleteTargetIds); deleteTargetIds = []; service.refreshDiskInfo(); cleanedSize = s; cleanedCount = c; showCleanResult = true } }
+    private func performDelete() { let s = service.scanItems.filter { deleteTargetIds.contains($0.id) }.reduce(Int64(0)) { $0 + $1.size }; let c = deleteTargetIds.count; Task { let _ = await service.deleteItems(ids: deleteTargetIds); service.removeScannedItems(ids: deleteTargetIds); selectedIds.subtract(deleteTargetIds); deleteTargetIds = []; try? await Task.sleep(nanoseconds: 1_500_000_000); service.refreshDiskInfo(); cleanedSize = s; cleanedCount = c; showCleanResult = true } }
     private func ignoreSelected() { service.ignoreItems(ids: Array(selectedIds)); selectedIds.removeAll() }
     private func toggleIgnore(_ item: ScanItem) { if item.ignored { service.unignoreItems(ids: [item.id]) } else { service.ignoreItems(ids: [item.id]) } }
 }
