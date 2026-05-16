@@ -1344,41 +1344,57 @@ class ScannerService: ObservableObject {
         }
 
         var eventSummary = ""
-        for e in events.suffix(80) {
-            eventSummary += "\(formattedTime(e.timestamp)) | \(e.operationType.rawValue) | \(e.targetPath)\n"
+        for e in events {
+            let path = e.targetPath
+            if path.contains("/.git/") || path.hasSuffix("/.git") || path.hasSuffix(".DS_Store") { continue }
+            if path.contains("/Library/Caches/") || path.contains("/Library/Containers/") || path.contains("/tmp/") { continue }
+            eventSummary += "\(formattedTime(e.timestamp)) | \(e.operationType.rawValue) | \(path)\n"
         }
+        let lines = eventSummary.components(separatedBy: "\n").filter { !$0.isEmpty }
+        eventSummary = lines.suffix(80).joined(separator: "\n")
 
         var procSummary = ""
-        let agentProcs = recentSnaps.filter { snap in
-            let lower = (snap.comm + " " + snap.args).lowercased()
-            for (_, keywords) in operationMonitor.agentKeywords {
-                for kw in keywords where lower.contains(kw) { return true }
-            }
-            return false
+        let systemComms: Set<String> = ["kernel_task", "launchd", "WindowServer", "Dock", "Finder", "SystemUIServer",
+            "cfprefsd", "distnoted", "logd", "syslogd", "securityd", "trustd", "sysmond", "mds", "mdworker",
+            "corespeechd", "coreaudiod", "WiFi", "bluetoothd", "airportd", "iconservicesagent", "coreduetd",
+            "locationd", "timed", "chronod", "powerd", "configd", "diskarbitrationd", "fseventsd", "sandboxd"]
+        let nonSystemProcs = recentSnaps.filter { snap in
+            let c = snap.comm.lowercased()
+            if systemComms.contains(snap.comm) { return false }
+            if c.hasPrefix("com.apple.") || c.hasPrefix("com.apple") { return false }
+            return true
         }
-        let uniqueAgents = Set(agentProcs.map { $0.comm })
-        for comm in uniqueAgents.sorted() {
-            let procs = agentProcs.filter { $0.comm == comm }
-            let pids = Set(procs.map { String($0.pid) }).sorted().joined(separator: ",")
-            let ppids = Set(procs.map { String($0.ppid) }).sorted().joined(separator: ",")
-            procSummary += "\(comm): PIDs[\(pids)] PPIDs[\(ppids)]\n"
+        print("[AIMacCleaner] curateWithAI: \(recentSnaps.count) recent snaps, \(nonSystemProcs.count) non-system")
+        if nonSystemProcs.isEmpty {
+            procSummary = "（无进程快照——请确保 Agent 监控已启用，或重新启用后等待 30 秒再试）"
+        } else {
+            let grouped = Dictionary(grouping: nonSystemProcs.prefix(200), by: { $0.comm })
+            for (comm, procs) in grouped.sorted(by: { $0.1.count > $1.1.count }) {
+                let pids = Set(procs.map { String($0.pid) }).sorted().joined(separator: ",")
+                let ppids = Set(procs.filter { $0.ppid != 0 }.map { String($0.ppid) }).sorted().joined(separator: ",")
+                let ppidStr = ppids.isEmpty ? "" : " PPIDs[\(ppids)]"
+                procSummary += "\(comm)(x\(procs.count)) PIDs[\(pids)]\(ppidStr)\n"
+            }
         }
 
         let prompt = """
-        你是 Agent 操作归因分析器。以下是监控期间的文件操作事件和进程快照。
-        
-        进程快照:
-        \(procSummary.isEmpty ? "无agent进程" : procSummary)
-        
-        文件操作事件:
-        \(eventSummary)
-        
-        对每条事件判断真实操作者（Agent名）。规则：~/Library/ 路径→agent填"系统内部"；子进程通过PPID追父Agent；仅输出 create/modify/delete。
-        
-        【重要】只返回JSON数组，禁止任何解释文字。
-        格式：[{"path":"/...","op":"创建|修改|删除","agent":"Agent名","confidence":0.9,"evidence":"依据"}]
-        现在就返回JSON数组：
-        """
+            你是 Agent 操作归因分析器。以下是监控期间的文件操作事件和进程快照。
+            
+            进程快照:
+            \(procSummary.isEmpty ? "无agent进程" : procSummary)
+            
+            文件操作事件:
+            \(eventSummary)
+            
+            对每条事件判断真实操作者（Agent名）。规则：~/Library/ 路径→agent填"系统内部"；子进程通过PPID追父Agent；仅输出 create/modify/delete。
+
+            当前已知活跃的 Agent: Trae, CodeBuddy, Cursor, Claude
+
+            【最重要】只返回JSON数组，一行解释都别写。
+            格式示例：
+            [{"path":"/...","op":"修改","agent":"Trae","confidence":0.9,"evidence":"trae-cn PID 1234"}]
+            现在返回JSON：
+            """
 
         guard let apiKey = config.apiKey, !apiKey.isEmpty,
               let apiBase = config.apiBase else {
@@ -1457,11 +1473,11 @@ class ScannerService: ObservableObject {
 
     private func parseCurationResponse(raw: String, events: [OperationRecord]) -> [CuratedRecord]? {
         var body = raw
+            .replacingOccurrences(of: "`json\n", with: "\n")
+            .replacingOccurrences(of: "`json \n", with: "\n")
 
-        // Try direct JSON parse first (best case)
         if let results = tryJSONParse(body) { return buildCurated(from: results, events: events) }
 
-        // Strip markdown code blocks
         while let start = body.range(of: "```"), let end = body.range(of: "```", options: [], range: body.index(after: start.lowerBound)..<body.endIndex) {
             var inner = String(body[body.index(after: start.lowerBound)..<end.lowerBound])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1497,7 +1513,10 @@ class ScannerService: ObservableObject {
     }
 
     private func tryJSONParse(_ text: String) -> [[String: Any]]? {
-        let cleaned = text.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "")
+        var cleaned = text
+        cleaned = cleaned.replacingOccurrences(of: "`json", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "```json", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "```", with: "")
         if let data = cleaned.data(using: .utf8),
            let obj = try? JSONSerialization.jsonObject(with: data) {
             if let arr = obj as? [[String: Any]] { return arr }

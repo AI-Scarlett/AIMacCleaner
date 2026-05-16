@@ -44,7 +44,7 @@ class OperationMonitor: ObservableObject {
         ("Claude", ["claude"]),
         ("Cursor", ["cursor"]),
         ("Windsurf", ["windsurf", "codeium"]),
-        ("CodeBuddy", ["codebuddy-cn", "codebuddy cn", "codebuddycn"]),
+        ("CodeBuddy", ["codebuddy-cn", "codebuddy cn", "codebuddycn", "codebuddy"]),
         ("Doubao", ["doubao"]),
         ("Kimi", ["kimi"]),
         ("DeepSeek", ["deepseek"]),
