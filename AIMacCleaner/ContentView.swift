@@ -529,6 +529,16 @@ struct OperationLogTab: View {
                             ProgressView().controlSize(.mini)
                             Text("梳理中...").font(.caption2).foregroundColor(.secondary)
                         }
+                    } else if !monitor.curationMessage.isEmpty {
+                        HStack(spacing: 4) {
+                            Image(systemName: monitor.curationMessage.hasPrefix("梳理完成") ? "checkmark.circle" : "info.circle")
+                                .font(.system(size: 10))
+                                .foregroundColor(monitor.curationMessage.hasPrefix("梳理完成") ? .green : .orange)
+                            Text(monitor.curationMessage)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
                     } else if let last = monitor.lastCurationTime {
                         HStack(spacing: 2) {
                             Image(systemName: "clock").font(.system(size: 9)).foregroundColor(.secondary)

@@ -1314,14 +1314,28 @@ class ScannerService: ObservableObject {
     }
 
     func curateWithAI() async {
-        guard let config = aiConfig, config.hasKey == true else { return }
+        operationMonitor.curationMessage = ""
 
-        operationMonitor.isCurating = true
-        let (events, snapshots) = operationMonitor.getRawDataForCuration()
-        guard !events.isEmpty else {
-            operationMonitor.isCurating = false
+        guard let config = aiConfig, config.hasKey == true else {
+            operationMonitor.curationMessage = "请先配置 AI 模型（设置 → AI 设置）"
             return
         }
+
+        operationMonitor.isCurating = true
+        operationMonitor.curationMessage = "正在收集原始数据..."
+
+        let (events, snapshots) = operationMonitor.getRawDataForCuration()
+        print("[AIMacCleaner] curateWithAI: got \(events.count) events, \(snapshots.count) snapshots")
+
+        guard events.count >= 3 else {
+            operationMonitor.isCurating = false
+            operationMonitor.curationMessage = events.isEmpty
+                ? "暂无监控数据，请先启用 Agent 监控并等待文件操作产生"
+                : "监控数据不足（仅有 \(events.count) 条），继续监控后重试"
+            return
+        }
+
+        operationMonitor.curationMessage = "正在调用 AI 分析..."
 
         let recentSnaps = snapshots.filter { s in
             if let first = events.first?.timestamp, let last = events.last?.timestamp {
@@ -1332,9 +1346,8 @@ class ScannerService: ObservableObject {
         }
 
         var eventSummary = ""
-        for e in events.suffix(100) {
-            let op = e.operationType.rawValue
-            eventSummary += "\(formattedTime(e.timestamp)) | \(op) | \(e.targetPath)\n"
+        for e in events.suffix(80) {
+            eventSummary += "\(formattedTime(e.timestamp)) | \(e.operationType.rawValue) | \(e.targetPath)\n"
         }
 
         var procSummary = ""
@@ -1353,32 +1366,34 @@ class ScannerService: ObservableObject {
             procSummary += "\(comm): PIDs[\(pids)] PPIDs[\(ppids)]\n"
         }
 
-        let totalProcs = Set(recentSnaps.map { $0.comm }).count
         let prompt = """
         你是 Agent 操作归因分析器。以下是在监控期间发生的文件操作事件和系统进程快照。
 
-        已知agent关键词: Trae, Cursor, CodeBuddy, Claude, Windsurf, Copilot, Cline, Gemini, ChatGPT, DeepSeek, Kimi, Doubao, Hermes, Codex, Augment, CodeArts
+        已知agent: Trae, Cursor, CodeBuddy, Claude, Windsurf, Copilot, Cline, Gemini, ChatGPT, DeepSeek, Kimi, Doubao, Hermes, Codex, Augment, CodeArts
 
-        进程快照（\(totalProcs)个不同进程）:
+        进程快照:
         \(procSummary.isEmpty ? "无agent进程" : procSummary)
 
-        文件操作事件（最近100条）:
+        文件操作事件（最近80条）:
         \(eventSummary)
 
-        任务：判断哪些事件是由哪个Agent产生的，忽略系统进程/IDE自身内部操作。
+        任务：判断每条事件的真实操作者（Agent名）。
         规则：
-        1. 如果路径在 ~/Library/ 下 → \"系统/IDE内部操作\"，忽略
-        2. 如果路径在用户项目目录（Desktop/Documents/Downloads/Projects/Dev等）→ 找对应的Agent进程
-        3. 子进程（如node/python）通过PPID追溯到父Agent
-        4. 仅文件操作（create/modify/delete），忽略read
+        1. 如果路径在 ~/Library/ 下 → agent 填 "系统内部"，忽略
+        2. 子进程（node/python等）通过PPID追溯到父Agent
+        3. 仅输出 create/modify/delete 事件，忽略 read
 
-        返回JSON数组，每个元素格式：
-        {"path":"/full/path","op":"创建|修改|删除","agent":"Agent名","confidence":0.0-1.0,"evidence":"归因依据"}
-        只返回JSON数组，不要其他内容。
+        严格返回JSON数组：
+        [{"path":"/完整路径","op":"创建|修改|删除","agent":"Agent名","confidence":0.0,"evidence":"归因依据"}]
+        只返回JSON数组。
         """
 
         guard let apiKey = config.apiKey, !apiKey.isEmpty,
-              let apiBase = config.apiBase else { operationMonitor.isCurating = false; return }
+              let apiBase = config.apiBase else {
+            operationMonitor.isCurating = false
+            operationMonitor.curationMessage = "AI 配置不完整"
+            return
+        }
         let base = apiBase.hasSuffix("/v1") ? apiBase : apiBase + "/v1"
         let requestBody: [String: Any] = [
             "model": config.model ?? "deepseek-chat",
@@ -1387,7 +1402,9 @@ class ScannerService: ObservableObject {
         ]
         guard let bodyData = try? JSONSerialization.data(withJSONObject: requestBody),
               let url = URL(string: "\(base)/chat/completions") else {
-            operationMonitor.isCurating = false; return
+            operationMonitor.isCurating = false
+            operationMonitor.curationMessage = "请求构建失败"
+            return
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -1398,31 +1415,51 @@ class ScannerService: ObservableObject {
 
         do {
             let (data, resp) = try await URLSession.shared.data(for: request)
-            guard let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 200,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            guard let httpResp = resp as? HTTPURLResponse else {
+                operationMonitor.isCurating = false
+                operationMonitor.curationMessage = "网络错误"
+                return
+            }
+            guard httpResp.statusCode == 200 else {
+                operationMonitor.isCurating = false
+                let body = String(data: data, encoding: .utf8) ?? ""
+                print("[AIMacCleaner] API error \(httpResp.statusCode): \(body.prefix(200))")
+                operationMonitor.curationMessage = "API 错误 (\(httpResp.statusCode))"
+                return
+            }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let choices = json["choices"] as? [[String: Any]],
                   let msg = choices.first?["message"] as? [String: Any],
                   let content = msg["content"] as? String else {
-                operationMonitor.isCurating = false; return
+                operationMonitor.isCurating = false
+                operationMonitor.curationMessage = "AI 响应格式错误"
+                return
             }
 
             let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            print("[AIMacCleaner] AI raw response (\(trimmed.count) chars): \(trimmed.prefix(200))")
+
             guard let start = trimmed.firstIndex(of: "["),
                   let end = trimmed.lastIndex(of: "]") else {
-                operationMonitor.isCurating = false; return
+                operationMonitor.isCurating = false
+                operationMonitor.curationMessage = "AI 返回非JSON: \(trimmed.prefix(100))"
+                print("[AIMacCleaner] No JSON array found in: \(trimmed.prefix(300))")
+                return
             }
             let jsonStr = String(trimmed[start...end])
             guard let jsonData = jsonStr.data(using: .utf8),
                   let results = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] else {
-                operationMonitor.isCurating = false; return
+                operationMonitor.isCurating = false
+                operationMonitor.curationMessage = "JSON 解析失败"
+                return
             }
 
             var curated: [CuratedRecord] = []
             for item in results {
                 guard let path = item["path"] as? String,
                       let agent = item["agent"] as? String,
-                      let op = item["op"] as? String,
-                      agent != "系统/IDE内部操作" else { continue }
+                      let op = item["op"] as? String else { continue }
+                if agent.hasPrefix("系统") { continue }
                 let conf = (item["confidence"] as? Double) ?? 0.5
                 let ev = (item["evidence"] as? String) ?? ""
                 let matchedEv = events.first { $0.targetPath == path }
@@ -1435,10 +1472,18 @@ class ScannerService: ObservableObject {
                 ))
             }
 
-            operationMonitor.saveCuratedRecords(curated)
-            print("[AIMacCleaner] Curation done: \(curated.count) records from \(events.count) events")
+            if curated.isEmpty {
+                operationMonitor.isCurating = false
+                operationMonitor.curationMessage = "梳理完成：\(results.count) 条均为系统内部操作，未发现对外部文件的改动"
+                operationMonitor.saveCuratedRecords([])
+            } else {
+                operationMonitor.saveCuratedRecords(curated)
+                operationMonitor.curationMessage = "梳理完成：识别到 \(curated.count) 条 Agent 操作"
+                print("[AIMacCleaner] Curation done: \(curated.count) records from \(events.count) events")
+            }
         } catch {
             operationMonitor.isCurating = false
+            operationMonitor.curationMessage = "网络请求失败: \(error.localizedDescription)"
             print("[AIMacCleaner] Curation failed: \(error)")
         }
     }
