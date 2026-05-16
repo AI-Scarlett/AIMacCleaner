@@ -1434,67 +1434,25 @@ class ScannerService: ObservableObject {
                 return
             }
 
-            var body = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            print("[AIMacCleaner] AI raw response (\(body.count) chars): \(body.prefix(200))")
+            let raw = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            operationMonitor.curationRawResponse = raw
+            print("[AIMacCleaner] AI raw response (\(raw.count) chars)")
 
-            if let mdStart = body.range(of: "```json"), let mdEnd = body.range(of: "```", range: mdStart.upperBound..<body.endIndex) {
-                body = String(body[mdStart.upperBound..<mdEnd.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-            } else if let mdStart = body.range(of: "```"), let mdEnd = body.range(of: "```", range: mdStart.upperBound..<body.endIndex) {
-                body = String(body[mdStart.upperBound..<mdEnd.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-
-            guard let start = body.firstIndex(of: "["),
-                  let end = body.lastIndex(of: "]"),
-                  start < end else {
+            let curated = parseCurationResponse(raw: raw, events: events)
+            if curated == nil {
                 operationMonitor.isCurating = false
-                operationMonitor.curationMessage = "AI 返回了非 JSON 格式，可能是模型输出被截断。前200字: \(body.prefix(200))"
-                print("[AIMacCleaner] No JSON array in: \(body.prefix(300))")
-                return
-            }
-            var jsonStr = String(body[start...end])
-
-            jsonStr = jsonStr.replacingOccurrences(of: "```json", with: "")
-            jsonStr = jsonStr.replacingOccurrences(of: "```", with: "")
-
-            guard let jsonData = jsonStr.data(using: .utf8) else {
-                operationMonitor.isCurating = false
-                operationMonitor.curationMessage = "JSON 编码失败"
                 return
             }
 
-            guard let results = (try? JSONSerialization.jsonObject(with: jsonData)) as? [[String: Any]] else {
+            if curated!.isEmpty {
                 operationMonitor.isCurating = false
-                operationMonitor.curationMessage = "JSON 解析失败，AI 返回了非标准格式"
-                print("[AIMacCleaner] JSON parse failed: \(jsonStr.prefix(300))")
-                return
-            }
-
-            var curated: [CuratedRecord] = []
-            for item in results {
-                guard let path = item["path"] as? String,
-                      let agent = item["agent"] as? String,
-                      let op = item["op"] as? String else { continue }
-                if agent.hasPrefix("系统") { continue }
-                let conf = (item["confidence"] as? NSNumber)?.doubleValue ?? 0.5
-                let ev = (item["evidence"] as? String) ?? ""
-                let matchedEv = events.first { $0.targetPath == path }
-                let detail = matchedEv?.detail ?? "\(op): \((path as NSString).lastPathComponent)"
-                let size = matchedEv?.fileSize ?? 0
-                curated.append(CuratedRecord(
-                    id: UUID().uuidString, timestamp: matchedEv?.timestamp ?? Date(),
-                    agentName: agent, operationType: op, targetPath: path,
-                    detail: detail, fileSize: size, confidence: conf, evidence: ev
-                ))
-            }
-
-            if curated.isEmpty {
-                operationMonitor.isCurating = false
-                operationMonitor.curationMessage = "梳理完成：\(results.count) 条均为系统内部操作，未发现对外部文件的改动"
+                operationMonitor.curationMessage = "梳理完成：均为系统内部操作，未发现对外部文件的改动"
                 operationMonitor.saveCuratedRecords([])
             } else {
-                operationMonitor.saveCuratedRecords(curated)
-                operationMonitor.curationMessage = "梳理完成：识别到 \(curated.count) 条 Agent 操作"
-                print("[AIMacCleaner] Curation done: \(curated.count) records from \(events.count) events")
+                operationMonitor.saveCuratedRecords(curated!)
+                operationMonitor.curationMessage = "梳理完成：识别到 \(curated!.count) 条 Agent 操作"
+                operationMonitor.curationRawResponse = ""
+                print("[AIMacCleaner] Curation done: \(curated!.count) records from \(events.count) events")
             }
         } catch {
             operationMonitor.isCurating = false
@@ -1503,6 +1461,71 @@ class ScannerService: ObservableObject {
         }
     }
 
+    private func parseCurationResponse(raw: String, events: [OperationRecord]) -> [CuratedRecord]? {
+        var body = raw
+
+        while let start = body.range(of: "```"), let end = body.range(of: "```", range: start.upperBound..<body.endIndex) {
+            var inner = String(body[start.upperBound..<end.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if inner.hasPrefix("json") { inner = String(inner.dropFirst(4)).trimmingCharacters(in: .whitespacesAndNewlines) }
+            body = String(body[..<start.lowerBound]) + "\n" + inner + "\n" + String(body[end.upperBound...])
+        }
+
+        var jsonStr: String? = nil
+
+        if let start = body.firstIndex(of: "["), let end = body.lastIndex(of: "]"), start < end {
+            jsonStr = String(body[start...end])
+        } else if let start = body.firstIndex(of: "{"), let end = body.lastIndex(of: "}"), start < end {
+            let objStr = String(body[start...end])
+            if let obj = try? JSONSerialization.jsonObject(with: objStr.data(using: .utf8)!) as? [String: Any],
+               let results = obj["results"] as? [[String: Any]] {
+                return buildCurated(from: results, events: events)
+            }
+            jsonStr = "[\(objStr)]"
+        }
+
+        guard var candidate = jsonStr else {
+            operationMonitor.curationMessage = "AI 未返回 JSON 数组或对象"
+            print("[AIMacCleaner] No JSON structure found in \(raw.count) chars")
+            return nil
+        }
+
+        candidate = candidate.replacingOccurrences(of: "```json", with: "")
+        candidate = candidate.replacingOccurrences(of: "```", with: "")
+
+        guard let jsonData = candidate.data(using: .utf8) else {
+            operationMonitor.curationMessage = "编码失败"
+            return nil
+        }
+
+        if let results = (try? JSONSerialization.jsonObject(with: jsonData)) as? [[String: Any]] {
+            return buildCurated(from: results, events: events)
+        }
+
+        operationMonitor.curationMessage = "JSON 解析失败，点击下方按钮查看 AI 原始回复"
+        print("[AIMacCleaner] JSON parse failed, raw saved: \(raw.prefix(200))")
+        return nil
+    }
+
+    private func buildCurated(from results: [[String: Any]], events: [OperationRecord]) -> [CuratedRecord] {
+        var curated: [CuratedRecord] = []
+        for item in results {
+            guard let path = item["path"] as? String,
+                  let agent = item["agent"] as? String,
+                  let op = item["op"] as? String else { continue }
+            if agent.hasPrefix("系统") || agent.hasPrefix("IDE") { continue }
+            let conf = (item["confidence"] as? NSNumber)?.doubleValue ?? 0.5
+            let ev = (item["evidence"] as? String) ?? ""
+            let matchedEv = events.first { $0.targetPath == path }
+            let detail = matchedEv?.detail ?? "\(op): \((path as NSString).lastPathComponent)"
+            let size = matchedEv?.fileSize ?? 0
+            curated.append(CuratedRecord(
+                id: UUID().uuidString, timestamp: matchedEv?.timestamp ?? Date(),
+                agentName: agent, operationType: op, targetPath: path,
+                detail: detail, fileSize: size, confidence: conf, evidence: ev
+            ))
+        }
+        return curated
+    }
     private func formattedTime(_ date: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss"

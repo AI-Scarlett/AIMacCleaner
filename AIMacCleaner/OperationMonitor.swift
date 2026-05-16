@@ -10,6 +10,7 @@ class OperationMonitor: ObservableObject {
     @Published var lastCurationTime: Date?
     @Published var autoCurationInterval: Int = 3
     @Published var curationMessage: String = ""
+    @Published var curationRawResponse: String = ""
 
     private var streamRef: FSEventStreamRef?
     private var fileSnapshots: [String: FileSnapshot] = [:]

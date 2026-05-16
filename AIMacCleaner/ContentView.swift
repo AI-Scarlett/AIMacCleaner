@@ -584,8 +584,21 @@ struct OperationLogTab: View {
                         }
                     }
                     Spacer()
+                    if monitor.curationMessage.hasPrefix("梳理完成") == false {
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(monitor.curationRawResponse, forType: .string)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 12))
+                                .foregroundColor(.accentColor)
+                        }
+                        .buttonStyle(.plain)
+                        .help("复制 AI 原始回复")
+                    }
                     Button {
                         monitor.curationMessage = ""
+                        monitor.curationRawResponse = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 14))
@@ -596,6 +609,25 @@ struct OperationLogTab: View {
                 .padding(.horizontal, 24)
                 .padding(.vertical, 8)
                 .background(monitor.curationMessage.hasPrefix("梳理完成") ? Color.green.opacity(0.06) : Color.orange.opacity(0.06))
+
+                if !monitor.curationRawResponse.isEmpty && monitor.curationMessage.hasPrefix("梳理完成") == false {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("AI 原始回复（\(monitor.curationRawResponse.count) 字符）：")
+                            .font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+                        ScrollView {
+                            Text(monitor.curationRawResponse)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.primary)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(maxHeight: 300)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 8)
+                }
+
                 Divider()
             }
 
