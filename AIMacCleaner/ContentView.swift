@@ -524,34 +524,16 @@ struct OperationLogTab: View {
                 Spacer()
 
                 if viewMode == 1 {
-                    if monitor.isCurating {
-                        HStack(spacing: 4) {
-                            ProgressView().controlSize(.mini)
-                            Text("梳理中...").font(.caption2).foregroundColor(.secondary)
-                        }
-                    } else if !monitor.curationMessage.isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: monitor.curationMessage.hasPrefix("梳理完成") ? "checkmark.circle" : "info.circle")
-                                .font(.system(size: 10))
-                                .foregroundColor(monitor.curationMessage.hasPrefix("梳理完成") ? .green : .orange)
-                            Text(monitor.curationMessage)
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
-                    } else if let last = monitor.lastCurationTime {
-                        HStack(spacing: 2) {
-                            Image(systemName: "clock").font(.system(size: 9)).foregroundColor(.secondary)
-                            Text("上次: \(formattedDate(last))").font(.caption2).foregroundColor(.secondary)
-                        }
-                    }
-
                     Button {
                         Task { await service.curateWithAI() }
                     } label: {
                         HStack(spacing: 3) {
-                            Image(systemName: "wand.and.stars").font(.system(size: 10))
-                            Text("立即梳理").font(.caption2)
+                            if monitor.isCurating {
+                                ProgressView().controlSize(.mini).scaleEffect(0.7)
+                            } else {
+                                Image(systemName: "wand.and.stars").font(.system(size: 10))
+                            }
+                            Text(monitor.isCurating ? "梳理中..." : "立即梳理").font(.caption2)
                         }
                         .foregroundColor(.purple)
                     }
@@ -564,8 +546,7 @@ struct OperationLogTab: View {
                         ForEach([1, 2, 3, 6, 12], id: \.self) { h in
                             Button("每 \(h) 小时") {
                                 monitor.autoCurationInterval = h
-                                if h > 0 { service.startAutoCuration() }
-                                else { service.stopAutoCuration() }
+                                service.startAutoCuration()
                             }
                         }
                         Button("关闭自动") { service.stopAutoCuration() }
@@ -582,8 +563,41 @@ struct OperationLogTab: View {
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.vertical, 8)
+            .padding(.vertical, 6)
             .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+
+            if viewMode == 1 && (!monitor.curationMessage.isEmpty || monitor.lastCurationTime != nil) {
+                HStack(spacing: 8) {
+                    Image(systemName: monitor.curationMessage.hasPrefix("梳理完成") ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(monitor.curationMessage.hasPrefix("梳理完成") ? .green : .orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(monitor.curationMessage)
+                            .font(.caption)
+                            .foregroundColor(.primary)
+                            .lineLimit(5)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let last = monitor.lastCurationTime {
+                            Text("上次梳理: \(formattedDate(last))")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Button {
+                        monitor.curationMessage = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 8)
+                .background(monitor.curationMessage.hasPrefix("梳理完成") ? Color.green.opacity(0.06) : Color.orange.opacity(0.06))
+                Divider()
+            }
 
             Divider()
 

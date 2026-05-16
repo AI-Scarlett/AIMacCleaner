@@ -1447,7 +1447,7 @@ class ScannerService: ObservableObject {
                   let end = body.lastIndex(of: "]"),
                   start < end else {
                 operationMonitor.isCurating = false
-                operationMonitor.curationMessage = "AI 返回非JSON: \(body.prefix(80))"
+                operationMonitor.curationMessage = "AI 返回了非 JSON 格式，可能是模型输出被截断。前200字: \(body.prefix(200))"
                 print("[AIMacCleaner] No JSON array in: \(body.prefix(300))")
                 return
             }
@@ -1464,8 +1464,8 @@ class ScannerService: ObservableObject {
 
             guard let results = (try? JSONSerialization.jsonObject(with: jsonData)) as? [[String: Any]] else {
                 operationMonitor.isCurating = false
-                operationMonitor.curationMessage = "JSON 解析失败"
-                print("[AIMacCleaner] JSON parse failed for: \(jsonStr.prefix(200))")
+                operationMonitor.curationMessage = "JSON 解析失败，AI 返回了非标准格式"
+                print("[AIMacCleaner] JSON parse failed: \(jsonStr.prefix(300))")
                 return
             }
 
