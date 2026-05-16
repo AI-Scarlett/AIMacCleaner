@@ -636,6 +636,214 @@ class OperationMonitor: ObservableObject {
         return commBase + " " + args
     }
 
+    // MARK: - Targeted Process Monitor
+
+    @Published var discoveredProcesses: [DiscoveredProcess] = []
+    @Published var targetedProcesses: Set<String> = []
+    @Published var targetedFileOps: [TargetedFileOp] = []
+    @Published var isTargetedMonitoring: Bool = false
+
+    private var targetedMonitorTimer: Timer?
+    private var targetedLsofCache: [pid_t: (comm: String, files: Set<String>, sizes: [String: Int64])] = [:]
+    private let targetedMaxOps = 2000
+
+    func scanDiscoveredProcesses() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/ps")
+        task.arguments = ["-eo", "pid=,ppid=,comm=,args="]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+
+        do {
+            try task.run()
+            task.waitUntilExit()
+            guard let data = try? pipe.fileHandleForReading.readToEnd(),
+                  let output = String(data: data, encoding: .utf8) else { return }
+
+            let systemComms: Set<String> = ["kernel_task", "launchd", "WindowServer", "Dock", "Finder",
+                "SystemUIServer", "cfprefsd", "distnoted", "logd", "syslogd", "securityd", "trustd",
+                "sysmond", "mds", "mdworker", "corespeechd", "coreaudiod", "WiFi", "bluetoothd",
+                "airportd", "iconservicesagent", "coreduetd", "locationd", "timed", "chronod",
+                "powerd", "configd", "diskarbitrationd", "fseventsd", "sandboxd", "loginwindow",
+                "notificationcenter", "controlcenter", "coreauthd", "atsd", "backgroundtaskmanagementd",
+                "com.apple", "OSAnalytics", "analyticsd", "diagnostics_agent", "sysdiagnose",
+                "ReportCrash", "spindump", "tailspind", "signpost_reporter"]
+
+            var commGroups: [String: [pid_t]] = [:]
+            for line in output.components(separatedBy: .newlines) {
+                let parts = line.trimmingCharacters(in: .whitespaces).split(separator: " ", omittingEmptySubsequences: true)
+                guard parts.count >= 3, let pid = pid_t(parts[0]) else { continue }
+                let comm = String(parts[2])
+                let args = parts.count >= 4 ? String(parts[3...].joined(separator: " ")) : ""
+                let lower = (comm + " " + args).lowercased()
+                if systemComms.contains(comm) || systemComms.contains(where: { lower.hasPrefix($0.lowercased()) }) { continue }
+                if comm.isEmpty || comm == "-" || comm == "(null)" { continue }
+                commGroups[comm, default: []].append(pid)
+            }
+
+            var results: [DiscoveredProcess] = []
+            for (comm, pids) in commGroups.sorted(by: { $0.1.count > $1.1.count }) {
+                var agentName: String? = nil
+                for (name, keywords) in agentKeywords {
+                    for kw in keywords {
+                        if comm.lowercased().contains(kw.lowercased()) { agentName = name; break }
+                    }
+                    if agentName != nil { break }
+                }
+                results.append(DiscoveredProcess(id: comm, comm: comm, pids: pids, agentName: agentName))
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                self?.discoveredProcesses = results
+            }
+        } catch {
+            print("[AIMacCleaner] scanDiscoveredProcesses failed: \(error)")
+        }
+    }
+
+    func toggleTargetedProcess(_ comm: String) {
+        if targetedProcesses.contains(comm) {
+            targetedProcesses.remove(comm)
+        } else {
+            targetedProcesses.insert(comm)
+        }
+        if targetedProcesses.isEmpty {
+            stopTargetedMonitoring()
+        } else if isTargetedMonitoring == false {
+            startTargetedMonitoring()
+        }
+    }
+
+    func startTargetedMonitoring() {
+        guard !targetedProcesses.isEmpty else { return }
+        isTargetedMonitoring = true
+        targetedLsofCache.removeAll()
+        targetedMonitorTimer?.invalidate()
+        targetedMonitorTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.pollTargetedProcesses()
+        }
+        pollTargetedProcesses()
+    }
+
+    func stopTargetedMonitoring() {
+        isTargetedMonitoring = false
+        targetedMonitorTimer?.invalidate()
+        targetedMonitorTimer = nil
+        targetedLsofCache.removeAll()
+    }
+
+    func clearTargetedOps() {
+        targetedFileOps.removeAll()
+    }
+
+    private func pollTargetedProcesses() {
+        let targets = targetedProcesses
+        guard !targets.isEmpty else { return }
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        task.arguments = ["+c", "0", "-w", "-FpcRn", "-u", "\(getuid())"]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+
+        do {
+            try task.run()
+            let deadline = DispatchTime.now() + .seconds(4)
+            DispatchQueue.global().asyncAfter(deadline: deadline) { task.terminate() }
+            task.waitUntilExit()
+
+            guard let data = try? pipe.fileHandleForReading.readToEnd(),
+                  let output = String(data: data, encoding: .utf8) else { return }
+
+            var currentFiles: [pid_t: (comm: String, files: Set<String>, sizes: [String: Int64])] = [:]
+            var currentPid: pid_t = 0
+            var currentComm: String = ""
+
+            for line in output.components(separatedBy: .newlines) {
+                if line.hasPrefix("p") {
+                    if let pid = pid_t(String(line.dropFirst())) {
+                        currentPid = pid
+                    }
+                } else if line.hasPrefix("c") {
+                    currentComm = String(line.dropFirst())
+                } else if line.hasPrefix("n") && currentPid != 0 {
+                    let path = String(line.dropFirst())
+                    guard path.hasPrefix("/"),
+                          !path.hasPrefix("/dev/"),
+                          !path.hasPrefix("/System/"),
+                          !path.hasPrefix("/private/var/folders/") else { continue }
+                    if !targets.contains(currentComm) { continue }
+
+                    var fileSize: Int64 = 0
+                    if let attrs = try? FileManager.default.attributesOfItem(atPath: path) {
+                        fileSize = (attrs[.size] as? Int64) ?? 0
+                    }
+
+                    if var entry = currentFiles[currentPid] {
+                        entry.files.insert(path)
+                        entry.sizes[path] = fileSize
+                        currentFiles[currentPid] = entry
+                    } else {
+                        currentFiles[currentPid] = (comm: currentComm, files: [path], sizes: [path: fileSize])
+                    }
+                }
+            }
+
+            let now = Date()
+            var newOps: [TargetedFileOp] = []
+
+            for (pid, current) in currentFiles {
+                guard let prev = targetedLsofCache[pid] else {
+                    for path in current.files {
+                        let sz = current.sizes[path] ?? 0
+                        newOps.append(TargetedFileOp(id: UUID().uuidString, timestamp: now, processComm: current.comm, processPid: pid, targetPath: path, opType: "打开", fileSize: sz))
+                    }
+                    continue
+                }
+
+                for path in current.files.subtracting(prev.files) {
+                    let sz = current.sizes[path] ?? 0
+                    newOps.append(TargetedFileOp(id: UUID().uuidString, timestamp: now, processComm: current.comm, processPid: pid, targetPath: path, opType: "打开", fileSize: sz))
+                }
+
+                for path in prev.files.subtracting(current.files) {
+                    newOps.append(TargetedFileOp(id: UUID().uuidString, timestamp: now, processComm: current.comm, processPid: pid, targetPath: path, opType: "关闭", fileSize: 0))
+                }
+
+                for path in current.files.intersection(prev.files) {
+                    let curSize = current.sizes[path] ?? 0
+                    let prevSize = prev.sizes[path] ?? 0
+                    if curSize != prevSize {
+                        let op = curSize > prevSize ? "修改" : "截断"
+                        newOps.append(TargetedFileOp(id: UUID().uuidString, timestamp: now, processComm: current.comm, processPid: pid, targetPath: path, opType: op, fileSize: curSize))
+                    }
+                }
+            }
+
+            for (pid, prev) in targetedLsofCache where currentFiles[pid] == nil {
+                for path in prev.files {
+                    newOps.append(TargetedFileOp(id: UUID().uuidString, timestamp: now, processComm: prev.comm, processPid: pid, targetPath: path, opType: "关闭", fileSize: 0))
+                }
+            }
+
+            targetedLsofCache = currentFiles
+
+            if !newOps.isEmpty {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    self.targetedFileOps.insert(contentsOf: newOps.reversed(), at: 0)
+                    if self.targetedFileOps.count > self.targetedMaxOps {
+                        self.targetedFileOps = Array(self.targetedFileOps.prefix(self.targetedMaxOps))
+                    }
+                }
+            }
+        } catch {
+            print("[AIMacCleaner] pollTargetedProcesses failed: \(error)")
+        }
+    }
+
     // MARK: - Process Poller
 
     private var processPoller: Timer?

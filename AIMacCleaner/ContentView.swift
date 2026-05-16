@@ -517,11 +517,50 @@ struct OperationLogTab: View {
                 Picker("", selection: $viewMode) {
                     Text("实时监控").tag(0)
                     Text("已梳理").tag(1)
+                    Text("精准").tag(2)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 160)
+                .frame(width: 220)
 
                 Spacer()
+
+                if viewMode == 2 {
+                    Button {
+                        monitor.scanDiscoveredProcesses()
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "arrow.clockwise").font(.system(size: 10))
+                            Text("刷新进程").font(.caption2)
+                        }
+                        .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    if monitor.isTargetedMonitoring {
+                        Button {
+                            monitor.stopTargetedMonitoring()
+                        } label: {
+                            HStack(spacing: 3) {
+                                Circle().fill(Color.green).frame(width: 5, height: 5)
+                                Text("监控中").font(.caption2)
+                            }
+                            .foregroundColor(.green)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .tint(.green)
+                    }
+
+                    Button {
+                        monitor.clearTargetedOps()
+                    } label: {
+                        HStack(spacing: 3) { Image(systemName: "trash"); Text("清除").font(.caption2) }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(.red)
+                }
 
                 if viewMode == 1 {
                     Button {
@@ -612,8 +651,10 @@ struct OperationLogTab: View {
 
             if viewMode == 0 {
                 liveView
-            } else {
+            } else if viewMode == 1 {
                 curatedView
+            } else {
+                targetedView
             }
         }
         .frame(minWidth: 600, minHeight: 400)
@@ -829,6 +870,83 @@ struct OperationLogTab: View {
         }
     }
 
+    private var targetedView: some View {
+        VStack(spacing: 0) {
+            if monitor.discoveredProcesses.isEmpty {
+                VStack(spacing: 16) {
+                    Spacer()
+                    Image(systemName: "target").font(.system(size: 40)).foregroundColor(.secondary.opacity(0.5))
+                    Text("点击「刷新进程」扫描正在运行的进程").font(.title3).fontWeight(.medium)
+                    Text("勾选你想监控的进程，系统会每2秒轮询这些进程打开的文件变化").font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                HSplitView {
+                    // Left: Process list
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("进程列表 (\(monitor.discoveredProcesses.count))").font(.caption).fontWeight(.semibold).padding(.horizontal, 12).padding(.vertical, 6)
+                            Divider()
+                            ForEach(monitor.discoveredProcesses.prefix(80)) { proc in
+                                HStack(spacing: 6) {
+                                    Toggle("", isOn: Binding(
+                                        get: { monitor.targetedProcesses.contains(proc.comm) },
+                                        set: { _ in monitor.toggleTargetedProcess(proc.comm) }
+                                    ))
+                                    .toggleStyle(.checkbox)
+                                    .scaleEffect(0.7)
+                                    .frame(width: 18)
+
+                                    if let agent = proc.agentName {
+                                        HStack(spacing: 2) {
+                                            Text(agent).font(.caption).fontWeight(.semibold).foregroundColor(.purple)
+                                            Text("·").foregroundColor(.secondary)
+                                        }
+                                    }
+                                    Text(proc.comm).font(.caption2).lineLimit(1).truncationMode(.middle)
+                                    Spacer()
+                                    Text("\(proc.pids.count) PID").font(.caption2).foregroundColor(.secondary)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 3)
+                                Divider()
+                            }
+                        }
+                    }
+                    .frame(minWidth: 240, maxWidth: 340)
+
+                    // Right: File operations
+                    if monitor.targetedFileOps.isEmpty {
+                        VStack(spacing: 16) {
+                            Spacer()
+                            Image(systemName: "eye.slash").font(.system(size: 30)).foregroundColor(.secondary.opacity(0.5))
+                            Text("勾选左侧进程后自动开始监控").font(.title3).fontWeight(.medium)
+                            Text("每 2 秒扫描一次目标进程的打开文件").font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        VStack(spacing: 0) {
+                            if monitor.isTargetedMonitoring {
+                                HStack(spacing: 8) {
+                                    Circle().fill(Color.green).frame(width: 6, height: 6)
+                                    Text("监控中 · 每2秒扫描 · \(monitor.targetedProcesses.count) 个进程 · 共 \(monitor.targetedFileOps.count) 条记录").font(.caption2).foregroundColor(.secondary)
+                                    Spacer()
+                                }.padding(.horizontal, 12).padding(.vertical, 4)
+                                Divider()
+                            }
+                            TargetedOpsTable(ops: monitor.targetedFileOps)
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear {
+            if monitor.discoveredProcesses.isEmpty {
+                monitor.scanDiscoveredProcesses()
+            }
+        }
+    }
+
     private func confidenceColor(_ conf: Double) -> Color {
         if conf >= 0.8 { return .green }
         if conf >= 0.5 { return .orange }
@@ -850,6 +968,57 @@ struct OperationLogTab: View {
         case .rename: .purple
         case .read: .cyan
         }
+    }
+}
+
+struct TargetedOpsTable: View {
+    let ops: [TargetedFileOp]
+
+    var filteredOps: [TargetedFileOp] {
+        ops.filter { op in
+            let p = op.targetPath
+            if p.contains("/.git/") || p.hasSuffix(".DS_Store") { return false }
+            if p.contains("/node_modules/") || p.contains("/.vite/") { return false }
+            if p.contains("/Library/Caches/") || p.contains("/private/var/") { return false }
+            if p.hasSuffix(".nib") || p.hasSuffix(".plist") || p.hasSuffix(".strings") { return false }
+            return true
+        }
+    }
+
+    var body: some View {
+        Table(filteredOps.prefix(500)) {
+            TableColumn("时间") { op in
+                Text(op.timestamp, style: .time).font(.caption2).monospacedDigit()
+            }.width(60)
+            TableColumn("进程") { op in
+                HStack(spacing: 3) {
+                    Text(op.processComm).font(.caption).fontWeight(.medium).lineLimit(1)
+                    Text("(\(String(op.processPid)))").font(.system(size: 9)).foregroundColor(.secondary)
+                }
+            }.width(min: 100)
+            TableColumn("操作") { op in
+                HStack(spacing: 3) {
+                    Image(systemName: op.opType == "修改" ? "pencil" : op.opType == "打开" ? "plus.circle" : "xmark.circle")
+                        .font(.caption2).foregroundColor(op.opType == "修改" ? .blue : op.opType == "打开" ? .green : .red)
+                    Text(op.opType).font(.caption2)
+                }
+            }.width(50)
+            TableColumn("路径") { op in
+                HStack(spacing: 4) {
+                    Text(op.targetPath).font(.caption2).lineLimit(1).truncationMode(.middle).help(op.targetPath)
+                    Button { NSPasteboard.general.setString(op.targetPath, forType: .string) } label: {
+                        Image(systemName: "doc.on.doc").font(.system(size: 9)).foregroundColor(.accentColor)
+                    }.buttonStyle(.plain)
+                }
+            }
+            TableColumn("大小") { op in
+                if op.fileSize > 0 {
+                    Text(ByteCountFormatter.string(fromByteCount: op.fileSize, countStyle: .file))
+                        .font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                }
+            }.width(70)
+        }
+        .tableStyle(.inset(alternatesRowBackgrounds: true))
     }
 }
 

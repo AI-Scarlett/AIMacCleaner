@@ -260,6 +260,26 @@ struct CuratedRecord: Identifiable, Codable {
     }
 }
 
+struct DiscoveredProcess: Identifiable, Hashable {
+    let id: String
+    let comm: String
+    let pids: [pid_t]
+    let agentName: String?
+
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    static func == (lhs: DiscoveredProcess, rhs: DiscoveredProcess) -> Bool { lhs.id == rhs.id }
+}
+
+struct TargetedFileOp: Identifiable {
+    let id: String
+    let timestamp: Date
+    let processComm: String
+    let processPid: pid_t
+    let targetPath: String
+    let opType: String
+    let fileSize: Int64
+}
+
 struct HardwareInfo {
     var cpuUsage: Double
     var cpuCoreCount: Int
