@@ -1436,21 +1436,38 @@ class ScannerService: ObservableObject {
                 return
             }
 
-            let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            print("[AIMacCleaner] AI raw response (\(trimmed.count) chars): \(trimmed.prefix(200))")
+            var body = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            print("[AIMacCleaner] AI raw response (\(body.count) chars): \(body.prefix(200))")
 
-            guard let start = trimmed.firstIndex(of: "["),
-                  let end = trimmed.lastIndex(of: "]") else {
+            if let mdStart = body.range(of: "```json"), let mdEnd = body.range(of: "```", range: mdStart.upperBound..<body.endIndex) {
+                body = String(body[mdStart.upperBound..<mdEnd.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            } else if let mdStart = body.range(of: "```"), let mdEnd = body.range(of: "```", range: mdStart.upperBound..<body.endIndex) {
+                body = String(body[mdStart.upperBound..<mdEnd.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+
+            guard let start = body.firstIndex(of: "["),
+                  let end = body.lastIndex(of: "]"),
+                  start < end else {
                 operationMonitor.isCurating = false
-                operationMonitor.curationMessage = "AI 返回非JSON: \(trimmed.prefix(100))"
-                print("[AIMacCleaner] No JSON array found in: \(trimmed.prefix(300))")
+                operationMonitor.curationMessage = "AI 返回非JSON: \(body.prefix(80))"
+                print("[AIMacCleaner] No JSON array in: \(body.prefix(300))")
                 return
             }
-            let jsonStr = String(trimmed[start...end])
-            guard let jsonData = jsonStr.data(using: .utf8),
-                  let results = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] else {
+            var jsonStr = String(body[start...end])
+
+            jsonStr = jsonStr.replacingOccurrences(of: "```json", with: "")
+            jsonStr = jsonStr.replacingOccurrences(of: "```", with: "")
+
+            guard let jsonData = jsonStr.data(using: .utf8) else {
+                operationMonitor.isCurating = false
+                operationMonitor.curationMessage = "JSON 编码失败"
+                return
+            }
+
+            guard let results = (try? JSONSerialization.jsonObject(with: jsonData)) as? [[String: Any]] else {
                 operationMonitor.isCurating = false
                 operationMonitor.curationMessage = "JSON 解析失败"
+                print("[AIMacCleaner] JSON parse failed for: \(jsonStr.prefix(200))")
                 return
             }
 
@@ -1460,7 +1477,7 @@ class ScannerService: ObservableObject {
                       let agent = item["agent"] as? String,
                       let op = item["op"] as? String else { continue }
                 if agent.hasPrefix("系统") { continue }
-                let conf = (item["confidence"] as? Double) ?? 0.5
+                let conf = (item["confidence"] as? NSNumber)?.doubleValue ?? 0.5
                 let ev = (item["evidence"] as? String) ?? ""
                 let matchedEv = events.first { $0.targetPath == path }
                 let detail = matchedEv?.detail ?? "\(op): \((path as NSString).lastPathComponent)"
