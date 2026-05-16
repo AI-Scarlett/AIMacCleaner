@@ -648,6 +648,12 @@ class OperationMonitor: ObservableObject {
     private let targetedMaxOps = 2000
 
     func scanDiscoveredProcesses() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.scanDiscoveredProcessesImpl()
+        }
+    }
+
+    private func scanDiscoveredProcessesImpl() {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/ps")
         task.arguments = ["-eo", "pid=,ppid=,comm=,args="]

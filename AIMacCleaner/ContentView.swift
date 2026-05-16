@@ -940,11 +940,7 @@ struct OperationLogTab: View {
                 }
             }
         }
-        .onAppear {
-            if monitor.discoveredProcesses.isEmpty {
-                monitor.scanDiscoveredProcesses()
-            }
-        }
+        .onAppear {}
     }
 
     private func confidenceColor(_ conf: Double) -> Color {

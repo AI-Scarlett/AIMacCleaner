@@ -65,20 +65,6 @@
   - **仅退出应用，保留菜单栏** - 菜单栏常驻模式，继续后台监控 Agent 操作
 - **版本与更新**：查看当前版本、手动检查更新、下载更新
 
-### 📊 存储分析
-
-点击左侧「存储分析」Tab，全面分析磁盘存储占用：
-- **系统数据**：/Library、/usr、/var、/tmp 等系统目录
-- **应用程序**：/Applications 等所有 .app 应用
-- **应用数据**：缓存、容器、偏好设置等
-- **文稿**：文档、桌面、下载、电影、音乐、图片
-- **Agent**：AI 编程助手的配置和数据
-- **依赖**：开发工具包管理器（Homebrew/npm/pip 等）
-- **日志与缓存**：系统及应用日志
-- 每个文件显示完整目录路径，可一键复制
-- 支持按大小、名称、添加日期、修改日期排序
-- 可调用 AI 对单个文件或整个类别进行分析
-
 ### 📊 磁盘信息 & 菜单栏监控
 - 实时显示磁盘使用率、总容量、已用、可用空间（数据与macOS系统设置完全一致）
 - **菜单栏常驻图标**：实时显示磁盘剩余百分比
@@ -90,7 +76,7 @@
 
 ### 方式一：下载 DMG（推荐）
 
-1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.7.3-arm64.dmg`
+1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.7.4-arm64.dmg`
 2. 双击打开 DMG 文件
 3. 将 AIMacCleaner 拖入 Applications 文件夹
 4. 首次打开时，右键点击应用 → 选择「打开」（需绕过 Gatekeeper 验证）
@@ -194,7 +180,6 @@ AIMacCleaner/
 │   ├── ScanRules.swift          # 35+ 条本地扫描规则
 │   ├── Models.swift             # 数据模型
 │   ├── SettingsView.swift       # 统一设置页面
-│   ├── StorageAnalyzer.swift    # 存储分析服务
 │   ├── SensorMonitor.swift      # 摄像头/麦克风监控
 │   ├── AIConfigView.swift       # AI 配置弹窗
 │   └── Assets.xcassets/         # 图标和资源
