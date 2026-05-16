@@ -1438,7 +1438,7 @@ class ScannerService: ObservableObject {
 
     func downloadUpdate() async {
         guard !updateDownloadURL.isEmpty, let url = URL(string: updateDownloadURL) else {
-            DispatchQueue.main.async { self.updateErrorMessage = "下载链接无效" }
+            updateErrorMessage = "下载链接无效"
             return
         }
 
@@ -1451,64 +1451,34 @@ class ScannerService: ObservableObject {
         try? FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
         let dmgPath = tempDir + "/AIMacCleaner-update.dmg"
 
-        do {
-            let (asyncBytes, response) = try await URLSession.shared.bytes(from: url)
-            guard let http = response as? HTTPURLResponse,
-                  let contentLength = http.value(forHTTPHeaderField: "Content-Length"),
-                  let totalBytes = Double(contentLength) else {
-                let (tempURL, _) = try await URLSession.shared.download(from: url)
-                try FileManager.default.moveItem(atPath: tempURL.path, toPath: dmgPath)
-                DispatchQueue.main.async {
-                    self.updateDownloadProgress = 1.0
-                    self.isDownloadingUpdate = false
-                    self.updateReadyToInstall = true
+        if FileManager.default.fileExists(atPath: dmgPath) {
+            try? FileManager.default.removeItem(atPath: dmgPath)
+        }
+
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let delegate = DownloadDelegate { progress in
+                Task { @MainActor in
+                    self.updateDownloadProgress = progress
                 }
-                return
-            }
-
-            if FileManager.default.fileExists(atPath: dmgPath) {
-                try FileManager.default.removeItem(atPath: dmgPath)
-            }
-            FileManager.default.createFile(atPath: dmgPath, contents: nil)
-            let fileHandle = try FileHandle(forWritingTo: URL(fileURLWithPath: dmgPath))
-
-            var receivedBytes: Double = 0
-            var buffer = Data()
-            let bufferSize = 65536
-
-            for try await byte in asyncBytes {
-                buffer.append(byte)
-                receivedBytes += 1
-
-                if buffer.count >= bufferSize {
-                    fileHandle.write(buffer)
-                    buffer.removeAll(keepingCapacity: true)
-                }
-
-                let progress = receivedBytes / totalBytes
-                DispatchQueue.main.async {
-                    self.updateDownloadProgress = min(progress, 0.99)
+            } onComplete: { fileURL, error in
+                Task { @MainActor in
+                    if let fileURL = fileURL {
+                        try? FileManager.default.moveItem(atPath: fileURL.path, toPath: dmgPath)
+                        self.updateDownloadProgress = 1.0
+                        self.isDownloadingUpdate = false
+                        self.updateReadyToInstall = true
+                    } else {
+                        self.isDownloadingUpdate = false
+                        self.updateErrorMessage = "下载失败: \(error?.localizedDescription ?? "未知错误")"
+                    }
+                    continuation.resume()
                 }
             }
 
-            if !buffer.isEmpty {
-                fileHandle.write(buffer)
-            }
-
-            if #available(macOS 10.15, *) {
-                try fileHandle.close()
-            }
-
-            DispatchQueue.main.async {
-                self.updateDownloadProgress = 1.0
-                self.isDownloadingUpdate = false
-                self.updateReadyToInstall = true
-            }
-        } catch {
-            DispatchQueue.main.async {
-                self.isDownloadingUpdate = false
-                self.updateErrorMessage = "下载失败: \(error.localizedDescription)"
-            }
+            let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+            let task = session.downloadTask(with: url)
+            delegate.task = task
+            task.resume()
         }
     }
 
@@ -2245,5 +2215,33 @@ class ScannerService: ObservableObject {
         let pattern = "[0-9]+\\.[0-9]+(\\.[0-9]+)?"
         guard let range = output.range(of: pattern, options: .regularExpression) else { return "" }
         return String(output[range])
+    }
+}
+
+class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
+    let onProgress: (Double) -> Void
+    let onComplete: (URL?, Error?) -> Void
+    var task: URLSessionDownloadTask?
+
+    init(onProgress: @escaping (Double) -> Void, onComplete: @escaping (URL?, Error?) -> Void) {
+        self.onProgress = onProgress
+        self.onComplete = onComplete
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        if totalBytesExpectedToWrite > 0 {
+            let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+            onProgress(min(progress, 0.99))
+        }
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        onComplete(location, nil)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error = error {
+            onComplete(nil, error)
+        }
     }
 }

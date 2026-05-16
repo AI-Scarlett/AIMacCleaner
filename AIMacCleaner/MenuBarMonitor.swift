@@ -77,6 +77,159 @@ struct MenuBarMonitor: View {
 
     private var popoverFooter: some View {
         VStack(spacing: 0) {
+            if service.isDownloadingUpdate {
+                VStack(spacing: 6) {
+                    HStack {
+                        Image(systemName: "arrow.down.circle")
+                            .foregroundColor(.blue)
+                            .font(.caption)
+                        Text(String(format: "正在下载更新 %.0f%%", service.updateDownloadProgress * 100))
+                            .font(.caption)
+                            .fontWeight(.medium)
+                        Spacer()
+                        Button {
+                            service.cancelUpdateDownload()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    ProgressView(value: service.updateDownloadProgress)
+                        .progressViewStyle(.linear)
+                        .tint(.blue)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color.blue.opacity(0.05))
+            } else if service.updateReadyToInstall {
+                VStack(spacing: 8) {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("更新已下载完成")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                    Button {
+                        Task {
+                            let alert = NSAlert()
+                            alert.messageText = "安装更新"
+                            alert.informativeText = "应用将退出并安装新版本 v\(service.latestVersion)，安装完成后会自动重新启动。"
+                            alert.addButton(withTitle: "退出并安装")
+                            alert.addButton(withTitle: "稍后安装")
+                            alert.alertStyle = .informational
+                            let response = alert.runModal()
+                            if response == .alertFirstButtonReturn {
+                                await service.installUpdate()
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .foregroundColor(.white)
+                            Text("退出并安装 v\(service.latestVersion)")
+                                .foregroundColor(.white)
+                                .fontWeight(.medium)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background(Color.green)
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color.green.opacity(0.05))
+            } else if !service.updateErrorMessage.isEmpty {
+                VStack(spacing: 6) {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text(service.updateErrorMessage)
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                        Spacer()
+                        Button {
+                            service.updateErrorMessage = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Button {
+                        Task { await service.downloadUpdate() }
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.clockwise")
+                            Text("重试下载")
+                        }
+                        .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+            } else if service.updateAvailable {
+                Button {
+                    Task { await service.downloadUpdate() }
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .foregroundColor(.green)
+                        Text("更新到 v\(service.latestVersion)")
+                            .foregroundColor(.green)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(.green)
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    NSApp.activate(ignoringOtherApps: true)
+                    if let window = NSApp.windows.first(where: { $0.isVisible }) {
+                        window.makeKeyAndOrderFront(nil)
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.down.doc.fill")
+                            .font(.caption2)
+                        Text(localizer.openAIMacCleaner)
+                            .font(.caption2)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+
+                Button {
+                    Task { await service.checkForUpdates() }
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.caption2)
+                        Text(localizer.checkForUpdate)
+                            .font(.caption2)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .disabled(service.isCheckingUpdate || service.isDownloadingUpdate)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+
             HStack(spacing: 12) {
                 HStack(spacing: 3) {
                     Circle()
@@ -123,8 +276,6 @@ struct MenuBarMonitor: View {
                 monitoringSettings
                 Divider()
                 safetySettings
-                Divider()
-                overviewActions
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -442,170 +593,6 @@ struct MenuBarMonitor: View {
             }
         }
         .padding(14)
-    }
-
-    private var overviewActions: some View {
-        VStack(spacing: 0) {
-            updateSection
-
-            HStack(spacing: 8) {
-                Button {
-                    NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.isVisible }) {
-                        window.makeKeyAndOrderFront(nil)
-                    } else {
-                        NSApp.activate(ignoringOtherApps: true)
-                    }
-                } label: {
-                    HStack {
-                        Image(systemName: "arrow.down.doc.fill")
-                        Text(localizer.openAIMacCleaner)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Button {
-                    Task { await service.checkForUpdates() }
-                } label: {
-                    HStack {
-                        Image(systemName: service.isCheckingUpdate ? "arrow.clockwise" : "arrow.triangle.2.circlepath")
-                        Text(service.isCheckingUpdate ? localizer.checkingUpdate : localizer.checkForUpdate)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(service.isCheckingUpdate || service.isDownloadingUpdate)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-        }
-    }
-
-    private var updateSection: some View {
-        VStack(spacing: 0) {
-            if service.isDownloadingUpdate {
-                VStack(spacing: 6) {
-                    HStack {
-                        Image(systemName: "arrow.down.circle")
-                            .foregroundColor(.blue)
-                            .font(.caption)
-                        Text(String(format: "正在下载更新 %.0f%%", service.updateDownloadProgress * 100))
-                            .font(.caption)
-                            .fontWeight(.medium)
-                        Spacer()
-                        Button {
-                            service.cancelUpdateDownload()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                                .font(.caption)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    ProgressView(value: service.updateDownloadProgress)
-                        .progressViewStyle(.linear)
-                        .tint(.blue)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color.blue.opacity(0.05))
-            } else if service.updateReadyToInstall {
-                VStack(spacing: 8) {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                        Text("更新已下载完成")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                    }
-
-                    Button {
-                        Task {
-                            let alert = NSAlert()
-                            alert.messageText = "安装更新"
-                            alert.informativeText = "应用将退出并安装新版本 v\(service.latestVersion)，安装完成后会自动重新启动。"
-                            alert.addButton(withTitle: "退出并安装")
-                            alert.addButton(withTitle: "稍后安装")
-                            alert.alertStyle = .informational
-                            let response = alert.runModal()
-                            if response == .alertFirstButtonReturn {
-                                await service.installUpdate()
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .foregroundColor(.white)
-                            Text("退出并安装 v\(service.latestVersion)")
-                                .foregroundColor(.white)
-                                .fontWeight(.medium)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .background(Color.green)
-                        .cornerRadius(6)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color.green.opacity(0.05))
-            } else if !service.updateErrorMessage.isEmpty {
-                VStack(spacing: 6) {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                        Text(service.updateErrorMessage)
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                        Spacer()
-                        Button {
-                            service.updateErrorMessage = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                                .font(.caption2)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    Button {
-                        Task { await service.downloadUpdate() }
-                    } label: {
-                        HStack {
-                            Image(systemName: "arrow.clockwise")
-                            Text("重试下载")
-                        }
-                        .font(.caption2)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color.orange.opacity(0.05))
-            } else if service.updateAvailable {
-                Button {
-                    Task { await service.downloadUpdate() }
-                } label: {
-                    HStack {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .foregroundColor(.green)
-                        Text("更新到 v\(service.latestVersion)")
-                            .foregroundColor(.green)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(.green)
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-            }
-        }
     }
 
     // MARK: - Operation Monitor Tab
