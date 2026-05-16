@@ -77,21 +77,8 @@ class ScannerService: ObservableObject {
     }
 
     func refreshDiskInfo() {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/sync")
-        task.standardOutput = FileHandle.nullDevice
-        task.standardError = FileHandle.nullDevice
-        try? task.run()
-        DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) { task.terminate() }
-        task.waitUntilExit()
         diskInfo = getDiskInfoNative()
     }
-
-    func refreshDiskInfoWithoutSync() {
-        diskInfo = getDiskInfoNative()
-    }
-
-    // MARK: - Hardware Info
 
     func refreshHardwareInfo() {
         hardwareInfo = safeGetHardwareInfo()
