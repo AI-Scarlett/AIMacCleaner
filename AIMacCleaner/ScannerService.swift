@@ -1365,25 +1365,19 @@ class ScannerService: ObservableObject {
         }
 
         let prompt = """
-        你是 Agent 操作归因分析器。以下是在监控期间发生的文件操作事件和系统进程快照。
-
-        已知agent: Trae, Cursor, CodeBuddy, Claude, Windsurf, Copilot, Cline, Gemini, ChatGPT, DeepSeek, Kimi, Doubao, Hermes, Codex, Augment, CodeArts
-
+        你是 Agent 操作归因分析器。以下是监控期间的文件操作事件和进程快照。
+        
         进程快照:
         \(procSummary.isEmpty ? "无agent进程" : procSummary)
-
-        文件操作事件（最近80条）:
+        
+        文件操作事件:
         \(eventSummary)
-
-        任务：判断每条事件的真实操作者（Agent名）。
-        规则：
-        1. 如果路径在 ~/Library/ 下 → agent 填 "系统内部"，忽略
-        2. 子进程（node/python等）通过PPID追溯到父Agent
-        3. 仅输出 create/modify/delete 事件，忽略 read
-
-        严格返回JSON数组：
-        [{"path":"/完整路径","op":"创建|修改|删除","agent":"Agent名","confidence":0.0,"evidence":"归因依据"}]
-        只返回JSON数组。
+        
+        对每条事件判断真实操作者（Agent名）。规则：~/Library/ 路径→agent填"系统内部"；子进程通过PPID追父Agent；仅输出 create/modify/delete。
+        
+        【重要】只返回JSON数组，禁止任何解释文字。
+        格式：[{"path":"/...","op":"创建|修改|删除","agent":"Agent名","confidence":0.9,"evidence":"依据"}]
+        现在就返回JSON数组：
         """
 
         guard let apiKey = config.apiKey, !apiKey.isEmpty,
@@ -1464,45 +1458,55 @@ class ScannerService: ObservableObject {
     private func parseCurationResponse(raw: String, events: [OperationRecord]) -> [CuratedRecord]? {
         var body = raw
 
-        while let start = body.range(of: "```"), let end = body.range(of: "```", range: start.upperBound..<body.endIndex) {
-            var inner = String(body[start.upperBound..<end.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+        // Try direct JSON parse first (best case)
+        if let results = tryJSONParse(body) { return buildCurated(from: results, events: events) }
+
+        // Strip markdown code blocks
+        while let start = body.range(of: "```"), let end = body.range(of: "```", options: [], range: body.index(after: start.lowerBound)..<body.endIndex) {
+            var inner = String(body[body.index(after: start.lowerBound)..<end.lowerBound])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             if inner.hasPrefix("json") { inner = String(inner.dropFirst(4)).trimmingCharacters(in: .whitespacesAndNewlines) }
-            body = String(body[..<start.lowerBound]) + "\n" + inner + "\n" + String(body[end.upperBound...])
+            body.replaceSubrange(start.lowerBound...end.upperBound, with: "\n\(inner)\n")
         }
 
-        var jsonStr: String? = nil
+        if let results = tryJSONParse(body) { return buildCurated(from: results, events: events) }
 
+        // Try extracting array
         if let start = body.firstIndex(of: "["), let end = body.lastIndex(of: "]"), start < end {
-            jsonStr = String(body[start...end])
-        } else if let start = body.firstIndex(of: "{"), let end = body.lastIndex(of: "}"), start < end {
+            if let results = tryJSONParse(String(body[start...end])) { return buildCurated(from: results, events: events) }
+        }
+
+        // Try extracting object with results key
+        if let start = body.firstIndex(of: "{"), let end = body.lastIndex(of: "}"), start < end {
             let objStr = String(body[start...end])
             if let obj = try? JSONSerialization.jsonObject(with: objStr.data(using: .utf8)!) as? [String: Any],
                let results = obj["results"] as? [[String: Any]] {
                 return buildCurated(from: results, events: events)
             }
-            jsonStr = "[\(objStr)]"
+            if let obj = try? JSONSerialization.jsonObject(with: objStr.data(using: .utf8)!) as? [String: Any],
+               let items = obj["items"] as? [[String: Any]] {
+                return buildCurated(from: items, events: events)
+            }
         }
 
-        guard var candidate = jsonStr else {
-            operationMonitor.curationMessage = "AI 未返回 JSON 数组或对象"
-            print("[AIMacCleaner] No JSON structure found in \(raw.count) chars")
-            return nil
+        operationMonitor.curationMessage = "AI 未返回 JSON 数组或对象"
+        print("[AIMacCleaner] --- AI RAW RESPONSE (\(raw.count) chars) ---")
+        print(raw)
+        print("[AIMacCleaner] --- END RAW RESPONSE ---")
+        return nil
+    }
+
+    private func tryJSONParse(_ text: String) -> [[String: Any]]? {
+        let cleaned = text.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "")
+        if let data = cleaned.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) {
+            if let arr = obj as? [[String: Any]] { return arr }
+            if let dict = obj as? [String: Any], let arr = dict["results"] as? [[String: Any]] { return arr }
+            if let dict = obj as? [String: Any], let arr = dict["items"] as? [[String: Any]] { return arr }
+            if let arr = obj as? [Any] {
+                return arr.compactMap { $0 as? [String: Any] }
+            }
         }
-
-        candidate = candidate.replacingOccurrences(of: "```json", with: "")
-        candidate = candidate.replacingOccurrences(of: "```", with: "")
-
-        guard let jsonData = candidate.data(using: .utf8) else {
-            operationMonitor.curationMessage = "编码失败"
-            return nil
-        }
-
-        if let results = (try? JSONSerialization.jsonObject(with: jsonData)) as? [[String: Any]] {
-            return buildCurated(from: results, events: events)
-        }
-
-        operationMonitor.curationMessage = "JSON 解析失败，点击下方按钮查看 AI 原始回复"
-        print("[AIMacCleaner] JSON parse failed, raw saved: \(raw.prefix(200))")
         return nil
     }
 

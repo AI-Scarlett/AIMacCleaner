@@ -567,35 +567,16 @@ struct OperationLogTab: View {
             .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
 
             if viewMode == 1 && (!monitor.curationMessage.isEmpty || monitor.lastCurationTime != nil) {
+                let isSuccess = monitor.curationMessage.hasPrefix("梳理完成")
                 HStack(spacing: 8) {
-                    Image(systemName: monitor.curationMessage.hasPrefix("梳理完成") ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    Image(systemName: isSuccess ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .font(.system(size: 14))
-                        .foregroundColor(monitor.curationMessage.hasPrefix("梳理完成") ? .green : .orange)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(monitor.curationMessage)
-                            .font(.caption)
-                            .foregroundColor(.primary)
-                            .lineLimit(5)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if let last = monitor.lastCurationTime {
-                            Text("上次梳理: \(formattedDate(last))")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    }
+                        .foregroundColor(isSuccess ? .green : .orange)
+                    Text(monitor.curationMessage)
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                        .lineLimit(3)
                     Spacer()
-                    if monitor.curationMessage.hasPrefix("梳理完成") == false {
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(monitor.curationRawResponse, forType: .string)
-                        } label: {
-                            Image(systemName: "doc.on.doc")
-                                .font(.system(size: 12))
-                                .foregroundColor(.accentColor)
-                        }
-                        .buttonStyle(.plain)
-                        .help("复制 AI 原始回复")
-                    }
                     Button {
                         monitor.curationMessage = ""
                         monitor.curationRawResponse = ""
@@ -608,21 +589,17 @@ struct OperationLogTab: View {
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 8)
-                .background(monitor.curationMessage.hasPrefix("梳理完成") ? Color.green.opacity(0.06) : Color.orange.opacity(0.06))
+                .background(isSuccess ? Color.green.opacity(0.06) : Color.orange.opacity(0.06))
 
-                if !monitor.curationRawResponse.isEmpty && monitor.curationMessage.hasPrefix("梳理完成") == false {
+                if !isSuccess && !monitor.curationRawResponse.isEmpty {
                     Divider()
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("AI 原始回复（\(monitor.curationRawResponse.count) 字符）：")
-                            .font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
-                        ScrollView {
-                            Text(monitor.curationRawResponse)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.primary)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(maxHeight: 300)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("AI 原始回复（\(monitor.curationRawResponse.count) 字符）")
+                            .font(.caption2).foregroundColor(.secondary)
+                        TextEditor(text: .constant(monitor.curationRawResponse))
+                            .font(.system(size: 10, design: .monospaced))
+                            .frame(minHeight: 120, maxHeight: 300)
+                            .scrollContentBackground(.hidden)
                     }
                     .padding(.horizontal, 24)
                     .padding(.vertical, 8)
