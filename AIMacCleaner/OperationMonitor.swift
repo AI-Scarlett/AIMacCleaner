@@ -34,7 +34,7 @@ class OperationMonitor: ObservableObject {
     private let cacheTTL: TimeInterval = 15.0
 
     private var activeAgentNames: Set<String> = []
-    private var agentSelfDirs: Set<String> = []
+    private(set) var agentSelfDirs: Set<String> = []
     private var selfDirDiscoveryTime: Date = .distantPast
     private var processSnapshots: [ProcessSnapshot] = []
     private var lastCurationRecordIndex: Int = 0
@@ -121,7 +121,7 @@ class OperationMonitor: ObservableObject {
         return false
     }
 
-    private func discoverAgentSelfDirs() {
+    func discoverAgentSelfDirs() {
         let fm = FileManager.default
         let home = NSHomeDirectory()
         var discovered: Set<String> = []

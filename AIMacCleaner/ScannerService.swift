@@ -1321,6 +1321,7 @@ class ScannerService: ObservableObject {
 
         operationMonitor.isCurating = true
         operationMonitor.curationMessage = "正在收集原始数据..."
+        operationMonitor.discoverAgentSelfDirs()
 
         let (events, snapshots) = operationMonitor.getRawDataForCuration()
         print("[AIMacCleaner] curateWithAI: got \(events.count) events, \(snapshots.count) snapshots")
@@ -1343,11 +1344,15 @@ class ScannerService: ObservableObject {
             return false
         }
 
+        let selfDirs = operationMonitor.agentSelfDirs
         var eventSummary = ""
         for e in events {
             let path = e.targetPath
             if path.contains("/.git/") || path.hasSuffix("/.git") || path.hasSuffix(".DS_Store") { continue }
             if path.contains("/Library/Caches/") || path.contains("/Library/Containers/") || path.contains("/tmp/") { continue }
+            if path.contains("/node_modules/") || path.contains("/.vite/") { continue }
+            if path.contains("/.turbo/") || path.contains("/dist/") || path.contains("/build/") || path.contains("/.next/") { continue }
+            if selfDirs.contains(where: { path.hasPrefix($0) || $0.hasPrefix(path) }) { continue }
             eventSummary += "\(formattedTime(e.timestamp)) | \(e.operationType.rawValue) | \(path)\n"
         }
         let lines = eventSummary.components(separatedBy: "\n").filter { !$0.isEmpty }
