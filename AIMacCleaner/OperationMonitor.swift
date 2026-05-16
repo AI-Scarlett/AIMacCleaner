@@ -563,24 +563,6 @@ class OperationMonitor: ObservableObject {
             }
         }
 
-        let pathLower = expanded.lowercased()
-        for (name, _) in agentKeywords {
-            let kw = name.lowercased()
-            if pathLower.contains("/\(kw)/") || pathLower.contains(".\(kw)/") ||
-               pathLower.contains(".\(kw)-") || pathLower.contains("\(kw).app") {
-                return (name, "path-match", nil)
-            }
-        }
-
-        let dirName = (expanded as NSString).deletingLastPathComponent.lowercased()
-        for (name, keywords) in agentKeywords {
-            for kw in keywords {
-                if dirName.contains(kw) {
-                    return (name, "dir-match", nil)
-                }
-            }
-        }
-
         return ("—", nil, nil)
     }
 
