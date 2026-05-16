@@ -5,6 +5,10 @@ class OperationMonitor: ObservableObject {
     @Published var records: [OperationRecord] = []
     @Published var isMonitoring: Bool = false
     @Published var aiSelfLearningEnabled: Bool = false
+    @Published var curatedRecords: [CuratedRecord] = []
+    @Published var isCurating: Bool = false
+    @Published var lastCurationTime: Date?
+    @Published var autoCurationInterval: Int = 3
 
     private var streamRef: FSEventStreamRef?
     private var fileSnapshots: [String: FileSnapshot] = [:]
@@ -12,6 +16,8 @@ class OperationMonitor: ObservableObject {
     private let maxRecords = 2000
     private let maxSnapshots = 10000
     private let recordsPath = NSHomeDirectory() + "/.aimaccleaner_operations_v2.json"
+    private let curatedPath = NSHomeDirectory() + "/.aimaccleaner_curated.json"
+    private let snapshotsPath = NSHomeDirectory() + "/.aimaccleaner_snapshots.json"
     private var hasRestoredBookmarks: Bool = false
     private var lastCleanupTime: Date = .distantPast
 
@@ -28,8 +34,10 @@ class OperationMonitor: ObservableObject {
     private var activeAgentNames: Set<String> = []
     private var agentSelfDirs: Set<String> = []
     private var selfDirDiscoveryTime: Date = .distantPast
+    private var processSnapshots: [ProcessSnapshot] = []
+    private var lastCurationRecordIndex: Int = 0
 
-    private let agentKeywords: [(String, [String])] = [
+    let agentKeywords: [(String, [String])] = [
         ("Trae", ["trae-cn", "trae cn", "traecn", "trae-cn.app"]),
         ("Claude", ["claude"]),
         ("Cursor", ["cursor"]),
@@ -226,6 +234,46 @@ class OperationMonitor: ObservableObject {
         print("[AIMacCleaner] AI learned new agent: \(displayName) keywords: \(keywords) dirs: \(dirs)")
     }
 
+    func getRawDataForCuration() -> (events: [OperationRecord], snapshots: [ProcessSnapshot]) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        let startIndex = lastCurationRecordIndex
+        lastCurationRecordIndex = records.count
+        return (Array(records[startIndex..<records.count]), processSnapshots)
+    }
+
+    func saveCuratedRecords(_ newRecords: [CuratedRecord]) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.curatedRecords = newRecords + self.curatedRecords
+            if self.curatedRecords.count > 1000 {
+                self.curatedRecords = Array(self.curatedRecords.prefix(1000))
+            }
+            self.lastCurationTime = Date()
+            self.isCurating = false
+            self.saveCurated()
+        }
+    }
+
+    func loadCurated() {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: curatedPath)),
+              let decoded = try? JSONDecoder().decode([CuratedRecord].self, from: data) else { return }
+        curatedRecords = decoded
+    }
+
+    private func saveCurated() {
+        stateLock.lock()
+        let cr = curatedRecords
+        stateLock.unlock()
+        guard let data = try? JSONEncoder().encode(cr) else { return }
+        try? data.write(to: URL(fileURLWithPath: curatedPath))
+    }
+
+    func clearCuratedRecords() {
+        curatedRecords.removeAll()
+        saveCurated()
+    }
+
     struct FileSnapshot: Codable {
         let path: String
         let modDate: TimeInterval
@@ -384,6 +432,15 @@ class OperationMonitor: ObservableObject {
         stateLock.unlock()
 
         refreshLsofData()
+
+        let now = Date()
+        let snapshot = newPidCommMap.map { (pid, comm) in
+            ProcessSnapshot(timestamp: now, pid: pid, ppid: newPpidMap[pid] ?? 0, comm: comm, args: newPidArgsMap[pid] ?? "")
+        }
+        stateLock.lock()
+        processSnapshots.append(contentsOf: snapshot)
+        if processSnapshots.count > 10000 { processSnapshots = Array(processSnapshots.suffix(8000)) }
+        stateLock.unlock()
 
         if agentsChanged || Date().timeIntervalSince(selfDirDiscoveryTime) > 30.0 {
             discoverAgentSelfDirs()

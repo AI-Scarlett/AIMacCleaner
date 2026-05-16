@@ -377,6 +377,7 @@ struct OperationLogTab: View {
     @State private var filterAgent = ""
     @State private var filterOpType: OperationRecord.OperationType?
     @State private var filterTimeRange: TimeRange = .all
+    @State private var viewMode = 0
 
     enum TimeRange: String, CaseIterable {
         case all = "all"
@@ -511,6 +512,86 @@ struct OperationLogTab: View {
                 .padding(.vertical, 5)
                 .background(Color.green.opacity(0.05))
             }
+
+            HStack(spacing: 8) {
+                Picker("", selection: $viewMode) {
+                    Text("实时监控").tag(0)
+                    Text("已梳理").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+
+                Spacer()
+
+                if viewMode == 1 {
+                    if monitor.isCurating {
+                        HStack(spacing: 4) {
+                            ProgressView().controlSize(.mini)
+                            Text("梳理中...").font(.caption2).foregroundColor(.secondary)
+                        }
+                    } else if let last = monitor.lastCurationTime {
+                        HStack(spacing: 2) {
+                            Image(systemName: "clock").font(.system(size: 9)).foregroundColor(.secondary)
+                            Text("上次: \(formattedDate(last))").font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+
+                    Button {
+                        Task { await service.curateWithAI() }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "wand.and.stars").font(.system(size: 10))
+                            Text("立即梳理").font(.caption2)
+                        }
+                        .foregroundColor(.purple)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(.purple)
+                    .disabled(monitor.isCurating || service.aiConfig?.hasKey != true)
+
+                    Menu {
+                        ForEach([1, 2, 3, 6, 12], id: \.self) { h in
+                            Button("每 \(h) 小时") {
+                                monitor.autoCurationInterval = h
+                                if h > 0 { service.startAutoCuration() }
+                                else { service.stopAutoCuration() }
+                            }
+                        }
+                        Button("关闭自动") { service.stopAutoCuration() }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "timer").font(.system(size: 10))
+                            Text("每\(monitor.autoCurationInterval)h").font(.caption2)
+                        }
+                        .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(monitor.isCurating)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 8)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+
+            Divider()
+
+            if viewMode == 0 {
+                liveView
+            } else {
+                curatedView
+            }
+        }
+        .onAppear {
+            if !monitor.isMonitoring { monitor.start() }
+            monitor.loadCurated()
+            if monitor.autoCurationInterval > 0 { service.startAutoCuration() }
+        }
+    }
+
+    private var liveView: some View {
+        Group {
 
             HStack(spacing: 12) {
                 FilterSearchBar(placeholder: localizer.searchFiles, text: $searchText)
@@ -648,9 +729,82 @@ struct OperationLogTab: View {
                 .tableStyle(.inset(alternatesRowBackgrounds: true))
             }
         }
-        .onAppear {
-            if !monitor.isMonitoring { monitor.start() }
+    }
+
+    private var curatedView: some View {
+        Group {
+            if monitor.curatedRecords.isEmpty {
+                VStack(spacing: 16) {
+                    Spacer()
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 40)).foregroundColor(.secondary.opacity(0.5))
+                    Text("暂无梳理数据").font(.title3).fontWeight(.medium)
+                    Text("点击「立即梳理」通过 AI 分析原始监控数据").font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Table(monitor.curatedRecords) {
+                    TableColumn(localizer.timeCol) { record in
+                        Text(record.timestamp, style: .time)
+                            .font(.caption).monospacedDigit()
+                    }.width(65)
+
+                    TableColumn(localizer.agentCol) { record in
+                        HStack(spacing: 4) {
+                            Image(systemName: record.confidence >= 0.8 ? "checkmark.seal.fill" : record.confidence >= 0.5 ? "checkmark.circle" : "questionmark.circle")
+                                .font(.caption2)
+                                .foregroundColor(confidenceColor(record.confidence))
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(record.agentName)
+                                    .font(.caption).fontWeight(.medium).lineLimit(1)
+                                Text("置信度: \(String(format: "%.0f", record.confidence * 100))%")
+                                    .font(.system(size: 9)).foregroundColor(.secondary)
+                            }
+                        }
+                    }.width(min: 100)
+
+                    TableColumn(localizer.opCol) { record in
+                        Text(record.operationType)
+                            .font(.caption2).fontWeight(.medium)
+                    }.width(60)
+
+                    TableColumn(localizer.pathCol) { record in
+                        HStack(spacing: 4) {
+                            Text(record.targetPath)
+                                .font(.caption2).lineLimit(1).truncationMode(.middle)
+                                .help(record.targetPath)
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(record.targetPath, forType: .string)
+                            } label: {
+                                Image(systemName: "doc.on.doc").font(.system(size: 10))
+                            }
+                            .buttonStyle(.plain).foregroundColor(.accentColor)
+                        }
+                    }
+
+                    TableColumn(localizer.fileSizeCol) { record in
+                        if record.fileSize > 0 {
+                            Text(ByteCountFormatter.string(fromByteCount: record.fileSize, countStyle: .file))
+                                .font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                        }
+                    }.width(70)
+                }
+                .tableStyle(.inset(alternatesRowBackgrounds: true))
+            }
         }
+    }
+
+    private func confidenceColor(_ conf: Double) -> Color {
+        if conf >= 0.8 { return .green }
+        if conf >= 0.5 { return .orange }
+        return .red
+    }
+
+    private func formattedDate(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
     }
 
     private func opTypeColor(_ type: OperationRecord.OperationType) -> Color {

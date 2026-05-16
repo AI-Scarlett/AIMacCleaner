@@ -228,6 +228,38 @@ struct OperationRecord: Identifiable, Codable {
     }
 }
 
+struct ProcessSnapshot: Codable {
+    let timestamp: Date
+    let pid: pid_t
+    let ppid: pid_t
+    let comm: String
+    let args: String
+}
+
+struct CuratedRecord: Identifiable, Codable {
+    let id: String
+    let timestamp: Date
+    let agentName: String
+    let operationType: String
+    let targetPath: String
+    let detail: String
+    let fileSize: Int64
+    let confidence: Double
+    let evidence: String
+
+    var confidenceLabel: String {
+        if confidence >= 0.8 { return "高" }
+        if confidence >= 0.5 { return "中" }
+        return "低"
+    }
+
+    var confidenceColor: String {
+        if confidence >= 0.8 { return "green" }
+        if confidence >= 0.5 { return "orange" }
+        return "red"
+    }
+}
+
 struct HardwareInfo {
     var cpuUsage: Double
     var cpuCoreCount: Int

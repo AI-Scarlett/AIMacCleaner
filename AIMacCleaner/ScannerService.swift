@@ -1296,6 +1296,159 @@ class ScannerService: ObservableObject {
         }
     }
 
+    private var curationTimer: Timer?
+
+    func startAutoCuration() {
+        stopAutoCuration()
+        let interval = TimeInterval(operationMonitor.autoCurationInterval * 3600)
+        curationTimer = Timer.scheduledTimer(withTimeInterval: max(interval, 300), repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                await self?.curateWithAI()
+            }
+        }
+    }
+
+    func stopAutoCuration() {
+        curationTimer?.invalidate()
+        curationTimer = nil
+    }
+
+    func curateWithAI() async {
+        guard let config = aiConfig, config.hasKey == true else { return }
+
+        operationMonitor.isCurating = true
+        let (events, snapshots) = operationMonitor.getRawDataForCuration()
+        guard !events.isEmpty else {
+            operationMonitor.isCurating = false
+            return
+        }
+
+        let recentSnaps = snapshots.filter { s in
+            if let first = events.first?.timestamp, let last = events.last?.timestamp {
+                let range = first.timeIntervalSince1970 ... last.timeIntervalSince1970 + 60
+                return range.contains(s.timestamp.timeIntervalSince1970)
+            }
+            return false
+        }
+
+        var eventSummary = ""
+        for e in events.suffix(100) {
+            let op = e.operationType.rawValue
+            eventSummary += "\(formattedTime(e.timestamp)) | \(op) | \(e.targetPath)\n"
+        }
+
+        var procSummary = ""
+        let agentProcs = recentSnaps.filter { snap in
+            let lower = (snap.comm + " " + snap.args).lowercased()
+            for (_, keywords) in operationMonitor.agentKeywords {
+                for kw in keywords where lower.contains(kw) { return true }
+            }
+            return false
+        }
+        let uniqueAgents = Set(agentProcs.map { $0.comm })
+        for comm in uniqueAgents.sorted() {
+            let procs = agentProcs.filter { $0.comm == comm }
+            let pids = Set(procs.map { String($0.pid) }).sorted().joined(separator: ",")
+            let ppids = Set(procs.map { String($0.ppid) }).sorted().joined(separator: ",")
+            procSummary += "\(comm): PIDs[\(pids)] PPIDs[\(ppids)]\n"
+        }
+
+        let totalProcs = Set(recentSnaps.map { $0.comm }).count
+        let prompt = """
+        你是 Agent 操作归因分析器。以下是在监控期间发生的文件操作事件和系统进程快照。
+
+        已知agent关键词: Trae, Cursor, CodeBuddy, Claude, Windsurf, Copilot, Cline, Gemini, ChatGPT, DeepSeek, Kimi, Doubao, Hermes, Codex, Augment, CodeArts
+
+        进程快照（\(totalProcs)个不同进程）:
+        \(procSummary.isEmpty ? "无agent进程" : procSummary)
+
+        文件操作事件（最近100条）:
+        \(eventSummary)
+
+        任务：判断哪些事件是由哪个Agent产生的，忽略系统进程/IDE自身内部操作。
+        规则：
+        1. 如果路径在 ~/Library/ 下 → \"系统/IDE内部操作\"，忽略
+        2. 如果路径在用户项目目录（Desktop/Documents/Downloads/Projects/Dev等）→ 找对应的Agent进程
+        3. 子进程（如node/python）通过PPID追溯到父Agent
+        4. 仅文件操作（create/modify/delete），忽略read
+
+        返回JSON数组，每个元素格式：
+        {"path":"/full/path","op":"创建|修改|删除","agent":"Agent名","confidence":0.0-1.0,"evidence":"归因依据"}
+        只返回JSON数组，不要其他内容。
+        """
+
+        guard let apiKey = config.apiKey, !apiKey.isEmpty,
+              let apiBase = config.apiBase else { operationMonitor.isCurating = false; return }
+        let base = apiBase.hasSuffix("/v1") ? apiBase : apiBase + "/v1"
+        let requestBody: [String: Any] = [
+            "model": config.model ?? "deepseek-chat",
+            "messages": [["role": "user", "content": prompt]],
+            "temperature": 0.1, "max_tokens": 4000
+        ]
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: requestBody),
+              let url = URL(string: "\(base)/chat/completions") else {
+            operationMonitor.isCurating = false; return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = bodyData
+        request.timeoutInterval = 60
+
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: request)
+            guard let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let msg = choices.first?["message"] as? [String: Any],
+                  let content = msg["content"] as? String else {
+                operationMonitor.isCurating = false; return
+            }
+
+            let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let start = trimmed.firstIndex(of: "["),
+                  let end = trimmed.lastIndex(of: "]") else {
+                operationMonitor.isCurating = false; return
+            }
+            let jsonStr = String(trimmed[start...end])
+            guard let jsonData = jsonStr.data(using: .utf8),
+                  let results = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] else {
+                operationMonitor.isCurating = false; return
+            }
+
+            var curated: [CuratedRecord] = []
+            for item in results {
+                guard let path = item["path"] as? String,
+                      let agent = item["agent"] as? String,
+                      let op = item["op"] as? String,
+                      agent != "系统/IDE内部操作" else { continue }
+                let conf = (item["confidence"] as? Double) ?? 0.5
+                let ev = (item["evidence"] as? String) ?? ""
+                let matchedEv = events.first { $0.targetPath == path }
+                let detail = matchedEv?.detail ?? "\(op): \((path as NSString).lastPathComponent)"
+                let size = matchedEv?.fileSize ?? 0
+                curated.append(CuratedRecord(
+                    id: UUID().uuidString, timestamp: matchedEv?.timestamp ?? Date(),
+                    agentName: agent, operationType: op, targetPath: path,
+                    detail: detail, fileSize: size, confidence: conf, evidence: ev
+                ))
+            }
+
+            operationMonitor.saveCuratedRecords(curated)
+            print("[AIMacCleaner] Curation done: \(curated.count) records from \(events.count) events")
+        } catch {
+            operationMonitor.isCurating = false
+            print("[AIMacCleaner] Curation failed: \(error)")
+        }
+    }
+
+    private func formattedTime(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f.string(from: date)
+    }
+
     func startMonitoring() {
         stopMonitoring()
         refreshDiskInfo()
