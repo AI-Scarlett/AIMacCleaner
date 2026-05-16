@@ -111,7 +111,6 @@ cp -r /tmp/AIMacCleaner_build/build/AIMacCleaner.app /Applications/
 | Tab | 功能 | 说明 |
 |-----|------|------|
 | 🧹 Mac 清理 | 扫描可清理的缓存/日志/临时文件 | 本地扫描 + AI 扫描 |
-| 📊 存储分析 | 全盘存储分析与AI建议 | 系统文件/应用/文稿/Agent |
 | 📱 APP 管理 | 管理本机 .app 应用 | 卸载/清理缓存/重置 |
 | 📦 依赖管理 | 管理 Homebrew/npm/pip 包 | 卸载/清理 |
 | 🖥️ Agent 监控 | 记录 AI Agent 自动操作 | 筛选 + 监控 |

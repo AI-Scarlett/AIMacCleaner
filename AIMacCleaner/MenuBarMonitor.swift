@@ -845,6 +845,26 @@ struct MenuBarMonitor: View {
                 .controlSize(.mini)
                 .tint(operationMonitorEnabled ? .orange : .green)
 
+                if operationMonitorEnabled {
+                    Button {
+                        if service.operationMonitor.aiSelfLearningEnabled {
+                            service.stopAISelfLearning()
+                        } else {
+                            service.startAISelfLearning()
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: service.operationMonitor.aiSelfLearningEnabled ? "sparkles" : "brain.head.profile")
+                                .font(.system(size: 8))
+                            Text(service.operationMonitor.aiSelfLearningEnabled ? "关闭AI" : "AI分析")
+                        }
+                        .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .tint(service.operationMonitor.aiSelfLearningEnabled ? .purple : .secondary)
+                }
+
                 Spacer()
 
                 if !service.operationRecords.isEmpty {
@@ -861,6 +881,19 @@ struct MenuBarMonitor: View {
                     .controlSize(.mini)
                     .tint(.red)
                 }
+            }
+
+            if operationMonitorEnabled && service.operationMonitor.aiSelfLearningEnabled {
+                HStack(spacing: 4) {
+                    Image(systemName: "brain.head.profile")
+                        .font(.system(size: 8))
+                        .foregroundColor(.purple)
+                    Text("AI 自学习中...")
+                        .font(.system(size: 9))
+                        .foregroundColor(.purple)
+                    Spacer()
+                }
+                .padding(.horizontal, 4)
             }
 
             HStack {

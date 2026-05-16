@@ -2,6 +2,19 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.7.4] - 2026-05-15
+
+### Removed
+- **移除存储分析功能** - 删除侧边栏"存储分析" Tab、StorageAnalysisTab 视图及相关本地化
+
+### Fixed
+- **修复侧边栏版本号显示不一致** - 展开/收起状态下均从 `service.currentVersion` 读取，不再硬编码
+- **修复 APP 管理执行操作后全量重扫** - 重置/卸载单条 APP 后仅移除该条记录，不再触发全量扫描
+
+### Added
+- **Agent 监控页面 AI 自学习开关** - 监控状态栏增加 AI 学习中标识和开关按钮
+- **菜单栏 Agent 监控 Tab AI 开关** - 菜单栏弹出面板同样增加 AI 分析按钮和状态提示
+
 ## [1.7.3] - 2026-05-15
 
 ### Fixed

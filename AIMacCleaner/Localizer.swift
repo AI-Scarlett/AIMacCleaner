@@ -221,14 +221,12 @@ extension Localizer {
     var settingsTabVersion: String { t("版本", en: "Version") }
 
     var navCleaner: String { t("Mac 清理", en: "Mac Clean") }
-    var navStorage: String { t("存储分析", en: "Storage Analysis") }
     var navApp: String { t("APP 管理", en: "App Manager") }
     var navDependency: String { t("依赖管理", en: "Dependency") }
     var navOther: String { t("其它工具", en: "Other Tools") }
     var navOperations: String { t("Agent 监控", en: "Agent Monitor") }
 
     var subCleaner: String { t("扫描并清理存储空间", en: "Scan and clean storage") }
-    var subStorage: String { t("存储空间分析与AI建议", en: "Storage analysis with AI") }
     var subApp: String { t("管理已安装的应用", en: "Manage installed apps") }
     var subDependency: String { t("管理开发依赖", en: "Manage dev dependencies") }
     var subOther: String { t("管理命令行工具", en: "Manage CLI tools") }
@@ -273,8 +271,6 @@ extension Localizer {
     var recordsCount: String { t("条", en: "records") }
 
     var allCats: String { t("全部分类", en: "All Categories") }
-    var startScanBtn: String { t("开始扫描", en: "Start Scan") }
-    var storageCats: String { t("存储分类", en: "Storage Categories") }
 
     var internetStatus: String { t("Internet", en: "Internet") }
     var offlineStatus: String { t("离线", en: "Offline") }

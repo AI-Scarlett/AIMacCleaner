@@ -5,14 +5,12 @@ struct ContentView: View {
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
     @State private var showSettings = false
-    @StateObject private var storageAnalyzer = StorageAnalyzer()
     @State private var sidebarCollapsed = false
     @AppStorage("networkMode") private var networkMode = "internet"
 
     enum NavItem: String, CaseIterable {
         case cleaner = "Mac 清理"
         case operations = "Agent 监控"
-        case storage = "存储分析"
         case app = "APP 管理"
         case dependency = "依赖管理"
         case other = "其它工具"
@@ -20,7 +18,6 @@ struct ContentView: View {
         var icon: String {
             switch self {
             case .cleaner: "arrow.down.doc.fill"
-            case .storage: "chart.pie"
             case .app: "app.badge"
             case .dependency: "cube.box"
             case .other: "terminal"
@@ -31,7 +28,6 @@ struct ContentView: View {
         var color: Color {
             switch self {
             case .cleaner: .blue
-            case .storage: .indigo
             case .app: .cyan
             case .dependency: .orange
             case .other: .gray
@@ -42,7 +38,6 @@ struct ContentView: View {
         func label(_ localizer: Localizer) -> String {
             switch self {
             case .cleaner: localizer.navCleaner
-            case .storage: localizer.navStorage
             case .app: localizer.navApp
             case .dependency: localizer.navDependency
             case .other: localizer.navOther
@@ -53,7 +48,6 @@ struct ContentView: View {
         func subtitle(_ localizer: Localizer) -> String {
             switch self {
             case .cleaner: localizer.subCleaner
-            case .storage: localizer.subStorage
             case .app: localizer.subApp
             case .dependency: localizer.subDependency
             case .other: localizer.subOther
@@ -206,7 +200,7 @@ struct ContentView: View {
                             .foregroundColor(networkMode == "internet" ? .blue : .orange)
                     }
 
-                    Text("v1.7.3")
+                    Text("v\(service.currentVersion)")
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
                 }
@@ -263,7 +257,7 @@ struct ContentView: View {
                             Circle()
                                 .fill(Color.green)
                                 .frame(width: 5, height: 5)
-                            Text("v1.7.2")
+                            Text("v\(service.currentVersion)")
                                 .font(.system(size: 9))
                                 .foregroundColor(.secondary)
                         }
@@ -282,9 +276,6 @@ struct ContentView: View {
         switch selectedTab {
         case .cleaner:
             MacCleanerTab()
-                .environmentObject(localizer)
-        case .storage:
-            StorageAnalysisTab(analyzer: storageAnalyzer, service: service)
                 .environmentObject(localizer)
         case .app:
             AppManagerTab(filterType: .app)
@@ -381,6 +372,7 @@ struct FilterSearchBar: View {
 struct OperationLogTab: View {
     @ObservedObject var monitor: OperationMonitor
     @EnvironmentObject var localizer: Localizer
+    @EnvironmentObject var service: ScannerService
     @State private var searchText = ""
     @State private var filterAgent = ""
     @State private var filterOpType: OperationRecord.OperationType?
@@ -480,6 +472,40 @@ struct OperationLogTab: View {
                     Text("·").foregroundColor(.secondary)
                     Text("\(monitor.records.count) \(localizer.records)").font(.caption2).foregroundColor(.secondary)
                     Spacer()
+                    if monitor.aiSelfLearningEnabled {
+                        HStack(spacing: 3) {
+                            Image(systemName: "brain.head.profile")
+                                .font(.system(size: 9))
+                                .foregroundColor(.purple)
+                            Text("AI 学习中")
+                                .font(.caption2)
+                                .foregroundColor(.purple)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.08))
+                        .cornerRadius(4)
+                    }
+                    Button {
+                        if monitor.aiSelfLearningEnabled {
+                            service.stopAISelfLearning()
+                        } else {
+                            service.startAISelfLearning()
+                        }
+                    } label: {
+                        HStack(spacing: 2) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 9))
+                            Text(monitor.aiSelfLearningEnabled ? "关闭 AI" : "AI 分析")
+                                .font(.caption2)
+                        }
+                        .foregroundColor(monitor.aiSelfLearningEnabled ? .purple : .secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.purple.opacity(monitor.aiSelfLearningEnabled ? 0.1 : 0.05))
+                        .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 5)
@@ -1114,6 +1140,7 @@ struct AppManagerTab: View {
         Task {
             var successCount = 0
             var failCount = 0
+            var removedIds: Set<String> = []
             for app in apps {
                 let ok: Bool
                 switch pendingAction {
@@ -1121,9 +1148,16 @@ struct AppManagerTab: View {
                 case .basicUninstall: ok = await service.basicUninstall(app: app)
                 case .fullUninstall: ok = await service.fullUninstall(app: app)
                 }
-                if ok { successCount += 1 } else { failCount += 1 }
+                if ok {
+                    successCount += 1
+                    if pendingAction != .reset {
+                        removedIds.insert(app.id)
+                    }
+                } else { failCount += 1 }
             }
-            await service.scanInstalledApps()
+            if !removedIds.isEmpty {
+                service.installedApps.removeAll { removedIds.contains($0.id) }
+            }
             service.refreshDiskInfo()
             selectedAppIds.removeAll()
             actionResultMsg = "\(pendingAction.label(localizer))\(localizer.actionComplete)：成功 \(successCount) 个" + (failCount > 0 ? "，失败 \(failCount) 个" : "")
@@ -1383,373 +1417,4 @@ struct SensorFilterChip: View {
     }
 }
 
-// MARK: - Storage Analysis Tab
 
-struct StorageAnalysisTab: View {
-    @ObservedObject var analyzer: StorageAnalyzer
-    @ObservedObject var service: ScannerService
-    @State private var selectedCategory: StorageCategory?
-    @State private var sortField: StorageFile.SortField = .size
-    @State private var sortAscending = false
-    @State private var isAnalyzing = false
-    @State private var analyzingFileName = ""
-    @State private var aiAnalysisText = ""
-    @State private var showAIAnalysis = false
-
-    var sortedFiles: [StorageFile] {
-        guard let cat = selectedCategory else { return [] }
-        let files = cat.files
-        return files.sorted { a, b in
-            switch sortField {
-            case .size: return sortAscending ? a.size < b.size : a.size > b.size
-            case .name: return sortAscending ? a.name < b.name : a.name > b.name
-            case .created:
-                let da = a.createdDate ?? .distantPast
-                let db = b.createdDate ?? .distantPast
-                return sortAscending ? da < db : da > db
-            case .modified:
-                let da = a.modifiedDate ?? .distantPast
-                let db = b.modifiedDate ?? .distantPast
-                return sortAscending ? da < db : da > db
-            }
-        }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            PageHeader(
-                icon: "chart.pie",
-                title: "存储分析",
-                subtitle: "存储空间分析与AI建议",
-                color: .indigo
-            ) {
-                if !analyzer.isScanning && !analyzer.categories.isEmpty {
-                    HStack(spacing: 8) {
-                        Button {
-                            Task { await analyzeCategory() }
-                        } label: {
-                            HStack(spacing: 4) { Image(systemName: "sparkles"); Text("AI 分析") }
-                        }
-                        .buttonStyle(.bordered).controlSize(.small).tint(.purple)
-                        .disabled(isAnalyzing || service.aiConfig?.hasKey != true)
-                    }
-                }
-            }
-
-            if analyzer.isScanning {
-                HStack(spacing: 10) {
-                    ProgressView().controlSize(.small)
-                    Text(analyzer.scanProgress).foregroundColor(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal, 24).padding(.vertical, 8)
-                .background(Color.indigo.opacity(0.05))
-                Divider()
-            }
-
-            if !aiAnalysisText.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Image(systemName: "sparkles").foregroundColor(.purple).font(.caption)
-                        Text("AI 分析结果").font(.caption).fontWeight(.semibold).foregroundColor(.purple)
-                        Spacer()
-                        Button { aiAnalysisText = "" } label: { Image(systemName: "xmark.circle.fill").font(.caption).foregroundColor(.secondary) }.buttonStyle(.plain)
-                    }
-                    ScrollView {
-                        Text(aiAnalysisText).font(.caption).foregroundColor(.primary).frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(maxHeight: 150)
-                }
-                .padding(12).background(Color.purple.opacity(0.05))
-                Divider()
-            }
-
-            if analyzer.categories.isEmpty {
-                VStack(spacing: 20) {
-                    Spacer()
-                    Image(systemName: "chart.pie").font(.system(size: 48)).foregroundColor(.secondary.opacity(0.5))
-                    Text("存储分析").font(.title3).fontWeight(.medium)
-                    Text("点击扫描分析存储空间使用情况").font(.caption).foregroundColor(.secondary)
-                    if !analyzer.isScanning {
-                        Button("开始扫描") { Task { await analyzer.scanStorage() } }
-                            .buttonStyle(.borderedProminent).tint(.indigo).controlSize(.regular)
-                    } else {
-                        VStack(spacing: 12) {
-                            ProgressView().controlSize(.large)
-                            Text(analyzer.scanProgress).font(.caption).foregroundColor(.secondary)
-                        }
-                    }
-                    Spacer()
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                HStack(spacing: 0) {
-                    categorySidebar
-                    Divider()
-                    fileDetailPanel
-                }
-            }
-        }
-        .alert("AI 分析", isPresented: $showAIAnalysis) {
-            Button("确定") {}
-        } message: {
-            Text(aiAnalysisText)
-        }
-    }
-
-    private var categorySidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("存储分类").font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
-                .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 6)
-
-            let totalSize = analyzer.categories.reduce(Int64(0)) { $0 + $1.size }
-            ForEach(analyzer.categories) { cat in
-                Button {
-                    selectedCategory = cat
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: cat.icon)
-                            .font(.system(size: 12))
-                            .foregroundColor(selectedCategory?.id == cat.id ? cat.color : .secondary)
-                            .frame(width: 16)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(cat.name)
-                                .font(.system(size: 12))
-                                .fontWeight(selectedCategory?.id == cat.id ? .semibold : .regular)
-                                .foregroundColor(selectedCategory?.id == cat.id ? .primary : .secondary)
-
-                            let pct = totalSize > 0 ? Double(cat.size) / Double(totalSize) * 100 : 0
-                            ProgressView(value: pct / 100.0)
-                                .progressViewStyle(.linear)
-                                .tint(cat.color)
-                                .frame(height: 3)
-                        }
-
-                        Text(cat.sizeFormatted)
-                            .font(.system(size: 10))
-                            .monospacedDigit()
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(selectedCategory?.id == cat.id ? cat.color.opacity(0.1) : Color.clear)
-                    )
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-
-            Spacer()
-
-            Divider()
-            VStack(alignment: .leading, spacing: 4) {
-                Text("已使用").font(.caption2).foregroundColor(.secondary)
-                Text(ByteCountFormatter.string(fromByteCount: analyzer.totalUsed, countStyle: .file))
-                    .font(.caption).fontWeight(.bold).foregroundColor(.indigo)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-        }
-        .frame(width: 200)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
-    }
-
-    private var fileDetailPanel: some View {
-        VStack(spacing: 0) {
-            if let cat = selectedCategory {
-                HStack(spacing: 12) {
-                    Text(cat.name)
-                        .font(.headline)
-                    Text("\(cat.files.count) 项 · \(cat.sizeFormatted)")
-                        .font(.caption).foregroundColor(.secondary)
-
-                    Spacer()
-
-                    HStack(spacing: 6) {
-                        Text("排序:").font(.caption).foregroundColor(.secondary)
-                        ForEach(StorageFile.SortField.allCases, id: \.self) { field in
-                            Button {
-                                if sortField == field { sortAscending.toggle() }
-                                else { sortField = field; sortAscending = false }
-                            } label: {
-                                HStack(spacing: 2) {
-                                    Image(systemName: field.icon).font(.caption2)
-                                    Text(field.rawValue).font(.caption2)
-                                    if sortField == field {
-                                        Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
-                                            .font(.system(size: 8))
-                                    }
-                                }
-                                .foregroundColor(sortField == field ? .accentColor : .secondary)
-                                .padding(.horizontal, 6).padding(.vertical, 3)
-                                .background(RoundedRectangle(cornerRadius: 4).fill(sortField == field ? Color.accentColor.opacity(0.1) : Color.clear))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-                .padding(.horizontal, 20).padding(.vertical, 10)
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
-                Divider()
-
-                if sortedFiles.isEmpty {
-                    VStack(spacing: 12) {
-                        Spacer()
-                        Image(systemName: "folder.open").font(.system(size: 36)).foregroundColor(.secondary.opacity(0.5))
-                        Text("无大文件（>1MB）").font(.callout).foregroundColor(.secondary)
-                        Spacer()
-                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    Table(sortedFiles) {
-                        TableColumn("名称") { file in
-                            HStack(spacing: 6) {
-                                Image(systemName: file.isDirectory ? "folder.fill" : "doc.fill")
-                                    .font(.caption)
-                                    .foregroundColor(file.isDirectory ? .blue : .gray)
-                                Text(file.name)
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .help(file.path)
-                            }
-                        }.width(min: 180)
-
-                        TableColumn("大小") { file in
-                            Text(file.sizeFormatted)
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .monospacedDigit()
-                                .foregroundColor(.cyan)
-                        }.width(80)
-
-                        TableColumn("风险") { file in
-                            HStack(spacing: 3) {
-                                Image(systemName: file.riskLevel.icon)
-                                    .foregroundColor(file.riskLevel.color)
-                                    .font(.caption)
-                                Text(file.riskLevel.rawValue)
-                                    .font(.caption2)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(file.riskLevel.color)
-                            }
-                        }.width(70)
-
-                        TableColumn("目录") { file in
-                            HStack(spacing: 4) {
-                                Text(file.path)
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .help(file.path)
-                                Button {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(file.path, forType: .string)
-                                } label: {
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.caption2)
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundColor(.accentColor)
-                                .help("复制路径")
-                            }
-                        }.width(min: 220)
-
-                        TableColumn("添加日期") { file in
-                            if let date = file.createdDate {
-                                Text(date, style: .date).font(.caption2).foregroundColor(.secondary)
-                            } else {
-                                Text("-").font(.caption2).foregroundColor(.secondary)
-                            }
-                        }.width(90)
-
-                        TableColumn("修改日期") { file in
-                            if let date = file.modifiedDate {
-                                Text(date, style: .date).font(.caption2).foregroundColor(.secondary)
-                            } else {
-                                Text("-").font(.caption2).foregroundColor(.secondary)
-                            }
-                        }.width(90)
-
-                        TableColumn("AI 分析") { file in
-                            if let analysis = file.aiAnalysis {
-                                Text(analysis).font(.caption2).foregroundColor(.purple).lineLimit(2)
-                            } else {
-                                Button {
-                                    Task { await analyzeFile(file) }
-                                } label: {
-                                    HStack(spacing: 2) {
-                                        if isAnalyzing && analyzingFileName == file.name {
-                                            ProgressView().controlSize(.mini)
-                                        } else {
-                                            Image(systemName: "sparkle").font(.caption2)
-                                        }
-                                        Text("分析").font(.caption2)
-                                    }
-                                    .foregroundColor(.purple)
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(isAnalyzing)
-                            }
-                        }.width(min: 120)
-                    }
-                    .tableStyle(.inset(alternatesRowBackgrounds: true))
-                }
-            } else {
-                VStack(spacing: 12) {
-                    Spacer()
-                    Image(systemName: "arrow.left.circle").font(.system(size: 36)).foregroundColor(.secondary.opacity(0.5))
-                    Text("选择左侧分类查看文件列表").font(.callout).foregroundColor(.secondary)
-                    Spacer()
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-    }
-
-    private func analyzeFile(_ file: StorageFile) async {
-        guard let config = service.aiConfig, config.hasKey == true else {
-            await MainActor.run {
-                aiAnalysisText = "⚠️ 请先在 AI 设置中配置 API Key"
-                showAIAnalysis = true
-            }
-            return
-        }
-        await MainActor.run {
-            isAnalyzing = true
-            analyzingFileName = file.name
-        }
-        let result = await analyzer.analyzeFileWithAI(file: file, config: config)
-        await MainActor.run {
-            isAnalyzing = false
-            analyzingFileName = ""
-            if let result = result {
-                aiAnalysisText = result
-                showAIAnalysis = true
-                if let catIndex = analyzer.categories.firstIndex(where: { $0.id == selectedCategory?.id }),
-                   let fileIndex = analyzer.categories[catIndex].files.firstIndex(where: { $0.id == file.id }) {
-                    analyzer.categories[catIndex].files[fileIndex].aiAnalysis = result
-                }
-            } else {
-                aiAnalysisText = "❌ AI 分析失败，请检查网络连接和 API 设置"
-                showAIAnalysis = true
-            }
-        }
-    }
-
-    private func analyzeCategory() async {
-        guard let config = service.aiConfig, config.hasKey == true, let cat = selectedCategory else { return }
-        await MainActor.run {
-            isAnalyzing = true
-            analyzingFileName = cat.name
-        }
-        let result = await analyzer.analyzeCategoryWithAI(category: cat, config: config)
-        await MainActor.run {
-            isAnalyzing = false
-            analyzingFileName = ""
-            if let result = result {
-                aiAnalysisText = result
-            }
-        }
-    }
-}
