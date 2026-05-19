@@ -798,7 +798,18 @@ struct OperationLogTab: View {
             isCustom: true,
             isVSCodeType: isVSCode,
             parser: { [sessionScanner] url, agentName in
-                sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
+                let ext = url.pathExtension
+                if ext == "vscdb" {
+                    return sessionScanner.parseVscdbSQLite(url: url, agentName: agentName)
+                } else if ext == "json" && url.path.contains("file-changes") {
+                    return sessionScanner.parseFileChangesJSON(url: url, agentName: agentName)
+                } else if ext == "db" {
+                    return sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
+                } else if ext == "sqlite" {
+                    return sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
+                } else {
+                    return sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
+                }
             }
         )
         sessionScanner.registerSource(ds)
@@ -1257,7 +1268,18 @@ struct OperationLogTab: View {
                 isCustom: true,
                 isVSCodeType: isVSCode,
                 parser: { [sessionScanner] url, agentName in
-                    sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
+                    let ext = url.pathExtension
+                    if ext == "vscdb" {
+                        return sessionScanner.parseVscdbSQLite(url: url, agentName: agentName)
+                    } else if ext == "json" && url.path.contains("file-changes") {
+                        return sessionScanner.parseFileChangesJSON(url: url, agentName: agentName)
+                    } else if ext == "db" {
+                        return sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
+                    } else if ext == "sqlite" {
+                        return sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
+                    } else {
+                        return sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
+                    }
                 }
             )
             sessionScanner.registerSource(ds)

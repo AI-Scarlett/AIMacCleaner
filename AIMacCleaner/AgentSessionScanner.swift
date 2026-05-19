@@ -129,10 +129,10 @@ class AgentSessionScanner: ObservableObject {
                 continue
             }
             let ext = url.pathExtension
-            if ext == "jsonl" || ext == "sqlite" || ext == "md" || ext == "vscdb" {
+            if ext == "jsonl" || ext == "sqlite" || ext == "md" || ext == "vscdb" || ext == "db" {
                 return true
             }
-            if ext == "json" && url.path.contains("file-changes") {
+            if ext == "json" && (url.path.contains("file-changes") || url.path.contains("session") || url.path.contains("events") || url.path.contains("conversation") || url.path.contains("trajectory")) {
                 return true
             }
         }
@@ -188,7 +188,7 @@ class AgentSessionScanner: ObservableObject {
                     self.fileManager.fileExists(atPath: basePath, isDirectory: &isDir)
                     guard isDir.boolValue else { continue }
 
-                    let depthLimit = 6
+                    let depthLimit = 10
                     var sessionCount = 0
                     var latestDate: Date?
                     var projectDirs = Set<String>()
@@ -205,7 +205,7 @@ class AgentSessionScanner: ObservableObject {
                             continue
                         }
 
-                        if path.hasSuffix(".jsonl") || path.hasSuffix(source.filePattern) || path.hasSuffix(".sqlite") || path.hasSuffix(".vscdb") || (itemURL.pathExtension == "json" && path.contains("file-changes")) {
+                        if path.hasSuffix(".jsonl") || path.hasSuffix(source.filePattern) || path.hasSuffix(".sqlite") || path.hasSuffix(".vscdb") || path.hasSuffix(".db") || path.hasSuffix(".md") || (itemURL.pathExtension == "json" && (path.contains("file-changes") || path.contains("session") || path.contains("events") || path.contains("conversation") || path.contains("trajectory"))) {
                             sessionCount += 1
                             if let attrs = try? self.fileManager.attributesOfItem(atPath: path),
                                let modDate = attrs[.modificationDate] as? Date {
@@ -1333,7 +1333,7 @@ class AgentSessionScanner: ObservableObject {
         return "操作"
     }
 
-    private func parseVscdbSQLite(url: URL, agentName: String) -> [AgentOpRecord] {
+    func parseVscdbSQLite(url: URL, agentName: String) -> [AgentOpRecord] {
         var records: [AgentOpRecord] = []
         let dbPath = url.path
 
@@ -1343,7 +1343,17 @@ class AgentSessionScanner: ObservableObject {
         }
         defer { sqlite3_close(dbRef) }
 
-        let query = "SELECT key, value FROM ItemTable WHERE key LIKE '%chat.ChatSessionStore.index' OR key LIKE '%ChatStore' OR key LIKE '%file-changes%' OR key LIKE '%agent%tool%' OR key LIKE '%icube-ai-agent-storage-input-history%' OR key LIKE '%agent-storage%' LIMIT 200;"
+        var workspaceFolder = ""
+        let wsPath = url.deletingLastPathComponent().appendingPathComponent("workspace.json").path
+        if let wsData = try? Data(contentsOf: URL(fileURLWithPath: wsPath)),
+           let wsJson = try? JSONSerialization.jsonObject(with: wsData) as? [String: Any],
+           let folder = wsJson["folder"] as? String {
+            workspaceFolder = folder
+                .replacingOccurrences(of: "file://", with: "")
+                .removingPercentEncoding ?? folder
+        }
+
+        let query = "SELECT key, value FROM ItemTable;"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(dbRef, query, -1, &stmt, nil) == SQLITE_OK else { return records }
         defer { sqlite3_finalize(stmt) }
@@ -1362,27 +1372,44 @@ class AgentSessionScanner: ObservableObject {
                     for (sessionId, entry) in entries {
                         guard let entryDict = entry as? [String: Any] else { continue }
                         let title = entryDict["title"] as? String ?? ""
-                        let ts = entryDict["createdAt"] as? Double ?? 0
+                        let lastMessage = entryDict["lastMessage"] as? String ?? ""
+                        let ts = entryDict["createdAt"] as? Double ?? entryDict["lastMessageDate"] as? Double ?? 0
                         let date = ts > 1_000_000_000_000 ? Date(timeIntervalSince1970: ts / 1000) : (ts > 0 ? Date(timeIntervalSince1970: ts) : Date())
 
                         records.append(AgentOpRecord(
                             id: "\(url.path)_\(sessionId)",
                             agentName: agentName,
                             sessionId: sessionId,
-                            projectDir: "",
+                            projectDir: workspaceFolder,
                             timestamp: date,
                             toolName: "chat_session",
-                            targetPath: title,
+                            targetPath: title.isEmpty ? lastMessage.prefix(100).description : title,
                             opType: "对话",
-                            detail: ""
+                            detail: workspaceFolder
                         ))
                     }
                 }
-            }
 
-            if key.contains("file-changes") || key.contains("tool") {
-                let ops = extractOpsFromText(value, agentName: agentName, sessionId: "", cwd: "", ts: Date())
-                records.append(contentsOf: ops)
+                if let state = json["state"] as? [String: Any] {
+                    if let turnsHeight = state["turnsHeight"] as? [String: Any] {
+                        for (sessionId, _) in turnsHeight {
+                            let existing = records.contains { $0.id == "\(url.path)_\(sessionId)" }
+                            if !existing {
+                                records.append(AgentOpRecord(
+                                    id: "\(url.path)_turns_\(sessionId)",
+                                    agentName: agentName,
+                                    sessionId: sessionId,
+                                    projectDir: workspaceFolder,
+                                    timestamp: Date(),
+                                    toolName: "chat_session",
+                                    targetPath: workspaceFolder,
+                                    opType: "对话",
+                                    detail: ""
+                                ))
+                            }
+                        }
+                    }
+                }
             }
 
             if key.contains("icube-ai-agent-storage-input-history") || key.contains("agent-storage-input-history") {
@@ -1391,29 +1418,85 @@ class AgentSessionScanner: ObservableObject {
                 for (idx, item) in historyList.enumerated() {
                     let inputText = item["inputText"] as? String ?? ""
                     guard !inputText.isEmpty else { continue }
-                    let ops = extractOpsFromText(inputText, agentName: agentName, sessionId: "history_\(idx)", cwd: "", ts: Date())
-                    records.append(contentsOf: ops)
-                    if ops.isEmpty {
-                        records.append(AgentOpRecord(
-                            id: "\(url.path)_history_\(idx)",
-                            agentName: agentName,
-                            sessionId: "history_\(idx)",
-                            projectDir: "",
-                            timestamp: Date(),
-                            toolName: "user_input",
-                            targetPath: "",
-                            opType: "对话",
-                            detail: String(inputText.prefix(200))
-                        ))
-                    }
+                    records.append(AgentOpRecord(
+                        id: "\(url.path)_history_\(idx)",
+                        agentName: agentName,
+                        sessionId: "input_history",
+                        projectDir: workspaceFolder,
+                        timestamp: Date(),
+                        toolName: "user_input",
+                        targetPath: String(inputText.prefix(100)),
+                        opType: "对话",
+                        detail: String(inputText.prefix(200))
+                    ))
                 }
+            }
+
+            if key == "icube_session_agent_map" {
+                guard let data = value.data(using: .utf8),
+                      let map = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { continue }
+                for (sessionId, agentType) in map {
+                    records.append(AgentOpRecord(
+                        id: "\(url.path)_agentmap_\(sessionId)",
+                        agentName: agentName,
+                        sessionId: sessionId,
+                        projectDir: workspaceFolder,
+                        timestamp: Date(),
+                        toolName: "agent_session",
+                        targetPath: agentType,
+                        opType: "操作",
+                        detail: "agent_type=\(agentType)"
+                    ))
+                }
+            }
+
+            if key == "memento/icube-ai-agent-storage" {
+                guard let data = value.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let list = json["list"] as? [[String: Any]] else { continue }
+                for item in list {
+                    let sessionId = item["sessionId"] as? String ?? ""
+                    let isCurrent = item["isCurrent"] as? Bool ?? false
+                    records.append(AgentOpRecord(
+                        id: "\(url.path)_icube_\(sessionId)",
+                        agentName: agentName,
+                        sessionId: sessionId,
+                        projectDir: workspaceFolder,
+                        timestamp: Date(),
+                        toolName: isCurrent ? "current_session" : "session",
+                        targetPath: workspaceFolder,
+                        opType: "操作",
+                        detail: isCurrent ? "当前活跃会话" : "历史会话"
+                    ))
+                }
+            }
+
+            if key.contains("currentAgentData") {
+                guard let data = value.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                let agentId = json["agent_id"] as? String ?? ""
+                let agentName2 = json["name"] as? String ?? ""
+                let desc = json["description"] as? String ?? ""
+                let tools = json["built_in_tool_list"] as? [[String: String]] ?? []
+                let toolNames = tools.compactMap { $0["value"] }.joined(separator: ", ")
+                records.append(AgentOpRecord(
+                    id: "\(url.path)_agent_config_\(agentId)",
+                    agentName: agentName,
+                    sessionId: agentId,
+                    projectDir: workspaceFolder,
+                    timestamp: Date(),
+                    toolName: "agent_config",
+                    targetPath: agentName2,
+                    opType: "操作",
+                    detail: "tools=[\(toolNames)] \(desc)"
+                ))
             }
         }
 
         return records
     }
 
-    private func parseFileChangesJSON(url: URL, agentName: String) -> [AgentOpRecord] {
+    func parseFileChangesJSON(url: URL, agentName: String) -> [AgentOpRecord] {
         guard let data = try? Data(contentsOf: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
 

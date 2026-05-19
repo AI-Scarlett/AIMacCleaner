@@ -86,7 +86,7 @@
 
 ### 方式一：下载 DMG（推荐）
 
-1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.7.4-arm64.dmg`
+1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.7.8-arm64.dmg`
 2. 双击打开 DMG 文件
 3. 将 AIMacCleaner 拖入 Applications 文件夹
 4. 首次打开时，右键点击应用 → 选择「打开」（需绕过 Gatekeeper 验证）
@@ -109,6 +109,7 @@ cp -r /tmp/AIMacCleaner_build/build/AIMacCleaner.app /Applications/
 | 🧹 Mac 清理 | 扫描可清理的缓存/日志/临时文件 | 本地扫描 + AI 扫描 |
 | 📱 APP 管理 | 管理本机 .app 应用 | 卸载/清理缓存/重置 |
 | 📦 依赖管理 | 管理 Homebrew/npm/pip 包 | 卸载/清理 |
+| 🛡️ Agent 审计 | 审计 AI Agent 对本地文件的操作 | 50+ 种 Agent 内置 |
 | 🖥️ Agent 监控 | 记录 AI Agent 自动操作 | 筛选 + 监控 |
 | ⚙️ 设置 | AI配置/功能开关/监控/版本更新 | 集中设置面板 |
 
@@ -182,20 +183,22 @@ rm -rf "$DMG_STAGING"
 ```
 AIMacCleaner/
 ├── AIMacCleaner/
-│   ├── AIMacCleanerApp.swift    # 应用入口
-│   ├── ContentView.swift        # 主界面（左侧导航 + 右侧内容）
-│   ├── MenuBarMonitor.swift     # 菜单栏常驻监控视图
-│   ├── OperationMonitor.swift   # AI Agent 操作监控服务
-│   ├── ScannerService.swift     # 核心服务（扫描、删除、AI、监控、更新）
-│   ├── ScanRules.swift          # 35+ 条本地扫描规则
-│   ├── Models.swift             # 数据模型
-│   ├── SettingsView.swift       # 统一设置页面
-│   ├── SensorMonitor.swift      # 摄像头/麦克风监控
-│   ├── AIConfigView.swift       # AI 配置弹窗
-│   └── Assets.xcassets/         # 图标和资源
-├── AIMacCleaner.xcodeproj/     # Xcode 项目
-├── build_native.sh              # 构建脚本
-├── CHANGELOG.md                 # 更新日志
+│   ├── AIMacCleanerApp.swift         # 应用入口
+│   ├── ContentView.swift             # 主界面（左侧导航 + 右侧内容）
+│   ├── MenuBarMonitor.swift          # 菜单栏常驻监控视图
+│   ├── AgentSessionScanner.swift     # Agent 审计：50+ 种 Agent 会话数据扫描与解析
+│   ├── OperationMonitor.swift        # AI Agent 操作监控服务
+│   ├── ScannerService.swift          # 核心服务（扫描、删除、AI、监控、更新）
+│   ├── ScanRules.swift               # 35+ 条本地扫描规则
+│   ├── Models.swift                  # 数据模型
+│   ├── SettingsView.swift            # 统一设置页面
+│   ├── SensorMonitor.swift           # 摄像头/麦克风监控
+│   ├── AIConfigView.swift            # AI 配置弹窗
+│   └── Assets.xcassets/              # 图标和资源
+├── AIMacCleaner.xcodeproj/          # Xcode 项目
+├── build_native.sh                   # 构建脚本
+├── upload_dmg.py                     # DMG 上传脚本
+├── CHANGELOG.md                      # 更新日志
 ├── README.md
 └── LICENSE
 ```
@@ -206,7 +209,7 @@ AIMacCleaner/
 |------|----------|
 | 浏览器 | Google Chrome, 夸克 |
 | 办公 | 飞书/Lark, 钉钉, WPS Office, XMind |
-| AI Agent | Trae, CodeBuddy, Claude, Codex, Hermes, yi-code, Cline, MiniMax, Cherry Studio, LM Studio, OpenClaw, QClaw, CodeArts, Kimi, DeepSeek, 豆包, 通义千问, Augment, Copilot, Aider, Cody, Tabby, Warp, ChatGPT, Gemini, 智谱AI, 讯飞星火, 通义灵码, Whitzard 等 30+ |
+| AI Agent | Trae, CodeBuddy, Claude, Codex, Hermes, yi-code, Cline, MiniMax, Cherry Studio, LM Studio, OpenClaw, QClaw, CodeArts, Kimi, DeepSeek, 豆包, 通义千问, Augment, Copilot, Aider, Cody, Tabby, Warp, ChatGPT, Gemini, 智谱AI, 讯飞星火, 通义灵码, Whitzard, Cursor, Windsurf, Roo Code, Continue, Amazon Q, Tabnine, Lingma, OpenHands, CrewAI, AutoGen, MetaGPT, CAMEL, DeerFlow, Dify, BrowserUse, Huginn, AgentGPT, LobeHub, LangGraph, Swarm, AgentScope, UI-TARS 等 50+ |
 | 开发 | Electron, Python/pip, Homebrew, npm, pnpm, CocoaPods, Gradle, Maven, Cargo, Go, Conda, Julia, pyenv, NVM, Android SDK, OpenHarmony SDK, HarmonyOS SDK, VS Code, IntelliJ 等 |
 | 系统 | macOS 照片分析, 系统日志, 地理位置服务 |
 | 社交 | 微信, QQ |
@@ -222,6 +225,27 @@ AIMacCleaner/
 ## 更新日志
 
 详见 [CHANGELOG.md](CHANGELOG.md)
+
+### v1.7.8 (2026-05-19)
+- 🛡️ **新增 Agent 审计功能**：50+ 种 AI Agent 内置支持，审计其对本地文件的操作记录
+- **新增 10+ 种 Agent 内置注册**：OpenClaw、Hermes、CrewAI、AutoGen、OpenHands、Dify、MetaGPT、CAMEL、DeerFlow、Huginn、BrowserUse 等
+- **OpenClaw 专用解析器**：解析 ~/.openclaw/agents/ 下 JSONL 会话中的 tool_use/tool_call 操作
+- **Hermes 专用解析器**：解析 ~/.hermes/sessions/ 下 JSON 会话 + SQLite state.db
+- **CrewAI/AutoGen SQLite 解析**：自动发现表结构并提取操作记录
+- **OpenHands 事件解析**：解析轨迹文件中的 action/tool 事件
+- **VSCode 类 Agent 智能分发**：Trae/Cursor/CodeBuddy 等自动识别 .vscdb 和 file-changes JSON
+- **修复 Trae/CodeBuddy 审计无记录**：智能解析器根据文件扩展名自动分发到正确解析方法
+- **修复内置 Agent 可被重复添加**
+- **修复菜单栏退出按钮导致应用卡死**
+- **文件发现增强**：支持 .db、.sqlite、session/events/conversation/trajectory JSON 文件
+- **UI 更新**：所有新增 Agent 均有专属图标和颜色
+
+### v1.7.7 (2026-05-18)
+- Agent 审计功能基础框架
+- SQLite3 解析支持 (state.vscdb)
+- file-changes JSON 解析支持
+- Kimi 会话路径修复
+- 调试日志增强
 
 ### v1.7.3 (2026-05-15)
 - 修复磁盘空间数据与macOS系统设置不一致：使用 `URL.resourceValues` API + 十进制GB，数据完全对齐

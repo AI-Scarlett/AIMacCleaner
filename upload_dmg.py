@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "1.7.8"
+VERSION = "1.7.9"
 DMG_PATH = f"/tmp/AIMacCleaner-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -33,32 +33,19 @@ if response.status_code == 200:
     print(f"Release {TAG} already exists (id={release_id})")
 else:
     print(f"Creating new release {TAG}...")
-    body_text = """## v1.7.8 Agent 审计大升级
-
-### 🛡️ 新增 Agent 审计功能
-- **50+ 种 AI Agent 内置支持**：自动发现本机 Agent 会话数据，审计其对本地文件的操作记录
-- **多种存储格式解析**：JSONL、SQLite (state.vscdb)、JSON (file-changes)、MD、数据库
-
-### 新增 Agent 支持
-- **OpenClaw** - 专用解析器，解析 `~/.openclaw/agents/` 下 JSONL 会话中的 tool_use/tool_call 操作
-- **Hermes** - 双解析器，解析 `~/.hermes/sessions/` 下 JSON 会话 + SQLite state.db
-- **CrewAI** - SQLite 解析，自动发现 `~/Library/Application Support/CrewAI/` 下的表结构
-- **AutoGen** - SQLite 解析，解析 `~/.autogenstudio/` 下的 session/message/conversation 表
-- **OpenHands** - JSON 事件解析，解析轨迹文件中的 action/tool 事件
-- **Dify / MetaGPT / CAMEL / DeerFlow / Huginn / BrowserUse** - 通用 JSONL 解析
-- 同时在 `knownDirs` 中新增 AgentGPT、LobeHub、LangGraph、Swarm、AgentScope、UI-TARS 路径注册
+    body_text = """## v1.7.9 修复与改进
 
 ### 修复
-- **修复 Trae/CodeBuddy 审计无记录** - VSCode 类 Agent 智能分发解析器，根据文件扩展名自动调用 parseVscdbSQLite / parseFileChangesJSON / parseGenericJSONL
-- **修复内置 Agent 可被重复添加** - 内置 Agent 在添加列表中禁用按钮
-- **修复菜单栏退出按钮导致应用卡死** - 先关闭所有窗口再延迟 terminate
-- **修复 Kimi 无法获取会话记录** - 添加 `~/.kimi/sessions` 和 `~/.kimi/user-history` 精确路径
+- **修复自定义Agent无法审计** - 自定义Agent现在也使用智能分发解析器，自动识别vscdb/file-changes/SQLite等格式
+- **修复Trae审计结果目标路径为空** - 增强parseVscdbSQLite：解析workspace.json获取项目路径、input-history显示用户输入文本、解析session agent map和agent配置
+- **修复未扫描出其他内置Agent** - hasSessionFiles和scanAllAgents现在识别.db文件和session/events/conversation/trajectory JSON
+- **修复菜单栏退出并更新流程无效** - 改用exit(0)替代NSApp.terminate，避免弹窗卡住
+- **scanAllAgents搜索深度从6增加到10** - 更深层次的目录也能被扫描到
 
 ### 改进
-- **文件发现增强** - `findSessionFiles` 现在支持 .db、.sqlite 文件和包含 session/events/conversation/trajectory 的 JSON 文件
-- **VSCode 类 Agent 智能解析器** - 自动根据文件类型分发到正确的解析方法
-- **UI 更新** - 所有新增 Agent 均有专属 SF Symbol 图标和颜色
-- **通用自动发现优化** - 已注册的 Agent 跳过，避免重复注册
+- **parseVscdbSQLite全面增强** - 查询所有key而非预过滤，解析ChatStore/turnsHeight/icube_session_agent_map/memento/currentAgentData
+- **Trae审计现在显示workspace项目路径** - 从workspace.json读取folder字段
+- **Trae用户输入历史显示在targetPath** - inputText前100字符作为目标路径
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',

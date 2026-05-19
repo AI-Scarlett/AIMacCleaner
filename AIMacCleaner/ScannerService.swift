@@ -1632,7 +1632,7 @@ class ScannerService: ObservableObject {
     @Published var updateReadyToInstall: Bool = false
     @Published var updateErrorMessage: String = ""
 
-    let currentVersion = "1.7.8"
+    let currentVersion = "1.7.9"
 
     @Published var appUpdates: [UpdateItem] = []
     @Published var isCheckingAppUpdates: Bool = false
@@ -1871,7 +1871,12 @@ class ScannerService: ObservableObject {
             Thread.sleep(forTimeInterval: 0.5)
 
             DispatchQueue.main.async {
-                NSApplication.shared.terminate(nil)
+                for window in NSApplication.shared.windows {
+                    window.orderOut(nil)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    exit(0)
+                }
             }
         }
     }
