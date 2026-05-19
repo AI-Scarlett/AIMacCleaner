@@ -268,70 +268,111 @@ class IntelMigrationScanner: ObservableObject {
         return (url.absoluteString, nil)
     }
 
-    func uninstallAndReplace(item: IntelAppInfo) -> Bool {
-        switch item.appType {
-        case .homebrew:
-            let uninstall = Process()
-            uninstall.launchPath = "/usr/local/bin/brew"
-            uninstall.arguments = ["uninstall", item.name]
-            do {
-                try uninstall.run()
+    func uninstallAndReplace(item: IntelAppInfo) {
+        guard let idx = items.firstIndex(where: { $0.id == item.id }) else { return }
+
+        items[idx].replaceState = .uninstalling
+        items[idx].replaceProgress = 0.2
+
+        let appPath = items[idx].path
+        let appName = items[idx].name
+        let appType = items[idx].appType
+        let downloadURL = items[idx].downloadURL
+        let itemId = items[idx].id
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
+            var success = false
+
+            switch appType {
+            case .homebrew:
+                let uninstall = Process()
+                uninstall.executableURL = URL(fileURLWithPath: "/usr/local/bin/brew")
+                uninstall.arguments = ["uninstall", appName]
+                try? uninstall.run()
                 uninstall.waitUntilExit()
-            } catch { return false }
 
-            let install = Process()
-            install.launchPath = "/opt/homebrew/bin/brew"
-            install.arguments = ["install", item.name]
-            do {
-                try install.run()
-            } catch { return false }
+                await MainActor.run {
+                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
+                        self.items[idx2].replaceProgress = 0.5
+                        self.items[idx2].replaceState = .installing
+                    }
+                }
 
-            items.removeAll { $0.id == item.id }
-            intelOnlyCount = max(0, intelOnlyCount - 1)
-            return true
-
-        case .app:
-            do {
-                var resultURL: NSURL?
-                try fileManager.trashItem(at: URL(fileURLWithPath: item.path), resultingItemURL: &resultURL)
-            } catch { return false }
-
-            if let urlStr = item.downloadURL, let url = URL(string: urlStr) {
-                NSWorkspace.shared.open(url)
-            }
-            items.removeAll { $0.id == item.id }
-            intelOnlyCount = max(0, intelOnlyCount - 1)
-            return true
-
-        case .cli:
-            do {
-                try fileManager.removeItem(atPath: item.path)
-            } catch { return false }
-
-            if let brewName = item.homebrewARMName {
                 let install = Process()
-                install.launchPath = "/opt/homebrew/bin/brew"
-                install.arguments = ["install", brewName]
+                install.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/brew")
+                install.arguments = ["install", appName]
                 try? install.run()
-            } else if let urlStr = item.downloadURL, let url = URL(string: urlStr) {
-                NSWorkspace.shared.open(url)
-            }
-            items.removeAll { $0.id == item.id }
-            intelOnlyCount = max(0, intelOnlyCount - 1)
-            return true
+                install.waitUntilExit()
+                success = true
 
-        case .framework:
-            do {
+            case .app:
                 var resultURL: NSURL?
-                try fileManager.trashItem(at: URL(fileURLWithPath: item.path), resultingItemURL: &resultURL)
-            } catch { return false }
+                try? self.fileManager.trashItem(at: URL(fileURLWithPath: appPath), resultingItemURL: &resultURL)
 
-            if let urlStr = item.downloadURL, let url = URL(string: urlStr) {
-                NSWorkspace.shared.open(url)
+                await MainActor.run {
+                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
+                        self.items[idx2].replaceProgress = 0.6
+                        self.items[idx2].replaceState = .installing
+                    }
+                }
+
+                if let urlStr = downloadURL, let url = URL(string: urlStr) {
+                    await MainActor.run { NSWorkspace.shared.open(url) }
+                }
+                success = true
+
+            case .cli:
+                try? self.fileManager.removeItem(atPath: appPath)
+
+                await MainActor.run {
+                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
+                        self.items[idx2].replaceProgress = 0.5
+                        self.items[idx2].replaceState = .installing
+                    }
+                }
+
+                let brewPath = "/opt/homebrew/bin/brew"
+                if self.fileManager.fileExists(atPath: brewPath) {
+                    let install = Process()
+                    install.executableURL = URL(fileURLWithPath: brewPath)
+                    install.arguments = ["install", appName]
+                    try? install.run()
+                    install.waitUntilExit()
+                } else if let urlStr = downloadURL, let url = URL(string: urlStr) {
+                    await MainActor.run { NSWorkspace.shared.open(url) }
+                }
+                success = true
+
+            case .framework:
+                var resultURL: NSURL?
+                try? self.fileManager.trashItem(at: URL(fileURLWithPath: appPath), resultingItemURL: &resultURL)
+
+                await MainActor.run {
+                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
+                        self.items[idx2].replaceProgress = 0.6
+                        self.items[idx2].replaceState = .installing
+                    }
+                }
+
+                if let urlStr = downloadURL, let url = URL(string: urlStr) {
+                    await MainActor.run { NSWorkspace.shared.open(url) }
+                }
+                success = true
             }
-            items.removeAll { $0.id == item.id }
-            intelOnlyCount = max(0, intelOnlyCount - 1)
-            return true
+
+            await MainActor.run {
+                if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
+                    self.items[idx2].replaceProgress = 1.0
+                    self.items[idx2].replaceState = success ? .completed : .failed
+                    if success {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            self.items.removeAll { $0.id == itemId }
+                            self.intelOnlyCount = max(0, self.intelOnlyCount - 1)
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -42,6 +42,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		F7A8B9C0D1E2F3A4B5C6D7E8 /* Localizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localizer.swift; sourceTree = "<group>"; };
 		CC22DD33EE44FF55AA66BB77 /* IntelMigrationScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntelMigrationScanner.swift; sourceTree = "<group>"; };
 		EE44FF55AA66BB77CC88DD99 /* IntelMigrationTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntelMigrationTab.swift; sourceTree = "<group>"; };
+		FF55AA66BB77CC88DD99EE00 /* AIMacCleaner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIMacCleaner.entitlements; sourceTree = "<group>"; };
 		FD0E8A971151EDD2952E2662 /* AIMacCleaner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIMacCleaner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AABBCCDDEEFF001122334455 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -76,6 +77,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				FF11EE22DD33CC44BB55AA66 /* AgentSessionScanner.swift */,
 				CC22DD33EE44FF55AA66BB77 /* IntelMigrationScanner.swift */,
 				EE44FF55AA66BB77CC88DD99 /* IntelMigrationTab.swift */,
+				FF55AA66BB77CC88DD99EE00 /* AIMacCleaner.entitlements */,
 				B2C3D4E5F6A7B8C9D0E1F2A3 /* SensorMonitor.swift */,
 				D4E5F6A7B8C9D0E1F2A3B4C5 /* StorageAnalyzer.swift */,
 				F6A7B8C9D0E1F2A3B4C5D6E7 /* SettingsView.swift */,
@@ -185,6 +187,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
+				CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = NO;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
@@ -330,14 +333,15 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
+				CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = NO;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
 			INFOPLIST_KEY_CFBundleDisplayName = AIMacCleaner;
 			INFOPLIST_KEY_LSMinimumSystemVersion = 13.0;
 			LD_RUNPATH_SEARCH_PATHS = (
-				"$(inherited)",
-				"@executable_path/../Frameworks",
+					"$(inherited)",
+					"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
 			MARKETING_VERSION = 1.6.4;

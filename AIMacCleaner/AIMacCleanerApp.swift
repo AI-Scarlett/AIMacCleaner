@@ -129,9 +129,6 @@ class WindowDelegate: NSObject, NSWindowDelegate {
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)
-        DispatchQueue.main.async {
-            NSApp.setActivationPolicy(.accessory)
-        }
         return false
     }
 }

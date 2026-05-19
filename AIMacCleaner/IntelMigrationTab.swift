@@ -9,6 +9,7 @@ struct IntelMigrationTab: View {
     @State private var filterArch: IntelAppInfo.BinaryArchitecture?
     @State private var showIntelOnly = true
     @State private var hasScanned = false
+    @State private var isPreScanning = false
     @State private var selectedAppId: String?
     @State private var showUninstallConfirm = false
     @State private var pendingUninstallApp: IntelAppInfo?
@@ -51,15 +52,26 @@ struct IntelMigrationTab: View {
                         Button {
                             Task {
                                 if service.installedApps.isEmpty {
+                                    isPreScanning = true
                                     await service.scanInstalledApps()
+                                    isPreScanning = false
                                 }
                                 hasScanned = true
                                 scanner.scanFromInstalledApps(service.installedApps)
                             }
                         } label: {
-                            Label("扫描", systemImage: "magnifyingglass")
+                            if isPreScanning {
+                                HStack(spacing: 4) {
+                                    ProgressView()
+                                        .scaleEffect(0.6)
+                                    Text("扫描应用列表中...")
+                                        .font(.caption)
+                                }
+                            } else {
+                                Label("扫描", systemImage: "magnifyingglass")
+                            }
                         }
-                        .disabled(scanner.isScanning)
+                        .disabled(scanner.isScanning || isPreScanning)
                         .buttonStyle(.borderedProminent)
                     }
                 }
@@ -69,9 +81,11 @@ struct IntelMigrationTab: View {
 
             filterBar
 
-            if !hasScanned && scanner.items.isEmpty && !scanner.isScanning {
+            if !hasScanned && scanner.items.isEmpty && !scanner.isScanning && !isPreScanning {
                 emptyView
-            } else if filteredItems.isEmpty && !scanner.isScanning && hasScanned {
+            } else if (isPreScanning || scanner.isScanning) {
+                scanningView
+            } else if filteredItems.isEmpty && hasScanned {
                 noIntelView
             } else {
                 itemList
@@ -186,7 +200,9 @@ struct IntelMigrationTab: View {
             Button {
                 Task {
                     if service.installedApps.isEmpty {
+                        isPreScanning = true
                         await service.scanInstalledApps()
+                        isPreScanning = false
                     }
                     hasScanned = true
                     scanner.scanFromInstalledApps(service.installedApps)
@@ -198,6 +214,31 @@ struct IntelMigrationTab: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(.purple)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var scanningView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            ProgressView()
+                .scaleEffect(1.5)
+            if isPreScanning {
+                Text("正在扫描已安装应用列表...")
+                    .font(.headline)
+                    .foregroundColor(.purple)
+                Text("请稍候，首次扫描需要获取所有应用信息")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            } else {
+                Text("正在检测CPU架构...")
+                    .font(.headline)
+                    .foregroundColor(.purple)
+                Text(scanner.scanProgress.isEmpty ? "使用 lipo/file 命令检测每个应用的二进制架构" : scanner.scanProgress)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -291,7 +332,33 @@ struct IntelAppRow: View {
                         .frame(width: 20)
                 }
 
-                if item.architecture.isIntel {
+                if item.replaceState == .uninstalling || item.replaceState == .installing {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.gray.opacity(0.2), lineWidth: 2)
+                            .frame(width: 22, height: 22)
+                        Circle()
+                            .trim(from: 0, to: item.replaceProgress)
+                            .stroke(item.replaceState.color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                            .frame(width: 22, height: 22)
+                            .rotationEffect(.degrees(-90))
+                        Text("\(Int(item.replaceProgress * 100))")
+                            .font(.system(size: 7))
+                            .fontWeight(.bold)
+                            .foregroundColor(item.replaceState.color)
+                    }
+                    Text(item.replaceState.label)
+                        .font(.caption2)
+                        .foregroundColor(item.replaceState.color)
+                } else if item.replaceState == .completed {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                } else if item.replaceState == .failed {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                } else if item.architecture.isIntel {
                     Button {
                         onReplace()
                     } label: {

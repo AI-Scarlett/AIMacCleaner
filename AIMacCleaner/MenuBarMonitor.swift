@@ -259,7 +259,7 @@ struct MenuBarMonitor: View {
                         window.orderOut(nil)
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        NSApp.terminate(nil)
+                        exit(0)
                     }
                 } label: {
                     HStack(spacing: 3) {

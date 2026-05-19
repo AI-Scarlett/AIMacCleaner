@@ -433,6 +433,36 @@ struct IntelAppInfo: Identifiable {
     var homebrewARMName: String?
     var isSearching: Bool = false
     var searchError: String?
+    var replaceState: ReplaceState = .idle
+    var replaceProgress: Double = 0
+
+    enum ReplaceState: Int {
+        case idle = 0
+        case uninstalling = 1
+        case installing = 2
+        case completed = 3
+        case failed = 4
+
+        var label: String {
+            switch self {
+            case .idle: return ""
+            case .uninstalling: return "正在卸载..."
+            case .installing: return "正在安装..."
+            case .completed: return "已完成"
+            case .failed: return "失败"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .idle: return .secondary
+            case .uninstalling: return .orange
+            case .installing: return .blue
+            case .completed: return .green
+            case .failed: return .red
+            }
+        }
+    }
 
     var sizeFormatted: String { ByteCountFormatter.string(fromByteCount: size, countStyle: .file) }
 
