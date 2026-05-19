@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "1.7.9"
+VERSION = "1.8.0"
 DMG_PATH = f"/tmp/AIMacCleaner-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -33,19 +33,28 @@ if response.status_code == 200:
     print(f"Release {TAG} already exists (id={release_id})")
 else:
     print(f"Creating new release {TAG}...")
-    body_text = """## v1.7.9 修复与改进
+    body_text = """## v1.8.0 芯片迁移功能
 
-### 修复
-- **修复自定义Agent无法审计** - 自定义Agent现在也使用智能分发解析器，自动识别vscdb/file-changes/SQLite等格式
-- **修复Trae审计结果目标路径为空** - 增强parseVscdbSQLite：解析workspace.json获取项目路径、input-history显示用户输入文本、解析session agent map和agent配置
-- **修复未扫描出其他内置Agent** - hasSessionFiles和scanAllAgents现在识别.db文件和session/events/conversation/trajectory JSON
-- **修复菜单栏退出并更新流程无效** - 改用exit(0)替代NSApp.terminate，避免弹窗卡住
-- **scanAllAgents搜索深度从6增加到10** - 更深层次的目录也能被扫描到
+### 🆕 新功能：芯片迁移 (Intel → Apple Silicon)
+- **新增「芯片迁移」Tab页** - 一键扫描本机所有 Intel 架构的应用、CLI工具、Homebrew包
+- **架构检测** - 使用 `lipo -info` 和 `file` 命令精确识别 x86_64/ARM64/Universal 二进制
+- **Intel 应用扫描** - 扫描 /Applications 和 ~/Applications 下所有 .app 的架构
+- **CLI 工具扫描** - 扫描 /usr/local/bin、/opt/homebrew/bin、~/.cargo/bin、~/go/bin 等
+- **Homebrew Intel 包检测** - 识别 /usr/local/Cellar 下的 Intel Homebrew 包
+- **Rosetta 进程检测** - 检测正在通过 Rosetta 转译运行的进程
+- **搜索 ARM 替代** - 联网搜索 ARM 版本下载链接（Google搜索/Mac App Store/brew install）
+- **一键卸载 Intel 版本** - 支持 .app 移入回收站、CLI 直接删除、brew uninstall
+- **一键重装 ARM 版本** - Homebrew 包支持 `brew install` 重装 ARM 版本
+- **统计面板** - Intel 应用数量、通用二进制数量、ARM 原生数量、可释放空间
 
-### 改进
-- **parseVscdbSQLite全面增强** - 查询所有key而非预过滤，解析ChatStore/turnsHeight/icube_session_agent_map/memento/currentAgentData
-- **Trae审计现在显示workspace项目路径** - 从workspace.json读取folder字段
-- **Trae用户输入历史显示在targetPath** - inputText前100字符作为目标路径
+### 数据模型
+- `IntelAppInfo` - 含 BinaryArchitecture (x86_64/arm64/universal/rosetta/unknown) 和 IntelAppType (app/cli/homebrew/framework)
+
+### 修复 (来自 v1.7.9)
+- 修复自定义Agent无法审计
+- 修复Trae审计结果目标路径为空
+- 修复未扫描出其他内置Agent
+- 修复退出并更新流程无效
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',

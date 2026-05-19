@@ -418,3 +418,86 @@ struct StorageFile: Identifiable {
         }
     }
 }
+
+struct IntelAppInfo: Identifiable {
+    let id: String
+    let name: String
+    let displayName: String
+    let path: String
+    let architecture: BinaryArchitecture
+    let appType: IntelAppType
+    let size: Int64
+    let version: String?
+    let bundleId: String?
+    var downloadURL: String?
+    var homebrewARMName: String?
+    var isSearching: Bool = false
+    var searchError: String?
+
+    var sizeFormatted: String { ByteCountFormatter.string(fromByteCount: size, countStyle: .file) }
+
+    enum BinaryArchitecture: String, CaseIterable {
+        case x86_64 = "Intel (x86_64)"
+        case arm64 = "Apple Silicon (arm64)"
+        case universal = "Universal"
+        case unknown = "未知"
+        case rosetta = "Rosetta 转译"
+
+        var isIntel: Bool { self == .x86_64 || self == .rosetta }
+
+        var icon: String {
+            switch self {
+            case .x86_64: "cpu"
+            case .arm64: "cpu"
+            case .universal: "arrow.triangle.2.circlepath"
+            case .unknown: "questionmark.circle"
+            case .rosetta: "arrow.right.arrow.left.circle"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .x86_64: .red
+            case .arm64: .green
+            case .universal: .blue
+            case .unknown: .gray
+            case .rosetta: .orange
+            }
+        }
+
+        var badge: String {
+            switch self {
+            case .x86_64: "Intel"
+            case .arm64: "ARM"
+            case .universal: "通用"
+            case .unknown: "?"
+            case .rosetta: "转译"
+            }
+        }
+    }
+
+    enum IntelAppType: String, CaseIterable {
+        case app = "应用程序"
+        case cli = "命令行工具"
+        case homebrew = "Homebrew 包"
+        case framework = "框架/库"
+
+        var icon: String {
+            switch self {
+            case .app: "app.badge"
+            case .cli: "terminal"
+            case .homebrew: "mug.is.full"
+            case .framework: "building.columns"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .app: .cyan
+            case .cli: .purple
+            case .homebrew: .orange
+            case .framework: .brown
+            }
+        }
+    }
+}

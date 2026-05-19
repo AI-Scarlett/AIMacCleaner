@@ -21,6 +21,8 @@
 		C3D4E5F6A7B8C9D0E1F2A3B4 /* StorageAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A7B8C9D0E1F2A3B4C5 /* StorageAnalyzer.swift */; };
 		E4F5A6B7C8D9E0F1A2B3C4D5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A7B8C9D0E1F2A3B4C5D6E7 /* SettingsView.swift */; };
 		A1B2C3D4E5F6A7B8C9D0E1F3 /* Localizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7A8B9C0D1E2F3A4B5C6D7E8 /* Localizer.swift */; };
+		BB11CC22DD33EE44FF55AA66 /* IntelMigrationScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC22DD33EE44FF55AA66BB77 /* IntelMigrationScanner.swift */; };
+		DD33EE44FF55AA66BB77CC88 /* IntelMigrationTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE44FF55AA66BB77CC88DD99 /* IntelMigrationTab.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +40,8 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		D4E5F6A7B8C9D0E1F2A3B4C5 /* StorageAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageAnalyzer.swift; sourceTree = "<group>"; };
 		F6A7B8C9D0E1F2A3B4C5D6E7 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		F7A8B9C0D1E2F3A4B5C6D7E8 /* Localizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localizer.swift; sourceTree = "<group>"; };
+		CC22DD33EE44FF55AA66BB77 /* IntelMigrationScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntelMigrationScanner.swift; sourceTree = "<group>"; };
+		EE44FF55AA66BB77CC88DD99 /* IntelMigrationTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntelMigrationTab.swift; sourceTree = "<group>"; };
 		FD0E8A971151EDD2952E2662 /* AIMacCleaner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIMacCleaner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AABBCCDDEEFF001122334455 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -70,6 +74,8 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				6B5E0F2A3C4D5E6F7A8B9C0D /* MenuBarMonitor.swift */,
 				9D8F1A2B3C4D5E6F7A8B9C0E /* OperationMonitor.swift */,
 				FF11EE22DD33CC44BB55AA66 /* AgentSessionScanner.swift */,
+				CC22DD33EE44FF55AA66BB77 /* IntelMigrationScanner.swift */,
+				EE44FF55AA66BB77CC88DD99 /* IntelMigrationTab.swift */,
 				B2C3D4E5F6A7B8C9D0E1F2A3 /* SensorMonitor.swift */,
 				D4E5F6A7B8C9D0E1F2A3B4C5 /* StorageAnalyzer.swift */,
 				F6A7B8C9D0E1F2A3B4C5D6E7 /* SettingsView.swift */,
@@ -161,6 +167,8 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				5A4D9E1F2B3C4D5E6F7A8B9C /* MenuBarMonitor.swift in Sources */,
 				8C7E0F3A4B5C6D7E8F9A0B1C /* OperationMonitor.swift in Sources */,
 				AA11BB22CC33DD44EE55FF66 /* AgentSessionScanner.swift in Sources */,
+				BB11CC22DD33EE44FF55AA66 /* IntelMigrationScanner.swift in Sources */,
+				DD33EE44FF55AA66BB77CC88 /* IntelMigrationTab.swift in Sources */,
 				DD8768E775E3FCAEE527E7C9 /* Models.swift in Sources */,
 				7A3B8C9D0E1F2A3B4C5D6E7F /* ScanRules.swift in Sources */,
 				BE25C05BB068770416C5ED04 /* ScannerService.swift in Sources */,

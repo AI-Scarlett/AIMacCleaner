@@ -13,6 +13,7 @@ struct ContentView: View {
         case operations = "Agent 监控"
         case app = "APP 管理"
         case dependency = "依赖管理"
+        case migration = "芯片迁移"
         case other = "其它工具"
 
         var icon: String {
@@ -22,6 +23,7 @@ struct ContentView: View {
             case .dependency: "cube.box"
             case .other: "terminal"
             case .operations: "cpu"
+            case .migration: "arrow.triangle.2.circlepath"
             }
         }
 
@@ -32,6 +34,7 @@ struct ContentView: View {
             case .dependency: .orange
             case .other: .gray
             case .operations: .green
+            case .migration: .purple
             }
         }
 
@@ -42,6 +45,7 @@ struct ContentView: View {
             case .dependency: localizer.navDependency
             case .other: localizer.navOther
             case .operations: localizer.navOperations
+            case .migration: "芯片迁移"
             }
         }
 
@@ -52,6 +56,7 @@ struct ContentView: View {
             case .dependency: localizer.subDependency
             case .other: localizer.subOther
             case .operations: localizer.subOperations
+            case .migration: "Intel → Apple Silicon"
             }
         }
     }
@@ -288,6 +293,9 @@ struct ContentView: View {
                 .environmentObject(localizer)
         case .operations:
             OperationLogTab(monitor: service.operationMonitor)
+                .environmentObject(localizer)
+        case .migration:
+            IntelMigrationTab()
                 .environmentObject(localizer)
         }
     }
