@@ -1,27 +1,34 @@
 import SwiftUI
 
 struct IntelMigrationTab: View {
-    @StateObject private var scanner = IntelMigrationScanner()
+    @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
+    @StateObject private var scanner = IntelMigrationScanner()
     @State private var searchText = ""
     @State private var filterType: IntelAppInfo.IntelAppType?
+    @State private var filterArch: IntelAppInfo.BinaryArchitecture?
     @State private var showIntelOnly = true
     @State private var selectedAppId: String?
     @State private var showUninstallConfirm = false
     @State private var pendingUninstallApp: IntelAppInfo?
+    @State private var showReplaceConfirm = false
+    @State private var pendingReplaceApp: IntelAppInfo?
 
-    var filteredApps: [IntelAppInfo] {
-        var apps = scanner.intelApps
+    var filteredItems: [IntelAppInfo] {
+        var items = scanner.items
         if showIntelOnly {
-            apps = apps.filter { $0.architecture.isIntel }
+            items = items.filter { $0.architecture.isIntel || $0.architecture == .universal }
         }
         if let ft = filterType {
-            apps = apps.filter { $0.appType == ft }
+            items = items.filter { $0.appType == ft }
+        }
+        if let fa = filterArch {
+            items = items.filter { $0.architecture == fa }
         }
         if !searchText.isEmpty {
-            apps = apps.filter { $0.displayName.localizedCaseInsensitiveContains(searchText) }
+            items = items.filter { $0.displayName.localizedCaseInsensitiveContains(searchText) }
         }
-        return apps
+        return items.sorted { ($0.architecture.isIntel ? 0 : ($0.architecture == .universal ? 1 : 2)) < ($1.architecture.isIntel ? 0 : ($1.architecture == .universal ? 1 : 2)) }
     }
 
     var body: some View {
@@ -41,7 +48,12 @@ struct IntelMigrationTab: View {
                                 .foregroundColor(.secondary)
                         }
                         Button {
-                            scanner.scanAll()
+                            Task {
+                                if service.installedApps.isEmpty {
+                                    await service.scanInstalledApps()
+                                }
+                                scanner.scanFromInstalledApps(service.installedApps)
+                            }
                         } label: {
                             Label("扫描", systemImage: "magnifyingglass")
                         }
@@ -55,10 +67,10 @@ struct IntelMigrationTab: View {
 
             filterBar
 
-            if scanner.intelApps.isEmpty && !scanner.isScanning {
+            if scanner.items.isEmpty && !scanner.isScanning {
                 emptyView
             } else {
-                appList
+                itemList
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -66,7 +78,7 @@ struct IntelMigrationTab: View {
             Button("取消", role: .cancel) {}
             Button("卸载", role: .destructive) {
                 if let app = pendingUninstallApp {
-                    _ = scanner.uninstallIntel(app: app)
+                    _ = scanner.uninstallOnly(item: app)
                 }
             }
         } message: {
@@ -74,38 +86,33 @@ struct IntelMigrationTab: View {
                 Text("确定要卸载「\(app.displayName)」吗？此操作不可撤销。")
             }
         }
+        .alert("替换为 ARM 版本", isPresented: $showReplaceConfirm) {
+            Button("取消", role: .cancel) {}
+            Button("替换", role: .destructive) {
+                if let app = pendingReplaceApp {
+                    _ = scanner.uninstallAndReplace(item: app)
+                }
+            }
+        } message: {
+            if let app = pendingReplaceApp {
+                Text("将卸载「\(app.displayName)」的 Intel 版本，并尝试安装 ARM 原生版本。")
+            }
+        }
     }
 
     private var statsBar: some View {
         HStack(spacing: 16) {
-            StatBadge(
-                icon: "cpu",
-                label: "Intel 应用",
-                value: "\(scanner.intelCount)",
-                color: Color.red
-            )
-            StatBadge(
-                icon: "arrow.triangle.2.circlepath",
-                label: "通用二进制",
-                value: "\(scanner.universalCount)",
-                color: Color.blue
-            )
-            StatBadge(
-                icon: "cpu",
-                label: "ARM 原生",
-                value: "\(scanner.armCount)",
-                color: Color.green
-            )
-            if scanner.intelCount > 0 {
-                StatBadge(
-                    icon: "externaldrive",
-                    label: "可释放空间",
-                    value: scanner.totalIntelSizeFormatted,
-                    color: Color.orange
-                )
+            StatBadge(icon: "cpu", label: "需要迁移", value: "\(scanner.intelOnlyCount)", color: Color.red)
+            StatBadge(icon: "arrow.triangle.2.circlepath", label: "通用二进制", value: "\(scanner.universalCount)", color: Color.blue)
+            StatBadge(icon: "cpu", label: "ARM 原生", value: "\(scanner.armNativeCount)", color: Color.green)
+            if scanner.intelOnlyCount > 0 {
+                StatBadge(icon: "externaldrive", label: "可释放空间", value: scanner.totalIntelSizeFormatted, color: Color.orange)
             }
             Spacer()
-            Toggle("仅显示 Intel", isOn: $showIntelOnly)
+            Text("已扫描 \(scanner.totalScanned) 项")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Toggle("仅显示需迁移", isOn: $showIntelOnly)
                 .toggleStyle(.checkbox)
                 .font(.caption)
         }
@@ -116,26 +123,23 @@ struct IntelMigrationTab: View {
 
     private var filterBar: some View {
         HStack(spacing: 8) {
-            FilterChip(label: "全部", isSelected: filterType == nil) {
-                filterType = nil
-            }
+            FilterChip(label: "全部", isSelected: filterType == nil) { filterType = nil }
             ForEach(IntelAppInfo.IntelAppType.allCases, id: \.self) { type in
-                FilterChip(
-                    label: type.rawValue,
-                    icon: type.icon,
-                    isSelected: filterType == type
-                ) {
+                FilterChip(label: type.rawValue, icon: type.icon, isSelected: filterType == type) {
                     filterType = type
                 }
             }
+            Divider().frame(height: 16)
+            FilterChip(label: "Intel", icon: "cpu", isSelected: filterArch == .x86_64) { filterArch = filterArch == .x86_64 ? nil : .x86_64 }
+            FilterChip(label: "通用", icon: "arrow.triangle.2.circlepath", isSelected: filterArch == .universal) { filterArch = filterArch == .universal ? nil : .universal }
             Spacer()
             HStack(spacing: 4) {
                 Image(systemName: "magnifyingglass")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                TextField("搜索应用...", text: $searchText)
+                TextField("搜索...", text: $searchText)
                     .textFieldStyle(.plain)
-                    .frame(width: 150)
+                    .frame(width: 120)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -146,29 +150,17 @@ struct IntelMigrationTab: View {
         .padding(.vertical, 8)
     }
 
-    private var appList: some View {
+    private var itemList: some View {
         List(selection: $selectedAppId) {
-            ForEach(filteredApps) { app in
-                IntelAppRow(app: app, scanner: scanner)
-                    .tag(app.id)
-                    .contextMenu {
-                        Button("搜索 ARM 版本") {
-                            Task { await scanner.searchDownloadLink(for: app) }
-                        }
-                        Button("卸载 Intel 版本", role: .destructive) {
-                            pendingUninstallApp = app
-                            showUninstallConfirm = true
-                        }
-                        if app.appType == .homebrew {
-                            Button("重新安装 ARM 版本") {
-                                _ = scanner.reinstallWithARM(app: app)
-                            }
-                        }
-                        Divider()
-                        Button("在 Finder 中显示") {
-                            NSWorkspace.shared.selectFile(app.path, inFileViewerRootedAtPath: "")
-                        }
-                    }
+            ForEach(filteredItems) { item in
+                IntelAppRow(item: item, scanner: scanner, onReplace: {
+                    pendingReplaceApp = item
+                    showReplaceConfirm = true
+                }, onUninstall: {
+                    pendingUninstallApp = item
+                    showUninstallConfirm = true
+                })
+                .tag(item.id)
             }
         }
         .listStyle(.inset)
@@ -177,15 +169,27 @@ struct IntelMigrationTab: View {
     private var emptyView: some View {
         VStack(spacing: 16) {
             Spacer()
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 48))
-                .foregroundColor(.green)
-            Text("未发现 Intel 应用")
-                .font(.title2)
-                .fontWeight(.medium)
-            Text("您的 Mac 上所有应用均已原生支持 Apple Silicon")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+            if service.installedApps.isEmpty {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 48))
+                    .foregroundColor(.purple)
+                Text("点击「扫描」开始检测")
+                    .font(.title2)
+                    .fontWeight(.medium)
+                Text("将扫描所有已安装的APP、依赖和CLI工具的CPU架构")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            } else {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundColor(.green)
+                Text("所有应用均已适配 Apple Silicon")
+                    .font(.title2)
+                    .fontWeight(.medium)
+                Text("您的 Mac 上没有需要迁移的 Intel 应用")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -193,37 +197,49 @@ struct IntelMigrationTab: View {
 }
 
 struct IntelAppRow: View {
-    let app: IntelAppInfo
+    let item: IntelAppInfo
     @ObservedObject var scanner: IntelMigrationScanner
+    let onReplace: () -> Void
+    let onUninstall: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: app.appType.icon)
+            Image(systemName: item.appType.icon)
                 .font(.title3)
-                .foregroundColor(app.appType.color)
+                .foregroundColor(item.appType.color)
                 .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(app.displayName)
+                    Text(item.displayName)
                         .fontWeight(.medium)
-                    Text(app.architecture.badge)
+                    Text(item.architecture.badge)
                         .font(.caption2)
                         .fontWeight(.bold)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
-                        .background(app.architecture.color.opacity(0.15))
-                        .foregroundColor(app.architecture.color)
+                        .background(item.architecture.color.opacity(0.15))
+                        .foregroundColor(item.architecture.color)
                         .cornerRadius(4)
-                    Text(app.appType.rawValue)
+                    Text(item.appType.rawValue)
                         .font(.caption2)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
-                        .background(app.appType.color.opacity(0.1))
-                        .foregroundColor(app.appType.color)
+                        .background(item.appType.color.opacity(0.1))
+                        .foregroundColor(item.appType.color)
                         .cornerRadius(4)
+                    if item.architecture.isIntel {
+                        Text("需迁移")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.red.opacity(0.15))
+                            .foregroundColor(.red)
+                            .cornerRadius(4)
+                    }
                 }
-                Text(app.path)
+                Text(item.path)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -231,58 +247,62 @@ struct IntelAppRow: View {
 
             Spacer()
 
-            Text(app.sizeFormatted)
+            Text(item.sizeFormatted)
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .frame(width: 70, alignment: .trailing)
 
-            if app.version != nil {
-                Text("v\(app.version!)")
+            if let v = item.version, !v.isEmpty {
+                Text("v\(v)")
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .frame(width: 50, alignment: .trailing)
             }
 
             HStack(spacing: 6) {
-                if app.isSearching {
+                if item.isSearching {
                     ProgressView()
                         .scaleEffect(0.6)
                         .frame(width: 20)
                 }
 
-                if app.architecture.isIntel {
+                if item.architecture.isIntel {
                     Button {
-                        Task { await scanner.searchDownloadLink(for: app) }
+                        onReplace()
+                    } label: {
+                        HStack(spacing: 2) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.caption2)
+                            Text("替换")
+                                .font(.caption2)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.purple)
+                    .help("卸载 Intel 版本并安装 ARM 版本")
+
+                    Button {
+                        Task { await scanner.searchDownloadLink(for: item) }
                     } label: {
                         Image(systemName: "magnifyingglass")
                             .font(.caption)
                     }
                     .buttonStyle(.bordered)
-                    .help("搜索 ARM 版本")
+                    .help("搜索 ARM 版本下载链接")
+                }
 
-                    if app.appType == .homebrew {
-                        Button {
-                            _ = scanner.reinstallWithARM(app: app)
-                        } label: {
-                            Image(systemName: "arrow.down.circle")
-                                .font(.caption)
-                        }
-                        .buttonStyle(.bordered)
-                        .help("重新安装 ARM 版本")
-                    }
-
+                if item.architecture == .universal {
                     Button {
-                        scanner.uninstallIntel(app: app)
+                        Task { await scanner.searchDownloadLink(for: item) }
                     } label: {
-                        Image(systemName: "trash")
+                        Image(systemName: "magnifyingglass")
                             .font(.caption)
                     }
                     .buttonStyle(.bordered)
-                    .foregroundColor(.red)
-                    .help("卸载 Intel 版本")
+                    .help("搜索纯 ARM 版本")
                 }
 
-                if let url = app.downloadURL {
+                if let url = item.downloadURL {
                     Button {
                         if let u = URL(string: url) { NSWorkspace.shared.open(u) }
                     } label: {
@@ -290,8 +310,18 @@ struct IntelAppRow: View {
                             .font(.caption)
                     }
                     .buttonStyle(.bordered)
-                    .help("打开下载链接")
+                    .help("打开下载链接: \(url)")
                 }
+
+                Button {
+                    onUninstall()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .foregroundColor(.red)
+                .help("卸载")
             }
         }
         .padding(.vertical, 4)
