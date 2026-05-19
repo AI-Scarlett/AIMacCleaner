@@ -638,22 +638,73 @@ class OperationMonitor: ObservableObject {
 
     // MARK: - Targeted Process Monitor
 
-    @Published var discoveredProcesses: [DiscoveredProcess] = []
-    @Published var targetedProcesses: Set<String> = []
     @Published var targetedFileOps: [TargetedFileOp] = []
     @Published var isTargetedMonitoring: Bool = false
+    @Published var targetedAgentName: String = ""
+    @Published var targetedPids: Set<pid_t> = []
+    @Published var targetedErrorMessage: String = ""
 
+    private var targetedAgentNames: [String] = []
     private var targetedMonitorTimer: Timer?
     private var targetedLsofCache: [pid_t: (comm: String, files: Set<String>, sizes: [String: Int64])] = [:]
     private let targetedMaxOps = 2000
 
-    func scanDiscoveredProcesses() {
+    func startTargetedMonitoring(agentNames: [String]) {
+        stopTargetedMonitoring()
+        targetedAgentNames = agentNames
+        let displayNames = agentNames.joined(separator: " + ")
+        targetedAgentName = displayNames
+        targetedErrorMessage = ""
+        print("[AIMacCleaner] startTargetedMonitoring called with agentNames=\(agentNames)")
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.scanDiscoveredProcessesImpl()
+            guard let self = self else { return }
+            var allPids = Set<pid_t>()
+            for name in agentNames {
+                let pids = self.discoverPidsForAgent(name)
+                allPids.formUnion(pids)
+            }
+            DispatchQueue.main.async {
+                self.targetedPids = allPids
+                self.targetedLsofCache.removeAll()
+                if allPids.isEmpty {
+                    self.targetedErrorMessage = "未找到「\(displayNames)」相关的运行中进程，请确认该程序正在运行"
+                    self.isTargetedMonitoring = false
+                    print("[AIMacCleaner] No PIDs found for \(displayNames)")
+                } else {
+                    self.isTargetedMonitoring = true
+                    self.targetedErrorMessage = ""
+                    print("[AIMacCleaner] Targeted monitoring started for \(displayNames), found \(allPids.count) PIDs")
+
+                    self.targetedMonitorTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            self?.pollTargetedProcesses()
+                        }
+                    }
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        self.pollTargetedProcesses()
+                    }
+                }
+            }
         }
     }
 
-    private func scanDiscoveredProcessesImpl() {
+    func startTargetedMonitoring(agentName: String) {
+        startTargetedMonitoring(agentNames: [agentName])
+    }
+
+    private func discoverPidsForAgent(_ name: String) -> Set<pid_t> {
+        var keywords: [String] = []
+        for (displayName, kws) in agentKeywords {
+            if displayName == name {
+                keywords = kws
+                break
+            }
+        }
+        if keywords.isEmpty {
+            keywords = [name.lowercased()]
+        }
+
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/ps")
         task.arguments = ["-eo", "pid=,ppid=,comm=,args="]
@@ -661,75 +712,77 @@ class OperationMonitor: ObservableObject {
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
 
+        var pidCommMap: [pid_t: String] = [:]
+        var pidPpidMap: [pid_t: pid_t] = [:]
+        var pidArgsMap: [pid_t: String] = [:]
+        var rootPids: Set<pid_t> = []
+
         do {
             try task.run()
             task.waitUntilExit()
             guard let data = try? pipe.fileHandleForReading.readToEnd(),
-                  let output = String(data: data, encoding: .utf8) else { return }
+                  let output = String(data: data, encoding: .utf8) else { return [] }
 
-            let systemComms: Set<String> = ["kernel_task", "launchd", "WindowServer", "Dock", "Finder",
-                "SystemUIServer", "cfprefsd", "distnoted", "logd", "syslogd", "securityd", "trustd",
-                "sysmond", "mds", "mdworker", "corespeechd", "coreaudiod", "WiFi", "bluetoothd",
-                "airportd", "iconservicesagent", "coreduetd", "locationd", "timed", "chronod",
-                "powerd", "configd", "diskarbitrationd", "fseventsd", "sandboxd", "loginwindow",
-                "notificationcenter", "controlcenter", "coreauthd", "atsd", "backgroundtaskmanagementd",
-                "com.apple", "OSAnalytics", "analyticsd", "diagnostics_agent", "sysdiagnose",
-                "ReportCrash", "spindump", "tailspind", "signpost_reporter"]
-
-            var commGroups: [String: [pid_t]] = [:]
             for line in output.components(separatedBy: .newlines) {
                 let parts = line.trimmingCharacters(in: .whitespaces).split(separator: " ", omittingEmptySubsequences: true)
-                guard parts.count >= 3, let pid = pid_t(parts[0]) else { continue }
+                guard parts.count >= 3,
+                      let pid = pid_t(parts[0]),
+                      let ppid = pid_t(parts[1]) else { continue }
+
                 let comm = String(parts[2])
                 let args = parts.count >= 4 ? String(parts[3...].joined(separator: " ")) : ""
-                let lower = (comm + " " + args).lowercased()
-                if systemComms.contains(comm) || systemComms.contains(where: { lower.hasPrefix($0.lowercased()) }) { continue }
-                if comm.isEmpty || comm == "-" || comm == "(null)" { continue }
-                commGroups[comm, default: []].append(pid)
-            }
+                let combined = (comm + " " + args).lowercased()
 
-            var results: [DiscoveredProcess] = []
-            for (comm, pids) in commGroups.sorted(by: { $0.1.count > $1.1.count }) {
-                var agentName: String? = nil
-                for (name, keywords) in agentKeywords {
-                    for kw in keywords {
-                        if comm.lowercased().contains(kw.lowercased()) { agentName = name; break }
+                pidCommMap[pid] = comm
+                pidPpidMap[pid] = ppid
+                pidArgsMap[pid] = args
+
+                for kw in keywords {
+                    if combined.contains(kw) {
+                        rootPids.insert(pid)
+                        break
                     }
-                    if agentName != nil { break }
                 }
-                results.append(DiscoveredProcess(id: comm, comm: comm, pids: pids, agentName: agentName))
-            }
-
-            DispatchQueue.main.async { [weak self] in
-                self?.discoveredProcesses = results
             }
         } catch {
-            print("[AIMacCleaner] scanDiscoveredProcesses failed: \(error)")
+            print("[AIMacCleaner] discoverPidsForAgent ps failed: \(error)")
+            return []
         }
+
+        var allPids = Set<pid_t>(rootPids)
+
+        var changed = true
+        while changed {
+            changed = false
+            for (pid, ppid) in pidPpidMap {
+                if allPids.contains(pid) { continue }
+                if allPids.contains(ppid) {
+                    allPids.insert(pid)
+                    changed = true
+                }
+            }
+        }
+
+        return allPids
     }
 
-    func toggleTargetedProcess(_ comm: String) {
-        if targetedProcesses.contains(comm) {
-            targetedProcesses.remove(comm)
-        } else {
-            targetedProcesses.insert(comm)
+    func refreshTargetedPids() {
+        guard isTargetedMonitoring, !targetedAgentNames.isEmpty else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            var newPids = Set<pid_t>()
+            for name in self.targetedAgentNames {
+                newPids.formUnion(self.discoverPidsForAgent(name))
+            }
+            DispatchQueue.main.async {
+                let added = newPids.subtracting(self.targetedPids)
+                let removed = self.targetedPids.subtracting(newPids)
+                if !added.isEmpty || !removed.isEmpty {
+                    print("[AIMacCleaner] PID refresh for \(self.targetedAgentName): +\(added.count) -\(removed.count), total \(newPids.count)")
+                }
+                self.targetedPids = newPids
+            }
         }
-        if targetedProcesses.isEmpty {
-            stopTargetedMonitoring()
-        } else if isTargetedMonitoring == false {
-            startTargetedMonitoring()
-        }
-    }
-
-    func startTargetedMonitoring() {
-        guard !targetedProcesses.isEmpty else { return }
-        isTargetedMonitoring = true
-        targetedLsofCache.removeAll()
-        targetedMonitorTimer?.invalidate()
-        targetedMonitorTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            self?.pollTargetedProcesses()
-        }
-        pollTargetedProcesses()
     }
 
     func stopTargetedMonitoring() {
@@ -743,9 +796,11 @@ class OperationMonitor: ObservableObject {
         targetedFileOps.removeAll()
     }
 
+    private var pidRefreshTimer: Timer?
+
     private func pollTargetedProcesses() {
-        let targets = targetedProcesses
-        guard !targets.isEmpty else { return }
+        let pids = targetedPids
+        guard !pids.isEmpty else { return }
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
@@ -780,7 +835,7 @@ class OperationMonitor: ObservableObject {
                           !path.hasPrefix("/dev/"),
                           !path.hasPrefix("/System/"),
                           !path.hasPrefix("/private/var/folders/") else { continue }
-                    if !targets.contains(currentComm) { continue }
+                    if !pids.contains(currentPid) { continue }
 
                     var fileSize: Int64 = 0
                     if let attrs = try? FileManager.default.attributesOfItem(atPath: path) {

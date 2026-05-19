@@ -72,8 +72,9 @@ struct AIMacCleanerApp: App {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    private var mainWindow: NSWindow?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
         DispatchQueue.main.async { [weak self] in
             self?.setupWindowDelegate()
         }
@@ -81,28 +82,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupWindowDelegate() {
         for window in NSApp.windows {
+            if window.title.contains("AIMacCleaner") || window.className.contains("Window") {
+                mainWindow = window
+            }
             window.delegate = WindowDelegate.shared
         }
         NotificationCenter.default.addObserver(
             forName: NSWindow.didBecomeKeyNotification,
             object: nil,
             queue: .main
-        ) { _ in
-            for window in NSApp.windows where window.delegate == nil {
-                window.delegate = WindowDelegate.shared
+        ) { [weak self] notification in
+            if let window = notification.object as? NSWindow {
+                self?.mainWindow = window
+                if window.delegate == nil {
+                    window.delegate = WindowDelegate.shared
+                }
             }
         }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        sender.setActivationPolicy(.regular)
-        sender.activate(ignoringOtherApps: true)
-        sender.unhide(nil)
-        for window in sender.windows {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+
+        if let window = mainWindow {
             window.makeKeyAndOrderFront(nil)
-        }
-        if let window = sender.windows.first, !window.isKeyWindow {
-            window.makeKeyAndOrderFront(nil)
+        } else {
+            for window in sender.windows {
+                if !window.title.isEmpty && window.className.contains("Window") {
+                    mainWindow = window
+                    window.makeKeyAndOrderFront(nil)
+                    break
+                }
+            }
         }
         return true
     }
@@ -117,8 +129,9 @@ class WindowDelegate: NSObject, NSWindowDelegate {
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)
-        NSApp.setActivationPolicy(.accessory)
-        NSApp.hide(nil)
+        DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.accessory)
+        }
         return false
     }
 }

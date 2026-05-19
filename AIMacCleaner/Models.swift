@@ -270,6 +270,34 @@ struct DiscoveredProcess: Identifiable, Hashable {
     static func == (lhs: DiscoveredProcess, rhs: DiscoveredProcess) -> Bool { lhs.id == rhs.id }
 }
 
+struct CustomAgentSource: Codable, Identifiable {
+    var id: String { name }
+    let name: String
+    let searchPaths: [String]
+    let addedAt: Date
+}
+
+struct DiscoveredAgent: Identifiable {
+    let id: String
+    let name: String
+    let sessionCount: Int
+    let latestActivity: Date?
+    let projectDirs: [String]
+    let dataPath: String
+}
+
+struct AgentOpRecord: Identifiable {
+    let id: String
+    let agentName: String
+    let sessionId: String
+    let projectDir: String
+    let timestamp: Date
+    let toolName: String
+    let targetPath: String
+    let opType: String
+    let detail: String
+}
+
 struct TargetedFileOp: Identifiable {
     let id: String
     let timestamp: Date

@@ -516,143 +516,38 @@ struct OperationLogTab: View {
             HStack(spacing: 8) {
                 Picker("", selection: $viewMode) {
                     Text("实时监控").tag(0)
-                    Text("已梳理").tag(1)
-                    Text("精准").tag(2)
+                    Text("审计").tag(1)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 220)
+                .frame(width: 150)
 
                 Spacer()
 
-                if viewMode == 2 {
-                    Button {
-                        monitor.scanDiscoveredProcesses()
-                    } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "arrow.clockwise").font(.system(size: 10))
-                            Text("刷新进程").font(.caption2)
-                        }
-                        .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    if monitor.isTargetedMonitoring {
+                if viewMode == 1 {
+                    if !sessionScanner.opRecords.isEmpty {
                         Button {
-                            monitor.stopTargetedMonitoring()
+                            sessionScanner.opRecords = []
+                            selectedAgentForAudit = nil
                         } label: {
                             HStack(spacing: 3) {
-                                Circle().fill(Color.green).frame(width: 5, height: 5)
-                                Text("监控中").font(.caption2)
+                                Image(systemName: "xmark.circle").font(.system(size: 10))
+                                Text("清除结果").font(.caption2)
                             }
-                            .foregroundColor(.green)
+                            .foregroundColor(.secondary)
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .tint(.green)
                     }
-
-                    Button {
-                        monitor.clearTargetedOps()
-                    } label: {
-                        HStack(spacing: 3) { Image(systemName: "trash"); Text("清除").font(.caption2) }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(.red)
-                }
-
-                if viewMode == 1 {
-                    Button {
-                        Task { await service.curateWithAI() }
-                    } label: {
-                        HStack(spacing: 3) {
-                            if monitor.isCurating {
-                                ProgressView().controlSize(.mini).scaleEffect(0.7)
-                            } else {
-                                Image(systemName: "wand.and.stars").font(.system(size: 10))
-                            }
-                            Text(monitor.isCurating ? "梳理中..." : "立即梳理").font(.caption2)
-                        }
-                        .foregroundColor(.purple)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(.purple)
-                    .disabled(monitor.isCurating || service.aiConfig?.hasKey != true)
-
-                    Menu {
-                        ForEach([1, 2, 3, 6, 12], id: \.self) { h in
-                            Button("每 \(h) 小时") {
-                                monitor.autoCurationInterval = h
-                                service.startAutoCuration()
-                            }
-                        }
-                        Button("关闭自动") { service.stopAutoCuration() }
-                    } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "timer").font(.system(size: 10))
-                            Text("每\(monitor.autoCurationInterval)h").font(.caption2)
-                        }
-                        .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(monitor.isCurating)
                 }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 6)
             .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
 
-            if viewMode == 1 && (!monitor.curationMessage.isEmpty || monitor.lastCurationTime != nil) {
-                let isSuccess = monitor.curationMessage.hasPrefix("梳理完成")
-                HStack(spacing: 8) {
-                    Image(systemName: isSuccess ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .font(.system(size: 14))
-                        .foregroundColor(isSuccess ? .green : .orange)
-                    Text(monitor.curationMessage)
-                        .font(.caption)
-                        .foregroundColor(.primary)
-                        .lineLimit(3)
-                    Spacer()
-                    Button {
-                        monitor.curationMessage = ""
-                        monitor.curationRawResponse = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 8)
-                .background(isSuccess ? Color.green.opacity(0.06) : Color.orange.opacity(0.06))
-
-                if !isSuccess && !monitor.curationRawResponse.isEmpty {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("AI 原始回复（\(monitor.curationRawResponse.count) 字符）")
-                            .font(.caption2).foregroundColor(.secondary)
-                        TextEditor(text: .constant(monitor.curationRawResponse))
-                            .font(.system(size: 10, design: .monospaced))
-                            .frame(minHeight: 120, maxHeight: 300)
-                            .scrollContentBackground(.hidden)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 8)
-                }
-
-                Divider()
-            }
-
             Divider()
 
             if viewMode == 0 {
                 liveView
-            } else if viewMode == 1 {
-                curatedView
             } else {
                 targetedView
             }
@@ -870,77 +765,701 @@ struct OperationLogTab: View {
         }
     }
 
+    @State private var selectedAgentName: String = ""
+    @State private var customAgentName: String = ""
+    @State private var customAgentPath: String = ""
+    @State private var targetedChecked: Set<String> = []
+    @StateObject private var sessionScanner = AgentSessionScanner()
+    @AppStorage("customAgentSources") private var customAgentSourcesData: Data = Data()
+    @State private var selectedAppToAdd: AppInfo?
+    @State private var showAddAgentSheet: Bool = false
+
+    private var customAgentSources: [CustomAgentSource] {
+        get {
+            guard let decoded = try? JSONDecoder().decode([CustomAgentSource].self, from: customAgentSourcesData) else { return [] }
+            return decoded
+        }
+    }
+
+    private func saveCustomAgentSource(_ source: CustomAgentSource) {
+        var sources = customAgentSources
+        if let idx = sources.firstIndex(where: { $0.name == source.name }) {
+            sources[idx] = source
+        } else {
+            sources.append(source)
+        }
+        customAgentSourcesData = (try? JSONEncoder().encode(sources)) ?? Data()
+        let home = NSHomeDirectory()
+        let paths = source.searchPaths.map { $0.replacingOccurrences(of: "~", with: home) }
+        let isVSCode = paths.contains { $0.contains("Library/Application Support") || $0.contains("globalStorage") }
+        let ds = AgentDataSource(
+            agentName: source.name,
+            searchPaths: paths,
+            isCustom: true,
+            isVSCodeType: isVSCode,
+            parser: { [sessionScanner] url, agentName in
+                sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
+            }
+        )
+        sessionScanner.registerSource(ds)
+        sessionScanner.scanAllAgents()
+    }
+
+    private func addAgentAndSearch(_ app: AppInfo) {
+        let dirs = sessionScanner.searchJSONLDirs(forAgentName: app.displayName, bundlePath: app.appPath)
+        var finalPaths: [String]
+        if dirs.isEmpty {
+            let home = NSHomeDirectory()
+            let lower = app.name.lowercased().replacingOccurrences(of: " ", with: "")
+            finalPaths = [
+                home + "/.\(lower)",
+                home + "/Library/Application Support/\(app.displayName)",
+                home + "/.config/\(lower)",
+            ]
+            if let bp = app.appPath as String? {
+                finalPaths.append(bp)
+                if bp.hasSuffix(".app") {
+                    finalPaths.append(bp.replacingOccurrences(of: ".app", with: ""))
+                }
+            }
+        } else {
+            finalPaths = dirs
+        }
+        saveCustomAgentSource(CustomAgentSource(name: app.displayName, searchPaths: finalPaths, addedAt: Date()))
+    }
+
+    private func removeCustomAgentSource(_ name: String) {
+        var sources = customAgentSources
+        sources.removeAll { $0.name == name }
+        customAgentSourcesData = (try? JSONEncoder().encode(sources)) ?? Data()
+        sessionScanner.removeDataSource(forAgentName: name)
+        sessionScanner.scanAllAgents()
+    }
+
+    private var allMonitorableApps: [AppInfo] {
+        service.installedApps
+    }
+    @State private var selectedAgentForAudit: String?
+    @State private var auditFilterAgent: String?
+    @State private var aiSummary: String = ""
+    @State private var isGeneratingSummary: Bool = false
+
+    private var auditFilteredRecords: [AgentOpRecord] {
+        if let filter = auditFilterAgent {
+            return sessionScanner.opRecords.filter { $0.agentName == filter }
+        }
+        return sessionScanner.opRecords
+    }
+
+    private var auditStats: [String: Int] {
+        var stats: [String: Int] = [:]
+        for rec in auditFilteredRecords {
+            stats["总操作", default: 0] += 1
+            stats[rec.opType, default: 0] += 1
+        }
+        return stats
+    }
+
+    private var auditFileStats: [String: Int] {
+        var stats: [String: Int] = [:]
+        for rec in auditFilteredRecords where !rec.targetPath.isEmpty {
+            stats[rec.targetPath, default: 0] += 1
+        }
+        return stats.sorted { $0.value > $1.value }.prefix(20).reduce(into: [:]) { $0[$1.key] = $1.value }
+    }
+
     private var targetedView: some View {
         VStack(spacing: 0) {
-            if monitor.discoveredProcesses.isEmpty {
+            if let sel = selectedAgentForAudit, !sessionScanner.opRecords.isEmpty {
+                VStack(spacing: 0) {
+                    HStack(spacing: 8) {
+                        Button {
+                            selectedAgentForAudit = nil
+                            sessionScanner.opRecords = []
+                            aiSummary = ""
+                            auditFilterAgent = nil
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "chevron.left").font(.system(size: 9))
+                                Text("返回").font(.caption2)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.secondary)
+
+                        Text("审计: \(sel)")
+                            .font(.caption).fontWeight(.semibold).foregroundColor(.purple)
+                        Text("·").foregroundColor(.secondary)
+                        Text("\(auditFilteredRecords.count) 条记录")
+                            .font(.caption).foregroundColor(.secondary)
+
+                        Spacer()
+
+                        Button {
+                            generateAISummary()
+                        } label: {
+                            HStack(spacing: 3) {
+                                if isGeneratingSummary {
+                                    ProgressView().controlSize(.mini).scaleEffect(0.7)
+                                } else {
+                                    Image(systemName: "wand.and.stars").font(.system(size: 9))
+                                }
+                                Text(isGeneratingSummary ? "分析中..." : "AI 分析").font(.caption2)
+                            }
+                            .foregroundColor(.purple)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .tint(.purple)
+                        .disabled(isGeneratingSummary || service.aiConfig?.hasKey != true)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 6)
+                    .background(Color.purple.opacity(0.06))
+
+                    Divider()
+
+                    VStack(spacing: 0) {
+                        HStack(spacing: 16) {
+                            ForEach(Array(auditStats.sorted(by: { $0.key < $1.key })), id: \.key) { key, val in
+                                HStack(spacing: 3) {
+                                    Text(key).font(.system(size: 10)).foregroundColor(.secondary)
+                                    Text("\(val)").font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                        .foregroundColor(key == "总操作" ? .primary : opTypeColor(key))
+                                }
+                            }
+                            Spacer()
+                            if let filter = auditFilterAgent {
+                                HStack(spacing: 3) {
+                                    Text("筛选: \(filter)").font(.system(size: 10)).foregroundColor(.blue)
+                                    Button {
+                                        auditFilterAgent = nil
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill").font(.system(size: 9)).foregroundColor(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 4)
+                        .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+
+                        if !auditFileStats.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 6) {
+                                    Text("高频文件:").font(.system(size: 9)).foregroundColor(.secondary)
+                                    ForEach(Array(auditFileStats.sorted(by: { $0.value > $1.value }).prefix(8)), id: \.key) { path, count in
+                                        HStack(spacing: 2) {
+                                            Text(URL(fileURLWithPath: path).lastPathComponent)
+                                                .font(.system(size: 9))
+                                                .lineLimit(1)
+                                            Text("×\(count)").font(.system(size: 8, weight: .semibold, design: .monospaced))
+                                                .foregroundColor(.orange)
+                                        }
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(Color.orange.opacity(0.08))
+                                        .cornerRadius(3)
+                                    }
+                                }
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 3)
+                            }
+                        }
+
+                        if !aiSummary.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "wand.and.stars").font(.system(size: 10)).foregroundColor(.purple)
+                                    Text("AI 分析总结").font(.caption).fontWeight(.semibold).foregroundColor(.purple)
+                                    Spacer()
+                                    Button {
+                                        aiSummary = ""
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill").font(.system(size: 10)).foregroundColor(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                ScrollView {
+                                    Text(aiSummary)
+                                        .font(.caption)
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .frame(maxHeight: 200)
+                            }
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 8)
+                            .background(Color.purple.opacity(0.04))
+                        }
+
+                        Divider()
+                    }
+
+                    Table(auditFilteredRecords) {
+                        TableColumn("时间") { rec in
+                            Text(timeStr(rec.timestamp)).font(.system(size: 11)).monospacedDigit()
+                        }
+                        .width(min: 60, max: 80)
+                        TableColumn("操作") { rec in
+                            HStack(spacing: 3) {
+                                Text(rec.opType)
+                                    .font(.system(size: 10))
+                                    .fontWeight(.medium)
+                                    .foregroundColor(opTypeColor(rec.opType))
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(opTypeColor(rec.opType).opacity(0.1))
+                                    .cornerRadius(3)
+                                Text(rec.toolName)
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .width(min: 80, max: 120)
+                        TableColumn("目标路径") { rec in
+                            Text(rec.targetPath).font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
+                        }
+                        TableColumn("项目") { rec in
+                            Text(rec.projectDir).font(.system(size: 10)).lineLimit(1).truncationMode(.middle).foregroundColor(.secondary)
+                        }
+                        .width(min: 80, max: 180)
+                        TableColumn("详情") { rec in
+                            Text(rec.detail).font(.system(size: 10)).lineLimit(1).truncationMode(.tail).foregroundColor(.secondary)
+                        }
+                    }
+                    .tableStyle(.bordered)
+                }
+            } else if sessionScanner.isScanning {
                 VStack(spacing: 16) {
                     Spacer()
-                    Image(systemName: "target").font(.system(size: 40)).foregroundColor(.secondary.opacity(0.5))
-                    Text("点击「刷新进程」扫描正在运行的进程").font(.title3).fontWeight(.medium)
-                    Text("勾选你想监控的进程，系统会每2秒轮询这些进程打开的文件变化").font(.caption).foregroundColor(.secondary)
+                    ProgressView().controlSize(.regular)
+                    Text(selectedAgentForAudit == nil ? "正在扫描 Agent 会话..." : "正在解析 \(selectedAgentForAudit!) 的操作记录...").font(.caption).foregroundColor(.secondary)
                     Spacer()
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                HSplitView {
-                    // Left: Process list
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text("进程列表 (\(monitor.discoveredProcesses.count))").font(.caption).fontWeight(.semibold).padding(.horizontal, 12).padding(.vertical, 6)
-                            Divider()
-                            ForEach(monitor.discoveredProcesses.prefix(80)) { proc in
-                                HStack(spacing: 6) {
-                                    Toggle("", isOn: Binding(
-                                        get: { monitor.targetedProcesses.contains(proc.comm) },
-                                        set: { _ in monitor.toggleTargetedProcess(proc.comm) }
-                                    ))
-                                    .toggleStyle(.checkbox)
-                                    .scaleEffect(0.7)
-                                    .frame(width: 18)
-
-                                    if let agent = proc.agentName {
-                                        HStack(spacing: 2) {
-                                            Text(agent).font(.caption).fontWeight(.semibold).foregroundColor(.purple)
-                                            Text("·").foregroundColor(.secondary)
-                                        }
-                                    }
-                                    Text(proc.comm).font(.caption2).lineLimit(1).truncationMode(.middle)
-                                    Spacer()
-                                    Text("\(proc.pids.count) PID").font(.caption2).foregroundColor(.secondary)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 3)
-                                Divider()
+                VStack(spacing: 0) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 13))
+                            .foregroundColor(.purple)
+                        Text("Agent 操作审计").font(.caption).fontWeight(.semibold)
+                        Text("·").foregroundColor(.secondary)
+                        Text("\(sessionScanner.discoveredAgents.count) 个 Agent").font(.caption).foregroundColor(.secondary)
+                        Spacer()
+                        Button {
+                            sessionScanner.scanAllAgents()
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "arrow.clockwise").font(.system(size: 9))
+                                Text("刷新扫描").font(.caption2)
                             }
                         }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.secondary)
                     }
-                    .frame(minWidth: 240, maxWidth: 340)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 8)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
 
-                    // Right: File operations
-                    if monitor.targetedFileOps.isEmpty {
+                    Divider()
+
+                    if sessionScanner.discoveredAgents.isEmpty {
                         VStack(spacing: 16) {
                             Spacer()
-                            Image(systemName: "eye.slash").font(.system(size: 30)).foregroundColor(.secondary.opacity(0.5))
-                            Text("勾选左侧进程后自动开始监控").font(.title3).fontWeight(.medium)
-                            Text("每 2 秒扫描一次目标进程的打开文件").font(.caption).foregroundColor(.secondary)
+                            Image(systemName: "doc.text.magnifyingglass")
+                                .font(.system(size: 40))
+                                .foregroundColor(.secondary.opacity(0.4))
+                            Text("点击「刷新扫描」发现本机的 Agent 会话记录").font(.caption).foregroundColor(.secondary)
+                            Text("支持 Claude Code、Codex、Trae、Cursor、CodeBuddy、Aider、Cline 等 20+ 种 Agent").font(.system(size: 10)).foregroundColor(.secondary.opacity(0.7))
                             Spacer()
-                        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        VStack(spacing: 0) {
-                            if monitor.isTargetedMonitoring {
-                                HStack(spacing: 8) {
-                                    Circle().fill(Color.green).frame(width: 6, height: 6)
-                                    Text("监控中 · 每2秒扫描 · \(monitor.targetedProcesses.count) 个进程 · 共 \(monitor.targetedFileOps.count) 条记录").font(.caption2).foregroundColor(.secondary)
-                                    Spacer()
-                                }.padding(.horizontal, 12).padding(.vertical, 4)
-                                Divider()
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(sessionScanner.discoveredAgents) { agent in
+                                    HStack(spacing: 10) {
+                                        Image(systemName: agentIconName(agent.name))
+                                            .font(.system(size: 14))
+                                            .foregroundColor(agentColorName(agent.name))
+                                            .frame(width: 20, height: 20)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            HStack(spacing: 4) {
+                                                Text(agent.name)
+                                                    .font(.body)
+                                                    .fontWeight(.medium)
+                                                if customAgentSources.contains(where: { $0.name == agent.name }) {
+                                                    Text("自定义")
+                                                        .font(.system(size: 9))
+                                                        .foregroundColor(.green)
+                                                        .padding(.horizontal, 3)
+                                                        .background(Color.green.opacity(0.1))
+                                                        .cornerRadius(2)
+                                                }
+                                            }
+                                            HStack(spacing: 6) {
+                                                Text("\(agent.sessionCount) 个会话")
+                                                    .font(.system(size: 10))
+                                                    .foregroundColor(.secondary)
+                                                if let date = agent.latestActivity {
+                                                    Text("最近: \(timeStr(date))")
+                                                        .font(.system(size: 10))
+                                                        .foregroundColor(.secondary)
+                                                }
+                                                if !agent.projectDirs.isEmpty {
+                                                    Text(agent.projectDirs.first ?? "")
+                                                        .font(.system(size: 9))
+                                                        .foregroundColor(.secondary)
+                                                        .lineLimit(1)
+                                                }
+                                            }
+                                        }
+
+                                        Spacer()
+
+                                        if customAgentSources.contains(where: { $0.name == agent.name }) {
+                                            Button {
+                                                removeCustomAgentSource(agent.name)
+                                                sessionScanner.scanAllAgents()
+                                            } label: {
+                                                Image(systemName: "xmark.circle.fill")
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .help("移除自定义 Agent")
+                                        }
+
+                                        Button {
+                                            selectedAgentForAudit = agent.name
+                                            auditFilterAgent = nil
+                                            aiSummary = ""
+                                            sessionScanner.scanAgentOps(agentName: agent.name)
+                                        } label: {
+                                            HStack(spacing: 3) {
+                                                Image(systemName: "magnifyingglass").font(.system(size: 9))
+                                                Text("审计").font(.caption2)
+                                            }
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.small)
+                                    }
+                                    .padding(.horizontal, 24)
+                                    .padding(.vertical, 8)
+
+                                    Divider()
+                                        .padding(.leading, 52)
+                                }
                             }
-                            TargetedOpsTable(ops: monitor.targetedFileOps)
+                            .padding(.vertical, 4)
                         }
                     }
+
+                    Divider()
+
+                    VStack(spacing: 8) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus.circle").font(.system(size: 11)).foregroundColor(.green)
+                            Text("添加自定义 Agent").font(.caption).fontWeight(.semibold).foregroundColor(.green)
+                            Spacer()
+                        }
+
+                        if !allMonitorableApps.isEmpty {
+                            Button {
+                                showAddAgentSheet = true
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "app.badge.plus")
+                                    Text("从已安装的 APP/依赖/工具中选择")
+                                }
+                                .font(.caption)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+
+                        HStack(spacing: 8) {
+                            TextField("名称", text: $customAgentName)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.caption)
+                                .frame(width: 100)
+
+                            TextField("会话目录路径 (如 ~/.trae/sessions)", text: $customAgentPath)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.caption)
+
+                            Button {
+                                let name = customAgentName.trimmingCharacters(in: .whitespaces)
+                                guard !name.isEmpty else { return }
+                                let existingNames = Set(sessionScanner.discoveredAgents.map(\.name))
+                                guard !existingNames.contains(name) else { return }
+                                let dirs = sessionScanner.searchJSONLDirs(forAgentName: name, bundlePath: nil)
+                                var paths: [String]
+                                if !customAgentPath.isEmpty {
+                                    paths = [customAgentPath]
+                                } else if !dirs.isEmpty {
+                                    paths = dirs
+                                } else {
+                                    let home = NSHomeDirectory()
+                                    let lower = name.lowercased().replacingOccurrences(of: " ", with: "")
+                                    paths = [home + "/.\(lower)", home + "/Library/Application Support/\(name)", home + "/.config/\(lower)"]
+                                }
+                                saveCustomAgentSource(CustomAgentSource(name: name, searchPaths: paths, addedAt: Date()))
+                                customAgentName = ""
+                                customAgentPath = ""
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "plus.circle.fill")
+                                    Text("添加并扫描")
+                                }
+                                .font(.caption)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .tint(.green)
+                            .disabled(customAgentName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 8)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
                 }
             }
         }
-        .onAppear {}
+        .sheet(isPresented: $showAddAgentSheet) {
+            AddAgentFromAppsSheet(
+                apps: allMonitorableApps,
+                existingNames: Set(sessionScanner.discoveredAgents.map(\.name)),
+                onAdd: { app in
+                    addAgentAndSearch(app)
+                    showAddAgentSheet = false
+                }
+            )
+        }
+        .onAppear {
+            loadCustomAgentSources()
+        }
+    }
+
+    private func loadCustomAgentSources() {
+        let sources = customAgentSources
+        let home = NSHomeDirectory()
+        for src in sources {
+            let paths = src.searchPaths.map { $0.replacingOccurrences(of: "~", with: home) }
+            let isVSCode = paths.contains { $0.contains("Library/Application Support") || $0.contains("globalStorage") }
+            let ds = AgentDataSource(
+                agentName: src.name,
+                searchPaths: paths,
+                isCustom: true,
+                isVSCodeType: isVSCode,
+                parser: { [sessionScanner] url, agentName in
+                    sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
+                }
+            )
+            sessionScanner.registerSource(ds)
+        }
+    }
+
+    private func generateAISummary() {
+        guard let config = service.aiConfig, config.hasKey == true else { return }
+        let records = auditFilteredRecords
+        guard !records.isEmpty else { return }
+        isGeneratingSummary = true
+        aiSummary = ""
+
+        Task {
+            let agentName = records.first?.agentName ?? "未知"
+            var opSummary: [String: Int] = [:]
+            var fileSummary: [String: Int] = [:]
+            var recentOps: [String] = []
+
+            for rec in records {
+                opSummary[rec.opType, default: 0] += 1
+                if !rec.targetPath.isEmpty {
+                    fileSummary[rec.targetPath, default: 0] += 1
+                }
+            }
+
+            for rec in records.prefix(30) {
+                recentOps.append("[\(timeStr(rec.timestamp))] \(rec.opType): \(rec.targetPath)")
+            }
+
+            let topFiles = fileSummary.sorted { $0.value > $1.value }.prefix(10).map { "\($0.key) (\($0.value)次)" }.joined(separator: "\n")
+            let opCounts = opSummary.map { "\($0.key): \($0.value)次" }.joined(separator: ", ")
+
+            let prompt = """
+            你是一个系统安全分析专家。以下是 Agent「\(agentName)」在本机的操作审计记录，请分析总结：
+
+            操作统计: \(opCounts)
+            总操作数: \(records.count)
+
+            高频操作文件 TOP10:
+            \(topFiles)
+
+            最近操作记录:
+            \(recentOps.joined(separator: "\n"))
+
+            请用中文总结：
+            1. 这个 Agent 主要在做什么？
+            2. 有哪些高风险操作（写入敏感目录、删除文件、执行危险命令）？
+            3. 文件操作的主要影响范围（哪些项目/目录被影响）
+            4. 安全建议
+
+            请简洁明了，不要用markdown格式。
+            """
+
+            let apiBase = (config.apiBase ?? "https://api.deepseek.com").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            guard let url = URL(string: "\(apiBase)/v1/chat/completions"),
+                  let apiKey = config.apiKey else {
+                aiSummary = "API 配置无效"
+                isGeneratingSummary = false
+                return
+            }
+
+            let body: [String: Any] = [
+                "model": config.model ?? "deepseek-chat",
+                "messages": [["role": "user", "content": prompt]],
+                "temperature": 0.3,
+                "max_tokens": 2048,
+            ]
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.timeoutInterval = 120
+            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                    aiSummary = "API 请求失败"
+                    isGeneratingSummary = false
+                    return
+                }
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let choices = json["choices"] as? [[String: Any]],
+                      let content = choices.first?["message"] as? [String: Any],
+                      let result = content["content"] as? String else {
+                    aiSummary = "AI 返回格式异常"
+                    isGeneratingSummary = false
+                    return
+                }
+                aiSummary = result
+                isGeneratingSummary = false
+            } catch {
+                aiSummary = "请求失败: \(error.localizedDescription)"
+                isGeneratingSummary = false
+            }
+        }
+    }
+
+    private func agentIconName(_ name: String) -> String {
+        switch name {
+        case "Claude Code": "brain.head.profile"
+        case "Codex": "curlybraces"
+        case "Trae": "laptopcomputer.and.arrow.down"
+        case "Cursor": "cursorarrow"
+        case "Windsurf": "wind"
+        case "CodeBuddy": "person.wave.2"
+        case "Aider": "terminal"
+        case "Cline": "terminal"
+        case "Gemini CLI": "sparkles"
+        case "DeepSeek": "magnifyingglass"
+        case "GLM": "text.bubble"
+        case "Doubao": "cup.and.saucer.fill"
+        case "Kimi": "moon.fill"
+        case "Lingma": "bolt.fill"
+        case "OpenClaw": "bird"
+        case "Hermes": "ant.circle"
+        case "CrewAI": "person.3.fill"
+        case "AutoGen": "gearshape.2.fill"
+        case "OpenHands": "hand.raised.fill"
+        case "Dify": "app.fill"
+        case "MetaGPT": "building.2.fill"
+        case "CAMEL": "hare.fill"
+        case "DeerFlow": "deer.fill"
+        case "Huginn": "bird.fill"
+        case "BrowserUse": "globe"
+        case "AgentGPT": "robot"
+        case "LobeHub": "hub.fill"
+        case "LangGraph": "point.topleft.down.to.point.bottomright.curvepath"
+        case "Swarm": "ant.fill"
+        case "AgentScope": "scope"
+        case "UI-TARS": "desktopcomputer"
+        case "Roo Code": "pawprint.fill"
+        case "Continue": "forward.fill"
+        case "Cody": "dog.fill"
+        case "Amazon Q": "q.square.fill"
+        case "Augment": "arrow.up.forward.app.fill"
+        case "Tabnine": "number.square.fill"
+        default: "cpu"
+        }
+    }
+
+    private func agentColorName(_ name: String) -> Color {
+        switch name {
+        case "Claude Code": .orange
+        case "Codex": .green
+        case "Trae": .purple
+        case "Cursor": .blue
+        case "Windsurf": .cyan
+        case "CodeBuddy": .green
+        case "Aider": .orange
+        case "Cline": .pink
+        case "Gemini CLI": .blue
+        case "DeepSeek": .indigo
+        case "GLM": .blue
+        case "Doubao": .pink
+        case "Kimi": .yellow
+        case "Lingma": .orange
+        case "OpenClaw": .red
+        case "Hermes": .purple
+        case "CrewAI": .blue
+        case "AutoGen": .teal
+        case "OpenHands": .green
+        case "Dify": .indigo
+        case "MetaGPT": .orange
+        case "CAMEL": .yellow
+        case "DeerFlow": .brown
+        case "Huginn": .cyan
+        case "BrowserUse": .blue
+        case "AgentGPT": .purple
+        case "LobeHub": .pink
+        case "LangGraph": .green
+        case "Swarm": .orange
+        case "AgentScope": .blue
+        case "UI-TARS": .indigo
+        case "Roo Code": .brown
+        case "Continue": .green
+        case "Cody": .red
+        case "Amazon Q": .orange
+        case "Augment": .purple
+        case "Tabnine": .blue
+        default: .secondary
+        }
+    }
+
+    private func opTypeColor(_ op: String) -> Color {
+        switch op {
+        case "写入": .red
+        case "编辑": .orange
+        case "读取": .blue
+        case "删除": .red
+        case "执行命令": .purple
+        case "搜索": .cyan
+        default: .secondary
+        }
+    }
+
+    private func timeStr(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm"
+        return f.string(from: date)
     }
 
     private func confidenceColor(_ conf: Double) -> Color {
@@ -964,6 +1483,138 @@ struct OperationLogTab: View {
         case .rename: .purple
         case .read: .cyan
         }
+    }
+}
+
+struct AddAgentFromAppsSheet: View {
+    let apps: [AppInfo]
+    let existingNames: Set<String>
+    let onAdd: (AppInfo) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText: String = ""
+    @State private var selectedApp: AppInfo?
+
+    private var filteredApps: [AppInfo] {
+        if searchText.isEmpty { return apps }
+        return apps.filter {
+            $0.displayName.localizedCaseInsensitiveContains(searchText) ||
+            $0.name.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text("选择要添加的 Agent / APP / 工具")
+                    .font(.headline)
+                Spacer()
+                Button("关闭") { dismiss() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+            .padding(16)
+
+            Divider()
+
+            TextField("搜索...", text: $searchText)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+
+            if filteredApps.isEmpty {
+                VStack(spacing: 8) {
+                    Spacer()
+                    Text("没有找到匹配的 APP").foregroundColor(.secondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(selection: Binding(
+                    get: { selectedApp?.id },
+                    set: { id in
+                        if let id = id, let app = apps.first(where: { $0.id == id }) {
+                            selectedApp = app
+                        }
+                    }
+                )) {
+                    ForEach(filteredApps) { app in
+                        HStack(spacing: 8) {
+                            if let iconPath = app.iconPath, let img = NSImage(contentsOfFile: iconPath) {
+                                Image(nsImage: img)
+                                    .resizable()
+                                    .frame(width: 20, height: 20)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                            } else {
+                                Image(systemName: "app.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 20, height: 20)
+                            }
+                            VStack(alignment: .leading, spacing: 1) {
+                                HStack(spacing: 4) {
+                                    Text(app.displayName)
+                                        .font(.body)
+                                        .fontWeight(.medium)
+                                    if existingNames.contains(app.displayName) {
+                                        Text("已添加")
+                                            .font(.system(size: 9))
+                                            .foregroundColor(.green)
+                                            .padding(.horizontal, 3)
+                                            .background(Color.green.opacity(0.1))
+                                            .cornerRadius(2)
+                                    }
+                                }
+                                HStack(spacing: 4) {
+                                    Text(app.subCategory)
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.secondary)
+                                    Text("·").foregroundColor(.secondary)
+                                    Text(app.name)
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            Spacer()
+                        }
+                        .tag(app.id)
+                    }
+                }
+                .listStyle(.inset)
+            }
+
+            Divider()
+
+            HStack {
+                if let app = selectedApp {
+                    Text("已选: \(app.displayName)")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                } else {
+                    Text("点击列表选择一个 APP")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Button {
+                    if let app = selectedApp {
+                        if existingNames.contains(app.displayName) { return }
+                        onAdd(app)
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("添加并扫描")
+                    }
+                    .font(.caption)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .tint(.green)
+                .disabled(selectedApp == nil || (selectedApp != nil && existingNames.contains(selectedApp!.displayName)))
+            }
+            .padding(16)
+        }
+        .frame(minWidth: 500, minHeight: 400)
     }
 }
 

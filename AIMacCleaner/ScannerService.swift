@@ -1632,7 +1632,7 @@ class ScannerService: ObservableObject {
     @Published var updateReadyToInstall: Bool = false
     @Published var updateErrorMessage: String = ""
 
-    let currentVersion = "1.7.4"
+    let currentVersion = "1.7.8"
 
     @Published var appUpdates: [UpdateItem] = []
     @Published var isCheckingAppUpdates: Bool = false
@@ -1762,7 +1762,7 @@ class ScannerService: ObservableObject {
         let dmgPath = tempDir + "/AIMacCleaner-update.dmg"
 
         guard FileManager.default.fileExists(atPath: dmgPath) else {
-            DispatchQueue.main.async { self.updateErrorMessage = "安装文件不存在，请重新下载" }
+            self.updateErrorMessage = "安装文件不存在，请重新下载"
             return
         }
 
@@ -1770,6 +1770,7 @@ class ScannerService: ObservableObject {
         let currentAppPath = Bundle.main.bundlePath
         let appName = Bundle.main.bundleURL.lastPathComponent
         let installedAppPath = "/Applications/\(appName)"
+        let currentPID = ProcessInfo.processInfo.processIdentifier
 
         let targetPath: String
         if currentAppPath.hasPrefix("/Applications/") {
@@ -1787,10 +1788,11 @@ class ScannerService: ObservableObject {
         TARGET_PATH="\(targetPath)"
         APP_NAME="\(appName)"
         TEMP_DIR="\(tempDir)"
+        OLD_PID="\(currentPID)"
 
-        # Wait for the app to quit
-        while pgrep -x "AIMacCleaner" > /dev/null 2>&1; do
-            sleep 0.5
+        # Wait for the old app to quit
+        while kill -0 "$OLD_PID" 2>/dev/null; do
+            sleep 0.3
         done
 
         sleep 1
@@ -1845,22 +1847,32 @@ class ScannerService: ObservableObject {
             try scriptContent.write(toFile: scriptPath, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
         } catch {
-            DispatchQueue.main.async { self.updateErrorMessage = "创建安装脚本失败: \(error.localizedDescription)" }
+            self.updateErrorMessage = "创建安装脚本失败: \(error.localizedDescription)"
             return
         }
 
-        let task = Process()
-        task.launchPath = "/bin/bash"
-        task.arguments = [scriptPath]
+        DispatchQueue.global(qos: .userInitiated).async {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/bin/bash")
+            task.arguments = [scriptPath]
+            task.standardInput = FileHandle.nullDevice
+            task.standardOutput = FileHandle.nullDevice
+            task.standardError = FileHandle.nullDevice
 
-        do {
-            try task.run()
+            do {
+                try task.run()
+            } catch {
+                DispatchQueue.main.async {
+                    self.updateErrorMessage = "启动安装失败: \(error.localizedDescription)"
+                }
+                return
+            }
+
+            Thread.sleep(forTimeInterval: 0.5)
 
             DispatchQueue.main.async {
-                NSApp.terminate(nil)
+                NSApplication.shared.terminate(nil)
             }
-        } catch {
-            DispatchQueue.main.async { self.updateErrorMessage = "启动安装失败: \(error.localizedDescription)" }
         }
     }
 

@@ -198,9 +198,13 @@ struct MenuBarMonitor: View {
                 Button {
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
-                    NSApp.unhide(nil)
-                    if let window = NSApp.windows.first(where: { !$0.isMiniaturized }) {
+                    if let window = NSApp.windows.first(where: { $0.title.contains("AIMacCleaner") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
                         window.makeKeyAndOrderFront(nil)
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        if let menuWindow = NSApp.windows.first(where: { $0.isFloatingPanel || $0.level == .floating }) {
+                            menuWindow.orderOut(nil)
+                        }
                     }
                 } label: {
                     HStack {
@@ -251,7 +255,12 @@ struct MenuBarMonitor: View {
                 Spacer()
 
                 Button {
-                    NSApp.terminate(nil)
+                    for window in NSApp.windows {
+                        window.orderOut(nil)
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        NSApp.terminate(nil)
+                    }
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "power")
@@ -889,9 +898,13 @@ struct MenuBarMonitor: View {
                 Button {
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
-                    NSApp.unhide(nil)
-                    if let window = NSApp.windows.first(where: { !$0.isMiniaturized }) {
+                    if let window = NSApp.windows.first(where: { $0.title.contains("AIMacCleaner") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
                         window.makeKeyAndOrderFront(nil)
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        if let menuWindow = NSApp.windows.first(where: { $0.isFloatingPanel || $0.level == .floating }) {
+                            menuWindow.orderOut(nil)
+                        }
                     }
                 } label: {
                     HStack {

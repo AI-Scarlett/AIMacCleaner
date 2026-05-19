@@ -44,6 +44,16 @@
 - **AI 影响分析**：勾选项后点击「AI 分析」，调用大模型分析删除影响，结果直接显示在列表中
 - 未识别的 dotdir 归入「其它」分类，标注风险提示
 
+### 🛡️ Agent 审计
+- **50+ 种 AI Agent 内置支持**：自动发现本机 Agent 会话数据，审计其对本地文件的操作记录
+- **多种存储格式解析**：JSONL、SQLite (state.vscdb)、JSON (file-changes)、MD、数据库
+- **VSCode 类 Agent 智能识别**：Trae、Cursor、CodeBuddy、Windsurf 等自动解析 vscdb + file-changes
+- **CLI 类 Agent 深度解析**：Claude Code、Codex、Kimi、OpenClaw、Hermes 等专用解析器
+- **多 Agent 框架支持**：CrewAI、AutoGen、OpenHands、MetaGPT、CAMEL、DeerFlow 等
+- **自定义 Agent 添加**：支持从已安装 App 中选择或手动指定路径添加
+- **防重复添加**：内置 Agent 不可重复添加
+- **操作记录分类**：写入、编辑、读取、删除、执行命令、搜索、对话等
+
 ### 🖥️ Agent 监控
 - **真实进程追踪** - 通过 `ps` + `lsof` 批量查询追踪真正操作文件的进程，支持进程树追溯（子进程如 node/python 自动归因到父 Agent）
 - **智能 Agent 识别** - 15 种主流 AI 工具 + 20 种开发工具自动识别

@@ -10,6 +10,7 @@
 		4FCB5CD83382DA42D96D7965 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0B9B53C5E13BA699005761 /* ContentView.swift */; };
 		5A4D9E1F2B3C4D5E6F7A8B9C /* MenuBarMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B5E0F2A3C4D5E6F7A8B9C0D /* MenuBarMonitor.swift */; };
 		8C7E0F3A4B5C6D7E8F9A0B1C /* OperationMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D8F1A2B3C4D5E6F7A8B9C0E /* OperationMonitor.swift */; };
+		AA11BB22CC33DD44EE55FF66 /* AgentSessionScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF11EE22DD33CC44BB55AA66 /* AgentSessionScanner.swift */; };
 		7A3B8C9D0E1F2A3B4C5D6E7F /* ScanRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B4C9D0E1F2A3B4C5D6E7F8A /* ScanRules.swift */; };
 		848104EB233AA4D62CD15403 /* AIMacCleanerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9838AA1A28FA8BA67862CC0F /* AIMacCleanerApp.swift */; };
 		BE25C05BB068770416C5ED04 /* ScannerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F15EC33FFB79FB101CE80521 /* ScannerService.swift */; };
@@ -26,6 +27,7 @@
 		4F0B9B53C5E13BA699005761 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		6B5E0F2A3C4D5E6F7A8B9C0D /* MenuBarMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarMonitor.swift; sourceTree = "<group>"; };
 		9D8F1A2B3C4D5E6F7A8B9C0E /* OperationMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperationMonitor.swift; sourceTree = "<group>"; };
+		FF11EE22DD33CC44BB55AA66 /* AgentSessionScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessionScanner.swift; sourceTree = "<group>"; };
 		6E3B64BE60289E69F30C340F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8B4C9D0E1F2A3B4C5D6E7F8A /* ScanRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanRules.swift; sourceTree = "<group>"; };
 		9838AA1A28FA8BA67862CC0F /* AIMacCleanerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIMacCleanerApp.swift; sourceTree = "<group>"; };
@@ -67,6 +69,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				4F0B9B53C5E13BA699005761 /* ContentView.swift */,
 				6B5E0F2A3C4D5E6F7A8B9C0D /* MenuBarMonitor.swift */,
 				9D8F1A2B3C4D5E6F7A8B9C0E /* OperationMonitor.swift */,
+				FF11EE22DD33CC44BB55AA66 /* AgentSessionScanner.swift */,
 				B2C3D4E5F6A7B8C9D0E1F2A3 /* SensorMonitor.swift */,
 				D4E5F6A7B8C9D0E1F2A3B4C5 /* StorageAnalyzer.swift */,
 				F6A7B8C9D0E1F2A3B4C5D6E7 /* SettingsView.swift */,
@@ -157,6 +160,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				4FCB5CD83382DA42D96D7965 /* ContentView.swift in Sources */,
 				5A4D9E1F2B3C4D5E6F7A8B9C /* MenuBarMonitor.swift in Sources */,
 				8C7E0F3A4B5C6D7E8F9A0B1C /* OperationMonitor.swift in Sources */,
+				AA11BB22CC33DD44EE55FF66 /* AgentSessionScanner.swift in Sources */,
 				DD8768E775E3FCAEE527E7C9 /* Models.swift in Sources */,
 				7A3B8C9D0E1F2A3B4C5D6E7F /* ScanRules.swift in Sources */,
 				BE25C05BB068770416C5ED04 /* ScannerService.swift in Sources */,
