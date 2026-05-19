@@ -8,6 +8,7 @@ struct IntelMigrationTab: View {
     @State private var filterType: IntelAppInfo.IntelAppType?
     @State private var filterArch: IntelAppInfo.BinaryArchitecture?
     @State private var showIntelOnly = true
+    @State private var hasScanned = false
     @State private var selectedAppId: String?
     @State private var showUninstallConfirm = false
     @State private var pendingUninstallApp: IntelAppInfo?
@@ -17,7 +18,7 @@ struct IntelMigrationTab: View {
     var filteredItems: [IntelAppInfo] {
         var items = scanner.items
         if showIntelOnly {
-            items = items.filter { $0.architecture.isIntel || $0.architecture == .universal }
+            items = items.filter { $0.architecture.isIntel }
         }
         if let ft = filterType {
             items = items.filter { $0.appType == ft }
@@ -52,6 +53,7 @@ struct IntelMigrationTab: View {
                                 if service.installedApps.isEmpty {
                                     await service.scanInstalledApps()
                                 }
+                                hasScanned = true
                                 scanner.scanFromInstalledApps(service.installedApps)
                             }
                         } label: {
@@ -67,8 +69,10 @@ struct IntelMigrationTab: View {
 
             filterBar
 
-            if scanner.items.isEmpty && !scanner.isScanning {
+            if !hasScanned && scanner.items.isEmpty && !scanner.isScanning {
                 emptyView
+            } else if filteredItems.isEmpty && !scanner.isScanning && hasScanned {
+                noIntelView
             } else {
                 itemList
             }
@@ -169,27 +173,48 @@ struct IntelMigrationTab: View {
     private var emptyView: some View {
         VStack(spacing: 16) {
             Spacer()
-            if service.installedApps.isEmpty {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 48))
-                    .foregroundColor(.purple)
-                Text("点击「扫描」开始检测")
-                    .font(.title2)
-                    .fontWeight(.medium)
-                Text("将扫描所有已安装的APP、依赖和CLI工具的CPU架构")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            } else {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 48))
-                    .foregroundColor(.green)
-                Text("所有应用均已适配 Apple Silicon")
-                    .font(.title2)
-                    .fontWeight(.medium)
-                Text("您的 Mac 上没有需要迁移的 Intel 应用")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 48))
+                .foregroundColor(.purple)
+            Text("点击「扫描」开始检测")
+                .font(.title2)
+                .fontWeight(.medium)
+            Text("将扫描所有已安装的APP、依赖和CLI工具的CPU架构\n检测哪些不适配当前 Apple Silicon 芯片")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            Button {
+                Task {
+                    if service.installedApps.isEmpty {
+                        await service.scanInstalledApps()
+                    }
+                    hasScanned = true
+                    scanner.scanFromInstalledApps(service.installedApps)
+                }
+            } label: {
+                Label("开始扫描", systemImage: "magnifyingglass")
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
             }
+            .buttonStyle(.borderedProminent)
+            .tint(.purple)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var noIntelView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 48))
+                .foregroundColor(.green)
+            Text("所有应用均已适配 Apple Silicon")
+                .font(.title2)
+                .fontWeight(.medium)
+            Text("您的 Mac 上没有需要迁移的 Intel 应用")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
