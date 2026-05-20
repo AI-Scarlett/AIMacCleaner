@@ -272,17 +272,24 @@ class IntelMigrationScanner: ObservableObject {
         guard let idx = items.firstIndex(where: { $0.id == item.id }) else { return }
 
         items[idx].replaceState = .uninstalling
-        items[idx].replaceProgress = 0.2
+        items[idx].replaceProgress = 0.1
 
         let appPath = items[idx].path
         let appName = items[idx].name
+        let displayName = items[idx].displayName
         let appType = items[idx].appType
-        let downloadURL = items[idx].downloadURL
+        let bundleId = items[idx].bundleId
+        var downloadURL = items[idx].downloadURL
         let itemId = items[idx].id
 
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             var success = false
+
+            if downloadURL == nil {
+                let searchResult = Self.performSearchStatic(name: displayName, bundleId: bundleId, appType: appType)
+                downloadURL = searchResult.0
+            }
 
             switch appType {
             case .homebrew:
@@ -307,6 +314,12 @@ class IntelMigrationScanner: ObservableObject {
                 success = true
 
             case .app:
+                await MainActor.run {
+                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
+                        self.items[idx2].replaceProgress = 0.3
+                    }
+                }
+
                 var resultURL: NSURL?
                 try? self.fileManager.trashItem(at: URL(fileURLWithPath: appPath), resultingItemURL: &resultURL)
 
@@ -319,8 +332,10 @@ class IntelMigrationScanner: ObservableObject {
 
                 if let urlStr = downloadURL, let url = URL(string: urlStr) {
                     await MainActor.run { NSWorkspace.shared.open(url) }
+                    success = true
+                } else {
+                    success = false
                 }
-                success = true
 
             case .cli:
                 try? self.fileManager.removeItem(atPath: appPath)
@@ -339,12 +354,21 @@ class IntelMigrationScanner: ObservableObject {
                     install.arguments = ["install", appName]
                     try? install.run()
                     install.waitUntilExit()
+                    success = true
                 } else if let urlStr = downloadURL, let url = URL(string: urlStr) {
                     await MainActor.run { NSWorkspace.shared.open(url) }
+                    success = true
+                } else {
+                    success = false
                 }
-                success = true
 
             case .framework:
+                await MainActor.run {
+                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
+                        self.items[idx2].replaceProgress = 0.3
+                    }
+                }
+
                 var resultURL: NSURL?
                 try? self.fileManager.trashItem(at: URL(fileURLWithPath: appPath), resultingItemURL: &resultURL)
 
@@ -357,8 +381,10 @@ class IntelMigrationScanner: ObservableObject {
 
                 if let urlStr = downloadURL, let url = URL(string: urlStr) {
                     await MainActor.run { NSWorkspace.shared.open(url) }
+                    success = true
+                } else {
+                    success = false
                 }
-                success = true
             }
 
             await MainActor.run {
@@ -366,7 +392,7 @@ class IntelMigrationScanner: ObservableObject {
                     self.items[idx2].replaceProgress = 1.0
                     self.items[idx2].replaceState = success ? .completed : .failed
                     if success {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                             self.items.removeAll { $0.id == itemId }
                             self.intelOnlyCount = max(0, self.intelOnlyCount - 1)
                         }

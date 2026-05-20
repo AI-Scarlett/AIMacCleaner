@@ -113,18 +113,7 @@ struct MenuBarMonitor: View {
                             .fontWeight(.medium)
                     }
                     Button {
-                        Task {
-                            let alert = NSAlert()
-                            alert.messageText = "安装更新"
-                            alert.informativeText = "应用将退出并安装新版本 v\(service.latestVersion)，安装完成后会自动重新启动。"
-                            alert.addButton(withTitle: "退出并安装")
-                            alert.addButton(withTitle: "稍后安装")
-                            alert.alertStyle = .informational
-                            let response = alert.runModal()
-                            if response == .alertFirstButtonReturn {
-                                await service.installUpdate()
-                            }
-                        }
+                        service.installUpdate()
                     } label: {
                         HStack {
                             Image(systemName: "arrow.up.circle.fill")

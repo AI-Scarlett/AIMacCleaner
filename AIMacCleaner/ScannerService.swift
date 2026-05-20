@@ -1632,7 +1632,7 @@ class ScannerService: ObservableObject {
     @Published var updateReadyToInstall: Bool = false
     @Published var updateErrorMessage: String = ""
 
-    let currentVersion = "1.8.2"
+    let currentVersion = "1.8.3"
 
     @Published var appUpdates: [UpdateItem] = []
     @Published var isCheckingAppUpdates: Bool = false
@@ -1757,7 +1757,7 @@ class ScannerService: ObservableObject {
         }
     }
 
-    func installUpdate() async {
+    func installUpdate() {
         let tempDir = NSTemporaryDirectory() + "AIMacCleanerUpdate"
         let dmgPath = tempDir + "/AIMacCleaner-update.dmg"
 
@@ -1780,67 +1780,55 @@ class ScannerService: ObservableObject {
         }
 
         let scriptContent = """
-        #!/bin/bash
-        # AIMacCleaner Auto-Update Script
+#!/bin/bash
+MOUNT_POINT="\(mountPoint)"
+DMG_PATH="\(dmgPath)"
+TARGET_PATH="\(targetPath)"
+APP_NAME="\(appName)"
+TEMP_DIR="\(tempDir)"
+OLD_PID="\(currentPID)"
 
-        MOUNT_POINT="\(mountPoint)"
-        DMG_PATH="\(dmgPath)"
-        TARGET_PATH="\(targetPath)"
-        APP_NAME="\(appName)"
-        TEMP_DIR="\(tempDir)"
-        OLD_PID="\(currentPID)"
+while kill -0 "$OLD_PID" 2>/dev/null; do
+    sleep 0.3
+done
 
-        # Wait for the old app to quit
-        while kill -0 "$OLD_PID" 2>/dev/null; do
-            sleep 0.3
-        done
+sleep 1
 
-        sleep 1
+/usr/bin/hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -nobrowse -quiet
 
-        # Mount DMG
-        /usr/bin/hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -nobrowse -quiet
+if [ $? -ne 0 ]; then
+    osascript -e 'display notification "更新安装失败：无法挂载安装包" with title "AIMacCleaner"'
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
 
-        if [ $? -ne 0 ]; then
-            osascript -e 'display notification "更新安装失败：无法挂载安装包" with title "AIMacCleaner"'
-            rm -rf "$TEMP_DIR"
-            exit 1
-        fi
+UPDATE_APP=$(find "$MOUNT_POINT" -maxdepth 1 -name "*.app" -type d | head -1)
 
-        # Find the .app inside the mounted DMG
-        UPDATE_APP=$(find "$MOUNT_POINT" -maxdepth 1 -name "*.app" -type d | head -1)
+if [ -z "$UPDATE_APP" ]; then
+    /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet
+    osascript -e 'display notification "更新安装失败：安装包中未找到应用" with title "AIMacCleaner"'
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
 
-        if [ -z "$UPDATE_APP" ]; then
-            /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet
-            osascript -e 'display notification "更新安装失败：安装包中未找到应用" with title "AIMacCleaner"'
-            rm -rf "$TEMP_DIR"
-            exit 1
-        fi
+if [ -d "$TARGET_PATH" ]; then
+    rm -rf "$TARGET_PATH"
+fi
 
-        # Remove old version and copy new version
-        if [ -d "$TARGET_PATH" ]; then
-            rm -rf "$TARGET_PATH"
-        fi
+cp -R "$UPDATE_APP" "$TARGET_PATH"
 
-        cp -R "$UPDATE_APP" "$TARGET_PATH"
+if [ $? -ne 0 ]; then
+    osascript -e 'display notification "更新安装失败：无法复制应用" with title "AIMacCleaner"'
+    /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
 
-        if [ $? -ne 0 ]; then
-            osascript -e 'display notification "更新安装失败：无法复制应用" with title "AIMacCleaner"'
-            /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet
-            rm -rf "$TEMP_DIR"
-            exit 1
-        fi
-
-        # Detach DMG
-        /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet
-
-        # Clean up
-        rm -rf "$TEMP_DIR"
-
-        # Launch the new version
-        open "$TARGET_PATH"
-
-        osascript -e 'display notification "已成功更新到最新版本" with title "AIMacCleaner"'
-        """
+/usr/bin/hdiutil detach "$MOUNT_POINT" -quiet
+rm -rf "$TEMP_DIR"
+open "$TARGET_PATH"
+osascript -e 'display notification "已成功更新到最新版本" with title "AIMacCleaner"'
+"""
 
         let scriptPath = tempDir + "/update_install.sh"
         do {
@@ -1851,33 +1839,22 @@ class ScannerService: ObservableObject {
             return
         }
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/bin/bash")
-            task.arguments = [scriptPath]
-            task.standardInput = FileHandle.nullDevice
-            task.standardOutput = FileHandle.nullDevice
-            task.standardError = FileHandle.nullDevice
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/bash")
+        task.arguments = [scriptPath]
+        task.standardInput = FileHandle.nullDevice
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
 
-            do {
-                try task.run()
-            } catch {
-                DispatchQueue.main.async {
-                    self.updateErrorMessage = "启动安装失败: \(error.localizedDescription)"
-                }
-                return
-            }
+        do {
+            try task.run()
+        } catch {
+            self.updateErrorMessage = "启动安装失败: \(error.localizedDescription)"
+            return
+        }
 
-            Thread.sleep(forTimeInterval: 0.5)
-
-            DispatchQueue.main.async {
-                for window in NSApplication.shared.windows {
-                    window.orderOut(nil)
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    exit(0)
-                }
-            }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            exit(0)
         }
     }
 
