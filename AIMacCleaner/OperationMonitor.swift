@@ -344,7 +344,9 @@ class OperationMonitor: ObservableObject {
         if !hasRestoredBookmarks {
             restoreAccessFromBookmarks()
         }
-        buildInitialSnapshot()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.buildInitialSnapshot()
+        }
         startFSEventStream()
         startProcessPoller()
         DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.0) { [weak self] in
@@ -1203,16 +1205,35 @@ class OperationMonitor: ObservableObject {
 
     // MARK: - Record Management
 
+    private var pendingRecords: [OperationRecord] = []
+    private var flushWorkItem: DispatchWorkItem?
+
     func addRecord(_ record: OperationRecord) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.records.insert(record, at: 0)
-            if self.records.count > self.maxRecords {
-                self.records = Array(self.records.prefix(self.maxRecords))
-            }
-            if self.records.count % 50 == 0 {
-                self.saveRecords()
-            }
+        stateLock.lock()
+        pendingRecords.append(record)
+        stateLock.unlock()
+
+        flushWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.flushRecords()
+        }
+        flushWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: item)
+    }
+
+    private func flushRecords() {
+        stateLock.lock()
+        let batch = pendingRecords
+        pendingRecords = []
+        stateLock.unlock()
+
+        guard !batch.isEmpty else { return }
+        records.insert(contentsOf: batch.reversed(), at: 0)
+        if records.count > maxRecords {
+            records = Array(records.prefix(maxRecords))
+        }
+        if records.count % 50 < batch.count {
+            saveRecords()
         }
     }
 

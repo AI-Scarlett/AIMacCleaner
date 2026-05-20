@@ -128,11 +128,17 @@ class AgentSessionScanner: ObservableObject {
                 enumerator.skipDescendants()
                 continue
             }
+            let lastComponent = url.lastPathComponent
+            if lastComponent == ".git" { return true }
+            if lastComponent.hasPrefix(".") && lastComponent != ".jsonl" {
+                enumerator.skipDescendants()
+                continue
+            }
             let ext = url.pathExtension
             if ext == "jsonl" || ext == "sqlite" || ext == "md" || ext == "vscdb" || ext == "db" {
                 return true
             }
-            if ext == "json" && (url.path.contains("file-changes") || url.path.contains("session") || url.path.contains("events") || url.path.contains("conversation") || url.path.contains("trajectory")) {
+            if ext == "json" && (url.path.contains("file-changes") || url.path.contains("session") || url.path.contains("events") || url.path.contains("conversation") || url.path.contains("trajectory") || url.lastPathComponent == "entries.json") {
                 return true
             }
         }
@@ -158,6 +164,7 @@ class AgentSessionScanner: ObservableObject {
         registerDeerFlow()
         registerHuginn()
         registerBrowserUse()
+        registerTrae()
         registerGenericAutoDiscovery()
     }
 
@@ -205,7 +212,22 @@ class AgentSessionScanner: ObservableObject {
                             continue
                         }
 
-                        if path.hasSuffix(".jsonl") || path.hasSuffix(source.filePattern) || path.hasSuffix(".sqlite") || path.hasSuffix(".vscdb") || path.hasSuffix(".db") || path.hasSuffix(".md") || (itemURL.pathExtension == "json" && (path.contains("file-changes") || path.contains("session") || path.contains("events") || path.contains("conversation") || path.contains("trajectory"))) {
+                        let lastComponent = itemURL.lastPathComponent
+                        if lastComponent == ".git" {
+                            sessionCount += 1
+                            if let attrs = try? self.fileManager.attributesOfItem(atPath: path),
+                               let modDate = attrs[.modificationDate] as? Date {
+                                if latestDate == nil || modDate > latestDate! { latestDate = modDate }
+                            }
+                            enumerator.skipDescendants()
+                            continue
+                        }
+                        if lastComponent.hasPrefix(".") && lastComponent != ".jsonl" {
+                            enumerator.skipDescendants()
+                            continue
+                        }
+
+                        if path.hasSuffix(".jsonl") || path.hasSuffix(source.filePattern) || path.hasSuffix(".sqlite") || path.hasSuffix(".vscdb") || path.hasSuffix(".db") || path.hasSuffix(".md") || (itemURL.pathExtension == "json" && (path.contains("file-changes") || path.contains("session") || path.contains("events") || path.contains("conversation") || path.contains("trajectory") || itemURL.lastPathComponent == "entries.json")) {
                             sessionCount += 1
                             if let attrs = try? self.fileManager.attributesOfItem(atPath: path),
                                let modDate = attrs[.modificationDate] as? Date {
@@ -297,7 +319,7 @@ class AgentSessionScanner: ObservableObject {
             }
 
             allRecords.sort { $0.timestamp > $1.timestamp }
-            if allRecords.count > 5000 { allRecords = Array(allRecords.prefix(5000)) }
+            if allRecords.count > 10000 { allRecords = Array(allRecords.prefix(10000)) }
 
             DispatchQueue.main.async {
                 self.opRecords = allRecords
@@ -317,10 +339,20 @@ class AgentSessionScanner: ObservableObject {
                 enumerator.skipDescendants()
                 continue
             }
+            let lastComponent = url.lastPathComponent
+            if lastComponent == ".git" {
+                results.append(url)
+                enumerator.skipDescendants()
+                continue
+            }
+            if lastComponent.hasPrefix(".") && lastComponent != ".jsonl" {
+                enumerator.skipDescendants()
+                continue
+            }
             let ext = url.pathExtension
             if ext == "jsonl" || url.path.hasSuffix(pattern) || ext == "sqlite" || ext == "md" || ext == "db" {
                 results.append(url)
-            } else if ext == "json" && (url.path.contains("file-changes") || url.path.contains("session") || url.path.contains("events") || url.path.contains("conversation") || url.path.contains("trajectory")) {
+            } else if ext == "json" && (url.path.contains("file-changes") || url.path.contains("session") || url.path.contains("events") || url.path.contains("conversation") || url.path.contains("trajectory") || url.lastPathComponent == "entries.json") {
                 results.append(url)
             } else if ext == "vscdb" {
                 results.append(url)
@@ -1036,15 +1068,237 @@ class AgentSessionScanner: ObservableObject {
         return records
     }
 
+    private func registerTrae() {
+        let home = NSHomeDirectory()
+        let traePaths = [
+            "Trae CN": home + "/Library/Application Support/Trae CN",
+            "Trae": home + "/Library/Application Support/Trae",
+        ]
+
+        for (_, basePath) in traePaths {
+            guard fileManager.fileExists(atPath: basePath) else { continue }
+
+            let globalStorage = basePath + "/User/globalStorage"
+            let workspaceStorage = basePath + "/User/workspaceStorage"
+            let snapshotDir = basePath + "/ModularData/ai-agent/snapshot"
+            let sandboxDir = basePath + "/ModularData/ai-agent/sandbox"
+            let historyDir = basePath + "/User/History"
+
+            var searchPaths = [globalStorage]
+            if fileManager.fileExists(atPath: workspaceStorage) {
+                if let contents = try? fileManager.contentsOfDirectory(atPath: workspaceStorage) {
+                    for item in contents {
+                        let wsPath = workspaceStorage + "/" + item
+                        var isDir: ObjCBool = false
+                        fileManager.fileExists(atPath: wsPath, isDirectory: &isDir)
+                        guard isDir.boolValue else { continue }
+                        let vscdbPath = wsPath + "/state.vscdb"
+                        if fileManager.fileExists(atPath: vscdbPath) {
+                            searchPaths.append(wsPath)
+                        }
+                    }
+                }
+            }
+
+            let vscdbParser: (URL, String) -> [AgentOpRecord] = { [weak self] url, agentName in
+                guard let self = self else { return [] }
+                return self.parseVscdbSQLite(url: url, agentName: agentName)
+            }
+
+            let source = AgentDataSource(
+                agentName: "Trae",
+                searchPaths: searchPaths,
+                filePattern: ".vscdb",
+                isVSCodeType: true,
+                parser: vscdbParser
+            )
+            dataSources.append(source)
+
+            if fileManager.fileExists(atPath: snapshotDir) {
+                let snapshotParser: (URL, String) -> [AgentOpRecord] = { [weak self] url, agentName in
+                    guard let self = self else { return [] }
+                    return self.parseTraeSnapshot(url: url, agentName: agentName)
+                }
+                let snapshotSource = AgentDataSource(
+                    agentName: "Trae",
+                    searchPaths: [snapshotDir],
+                    filePattern: ".git",
+                    isVSCodeType: false,
+                    parser: snapshotParser
+                )
+                dataSources.append(snapshotSource)
+            }
+
+            if fileManager.fileExists(atPath: sandboxDir) {
+                let sandboxParser: (URL, String) -> [AgentOpRecord] = { [weak self] url, agentName in
+                    guard let self = self else { return [] }
+                    return self.parseTraeSandbox(url: url, agentName: agentName)
+                }
+                let sandboxSource = AgentDataSource(
+                    agentName: "Trae",
+                    searchPaths: [sandboxDir],
+                    filePattern: ".json",
+                    isVSCodeType: false,
+                    parser: sandboxParser
+                )
+                dataSources.append(sandboxSource)
+            }
+
+            if fileManager.fileExists(atPath: historyDir) {
+                let historyParser: (URL, String) -> [AgentOpRecord] = { [weak self] url, agentName in
+                    guard let self = self else { return [] }
+                    return self.parseTraeHistory(url: url, agentName: agentName)
+                }
+                let historySource = AgentDataSource(
+                    agentName: "Trae",
+                    searchPaths: [historyDir],
+                    filePattern: ".json",
+                    isVSCodeType: false,
+                    parser: historyParser
+                )
+                dataSources.append(historySource)
+            }
+        }
+    }
+
+    private func parseTraeSnapshot(url: URL, agentName: String) -> [AgentOpRecord] {
+        var records: [AgentOpRecord] = []
+        let dirName = url.deletingLastPathComponent().lastPathComponent
+        guard dirName.count >= 24 else { return records }
+
+        let sessionId: String
+        if dirName == "v2" {
+            sessionId = url.deletingPathExtension().deletingLastPathComponent().lastPathComponent
+        } else {
+            sessionId = dirName
+        }
+
+        let date = dateFromObjectID(sessionId) ?? Date()
+
+        let snapshotDir = url.deletingLastPathComponent().deletingLastPathComponent()
+        var fileCount = 0
+        if let enumerator = fileManager.enumerator(at: snapshotDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+            for case let fileURL as URL in enumerator {
+                let relPath = String(fileURL.path.dropFirst(snapshotDir.path.count + 1))
+                if relPath.contains(".git/") || relPath.contains(".git\\") {
+                    enumerator.skipDescendants()
+                    continue
+                }
+                var isDir: ObjCBool = false
+                fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDir)
+                guard !isDir.boolValue else { continue }
+                fileCount += 1
+                if fileCount > 50 { break }
+            }
+        }
+
+        records.append(AgentOpRecord(
+            id: "trae_snapshot_\(sessionId)",
+            agentName: agentName,
+            sessionId: sessionId,
+            projectDir: "",
+            timestamp: date,
+            toolName: "snapshot",
+            targetPath: fileCount > 0 ? "\(fileCount)个文件变更" : "会话快照",
+            opType: "写入",
+            detail: "git快照记录"
+        ))
+
+        return records
+    }
+
+    private func parseTraeSandbox(url: URL, agentName: String) -> [AgentOpRecord] {
+        guard let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+
+        let sessionId = json["name"] as? String ?? url.deletingPathExtension().lastPathComponent
+        let date = dateFromObjectID(sessionId) ?? Date()
+
+        var allowedPaths: [String] = []
+        if let permissions = json["permission"] as? [[String: String]] {
+            for perm in permissions {
+                for (_, path) in perm {
+                    allowedPaths.append(path)
+                }
+            }
+        }
+
+        return [AgentOpRecord(
+            id: "trae_sandbox_\(sessionId)",
+            agentName: agentName,
+            sessionId: sessionId,
+            projectDir: allowedPaths.first ?? "",
+            timestamp: date,
+            toolName: "sandbox",
+            targetPath: allowedPaths.joined(separator: ", ").prefix(100).description,
+            opType: "操作",
+            detail: "允许访问: \(allowedPaths.count)个路径"
+        )]
+    }
+
+    private func parseTraeHistory(url: URL, agentName: String) -> [AgentOpRecord] {
+        let filename = url.lastPathComponent
+        guard filename == "entries.json" else { return [] }
+
+        guard let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+
+        let resource = json["resource"] as? String ?? ""
+        let resourcePath = resource
+            .replacingOccurrences(of: "file://", with: "")
+            .removingPercentEncoding ?? resource
+
+        guard let entries = json["entries"] as? [[String: Any]] else { return [] }
+
+        var records: [AgentOpRecord] = []
+        let dirName = url.deletingLastPathComponent().lastPathComponent
+
+        for entry in entries {
+            let entryId = entry["id"] as? String ?? ""
+            let source = entry["source"] as? String ?? ""
+            let timestamp = entry["timestamp"] as? Double ?? 0
+
+            let date: Date
+            if timestamp > 1_000_000_000_000 {
+                date = Date(timeIntervalSince1970: timestamp / 1000)
+            } else if timestamp > 1_000_000_000 {
+                date = Date(timeIntervalSince1970: timestamp)
+            } else {
+                date = Date()
+            }
+
+            let opType: String
+            if source.contains("编辑") || source.contains("edit") || source.contains("Edit") {
+                opType = "编辑"
+            } else if source.contains("保存") || source.contains("save") || source.contains("Save") {
+                opType = "写入"
+            } else if source.contains("删除") || source.contains("delete") {
+                opType = "删除"
+            } else {
+                opType = "编辑"
+            }
+
+            records.append(AgentOpRecord(
+                id: "trae_history_\(dirName)_\(entryId)",
+                agentName: agentName,
+                sessionId: dirName,
+                projectDir: "",
+                timestamp: date,
+                toolName: "file_edit",
+                targetPath: resourcePath,
+                opType: opType,
+                detail: source
+            ))
+        }
+
+        return records
+    }
+
     private func registerGenericAutoDiscovery() {
         let home = NSHomeDirectory()
         let vscodeAgents: Set<String> = ["Trae", "Cursor", "CodeBuddy", "Windsurf", "Kimi", "Lingma", "Augment", "Continue", "Cody", "Amazon Q", "Roo Code", "Tabnine"]
 
         let knownDirs: [(String, String)] = [
-            ("Trae", home + "/Library/Application Support/Trae CN"),
-            ("Trae", home + "/Library/Application Support/Trae"),
-            ("Trae", home + "/Library/Application Support/Trae CN/User/globalStorage"),
-            ("Trae", home + "/Library/Application Support/Trae/User/globalStorage"),
             ("Cursor", home + "/.cursor"),
             ("Windsurf", home + "/.codeium/windsurf"),
             ("CodeBuddy", home + "/.codebuddy"),
@@ -1333,6 +1587,13 @@ class AgentSessionScanner: ObservableObject {
         return "操作"
     }
 
+    private func dateFromObjectID(_ oid: String) -> Date? {
+        guard oid.count >= 8 else { return nil }
+        let hex = String(oid.prefix(8))
+        guard let ts = UInt64(hex, radix: 16), ts > 0 else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(ts))
+    }
+
     func parseVscdbSQLite(url: URL, agentName: String) -> [AgentOpRecord] {
         var records: [AgentOpRecord] = []
         let dbPath = url.path
@@ -1353,16 +1614,47 @@ class AgentSessionScanner: ObservableObject {
                 .removingPercentEncoding ?? folder
         }
 
+        var dbModDate: Date? = nil
+        if let attrs = try? fileManager.attributesOfItem(atPath: dbPath),
+           let modDate = attrs[.modificationDate] as? Date {
+            dbModDate = modDate
+        }
+
         let query = "SELECT key, value FROM ItemTable;"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(dbRef, query, -1, &stmt, nil) == SQLITE_OK else { return records }
         defer { sqlite3_finalize(stmt) }
+
+        var sessionModelMap: [String: String] = [:]
+        var sessionModeMap: [String: String] = [:]
 
         while sqlite3_step(stmt) == SQLITE_ROW {
             guard let keyPtr = sqlite3_column_text(stmt, 0),
                   let valuePtr = sqlite3_column_text(stmt, 1) else { continue }
             let key = String(cString: keyPtr)
             let value = String(cString: valuePtr)
+
+            if key.contains("ai-chat:sessionRelation:modelMap") {
+                guard let data = value.data(using: .utf8),
+                      let map = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                for (sessionId, modelInfo) in map {
+                    if let m = modelInfo as? [String: String] {
+                        sessionModelMap[sessionId] = m.values.joined(separator: " ")
+                    } else {
+                        sessionModelMap[sessionId] = String(describing: modelInfo)
+                    }
+                }
+            }
+
+            if key.contains("ai-chat:sessionRelation:modeMap") || key.contains("ai-chat:sessionRelation:planModeMap") || key.contains("ai-chat:sessionRelation:specModeMap") {
+                guard let data = value.data(using: .utf8),
+                      let map = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                for (sessionId, modeInfo) in map {
+                    if let m = modeInfo as? [String: String] {
+                        sessionModeMap[sessionId] = m.values.joined(separator: " ")
+                    }
+                }
+            }
 
             if key.hasSuffix("ChatStore") || key.hasSuffix("chat.ChatSessionStore.index") {
                 guard let data = value.data(using: .utf8),
@@ -1374,7 +1666,14 @@ class AgentSessionScanner: ObservableObject {
                         let title = entryDict["title"] as? String ?? ""
                         let lastMessage = entryDict["lastMessage"] as? String ?? ""
                         let ts = entryDict["createdAt"] as? Double ?? entryDict["lastMessageDate"] as? Double ?? 0
-                        let date = ts > 1_000_000_000_000 ? Date(timeIntervalSince1970: ts / 1000) : (ts > 0 ? Date(timeIntervalSince1970: ts) : Date())
+                        let date: Date
+                        if ts > 1_000_000_000_000 {
+                            date = Date(timeIntervalSince1970: ts / 1000)
+                        } else if ts > 0 {
+                            date = Date(timeIntervalSince1970: ts)
+                        } else {
+                            date = dateFromObjectID(sessionId) ?? dbModDate ?? Date()
+                        }
 
                         records.append(AgentOpRecord(
                             id: "\(url.path)_\(sessionId)",
@@ -1395,12 +1694,13 @@ class AgentSessionScanner: ObservableObject {
                         for (sessionId, _) in turnsHeight {
                             let existing = records.contains { $0.id == "\(url.path)_\(sessionId)" }
                             if !existing {
+                                let date = dateFromObjectID(sessionId) ?? dbModDate ?? Date()
                                 records.append(AgentOpRecord(
                                     id: "\(url.path)_turns_\(sessionId)",
                                     agentName: agentName,
                                     sessionId: sessionId,
                                     projectDir: workspaceFolder,
-                                    timestamp: Date(),
+                                    timestamp: date,
                                     toolName: "chat_session",
                                     targetPath: workspaceFolder,
                                     opType: "对话",
@@ -1412,18 +1712,26 @@ class AgentSessionScanner: ObservableObject {
                 }
             }
 
-            if key.contains("icube-ai-agent-storage-input-history") || key.contains("agent-storage-input-history") {
+            if (key.contains("icube-ai-agent-storage-input-history") || key.contains("agent-storage-input-history")) && !key.contains("query") {
                 guard let data = value.data(using: .utf8),
                       let historyList = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { continue }
                 for (idx, item) in historyList.enumerated() {
                     let inputText = item["inputText"] as? String ?? ""
                     guard !inputText.isEmpty else { continue }
+                    let date: Date
+                    if let ts = item["timestamp"] as? Double, ts > 0 {
+                        date = ts > 1_000_000_000_000 ? Date(timeIntervalSince1970: ts / 1000) : Date(timeIntervalSince1970: ts)
+                    } else if let tsStr = item["timestamp"] as? String, let ts = parseTimestamp(tsStr) {
+                        date = ts
+                    } else {
+                        date = dbModDate ?? Date()
+                    }
                     records.append(AgentOpRecord(
                         id: "\(url.path)_history_\(idx)",
                         agentName: agentName,
                         sessionId: "input_history",
                         projectDir: workspaceFolder,
-                        timestamp: Date(),
+                        timestamp: date,
                         toolName: "user_input",
                         targetPath: String(inputText.prefix(100)),
                         opType: "对话",
@@ -1436,16 +1744,22 @@ class AgentSessionScanner: ObservableObject {
                 guard let data = value.data(using: .utf8),
                       let map = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { continue }
                 for (sessionId, agentType) in map {
+                    let date = dateFromObjectID(sessionId) ?? dbModDate ?? Date()
+                    let modelInfo = sessionModelMap[sessionId] ?? ""
+                    let modeInfo = sessionModeMap[sessionId] ?? ""
+                    var detail = "agent_type=\(agentType)"
+                    if !modelInfo.isEmpty { detail += " model=\(modelInfo)" }
+                    if !modeInfo.isEmpty { detail += " mode=\(modeInfo)" }
                     records.append(AgentOpRecord(
                         id: "\(url.path)_agentmap_\(sessionId)",
                         agentName: agentName,
                         sessionId: sessionId,
                         projectDir: workspaceFolder,
-                        timestamp: Date(),
+                        timestamp: date,
                         toolName: "agent_session",
                         targetPath: agentType,
                         opType: "操作",
-                        detail: "agent_type=\(agentType)"
+                        detail: detail
                     ))
                 }
             }
@@ -1457,16 +1771,20 @@ class AgentSessionScanner: ObservableObject {
                 for item in list {
                     let sessionId = item["sessionId"] as? String ?? ""
                     let isCurrent = item["isCurrent"] as? Bool ?? false
+                    let date = dateFromObjectID(sessionId) ?? dbModDate ?? Date()
+                    let modelInfo = sessionModelMap[sessionId] ?? ""
+                    var detail = isCurrent ? "当前活跃会话" : "历史会话"
+                    if !modelInfo.isEmpty { detail += " model=\(modelInfo)" }
                     records.append(AgentOpRecord(
                         id: "\(url.path)_icube_\(sessionId)",
                         agentName: agentName,
                         sessionId: sessionId,
                         projectDir: workspaceFolder,
-                        timestamp: Date(),
+                        timestamp: date,
                         toolName: isCurrent ? "current_session" : "session",
                         targetPath: workspaceFolder,
                         opType: "操作",
-                        detail: isCurrent ? "当前活跃会话" : "历史会话"
+                        detail: detail
                     ))
                 }
             }
@@ -1479,17 +1797,48 @@ class AgentSessionScanner: ObservableObject {
                 let desc = json["description"] as? String ?? ""
                 let tools = json["built_in_tool_list"] as? [[String: String]] ?? []
                 let toolNames = tools.compactMap { $0["value"] }.joined(separator: ", ")
+                let createdAt = json["created_at"] as? Double ?? 0
+                let updatedAt = json["updated_at"] as? Double ?? 0
+                let date: Date
+                if updatedAt > 0 {
+                    date = updatedAt > 1_000_000_000_000 ? Date(timeIntervalSince1970: updatedAt / 1000) : Date(timeIntervalSince1970: updatedAt)
+                } else if createdAt > 0 {
+                    date = createdAt > 1_000_000_000_000 ? Date(timeIntervalSince1970: createdAt / 1000) : Date(timeIntervalSince1970: createdAt)
+                } else {
+                    date = dbModDate ?? Date()
+                }
                 records.append(AgentOpRecord(
                     id: "\(url.path)_agent_config_\(agentId)",
                     agentName: agentName,
                     sessionId: agentId,
                     projectDir: workspaceFolder,
-                    timestamp: Date(),
+                    timestamp: date,
                     toolName: "agent_config",
                     targetPath: agentName2,
                     opType: "操作",
                     detail: "tools=[\(toolNames)] \(desc)"
                 ))
+            }
+
+            if key.contains("all_session_badges_") {
+                let badgeSessionId = key.replacingOccurrences(of: "all_session_badges_", with: "")
+                guard let data = value.data(using: .utf8),
+                      let badgeMap = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { continue }
+                let sessionDate = dateFromObjectID(badgeSessionId) ?? dbModDate ?? Date()
+                for (subSessionId, status) in badgeMap {
+                    let subDate = dateFromObjectID(subSessionId) ?? sessionDate
+                    records.append(AgentOpRecord(
+                        id: "\(url.path)_badge_\(subSessionId)",
+                        agentName: agentName,
+                        sessionId: subSessionId,
+                        projectDir: workspaceFolder,
+                        timestamp: subDate,
+                        toolName: "session_badge",
+                        targetPath: status,
+                        opType: "操作",
+                        detail: "status=\(status) workspace_session=\(badgeSessionId)"
+                    ))
+                }
             }
         }
 

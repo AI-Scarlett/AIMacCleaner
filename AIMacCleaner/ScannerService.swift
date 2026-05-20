@@ -1184,7 +1184,7 @@ class ScannerService: ObservableObject {
 
     private func startOperationPolling() {
         stopOperationPolling()
-        operationPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        operationPollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
                 self.operationRecords = self.operationMonitor.records
@@ -1632,7 +1632,7 @@ class ScannerService: ObservableObject {
     @Published var updateReadyToInstall: Bool = false
     @Published var updateErrorMessage: String = ""
 
-    let currentVersion = "1.8.3"
+    let currentVersion = "1.8.4"
 
     @Published var appUpdates: [UpdateItem] = []
     @Published var isCheckingAppUpdates: Bool = false

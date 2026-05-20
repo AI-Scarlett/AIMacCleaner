@@ -19,9 +19,13 @@ class SensorMonitor: ObservableObject {
         guard !isMonitoring else { return }
         isMonitoring = true
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            DispatchQueue.global(qos: .utility).async {
+                self?.checkSensors()
+            }
+        }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
             self?.checkSensors()
         }
-        checkSensors()
     }
 
     func stop() {
@@ -47,6 +51,7 @@ class SensorMonitor: ObservableObject {
         let newCamera = cameraApps.filter { !knownCameraApps.contains($0.pid) }
         let newMic = micApps.filter { !knownMicApps.contains($0.pid) }
 
+        var newEvents: [SensorEvent] = []
         for app in newCamera {
             let event = SensorEvent(
                 timestamp: Date(),
@@ -55,7 +60,7 @@ class SensorMonitor: ObservableObject {
                 pid: app.pid,
                 bundleId: app.bundleId
             )
-            events.append(event)
+            newEvents.append(event)
         }
 
         for app in newMic {
@@ -66,12 +71,11 @@ class SensorMonitor: ObservableObject {
                 pid: app.pid,
                 bundleId: app.bundleId
             )
-            events.append(event)
+            newEvents.append(event)
         }
 
-        if events.count > maxEvents {
-            events = Array(events.suffix(maxEvents))
-        }
+        knownCameraApps = Set(cameraApps.map(\.pid))
+        knownMicApps = Set(micApps.map(\.pid))
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -79,10 +83,13 @@ class SensorMonitor: ObservableObject {
             self.microphoneActive = !micApps.isEmpty
             self.cameraProcess = cameraApps.first?.name
             self.microphoneProcess = micApps.first?.name
+            if !newEvents.isEmpty {
+                self.events.append(contentsOf: newEvents)
+                if self.events.count > self.maxEvents {
+                    self.events = Array(self.events.suffix(self.maxEvents))
+                }
+            }
         }
-
-        knownCameraApps = Set(cameraApps.map(\.pid))
-        knownMicApps = Set(micApps.map(\.pid))
     }
 
     private struct AppInfo {
