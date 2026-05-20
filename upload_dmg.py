@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "1.8.3"
+VERSION = "1.8.4"
 DMG_PATH = f"/tmp/AIMacCleaner-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -33,28 +33,23 @@ if response.status_code == 200:
     print(f"Release {TAG} already exists (id={release_id})")
 else:
     print(f"Creating new release {TAG}...")
-    body_text = """## v1.8.0 芯片迁移功能
+    body_text = """## v1.8.4 修复主线程阻塞与Trae审计
 
-### 🆕 新功能：芯片迁移 (Intel → Apple Silicon)
-- **新增「芯片迁移」Tab页** - 一键扫描本机所有 Intel 架构的应用、CLI工具、Homebrew包
-- **架构检测** - 使用 `lipo -info` 和 `file` 命令精确识别 x86_64/ARM64/Universal 二进制
-- **Intel 应用扫描** - 扫描 /Applications 和 ~/Applications 下所有 .app 的架构
-- **CLI 工具扫描** - 扫描 /usr/local/bin、/opt/homebrew/bin、~/.cargo/bin、~/go/bin 等
-- **Homebrew Intel 包检测** - 识别 /usr/local/Cellar 下的 Intel Homebrew 包
-- **Rosetta 进程检测** - 检测正在通过 Rosetta 转译运行的进程
-- **搜索 ARM 替代** - 联网搜索 ARM 版本下载链接（Google搜索/Mac App Store/brew install）
-- **一键卸载 Intel 版本** - 支持 .app 移入回收站、CLI 直接删除、brew uninstall
-- **一键重装 ARM 版本** - Homebrew 包支持 `brew install` 重装 ARM 版本
-- **统计面板** - Intel 应用数量、通用二进制数量、ARM 原生数量、可释放空间
+### 🔧 修复：列表无法滚动/卡死
+- **SensorMonitor**: checkSensors() 移到后台执行，避免 lsof/ps 命令同步阻塞主线程
+- **OperationMonitor**: addRecord() 改为批量合并更新（0.3秒合并一次），避免洪水式主线程调度
+- **OperationMonitor**: buildInitialSnapshot() 移到后台执行，避免启动时遍历文件阻塞
+- **ScannerService**: operationPollTimer 轮询间隔从 2 秒调整为 5 秒
 
-### 数据模型
-- `IntelAppInfo` - 含 BinaryArchitecture (x86_64/arm64/universal/rosetta/unknown) 和 IntelAppType (app/cli/homebrew/framework)
-
-### 修复 (来自 v1.7.9)
-- 修复自定义Agent无法审计
-- 修复Trae审计结果目标路径为空
-- 修复未扫描出其他内置Agent
-- 修复退出并更新流程无效
+### 🔧 修复：Trae 审计日期不符和最近数据缺失
+- 从 MongoDB ObjectID 前8位提取 Unix 时间戳，替代 Date()
+- 新增 workspaceStorage/*/state.vscdb 扫描（8个工作区）
+- 新增 ModularData/ai-agent/snapshot/ 扫描（69个会话快照）
+- 新增 ModularData/ai-agent/sandbox/ 扫描（权限配置）
+- 新增 User/History/ 扫描（545个文件编辑记录）
+- 新增 all_session_badges 和 sessionRelation 解析
+- 新增 currentAgentData 的 created_at/updated_at 时间戳解析
+- 记录上限从 5000 提升到 10000
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',
