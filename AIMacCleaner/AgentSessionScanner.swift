@@ -1715,6 +1715,16 @@ class AgentSessionScanner: ObservableObject {
             if (key.contains("icube-ai-agent-storage-input-history") || key.contains("agent-storage-input-history")) && !key.contains("query") {
                 guard let data = value.data(using: .utf8),
                       let historyList = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { continue }
+                let totalCount = historyList.count
+                let endDate = dbModDate ?? Date()
+                var startDate = endDate
+                if let earliestSession = sessionModelMap.keys.sorted().first, let oidDate = dateFromObjectID(earliestSession) {
+                    startDate = oidDate
+                } else {
+                    startDate = endDate.addingTimeInterval(-Double(totalCount) * 600)
+                }
+                let timeRange = endDate.timeIntervalSince(startDate)
+                let step = totalCount > 1 ? timeRange / Double(totalCount - 1) : 0
                 for (idx, item) in historyList.enumerated() {
                     let inputText = item["inputText"] as? String ?? ""
                     guard !inputText.isEmpty else { continue }
@@ -1724,7 +1734,7 @@ class AgentSessionScanner: ObservableObject {
                     } else if let tsStr = item["timestamp"] as? String, let ts = parseTimestamp(tsStr) {
                         date = ts
                     } else {
-                        date = dbModDate ?? Date()
+                        date = startDate.addingTimeInterval(Double(idx) * step)
                     }
                     records.append(AgentOpRecord(
                         id: "\(url.path)_history_\(idx)",

@@ -248,21 +248,73 @@ class IntelMigrationScanner: ObservableObject {
                     }
                 }
             }
-            return searchOnlineStatic(name: name)
-        case .app:
-            if let bid = bundleId {
-                return ("macappstore://itunes.apple.com/app/id\(bid)", nil)
+            let ghResult = searchGitHubRepos(query: name)
+            if let url = ghResult {
+                return (url, nil)
             }
-            return searchOnlineStatic(name: name)
+            return searchDuckDuckGo(name: name, appType: appType)
+        case .app:
+            let ghResult = searchGitHubRepos(query: name)
+            if let url = ghResult {
+                return (url, nil)
+            }
+            if let bid = bundleId {
+                let itunesResult = searchITunesLookup(bundleId: bid)
+                if let url = itunesResult {
+                    return (url, nil)
+                }
+            }
+            return searchDuckDuckGo(name: name, appType: appType)
         case .framework:
-            return searchOnlineStatic(name: name)
+            let ghResult = searchGitHubRepos(query: name)
+            if let url = ghResult {
+                return (url, nil)
+            }
+            return searchDuckDuckGo(name: name, appType: appType)
         }
     }
 
-    nonisolated static func searchOnlineStatic(name: String) -> (String?, String?) {
-        let query = "\(name) mac download arm64 apple silicon"
+    nonisolated static func searchGitHubRepos(query: String) -> String? {
+        let searchTerms = query
+            .replacingOccurrences(of: " ", with: "+")
+            .lowercased()
+        guard let url = URL(string: "https://api.github.com/search/repositories?q=\(searchTerms)+mac+arm64&sort=stars&per_page=3"),
+              let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = json["items"] as? [[String: Any]] else {
+            return nil
+        }
+        for item in items {
+            if let htmlUrl = item["html_url"] as? String {
+                return htmlUrl
+            }
+        }
+        return nil
+    }
+
+    nonisolated static func searchITunesLookup(bundleId: String) -> String? {
+        guard let url = URL(string: "https://itunes.apple.com/lookup?bundleId=\(bundleId)"),
+              let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let results = json["results"] as? [[String: Any]],
+              let first = results.first,
+              let trackViewUrl = first["trackViewUrl"] as? String else {
+            return nil
+        }
+        return trackViewUrl
+    }
+
+    nonisolated static func searchDuckDuckGo(name: String, appType: IntelAppInfo.IntelAppType) -> (String?, String?) {
+        let typeHint: String
+        switch appType {
+        case .app: typeHint = "mac app download"
+        case .cli: typeHint = "mac cli install arm64"
+        case .homebrew: typeHint = "homebrew install"
+        case .framework: typeHint = "mac framework download arm64"
+        }
+        let query = "\(name) \(typeHint) apple silicon"
         guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://www.google.com/search?q=\(encodedQuery)") else {
+              let url = URL(string: "https://duckduckgo.com/?q=\(encodedQuery)") else {
             return (nil, "搜索链接生成失败")
         }
         return (url.absoluteString, nil)
@@ -320,22 +372,27 @@ class IntelMigrationScanner: ObservableObject {
                     }
                 }
 
+                if let urlStr = downloadURL, let url = URL(string: urlStr) {
+                    await MainActor.run { NSWorkspace.shared.open(url) }
+                }
+
+                await MainActor.run {
+                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
+                        self.items[idx2].replaceProgress = 0.5
+                    }
+                }
+
                 var resultURL: NSURL?
                 try? self.fileManager.trashItem(at: URL(fileURLWithPath: appPath), resultingItemURL: &resultURL)
 
                 await MainActor.run {
                     if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
-                        self.items[idx2].replaceProgress = 0.6
+                        self.items[idx2].replaceProgress = 0.8
                         self.items[idx2].replaceState = .installing
                     }
                 }
 
-                if let urlStr = downloadURL, let url = URL(string: urlStr) {
-                    await MainActor.run { NSWorkspace.shared.open(url) }
-                    success = true
-                } else {
-                    success = false
-                }
+                success = downloadURL != nil
 
             case .cli:
                 try? self.fileManager.removeItem(atPath: appPath)
@@ -369,22 +426,27 @@ class IntelMigrationScanner: ObservableObject {
                     }
                 }
 
+                if let urlStr = downloadURL, let url = URL(string: urlStr) {
+                    await MainActor.run { NSWorkspace.shared.open(url) }
+                }
+
+                await MainActor.run {
+                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
+                        self.items[idx2].replaceProgress = 0.5
+                    }
+                }
+
                 var resultURL: NSURL?
                 try? self.fileManager.trashItem(at: URL(fileURLWithPath: appPath), resultingItemURL: &resultURL)
 
                 await MainActor.run {
                     if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
-                        self.items[idx2].replaceProgress = 0.6
+                        self.items[idx2].replaceProgress = 0.8
                         self.items[idx2].replaceState = .installing
                     }
                 }
 
-                if let urlStr = downloadURL, let url = URL(string: urlStr) {
-                    await MainActor.run { NSWorkspace.shared.open(url) }
-                    success = true
-                } else {
-                    success = false
-                }
+                success = downloadURL != nil
             }
 
             await MainActor.run {

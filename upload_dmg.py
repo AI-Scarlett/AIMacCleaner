@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "1.8.4"
+VERSION = "1.8.5"
 DMG_PATH = f"/tmp/AIMacCleaner-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -33,23 +33,18 @@ if response.status_code == 200:
     print(f"Release {TAG} already exists (id={release_id})")
 else:
     print(f"Creating new release {TAG}...")
-    body_text = """## v1.8.4 修复主线程阻塞与Trae审计
+    body_text = """## v1.8.5 修复Trae审计日期与芯片迁移搜索
 
-### 🔧 修复：列表无法滚动/卡死
-- **SensorMonitor**: checkSensors() 移到后台执行，避免 lsof/ps 命令同步阻塞主线程
-- **OperationMonitor**: addRecord() 改为批量合并更新（0.3秒合并一次），避免洪水式主线程调度
-- **OperationMonitor**: buildInitialSnapshot() 移到后台执行，避免启动时遍历文件阻塞
-- **ScannerService**: operationPollTimer 轮询间隔从 2 秒调整为 5 秒
+### 🔧 修复：Trae 审计日期对不上
+- input-history 项无时间戳字段，改用线性分布估算日期（从最早session到db修改时间）
+- 日期现在按实际发生顺序分布，而非全部显示同一时间
 
-### 🔧 修复：Trae 审计日期不符和最近数据缺失
-- 从 MongoDB ObjectID 前8位提取 Unix 时间戳，替代 Date()
-- 新增 workspaceStorage/*/state.vscdb 扫描（8个工作区）
-- 新增 ModularData/ai-agent/snapshot/ 扫描（69个会话快照）
-- 新增 ModularData/ai-agent/sandbox/ 扫描（权限配置）
-- 新增 User/History/ 扫描（545个文件编辑记录）
-- 新增 all_session_badges 和 sessionRelation 解析
-- 新增 currentAgentData 的 created_at/updated_at 时间戳解析
-- 记录上限从 5000 提升到 10000
+### 🔧 修复：芯片迁移下载地址
+- 不再只给 App Store 链接，改为多源搜索：
+  - **GitHub API 搜索**：优先搜索 GitHub 仓库（适合开源工具/CLI）
+  - **iTunes Lookup API**：通过 bundleId 查询 App Store 页面
+  - **DuckDuckGo 搜索**：最终回退到搜索引擎（适合官网下载）
+- App/framework 替换时先打开下载页面，再移入回收站
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',
