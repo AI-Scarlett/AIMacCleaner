@@ -149,7 +149,7 @@ extension Localizer {
     var clearResults: String { t("清除结果", en: "Clear Results") }
     var viewFullLog: String { t("查看完整记录", en: "View Full Log") }
     var quitApp: String { t("退出", en: "Quit") }
-    var openAIMacCleaner: String { t("打开 AIMacCleaner", en: "Open AIMacCleaner") }
+    var openAIMacCleaner: String { t("打开 Agent守护", en: "Open AgentGuard") }
     var checkForUpdate: String { t("检查更新", en: "Check for Updates") }
     var checkingUpdate: String { t("检查中...", en: "Checking...") }
     var running: String { t("运行中", en: "Running") }
@@ -203,6 +203,7 @@ extension Localizer {
     var searchingScanning: String { t("正在扫描...", en: "Scanning...") }
 
     var agentMonitorTitle: String { t("Agent 监控", en: "Agent Monitor") }
+    var systemMonitorTitle: String { t("系统监控", en: "System Monitor") }
     var agentMonitorSubtitle: String { t("监控 AI Agent 的文件操作", en: "Monitor AI Agent file operations") }
     var monitoring: String { t("监控中", en: "Monitoring") }
     var startMonitoring: String { t("开始监控", en: "Start Monitoring") }

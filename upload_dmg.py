@@ -14,7 +14,7 @@ def get_github_token():
     return None
 
 VERSION = "2.0.0"
-DMG_PATH = f"/tmp/AIMacCleaner-v{VERSION}-arm64.dmg"
+DMG_PATH = f"/tmp/AgentGuard-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
 
@@ -88,7 +88,7 @@ print(f"Uploading DMG: {DMG_PATH}...")
 
 with open(DMG_PATH, 'rb') as f:
     response = requests.post(
-        f"{upload_url}?name=AIMacCleaner-{TAG}-arm64.dmg",
+        f"{upload_url}?name=AgentGuard-{TAG}-arm64.dmg",
         headers={**headers, 'Content-Type': 'application/octet-stream'},
         data=f
     )
@@ -101,7 +101,7 @@ import os
 import tempfile
 
 print("Creating source code zip...")
-zip_path = f"/tmp/AIMacCleaner-{TAG}-source.zip"
+zip_path = f"/tmp/AgentGuard-{TAG}-source.zip"
 source_dir = "/Users/zhouxiaoming/Downloads/MacCleaner"
 
 with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -116,7 +116,7 @@ with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
 print(f"Uploading source code zip: {zip_path}...")
 with open(zip_path, 'rb') as f:
     response = requests.post(
-        f"{upload_url}?name=AIMacCleaner-{TAG}-source.zip",
+        f"{upload_url}?name=AgentGuard-{TAG}-source.zip",
         headers={**headers, 'Content-Type': 'application/zip'},
         data=f
     )

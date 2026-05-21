@@ -3,7 +3,7 @@ import SwiftUI
 struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
-    @State private var selectedTab: MonitorTab = .overview
+    @State private var selectedTab: MonitorTab = .operations
     @AppStorage("networkMode") private var networkMode = "internet"
     @State private var alertThreshold: Double = 10.0
     @State private var monitoringEnabled: Bool = true
@@ -12,13 +12,13 @@ struct MenuBarMonitor: View {
     @State private var preventAutoEmptyTrash: Bool = true
 
     enum MonitorTab: String, CaseIterable {
-        case overview = "overview"
         case operations = "operations"
+        case overview = "overview"
 
         func label(_ localizer: Localizer) -> String {
             switch self {
-            case .overview: return localizer.hardwareMonitor
             case .operations: return localizer.agentMonitorTitle
+            case .overview: return localizer.systemMonitorTitle
             }
         }
     }
@@ -38,7 +38,7 @@ struct MenuBarMonitor: View {
             Divider()
             popoverFooter
         }
-        .frame(width: 300)
+        .frame(width: 340)
         .onAppear {
             loadSettings()
             if monitoringEnabled { service.startMonitoring() }
@@ -55,7 +55,7 @@ struct MenuBarMonitor: View {
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: tab == .overview ? "gauge.open.with.lines.needle.84percent" : "chart.bar")
+                        Image(systemName: tab == .operations ? "chart.bar" : "gauge.open.with.lines.needle.84percent")
                             .font(Theme.Font.caption)
                         Text(tab.label(localizer))
                             .font(Theme.Font.captionMedium)
@@ -220,7 +220,7 @@ struct MenuBarMonitor: View {
                 Button {
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.title.contains("AIMacCleaner") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
+                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentGuard") || $0.title.contains("Agent守护") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
                         window.makeKeyAndOrderFront(nil)
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -284,6 +284,23 @@ struct MenuBarMonitor: View {
                     .foregroundStyle(Theme.Colors.textTertiary)
 
                 Spacer()
+
+                Button {
+                    withAnimation(.none) {
+                        localizer.language = localizer.language == .chinese ? .english : .chinese
+                    }
+                } label: {
+                    Text(localizer.language == .chinese ? "EN" : "中")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.accent)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(Theme.Colors.accent.opacity(0.12))
+                        )
+                }
+                .buttonStyle(.plain)
 
                 Button {
                     let behavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
@@ -660,67 +677,84 @@ struct MenuBarMonitor: View {
     // MARK: - Operation Monitor Tab
 
     private var operationStatsHeader: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            SectionHeader(title: localizer.opStatsLabel, icon: "chart.bar")
-
-            if operationMonitorEnabled {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(Theme.Colors.success)
-                        .frame(width: 6, height: 6)
-                    Text(localizer.monitoringLabel)
+        VStack(spacing: Theme.Spacing.sm) {
+            HStack {
+                SectionHeader(title: localizer.opStatsLabel, icon: "chart.bar")
+                if operationMonitorEnabled {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Theme.Colors.success)
+                            .frame(width: 5, height: 5)
+                        Text(localizer.monitoringLabel)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.success)
+                    }
+                } else {
+                    Text(localizer.notEnabledLabel)
                         .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.Colors.success)
+                        .foregroundStyle(Theme.Colors.textTertiary)
                 }
-                .frame(maxWidth: .infinity, alignment: .trailing)
-            } else {
-                Text(localizer.notEnabledLabel)
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.Colors.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
-            HStack(spacing: Theme.Spacing.sm) {
-                StatCardView(
+            HStack(spacing: Theme.Spacing.xs) {
+                compactStatCard(
                     icon: "list.bullet",
                     iconColor: Theme.Colors.info,
                     title: localizer.totalOpsLabel,
-                    value: "\(service.operationRecords.count)",
-                    subtitle: nil
+                    value: "\(service.operationRecords.count)"
                 )
-                StatCardView(
+                compactStatCard(
                     icon: "clock",
                     iconColor: Theme.Colors.success,
                     title: localizer.todayLabel,
-                    value: "\(todayOperationCount)",
-                    subtitle: nil
+                    value: "\(todayOperationCount)"
                 )
-                StatCardView(
+                compactStatCard(
                     icon: "flame.fill",
                     iconColor: Theme.Colors.warning,
                     title: localizer.hourLabel,
-                    value: "\(hourOperationCount)",
-                    subtitle: nil
+                    value: "\(hourOperationCount)"
                 )
             }
         }
-        .padding(Theme.Spacing.lg)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.md)
+    }
+
+    private func compactStatCard(icon: String, iconColor: Color, title: String, value: String) -> some View {
+        VStack(spacing: 2) {
+            Image(systemName: icon)
+                .font(Theme.Font.caption)
+                .foregroundStyle(iconColor)
+            Text(value)
+                .font(Theme.Font.subheadlineMedium)
+                .monospacedDigit()
+                .foregroundStyle(Theme.Colors.textPrimary)
+            Text(title)
+                .font(.system(size: 9))
+                .foregroundStyle(Theme.Colors.textTertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(iconColor.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
 
     private var operationAgentStats: some View {
-        VStack(spacing: Theme.Spacing.sm) {
+        VStack(spacing: Theme.Spacing.xs) {
             SectionHeader(title: localizer.agentActivityLabel, icon: "cpu")
 
             if agentStats.isEmpty {
                 Text(localizer.noOpRecordsLabel)
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.textTertiary)
-                    .padding(.vertical, Theme.Spacing.sm)
+                    .padding(.vertical, Theme.Spacing.xs)
             } else {
                 agentStatsList
             }
         }
-        .padding(Theme.Spacing.lg)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.sm)
     }
 
     private var agentStatsList: some View {
@@ -760,33 +794,38 @@ struct MenuBarMonitor: View {
     }
 
     private var operationTypeStats: some View {
-        VStack(spacing: Theme.Spacing.sm) {
+        VStack(spacing: Theme.Spacing.xs) {
             SectionHeader(title: localizer.opTypeDistLabel, icon: "chart.pie")
 
             if service.operationRecords.isEmpty {
                 Text(localizer.noData)
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.textTertiary)
-                    .padding(.vertical, Theme.Spacing.sm)
+                    .padding(.vertical, Theme.Spacing.xs)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        ForEach(Array(typeStats.enumerated()), id: \.offset) { _, stat in
-                            HStack(spacing: Theme.Spacing.xs) {
-                                Image(systemName: stat.icon)
-                                    .font(Theme.Font.caption)
-                                PillBadge(text: "\(stat.count) \(stat.label)", color: stat.color, size: .small)
-                            }
+                FlowLayout(spacing: Theme.Spacing.xs) {
+                    ForEach(Array(typeStats.enumerated()), id: \.offset) { _, stat in
+                        HStack(spacing: 3) {
+                            Image(systemName: stat.icon)
+                                .font(.system(size: 9))
+                            Text("\(stat.count) \(stat.label)")
+                                .font(.system(size: 10))
                         }
+                        .foregroundStyle(stat.color)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(stat.color.opacity(0.1))
+                        .clipShape(Capsule())
                     }
                 }
             }
         }
-        .padding(Theme.Spacing.lg)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.sm)
     }
 
     private var recentOperations: some View {
-        VStack(spacing: Theme.Spacing.sm) {
+        VStack(spacing: Theme.Spacing.xs) {
             SectionHeader(title: localizer.recentOpsLabel, icon: "clock.arrow.circlepath") {
                 if !service.operationRecords.isEmpty {
                     Text("\(service.operationRecords.count) \(localizer.recordsUnit)")
@@ -796,7 +835,7 @@ struct MenuBarMonitor: View {
             }
 
             if service.operationRecords.isEmpty {
-                VStack(spacing: Theme.Spacing.sm) {
+                VStack(spacing: Theme.Spacing.xs) {
                     Image(systemName: "tray")
                         .font(.title3)
                         .foregroundStyle(Theme.Colors.textTertiary.opacity(0.4))
@@ -807,27 +846,27 @@ struct MenuBarMonitor: View {
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textTertiary)
                 }
-                .padding(.vertical, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.sm)
             } else {
-                VStack(spacing: Theme.Spacing.xs) {
+                VStack(spacing: 3) {
                     ForEach(recentRecords, id: \.id) { record in
-                        HStack(spacing: Theme.Spacing.sm) {
+                        HStack(spacing: Theme.Spacing.xs) {
                             Image(systemName: record.operationType.icon)
-                                .font(Theme.Font.caption)
+                                .font(.system(size: 10))
                                 .foregroundStyle(opTypeColor(record.operationType))
-                                .frame(width: 16)
+                                .frame(width: 14)
 
                             Text(record.agentName)
-                                .font(Theme.Font.captionMedium)
+                                .font(.system(size: 11))
                                 .foregroundStyle(Theme.Colors.textPrimary)
                                 .lineLimit(1)
-                                .frame(width: 60, alignment: .leading)
+                                .frame(width: 64, alignment: .leading)
                                 .help(record.processName ?? record.agentName)
 
                             PillBadge(text: record.operationType.rawValue, color: opTypeColor(record.operationType), size: .small)
 
                             Text(record.targetPath)
-                                .font(Theme.Font.caption)
+                                .font(.system(size: 10))
                                 .foregroundStyle(Theme.Colors.textTertiary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
@@ -835,16 +874,24 @@ struct MenuBarMonitor: View {
                             Spacer()
 
                             Text(record.timestamp, style: .time)
-                                .font(Theme.Font.caption)
+                                .font(.system(size: 10))
                                 .monospacedDigit()
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         }
-                        .cardStyle(padding: Theme.Spacing.sm, cornerRadius: Theme.Radius.sm)
+                        .padding(.horizontal, Theme.Spacing.sm)
+                        .padding(.vertical, 4)
+                        .background(Theme.Colors.cardBg)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+                        )
                     }
                 }
             }
         }
-        .padding(Theme.Spacing.lg)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.sm)
     }
 
     private var operationControlBar: some View {
@@ -935,7 +982,7 @@ struct MenuBarMonitor: View {
                 Button {
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.title.contains("AIMacCleaner") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
+                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentGuard") || $0.title.contains("Agent守护") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
                         window.makeKeyAndOrderFront(nil)
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {

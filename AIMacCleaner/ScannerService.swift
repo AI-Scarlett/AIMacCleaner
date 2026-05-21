@@ -1853,7 +1853,7 @@ sleep 3
 log "Mounting DMG..."
 if ! /usr/bin/hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -nobrowse -quiet 2>>"$LOG_PATH"; then
     log "ERROR: Failed to mount DMG"
-    osascript -e 'display notification "\(localizer?.updateInstallFailedMount ?? "Update install failed: cannot mount installer")" with title "AIMacCleaner"'
+    osascript -e 'display notification "\(localizer?.updateInstallFailedMount ?? "Update install failed: cannot mount installer")" with title "AgentGuard"'
     rm -rf "$TEMP_DIR"
     exit 1
 fi
@@ -1864,7 +1864,7 @@ UPDATE_APP=$(find "$MOUNT_POINT" -maxdepth 1 -name "*.app" -type d 2>/dev/null |
 if [ -z "$UPDATE_APP" ]; then
     log "ERROR: No .app found in DMG"
     /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
-    osascript -e 'display notification "\(localizer?.updateInstallFailedApp ?? "Update install failed: app not found in installer")" with title "AIMacCleaner"'
+    osascript -e 'display notification "\(localizer?.updateInstallFailedApp ?? "Update install failed: app not found in installer")" with title "AgentGuard"'
     rm -rf "$TEMP_DIR"
     exit 1
 fi
@@ -1881,7 +1881,7 @@ log "Copying new app to $TARGET_PATH"
 if ! /usr/bin/ditto "$UPDATE_APP" "$TARGET_PATH" 2>>"$LOG_PATH"; then
     log "ERROR: Failed to copy new app"
     /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
-    osascript -e 'display notification "\(localizer?.updateInstallFailedCopy ?? "Update install failed: cannot copy app")" with title "AIMacCleaner"'
+    osascript -e 'display notification "\(localizer?.updateInstallFailedCopy ?? "Update install failed: cannot copy app")" with title "AgentGuard"'
     rm -rf "$TEMP_DIR"
     exit 1
 fi
@@ -1897,7 +1897,7 @@ xattr -cr "$TARGET_PATH" 2>/dev/null || true
 log "Launching updated app..."
 open "$TARGET_PATH"
 
-osascript -e 'display notification "\(localizer?.updateSuccess ?? "Successfully updated to latest version")" with title "AIMacCleaner" sound name "Glass"'
+osascript -e 'display notification "\(localizer?.updateSuccess ?? "Successfully updated to latest version")" with title "AgentGuard" sound name "Glass"'
 log "=== Update completed successfully ==="
 
 # Cleanup temp files after launch

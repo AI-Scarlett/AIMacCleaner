@@ -55,7 +55,7 @@ struct AIMacCleanerApp: App {
             if menuBarMonitorEnabled {
                 menuBarLabel
             } else {
-                Image(systemName: "internaldrive")
+                Image(systemName: "shield.lefthalf.filled")
             }
         }
         .menuBarExtraStyle(.window)
@@ -65,11 +65,11 @@ struct AIMacCleanerApp: App {
     private var menuBarLabel: some View {
         if let disk = service.diskInfo {
             HStack(spacing: 3) {
-                Image(systemName: disk.usedPct > 90 ? "internaldrive.fill" : "internaldrive")
+                Image(systemName: disk.usedPct > 90 ? "shield.lefthalf.filled" : "shield.lefthalf.filled")
                 Text(String(format: "%.0f%%", 100.0 - disk.usedPct))
             }
         } else {
-            Image(systemName: "internaldrive")
+            Image(systemName: "shield.lefthalf.filled")
         }
     }
 }
@@ -90,7 +90,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupWindowDelegate() {
         for window in NSApp.windows {
-            if window.title.contains("AIMacCleaner") || window.className.contains("Window") {
+            if window.title.contains("AgentGuard") || window.title.contains("Agent守护") || window.className.contains("Window") {
                 mainWindow = window
             }
             window.delegate = WindowDelegate.shared

@@ -5,7 +5,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="AIMacCleaner"
 VERSION="2.0.0"
 BUILD_DIR="/tmp/AIMacCleaner_build"
-DMG_NAME="AIMacCleaner-v${VERSION}-arm64"
+DMG_NAME="AgentGuard-v${VERSION}-arm64"
 STAGING_DIR="/tmp/AIMacCleaner_dmg_staging"
 
 echo "========================================="
@@ -118,7 +118,7 @@ cp -R "$APP_PATH" "$STAGING_DIR/"
 ln -s /Applications "$STAGING_DIR/Applications"
 
 hdiutil create \
-    -volname "$APP_NAME" \
+    -volname "AgentGuard" \
     -srcfolder "$STAGING_DIR" \
     -ov \
     -format UDZO \

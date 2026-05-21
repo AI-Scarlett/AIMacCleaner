@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 struct ContentView: View {
-    @State private var selectedTab: NavItem = .cleaner
+    @State private var selectedTab: NavItem = .operations
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
     @State private var showSettings = false
@@ -11,12 +11,12 @@ struct ContentView: View {
     @AppStorage("networkMode") private var networkMode = "internet"
 
     enum NavItem: String, CaseIterable {
-        case cleaner = "Mac 清理"
         case operations = "Agent 监控"
+        case cleaner = "Mac 清理"
         case app = "APP 管理"
         case dependency = "依赖管理"
-        case migration = "适配检测"
         case other = "其它工具"
+        case migration = "适配检测"
 
         var icon: String {
             switch self {
@@ -113,16 +113,16 @@ struct ContentView: View {
         HStack(spacing: 0) {
             if !sidebarCollapsed {
                 HStack(spacing: Theme.Spacing.sm) {
-                    Image(systemName: "arrow.down.doc.fill")
+                    Image(systemName: "shield.lefthalf.filled")
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(Theme.Gradients.accent)
-                    Text("AIMacCleaner")
+                    Text(localizer.t("Agent守护", en: "AgentGuard"))
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Theme.Gradients.accent)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
             } else {
-                Image(systemName: "arrow.down.doc.fill")
+                Image(systemName: "shield.lefthalf.filled")
                     .font(.system(size: Theme.Sidebar.iconSize, weight: .semibold))
                     .foregroundStyle(Theme.Gradients.accent)
                     .frame(maxWidth: .infinity)
@@ -265,6 +265,8 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
 
+                    languageToggleButton
+
                     networkStatusBadge
 
                     Text("v\(service.currentVersion)")
@@ -293,6 +295,8 @@ struct ContentView: View {
                         .buttonStyle(.plain)
 
                         Spacer()
+
+                        languageToggleButton
 
                         networkStatusBadge
                     }
@@ -335,6 +339,26 @@ struct ContentView: View {
                 .padding(.vertical, Theme.Spacing.lg)
             }
         }
+    }
+
+    private var languageToggleButton: some View {
+        Button {
+            withAnimation(.none) {
+                localizer.language = localizer.language == .chinese ? .english : .chinese
+            }
+        } label: {
+            Text(localizer.language == .chinese ? "EN" : "中")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.Colors.accent)
+                .padding(.horizontal, sidebarCollapsed ? 6 : 8)
+                .padding(.vertical, 2)
+                .background(
+                    Capsule()
+                        .fill(Theme.Colors.accent.opacity(0.12))
+                )
+        }
+        .buttonStyle(.plain)
+        .help(localizer.language == .chinese ? "Switch to English" : "切换到中文")
     }
 
     private var networkStatusBadge: some View {
@@ -811,7 +835,7 @@ struct OperationLogTab: View {
                                     .font(Theme.Font.caption)
                                     .monospacedDigit()
                                     .foregroundStyle(Theme.Colors.textSecondary)
-                                    .frame(width: 50, alignment: .leading)
+                                    .frame(width: 60, alignment: .leading)
 
                                 HStack(spacing: Theme.Spacing.xs) {
                                     Image(systemName: "cpu")
@@ -831,13 +855,14 @@ struct OperationLogTab: View {
                                         }
                                     }
                                 }
-                                .frame(minWidth: 100, alignment: .leading)
+                                .frame(width: 120, alignment: .leading)
 
                                 PillBadge(
                                     text: record.operationType.rawValue,
                                     color: opTypeColor(record.operationType),
                                     size: .small
                                 )
+                                .frame(width: 70, alignment: .center)
 
                                 HStack(spacing: Theme.Spacing.xs) {
                                     VStack(alignment: .leading, spacing: 1) {
@@ -1284,13 +1309,14 @@ struct OperationLogTab: View {
                                         .font(Theme.Font.caption)
                                         .monospacedDigit()
                                         .foregroundStyle(Theme.Colors.textSecondary)
-                                        .frame(width: 70, alignment: .leading)
+                                        .frame(width: 80, alignment: .leading)
 
                                     PillBadge(
                                         text: rec.opType,
                                         color: opTypeColor(rec.opType),
                                         size: .small
                                     )
+                                    .frame(width: 70, alignment: .center)
 
                                     Text(rec.toolName)
                                         .font(Theme.Font.caption)
@@ -2423,10 +2449,10 @@ struct MacCleanerTab: View {
         VStack(spacing: Theme.Spacing.xxl) {
             Spacer()
             VStack(spacing: Theme.Spacing.md) {
-                Image(systemName: "arrow.down.doc.fill")
+                Image(systemName: "shield.lefthalf.filled")
                     .font(.system(size: 48))
                     .foregroundStyle(Theme.Colors.accent.opacity(0.6))
-                Text("AIMacCleaner")
+                Text(localizer.t("Agent守护", en: "AgentGuard"))
                     .font(Theme.Font.title2Bold)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Text(localizer.smartCleanDesc)
@@ -2524,12 +2550,14 @@ struct MacCleanerTab: View {
                             .font(Theme.Font.bodyMedium)
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
+                            .frame(width: 160, alignment: .leading)
 
                         PillBadge(
                             text: item.sourceType.localizedLabel(localizer),
                             color: item.sourceType == .ai ? Theme.Colors.purple : Theme.Colors.info,
                             size: .small
                         )
+                        .frame(width: 60, alignment: .center)
 
                         Text(item.app)
                             .font(Theme.Font.caption)
@@ -2542,6 +2570,7 @@ struct MacCleanerTab: View {
                             color: riskColor(item.riskLevel),
                             size: .small
                         )
+                        .frame(width: 60, alignment: .center)
 
                         Text(service.formatSize(item.size))
                             .font(Theme.Font.subheadlineMedium)
@@ -2664,10 +2693,12 @@ struct AppRowCard: View {
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .lineLimit(1)
             }
+            .frame(minWidth: 160, maxWidth: 220, alignment: .leading)
 
             Spacer()
 
             PillBadge(text: riskLabel, color: riskColor, size: .small)
+                .frame(width: 60, alignment: .center)
 
             if let aiResult = aiResult {
                 Text(aiResult)
