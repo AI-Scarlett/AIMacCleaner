@@ -90,7 +90,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupWindowDelegate() {
         for window in NSApp.windows {
-            if window.title.contains("AgentGuard") || window.title.contains("Agent守护") || window.className.contains("Window") {
+            if window.title.contains("AgentGuard") || window.title.contains("Agent卫士") || window.className.contains("Window") {
                 mainWindow = window
             }
             window.delegate = WindowDelegate.shared

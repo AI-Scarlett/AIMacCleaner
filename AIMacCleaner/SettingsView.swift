@@ -443,36 +443,43 @@ struct SettingsView: View {
     private var languageSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             SectionHeader(title: localizer.languageLabel, icon: "globe")
-            HStack(spacing: Theme.Spacing.sm) {
-                ForEach(AppLanguage.allCases, id: \.self) { lang in
-                    Button {
-                        withAnimation(.none) {
-                            localizer.language = lang
-                        }
-                    } label: {
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Text(lang.flag)
-                                .font(Theme.Font.caption)
-                            Text(lang.label)
-                                .font(Theme.Font.captionMedium)
-                                .foregroundStyle(localizer.language == lang ? Theme.Colors.teal : Theme.Colors.textSecondary)
-                        }
-                        .frame(minWidth: 80)
-                        .padding(.horizontal, Theme.Spacing.md)
-                        .padding(.vertical, Theme.Spacing.sm - 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .fill(localizer.language == lang ? Theme.Colors.teal.opacity(0.15) : Theme.Colors.cardBg)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(localizer.language == lang ? Theme.Colors.teal.opacity(0.5) : Color.primary.opacity(0.1), lineWidth: 1)
-                        )
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    ForEach(AppLanguage.allCases, id: \.self) { lang in
+                        languageButton(lang)
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
+    }
+
+    private func languageButton(_ lang: AppLanguage) -> some View {
+        let isSelected = localizer.language == lang
+        return Button {
+            withAnimation(.none) {
+                localizer.language = lang
+            }
+        } label: {
+            HStack(spacing: Theme.Spacing.xs) {
+                Text(lang.flag)
+                    .font(Theme.Font.caption)
+                Text(lang.label)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(isSelected ? Theme.Colors.teal : Theme.Colors.textSecondary)
+            }
+            .frame(minWidth: 80)
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm - 2)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .fill(isSelected ? Theme.Colors.teal.opacity(0.15) : Theme.Colors.cardBg)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .stroke(isSelected ? Theme.Colors.teal.opacity(0.5) : Color.primary.opacity(0.1), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var versionSection: some View {

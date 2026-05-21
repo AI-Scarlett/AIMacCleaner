@@ -2,16 +2,66 @@ import SwiftUI
 import Foundation
 
 enum AppLanguage: String, CaseIterable {
-    case chinese = "zh-CN"
+    case simplifiedChinese = "zh-Hans"
     case english = "en"
-    var label: String {
+    case traditionalChinese = "zh-Hant"
+    case japanese = "ja"
+    case korean = "ko"
+    case maltese = "mt"
+
+    var displayName: String {
         switch self {
-        case .chinese: "简体中文"
-        case .english: "English"
+        case .simplifiedChinese: return "中文"
+        case .english: return "English"
+        case .traditionalChinese: return "繁體中文"
+        case .japanese: return "日本語"
+        case .korean: return "한국어"
+        case .maltese: return "Malti"
         }
     }
+
+    var nativeName: String {
+        switch self {
+        case .simplifiedChinese: return "中文"
+        case .english: return "EN"
+        case .traditionalChinese: return "繁體"
+        case .japanese: return "日本語"
+        case .korean: return "한국어"
+        case .maltese: return "Malti"
+        }
+    }
+
+    var appName: String {
+        switch self {
+        case .simplifiedChinese: return "Agent卫士"
+        case .english: return "AgentGuard"
+        case .traditionalChinese: return "Agent衛士"
+        case .japanese: return "Agentガード"
+        case .korean: return "Agent가드"
+        case .maltese: return "AgentGuard"
+        }
+    }
+
     var flag: String {
-        switch self { case .chinese: "🇨🇳"; case .english: "🇺🇸" }
+        switch self {
+        case .simplifiedChinese: return "🇨🇳"
+        case .english: return "🇺🇸"
+        case .traditionalChinese: return "🇭🇰"
+        case .japanese: return "🇯🇵"
+        case .korean: return "🇰🇷"
+        case .maltese: return "🇲🇹"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .simplifiedChinese: return "中文"
+        case .english: return "English"
+        case .traditionalChinese: return "繁體"
+        case .japanese: return "日本語"
+        case .korean: return "한국어"
+        case .maltese: return "Malti"
+        }
     }
 }
 
@@ -24,12 +74,57 @@ class Localizer: ObservableObject {
     }
 
     init() {
-        let saved = UserDefaults.standard.string(forKey: "appLanguage") ?? "zh-CN"
-        language = AppLanguage(rawValue: saved) ?? .chinese
+        let saved = UserDefaults.standard.string(forKey: "appLanguage") ?? "en"
+        language = AppLanguage(rawValue: saved) ?? .english
     }
 
-    func t(_ zh: String, en: String) -> String {
-        language == .chinese ? zh : en
+    func t(_ zh: String, en: String, zhHant: String? = nil, ja: String? = nil, ko: String? = nil, mt: String? = nil) -> String {
+        switch language {
+        case .english: return en
+        case .traditionalChinese: return zhHant ?? zh
+        case .japanese: return ja ?? en
+        case .korean: return ko ?? en
+        case .maltese: return mt ?? en
+        default: return zh
+        }
+    }
+
+    var appName: String { language.appName }
+
+    func localizedSubCategory(_ cat: String) -> String {
+        switch cat {
+        case "包管理", "Package Manager": return t("包管理", en: "Package Manager")
+        case "开发", "Development": return t("开发", en: "Development")
+        case "应用", "Apps": return t("应用", en: "Apps")
+        case "其它", "Other": return t("其它", en: "Other")
+        case "浏览器", "Browser": return t("浏览器", en: "Browser")
+        case "办公", "Office": return t("办公", en: "Office")
+        case "AI Agent": return "AI Agent"
+        case "系统", "System": return t("系统", en: "System")
+        case "社交", "Social": return t("社交", en: "Social")
+        case "CLI": return "CLI"
+        default: return cat
+        }
+    }
+
+    func localizedConfidence(_ level: String) -> String {
+        switch level {
+        case "高": return highConf
+        case "中": return medConf
+        case "低": return lowConf
+        default: return level
+        }
+    }
+
+    var langToggleText: String {
+        switch language {
+        case .simplifiedChinese: return "EN"
+        case .english: return "中文"
+        case .traditionalChinese: return "EN"
+        case .japanese: return "EN"
+        case .korean: return "EN"
+        case .maltese: return "中文"
+        }
     }
 }
 
@@ -149,7 +244,7 @@ extension Localizer {
     var clearResults: String { t("清除结果", en: "Clear Results") }
     var viewFullLog: String { t("查看完整记录", en: "View Full Log") }
     var quitApp: String { t("退出", en: "Quit") }
-    var openAIMacCleaner: String { t("打开 Agent守护", en: "Open AgentGuard") }
+    var openAIMacCleaner: String { t("打开 Agent卫士", en: "Open AgentGuard", zhHant: "打開 Agent衛士", ja: "AgentGuardを開く", ko: "AgentGuard 열기", mt: "Open AgentGuard") }
     var checkForUpdate: String { t("检查更新", en: "Check for Updates") }
     var checkingUpdate: String { t("检查中...", en: "Checking...") }
     var running: String { t("运行中", en: "Running") }

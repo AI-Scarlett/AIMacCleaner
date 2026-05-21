@@ -38,7 +38,7 @@ struct MenuBarMonitor: View {
             Divider()
             popoverFooter
         }
-        .frame(width: 340)
+        .frame(width: 360)
         .onAppear {
             loadSettings()
             if monitoringEnabled { service.startMonitoring() }
@@ -220,7 +220,7 @@ struct MenuBarMonitor: View {
                 Button {
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentGuard") || $0.title.contains("Agent守护") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
+                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentGuard") || $0.title.contains("Agent卫士") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
                         window.makeKeyAndOrderFront(nil)
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -287,10 +287,10 @@ struct MenuBarMonitor: View {
 
                 Button {
                     withAnimation(.none) {
-                        localizer.language = localizer.language == .chinese ? .english : .chinese
+                        localizer.language = localizer.language == .simplifiedChinese ? .english : .simplifiedChinese
                     }
                 } label: {
-                    Text(localizer.language == .chinese ? "EN" : "中")
+                    Text(localizer.langToggleText)
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Theme.Colors.accent)
                         .padding(.horizontal, 8)
@@ -482,6 +482,7 @@ struct MenuBarMonitor: View {
                         Text("\(hw.processCount) \(localizer.processesLabel)")
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Colors.textTertiary)
+                            .lineLimit(1)
                     }
                     HStack(spacing: Theme.Spacing.xs) {
                         Image(systemName: "arrow.up.arrow.down.circle")
@@ -490,6 +491,7 @@ struct MenuBarMonitor: View {
                         Text("\(hw.threadCount) \(localizer.threadsLabel)")
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Colors.textTertiary)
+                            .lineLimit(1)
                     }
                     Spacer()
                     HStack(spacing: Theme.Spacing.xs) {
@@ -499,6 +501,7 @@ struct MenuBarMonitor: View {
                         Text("\(localizer.runtimeLabel) \(hw.uptimeFormatted)")
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Colors.textTertiary)
+                            .lineLimit(1)
                     }
                 }
                 .padding(.top, Theme.Spacing.xs)
@@ -733,6 +736,8 @@ struct MenuBarMonitor: View {
             Text(title)
                 .font(.system(size: 9))
                 .foregroundStyle(Theme.Colors.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Theme.Spacing.sm)
@@ -774,14 +779,15 @@ struct MenuBarMonitor: View {
                 .font(Theme.Font.captionMedium)
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .lineLimit(1)
-                .frame(width: 80, alignment: .leading)
+                .truncationMode(.tail)
+                .frame(width: 90, alignment: .leading)
 
             GeometryReader { geo in
                 let maxCount = agentStats.first?.count ?? 1
                 let ratio = CGFloat(stat.count) / CGFloat(max(maxCount, 1))
                 RoundedRectangle(cornerRadius: 3)
                     .fill(agentStatColor(index: stat.index).opacity(0.7))
-                    .frame(width: geo.size.width * ratio, height: 10)
+                    .frame(width: max(geo.size.width * ratio, 4), height: 10)
             }
             .frame(height: 10)
 
@@ -789,7 +795,7 @@ struct MenuBarMonitor: View {
                 .font(Theme.Font.captionMedium)
                 .monospacedDigit()
                 .foregroundStyle(Theme.Colors.textSecondary)
-                .frame(width: 30, alignment: .trailing)
+                .frame(width: 28, alignment: .trailing)
         }
     }
 
@@ -810,10 +816,12 @@ struct MenuBarMonitor: View {
                                 .font(.system(size: 9))
                             Text("\(stat.count) \(stat.label)")
                                 .font(.system(size: 10))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
                         }
                         .foregroundStyle(stat.color)
                         .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 3)
                         .background(stat.color.opacity(0.1))
                         .clipShape(Capsule())
                     }
@@ -860,18 +868,21 @@ struct MenuBarMonitor: View {
                                 .font(.system(size: 11))
                                 .foregroundStyle(Theme.Colors.textPrimary)
                                 .lineLimit(1)
-                                .frame(width: 64, alignment: .leading)
+                                .truncationMode(.tail)
+                                .frame(width: 58, alignment: .leading)
                                 .help(record.processName ?? record.agentName)
 
-                            PillBadge(text: record.operationType.rawValue, color: opTypeColor(record.operationType), size: .small)
+                            PillBadge(text: record.operationType.localizedLabel(localizer), color: opTypeColor(record.operationType), size: .small)
+                                .fixedSize()
 
                             Text(record.targetPath)
                                 .font(.system(size: 10))
                                 .foregroundStyle(Theme.Colors.textTertiary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
+                                .frame(minWidth: 40)
 
-                            Spacer()
+                            Spacer(minLength: 4)
 
                             Text(record.timestamp, style: .time)
                                 .font(.system(size: 10))
@@ -896,7 +907,7 @@ struct MenuBarMonitor: View {
 
     private var operationControlBar: some View {
         VStack(spacing: Theme.Spacing.sm) {
-            HStack {
+            HStack(spacing: Theme.Spacing.xs) {
                 Button {
                     operationMonitorEnabled.toggle()
                     saveSettings()
@@ -909,10 +920,12 @@ struct MenuBarMonitor: View {
                     HStack(spacing: Theme.Spacing.xs) {
                         Image(systemName: operationMonitorEnabled ? "pause.circle" : "play.circle")
                         Text(operationMonitorEnabled ? localizer.pauseMonitorLabel : localizer.startMonitorLabel)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(.white)
-                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.horizontal, Theme.Spacing.sm)
                     .padding(.vertical, Theme.Spacing.xs)
                     .background(operationMonitorEnabled ? Theme.Colors.warning.opacity(0.85) : Theme.Colors.success.opacity(0.85))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
@@ -930,10 +943,12 @@ struct MenuBarMonitor: View {
                         HStack(spacing: Theme.Spacing.xs) {
                             Image(systemName: service.operationMonitor.aiSelfLearningEnabled ? "sparkles" : "brain.head.profile")
                             Text(service.operationMonitor.aiSelfLearningEnabled ? localizer.closeAILabel : localizer.aiAnalysisLabel)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
                         }
                         .font(Theme.Font.captionMedium)
                         .foregroundStyle(service.operationMonitor.aiSelfLearningEnabled ? .white : Theme.Colors.textSecondary)
-                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.horizontal, Theme.Spacing.sm)
                         .padding(.vertical, Theme.Spacing.xs)
                         .background(service.operationMonitor.aiSelfLearningEnabled ? Theme.Colors.purple.opacity(0.85) : Theme.Colors.cardBg)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
@@ -957,7 +972,7 @@ struct MenuBarMonitor: View {
                         }
                         .font(Theme.Font.captionMedium)
                         .foregroundStyle(.white)
-                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.horizontal, Theme.Spacing.sm)
                         .padding(.vertical, Theme.Spacing.xs)
                         .background(Theme.Colors.danger.opacity(0.85))
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
@@ -982,7 +997,7 @@ struct MenuBarMonitor: View {
                 Button {
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentGuard") || $0.title.contains("Agent守护") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
+                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentGuard") || $0.title.contains("Agent卫士") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
                         window.makeKeyAndOrderFront(nil)
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -1054,7 +1069,7 @@ struct MenuBarMonitor: View {
         return OperationRecord.OperationType.allCases.compactMap { type in
             let count = counts[type] ?? 0
             if count > 0 {
-                return TypeStat(label: type.rawValue, icon: type.icon, color: opTypeColor(type), count: count)
+                return TypeStat(label: type.localizedLabel(localizer), icon: type.icon, color: opTypeColor(type), count: count)
             }
             return nil
         }

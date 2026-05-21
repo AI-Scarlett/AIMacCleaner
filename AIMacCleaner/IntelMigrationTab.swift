@@ -161,7 +161,7 @@ struct IntelMigrationTab: View {
             HStack(spacing: Theme.Spacing.sm) {
                 filterPill(label: localizer.all, isSelected: filterType == nil) { filterType = nil }
                 ForEach(IntelAppInfo.IntelAppType.allCases, id: \.self) { type in
-                    filterPill(label: type.rawValue, icon: type.icon, isSelected: filterType == type) {
+                    filterPill(label: type.localizedLabel(localizer), icon: type.icon, isSelected: filterType == type) {
                         filterType = type
                     }
                 }

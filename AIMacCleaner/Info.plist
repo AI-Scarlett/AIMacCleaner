@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>zh-Hans</string>
+	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Agent守护</string>
+	<string>Agent卫士</string>
 	<key>CFBundleExecutable</key>
 	<string>AIMacCleaner</string>
 	<key>CFBundleIconFile</key>
@@ -19,7 +19,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.0.0</string>
+	<string>2.1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>

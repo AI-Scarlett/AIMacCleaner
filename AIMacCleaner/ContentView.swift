@@ -116,7 +116,7 @@ struct ContentView: View {
                     Image(systemName: "shield.lefthalf.filled")
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(Theme.Gradients.accent)
-                    Text(localizer.t("Agent守护", en: "AgentGuard"))
+                    Text(localizer.appName)
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Theme.Gradients.accent)
                 }
@@ -344,10 +344,10 @@ struct ContentView: View {
     private var languageToggleButton: some View {
         Button {
             withAnimation(.none) {
-                localizer.language = localizer.language == .chinese ? .english : .chinese
+                localizer.language = localizer.language == .simplifiedChinese ? .english : .simplifiedChinese
             }
         } label: {
-            Text(localizer.language == .chinese ? "EN" : "中")
+            Text(localizer.langToggleText)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Theme.Colors.accent)
                 .padding(.horizontal, sidebarCollapsed ? 6 : 8)
@@ -358,7 +358,7 @@ struct ContentView: View {
                 )
         }
         .buttonStyle(.plain)
-        .help(localizer.language == .chinese ? "Switch to English" : "切换到中文")
+        .help(localizer.language == .simplifiedChinese ? "Switch to English" : "切换到中文")
     }
 
     private var networkStatusBadge: some View {
@@ -775,7 +775,7 @@ struct OperationLogTab: View {
                 Picker(localizer.opTypeLabel, selection: $filterOpType) {
                     Text(localizer.allTypes).tag(nil as OperationRecord.OperationType?)
                     ForEach(OperationRecord.OperationType.allCases, id: \.self) { type in
-                        Text(type.rawValue).tag(type as OperationRecord.OperationType?)
+                        Text(type.localizedLabel(localizer)).tag(type as OperationRecord.OperationType?)
                     }
                 }
                 .labelsHidden()
@@ -858,7 +858,7 @@ struct OperationLogTab: View {
                                 .frame(width: 120, alignment: .leading)
 
                                 PillBadge(
-                                    text: record.operationType.rawValue,
+                                    text: record.operationType.localizedLabel(localizer),
                                     color: opTypeColor(record.operationType),
                                     size: .small
                                 )
@@ -1942,7 +1942,7 @@ struct AddAgentFromAppsSheet: View {
                                     }
                                 }
                                 HStack(spacing: 4) {
-                                    Text(app.subCategory)
+                                    Text(localizer.localizedSubCategory(app.subCategory))
                                         .font(.system(size: 9))
                                         .foregroundColor(.secondary)
                                     Text("·").foregroundColor(.secondary)
@@ -2204,7 +2204,7 @@ struct MacCleanerTab: View {
                     if !categories.isEmpty {
                         Picker(localizer.allCategories, selection: $filterCategory) {
                             Text(localizer.allCategories).tag("")
-                            ForEach(categories, id: \.self) { Text($0).tag($0) }
+                            ForEach(categories, id: \.self) { Text(localizer.localizedSubCategory($0)).tag($0) }
                         }
                         .labelsHidden()
                     }
@@ -2452,7 +2452,7 @@ struct MacCleanerTab: View {
                 Image(systemName: "shield.lefthalf.filled")
                     .font(.system(size: 48))
                     .foregroundStyle(Theme.Colors.accent.opacity(0.6))
-                Text(localizer.t("Agent守护", en: "AgentGuard"))
+                Text(localizer.appName)
                     .font(Theme.Font.title2Bold)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Text(localizer.smartCleanDesc)
@@ -2685,7 +2685,7 @@ struct AppRowCard: View {
                         .lineLimit(1)
 
                     if filterType != .app {
-                        PillBadge(text: app.subCategory, color: subCategoryColor(app.subCategory), size: .small)
+                        PillBadge(text: localizer.localizedSubCategory(app.subCategory), color: subCategoryColor(app.subCategory), size: .small)
                     }
                 }
                 Text(app.desc)
@@ -2946,7 +2946,7 @@ struct AppManagerTab: View {
                                 HStack(spacing: Theme.Spacing.xs) {
                                     Image(systemName: subCategoryIconName(cat))
                                         .font(Theme.Font.caption)
-                                    Text(cat)
+                                    Text(localizer.localizedSubCategory(cat))
                                         .font(Theme.Font.captionMedium)
                                     Text("\(count)")
                                         .font(Theme.Font.caption)

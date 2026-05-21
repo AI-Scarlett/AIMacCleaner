@@ -1646,7 +1646,7 @@ class ScannerService: ObservableObject {
     @Published var updateErrorMessage: String = ""
     @Published var isInstallingUpdate: Bool = false
 
-    let currentVersion = "2.0.0"
+    let currentVersion = "2.1.0"
 
     private var updateCheckTimer: Timer?
     private var downloadSession: URLSession?
@@ -1975,28 +1975,28 @@ rm -rf "$TEMP_DIR"
 
         let itemsDesc = apps.map { app in
             """
-            - 名称: \(app.displayName)
-              类型: \(app.appType.label) / \(app.subCategory)
-              大小: \(formatSize(app.totalSize))
-              路径: \(app.appPath)
-              当前风险: \(app.risk) - \(app.riskDesc)
+            - Name: \(app.displayName)
+              Type: \(app.appType.localizedLabel(localizer ?? Localizer())) / \(localizer?.localizedSubCategory(app.subCategory) ?? app.subCategory)
+              Size: \(formatSize(app.totalSize))
+              Path: \(app.appPath)
+              Risk: \(app.risk) - \(app.riskDesc)
             """
         }.joined(separator: "\n")
 
         let prompt = """
-        你是一个 macOS 系统管理专家。用户想要删除/清理以下项目，请分析每个项目删除后的影响。
+        You are a macOS system management expert. The user wants to delete/clean the following items. Please analyze the impact of deleting each item.
 
-        对于每个项目，请用一句话（不超过30字）说明删除后的主要影响。
+        For each item, provide a one-sentence description (no more than 30 words) of the main impact after deletion.
 
-        请严格按照以下 JSON 格式返回结果，不要包含任何其他文字：
+        Please strictly return the result in the following JSON format, without any other text:
         [
           {
-            "name": "项目名称",
-            "impact": "一句话影响说明"
+            "name": "item name",
+            "impact": "one-sentence impact description"
           }
         ]
-        只返回JSON数组，不要包含markdown代码块标记。
-        以下是要分析的项目：
+        Only return the JSON array, do not include markdown code block markers.
+        The items to analyze:
         \(itemsDesc)
         """
 

@@ -285,9 +285,15 @@ struct CuratedRecord: Identifiable, Codable {
     let evidence: String
 
     var confidenceLabel: String {
-        if confidence >= 0.8 { return "高" }
-        if confidence >= 0.5 { return "中" }
-        return "低"
+        if confidence >= 0.8 { return "high" }
+        if confidence >= 0.5 { return "medium" }
+        return "low"
+    }
+
+    func localizedConfidenceLabel(_ localizer: Localizer) -> String {
+        if confidence >= 0.8 { return localizer.highConf }
+        if confidence >= 0.5 { return localizer.medConf }
+        return localizer.lowConf
     }
 
     var confidenceColor: String {
