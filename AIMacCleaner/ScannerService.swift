@@ -1646,7 +1646,7 @@ class ScannerService: ObservableObject {
     @Published var updateErrorMessage: String = ""
     @Published var isInstallingUpdate: Bool = false
 
-    let currentVersion = "1.9.5"
+    let currentVersion = "2.0.0"
 
     private var updateCheckTimer: Timer?
     private var downloadSession: URLSession?

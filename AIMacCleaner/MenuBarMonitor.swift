@@ -48,120 +48,133 @@ struct MenuBarMonitor: View {
     private var tabBar: some View {
         HStack(spacing: 0) {
             ForEach(MonitorTab.allCases, id: \.self) { tab in
+                let isSelected = selectedTab == tab
                 Button {
-                    selectedTab = tab
+                    withAnimation(.spring(duration: 0.3)) {
+                        selectedTab = tab
+                    }
                 } label: {
-                    VStack(spacing: 3) {
-                        HStack(spacing: 4) {
-                            Image(systemName: tab == .overview ? "gauge.open.with.lines.needle.84percent" : "chart.bar")
-                                .font(.caption2)
-                            Text(tab.label(localizer))
-                                .font(.caption)
-                                .fontWeight(selectedTab == tab ? .semibold : .regular)
+                    HStack(spacing: 4) {
+                        Image(systemName: tab == .overview ? "gauge.open.with.lines.needle.84percent" : "chart.bar")
+                            .font(Theme.Font.caption)
+                        Text(tab.label(localizer))
+                            .font(Theme.Font.captionMedium)
+                    }
+                    .foregroundStyle(isSelected ? .white : Theme.Colors.textSecondary)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.vertical, Theme.Spacing.xs + 1)
+                    .background {
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .fill(Theme.Gradients.accent)
+                        } else {
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .fill(Color.clear)
                         }
-                        .foregroundColor(selectedTab == tab ? .accentColor : .secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-
-                        Rectangle()
-                            .fill(selectedTab == tab ? Color.accentColor : Color.clear)
-                            .frame(height: 2)
                     }
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 8)
+        .padding(Theme.Spacing.xs)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .fill(Theme.Colors.cardBg)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+        )
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.top, Theme.Spacing.md)
     }
 
     private var popoverFooter: some View {
         VStack(spacing: 0) {
             if service.isDownloadingUpdate {
-                VStack(spacing: 6) {
+                VStack(spacing: Theme.Spacing.sm) {
                     HStack {
                         Image(systemName: "arrow.down.circle")
-                            .foregroundColor(.blue)
-                            .font(.caption)
+                            .foregroundStyle(Theme.Colors.info)
+                            .font(Theme.Font.caption)
                         Text(String(format: "\(localizer.downloadingUpdateFmt) %.0f%%", service.updateDownloadProgress * 100))
-                            .font(.caption)
-                            .fontWeight(.medium)
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
                         Spacer()
                         Button {
                             service.cancelUpdateDownload()
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                                .font(.caption)
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                                .font(Theme.Font.caption)
                         }
                         .buttonStyle(.plain)
                     }
                     ProgressView(value: service.updateDownloadProgress)
                         .progressViewStyle(.linear)
-                        .tint(.blue)
+                        .tint(Theme.Colors.info)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color.blue.opacity(0.05))
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.sm)
+                .background(Theme.Colors.info.opacity(0.05))
             } else if service.isInstallingUpdate {
-                VStack(spacing: 6) {
+                VStack(spacing: Theme.Spacing.sm) {
                     HStack {
                         ProgressView()
                             .controlSize(.small)
                             .scaleEffect(0.7)
                         Text(localizer.installingUpdate)
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.orange)
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.warning)
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color.orange.opacity(0.05))
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.sm)
+                .background(Theme.Colors.warning.opacity(0.05))
             } else if service.updateReadyToInstall {
-                VStack(spacing: 8) {
+                VStack(spacing: Theme.Spacing.sm) {
                     HStack {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
+                            .foregroundStyle(Theme.Colors.success)
                         Text(localizer.updateDownloaded)
-                            .font(.caption)
-                            .fontWeight(.medium)
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
                     }
                     Button {
                         service.installUpdate()
                     } label: {
                         HStack {
                             Image(systemName: "arrow.up.circle.fill")
-                                .foregroundColor(.white)
+                                .foregroundStyle(.white)
                             Text("\(localizer.quitAndInstall) v\(service.latestVersion)")
-                                .foregroundColor(.white)
-                                .fontWeight(.medium)
+                                .foregroundStyle(.white)
+                                .font(Theme.Font.captionMedium)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .background(Color.green)
-                        .cornerRadius(6)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .background(Theme.Gradients.success)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color.green.opacity(0.05))
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.sm)
+                .background(Theme.Colors.success.opacity(0.05))
             } else if !service.updateErrorMessage.isEmpty {
-                VStack(spacing: 6) {
+                VStack(spacing: Theme.Spacing.sm) {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
+                            .foregroundStyle(Theme.Colors.warning)
                         Text(service.updateErrorMessage)
-                            .font(.caption2)
-                            .foregroundColor(.orange)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.warning)
                         Spacer()
                         Button {
                             service.updateErrorMessage = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                                .font(.caption2)
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                                .font(Theme.Font.caption)
                         }
                         .buttonStyle(.plain)
                     }
@@ -172,33 +185,38 @@ struct MenuBarMonitor: View {
                             Image(systemName: "arrow.clockwise")
                             Text(localizer.retryDownload)
                         }
-                        .font(.caption2)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.accent)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.xs)
+                        .background(Theme.Colors.accent.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.sm)
             } else if service.updateAvailable {
                 Button {
                     service.downloadUpdate()
                 } label: {
                     HStack {
                         Image(systemName: "arrow.down.circle.fill")
-                            .foregroundColor(.green)
                         Text("\(localizer.updateToVersion) v\(service.latestVersion)")
-                            .foregroundColor(.green)
                     }
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(Theme.Gradients.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(.green)
-                .padding(.horizontal, 14)
-                .padding(.top, 8)
+                .buttonStyle(.plain)
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.top, Theme.Spacing.sm)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: Theme.Spacing.sm) {
                 Button {
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
@@ -211,50 +229,59 @@ struct MenuBarMonitor: View {
                         }
                     }
                 } label: {
-                    HStack {
+                    HStack(spacing: Theme.Spacing.xs) {
                         Image(systemName: "arrow.down.doc.fill")
-                            .font(.caption2)
                         Text(localizer.openAIMacCleaner)
-                            .font(.caption2)
                     }
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, Theme.Spacing.xs + 1)
+                    .background(Theme.Colors.accent.opacity(0.85))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
+                .buttonStyle(.plain)
 
                 Button {
                     Task { await service.checkForUpdates() }
                 } label: {
-                    HStack {
+                    HStack(spacing: Theme.Spacing.xs) {
                         Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.caption2)
                         Text(localizer.checkForUpdate)
-                            .font(.caption2)
                     }
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textSecondary)
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, Theme.Spacing.xs + 1)
+                    .background(Theme.Colors.cardBg)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+                    )
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
+                .buttonStyle(.plain)
                 .disabled(service.isCheckingUpdate || service.isDownloadingUpdate)
+                .opacity(service.isCheckingUpdate || service.isDownloadingUpdate ? 0.5 : 1)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.top, Theme.Spacing.sm)
 
-            HStack(spacing: 12) {
-                HStack(spacing: 3) {
+            HStack(spacing: Theme.Spacing.md) {
+                HStack(spacing: Theme.Spacing.xs) {
                     Circle()
-                        .fill(networkMode == "internet" ? Color.green : Color.orange)
+                        .fill(networkMode == "internet" ? Theme.Colors.success : Theme.Colors.warning)
                         .frame(width: 5, height: 5)
                     Text(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus)
-                        .font(.system(size: 9))
-                        .foregroundColor(.secondary)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
                 }
 
                 Spacer()
 
                 Text("v\(service.currentVersion)")
-                    .font(.system(size: 9))
-                    .foregroundColor(.secondary.opacity(0.6))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
 
                 Spacer()
 
@@ -274,18 +301,21 @@ struct MenuBarMonitor: View {
                         }
                     }
                 } label: {
-                    HStack(spacing: 3) {
+                    HStack(spacing: Theme.Spacing.xs) {
                         Image(systemName: "power")
-                            .font(.system(size: 8))
                         Text(localizer.quitApp)
-                            .font(.system(size: 9))
                     }
-                    .foregroundColor(.red.opacity(0.8))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.danger)
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, 2)
+                    .background(Theme.Colors.danger.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.sm)
         }
     }
 
@@ -322,210 +352,216 @@ struct MenuBarMonitor: View {
     }
 
     private var hardwareOverview: some View {
-        VStack(spacing: 10) {
-            HStack {
-                Text(localizer.hardwareMonitor)
-                    .font(.headline)
-                Spacer()
-                if let hw = service.hardwareInfo {
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(hw.cpuUsage > 80 ? .red : hw.cpuUsage > 50 ? .orange : .green)
-                            .frame(width: 6, height: 6)
-                        Text(localizer.running)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
+        VStack(spacing: Theme.Spacing.md) {
+            SectionHeader(title: localizer.hardwareMonitor, icon: "gauge.open.with.lines.needle.84percent")
 
             if let hw = service.hardwareInfo {
-                VStack(spacing: 8) {
-                    HStack(spacing: 8) {
-                        HardwareStatCard(
-                            icon: "cpu",
-                            label: localizer.cpuLabel,
-                            value: String(format: "%.0f%%", hw.cpuUsage),
-                            detail: "\(hw.cpuCoreCount) " + localizer.coresLabel,
-                            color: hw.cpuUsage > 80 ? .red : hw.cpuUsage > 50 ? .orange : .green,
-                            progress: hw.cpuUsage / 100.0
-                        )
-
-                        HardwareStatCard(
-                            icon: "memorychip",
-                            label: localizer.memoryLabel,
-                            value: String(format: "%.0f%%", hw.memoryPressurePct),
-                            detail: String(format: "%.1f/%.0fG", hw.memoryUsedGb, hw.memoryTotalGb),
-                            color: hw.memoryPressurePct > 85 ? .red : hw.memoryPressurePct > 70 ? .orange : .blue,
-                            progress: hw.memoryPressurePct / 100.0
-                        )
+                DashboardGrid(columns: 2, spacing: Theme.Spacing.sm) {
+                    VStack(spacing: Theme.Spacing.xs) {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Image(systemName: "cpu")
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.statusColor(for: hw.cpuUsage / 100.0))
+                            Text(localizer.cpuLabel)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                        Text(String(format: "%.0f%%", hw.cpuUsage))
+                            .font(Theme.Font.title2Bold)
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.Colors.statusColor(for: hw.cpuUsage / 100.0))
+                        Text("\(hw.cpuCoreCount) " + localizer.coresLabel)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
                     }
+                    .cardStyle(padding: Theme.Spacing.md)
+
+                    VStack(spacing: Theme.Spacing.xs) {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Image(systemName: "memorychip")
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.statusColor(for: hw.memoryPressurePct / 100.0))
+                            Text(localizer.memoryLabel)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                        Text(String(format: "%.0f%%", hw.memoryPressurePct))
+                            .font(Theme.Font.title2Bold)
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.Colors.statusColor(for: hw.memoryPressurePct / 100.0))
+                        Text(String(format: "%.1f/%.0fG", hw.memoryUsedGb, hw.memoryTotalGb))
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    .cardStyle(padding: Theme.Spacing.md)
 
                     if let temp = hw.cpuTemperature {
-                        HStack(spacing: 8) {
-                            HardwareStatCard(
-                                icon: "thermometer.medium",
-                                label: localizer.cpuTempLabel,
-                                value: String(format: "%.0f°C", temp),
-                                detail: temp > 80 ? localizer.overheating : temp > 60 ? localizer.high : localizer.normal,
-                                color: temp > 80 ? .red : temp > 60 ? .orange : .green,
-                                progress: min(temp / 100.0, 1.0)
-                            )
-
-                            if let battery = hw.batteryPercent {
-                                HardwareStatCard(
-                                    icon: hw.batteryCharging ? "battery.100.bolt" : "battery.75",
-                                    label: localizer.batteryLabel,
-                                    value: String(format: "%.0f%%", battery),
-                                    detail: hw.batteryCharging ? localizer.charging : (hw.batteryTimeRemaining.map { "\($0)\(localizer.minuteUnit)" } ?? localizer.inUse),
-                                    color: battery < 20 ? .red : battery < 50 ? .orange : .green,
-                                    progress: battery / 100.0
-                                )
-                            } else {
-                                HardwareStatCard(
-                                    icon: "arrow.up.arrow.down",
-                                    label: localizer.networkLabel,
-                                    value: "↓\(hw.networkInFormatted)",
-                                    detail: "↑\(hw.networkOutFormatted)",
-                                    color: .teal,
-                                    progress: nil
-                                )
+                        VStack(spacing: Theme.Spacing.xs) {
+                            HStack(spacing: Theme.Spacing.xs) {
+                                Image(systemName: "thermometer.medium")
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(Theme.Colors.statusColor(for: min(temp / 100.0, 1.0)))
+                                Text(localizer.cpuTempLabel)
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(Theme.Colors.textSecondary)
                             }
+                            Text(String(format: "%.0f°C", temp))
+                                .font(Theme.Font.title2Bold)
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.Colors.statusColor(for: min(temp / 100.0, 1.0)))
+                            Text(temp > 80 ? localizer.overheating : temp > 60 ? localizer.high : localizer.normal)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textTertiary)
                         }
-                    } else {
-                        HStack(spacing: 8) {
-                            if let battery = hw.batteryPercent {
-                                HardwareStatCard(
-                                    icon: hw.batteryCharging ? "battery.100.bolt" : "battery.75",
-                                    label: localizer.batteryLabel,
-                                    value: String(format: "%.0f%%", battery),
-                                    detail: hw.batteryCharging ? localizer.charging : (hw.batteryTimeRemaining.map { "\($0)\(localizer.minuteUnit)" } ?? localizer.inUse),
-                                    color: battery < 20 ? .red : battery < 50 ? .orange : .green,
-                                    progress: battery / 100.0
-                                )
-                            }
-
-                            HardwareStatCard(
-                                icon: "arrow.up.arrow.down",
-                                label: localizer.networkLabel,
-                                value: "↓\(hw.networkInFormatted)",
-                                detail: "↑\(hw.networkOutFormatted)",
-                                color: .teal,
-                                progress: nil
-                            )
-                        }
+                        .cardStyle(padding: Theme.Spacing.md)
                     }
 
-                    HStack(spacing: 12) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "app.badge")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
-                            Text("\(hw.processCount) \(localizer.processesLabel)")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
+                    if let battery = hw.batteryPercent {
+                        VStack(spacing: Theme.Spacing.xs) {
+                            HStack(spacing: Theme.Spacing.xs) {
+                                Image(systemName: hw.batteryCharging ? "battery.100.bolt" : "battery.75")
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(Theme.Colors.statusColor(for: 1.0 - battery / 100.0))
+                                Text(localizer.batteryLabel)
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                            }
+                            Text(String(format: "%.0f%%", battery))
+                                .font(Theme.Font.title2Bold)
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.Colors.statusColor(for: 1.0 - battery / 100.0))
+                            Text(hw.batteryCharging ? localizer.charging : (hw.batteryTimeRemaining.map { "\($0)\(localizer.minuteUnit)" } ?? localizer.inUse))
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textTertiary)
                         }
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.up.arrow.down.circle")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
-                            Text("\(hw.threadCount) \(localizer.threadsLabel)")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        HStack(spacing: 4) {
-                            Image(systemName: "clock")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
-                            Text("\(localizer.runtimeLabel) \(hw.uptimeFormatted)")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
-                        }
+                        .cardStyle(padding: Theme.Spacing.md)
                     }
-                    .padding(.top, 2)
+
+                    VStack(spacing: Theme.Spacing.xs) {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Image(systemName: "arrow.up.arrow.down")
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.teal)
+                            Text(localizer.networkLabel)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                        Text("↓\(hw.networkInFormatted)")
+                            .font(Theme.Font.title2Bold)
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.Colors.teal)
+                        Text("↑\(hw.networkOutFormatted)")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    .cardStyle(padding: Theme.Spacing.md)
                 }
+
+                HStack(spacing: Theme.Spacing.md) {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "app.badge")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                        Text("\(hw.processCount) \(localizer.processesLabel)")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "arrow.up.arrow.down.circle")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                        Text("\(hw.threadCount) \(localizer.threadsLabel)")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    Spacer()
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "clock")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                        Text("\(localizer.runtimeLabel) \(hw.uptimeFormatted)")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                }
+                .padding(.top, Theme.Spacing.xs)
             } else {
                 Text(localizer.gettingHardwareInfo)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
         }
-        .padding(14)
+        .padding(Theme.Spacing.lg)
     }
 
     private var diskOverview: some View {
-        VStack(spacing: 10) {
-            HStack {
-                Text(localizer.diskSpaceLabel)
-                    .font(.headline)
-                Spacer()
-                if let disk = service.diskInfo {
-                    Text(String(format: "%.0f%% %@", disk.usedPct, localizer.usedPct))
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(diskColor(pct: disk.usedPct))
-                }
-            }
+        VStack(spacing: Theme.Spacing.md) {
+            SectionHeader(title: localizer.diskSpaceLabel, icon: "internaldrive")
 
             if let disk = service.diskInfo {
-                ProgressView(value: disk.usedPct / 100.0)
-                    .progressViewStyle(.linear)
-                    .tint(diskColor(pct: disk.usedPct))
-                    .scaleEffect(y: 2)
+                HStack(spacing: Theme.Spacing.lg) {
+                    ProgressRing(
+                        progress: disk.usedPct / 100.0,
+                        lineWidth: 6,
+                        size: 56,
+                        color: diskColor(pct: disk.usedPct)
+                    )
 
-                HStack(spacing: 0) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(localizer.totalCapacity).font(.caption2).foregroundColor(.secondary)
-                        Text(String(format: "%.0f GB", disk.totalGb)).font(.caption).fontWeight(.medium)
-                    }
-                    Spacer()
-                    VStack(alignment: .center, spacing: 2) {
-                        Text(localizer.usedLabel).font(.caption2).foregroundColor(.secondary)
-                        Text(String(format: "%.0f GB", disk.usedGb)).font(.caption).fontWeight(.medium)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(localizer.available).font(.caption2).foregroundColor(.secondary)
-                        Text(String(format: "%.0f GB", disk.freeGb))
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(disk.freeGb < 20 ? .red : .green)
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(localizer.usedLabel)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                            Text(String(format: "%.0f GB / %.0f GB", disk.usedGb, disk.totalGb))
+                                .font(Theme.Font.subheadlineMedium)
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(localizer.available)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                            Text(String(format: "%.0f GB", disk.freeGb))
+                                .font(Theme.Font.subheadlineMedium)
+                                .monospacedDigit()
+                                .foregroundStyle(disk.freeGb < 20 ? Theme.Colors.danger : Theme.Colors.success)
+                        }
                     }
                 }
+                .cardStyle(padding: Theme.Spacing.md)
 
                 if disk.freeGb < Double(100 * Int(alertThreshold) / 100) || disk.usedPct > (100 - alertThreshold) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: Theme.Spacing.sm) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
+                            .foregroundStyle(Theme.Colors.warning)
                         Text(localizer.storageWarning)
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                            .fontWeight(.medium)
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.warning)
                     }
-                    .padding(6)
+                    .padding(Theme.Spacing.sm)
                     .frame(maxWidth: .infinity)
-                    .background(Color.orange.opacity(0.1))
-                    .cornerRadius(6)
+                    .background(Theme.Colors.warning.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
             } else {
                 Text(localizer.scanning)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
         }
-        .padding(14)
+        .padding(Theme.Spacing.lg)
     }
 
     private var monitoringSettings: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Theme.Spacing.sm) {
             HStack {
                 Image(systemName: "bell.badge")
-                    .font(.caption)
-                    .foregroundColor(.orange)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.warning)
                 Text(localizer.storageAlert)
-                    .font(.caption)
-                    .fontWeight(.medium)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
                 Toggle("", isOn: $monitoringEnabled)
                     .toggleStyle(.switch)
@@ -543,37 +579,38 @@ struct MenuBarMonitor: View {
             if monitoringEnabled {
                 HStack {
                     Text(localizer.alertThresholdLabel)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                     Spacer()
                     Text("\(localizer.remainingLabel) \(Int(alertThreshold))%")
-                        .font(.caption2)
-                        .fontWeight(.medium)
-                        .foregroundColor(.orange)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.warning)
                 }
 
                 Slider(value: $alertThreshold, in: 5...30, step: 5) {
                     Text(localizer.thresholdLabel)
                 }
                 .controlSize(.small)
+                .tint(Theme.Colors.warning)
                 .onChange(of: alertThreshold) { _ in
                     service.alertThreshold = alertThreshold
                     saveSettings()
                 }
             }
         }
-        .padding(14)
+        .cardStyle(padding: Theme.Spacing.md)
+        .padding(.horizontal, Theme.Spacing.lg)
     }
 
     private var safetySettings: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Theme.Spacing.sm) {
             HStack {
                 Image(systemName: "eye.fill")
-                    .font(.caption)
-                    .foregroundColor(.purple)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.purple)
                 Text(localizer.opMonitorLabel)
-                    .font(.caption)
-                    .fontWeight(.medium)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
                 Toggle("", isOn: $operationMonitorEnabled)
                     .toggleStyle(.switch)
@@ -583,11 +620,11 @@ struct MenuBarMonitor: View {
 
             HStack {
                 Image(systemName: "trash")
-                    .font(.caption)
-                    .foregroundColor(.blue)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.info)
                 Text(localizer.moveToTrash)
-                    .font(.caption)
-                    .fontWeight(.medium)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
                 Toggle("", isOn: $trashInsteadOfDelete)
                     .toggleStyle(.switch)
@@ -600,11 +637,11 @@ struct MenuBarMonitor: View {
 
             HStack {
                 Image(systemName: "trash.slash")
-                    .font(.caption)
-                    .foregroundColor(.red)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.danger)
                 Text(localizer.preventAutoEmptyTrash)
-                    .font(.caption)
-                    .fontWeight(.medium)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
                 Toggle("", isOn: $preventAutoEmptyTrash)
                     .toggleStyle(.switch)
@@ -615,226 +652,203 @@ struct MenuBarMonitor: View {
                     }
             }
         }
-        .padding(14)
+        .cardStyle(padding: Theme.Spacing.md)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.bottom, Theme.Spacing.lg)
     }
 
     // MARK: - Operation Monitor Tab
 
     private var operationStatsHeader: some View {
-        VStack(spacing: 10) {
-            HStack {
-                Text(localizer.opStatsLabel)
-                    .font(.headline)
-                Spacer()
-                if operationMonitorEnabled {
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 6, height: 6)
-                        Text(localizer.monitoringLabel)
-                            .font(.caption2)
-                            .foregroundColor(.green)
-                    }
-                } else {
-                    Text(localizer.notEnabledLabel)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+        VStack(spacing: Theme.Spacing.md) {
+            SectionHeader(title: localizer.opStatsLabel, icon: "chart.bar")
+
+            if operationMonitorEnabled {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(Theme.Colors.success)
+                        .frame(width: 6, height: 6)
+                    Text(localizer.monitoringLabel)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.success)
                 }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            } else {
+                Text(localizer.notEnabledLabel)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
-            HStack(spacing: 10) {
-                StatCard(
+            HStack(spacing: Theme.Spacing.sm) {
+                StatCardView(
                     icon: "list.bullet",
+                    iconColor: Theme.Colors.info,
+                    title: localizer.totalOpsLabel,
                     value: "\(service.operationRecords.count)",
-                    label: localizer.totalOpsLabel,
-                    color: .blue
+                    subtitle: nil
                 )
-                StatCard(
+                StatCardView(
                     icon: "clock",
+                    iconColor: Theme.Colors.success,
+                    title: localizer.todayLabel,
                     value: "\(todayOperationCount)",
-                    label: localizer.todayLabel,
-                    color: .green
+                    subtitle: nil
                 )
-                StatCard(
+                StatCardView(
                     icon: "flame.fill",
+                    iconColor: Theme.Colors.warning,
+                    title: localizer.hourLabel,
                     value: "\(hourOperationCount)",
-                    label: localizer.hourLabel,
-                    color: .orange
+                    subtitle: nil
                 )
             }
         }
-        .padding(14)
+        .padding(Theme.Spacing.lg)
     }
 
     private var operationAgentStats: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Image(systemName: "cpu")
-                    .font(.caption)
-                    .foregroundColor(.purple)
-                Text(localizer.agentActivityLabel)
-                    .font(.caption)
-                    .fontWeight(.medium)
-            }
+        VStack(spacing: Theme.Spacing.sm) {
+            SectionHeader(title: localizer.agentActivityLabel, icon: "cpu")
 
             if agentStats.isEmpty {
                 Text(localizer.noOpRecordsLabel)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .padding(.vertical, 8)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .padding(.vertical, Theme.Spacing.sm)
             } else {
-                VStack(spacing: 4) {
-                    ForEach(agentStats.prefix(5), id: \.name) { stat in
-                        HStack(spacing: 6) {
-                            Text(stat.name)
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                                .lineLimit(1)
-                                .frame(width: 80, alignment: .leading)
+                agentStatsList
+            }
+        }
+        .padding(Theme.Spacing.lg)
+    }
 
-                            GeometryReader { geo in
-                                let maxCount = agentStats.first?.count ?? 1
-                                let ratio = CGFloat(stat.count) / CGFloat(max(maxCount, 1))
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(agentStatColor(index: stat.index))
-                                    .frame(width: geo.size.width * ratio, height: 10)
-                            }
-                            .frame(height: 10)
-
-                            Text("\(stat.count)")
-                                .font(.caption2)
-                                .monospacedDigit()
-                                .fontWeight(.medium)
-                                .foregroundColor(.secondary)
-                                .frame(width: 30, alignment: .trailing)
-                        }
-                    }
+    private var agentStatsList: some View {
+        let stats = topAgentStats
+        return VStack(spacing: Theme.Spacing.xs) {
+            ForEach(stats.map { $0.name }, id: \.self) { name in
+                if let stat = stats.first(where: { $0.name == name }) {
+                    agentStatRow(stat)
                 }
             }
         }
-        .padding(14)
+    }
+
+    private func agentStatRow(_ stat: AgentStat) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Text(stat.name)
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .lineLimit(1)
+                .frame(width: 80, alignment: .leading)
+
+            GeometryReader { geo in
+                let maxCount = agentStats.first?.count ?? 1
+                let ratio = CGFloat(stat.count) / CGFloat(max(maxCount, 1))
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(agentStatColor(index: stat.index).opacity(0.7))
+                    .frame(width: geo.size.width * ratio, height: 10)
+            }
+            .frame(height: 10)
+
+            Text("\(stat.count)")
+                .font(Theme.Font.captionMedium)
+                .monospacedDigit()
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .frame(width: 30, alignment: .trailing)
+        }
     }
 
     private var operationTypeStats: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Image(systemName: "chart.pie")
-                    .font(.caption)
-                    .foregroundColor(.blue)
-                Text(localizer.opTypeDistLabel)
-                    .font(.caption)
-                    .fontWeight(.medium)
-            }
+        VStack(spacing: Theme.Spacing.sm) {
+            SectionHeader(title: localizer.opTypeDistLabel, icon: "chart.pie")
 
             if service.operationRecords.isEmpty {
                 Text(localizer.noData)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .padding(.vertical, 8)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .padding(.vertical, Theme.Spacing.sm)
             } else {
-                HStack(spacing: 6) {
-                    ForEach(Array(typeStats.enumerated()), id: \.offset) { index, stat in
-                        VStack(spacing: 3) {
-                            Image(systemName: stat.icon)
-                                .font(.caption2)
-                                .foregroundColor(stat.color)
-                            Text("\(stat.count)")
-                                .font(.caption2)
-                                .fontWeight(.bold)
-                                .monospacedDigit()
-                            Text(stat.label)
-                                .font(.system(size: 8))
-                                .foregroundColor(.secondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        ForEach(Array(typeStats.enumerated()), id: \.offset) { _, stat in
+                            HStack(spacing: Theme.Spacing.xs) {
+                                Image(systemName: stat.icon)
+                                    .font(Theme.Font.caption)
+                                PillBadge(text: "\(stat.count) \(stat.label)", color: stat.color, size: .small)
+                            }
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .background(stat.color.opacity(0.06))
-                        .cornerRadius(6)
                     }
                 }
             }
         }
-        .padding(14)
+        .padding(Theme.Spacing.lg)
     }
 
     private var recentOperations: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.caption)
-                    .foregroundColor(.green)
-                Text(localizer.recentOpsLabel)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                Spacer()
+        VStack(spacing: Theme.Spacing.sm) {
+            SectionHeader(title: localizer.recentOpsLabel, icon: "clock.arrow.circlepath") {
                 if !service.operationRecords.isEmpty {
                     Text("\(service.operationRecords.count) \(localizer.recordsUnit)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
                 }
             }
 
             if service.operationRecords.isEmpty {
-                VStack(spacing: 6) {
+                VStack(spacing: Theme.Spacing.sm) {
                     Image(systemName: "tray")
                         .font(.title3)
-                        .foregroundColor(.secondary.opacity(0.4))
+                        .foregroundStyle(Theme.Colors.textTertiary.opacity(0.4))
                     Text(localizer.noOpRecordsLabel)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                     Text(localizer.startMonitorHint2)
-                        .font(.system(size: 9))
-                        .foregroundColor(.secondary.opacity(0.6))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
                 }
-                .padding(.vertical, 12)
+                .padding(.vertical, Theme.Spacing.md)
             } else {
-                VStack(spacing: 4) {
+                VStack(spacing: Theme.Spacing.xs) {
                     ForEach(recentRecords, id: \.id) { record in
-                        HStack(spacing: 6) {
+                        HStack(spacing: Theme.Spacing.sm) {
                             Image(systemName: record.operationType.icon)
-                                .font(.system(size: 9))
-                                .foregroundColor(opTypeColor(record.operationType))
-                                .frame(width: 14)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(opTypeColor(record.operationType))
+                                .frame(width: 16)
 
                             Text(record.agentName)
-                                .font(.system(size: 10))
-                                .fontWeight(.medium)
+                                .font(Theme.Font.captionMedium)
+                                .foregroundStyle(Theme.Colors.textPrimary)
                                 .lineLimit(1)
                                 .frame(width: 60, alignment: .leading)
                                 .help(record.processName ?? record.agentName)
 
-                            Text(record.operationType.rawValue)
-                                .font(.system(size: 9))
-                                .fontWeight(.medium)
-                                .foregroundColor(opTypeColor(record.operationType))
-                                .frame(width: 24, alignment: .center)
+                            PillBadge(text: record.operationType.rawValue, color: opTypeColor(record.operationType), size: .small)
 
                             Text(record.targetPath)
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textTertiary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
 
                             Spacer()
 
                             Text(record.timestamp, style: .time)
-                                .font(.system(size: 9))
+                                .font(Theme.Font.caption)
                                 .monospacedDigit()
-                                .foregroundColor(.secondary.opacity(0.7))
+                                .foregroundStyle(Theme.Colors.textTertiary)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
-                        .cornerRadius(4)
+                        .cardStyle(padding: Theme.Spacing.sm, cornerRadius: Theme.Radius.sm)
                     }
                 }
             }
         }
-        .padding(14)
+        .padding(Theme.Spacing.lg)
     }
 
     private var operationControlBar: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Theme.Spacing.sm) {
             HStack {
                 Button {
                     operationMonitorEnabled.toggle()
@@ -845,15 +859,18 @@ struct MenuBarMonitor: View {
                         service.stopOperationMonitor()
                     }
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: Theme.Spacing.xs) {
                         Image(systemName: operationMonitorEnabled ? "pause.circle" : "play.circle")
                         Text(operationMonitorEnabled ? localizer.pauseMonitorLabel : localizer.startMonitorLabel)
                     }
-                    .font(.caption2)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.vertical, Theme.Spacing.xs)
+                    .background(operationMonitorEnabled ? Theme.Colors.warning.opacity(0.85) : Theme.Colors.success.opacity(0.85))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-                .tint(operationMonitorEnabled ? .orange : .green)
+                .buttonStyle(.plain)
 
                 if operationMonitorEnabled {
                     Button {
@@ -863,16 +880,22 @@ struct MenuBarMonitor: View {
                             service.startAISelfLearning()
                         }
                     } label: {
-                        HStack(spacing: 3) {
+                        HStack(spacing: Theme.Spacing.xs) {
                             Image(systemName: service.operationMonitor.aiSelfLearningEnabled ? "sparkles" : "brain.head.profile")
-                                .font(.system(size: 8))
                             Text(service.operationMonitor.aiSelfLearningEnabled ? localizer.closeAILabel : localizer.aiAnalysisLabel)
                         }
-                        .font(.caption2)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(service.operationMonitor.aiSelfLearningEnabled ? .white : Theme.Colors.textSecondary)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.xs)
+                        .background(service.operationMonitor.aiSelfLearningEnabled ? Theme.Colors.purple.opacity(0.85) : Theme.Colors.cardBg)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .stroke(service.operationMonitor.aiSelfLearningEnabled ? Color.clear : Color.primary.opacity(0.1), lineWidth: 0.5)
+                        )
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                    .tint(service.operationMonitor.aiSelfLearningEnabled ? .purple : .secondary)
+                    .buttonStyle(.plain)
                 }
 
                 Spacer()
@@ -881,29 +904,31 @@ struct MenuBarMonitor: View {
                     Button {
                         service.clearOperationRecords()
                     } label: {
-                        HStack(spacing: 3) {
+                        HStack(spacing: Theme.Spacing.xs) {
                             Image(systemName: "trash")
                             Text(localizer.clear)
                         }
-                        .font(.caption2)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.xs)
+                        .background(Theme.Colors.danger.opacity(0.85))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                    .tint(.red)
+                    .buttonStyle(.plain)
                 }
             }
 
             if operationMonitorEnabled && service.operationMonitor.aiSelfLearningEnabled {
-                HStack(spacing: 4) {
+                HStack(spacing: Theme.Spacing.xs) {
                     Image(systemName: "brain.head.profile")
-                        .font(.system(size: 8))
-                        .foregroundColor(.purple)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.purple)
                     Text(localizer.aiSelfLearningStatus)
-                        .font(.system(size: 9))
-                        .foregroundColor(.purple)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.purple)
                     Spacer()
                 }
-                .padding(.horizontal, 4)
             }
 
             HStack {
@@ -919,20 +944,24 @@ struct MenuBarMonitor: View {
                         }
                     }
                 } label: {
-                    HStack {
+                    HStack(spacing: Theme.Spacing.xs) {
                         Image(systemName: "arrow.up.right.and.arrow.down.left")
                         Text(localizer.viewFullLogLabel)
                     }
-                    .font(.caption2)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.accent)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.vertical, Theme.Spacing.xs)
+                    .background(Theme.Colors.accent.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
+                .buttonStyle(.plain)
 
                 Spacer()
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.md)
     }
 
     // MARK: - Computed Properties
@@ -946,10 +975,11 @@ struct MenuBarMonitor: View {
         service.operationRecords.filter { Date().timeIntervalSince($0.timestamp) < 3600 }.count
     }
 
-    private struct AgentStat {
+    private struct AgentStat: Identifiable {
         let name: String
         let count: Int
         let index: Int
+        var id: String { name }
     }
 
     private var agentStats: [AgentStat] {
@@ -985,6 +1015,11 @@ struct MenuBarMonitor: View {
 
     private var recentRecords: [OperationRecord] {
         Array(service.operationRecords.prefix(5))
+    }
+
+    private var topAgentStats: [AgentStat] {
+        let stats = agentStats
+        return Array(stats.prefix(min(5, stats.count)))
     }
 
     // MARK: - Helper Functions
@@ -1044,72 +1079,3 @@ struct MenuBarMonitor: View {
     }
 }
 
-private struct StatCard: View {
-    let icon: String
-    let value: String
-    let label: String
-    let color: Color
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundColor(color)
-            Text(value)
-                .font(.title3)
-                .fontWeight(.bold)
-                .monospacedDigit()
-                .foregroundColor(color)
-            Text(label)
-                .font(.system(size: 9))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(color.opacity(0.06))
-        .cornerRadius(8)
-    }
-}
-
-private struct HardwareStatCard: View {
-    let icon: String
-    let label: String
-    let value: String
-    let detail: String
-    let color: Color
-    let progress: Double?
-
-    var body: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.caption2)
-                    .foregroundColor(color)
-                Text(label)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-
-            Text(value)
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundColor(color)
-
-            if let progress = progress {
-                ProgressView(value: progress)
-                    .progressViewStyle(.linear)
-                    .tint(color)
-                    .scaleEffect(y: 1.5)
-            }
-
-            Text(detail)
-                .font(.system(size: 9))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .padding(.horizontal, 6)
-        .background(color.opacity(0.06))
-        .cornerRadius(8)
-    }
-}

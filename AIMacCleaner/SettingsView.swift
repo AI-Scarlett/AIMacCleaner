@@ -69,40 +69,46 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "gearshape.2.fill")
-                    .font(.title2).foregroundColor(.accentColor)
+                    .font(Theme.Font.title2)
+                    .foregroundStyle(Theme.Colors.accent)
                 Text(localizer.settingsTitle)
-                    .font(.title2).fontWeight(.bold)
+                    .font(Theme.Font.title2Bold)
+                    .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
                 Button { dismiss() } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Theme.Colors.textTertiary)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(20)
+            .padding(Theme.Spacing.xl)
             Divider()
 
             HStack(spacing: 0) {
-                VStack(spacing: 0) {
+                VStack(spacing: Theme.Spacing.xs) {
                     ForEach(SettingsTab.allCases, id: \.self) { tab in
                         Button {
                             selectedTab = tab
                         } label: {
-                            HStack(spacing: 8) {
+                            HStack(spacing: Theme.Spacing.sm) {
+                                RoundedRectangle(cornerRadius: 1.5)
+                                    .fill(selectedTab == tab ? Theme.Colors.accent : Color.clear)
+                                    .frame(width: 3, height: 20)
+
                                 Image(systemName: tab.icon)
-                                    .font(.system(size: 12))
-                                    .foregroundColor(selectedTab == tab ? .accentColor : .secondary)
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(selectedTab == tab ? Theme.Colors.accent : Theme.Colors.textSecondary)
                                     .frame(width: 16)
                                 Text(tab.localizedLabel(localizer))
-                                    .font(.system(size: 12))
-                                    .fontWeight(selectedTab == tab ? .semibold : .regular)
-                                    .foregroundColor(selectedTab == tab ? .primary : .secondary)
+                                    .font(Theme.Font.captionMedium)
+                                    .foregroundStyle(selectedTab == tab ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
                                 Spacer()
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.sm)
                             .background(
-                                RoundedRectangle(cornerRadius: 5)
-                                    .fill(selectedTab == tab ? Color.accentColor.opacity(0.1) : Color.clear)
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                    .fill(selectedTab == tab ? Theme.Colors.accent.opacity(0.08) : Color.clear)
                             )
                             .contentShape(Rectangle())
                         }
@@ -110,12 +116,14 @@ struct SettingsView: View {
                     }
                     Spacer()
                 }
-                .frame(width: 120)
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                .frame(width: 140)
+                .padding(.horizontal, Theme.Spacing.sm)
+                .padding(.vertical, Theme.Spacing.md)
+                .background(Theme.Colors.sidebarBg)
                 Divider()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                         switch selectedTab {
                         case .ai: aiSection
                         case .features: featuresSection
@@ -126,7 +134,7 @@ struct SettingsView: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    .padding(24)
+                    .padding(Theme.Spacing.xl)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -134,53 +142,116 @@ struct SettingsView: View {
             Divider()
             HStack {
                 Spacer()
-                Button(localizer.cancel) { dismiss() }.buttonStyle(.bordered)
-                Button(localizer.save) { saveSettings() }.buttonStyle(.borderedProminent)
+                Button(localizer.cancel) { dismiss() }
+                    .font(Theme.Font.subheadlineMedium)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(Theme.Colors.cardBg)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+                    )
+                    .buttonStyle(.plain)
+                Button(localizer.save) { saveSettings() }
+                    .font(Theme.Font.subheadlineMedium)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(Theme.Colors.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    .buttonStyle(.plain)
             }
-            .padding(16)
+            .padding(Theme.Spacing.lg)
         }
         .frame(width: 680, height: 520)
         .onAppear { loadConfig() }
     }
 
     private var aiSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "brain").foregroundColor(.purple)
-                Text(localizer.aiSettings).font(.headline)
-            }
-            Text(localizer.aiSettingsDesc).font(.caption).foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            SectionHeader(title: localizer.aiSettings, icon: "brain")
+            Text(localizer.aiSettingsDesc)
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
 
-            LabeledContent(localizer.apiBase) {
-                TextField("https://api.deepseek.com", text: $apiBase)
-                    .textFieldStyle(.roundedBorder).frame(width: 360)
-            }
-            LabeledContent(localizer.apiKey) {
-                SecureField("sk-...", text: $apiKey)
-                    .textFieldStyle(.roundedBorder).frame(width: 360)
-            }
-            LabeledContent(localizer.modelName) {
-                TextField("deepseek-chat", text: $model)
-                    .textFieldStyle(.roundedBorder).frame(width: 360)
-            }
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    Text(localizer.apiBase)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    TextField("https://api.deepseek.com", text: $apiBase)
+                        .textFieldStyle(.plain)
+                        .font(Theme.Font.body)
+                        .padding(Theme.Spacing.sm)
+                        .background(Theme.Colors.cardBg)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+                        )
+                }
 
-            VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    Text(localizer.apiKey)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    SecureField("sk-...", text: $apiKey)
+                        .textFieldStyle(.plain)
+                        .font(Theme.Font.body)
+                        .padding(Theme.Spacing.sm)
+                        .background(Theme.Colors.cardBg)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+                        )
+                }
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    Text(localizer.modelName)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    TextField("deepseek-chat", text: $model)
+                        .textFieldStyle(.plain)
+                        .font(Theme.Font.body)
+                        .padding(Theme.Spacing.sm)
+                        .background(Theme.Colors.cardBg)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+                        )
+                }
+            }
+            .cardStyle()
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 Text(localizer.recommendedConfig)
-                    .font(.caption).fontWeight(.semibold).foregroundColor(.purple)
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.purple)
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Theme.Spacing.sm) {
                     ForEach(presets, id: \.name) { preset in
                         Button {
                             apiBase = preset.base
                             model = preset.model
                         } label: {
                             HStack {
-                                Text(preset.name).font(.caption)
+                                Text(preset.name)
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(Theme.Colors.textPrimary)
                                 Spacer()
-                                Text(preset.model).font(.system(size: 9)).foregroundColor(.secondary)
+                                Text(preset.model)
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(Theme.Colors.textTertiary)
                             }
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(Color.purple.opacity(0.08)).cornerRadius(6)
-                        }.buttonStyle(.plain)
+                            .padding(.horizontal, Theme.Spacing.sm)
+                            .padding(.vertical, Theme.Spacing.xs + 1)
+                            .background(Theme.Colors.purple.opacity(0.08))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -188,183 +259,214 @@ struct SettingsView: View {
     }
 
     private var featuresSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "switch.2").foregroundColor(.blue)
-                Text(localizer.featureToggles).font(.headline)
-            }
-            ToggleSetting(
-                icon: "menubar.rectangle",
-                title: localizer.menuBarMonitor,
-                desc: localizer.menuBarMonitorDesc,
-                isOn: $menuBarMonitorEnabled
-            )
-            ToggleSetting(
-                icon: "video.fill",
-                title: localizer.sensorMonitor,
-                desc: localizer.sensorMonitorDesc,
-                isOn: $sensorMonitorEnabled
-            )
-            ToggleSetting(
-                icon: "clock.arrow.circlepath",
-                title: localizer.operationMonitor,
-                desc: localizer.operationMonitorDesc,
-                isOn: $operationMonitorEnabled
-            )
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            SectionHeader(title: localizer.featureToggles, icon: "switch.2")
 
-            ToggleSetting(
-                icon: "brain.head.profile",
-                title: localizer.aiSelfLearning,
-                desc: localizer.aiSelfLearningDesc,
-                isOn: Binding(
-                    get: { service.operationMonitor.aiSelfLearningEnabled },
-                    set: { newValue in
-                        if newValue {
-                            service.startAISelfLearning()
-                        } else {
-                            service.stopAISelfLearning()
-                        }
-                    }
+            VStack(spacing: Theme.Spacing.sm) {
+                ToggleSetting(
+                    icon: "menubar.rectangle",
+                    title: localizer.menuBarMonitor,
+                    desc: localizer.menuBarMonitorDesc,
+                    isOn: $menuBarMonitorEnabled
                 )
-            )
+                ToggleSetting(
+                    icon: "video.fill",
+                    title: localizer.sensorMonitor,
+                    desc: localizer.sensorMonitorDesc,
+                    isOn: $sensorMonitorEnabled
+                )
+                ToggleSetting(
+                    icon: "clock.arrow.circlepath",
+                    title: localizer.operationMonitor,
+                    desc: localizer.operationMonitorDesc,
+                    isOn: $operationMonitorEnabled
+                )
 
-            Divider().padding(.vertical, 4)
+                ToggleSetting(
+                    icon: "brain.head.profile",
+                    title: localizer.aiSelfLearning,
+                    desc: localizer.aiSelfLearningDesc,
+                    isOn: Binding(
+                        get: { service.operationMonitor.aiSelfLearningEnabled },
+                        set: { newValue in
+                            if newValue {
+                                service.startAISelfLearning()
+                            } else {
+                                service.stopAISelfLearning()
+                            }
+                        }
+                    )
+                )
+            }
+            .cardStyle()
 
-            HStack(spacing: 8) {
-                Image(systemName: "rectangle.portrait.and.arrow.right").foregroundColor(.purple)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(localizer.quitBehaviorTitle).font(.subheadline).fontWeight(.medium)
-                    Text(localizer.quitBehaviorDesc).font(.caption).foregroundColor(.secondary)
+            VStack(spacing: Theme.Spacing.sm) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                        .foregroundStyle(Theme.Colors.purple)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(localizer.quitBehaviorTitle)
+                            .font(Theme.Font.subheadlineMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text(localizer.quitBehaviorDesc)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                    }
                 }
+                Picker("", selection: $quitBehavior) {
+                    Text(localizer.quitAppAndMenu).tag("quitAll")
+                    Text(localizer.quitAppKeepMenu).tag("quitAppOnly")
+                }
+                .pickerStyle(.segmented)
             }
-            Picker("", selection: $quitBehavior) {
-                Text(localizer.quitAppAndMenu).tag("quitAll")
-                Text(localizer.quitAppKeepMenu).tag("quitAppOnly")
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 320)
+            .cardStyle()
         }
     }
 
     private var monitorSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "bell.badge").foregroundColor(.orange)
-                Text(localizer.monitorSettings).font(.headline)
-            }
-            LabeledContent(localizer.storageAlertThreshold) {
-                HStack {
-                    Slider(value: Binding(
-                        get: { service.alertThreshold },
-                        set: { service.alertThreshold = $0 }
-                    ), in: 5...50, step: 5).frame(width: 200)
-                    Text("\(Int(service.alertThreshold))%")
-                        .font(.caption).monospacedDigit().foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            SectionHeader(title: localizer.monitorSettings, icon: "bell.badge")
+
+            VStack(spacing: Theme.Spacing.md) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    Text(localizer.storageAlertThreshold)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    HStack {
+                        Slider(value: Binding(
+                            get: { service.alertThreshold },
+                            set: { service.alertThreshold = $0 }
+                        ), in: 5...50, step: 5)
+                        .tint(Theme.Colors.warning)
+                        Text("\(Int(service.alertThreshold))%")
+                            .font(Theme.Font.captionMedium)
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                    }
                 }
-            }
-            ToggleSetting(
-                icon: "trash",
-                title: localizer.trashInsteadOfDelete,
-                desc: localizer.trashInsteadOfDeleteDesc,
-                isOn: Binding(
-                    get: { service.trashInsteadOfDelete },
-                    set: { service.trashInsteadOfDelete = $0 }
+
+                ToggleSetting(
+                    icon: "trash",
+                    title: localizer.trashInsteadOfDelete,
+                    desc: localizer.trashInsteadOfDeleteDesc,
+                    isOn: Binding(
+                        get: { service.trashInsteadOfDelete },
+                        set: { service.trashInsteadOfDelete = $0 }
+                    )
                 )
-            )
+            }
+            .cardStyle()
         }
     }
 
     private var networkSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "network").foregroundColor(.blue)
-                Text(localizer.networkModeTitle).font(.headline)
-            }
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            SectionHeader(title: localizer.networkModeTitle, icon: "network")
             Text(localizer.networkModeDesc)
-                .font(.callout).foregroundColor(.secondary)
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
 
-            VStack(spacing: 10) {
-                HStack(spacing: 12) {
-                    Image(systemName: networkMode == "internet" ? "globe" : "globe")
-                        .font(.title2)
-                        .foregroundColor(networkMode == "internet" ? .blue : .secondary)
+            VStack(spacing: Theme.Spacing.sm) {
+                HStack(spacing: Theme.Spacing.md) {
+                    Image(systemName: "globe")
+                        .font(Theme.Font.title2)
+                        .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.textTertiary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(localizer.internetMode).font(.body).fontWeight(.medium)
+                        Text(localizer.internetMode)
+                            .font(Theme.Font.bodyMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
                         Text(localizer.internetModeDesc)
-                            .font(.caption).foregroundColor(.secondary)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
                     }
                     Spacer()
                     if networkMode == "internet" {
-                        Image(systemName: "checkmark.circle.fill").foregroundColor(.blue)
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Theme.Colors.info)
                     }
                 }
-                .padding(10)
-                .background(networkMode == "internet" ? Color.blue.opacity(0.08) : Color.clear)
-                .cornerRadius(8)
+                .padding(Theme.Spacing.md)
+                .background(networkMode == "internet" ? Theme.Colors.info.opacity(0.08) : Theme.Colors.cardBg)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .stroke(networkMode == "internet" ? Theme.Colors.info.opacity(0.3) : Color.primary.opacity(0.06), lineWidth: networkMode == "internet" ? 1.5 : 0.5)
+                )
                 .contentShape(Rectangle())
                 .onTapGesture { networkMode = "internet" }
 
-                HStack(spacing: 12) {
+                HStack(spacing: Theme.Spacing.md) {
                     Image(systemName: "lock.shield")
-                        .font(.title2)
-                        .foregroundColor(networkMode == "intranet" ? .orange : .secondary)
+                        .font(Theme.Font.title2)
+                        .foregroundStyle(networkMode == "intranet" ? Theme.Colors.warning : Theme.Colors.textTertiary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(localizer.intranetMode).font(.body).fontWeight(.medium)
+                        Text(localizer.intranetMode)
+                            .font(Theme.Font.bodyMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
                         Text(localizer.intranetModeDesc)
-                            .font(.caption).foregroundColor(.secondary)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
                     }
                     Spacer()
                     if networkMode == "intranet" {
-                        Image(systemName: "checkmark.circle.fill").foregroundColor(.orange)
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Theme.Colors.warning)
                     }
                 }
-                .padding(10)
-                .background(networkMode == "intranet" ? Color.orange.opacity(0.08) : Color.clear)
-                .cornerRadius(8)
+                .padding(Theme.Spacing.md)
+                .background(networkMode == "intranet" ? Theme.Colors.warning.opacity(0.08) : Theme.Colors.cardBg)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .stroke(networkMode == "intranet" ? Theme.Colors.warning.opacity(0.3) : Color.primary.opacity(0.06), lineWidth: networkMode == "intranet" ? 1.5 : 0.5)
+                )
                 .contentShape(Rectangle())
                 .onTapGesture { networkMode = "intranet" }
             }
 
             if networkMode == "internet" {
-                Divider()
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.up.circle").foregroundColor(.green)
-                    Text(localizer.updateChecking).font(.subheadline).fontWeight(.medium)
+                HStack(spacing: Theme.Spacing.sm) {
+                    Image(systemName: "arrow.up.circle")
+                        .foregroundStyle(Theme.Colors.success)
+                    Text(localizer.updateChecking)
+                        .font(Theme.Font.subheadlineMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
                 }
+                .cardStyle(padding: Theme.Spacing.md)
                 Text(localizer.updateCheckingDesc)
-                    .font(.caption).foregroundColor(.secondary)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
         }
     }
 
     private var languageSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "globe").foregroundColor(.teal)
-                Text(localizer.languageLabel).font(.headline)
-            }
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            SectionHeader(title: localizer.languageLabel, icon: "globe")
+            HStack(spacing: Theme.Spacing.sm) {
                 ForEach(AppLanguage.allCases, id: \.self) { lang in
                     Button {
                         withAnimation(.none) {
                             localizer.language = lang
                         }
                     } label: {
-                        HStack(spacing: 4) {
-                            Text(lang.flag).font(.caption)
-                            Text(lang.label).font(.caption)
-                                .fontWeight(localizer.language == lang ? .semibold : .regular)
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Text(lang.flag)
+                                .font(Theme.Font.caption)
+                            Text(lang.label)
+                                .font(Theme.Font.captionMedium)
+                                .foregroundStyle(localizer.language == lang ? Theme.Colors.teal : Theme.Colors.textSecondary)
                         }
                         .frame(minWidth: 80)
-                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.sm - 2)
                         .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(localizer.language == lang ? Color.teal.opacity(0.15) : Color.clear)
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .fill(localizer.language == lang ? Theme.Colors.teal.opacity(0.15) : Theme.Colors.cardBg)
                         )
-                        .foregroundColor(localizer.language == lang ? .teal : .secondary)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(localizer.language == lang ? Color.teal.opacity(0.5) : Color.secondary.opacity(0.2), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .stroke(localizer.language == lang ? Theme.Colors.teal.opacity(0.5) : Color.primary.opacity(0.1), lineWidth: 1)
                         )
                     }
                     .buttonStyle(.plain)
@@ -374,29 +476,37 @@ struct SettingsView: View {
     }
 
     private var versionSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.up.circle").foregroundColor(.green)
-                Text(localizer.versionUpdate).font(.headline)
-            }
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            SectionHeader(title: localizer.versionUpdate, icon: "arrow.up.circle")
 
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(localizer.currentVersion).font(.caption).foregroundColor(.secondary)
-                        Text("v\(service.currentVersion)").font(.caption).fontWeight(.semibold)
-                        Circle().fill(Color.green).frame(width: 6, height: 6)
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Text(localizer.currentVersion)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                        Text("v\(service.currentVersion)")
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Circle()
+                            .fill(Theme.Colors.success)
+                            .frame(width: 6, height: 6)
                     }
                     if service.updateAvailable {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.down.circle.fill").foregroundColor(.blue).font(.caption)
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundStyle(Theme.Colors.info)
+                                .font(Theme.Font.caption)
                             Text(localizer.newVersionAvailable + service.latestVersion)
-                                .font(.caption).fontWeight(.medium).foregroundColor(.blue)
+                                .font(Theme.Font.captionMedium)
+                                .foregroundStyle(Theme.Colors.info)
                         }
                     } else if service.isCheckingUpdate {
-                        HStack(spacing: 6) {
+                        HStack(spacing: Theme.Spacing.sm) {
                             ProgressView().controlSize(.mini)
-                            Text(localizer.downloadingUpdate).font(.caption).foregroundColor(.secondary)
+                            Text(localizer.downloadingUpdate)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
                         }
                     }
                 }
@@ -404,26 +514,40 @@ struct SettingsView: View {
                 Button {
                     Task { await service.checkForUpdates() }
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: Theme.Spacing.xs) {
                         Image(systemName: "arrow.clockwise")
                         Text(localizer.checkUpdate)
                     }
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.accent)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.vertical, Theme.Spacing.xs + 1)
+                    .background(Theme.Colors.accent.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
-                .buttonStyle(.bordered).controlSize(.small)
+                .buttonStyle(.plain)
                 .disabled(service.isCheckingUpdate)
+                .opacity(service.isCheckingUpdate ? 0.5 : 1)
 
                 if service.updateAvailable {
                     Button {
                         service.openDownloadPage()
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: Theme.Spacing.xs) {
                             Image(systemName: "arrow.down.circle")
                             Text(localizer.downloadUpdate)
                         }
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.xs + 1)
+                        .background(Theme.Gradients.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     }
-                    .buttonStyle(.borderedProminent).controlSize(.small)
+                    .buttonStyle(.plain)
                 }
             }
+            .cardStyle()
         }
     }
 
@@ -453,20 +577,24 @@ struct ToggleSetting: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.Spacing.md) {
             Image(systemName: icon)
-                .font(.title3)
-                .foregroundColor(isOn ? .accentColor : .secondary)
+                .font(Theme.Font.subheadline)
+                .foregroundStyle(isOn ? Theme.Colors.accent : Theme.Colors.textTertiary)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.caption).fontWeight(.medium)
-                Text(desc).font(.system(size: 10)).foregroundColor(.secondary)
+                Text(title)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(desc)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
             Spacer()
             Toggle("", isOn: $isOn)
                 .toggleStyle(.switch)
                 .labelsHidden()
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Theme.Spacing.xs)
     }
 }

@@ -7,6 +7,7 @@ struct ContentView: View {
     @EnvironmentObject var localizer: Localizer
     @State private var showSettings = false
     @State private var sidebarCollapsed = false
+    @State private var hoveredItem: NavItem?
     @AppStorage("networkMode") private var networkMode = "internet"
 
     enum NavItem: String, CaseIterable {
@@ -65,7 +66,9 @@ struct ContentView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar
-            Divider()
+            Rectangle()
+                .fill(Theme.Colors.separator)
+                .frame(width: 0.5)
             detailContent
         }
         .frame(minWidth: 960, minHeight: 640)
@@ -79,203 +82,278 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                if !sidebarCollapsed {
-                    VStack(spacing: 3) {
-                        Image(systemName: "arrow.down.doc.fill")
-                            .font(.system(size: 22, weight: .medium))
-                            .foregroundColor(.accentColor)
-                        Text("AIMacCleaner")
-                            .font(.system(size: 11, weight: .bold))
-                    }
-                    .padding(.top, 12)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                } else {
-                    Image(systemName: "arrow.down.doc.fill")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(.accentColor)
-                        .padding(.top, 12)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(.horizontal, sidebarCollapsed ? 6 : 12)
-            .padding(.bottom, 10)
+            sidebarLogo
 
-            Divider()
+            Rectangle()
+                .fill(Theme.Colors.separator.opacity(0.5))
+                .frame(height: 0.5)
+                .padding(.horizontal, Theme.Spacing.md)
 
-            VStack(alignment: sidebarCollapsed ? .center : .leading, spacing: 4) {
-                if !sidebarCollapsed {
-                    Text(localizer.features)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .textCase(.uppercase)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                        .padding(.bottom, 4)
-                } else {
-                    Text(localizer.features)
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .padding(.top, 12)
-                        .padding(.bottom, 4)
-                }
-
-                ForEach(NavItem.allCases, id: \.self) { item in
-                    Button {
-                        selectedTab = item
-                    } label: {
-                        Group {
-                            if sidebarCollapsed {
-                                VStack(spacing: 4) {
-                                    Image(systemName: item.icon)
-                                        .font(.system(size: 15, weight: .medium))
-                                        .foregroundColor(selectedTab == item ? item.color : .secondary)
-                                        .frame(width: 24, height: 24)
-                                    Text(item.label(localizer).split(separator: " ").first.map(String.init) ?? "")
-                                        .font(.system(size: 8))
-                                        .foregroundColor(selectedTab == item ? .primary : .secondary)
-                                        .lineLimit(1)
-                                }
-                                .padding(.vertical, 6)
-                                .frame(maxWidth: .infinity)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(selectedTab == item ? item.color.opacity(0.12) : Color.clear)
-                                )
-                            } else {
-                                HStack(spacing: 10) {
-                                    Image(systemName: item.icon)
-                                        .font(.system(size: 13, weight: .medium))
-                                        .foregroundColor(selectedTab == item ? item.color : .secondary)
-                                        .frame(width: 18)
-
-                                    Text(item.label(localizer))
-                                        .font(.system(size: 13))
-                                        .fontWeight(selectedTab == item ? .semibold : .regular)
-                                        .foregroundColor(selectedTab == item ? .primary : .secondary)
-
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(selectedTab == item ? item.color.opacity(0.12) : Color.clear)
-                                )
-                            }
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, sidebarCollapsed ? 4 : 8)
+            sidebarNavItems
 
             Spacer()
 
-            Divider()
+            Rectangle()
+                .fill(Theme.Colors.separator.opacity(0.5))
+                .frame(height: 0.5)
+                .padding(.horizontal, Theme.Spacing.md)
 
+            sidebarFooter
+        }
+        .frame(width: sidebarCollapsed ? Theme.Sidebar.collapsedWidth : Theme.Sidebar.expandedWidth)
+        .background(
+            ZStack {
+                Theme.Colors.sidebarBg
+                Theme.Gradients.sidebar
+            }
+        )
+    }
+
+    private var sidebarLogo: some View {
+        HStack(spacing: 0) {
+            if !sidebarCollapsed {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Image(systemName: "arrow.down.doc.fill")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Theme.Gradients.accent)
+                    Text("AIMacCleaner")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Theme.Gradients.accent)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            } else {
+                Image(systemName: "arrow.down.doc.fill")
+                    .font(.system(size: Theme.Sidebar.iconSize, weight: .semibold))
+                    .foregroundStyle(Theme.Gradients.accent)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.top, Theme.Spacing.xl)
+        .padding(.bottom, Theme.Spacing.lg)
+        .padding(.horizontal, sidebarCollapsed ? Theme.Spacing.xs : Theme.Spacing.md)
+    }
+
+    private var sidebarNavItems: some View {
+        VStack(alignment: sidebarCollapsed ? .center : .leading, spacing: Theme.Spacing.xs) {
+            if !sidebarCollapsed {
+                Text(localizer.features)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .textCase(.uppercase)
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.top, Theme.Spacing.lg)
+                    .padding(.bottom, Theme.Spacing.xs)
+            } else {
+                Text(localizer.features)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .padding(.top, Theme.Spacing.lg)
+                    .padding(.bottom, Theme.Spacing.xs)
+            }
+
+            ForEach(NavItem.allCases, id: \.self) { item in
+                Button {
+                    selectedTab = item
+                } label: {
+                    Group {
+                        if sidebarCollapsed {
+                            sidebarCollapsedItem(item)
+                        } else {
+                            sidebarExpandedItem(item)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in
+                    hoveredItem = hovering ? item : nil
+                }
+            }
+        }
+        .padding(.horizontal, sidebarCollapsed ? Theme.Spacing.xs : Theme.Spacing.sm)
+    }
+
+    private func sidebarExpandedItem(_ item: NavItem) -> some View {
+        HStack(spacing: Theme.Spacing.sm + 2) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(selectedTab == item ? item.color : Color.clear)
+                .frame(width: 3, height: Theme.Sidebar.itemHeight * 0.5)
+
+            Image(systemName: item.icon)
+                .font(.system(size: Theme.Sidebar.iconSize * 0.65, weight: selectedTab == item ? .semibold : .medium))
+                .foregroundStyle(selectedTab == item ? item.color : (hoveredItem == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary))
+                .frame(width: Theme.Sidebar.iconSize)
+
+            Text(item.label(localizer))
+                .font(.system(size: 13))
+                .fontWeight(selectedTab == item ? .semibold : .regular)
+                .foregroundStyle(selectedTab == item ? Theme.Colors.textPrimary : (hoveredItem == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary))
+
+            Spacer()
+
+            if selectedTab == item {
+                Circle()
+                    .fill(item.color.opacity(0.6))
+                    .frame(width: 5, height: 5)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.sm + 1)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Sidebar.itemRadius)
+                .fill(selectedTab == item ? item.color.opacity(0.1) : (hoveredItem == item ? Theme.Colors.cardHover : Color.clear))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Sidebar.itemRadius)
+                .stroke(selectedTab == item ? item.color.opacity(0.2) : Color.clear, lineWidth: 1)
+        )
+    }
+
+    private func sidebarCollapsedItem(_ item: NavItem) -> some View {
+        VStack(spacing: Theme.Spacing.xs) {
+            Image(systemName: item.icon)
+                .font(.system(size: Theme.Sidebar.iconSize * 0.75, weight: selectedTab == item ? .semibold : .medium))
+                .foregroundStyle(selectedTab == item ? item.color : (hoveredItem == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary))
+                .frame(width: 24, height: 24)
+            Text(item.label(localizer).split(separator: " ").first.map(String.init) ?? "")
+                .font(.system(size: 8, weight: selectedTab == item ? .semibold : .regular))
+                .foregroundStyle(selectedTab == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
+                .lineLimit(1)
+        }
+        .padding(.vertical, Theme.Spacing.sm - 2)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .fill(selectedTab == item ? item.color.opacity(0.12) : (hoveredItem == item ? Theme.Colors.cardHover : Color.clear))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(selectedTab == item ? item.color.opacity(0.25) : Color.clear, lineWidth: 1)
+        )
+    }
+
+    private var sidebarFooter: some View {
+        Group {
             if sidebarCollapsed {
-                VStack(spacing: 10) {
+                VStack(spacing: Theme.Spacing.sm) {
                     Button {
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                             sidebarCollapsed = false
                         }
                     } label: {
                         Image(systemName: "sidebar.right")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundColor(.secondary)
-                            .frame(width: 36, height: 36)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .frame(width: 32, height: 32)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                    .fill(Theme.Colors.cardHover)
+                            )
                     }
                     .buttonStyle(.plain)
                     .help(localizer.expandSidebar)
 
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape")
-                            .font(.system(size: 18))
-                            .foregroundColor(.secondary)
-                            .frame(width: 36, height: 36)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .frame(width: 32, height: 32)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                    .fill(Theme.Colors.cardHover)
+                            )
                     }
                     .buttonStyle(.plain)
 
-                    HStack(spacing: 4) {
-                        Image(systemName: networkMode == "internet" ? "globe" : "lock.shield")
-                            .font(.system(size: 10))
-                            .foregroundColor(networkMode == "internet" ? .blue : .orange)
-                        Text(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus)
-                            .font(.system(size: 9))
-                            .foregroundColor(networkMode == "internet" ? .blue : .orange)
-                    }
+                    networkStatusBadge
 
                     Text("v\(service.currentVersion)")
-                        .font(.system(size: 9))
-                        .foregroundColor(.secondary)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
                 }
-                .padding(.vertical, 14)
+                .padding(.vertical, Theme.Spacing.lg)
             } else {
-                VStack(spacing: 8) {
-                    HStack(spacing: 12) {
+                VStack(spacing: Theme.Spacing.sm) {
+                    HStack(spacing: Theme.Spacing.md) {
                         Button { showSettings = true } label: {
-                            HStack(spacing: 5) {
+                            HStack(spacing: Theme.Spacing.xs + 1) {
                                 Image(systemName: "gearshape")
-                                    .font(.system(size: 12))
+                                    .font(.system(size: 11))
                                 Text(localizer.settings)
                                     .font(.system(size: 11))
                             }
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .padding(.horizontal, Theme.Spacing.sm)
+                            .padding(.vertical, Theme.Spacing.xs + 1)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                    .fill(Theme.Colors.cardHover)
+                            )
                         }
                         .buttonStyle(.plain)
 
                         Spacer()
 
-                        HStack(spacing: 4) {
-                            Image(systemName: networkMode == "internet" ? "globe" : "lock.shield")
-                                .font(.system(size: 9))
-                                .foregroundColor(networkMode == "internet" ? .blue : .orange)
-                            Text(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus)
-                                .font(.system(size: 9))
-                                .foregroundColor(networkMode == "internet" ? .blue : .orange)
-                        }
+                        networkStatusBadge
                     }
 
-                    HStack(spacing: 12) {
+                    HStack(spacing: Theme.Spacing.md) {
                         Button {
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                                 sidebarCollapsed = true
                             }
                         } label: {
-                            HStack(spacing: 5) {
+                            HStack(spacing: Theme.Spacing.xs) {
                                 Image(systemName: "sidebar.left")
-                                    .font(.system(size: 11, weight: .medium))
+                                    .font(.system(size: 10, weight: .medium))
                                 Text(localizer.collapseSidebar)
                                     .font(.system(size: 10))
                             }
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.secondary.opacity(0.08))
-                            .cornerRadius(6)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                            .padding(.horizontal, Theme.Spacing.sm)
+                            .padding(.vertical, Theme.Spacing.xs)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                    .fill(Theme.Colors.cardHover)
+                            )
                         }
                         .buttonStyle(.plain)
 
                         Spacer()
 
-                        HStack(spacing: 4) {
+                        HStack(spacing: Theme.Spacing.xs) {
                             Circle()
-                                .fill(Color.green)
+                                .fill(Theme.Colors.success)
                                 .frame(width: 5, height: 5)
                             Text("v\(service.currentVersion)")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textTertiary)
                         }
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 14)
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.lg)
             }
         }
-        .frame(width: sidebarCollapsed ? 60 : 180)
-        .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var networkStatusBadge: some View {
+        HStack(spacing: 3) {
+            Image(systemName: networkMode == "internet" ? "globe" : "lock.shield")
+                .font(.system(size: 9))
+                .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
+            if !sidebarCollapsed {
+                Text(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus)
+                    .font(.system(size: 9))
+                    .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
+            }
+        }
+        .padding(.horizontal, sidebarCollapsed ? 0 : Theme.Spacing.xs + 1)
+        .padding(.vertical, 2)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .fill((networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning).opacity(sidebarCollapsed ? 0 : 0.08))
+        )
     }
 
     @ViewBuilder
@@ -321,29 +399,30 @@ struct PageHeader: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: Theme.Spacing.lg) {
             Image(systemName: icon)
-                .font(.system(size: 22, weight: .medium))
-                .foregroundColor(color)
-                .frame(width: 32, height: 32)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 36, height: 36)
                 .background(color.opacity(0.1))
-                .cornerRadius(8)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 18, weight: .bold))
+                    .font(Theme.Font.headline)
+                    .foregroundStyle(Theme.Colors.textPrimary)
                 Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
 
             Spacer()
 
             trailing
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 14)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.lg)
+        .background(Theme.Colors.background)
     }
 }
 
@@ -354,9 +433,9 @@ struct FilterSearchBar: View {
     @Binding var text: String
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Theme.Spacing.sm - 2) {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(.secondary)
+                .foregroundStyle(Theme.Colors.textTertiary)
                 .font(.system(size: 11))
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
@@ -365,15 +444,15 @@ struct FilterSearchBar: View {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(Theme.Colors.textTertiary)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
+        .padding(.horizontal, Theme.Spacing.sm + 2)
+        .padding(.vertical, Theme.Spacing.sm - 2)
+        .background(Theme.Colors.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
 }
 
@@ -388,6 +467,7 @@ struct OperationLogTab: View {
     @State private var filterOpType: OperationRecord.OperationType?
     @State private var filterTimeRange: TimeRange = .all
     @State private var viewMode = 0
+    @Namespace private var segmentNS
 
     enum TimeRange: String, CaseIterable {
         case all = "all"
@@ -447,6 +527,21 @@ struct OperationLogTab: View {
         return result
     }
 
+    private var agentActivityProgress: Double {
+        guard !agentNames.isEmpty else { return 0 }
+        let recentAgents = Set(monitor.records.filter { Date().timeIntervalSince($0.timestamp) < 3600 }.map(\.agentName)).count
+        return Double(recentAgents) / Double(agentNames.count)
+    }
+
+    private var todayRecordCount: Int {
+        let start = Calendar.current.startOfDay(for: Date())
+        return monitor.records.filter { $0.timestamp >= start }.count
+    }
+
+    private var hourRecordCount: Int {
+        monitor.records.filter { Date().timeIntervalSince($0.timestamp) < 3600 }.count
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             PageHeader(
@@ -476,26 +571,57 @@ struct OperationLogTab: View {
                 }
             }
 
+            ScrollView(.horizontal, showsIndicators: false) {
+                DashboardGrid(columns: 4) {
+                    StatCardView(
+                        icon: "list.bullet.clipboard",
+                        iconColor: Theme.Colors.info,
+                        title: localizer.totalOps,
+                        value: "\(monitor.records.count)",
+                        subtitle: nil
+                    )
+                    StatCardView(
+                        icon: "sun.max",
+                        iconColor: Theme.Colors.warning,
+                        title: localizer.timeToday,
+                        value: "\(todayRecordCount)",
+                        subtitle: nil
+                    )
+                    StatCardView(
+                        icon: "clock",
+                        iconColor: Theme.Colors.success,
+                        title: localizer.time1h,
+                        value: "\(hourRecordCount)",
+                        subtitle: nil
+                    )
+                    CardView {
+                        VStack(spacing: Theme.Spacing.sm) {
+                            ProgressRing(
+                                progress: agentActivityProgress,
+                                lineWidth: 6,
+                                size: 60,
+                                color: Theme.Colors.purple
+                            )
+                            Text("\(agentNames.count) \(localizer.unitAgent)")
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.vertical, Theme.Spacing.md)
+            }
+
             if monitor.isMonitoring {
-                HStack(spacing: 6) {
-                    Circle().fill(Color.green).frame(width: 6, height: 6)
-                    Text(localizer.monitoring).font(.caption2).foregroundColor(.green)
-                    Text("·").foregroundColor(.secondary)
-                    Text("\(monitor.records.count) \(localizer.records)").font(.caption2).foregroundColor(.secondary)
+                HStack(spacing: Theme.Spacing.sm) {
+                    Circle().fill(Theme.Colors.success).frame(width: 6, height: 6)
+                    Text(localizer.monitoring).font(Theme.Font.caption).foregroundColor(Theme.Colors.success)
+                    Text("·").foregroundColor(Theme.Colors.textTertiary)
+                    Text("\(monitor.records.count) \(localizer.records)").font(Theme.Font.caption).foregroundColor(Theme.Colors.textTertiary)
                     Spacer()
                     if monitor.aiSelfLearningEnabled {
-                        HStack(spacing: 3) {
-                            Image(systemName: "brain.head.profile")
-                                .font(.system(size: 9))
-                                .foregroundColor(.purple)
-                            Text(localizer.aiLearning)
-                                .font(.caption2)
-                                .foregroundColor(.purple)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.purple.opacity(0.08))
-                        .cornerRadius(4)
+                        PillBadge(text: localizer.aiLearning, color: Theme.Colors.purple)
                     }
                     Button {
                         if monitor.aiSelfLearningEnabled {
@@ -504,32 +630,72 @@ struct OperationLogTab: View {
                             service.startAISelfLearning()
                         }
                     } label: {
-                        HStack(spacing: 2) {
+                        HStack(spacing: Theme.Spacing.xs) {
                             Image(systemName: "sparkles")
                                 .font(.system(size: 9))
                             Text(monitor.aiSelfLearningEnabled ? localizer.closeAI : localizer.aiAnalysis)
-                                .font(.caption2)
+                                .font(Theme.Font.caption)
                         }
-                        .foregroundColor(monitor.aiSelfLearningEnabled ? .purple : .secondary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Color.purple.opacity(monitor.aiSelfLearningEnabled ? 0.1 : 0.05))
-                        .cornerRadius(4)
+                        .foregroundColor(monitor.aiSelfLearningEnabled ? Theme.Colors.purple : Theme.Colors.textTertiary)
+                        .padding(.horizontal, Theme.Spacing.sm)
+                        .padding(.vertical, Theme.Spacing.xs)
+                        .background(Theme.Colors.purple.opacity(monitor.aiSelfLearningEnabled ? 0.1 : 0.05))
+                        .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 5)
-                .background(Color.green.opacity(0.05))
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.vertical, Theme.Spacing.xs + 1)
+                .background(Theme.Colors.success.opacity(0.05))
             }
 
-            HStack(spacing: 8) {
-                Picker("", selection: $viewMode) {
-                    Text(localizer.liveMonitor).tag(0)
-                    Text(localizer.audit).tag(1)
+            HStack(spacing: Theme.Spacing.lg) {
+                HStack(spacing: 0) {
+                    Button {
+                        withAnimation(.spring(duration: 0.3)) { viewMode = 0 }
+                    } label: {
+                        Text(localizer.liveMonitor)
+                            .font(Theme.Font.captionMedium)
+                            .foregroundColor(viewMode == 0 ? .white : Theme.Colors.textSecondary)
+                            .padding(.horizontal, Theme.Spacing.lg)
+                            .padding(.vertical, Theme.Spacing.sm - 2)
+                            .background {
+                                if viewMode == 0 {
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                        .fill(Theme.Gradients.accent)
+                                        .matchedGeometryEffect(id: "segment", in: segmentNS)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        withAnimation(.spring(duration: 0.3)) { viewMode = 1 }
+                    } label: {
+                        Text(localizer.audit)
+                            .font(Theme.Font.captionMedium)
+                            .foregroundColor(viewMode == 1 ? .white : Theme.Colors.textSecondary)
+                            .padding(.horizontal, Theme.Spacing.lg)
+                            .padding(.vertical, Theme.Spacing.sm - 2)
+                            .background {
+                                if viewMode == 1 {
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                        .fill(Theme.Gradients.accent)
+                                        .matchedGeometryEffect(id: "segment", in: segmentNS)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 150)
+                .padding(3)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(Theme.Colors.cardBg)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                                .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+                        )
+                )
 
                 Spacer()
 
@@ -539,20 +705,20 @@ struct OperationLogTab: View {
                             sessionScanner.opRecords = []
                             selectedAgentForAudit = nil
                         } label: {
-                            HStack(spacing: 3) {
+                            HStack(spacing: Theme.Spacing.xs) {
                                 Image(systemName: "xmark.circle").font(.system(size: 10))
-                                Text(localizer.clearResults).font(.caption2)
+                                Text(localizer.clearResults).font(Theme.Font.caption)
                             }
-                            .foregroundColor(.secondary)
+                            .foregroundColor(Theme.Colors.textSecondary)
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                     }
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 6)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.sm - 2)
+            .background(Theme.Colors.sidebarBg.opacity(0.3))
 
             Divider()
 
@@ -572,7 +738,7 @@ struct OperationLogTab: View {
 
     private var liveView: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
+            HStack(spacing: Theme.Spacing.md) {
                 FilterSearchBar(placeholder: localizer.searchFiles, text: $searchText)
                     .frame(width: 200)
 
@@ -597,127 +763,136 @@ struct OperationLogTab: View {
 
                 Spacer()
 
-                Text("\(filteredRecords.count) \(localizer.recordsCount)").font(.caption).foregroundColor(.secondary)
+                Text("\(filteredRecords.count) \(localizer.recordsCount)")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 10)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.md)
+            .background(Theme.Colors.sidebarBg.opacity(0.3))
 
             Divider()
 
             if filteredRecords.isEmpty {
-                VStack(spacing: 16) {
+                VStack(spacing: Theme.Spacing.lg) {
                     Spacer()
                     Image(systemName: "cpu")
-                        .font(.system(size: 40)).foregroundColor(.secondary.opacity(0.5))
-                    Text(localizer.noRecords).font(.title3).fontWeight(.medium)
-                    Text(localizer.noRecordsHint).font(.caption).foregroundColor(.secondary)
+                        .font(.system(size: 40))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Text(localizer.noRecords)
+                        .font(Theme.Font.subheadlineMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(localizer.noRecordsHint)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                     if !monitor.isMonitoring {
                         Button(localizer.startMonitoring) { monitor.start() }
-                            .buttonStyle(.bordered).controlSize(.regular)
+                            .buttonStyle(.bordered)
+                            .controlSize(.regular)
                     } else {
-                        VStack(spacing: 4) {
+                        VStack(spacing: Theme.Spacing.xs) {
                             Text(localizer.monitoringStarted)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
                             Text(localizer.monitoringHint)
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary.opacity(0.7))
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textTertiary)
                         }
                     }
                     Spacer()
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Table(filteredRecords) {
-                    TableColumn(localizer.timeCol) { record in
-                        Text(record.timestamp, style: .time)
-                            .font(.caption).monospacedDigit()
-                    }.width(65)
+                ScrollView {
+                    LazyVStack(spacing: Theme.Spacing.sm) {
+                        ForEach(filteredRecords) { record in
+                            HStack(spacing: Theme.Spacing.md) {
+                                Text(record.timestamp, style: .time)
+                                    .font(Theme.Font.caption)
+                                    .monospacedDigit()
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                    .frame(width: 50, alignment: .leading)
 
-                    TableColumn(localizer.agentCol) { record in
-                        HStack(spacing: 4) {
-                            Image(systemName: "cpu")
-                                .font(.caption2)
-                                .foregroundColor(record.agentName == "—" ? .secondary : .purple)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(record.agentName)
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .lineLimit(1)
-                                    .help(record.agentName)
-                                if let pn = record.processName, !pn.isEmpty, pn != "path-match", pn != "dir-match" {
-                                    Text(pn)
-                                        .font(.system(size: 9))
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(1)
-                                        .help("\(localizer.processHelp)\(pn)")
+                                HStack(spacing: Theme.Spacing.xs) {
+                                    Image(systemName: "cpu")
+                                        .font(Theme.Font.caption)
+                                        .foregroundColor(record.agentName == "—" ? Theme.Colors.textTertiary : Theme.Colors.purple)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(record.agentName)
+                                            .font(Theme.Font.captionMedium)
+                                            .lineLimit(1)
+                                            .help(record.agentName)
+                                        if let pn = record.processName, !pn.isEmpty, pn != "path-match", pn != "dir-match" {
+                                            Text(pn)
+                                                .font(Theme.Font.caption)
+                                                .foregroundStyle(Theme.Colors.textTertiary)
+                                                .lineLimit(1)
+                                                .help("\(localizer.processHelp)\(pn)")
+                                        }
+                                    }
+                                }
+                                .frame(minWidth: 100, alignment: .leading)
+
+                                PillBadge(
+                                    text: record.operationType.rawValue,
+                                    color: opTypeColor(record.operationType),
+                                    size: .small
+                                )
+
+                                HStack(spacing: Theme.Spacing.xs) {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(record.targetPath)
+                                            .font(Theme.Font.caption)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                            .help(record.targetPath)
+                                        if let ti = record.toolInfo, !ti.isEmpty {
+                                            Text(ti)
+                                                .font(Theme.Font.caption)
+                                                .foregroundStyle(Theme.Colors.warning.opacity(0.8))
+                                                .lineLimit(1)
+                                                .truncationMode(.middle)
+                                                .help(ti)
+                                        }
+                                    }
+                                    Button {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(record.targetPath, forType: .string)
+                                    } label: {
+                                        Image(systemName: "doc.on.doc")
+                                            .font(.system(size: 10))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .foregroundColor(Theme.Colors.accent)
+                                    .help(localizer.copyPath)
+                                    if record.targetPath.hasPrefix("/") {
+                                        Button {
+                                            let url = URL(fileURLWithPath: record.targetPath)
+                                            NSWorkspace.shared.activateFileViewerSelecting([url])
+                                        } label: {
+                                            Image(systemName: "folder")
+                                                .font(.system(size: 10))
+                                        }
+                                        .buttonStyle(.plain)
+                                        .foregroundColor(Theme.Colors.accent)
+                                        .help(localizer.openInFinder)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                                if record.fileSize > 0 {
+                                    Text(ByteCountFormatter.string(fromByteCount: record.fileSize, countStyle: .file))
+                                        .font(Theme.Font.caption)
+                                        .monospacedDigit()
+                                        .foregroundStyle(Theme.Colors.textTertiary)
+                                        .frame(width: 60, alignment: .trailing)
                                 }
                             }
-                        }
-                    }.width(min: 110)
-
-                    TableColumn(localizer.opCol) { record in
-                        HStack(spacing: 3) {
-                            Image(systemName: record.operationType.icon)
-                                .font(.caption)
-                                .foregroundColor(opTypeColor(record.operationType))
-                            Text(record.operationType.rawValue)
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                                .foregroundColor(opTypeColor(record.operationType))
-                        }
-                    }.width(60)
-
-                    TableColumn(localizer.pathCol) { record in
-                        HStack(spacing: 4) {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(record.targetPath)
-                                    .font(.caption2)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .help(record.targetPath)
-                                if let ti = record.toolInfo, !ti.isEmpty {
-                                    Text(ti)
-                                        .font(.system(size: 9))
-                                        .foregroundColor(.orange.opacity(0.8))
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                        .help(ti)
-                                }
-                            }
-                            Button {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(record.targetPath, forType: .string)
-                            } label: {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.system(size: 10))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundColor(.accentColor)
-                            .help(localizer.copyPath)
-                            if record.targetPath.hasPrefix("/") {
-                                Button {
-                                    let url = URL(fileURLWithPath: record.targetPath)
-                                    NSWorkspace.shared.activateFileViewerSelecting([url])
-                                } label: {
-                                    Image(systemName: "folder")
-                                        .font(.system(size: 10))
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundColor(.accentColor)
-                                .help(localizer.openInFinder)
-                            }
+                            .cardStyle(padding: Theme.Spacing.md, cornerRadius: Theme.Radius.md)
                         }
                     }
-
-                    TableColumn(localizer.fileSizeCol) { record in
-                        if record.fileSize > 0 {
-                            Text(ByteCountFormatter.string(fromByteCount: record.fileSize, countStyle: .file))
-                                .font(.caption2).monospacedDigit().foregroundColor(.secondary)
-                        }
-                    }.width(70)
+                    .padding(Theme.Spacing.lg)
                 }
-                .tableStyle(.inset(alternatesRowBackgrounds: true))
             }
         }
         .frame(minHeight: 200)
@@ -938,80 +1113,89 @@ struct OperationLogTab: View {
         VStack(spacing: 0) {
             if let sel = selectedAgentForAudit, !sessionScanner.opRecords.isEmpty {
                 VStack(spacing: 0) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Theme.Spacing.sm) {
                         Button {
                             selectedAgentForAudit = nil
                             sessionScanner.opRecords = []
                             aiSummary = ""
                             auditFilterAgent = nil
                         } label: {
-                            HStack(spacing: 3) {
+                            HStack(spacing: Theme.Spacing.xs) {
                                 Image(systemName: "chevron.left").font(.system(size: 9))
-                                Text(localizer.back).font(.caption2)
+                                Text(localizer.back).font(Theme.Font.caption)
                             }
                         }
                         .buttonStyle(.plain)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Theme.Colors.textSecondary)
 
                         Text("\(localizer.audit): \(sel)")
-                            .font(.caption).fontWeight(.semibold).foregroundColor(.purple)
-                        Text("·").foregroundColor(.secondary)
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.purple)
+                        Text("·").foregroundColor(Theme.Colors.textTertiary)
                         Text("\(auditFilteredRecords.count) \(localizer.auditRecordCount)")
-                            .font(.caption).foregroundColor(.secondary)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
 
                         Spacer()
 
                         Button {
                             generateAISummary()
                         } label: {
-                            HStack(spacing: 3) {
+                            HStack(spacing: Theme.Spacing.xs) {
                                 if isGeneratingSummary {
                                     ProgressView().controlSize(.mini).scaleEffect(0.7)
                                 } else {
                                     Image(systemName: "wand.and.stars").font(.system(size: 9))
                                 }
-                                Text(isGeneratingSummary ? localizer.aiAnalyzing : localizer.aiAnalysis).font(.caption2)
+                                Text(isGeneratingSummary ? localizer.aiAnalyzing : localizer.aiAnalysis)
+                                    .font(Theme.Font.caption)
                             }
-                            .foregroundColor(.purple)
+                            .foregroundColor(Theme.Colors.purple)
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .tint(.purple)
+                        .tint(Theme.Colors.purple)
                         .disabled(isGeneratingSummary || service.aiConfig?.hasKey != true)
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 6)
-                    .background(Color.purple.opacity(0.06))
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(Theme.Colors.purple.opacity(0.06))
 
                     Divider()
 
                     VStack(spacing: 0) {
-                        HStack(spacing: 16) {
-                            ForEach(Array(auditStats.sorted(by: { $0.key < $1.key })), id: \.key) { key, val in
-                                HStack(spacing: 3) {
-                                    Text(key).font(.system(size: 10)).foregroundColor(.secondary)
-                                    Text("\(val)").font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                        .foregroundColor(key == localizer.totalOps ? .primary : opTypeColor(key))
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: Theme.Spacing.sm) {
+                                ForEach(Array(auditStats.sorted(by: { $0.key < $1.key })), id: \.key) { key, val in
+                                    PillBadge(
+                                        text: "\(key) \(val)",
+                                        color: key == localizer.totalOps ? Theme.Colors.info : opTypeColor(key),
+                                        size: .small
+                                    )
                                 }
-                            }
-                            Spacer()
-                            if let filter = auditFilterAgent {
-                                HStack(spacing: 3) {
-                                    Text("\(localizer.filterColon)\(filter)").font(.system(size: 10)).foregroundColor(.blue)
-                                    Button {
-                                        auditFilterAgent = nil
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill").font(.system(size: 9)).foregroundColor(.secondary)
+                                Spacer()
+                                if let filter = auditFilterAgent {
+                                    HStack(spacing: Theme.Spacing.xs) {
+                                        Text("\(localizer.filterColon)\(filter)")
+                                            .font(Theme.Font.caption)
+                                            .foregroundStyle(Theme.Colors.info)
+                                        Button {
+                                            auditFilterAgent = nil
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.system(size: 9))
+                                                .foregroundColor(Theme.Colors.textTertiary)
+                                        }
+                                        .buttonStyle(.plain)
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
+                            .padding(.horizontal, Theme.Spacing.xl)
+                            .padding(.vertical, Theme.Spacing.xs + 1)
                         }
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 4)
-                        .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+                        .background(Theme.Colors.sidebarBg.opacity(0.3))
 
-                        HStack(spacing: 12) {
+                        HStack(spacing: Theme.Spacing.md) {
                             Picker(localizer.timeRange, selection: $auditFilterTimeRange) {
                                 ForEach(TimeRange.allCases, id: \.self) { t in
                                     Text(t.label(localizer)).tag(t)
@@ -1031,215 +1215,236 @@ struct OperationLogTab: View {
                             .frame(width: 110)
 
                             Text("\(localizer.total) \(auditFilteredRecords.count) \(localizer.recordsCount)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textTertiary)
                         }
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, Theme.Spacing.xl)
+                        .padding(.vertical, Theme.Spacing.xs)
 
                         if !auditFileStats.isEmpty {
                             ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 6) {
-                                    Text(localizer.highFreqFiles).font(.system(size: 9)).foregroundColor(.secondary)
+                                HStack(spacing: Theme.Spacing.xs) {
+                                    Text(localizer.highFreqFiles)
+                                        .font(Theme.Font.caption)
+                                        .foregroundStyle(Theme.Colors.textSecondary)
                                     ForEach(Array(auditFileStats.sorted(by: { $0.value > $1.value }).prefix(8)), id: \.key) { path, count in
-                                        HStack(spacing: 2) {
-                                            Text(URL(fileURLWithPath: path).lastPathComponent)
-                                                .font(.system(size: 9))
-                                                .lineLimit(1)
-                                            Text("×\(count)").font(.system(size: 8, weight: .semibold, design: .monospaced))
-                                                .foregroundColor(.orange)
-                                        }
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 1)
-                                        .background(Color.orange.opacity(0.08))
-                                        .cornerRadius(3)
+                                        PillBadge(
+                                            text: "\(URL(fileURLWithPath: path).lastPathComponent) ×\(count)",
+                                            color: Theme.Colors.warning,
+                                            size: .small
+                                        )
                                     }
                                 }
-                                .padding(.horizontal, 24)
-                                .padding(.vertical, 3)
+                                .padding(.horizontal, Theme.Spacing.xl)
+                                .padding(.vertical, Theme.Spacing.xs - 1)
                             }
                         }
 
                         if !aiSummary.isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "wand.and.stars").font(.system(size: 10)).foregroundColor(.purple)
-                                    Text(localizer.aiSummaryTitle).font(.caption).fontWeight(.semibold).foregroundColor(.purple)
-                                    Spacer()
-                                    Button {
-                                        aiSummary = ""
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill").font(.system(size: 10)).foregroundColor(.secondary)
+                            CardView {
+                                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                                    HStack(spacing: Theme.Spacing.xs) {
+                                        Image(systemName: "wand.and.stars")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(Theme.Colors.purple)
+                                        Text(localizer.aiSummaryTitle)
+                                            .font(Theme.Font.captionMedium)
+                                            .foregroundStyle(Theme.Colors.purple)
+                                        Spacer()
+                                        Button {
+                                            aiSummary = ""
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.system(size: 10))
+                                                .foregroundColor(Theme.Colors.textTertiary)
+                                        }
+                                        .buttonStyle(.plain)
                                     }
-                                    .buttonStyle(.plain)
+                                    ScrollView {
+                                        Text(aiSummary)
+                                            .font(Theme.Font.caption)
+                                            .textSelection(.enabled)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .frame(maxHeight: 200)
                                 }
-                                ScrollView {
-                                    Text(aiSummary)
-                                        .font(.caption)
-                                        .textSelection(.enabled)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .frame(maxHeight: 200)
                             }
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 8)
-                            .background(Color.purple.opacity(0.04))
+                            .padding(.horizontal, Theme.Spacing.xl)
+                            .padding(.vertical, Theme.Spacing.sm)
                         }
 
                         Divider()
                     }
 
-                    Table(auditFilteredRecords) {
-                        TableColumn(localizer.timeCol) { rec in
-                            Text(timeStr(rec.timestamp)).font(.system(size: 11)).monospacedDigit()
-                        }
-                        .width(min: 60, max: 80)
-                        TableColumn(localizer.operationCol) { rec in
-                            HStack(spacing: 3) {
-                                Text(rec.opType)
-                                    .font(.system(size: 10))
-                                    .fontWeight(.medium)
-                                    .foregroundColor(opTypeColor(rec.opType))
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 1)
-                                    .background(opTypeColor(rec.opType).opacity(0.1))
-                                    .cornerRadius(3)
-                            }
-                        }
-                        .width(min: 50, max: 70)
-                        TableColumn(localizer.instructionCol) { rec in
-                            Text(rec.toolName)
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        .width(min: 60, max: 100)
-                        TableColumn(localizer.targetPathCol) { rec in
-                            HStack(spacing: 4) {
-                                Text(rec.targetPath)
-                                    .font(.system(size: 11))
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .help(rec.targetPath)
-                                Button {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(rec.targetPath, forType: .string)
-                                } label: {
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.system(size: 9))
-                                        .foregroundColor(.accentColor)
-                                }
-                                .buttonStyle(.plain)
-                                .help(localizer.copyPath)
-                                if !rec.targetPath.isEmpty, rec.targetPath.hasPrefix("/") {
-                                    Button {
-                                        let url = URL(fileURLWithPath: rec.targetPath)
-                                        NSWorkspace.shared.activateFileViewerSelecting([url])
-                                    } label: {
-                                        Image(systemName: "folder")
-                                            .font(.system(size: 9))
-                                            .foregroundColor(.accentColor)
+                    ScrollView {
+                        LazyVStack(spacing: Theme.Spacing.sm) {
+                            ForEach(auditFilteredRecords) { rec in
+                                HStack(spacing: Theme.Spacing.md) {
+                                    Text(timeStr(rec.timestamp))
+                                        .font(Theme.Font.caption)
+                                        .monospacedDigit()
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                        .frame(width: 70, alignment: .leading)
+
+                                    PillBadge(
+                                        text: rec.opType,
+                                        color: opTypeColor(rec.opType),
+                                        size: .small
+                                    )
+
+                                    Text(rec.toolName)
+                                        .font(Theme.Font.caption)
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                        .frame(width: 80, alignment: .leading)
+
+                                    HStack(spacing: Theme.Spacing.xs) {
+                                        Text(rec.targetPath)
+                                            .font(Theme.Font.caption)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                            .help(rec.targetPath)
+                                        Button {
+                                            NSPasteboard.general.clearContents()
+                                            NSPasteboard.general.setString(rec.targetPath, forType: .string)
+                                        } label: {
+                                            Image(systemName: "doc.on.doc")
+                                                .font(.system(size: 9))
+                                                .foregroundColor(Theme.Colors.accent)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help(localizer.copyPath)
+                                        if !rec.targetPath.isEmpty, rec.targetPath.hasPrefix("/") {
+                                            Button {
+                                                let url = URL(fileURLWithPath: rec.targetPath)
+                                                NSWorkspace.shared.activateFileViewerSelecting([url])
+                                            } label: {
+                                                Image(systemName: "folder")
+                                                    .font(.system(size: 9))
+                                                    .foregroundColor(Theme.Colors.accent)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .help(localizer.openInFinder)
+                                        }
                                     }
-                                    .buttonStyle(.plain)
-                                    .help(localizer.openInFinder)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                                    Text(rec.projectDir)
+                                        .font(Theme.Font.caption)
+                                        .foregroundStyle(Theme.Colors.textTertiary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                        .frame(width: 100, alignment: .leading)
+
+                                    Text(rec.detail)
+                                        .font(Theme.Font.caption)
+                                        .foregroundStyle(Theme.Colors.textTertiary)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                        .frame(width: 80, alignment: .leading)
                                 }
+                                .cardStyle(padding: Theme.Spacing.md, cornerRadius: Theme.Radius.md)
                             }
                         }
-                        TableColumn(localizer.projectCol) { rec in
-                            Text(rec.projectDir).font(.system(size: 10)).lineLimit(1).truncationMode(.middle).foregroundColor(.secondary)
-                        }
-                        .width(min: 80, max: 180)
-                        TableColumn(localizer.detailCol) { rec in
-                            Text(rec.detail).font(.system(size: 10)).lineLimit(1).truncationMode(.tail).foregroundColor(.secondary)
-                        }
+                        .padding(Theme.Spacing.lg)
                     }
-                    .tableStyle(.bordered)
                 }
             } else if sessionScanner.isScanning {
-                VStack(spacing: 16) {
+                VStack(spacing: Theme.Spacing.lg) {
                     Spacer()
                     ProgressView().controlSize(.regular)
-                    Text(selectedAgentForAudit == nil ? localizer.scanAgentSession : "\(localizer.parsingAgentOps) \(selectedAgentForAudit!) \(localizer.operationsRecord)").font(.caption).foregroundColor(.secondary)
+                    Text(selectedAgentForAudit == nil ? localizer.scanAgentSession : "\(localizer.parsingAgentOps) \(selectedAgentForAudit!) \(localizer.operationsRecord)")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 0) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Theme.Spacing.sm) {
                         Image(systemName: "doc.text.magnifyingglass")
                             .font(.system(size: 13))
-                            .foregroundColor(.purple)
-                        Text(localizer.agentOpAudit).font(.caption).fontWeight(.semibold)
-                        Text("·").foregroundColor(.secondary)
-                        Text("\(sessionScanner.discoveredAgents.count) \(localizer.unitAgent)").font(.caption).foregroundColor(.secondary)
+                            .foregroundColor(Theme.Colors.purple)
+                        Text(localizer.agentOpAudit)
+                            .font(Theme.Font.captionMedium)
+                        Text("·").foregroundColor(Theme.Colors.textTertiary)
+                        Text("\(sessionScanner.discoveredAgents.count) \(localizer.unitAgent)")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
                         Spacer()
                         Button {
                             sessionScanner.isScanning = true
                             Task { sessionScanner.scanAllAgents() }
                         } label: {
-                            HStack(spacing: 3) {
+                            HStack(spacing: Theme.Spacing.xs) {
                                 Image(systemName: "arrow.clockwise").font(.system(size: 9))
-                                Text(localizer.scanRefresh).font(.caption2)
+                                Text(localizer.scanRefresh).font(Theme.Font.caption)
                             }
+                            .foregroundStyle(Theme.Gradients.accent)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.xs + 1)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                    .fill(Theme.Colors.accent.opacity(0.1))
+                            )
                         }
                         .buttonStyle(.plain)
-                        .foregroundColor(.secondary)
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 8)
-                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(Theme.Colors.sidebarBg.opacity(0.3))
 
                     Divider()
 
                     if sessionScanner.discoveredAgents.isEmpty {
-                        VStack(spacing: 16) {
+                        VStack(spacing: Theme.Spacing.lg) {
                             Spacer()
                             Image(systemName: "doc.text.magnifyingglass")
                                 .font(.system(size: 40))
-                                .foregroundColor(.secondary.opacity(0.4))
-                            Text(localizer.scanToDiscover).font(.caption).foregroundColor(.secondary)
-                            Text(localizer.supportedAgents).font(.system(size: 10)).foregroundColor(.secondary.opacity(0.7))
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                            Text(localizer.scanToDiscover)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                            Text(localizer.supportedAgents)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textTertiary)
                             Spacer()
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         ScrollView {
-                            VStack(alignment: .leading, spacing: 0) {
+                            LazyVStack(spacing: Theme.Spacing.sm) {
                                 ForEach(sessionScanner.discoveredAgents) { agent in
-                                    HStack(spacing: 10) {
+                                    HStack(spacing: Theme.Spacing.md) {
                                         Image(systemName: agentIconName(agent.name))
-                                            .font(.system(size: 14))
+                                            .font(.system(size: 16))
                                             .foregroundColor(agentColorName(agent.name))
-                                            .frame(width: 20, height: 20)
+                                            .frame(width: 36, height: 36)
+                                            .background(agentColorName(agent.name).opacity(0.1))
+                                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
 
                                         VStack(alignment: .leading, spacing: 2) {
-                                            HStack(spacing: 4) {
+                                            HStack(spacing: Theme.Spacing.xs) {
                                                 Text(agent.name)
-                                                    .font(.body)
-                                                    .fontWeight(.medium)
+                                                    .font(Theme.Font.bodyMedium)
                                                 if customAgentSources.contains(where: { $0.name == agent.name }) {
-                                                    Text(localizer.customBadge)
-                                                        .font(.system(size: 9))
-                                                        .foregroundColor(.green)
-                                                        .padding(.horizontal, 3)
-                                                        .background(Color.green.opacity(0.1))
-                                                        .cornerRadius(2)
+                                                    PillBadge(text: localizer.customBadge, color: Theme.Colors.success, size: .small)
                                                 }
                                             }
-                                            HStack(spacing: 6) {
+                                            HStack(spacing: Theme.Spacing.sm) {
                                                 Text("\(agent.sessionCount) \(localizer.unitSession)")
-                                                    .font(.system(size: 10))
-                                                    .foregroundColor(.secondary)
+                                                    .font(Theme.Font.caption)
+                                                    .foregroundStyle(Theme.Colors.textSecondary)
                                                 if let date = agent.latestActivity {
                                                     Text("\(localizer.recentLabel): \(timeStr(date))")
-                                                        .font(.system(size: 10))
-                                                        .foregroundColor(.secondary)
+                                                        .font(Theme.Font.caption)
+                                                        .foregroundStyle(Theme.Colors.textSecondary)
                                                 }
                                                 if !agent.projectDirs.isEmpty {
                                                     Text(agent.projectDirs.first ?? "")
-                                                        .font(.system(size: 9))
-                                                        .foregroundColor(.secondary)
+                                                        .font(Theme.Font.caption)
+                                                        .foregroundStyle(Theme.Colors.textTertiary)
                                                         .lineLimit(1)
                                                 }
                                             }
@@ -1254,7 +1459,7 @@ struct OperationLogTab: View {
                                             } label: {
                                                 Image(systemName: "xmark.circle.fill")
                                                     .font(.system(size: 11))
-                                                    .foregroundColor(.secondary)
+                                                    .foregroundColor(Theme.Colors.textTertiary)
                                             }
                                             .buttonStyle(.plain)
                                             .help(localizer.removeCustomAgent)
@@ -1271,31 +1476,31 @@ struct OperationLogTab: View {
                                                 sessionScanner.scanAgentOps(agentName: agent.name)
                                             }
                                         } label: {
-                                            HStack(spacing: 3) {
+                                            HStack(spacing: Theme.Spacing.xs) {
                                                 Image(systemName: "magnifyingglass").font(.system(size: 9))
-                                                Text(localizer.audit).font(.caption2)
+                                                Text(localizer.audit).font(Theme.Font.caption)
                                             }
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, Theme.Spacing.md)
+                                            .padding(.vertical, Theme.Spacing.xs + 1)
+                                            .background(Theme.Gradients.accent)
+                                            .clipShape(Capsule())
                                         }
-                                        .buttonStyle(.bordered)
-                                        .controlSize(.small)
+                                        .buttonStyle(.plain)
                                     }
-                                    .padding(.horizontal, 24)
-                                    .padding(.vertical, 8)
-
-                                    Divider()
-                                        .padding(.leading, 52)
+                                    .cardStyle(padding: Theme.Spacing.md, cornerRadius: Theme.Radius.md)
                                 }
                             }
-                            .padding(.vertical, 4)
+                            .padding(Theme.Spacing.lg)
                         }
                     }
 
                     Divider()
 
-                    VStack(spacing: 8) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "plus.circle").font(.system(size: 11)).foregroundColor(.green)
-                            Text(localizer.addCustomAgent).font(.caption).fontWeight(.semibold).foregroundColor(.green)
+                    VStack(spacing: Theme.Spacing.sm) {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Image(systemName: "plus.circle").font(.system(size: 11)).foregroundColor(Theme.Colors.success)
+                            Text(localizer.addCustomAgent).font(Theme.Font.captionMedium).foregroundStyle(Theme.Colors.success)
                             Spacer()
                         }
 
@@ -1303,25 +1508,25 @@ struct OperationLogTab: View {
                             Button {
                                 showAddAgentSheet = true
                             } label: {
-                                HStack(spacing: 3) {
+                                HStack(spacing: Theme.Spacing.xs) {
                                     Image(systemName: "app.badge.plus")
                                     Text(localizer.selectFromInstalled)
                                 }
-                                .font(.caption)
+                                .font(Theme.Font.caption)
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                         }
 
-                        HStack(spacing: 8) {
+                        HStack(spacing: Theme.Spacing.sm) {
                             TextField(localizer.customAgentName, text: $customAgentName)
                                 .textFieldStyle(.roundedBorder)
-                                .font(.caption)
+                                .font(Theme.Font.caption)
                                 .frame(width: 100)
 
                             TextField(localizer.sessionPathHint, text: $customAgentPath)
                                 .textFieldStyle(.roundedBorder)
-                                .font(.caption)
+                                .font(Theme.Font.caption)
 
                             Button {
                                 let name = customAgentName.trimmingCharacters(in: .whitespaces)
@@ -1343,21 +1548,24 @@ struct OperationLogTab: View {
                                 customAgentName = ""
                                 customAgentPath = ""
                             } label: {
-                                HStack(spacing: 3) {
+                                HStack(spacing: Theme.Spacing.xs) {
                                     Image(systemName: "plus.circle.fill")
                                     Text(localizer.addAndScan)
                                 }
-                                .font(.caption)
+                                .font(Theme.Font.caption)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, Theme.Spacing.md)
+                                .padding(.vertical, Theme.Spacing.xs + 1)
+                                .background(Theme.Gradients.success)
+                                .clipShape(Capsule())
                             }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                            .tint(.green)
+                            .buttonStyle(.plain)
                             .disabled(customAgentName.trimmingCharacters(in: .whitespaces).isEmpty)
                         }
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 8)
-                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(Theme.Colors.sidebarBg.opacity(0.3))
                 }
             }
         }
@@ -1866,21 +2074,60 @@ struct MacCleanerTab: View {
                 subtitle: localizer.macCleanerSubtitle,
                 color: .blue
             ) {
-                HStack(spacing: 8) {
+                HStack(spacing: Theme.Spacing.sm) {
                     Button { Task { await service.scanLocal() } } label: {
-                        HStack(spacing: 4) { Image(systemName: "magnifyingglass"); Text(localizer.localScan) }
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text(localizer.localScan)
+                                .font(Theme.Font.subheadlineMedium)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .background(Theme.Gradients.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                     }
-                    .buttonStyle(.bordered).controlSize(.small).disabled(service.isScanning)
+                    .buttonStyle(.plain)
+                    .disabled(service.isScanning)
+                    .opacity(service.isScanning ? 0.5 : 1)
 
                     Button { Task { await performAiScan() } } label: {
-                        HStack(spacing: 4) { Image(systemName: "brain"); Text(localizer.aiScan) }
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Image(systemName: "brain")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text(localizer.aiScan)
+                                .font(Theme.Font.subheadlineMedium)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .background(LinearGradient(
+                            colors: [Color.purple.opacity(0.8), Color.pink.opacity(0.6)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                     }
-                    .buttonStyle(.bordered).controlSize(.small).tint(.purple).disabled(service.isAiScanning)
+                    .buttonStyle(.plain)
+                    .disabled(service.isAiScanning)
+                    .opacity(service.isAiScanning ? 0.5 : 1)
 
                     Button { Task { await service.startEnhancedScan() } } label: {
-                        HStack(spacing: 4) { Image(systemName: "bolt.fill"); Text(localizer.enhancedScan) }
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text(localizer.enhancedScan)
+                                .font(Theme.Font.subheadlineMedium)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .background(Theme.Gradients.danger)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                     }
-                    .buttonStyle(.bordered).controlSize(.small).tint(.orange).disabled(service.isEnhancedScanning)
+                    .buttonStyle(.plain)
+                    .disabled(service.isEnhancedScanning)
+                    .opacity(service.isEnhancedScanning ? 0.5 : 1)
                 }
             }
 
@@ -1888,21 +2135,43 @@ struct MacCleanerTab: View {
             Divider()
 
             if service.isAiScanning || service.isEnhancedScanning {
-                HStack(spacing: 10) { ProgressView().controlSize(.small); Text(service.isEnhancedScanning ? localizer.enhancedScan + "..." : service.aiStatusMessage).foregroundColor(.purple); Spacer() }
-                    .padding(.horizontal, 24).padding(.vertical, 8).background(Color.purple.opacity(0.05))
+                HStack(spacing: Theme.Spacing.md) {
+                    ProgressView().controlSize(.small)
+                    Text(service.isEnhancedScanning ? localizer.enhancedScan + "..." : service.aiStatusMessage)
+                        .font(Theme.Font.subheadline)
+                        .foregroundStyle(Theme.Colors.purple)
+                    Spacer()
+                }
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.vertical, Theme.Spacing.md)
+                .background(Theme.Colors.purple.opacity(0.06))
                 Divider()
             }
             if let error = service.errorMessage {
-                HStack(spacing: 10) { Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange); Text(error).font(.caption).foregroundColor(.secondary).lineLimit(3); Spacer()
-                    Button { service.errorMessage = nil } label: { Image(systemName: "xmark.circle.fill").foregroundColor(.secondary) }.buttonStyle(.plain)
-                }.padding(.horizontal, 24).padding(.vertical, 8).background(Color.orange.opacity(0.05))
+                HStack(spacing: Theme.Spacing.md) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.Colors.warning)
+                    Text(error)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(3)
+                    Spacer()
+                    Button { service.errorMessage = nil } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.vertical, Theme.Spacing.md)
+                .background(Theme.Colors.warning.opacity(0.06))
                 Divider()
             }
 
             if service.isScanning { scanningOverlay }
             else if service.scanItems.isEmpty { welcomeCenter }
             else {
-                HStack(spacing: 12) {
+                HStack(spacing: Theme.Spacing.md) {
                     FilterSearchBar(placeholder: localizer.searchFiles, text: $searchText)
                         .frame(width: 180)
 
@@ -1921,35 +2190,108 @@ struct MacCleanerTab: View {
                         .labelsHidden()
                     }
 
-                    HStack(spacing: 4) {
-                        Text(localizer.riskLabel + ":").font(.caption).foregroundColor(.secondary)
-                        RiskFilterButton(label: localizer.riskSafe, color: .green, isActive: filterRisk == "safe") { filterRisk = "safe" }
-                        RiskFilterButton(label: localizer.riskCaution, color: .orange, isActive: filterRisk == "caution") { filterRisk = "caution" }
-                        RiskFilterButton(label: localizer.riskDangerous, color: .red, isActive: filterRisk == "dangerous") { filterRisk = "dangerous" }
-                        if !filterRisk.isEmpty { Button { filterRisk = "" } label: { Image(systemName: "xmark.circle.fill").font(.caption).foregroundColor(.secondary) }.buttonStyle(.plain) }
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Text(localizer.riskLabel + ":")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                        RiskPillFilterButton(label: localizer.riskSafe, color: Theme.Colors.success, isActive: filterRisk == "safe") { filterRisk = "safe" }
+                        RiskPillFilterButton(label: localizer.riskCaution, color: Theme.Colors.warning, isActive: filterRisk == "caution") { filterRisk = "caution" }
+                        RiskPillFilterButton(label: localizer.riskDangerous, color: Theme.Colors.danger, isActive: filterRisk == "dangerous") { filterRisk = "dangerous" }
+                        if !filterRisk.isEmpty {
+                            Button { filterRisk = "" } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
 
                     Spacer()
-                    Button { smartClean() } label: { Label(localizer.smartClean, systemImage: "wand.and.stars") }
-                        .buttonStyle(.borderedProminent).tint(.green).controlSize(.small)
-                        .disabled(service.scanItems.filter { $0.risk == "safe" && !$0.ignored }.isEmpty)
-                    Text("\(filteredItems.count) \(localizer.selected) · \(service.formatSize(totalCleanable))").font(.caption).foregroundColor(.secondary)
+                    Button { smartClean() } label: {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Image(systemName: "wand.and.stars")
+                            Text(localizer.smartClean)
+                        }
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .background(Theme.Gradients.success)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(service.scanItems.filter { $0.risk == "safe" && !$0.ignored }.isEmpty)
+                    .opacity(service.scanItems.filter { $0.risk == "safe" && !$0.ignored }.isEmpty ? 0.5 : 1)
+                    Text("\(filteredItems.count) \(localizer.selected) · \(service.formatSize(totalCleanable))")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 8)
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.vertical, Theme.Spacing.md)
+                .background(Theme.Colors.cardBg.opacity(0.5))
                 Divider()
 
                 if !selectedIds.isEmpty {
-                    HStack(spacing: 10) {
-                        Button { selectAll() } label: { Text(localizer.selectAll) }.buttonStyle(.bordered).controlSize(.small)
-                        Button { selectSafe() } label: { Text(localizer.safeOnly) }.buttonStyle(.bordered).controlSize(.small)
-                        Button { selectedIds.removeAll() } label: { Text(localizer.cancelSelection) }.buttonStyle(.bordered).controlSize(.small)
-                        Text(localizer.selected + " \(selectedIds.count) \(localizer.selected) · \(service.formatSize(selectedSize))").font(.caption).foregroundColor(.blue).fontWeight(.medium)
+                    HStack(spacing: Theme.Spacing.md) {
+                        Button { selectAll() } label: {
+                            Text(localizer.selectAll)
+                                .font(Theme.Font.captionMedium)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button { selectSafe() } label: {
+                            Text(localizer.safeOnly)
+                                .font(Theme.Font.captionMedium)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button { selectedIds.removeAll() } label: {
+                            Text(localizer.cancelSelection)
+                                .font(Theme.Font.captionMedium)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Text("\(localizer.selected) \(selectedIds.count) \(localizer.selected) · \(service.formatSize(selectedSize))")
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.accent)
+
                         Spacer()
-                        Button { ignoreSelected() } label: { Label(localizer.ignoreSelected, systemImage: "eye.slash") }.buttonStyle(.bordered).controlSize(.small).disabled(selectedIds.isEmpty)
-                        Button { confirmDeleteSelected() } label: { Label(localizer.deleteSelected, systemImage: "trash") }.buttonStyle(.bordered).tint(.red).controlSize(.small).disabled(selectedIds.isEmpty)
-                    }.padding(.horizontal, 24).padding(.vertical, 8).background(Color.accentColor.opacity(0.06))
+
+                        Button { ignoreSelected() } label: {
+                            HStack(spacing: Theme.Spacing.xs) {
+                                Image(systemName: "eye.slash")
+                                Text(localizer.ignoreSelected)
+                            }
+                            .font(Theme.Font.captionMedium)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(selectedIds.isEmpty)
+
+                        Button { confirmDeleteSelected() } label: {
+                            HStack(spacing: Theme.Spacing.xs) {
+                                Image(systemName: "trash")
+                                Text(localizer.deleteSelected)
+                            }
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.xs)
+                            .background(Theme.Colors.danger)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        }
+                        .buttonStyle(.plain)
+                        .controlSize(.small)
+                        .disabled(selectedIds.isEmpty)
+                        .opacity(selectedIds.isEmpty ? 0.5 : 1)
+                    }
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.vertical, Theme.Spacing.md)
+                    .background(Theme.Colors.accent.opacity(0.06))
                     Divider()
                 }
 
@@ -1968,78 +2310,291 @@ struct MacCleanerTab: View {
             let items = service.scanItems.filter { deleteTargetIds.contains($0.id) }
             Text("\(localizer.confirmDeleteMsg) \(deleteTargetIds.count) \(localizer.itemsLabel) (\(localizer.total) \(service.formatSize(items.reduce(Int64(0)) { $0 + $1.size })))？")
         }
-        .alert(localizer.cleanComplete, isPresented: $showCleanResult) {
-            Button(localizer.ok) {}
-        } message: {
-            Text("\(localizer.cleanCompleteMsg) \(service.formatSize(cleanedSize))，\(localizer.total) \(cleanedCount) \(localizer.itemsLabel)。")
+        .sheet(isPresented: $showCleanResult) {
+            VStack(spacing: Theme.Spacing.xl) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundStyle(Theme.Colors.success)
+
+                Text(localizer.cleanComplete)
+                    .font(Theme.Font.title2Bold)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+
+                CardView(padding: Theme.Spacing.xl, cornerRadius: Theme.Radius.lg) {
+                    VStack(spacing: Theme.Spacing.md) {
+                        Text(service.formatSize(cleanedSize))
+                            .font(.system(size: 36, weight: .bold, design: .rounded))
+                            .foregroundStyle(Theme.Colors.success)
+
+                        Text("\(localizer.total) \(cleanedCount) \(localizer.itemsLabel)")
+                            .font(Theme.Font.subheadline)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                    }
+                    .frame(maxWidth: 240)
+                }
+
+                Button { showCleanResult = false } label: {
+                    Text(localizer.ok)
+                        .font(Theme.Font.bodyMedium)
+                        .foregroundStyle(.white)
+                        .frame(width: 120)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .background(Theme.Gradients.success)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(Theme.Spacing.xxl)
+            .frame(width: 360)
         }
     }
 
     private var diskCard: some View {
-        HStack(spacing: 32) {
+        Group {
             if let disk = service.diskInfo {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(localizer.diskSpaceLabel).font(.headline)
-                    ProgressView(value: disk.usedPct / 100.0).progressViewStyle(.linear).tint(disk.usedPct > 85 ? .red : disk.usedPct > 70 ? .orange : .green)
-                    Text("\(String(format: "%.1f%%", disk.usedPct)) \(localizer.usedLabel)").font(.caption).foregroundColor(.secondary)
-                }.frame(maxWidth: 280)
-                HStack(spacing: 28) {
-                    DiskStat(title: localizer.totalCapacity, value: String(format: "%.0f GB", disk.totalGb))
-                    DiskStat(title: localizer.usedLabel, value: String(format: "%.0f GB", disk.usedGb))
-                    DiskStat(title: localizer.available, value: String(format: "%.0f GB", disk.freeGb), color: disk.freeGb < 20 ? .red : .green)
-                    DiskStat(title: localizer.releasable, value: service.formatSize(totalCleanable), color: .cyan)
+                CardView(padding: Theme.Spacing.lg, cornerRadius: Theme.Radius.lg) {
+                    HStack(spacing: Theme.Spacing.xl) {
+                        VStack(spacing: Theme.Spacing.sm) {
+                            ProgressRing(
+                                progress: disk.usedPct / 100.0,
+                                lineWidth: 12,
+                                size: 120,
+                                showLabel: true
+                            )
+                            Text(localizer.diskSpaceLabel)
+                                .font(Theme.Font.captionMedium)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+
+                        DashboardGrid(columns: 2) {
+                            StatCardView(
+                                icon: "internaldrive",
+                                iconColor: Theme.Colors.info,
+                                title: localizer.totalCapacity,
+                                value: String(format: "%.0f GB", disk.totalGb),
+                                subtitle: nil
+                            )
+                            StatCardView(
+                                icon: "arrow.down.circle.fill",
+                                iconColor: Theme.Colors.warning,
+                                title: localizer.usedLabel,
+                                value: String(format: "%.0f GB", disk.usedGb),
+                                subtitle: String(format: "%.1f%%", disk.usedPct)
+                            )
+                            StatCardView(
+                                icon: "arrow.up.circle.fill",
+                                iconColor: disk.freeGb < 20 ? Theme.Colors.danger : Theme.Colors.success,
+                                title: localizer.available,
+                                value: String(format: "%.0f GB", disk.freeGb),
+                                subtitle: nil
+                            )
+                            StatCardView(
+                                icon: "sparkles",
+                                iconColor: Theme.Colors.cyan,
+                                title: localizer.releasable,
+                                value: service.formatSize(totalCleanable),
+                                subtitle: nil
+                            )
+                        }
+
+                        Spacer()
+                    }
                 }
-                Spacer()
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.sm)
             }
-        }.padding(.horizontal, 24).padding(.vertical, 16).background(Color(nsColor: .windowBackgroundColor))
+        }
     }
 
     private var scanningOverlay: some View {
-        VStack(spacing: 20) { ProgressView().controlSize(.large); Text(localizer.scanningStorage).font(.title3).fontWeight(.medium); Text(localizer.scanningStorageHint).foregroundColor(.secondary).font(.callout) }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: Theme.Spacing.xl) {
+            ProgressView().controlSize(.large)
+            Text(localizer.scanningStorage)
+                .font(Theme.Font.title2)
+                .foregroundStyle(Theme.Colors.textPrimary)
+            Text(localizer.scanningStorageHint)
+                .font(Theme.Font.subheadline)
+                .foregroundStyle(Theme.Colors.textSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var welcomeCenter: some View {
-        VStack(spacing: 40) {
+        VStack(spacing: Theme.Spacing.xxl) {
             Spacer()
-            VStack(spacing: 8) { Image(systemName: "arrow.down.doc.fill").font(.system(size: 48)).foregroundColor(.accentColor.opacity(0.6)); Text("AIMacCleaner").font(.title).fontWeight(.bold); Text(localizer.smartCleanDesc).foregroundColor(.secondary).font(.callout) }
-            HStack(spacing: 24) {
-                ActionCard(icon: "magnifyingglass", title: localizer.localScan, subtitle: localizer.localScanSubtitle, color: .blue, isDisabled: service.isScanning) { Task { await service.scanLocal() } }
-                ActionCard(icon: "brain", title: localizer.aiScan, subtitle: localizer.aiScanSubtitle, color: .purple, isDisabled: service.isAiScanning) { Task { await performAiScan() } }
-                ActionCard(icon: "bolt.fill", title: localizer.enhancedScan, subtitle: localizer.enhancedScanSubtitle, color: .orange, isDisabled: service.isEnhancedScanning) { Task { await service.startEnhancedScan() } }
+            VStack(spacing: Theme.Spacing.md) {
+                Image(systemName: "arrow.down.doc.fill")
+                    .font(.system(size: 48))
+                    .foregroundStyle(Theme.Colors.accent.opacity(0.6))
+                Text("AIMacCleaner")
+                    .font(Theme.Font.title2Bold)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(localizer.smartCleanDesc)
+                    .font(Theme.Font.subheadline)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            }
+            HStack(spacing: Theme.Spacing.xl) {
+                ScanActionCard(
+                    icon: "magnifyingglass",
+                    title: localizer.localScan,
+                    subtitle: localizer.localScanSubtitle,
+                    iconColor: Theme.Colors.accent,
+                    isDisabled: service.isScanning
+                ) { Task { await service.scanLocal() } }
+                ScanActionCard(
+                    icon: "brain",
+                    title: localizer.aiScan,
+                    subtitle: localizer.aiScanSubtitle,
+                    iconColor: Theme.Colors.purple,
+                    isDisabled: service.isAiScanning
+                ) { Task { await performAiScan() } }
+                ScanActionCard(
+                    icon: "bolt.fill",
+                    title: localizer.enhancedScan,
+                    subtitle: localizer.enhancedScanSubtitle,
+                    iconColor: Theme.Colors.warning,
+                    isDisabled: service.isEnhancedScanning
+                ) { Task { await service.startEnhancedScan() } }
             }
             Spacer()
-        }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(40)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(Theme.Spacing.xxl)
     }
 
     private var noResultView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Theme.Spacing.lg) {
             Spacer()
-            Image(systemName: "line.3.horizontal.decrease.circle").font(.system(size: 40)).foregroundColor(.secondary.opacity(0.5))
-            Text(localizer.noMatchesHint).font(.title3).fontWeight(.medium)
-            HStack(spacing: 10) {
-                if !filterRisk.isEmpty { Button { filterRisk = "" } label: { Text(localizer.clearRiskFilter) }.buttonStyle(.bordered).controlSize(.small) }
-                if !filterCategory.isEmpty { Button { filterCategory = "" } label: { Text(localizer.clearCategoryFilter) }.buttonStyle(.bordered).controlSize(.small) }
-                if !searchText.isEmpty { Button { searchText = "" } label: { Text(localizer.clearSearch) }.buttonStyle(.bordered).controlSize(.small) }
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.system(size: 40))
+                .foregroundStyle(Theme.Colors.textTertiary.opacity(0.5))
+            Text(localizer.noMatchesHint)
+                .font(Theme.Font.headline)
+                .foregroundStyle(Theme.Colors.textPrimary)
+            HStack(spacing: Theme.Spacing.md) {
+                if !filterRisk.isEmpty {
+                    Button { filterRisk = "" } label: {
+                        PillBadge(text: localizer.clearRiskFilter, color: Theme.Colors.danger, size: .medium)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if !filterCategory.isEmpty {
+                    Button { filterCategory = "" } label: {
+                        PillBadge(text: localizer.clearCategoryFilter, color: Theme.Colors.info, size: .medium)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if !searchText.isEmpty {
+                    Button { searchText = "" } label: {
+                        PillBadge(text: localizer.clearSearch, color: Theme.Colors.textSecondary, size: .medium)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             Spacer()
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var resultList: some View {
-        Table(filteredItems, selection: $selectedIds) {
-            TableColumn("✓") { item in Toggle("", isOn: Binding(get: { selectedIds.contains(item.id) }, set: { _ in if selectedIds.contains(item.id) { selectedIds.remove(item.id) } else { selectedIds.insert(item.id) } })).toggleStyle(.checkbox).labelsHidden() }.width(36)
-            TableColumn(localizer.colName) { item in HStack(spacing: 6) { if item.ignored { Image(systemName: "eye.slash").foregroundColor(.secondary).font(.caption) }; Text(item.name).fontWeight(.semibold) } }.width(min: 150)
-            TableColumn(localizer.colSource) { item in Text(item.sourceType.localizedLabel(localizer)).font(.caption2).padding(.horizontal, 6).padding(.vertical, 2).background(item.sourceType == .ai ? Color.purple.opacity(0.12) : Color.blue.opacity(0.12)).cornerRadius(4) }.width(50)
-            TableColumn(localizer.colApp) { item in Text(item.app).font(.caption).foregroundColor(.secondary) }.width(90)
-            TableColumn(localizer.colRisk) { item in HStack(spacing: 3) { Image(systemName: item.riskLevel.systemImage).foregroundColor(riskColor(item.riskLevel)).font(.caption); Text(item.riskLevel.localizedLabel(localizer)).font(.caption2).fontWeight(.medium) } }.width(60)
-            TableColumn(localizer.colSize) { item in Text(service.formatSize(item.size)).fontWeight(.bold).monospacedDigit().foregroundColor(.cyan) }.width(70)
-            TableColumn(localizer.colDesc) { item in Text(item.reason ?? item.riskDesc).font(.caption2).foregroundColor(item.sourceType == .ai ? .purple : .orange).lineLimit(2) }
-            TableColumn(localizer.colAction) { item in HStack(spacing: 4) {
-                Button { confirmDeleteSingle(item) } label: { Image(systemName: "trash").font(.caption) }.buttonStyle(.bordered).controlSize(.mini).tint(.red)
-                Button { toggleIgnore(item) } label: { Image(systemName: item.ignored ? "eye" : "eye.slash").font(.caption) }.buttonStyle(.bordered).controlSize(.mini)
-            } }.width(70)
-        }.tableStyle(.inset(alternatesRowBackgrounds: true))
+        ScrollView {
+            LazyVStack(spacing: Theme.Spacing.sm) {
+                ForEach(filteredItems) { item in
+                    HStack(spacing: Theme.Spacing.md) {
+                        Toggle("", isOn: Binding(
+                            get: { selectedIds.contains(item.id) },
+                            set: { _ in
+                                if selectedIds.contains(item.id) {
+                                    selectedIds.remove(item.id)
+                                } else {
+                                    selectedIds.insert(item.id)
+                                }
+                            }
+                        ))
+                        .toggleStyle(.checkbox)
+                        .labelsHidden()
+
+                        if item.ignored {
+                            Image(systemName: "eye.slash")
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        }
+
+                        Text(item.name)
+                            .font(Theme.Font.bodyMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .lineLimit(1)
+
+                        PillBadge(
+                            text: item.sourceType.localizedLabel(localizer),
+                            color: item.sourceType == .ai ? Theme.Colors.purple : Theme.Colors.info,
+                            size: .small
+                        )
+
+                        Text(item.app)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .lineLimit(1)
+                            .frame(width: 90, alignment: .leading)
+
+                        PillBadge(
+                            text: item.riskLevel.localizedLabel(localizer),
+                            color: riskColor(item.riskLevel),
+                            size: .small
+                        )
+
+                        Text(service.formatSize(item.size))
+                            .font(Theme.Font.subheadlineMedium)
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.Colors.cyan)
+                            .frame(width: 70, alignment: .trailing)
+
+                        Text(item.reason ?? item.riskDesc)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(item.sourceType == .ai ? Theme.Colors.purple : Theme.Colors.warning)
+                            .lineLimit(1)
+                            .frame(maxWidth: 180, alignment: .leading)
+
+                        Spacer()
+
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Button { confirmDeleteSingle(item) } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Theme.Colors.danger)
+                                    .padding(Theme.Spacing.xs)
+                                    .background(Theme.Colors.danger.opacity(0.08))
+                                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                            }
+                            .buttonStyle(.plain)
+
+                            Button { toggleIgnore(item) } label: {
+                                Image(systemName: item.ignored ? "eye" : "eye.slash")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                    .padding(Theme.Spacing.xs)
+                                    .background(Theme.Colors.textSecondary.opacity(0.08))
+                                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.vertical, Theme.Spacing.md)
+                    .cardStyle(padding: 0, cornerRadius: Theme.Radius.md)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if selectedIds.contains(item.id) {
+                            selectedIds.remove(item.id)
+                        } else {
+                            selectedIds.insert(item.id)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.sm)
+        }
     }
 
     private func riskColor(_ level: ScanItem.RiskLevel) -> Color { switch level { case .safe: .green; case .caution: .orange; case .dangerous: .red } }
@@ -2055,6 +2610,139 @@ struct MacCleanerTab: View {
 }
 
 // MARK: - App Manager Tab
+
+struct AppRowCard: View {
+    let app: AppInfo
+    let filterType: AppInfo.AppType
+    let isSelected: Bool
+    let aiResult: String?
+    let subCategoryColor: (String) -> Color
+    let onToggle: () -> Void
+    let onAction: (AppManagerTab.AppAction) -> Void
+    let formatSize: (Int64) -> String
+    let localizer: Localizer
+
+    @State private var isHovered = false
+
+    private var riskColor: Color {
+        app.risk == "safe" ? Theme.Colors.success : app.risk == "dangerous" ? Theme.Colors.danger : Theme.Colors.warning
+    }
+
+    private var riskLabel: String {
+        app.risk == "safe" ? localizer.safe : app.risk == "dangerous" ? localizer.dangerous : localizer.warning
+    }
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            Button(action: onToggle) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 16))
+                    .foregroundStyle(isSelected ? Theme.Colors.accent : Theme.Colors.textTertiary)
+            }
+            .buttonStyle(.plain)
+
+            if let iconPath = app.iconPath, let img = NSImage(contentsOfFile: iconPath) {
+                Image(nsImage: img).resizable().frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            } else {
+                Image(systemName: filterType == .app ? "app.fill" : filterType == .dependency ? "cube.box.fill" : "terminal.fill")
+                    .font(.title3).foregroundStyle(Theme.Colors.textTertiary).frame(width: 36, height: 36)
+            }
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Text(app.displayName)
+                        .font(Theme.Font.subheadlineMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(1)
+
+                    if filterType != .app {
+                        PillBadge(text: app.subCategory, color: subCategoryColor(app.subCategory), size: .small)
+                    }
+                }
+                Text(app.desc)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            PillBadge(text: riskLabel, color: riskColor, size: .small)
+
+            if let aiResult = aiResult {
+                Text(aiResult)
+                    .font(Theme.Font.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(
+                        aiResult.hasPrefix("🤖") ? Theme.Colors.purple :
+                        aiResult.hasPrefix("❌") ? Theme.Colors.danger :
+                        aiResult.hasPrefix("⚠️") ? Theme.Colors.warning :
+                        Theme.Colors.textSecondary
+                    )
+                    .lineLimit(1)
+                    .frame(maxWidth: 120, alignment: .leading)
+            } else {
+                Text(app.riskDesc)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.warning)
+                    .lineLimit(1)
+                    .frame(maxWidth: 120, alignment: .leading)
+            }
+
+            Text(formatSize(app.totalSize))
+                .font(Theme.Font.subheadlineMedium)
+                .monospacedDigit()
+                .foregroundStyle(Theme.Colors.cyan)
+                .frame(width: 80, alignment: .trailing)
+
+            HStack(spacing: Theme.Spacing.xs) {
+                if app.canClean || app.canReset {
+                    Button { onAction(.reset) } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.warning)
+                            .frame(width: 28, height: 28)
+                            .background(Theme.Colors.warning.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    }
+                    .buttonStyle(.plain)
+                }
+                if app.canUninstall {
+                    Button { onAction(.basicUninstall) } label: {
+                        Image(systemName: "xmark.circle")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.info)
+                            .frame(width: 28, height: 28)
+                            .background(Theme.Colors.info.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    }
+                    .buttonStyle(.plain)
+                    Button { onAction(.fullUninstall) } label: {
+                        Image(systemName: "trash")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.danger)
+                            .frame(width: 28, height: 28)
+                            .background(Theme.Colors.danger.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .fill(isSelected ? Theme.Colors.accent.opacity(0.06) : (isHovered ? Theme.Colors.cardHover : Theme.Colors.cardBg))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(isSelected ? Theme.Colors.accent.opacity(0.3) : Color.primary.opacity(0.06), lineWidth: isSelected ? 1.5 : 0.5)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .onHover { isHovered = $0 }
+    }
+}
 
 struct AppManagerTab: View {
     @EnvironmentObject var service: ScannerService
@@ -2111,171 +2799,362 @@ struct AppManagerTab: View {
                 subtitle: filterType == .app ? localizer.appManagerSubtitle : filterType == .dependency ? localizer.dependencySubtitle : localizer.otherToolsSubtitle,
                 color: filterType.tabColor
             ) {
-                HStack(spacing: 8) {
+                HStack(spacing: Theme.Spacing.sm) {
                     Button { Task { await service.scanInstalledApps() } } label: {
-                        HStack(spacing: 4) { Image(systemName: "arrow.clockwise"); Text(localizer.refresh) }
+                        HStack(spacing: Theme.Spacing.xs) { Image(systemName: "arrow.clockwise"); Text(localizer.refresh) }
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.accent)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.xs + 1)
+                            .background(Theme.Colors.accent.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     }
-                    .buttonStyle(.bordered).controlSize(.small).disabled(service.isScanningApps)
+                    .buttonStyle(.plain)
+                    .disabled(service.isScanningApps)
+                    .opacity(service.isScanningApps ? 0.5 : 1)
 
                     Button { service.checkAppUpdates() } label: {
-                        HStack(spacing: 4) { Image(systemName: "arrow.up.circle"); Text(localizer.checkUpdates) }
+                        HStack(spacing: Theme.Spacing.xs) { Image(systemName: "arrow.up.circle"); Text(localizer.checkUpdates) }
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.success)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.xs + 1)
+                            .background(Theme.Colors.success.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     }
-                    .buttonStyle(.bordered).controlSize(.small).tint(.green)
+                    .buttonStyle(.plain)
                     .disabled(service.isCheckingAppUpdates)
+                    .opacity(service.isCheckingAppUpdates ? 0.5 : 1)
 
                     Button {
                         let apps = service.installedApps.filter { selectedAppIds.contains($0.id) }
                         if !apps.isEmpty { Task { await service.analyzeImpactWithAI(apps: apps) } }
                     } label: {
-                        HStack(spacing: 4) { Image(systemName: "sparkles"); Text(localizer.aiAnalysis) }
+                        HStack(spacing: Theme.Spacing.xs) { Image(systemName: "sparkles"); Text(localizer.aiAnalysis) }
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.xs + 1)
+                            .background(Theme.Colors.purple.opacity(0.85))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     }
-                    .buttonStyle(.bordered).controlSize(.small).tint(.purple)
+                    .buttonStyle(.plain)
                     .disabled(selectedAppIds.isEmpty || service.isAnalyzingImpact)
+                    .opacity(selectedAppIds.isEmpty || service.isAnalyzingImpact ? 0.5 : 1)
                 }
             }
 
+            DashboardGrid(columns: 4) {
+                StatCardView(
+                    icon: "app.badge",
+                    iconColor: filterType.tabColor,
+                    title: localizer.typeApp,
+                    value: "\(filteredApps.count)",
+                    subtitle: localizer.itemsLabel
+                )
+                StatCardView(
+                    icon: "internaldrive",
+                    iconColor: Theme.Colors.info,
+                    title: localizer.sizeCol,
+                    value: service.formatSize(filteredApps.reduce(Int64(0)) { $0 + $1.totalSize }),
+                    subtitle: nil
+                )
+                StatCardView(
+                    icon: "arrow.triangle.2.circlepath",
+                    iconColor: Theme.Colors.warning,
+                    title: localizer.checkUpdates,
+                    value: "\(service.appUpdates.filter { $0.type == .app }.count)",
+                    subtitle: nil
+                )
+                StatCardView(
+                    icon: "exclamationmark.triangle",
+                    iconColor: Theme.Colors.danger,
+                    title: localizer.warning,
+                    value: "\(filteredApps.filter { $0.risk == "caution" || $0.risk == "dangerous" }.count)",
+                    subtitle: nil
+                )
+            }
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.top, Theme.Spacing.md)
+
             if subCategories.count > 1 {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        SubCategoryChip(label: localizer.all, count: service.installedApps.filter { $0.appType == filterType }.count, isActive: filterSubCategory.isEmpty, color: .accentColor) { filterSubCategory = "" }
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Button { filterSubCategory = "" } label: {
+                            HStack(spacing: Theme.Spacing.xs) {
+                                Image(systemName: "square.grid.2x2")
+                                    .font(Theme.Font.caption)
+                                Text(localizer.all)
+                                    .font(Theme.Font.captionMedium)
+                                Text("\(service.installedApps.filter { $0.appType == filterType }.count)")
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(filterSubCategory.isEmpty ? .white.opacity(0.8) : Theme.Colors.textTertiary)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(filterSubCategory.isEmpty ? Color.white.opacity(0.2) : Theme.Colors.accent.opacity(0.1))
+                                    .clipShape(Capsule())
+                            }
+                            .foregroundStyle(filterSubCategory.isEmpty ? .white : Theme.Colors.textPrimary)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, 5)
+                            .background(
+                                Capsule()
+                                    .fill(filterSubCategory.isEmpty ? Theme.Colors.accent : Theme.Colors.cardBg)
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(filterSubCategory.isEmpty ? Color.clear : Color.primary.opacity(0.1), lineWidth: 0.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
+
                         ForEach(subCategories, id: \.self) { cat in
                             let count = service.installedApps.filter { $0.appType == filterType && $0.subCategory == cat }.count
-                            SubCategoryChip(label: cat, count: count, isActive: filterSubCategory == cat, color: subCategoryColor(cat)) { filterSubCategory = filterSubCategory == cat ? "" : cat }
+                            let catColor = subCategoryColor(cat)
+                            Button { filterSubCategory = filterSubCategory == cat ? "" : cat } label: {
+                                HStack(spacing: Theme.Spacing.xs) {
+                                    Image(systemName: subCategoryIconName(cat))
+                                        .font(Theme.Font.caption)
+                                    Text(cat)
+                                        .font(Theme.Font.captionMedium)
+                                    Text("\(count)")
+                                        .font(Theme.Font.caption)
+                                        .foregroundStyle(filterSubCategory == cat ? .white.opacity(0.8) : Theme.Colors.textTertiary)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(filterSubCategory == cat ? Color.white.opacity(0.2) : catColor.opacity(0.1))
+                                        .clipShape(Capsule())
+                                }
+                                .foregroundStyle(filterSubCategory == cat ? .white : Theme.Colors.textPrimary)
+                                .padding(.horizontal, Theme.Spacing.md)
+                                .padding(.vertical, 5)
+                                .background(
+                                    Capsule()
+                                        .fill(filterSubCategory == cat ? catColor : Theme.Colors.cardBg)
+                                )
+                                .overlay(
+                                    Capsule()
+                                        .stroke(filterSubCategory == cat ? Color.clear : catColor.opacity(0.3), lineWidth: 0.5)
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
-                    }.padding(.horizontal, 24).padding(.vertical, 8)
-                }.background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
-                Divider()
+                    }
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.vertical, Theme.Spacing.sm)
+                }
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: Theme.Spacing.md) {
                 FilterSearchBar(placeholder: localizer.searchingApps, text: $searchText)
-                    .frame(width: 200)
+                    .frame(width: 220)
 
                 Spacer()
 
                 if !selectedAppIds.isEmpty {
-                    Text("\(localizer.selected) \(selectedAppIds.count) \(localizer.itemsLabel) · \(service.formatSize(selectedTotalSize))").font(.caption).foregroundColor(.blue).fontWeight(.medium)
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.accent)
+                        Text("\(localizer.selected) \(selectedAppIds.count) \(localizer.itemsLabel) · \(service.formatSize(selectedTotalSize))")
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.accent)
+                    }
                 }
 
-                HStack(spacing: 4) {
-                    Button { selectedAppIds = Set(filteredApps.map(\.id)) } label: { Text(localizer.selectAllBtn) }.buttonStyle(.bordered).controlSize(.small)
-                    Button { selectedAppIds.removeAll() } label: { Text(localizer.cancelBtn) }.buttonStyle(.bordered).controlSize(.small)
+                HStack(spacing: Theme.Spacing.xs) {
+                    Button { selectedAppIds = Set(filteredApps.map(\.id)) } label: {
+                        Text(localizer.selectAllBtn)
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.accent)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.xs + 1)
+                            .background(Theme.Colors.accent.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    }
+                    .buttonStyle(.plain)
+                    Button { selectedAppIds.removeAll() } label: {
+                        Text(localizer.cancelBtn)
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.xs + 1)
+                            .background(Theme.Colors.textTertiary.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 ForEach(AppAction.allCases, id: \.self) { action in
                     Button { pendingAction = action; pendingAppIds = Array(selectedAppIds); showActionConfirm = true } label: {
-                        HStack(spacing: 4) { Image(systemName: action.icon); Text(action.label(localizer)) }
+                        HStack(spacing: Theme.Spacing.xs) { Image(systemName: action.icon); Text(action.label(localizer)) }
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.xs + 1)
+                            .background(action.color.opacity(0.85))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     }
-                    .buttonStyle(.bordered).controlSize(.small).tint(action.color)
+                    .buttonStyle(.plain)
                     .disabled(selectedAppIds.isEmpty)
+                    .opacity(selectedAppIds.isEmpty ? 0.5 : 1)
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 10)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
-
-            HStack(spacing: 20) {
-                ForEach(AppAction.allCases, id: \.self) { action in
-                    HStack(spacing: 6) {
-                        Image(systemName: action.icon).foregroundColor(action.color).font(.caption)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(action.label(localizer)).font(.caption).fontWeight(.semibold)
-                            Text(action.desc(localizer)).font(.system(size: 9)).foregroundColor(.secondary).lineLimit(1)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 6)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.sm)
 
             Divider()
 
             if service.isScanningApps {
-                VStack(spacing: 16) { ProgressView().controlSize(.large); Text(localizer.searching).foregroundColor(.secondary) }
+                VStack(spacing: Theme.Spacing.lg) { ProgressView().controlSize(.large); Text(localizer.searching).foregroundColor(.secondary) }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if filteredApps.isEmpty {
-                VStack(spacing: 16) {
+                VStack(spacing: Theme.Spacing.lg) {
                     Spacer()
                     Image(systemName: filterType == .app ? "app.dashed" : filterType == .dependency ? "cube.box" : "terminal")
                         .font(.system(size: 40)).foregroundColor(.secondary.opacity(0.5))
-                    Text("\(localizer.notFound)\(filterType.localizedLabel(localizer))").font(.title3).fontWeight(.medium)
+                    Text("\(localizer.notFound)\(filterType.localizedLabel(localizer))").font(Theme.Font.title2).fontWeight(.medium)
                     Spacer()
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Table(filteredApps, selection: $selectedAppIds) {
-                    TableColumn("✓") { app in Toggle("", isOn: Binding(get: { selectedAppIds.contains(app.id) }, set: { _ in if selectedAppIds.contains(app.id) { selectedAppIds.remove(app.id) } else { selectedAppIds.insert(app.id) } })).toggleStyle(.checkbox).labelsHidden() }.width(36)
-                    TableColumn(localizer.nameCol) { app in
-                        HStack(spacing: 8) {
-                            if let iconPath = app.iconPath, let img = NSImage(contentsOfFile: iconPath) {
-                                Image(nsImage: img).resizable().frame(width: 32, height: 32).clipShape(RoundedRectangle(cornerRadius: 6))
-                            } else {
-                                Image(systemName: filterType == .app ? "app.fill" : filterType == .dependency ? "cube.box.fill" : "terminal.fill")
-                                    .font(.title3).foregroundColor(.secondary).frame(width: 32, height: 32)
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(app.displayName).fontWeight(.semibold)
-                                if filterType != .app {
-                                    Text(app.subCategory).font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
-                                        .background(subCategoryColor(app.subCategory).opacity(0.12)).cornerRadius(4)
-                                        .foregroundColor(subCategoryColor(app.subCategory))
-                                }
-                                Text(app.desc).font(.caption2).foregroundColor(.secondary).lineLimit(1)
-                            }
+                ScrollView {
+                    LazyVStack(spacing: Theme.Spacing.sm) {
+                        ForEach(filteredApps) { app in
+                            AppRowCard(
+                                app: app,
+                                filterType: filterType,
+                                isSelected: selectedAppIds.contains(app.id),
+                                aiResult: service.aiAnalysisMap[app.id],
+                                subCategoryColor: subCategoryColor,
+                                onToggle: {
+                                    if selectedAppIds.contains(app.id) {
+                                        selectedAppIds.remove(app.id)
+                                    } else {
+                                        selectedAppIds.insert(app.id)
+                                    }
+                                },
+                                onAction: { action in
+                                    pendingAction = action
+                                    pendingAppIds = [app.id]
+                                    showActionConfirm = true
+                                },
+                                formatSize: { service.formatSize($0) },
+                                localizer: localizer
+                            )
                         }
-                    }.width(min: 220)
-                    TableColumn(localizer.riskCol) { app in
-                        HStack(spacing: 3) {
-                            let rc: Color = app.risk == "safe" ? .green : app.risk == "dangerous" ? .red : .orange
-                            let rl: String = app.risk == "safe" ? localizer.safe : app.risk == "dangerous" ? localizer.dangerous : localizer.warning
-                            Image(systemName: app.risk == "safe" ? "checkmark.circle.fill" : app.risk == "dangerous" ? "xmark.circle.fill" : "exclamationmark.triangle.fill")
-                                .foregroundColor(rc).font(.caption)
-                            Text(rl).font(.caption2).fontWeight(.medium).foregroundColor(rc)
-                        }
-                    }.width(60)
-                    TableColumn(localizer.impactCol) { app in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(app.riskDesc).font(.caption2).foregroundColor(.orange).lineLimit(2)
-                            if let aiResult = service.aiAnalysisMap[app.id] {
-                                Text(aiResult).font(.caption2).fontWeight(.medium)
-                                    .foregroundColor(aiResult.hasPrefix("🤖") ? .purple : aiResult.hasPrefix("❌") ? .red : aiResult.hasPrefix("⚠️") ? .yellow : .secondary)
-                                    .lineLimit(2)
-                            }
-                        }
-                    }.width(min: 140)
-                    TableColumn(localizer.sizeCol) { app in
-                        Text(service.formatSize(app.totalSize)).fontWeight(.bold).monospacedDigit().foregroundColor(.cyan)
-                    }.width(80)
-                    TableColumn(localizer.actionCol) { app in
-                        HStack(spacing: 4) {
-                            if app.canClean || app.canReset {
-                                Button { pendingAction = .reset; pendingAppIds = [app.id]; showActionConfirm = true } label: { Image(systemName: "arrow.counterclockwise").font(.caption) }
-                                    .buttonStyle(.bordered).controlSize(.mini).tint(.orange)
-                            }
-                            if app.canUninstall {
-                                Button { pendingAction = .basicUninstall; pendingAppIds = [app.id]; showActionConfirm = true } label: { Image(systemName: "xmark.circle").font(.caption) }
-                                    .buttonStyle(.bordered).controlSize(.mini)
-                                Button { pendingAction = .fullUninstall; pendingAppIds = [app.id]; showActionConfirm = true } label: { Image(systemName: "trash").font(.caption) }
-                                    .buttonStyle(.bordered).controlSize(.mini).tint(.red)
-                            }
-                        }
-                    }.width(90)
+                    }
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.vertical, Theme.Spacing.sm)
                 }
-                .tableStyle(.inset(alternatesRowBackgrounds: true))
             }
         }
         .onAppear { if service.installedApps.isEmpty { Task { await service.scanInstalledApps() } } }
-        .alert(localizer.actionConfirm, isPresented: $showActionConfirm) {
-            Button(localizer.cancelBtn, role: .cancel) {}
-            Button(localizer.confirmBtn, role: .destructive) { performAction() }
-        } message: {
-            let apps = selectedApps
-            let size = pendingAction == .basicUninstall ? apps.reduce(Int64(0)) { $0 + $1.appSize } : apps.reduce(Int64(0)) { $0 + $1.totalSize }
-            Text("\(pendingAction.desc(localizer))\n\n\(localizer.willAction)\(pendingAction.label(localizer)) \(apps.count) \(localizer.itemsLabel)，\(localizer.total) \(service.formatSize(size))")
+        .overlay {
+            if showActionConfirm {
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                        .onTapGesture { showActionConfirm = false }
+
+                    CardView(cornerRadius: Theme.Radius.lg) {
+                        VStack(spacing: Theme.Spacing.lg) {
+                            Image(systemName: pendingAction.icon)
+                                .font(.system(size: 28))
+                                .foregroundStyle(pendingAction.color)
+                                .frame(width: 52, height: 52)
+                                .background(pendingAction.color.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+
+                            Text(localizer.actionConfirm)
+                                .font(Theme.Font.headline)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+
+                            let apps = selectedApps
+                            let size = pendingAction == .basicUninstall ? apps.reduce(Int64(0)) { $0 + $1.appSize } : apps.reduce(Int64(0)) { $0 + $1.totalSize }
+
+                            VStack(spacing: Theme.Spacing.xs) {
+                                Text(pendingAction.desc(localizer))
+                                    .font(Theme.Font.body)
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                Text("\(localizer.willAction)\(pendingAction.label(localizer)) \(apps.count) \(localizer.itemsLabel)，\(localizer.total) \(service.formatSize(size))")
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                            }
+
+                            HStack(spacing: Theme.Spacing.md) {
+                                Button { showActionConfirm = false } label: {
+                                    Text(localizer.cancelBtn)
+                                        .font(Theme.Font.subheadlineMedium)
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, Theme.Spacing.sm)
+                                        .background(Theme.Colors.cardBg)
+                                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                                .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    showActionConfirm = false
+                                    performAction()
+                                } label: {
+                                    Text(localizer.confirmBtn)
+                                        .font(Theme.Font.subheadlineMedium)
+                                        .foregroundStyle(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, Theme.Spacing.sm)
+                                        .background(Theme.Colors.danger)
+                                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .frame(width: 360)
+                }
+            }
         }
-        .alert(localizer.actionDone, isPresented: $showActionResult) {
-            Button(localizer.confirmBtn) {}
-        } message: { Text(actionResultMsg) }
+        .overlay {
+            if showActionResult {
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                        .onTapGesture { showActionResult = false }
+
+                    CardView(cornerRadius: Theme.Radius.lg) {
+                        VStack(spacing: Theme.Spacing.lg) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 32))
+                                .foregroundStyle(Theme.Colors.success)
+                                .frame(width: 52, height: 52)
+
+                            Text(localizer.actionDone)
+                                .font(Theme.Font.headline)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+
+                            Text(actionResultMsg)
+                                .font(Theme.Font.body)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+
+                            Button { showActionResult = false } label: {
+                                Text(localizer.confirmBtn)
+                                    .font(Theme.Font.subheadlineMedium)
+                                    .foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, Theme.Spacing.sm)
+                                    .background(Theme.Colors.accent)
+                                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .frame(width: 340)
+                }
+            }
+        }
     }
 
     private func subCategoryColor(_ cat: String) -> Color {
@@ -2287,6 +3166,18 @@ struct AppManagerTab: View {
         case "应用", "Apps": .cyan
         case "其它", "Other": .gray
         default: .gray
+        }
+    }
+
+    private func subCategoryIconName(_ cat: String) -> String {
+        switch cat {
+        case "AI Agent": "cpu"
+        case "CLI": "terminal"
+        case "包管理", "Package Manager": "cube.box"
+        case "开发", "Development": "hammer"
+        case "应用", "Apps": "app.fill"
+        case "其它", "Other": "questionmark.folder"
+        default: "folder"
         }
     }
 
@@ -2339,6 +3230,54 @@ struct ActionCard: View {
     }
 }
 
+struct ScanActionCard: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let iconColor: Color
+    let isDisabled: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: Theme.Spacing.lg) {
+                ZStack {
+                    Circle()
+                        .fill(iconColor.opacity(isHovered && !isDisabled ? 0.3 : 0.15))
+                        .frame(width: 64, height: 64)
+                    Image(systemName: icon)
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundStyle(isDisabled ? Theme.Colors.textTertiary : iconColor)
+                }
+                VStack(spacing: Theme.Spacing.xs) {
+                    Text(title)
+                        .font(Theme.Font.headline)
+                        .foregroundStyle(isDisabled ? Theme.Colors.textTertiary : Theme.Colors.textPrimary)
+                    Text(subtitle)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
+            }
+            .frame(width: 170, height: 160)
+            .padding(Theme.Spacing.lg)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                    .fill(isHovered && !isDisabled ? iconColor.opacity(0.06) : Theme.Colors.cardBg)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                    .stroke(isHovered && !isDisabled ? iconColor.opacity(0.4) : Color.primary.opacity(0.06), lineWidth: isHovered && !isDisabled ? 2 : 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .onHover { isHovered = $0 }
+    }
+}
+
 struct RiskFilterButton: View {
     let label: String; let color: Color; let isActive: Bool; let action: () -> Void
     var body: some View {
@@ -2351,63 +3290,37 @@ struct RiskFilterButton: View {
     }
 }
 
+struct RiskPillFilterButton: View {
+    let label: String
+    let color: Color
+    let isActive: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(isActive ? color : Theme.Colors.textTertiary)
+                .padding(.horizontal, Theme.Spacing.sm)
+                .padding(.vertical, Theme.Spacing.xs)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .fill(isActive ? color.opacity(0.12) : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(isActive ? color.opacity(0.4) : Theme.Colors.separator, lineWidth: isActive ? 1.5 : 0.5)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct DiskStat: View {
     let title: String; let value: String; var color: Color = .primary
     var body: some View { VStack(spacing: 2) { Text(title).font(.caption2).foregroundColor(.secondary).textCase(.uppercase); Text(value).font(.title3).fontWeight(.bold).foregroundColor(color) } }
 }
 
-struct SubCategoryChip: View {
-    let label: String
-    let count: Int
-    let isActive: Bool
-    let color: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: subCategoryIcon(label))
-                    .font(.caption2)
-                    .foregroundColor(isActive ? .white : color)
-                Text(label)
-                    .font(.caption)
-                    .fontWeight(isActive ? .semibold : .regular)
-                    .foregroundColor(isActive ? .white : .primary)
-                Text("\(count)")
-                    .font(.caption2)
-                    .fontWeight(.medium)
-                    .foregroundColor(isActive ? .white.opacity(0.8) : .secondary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(isActive ? Color.white.opacity(0.2) : color.opacity(0.1))
-                    .cornerRadius(6)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isActive ? color : Color(nsColor: .controlBackgroundColor))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isActive ? color.opacity(0.6) : color.opacity(0.3), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func subCategoryIcon(_ cat: String) -> String {
-        switch cat {
-        case "AI Agent": "cpu"
-        case "CLI": "terminal"
-        case "包管理", "Package Manager": "cube.box"
-        case "开发", "Development": "hammer"
-        case "应用", "Apps": "app.fill"
-        case "其它", "Other": "questionmark.folder"
-        default: "folder"
-        }
-    }
-}
 
 // MARK: - Sensor Monitor Tab
 

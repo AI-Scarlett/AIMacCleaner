@@ -41,13 +41,13 @@ struct IntelMigrationTab: View {
                 subtitle: localizer.subMigration,
                 color: .purple,
                 trailing: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Theme.Spacing.sm) {
                         if scanner.isScanning {
                             ProgressView()
                                 .scaleEffect(0.7)
                             Text(scanner.scanProgress)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
                         }
                         Button {
                             Task {
@@ -61,18 +61,29 @@ struct IntelMigrationTab: View {
                             }
                         } label: {
                             if isPreScanning {
-                                HStack(spacing: 4) {
+                                HStack(spacing: Theme.Spacing.xs) {
                                     ProgressView()
                                         .scaleEffect(0.6)
                                     Text(localizer.scanningAppList)
-                                        .font(.caption)
+                                        .font(Theme.Font.caption)
                                 }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, Theme.Spacing.md)
+                                .padding(.vertical, Theme.Spacing.xs)
+                                .background(Theme.Gradients.accent)
+                                .clipShape(Capsule())
                             } else {
                                 Label(localizer.startScan, systemImage: "magnifyingglass")
+                                    .font(Theme.Font.captionMedium)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, Theme.Spacing.md)
+                                    .padding(.vertical, Theme.Spacing.xs)
+                                    .background(Theme.Gradients.accent)
+                                    .clipShape(Capsule())
                             }
                         }
+                        .buttonStyle(.plain)
                         .disabled(scanner.isScanning || isPreScanning)
-                        .buttonStyle(.borderedProminent)
                     }
                 }
             )
@@ -120,83 +131,117 @@ struct IntelMigrationTab: View {
     }
 
     private var statsBar: some View {
-        HStack(spacing: 16) {
-            StatBadge(icon: "cpu", label: localizer.needAdaptLabel, value: "\(scanner.intelOnlyCount)", color: Color.red)
-            StatBadge(icon: "arrow.triangle.2.circlepath", label: localizer.universalBinLabel, value: "\(scanner.universalCount)", color: Color.blue)
-            StatBadge(icon: "cpu", label: localizer.armNative, value: "\(scanner.armNativeCount)", color: Color.green)
-            if scanner.intelOnlyCount > 0 {
-                StatBadge(icon: "externaldrive", label: localizer.releasableSpace, value: scanner.totalIntelSizeFormatted, color: Color.orange)
+        VStack(spacing: Theme.Spacing.md) {
+            DashboardGrid(columns: 4) {
+                StatCardView(icon: "cpu", iconColor: Theme.Colors.danger, title: localizer.needAdaptLabel, value: "\(scanner.intelOnlyCount)", subtitle: nil)
+                StatCardView(icon: "arrow.triangle.2.circlepath", iconColor: Theme.Colors.info, title: localizer.universalBinLabel, value: "\(scanner.universalCount)", subtitle: nil)
+                StatCardView(icon: "cpu", iconColor: Theme.Colors.success, title: localizer.armNative, value: "\(scanner.armNativeCount)", subtitle: nil)
+                StatCardView(icon: "externaldrive", iconColor: Theme.Colors.warning, title: localizer.releasableSpace, value: scanner.intelOnlyCount > 0 ? scanner.totalIntelSizeFormatted : "—", subtitle: nil)
             }
-            Spacer()
-            Text("\(localizer.scannedCount) \(scanner.totalScanned) \(localizer.itemsLabel)")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            Toggle(localizer.showIntelOnly, isOn: $showIntelOnly)
-                .toggleStyle(.checkbox)
-                .font(.caption)
+            HStack(spacing: Theme.Spacing.lg) {
+                if scanner.totalScanned > 0 {
+                    let progress = 1.0 - (scanner.totalScanned > 0 ? Double(scanner.intelOnlyCount) / Double(scanner.totalScanned) : 0)
+                    ProgressRing(progress: progress, lineWidth: 4, size: 28, color: Theme.Colors.purple, showLabel: true)
+                }
+                Spacer()
+                Text("\(localizer.scannedCount) \(scanner.totalScanned) \(localizer.itemsLabel)")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                Toggle(localizer.showIntelOnly, isOn: $showIntelOnly)
+                    .toggleStyle(.checkbox)
+                    .font(Theme.Font.caption)
+            }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.md)
     }
 
     private var filterBar: some View {
-        HStack(spacing: 8) {
-            FilterChip(label: localizer.all, isSelected: filterType == nil) { filterType = nil }
-            ForEach(IntelAppInfo.IntelAppType.allCases, id: \.self) { type in
-                FilterChip(label: type.rawValue, icon: type.icon, isSelected: filterType == type) {
-                    filterType = type
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Theme.Spacing.sm) {
+                filterPill(label: localizer.all, isSelected: filterType == nil) { filterType = nil }
+                ForEach(IntelAppInfo.IntelAppType.allCases, id: \.self) { type in
+                    filterPill(label: type.rawValue, icon: type.icon, isSelected: filterType == type) {
+                        filterType = type
+                    }
                 }
+                Rectangle()
+                    .fill(Theme.Colors.separator)
+                    .frame(width: 1, height: 16)
+                filterPill(label: "Intel", icon: "cpu", isSelected: filterArch == .x86_64) { filterArch = filterArch == .x86_64 ? nil : .x86_64 }
+                filterPill(label: localizer.universalBinary, icon: "arrow.triangle.2.circlepath", isSelected: filterArch == .universal) { filterArch = filterArch == .universal ? nil : .universal }
+                Spacer(minLength: Theme.Spacing.md)
+                HStack(spacing: Theme.Spacing.xs) {
+                    Image(systemName: "magnifyingglass")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    TextField(localizer.searchingPlaceholder, text: $searchText)
+                        .textFieldStyle(.plain)
+                        .frame(width: 120)
+                }
+                .padding(.horizontal, Theme.Spacing.sm)
+                .padding(.vertical, Theme.Spacing.xs)
+                .background(Theme.Colors.cardBg)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             }
-            Divider().frame(height: 16)
-            FilterChip(label: "Intel", icon: "cpu", isSelected: filterArch == .x86_64) { filterArch = filterArch == .x86_64 ? nil : .x86_64 }
-            FilterChip(label: localizer.universalBinary, icon: "arrow.triangle.2.circlepath", isSelected: filterArch == .universal) { filterArch = filterArch == .universal ? nil : .universal }
-            Spacer()
-            HStack(spacing: 4) {
-                Image(systemName: "magnifyingglass")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                TextField(localizer.searchingPlaceholder, text: $searchText)
-                    .textFieldStyle(.plain)
-                    .frame(width: 120)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color(nsColor: .textBackgroundColor))
-            .cornerRadius(6)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.sm)
+    }
+
+    private func filterPill(label: String, icon: String? = nil, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: Theme.Spacing.xs) {
+                if let ic = icon {
+                    Image(systemName: ic)
+                        .font(Theme.Font.caption)
+                }
+                Text(label)
+                    .font(Theme.Font.captionMedium)
+            }
+            .foregroundStyle(isSelected ? Theme.Colors.accent : Theme.Colors.textSecondary)
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, Theme.Spacing.xs)
+            .background(isSelected ? Theme.Colors.accent.opacity(0.12) : Color.clear)
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(isSelected ? Theme.Colors.accent.opacity(0.3) : Theme.Colors.separator, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var itemList: some View {
-        List(selection: $selectedAppId) {
-            ForEach(filteredItems) { item in
-                IntelAppRow(item: item, scanner: scanner, onReplace: {
-                    pendingReplaceApp = item
-                    showReplaceConfirm = true
-                }, onUninstall: {
-                    pendingUninstallApp = item
-                    showUninstallConfirm = true
-                })
-                .tag(item.id)
+        ScrollView {
+            LazyVStack(spacing: Theme.Spacing.sm) {
+                ForEach(filteredItems) { item in
+                    IntelAppRow(item: item, scanner: scanner, onReplace: {
+                        pendingReplaceApp = item
+                        showReplaceConfirm = true
+                    }, onUninstall: {
+                        pendingUninstallApp = item
+                        showUninstallConfirm = true
+                    })
+                }
             }
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.sm)
         }
-        .listStyle(.inset)
     }
 
     private var emptyView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Theme.Spacing.lg) {
             Spacer()
             Image(systemName: "arrow.triangle.2.circlepath")
                 .font(.system(size: 48))
-                .foregroundColor(.purple)
+                .foregroundStyle(Theme.Colors.purple)
             Text(localizer.clickScanToDetect)
-                .font(.title2)
+                .font(Theme.Font.title2)
                 .fontWeight(.medium)
             Text("\(localizer.scanDesc1)\n\(localizer.scanDesc2)")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+                .font(Theme.Font.subheadline)
+                .foregroundStyle(Theme.Colors.textSecondary)
                 .multilineTextAlignment(.center)
             Button {
                 Task {
@@ -210,35 +255,44 @@ struct IntelMigrationTab: View {
                 }
             } label: {
                 Label(localizer.startScan, systemImage: "magnifyingglass")
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 8)
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(Theme.Gradients.accent)
+                    .clipShape(Capsule())
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.purple)
+            .buttonStyle(.plain)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var scanningView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Theme.Spacing.lg) {
             Spacer()
-            ProgressView()
-                .scaleEffect(1.5)
+            ZStack {
+                Circle()
+                    .stroke(Theme.Colors.purple.opacity(0.1), lineWidth: 6)
+                    .frame(width: 80, height: 80)
+                ProgressView()
+                    .scaleEffect(1.2)
+                    .tint(Theme.Colors.purple)
+            }
             if isPreScanning {
                 Text(localizer.scanningAppList)
-                    .font(.headline)
-                    .foregroundColor(.purple)
+                    .font(Theme.Font.headline)
+                    .foregroundStyle(Theme.Colors.purple)
                 Text(localizer.firstScanHint)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(Theme.Font.subheadline)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             } else {
                 Text(localizer.detectingArch)
-                    .font(.headline)
-                    .foregroundColor(.purple)
+                    .font(Theme.Font.headline)
+                    .foregroundStyle(Theme.Colors.purple)
                 Text(scanner.scanProgress.isEmpty ? localizer.detectingArchWithLipo : scanner.scanProgress)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(Theme.Font.subheadline)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
             Spacer()
         }
@@ -246,17 +300,17 @@ struct IntelMigrationTab: View {
     }
 
     private var noIntelView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Theme.Spacing.lg) {
             Spacer()
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 48))
-                .foregroundColor(.green)
+                .foregroundStyle(Theme.Colors.success)
             Text(localizer.allAdapted)
-                .font(.title2)
+                .font(Theme.Font.title2)
                 .fontWeight(.medium)
             Text(localizer.noIntelApps)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+                .font(Theme.Font.subheadline)
+                .foregroundStyle(Theme.Colors.textSecondary)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -271,63 +325,45 @@ struct IntelAppRow: View {
     let onUninstall: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.Spacing.md) {
             Image(systemName: item.appType.icon)
                 .font(.title3)
-                .foregroundColor(item.appType.color)
-                .frame(width: 28)
+                .foregroundStyle(item.appType.color)
+                .frame(width: 32, height: 32)
+                .background(item.appType.color.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+                HStack(spacing: Theme.Spacing.xs) {
                     Text(item.displayName)
-                        .fontWeight(.medium)
-                    Text(item.architecture.badge)
-                        .font(.caption2)
-                        .fontWeight(.bold)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(item.architecture.color.opacity(0.15))
-                        .foregroundColor(item.architecture.color)
-                        .cornerRadius(4)
-                    Text(item.appType.localizedLabel(localizer))
-                        .font(.caption2)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(item.appType.color.opacity(0.1))
-                        .foregroundColor(item.appType.color)
-                        .cornerRadius(4)
+                        .font(Theme.Font.bodyMedium)
+                    PillBadge(text: item.architecture.badge, color: archBadgeColor)
+                    PillBadge(text: item.appType.localizedLabel(localizer), color: item.appType.color)
                     if item.architecture.isIntel {
-                        Text(localizer.needAdapt)
-                            .font(.caption2)
-                            .fontWeight(.bold)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Color.red.opacity(0.15))
-                            .foregroundColor(.red)
-                            .cornerRadius(4)
+                        PillBadge(text: localizer.needAdapt, color: Theme.Colors.danger)
                     }
                 }
                 Text(item.path)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
                     .lineLimit(1)
             }
 
             Spacer()
 
             Text(item.sizeFormatted)
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(Theme.Colors.textSecondary)
                 .frame(width: 70, alignment: .trailing)
 
             if let v = item.version, !v.isEmpty {
                 Text("v\(v)")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
                     .frame(width: 50, alignment: .trailing)
             }
 
-            HStack(spacing: 6) {
+            HStack(spacing: Theme.Spacing.xs) {
                 if item.isSearching {
                     ProgressView()
                         .scaleEffect(0.6)
@@ -335,51 +371,38 @@ struct IntelAppRow: View {
                 }
 
                 if item.replaceState == .uninstalling || item.replaceState == .installing {
-                    ZStack {
-                        Circle()
-                            .stroke(Color.gray.opacity(0.2), lineWidth: 2)
-                            .frame(width: 22, height: 22)
-                        Circle()
-                            .trim(from: 0, to: item.replaceProgress)
-                            .stroke(item.replaceState.color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                            .frame(width: 22, height: 22)
-                            .rotationEffect(.degrees(-90))
-                        Text("\(Int(item.replaceProgress * 100))")
-                            .font(.system(size: 7))
-                            .fontWeight(.bold)
-                            .foregroundColor(item.replaceState.color)
-                    }
-                    Text(item.replaceState.label)
-                        .font(.caption2)
-                        .foregroundColor(item.replaceState.color)
+                    ProgressRing(progress: item.replaceProgress, lineWidth: 2, size: 22, color: item.replaceState.color, bgColor: Color.gray.opacity(0.2), showLabel: false)
+                    Text(item.replaceState.localizedLabel(localizer))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(item.replaceState.color)
                 } else if item.replaceState == .completed {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.caption)
-                        .foregroundColor(.green)
+                        .foregroundStyle(Theme.Colors.success)
                 } else if item.replaceState == .failed {
                     Image(systemName: "xmark.circle.fill")
                         .font(.caption)
-                        .foregroundColor(.red)
+                        .foregroundStyle(Theme.Colors.danger)
                 } else if item.architecture.isIntel {
                     Button {
                         onReplace()
                     } label: {
                         HStack(spacing: 2) {
                             Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.caption2)
+                                .font(Theme.Font.caption)
                             Text(localizer.replaceBtn)
-                                .font(.caption2)
+                                .font(Theme.Font.caption)
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.purple)
+                    .tint(Theme.Colors.purple)
                     .help(localizer.uninstallIntelAndInstallARM)
 
                     Button {
                         Task { await scanner.searchDownloadLink(for: item) }
                     } label: {
                         Image(systemName: "magnifyingglass")
-                            .font(.caption)
+                            .font(Theme.Font.caption)
                     }
                     .buttonStyle(.bordered)
                     .help(localizer.searchARMDownload)
@@ -390,7 +413,7 @@ struct IntelAppRow: View {
                         Task { await scanner.searchDownloadLink(for: item) }
                     } label: {
                         Image(systemName: "magnifyingglass")
-                            .font(.caption)
+                            .font(Theme.Font.caption)
                     }
                     .buttonStyle(.bordered)
                     .help(localizer.searchPureARM)
@@ -401,7 +424,7 @@ struct IntelAppRow: View {
                         if let u = URL(string: url) { NSWorkspace.shared.open(u) }
                     } label: {
                         Image(systemName: "arrow.down.to.line")
-                            .font(.caption)
+                            .font(Theme.Font.caption)
                     }
                     .buttonStyle(.bordered)
                     .help(localizer.openDownloadLink + ": \(url)")
@@ -411,14 +434,25 @@ struct IntelAppRow: View {
                     onUninstall()
                 } label: {
                     Image(systemName: "trash")
-                        .font(.caption)
+                        .font(Theme.Font.caption)
                 }
                 .buttonStyle(.bordered)
-                .foregroundColor(.red)
+                .foregroundColor(Theme.Colors.danger)
                 .help(localizer.uninstallLabel)
             }
         }
-        .padding(.vertical, 4)
+        .cardStyle(padding: Theme.Spacing.md, cornerRadius: Theme.Radius.md)
+    }
+
+    private var archBadgeColor: Color {
+        switch item.architecture {
+        case .x86_64: return Theme.Colors.danger
+        case .arm64: return Theme.Colors.success
+        case .universal: return Theme.Colors.info
+        case .rosetta: return Theme.Colors.warning
+        case .unknown: return Theme.Colors.textTertiary
+        @unknown default: return Theme.Colors.textTertiary
+        }
     }
 }
 

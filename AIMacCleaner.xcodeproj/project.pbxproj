@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2A3B4C5D6E7F8A9B0C1D2E3F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7A8B9C0D1E2F /* Theme.swift */; };
 		4FCB5CD83382DA42D96D7965 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0B9B53C5E13BA699005761 /* ContentView.swift */; };
 		5A4D9E1F2B3C4D5E6F7A8B9C /* MenuBarMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B5E0F2A3C4D5E6F7A8B9C0D /* MenuBarMonitor.swift */; };
 		8C7E0F3A4B5C6D7E8F9A0B1C /* OperationMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D8F1A2B3C4D5E6F7A8B9C0E /* OperationMonitor.swift */; };
@@ -26,6 +27,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		1A2B3C4D5E6F7A8B9C0D1E2F /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		4F0B9B53C5E13BA699005761 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		6B5E0F2A3C4D5E6F7A8B9C0D /* MenuBarMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarMonitor.swift; sourceTree = "<group>"; };
 		9D8F1A2B3C4D5E6F7A8B9C0E /* OperationMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperationMonitor.swift; sourceTree = "<group>"; };
@@ -81,6 +83,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				B2C3D4E5F6A7B8C9D0E1F2A3 /* SensorMonitor.swift */,
 				D4E5F6A7B8C9D0E1F2A3B4C5 /* StorageAnalyzer.swift */,
 				F6A7B8C9D0E1F2A3B4C5D6E7 /* SettingsView.swift */,
+			1A2B3C4D5E6F7A8B9C0D1E2F /* Theme.swift */,
 			F7A8B9C0D1E2F3A4B5C6D7E8 /* Localizer.swift */,
 			C3109E2D93F7928BE4CFFF2F /* Models.swift */,
 				8B4C9D0E1F2A3B4C5D6E7F8A /* ScanRules.swift */,
@@ -174,6 +177,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				DD8768E775E3FCAEE527E7C9 /* Models.swift in Sources */,
 				7A3B8C9D0E1F2A3B4C5D6E7F /* ScanRules.swift in Sources */,
 				BE25C05BB068770416C5ED04 /* ScannerService.swift in Sources */,
+			2A3B4C5D6E7F8A9B0C1D2E3F /* Theme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

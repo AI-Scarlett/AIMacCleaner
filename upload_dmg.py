@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "1.9.5"
+VERSION = "2.0.0"
 DMG_PATH = f"/tmp/AIMacCleaner-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -33,22 +33,24 @@ if response.status_code == 200:
     print(f"Release {TAG} already exists (id={release_id})")
 else:
     print(f"Creating new release {TAG}...")
-    body_text = """## v1.9.5 修复磁盘空间不更新 + 更新后权限重置
+    body_text = """## v2.0.0 全面UI商业化重构 - 现代SaaS仪表盘风格
 
-### 🐛 关键修复
-- **磁盘空间清理后不更新** - 修复Mac清理删除后"可用"和"已使用"不变化的问题
-  - **根因**：删除操作使用 `moveToTrash`（移到回收站），文件仍在磁盘上
-  - **修复**：Mac清理的删除操作改为永久删除（缓存/日志等不需要恢复），磁盘空间立即释放
-  - APP管理/依赖管理的卸载操作仍使用移到回收站
+### 🎨 UI全面重构
+- **设计系统** - 新增 Theme.swift 统一设计系统（颜色/字体/间距/圆角/阴影/渐变）
+- **侧边栏** - 渐变Logo、彩色指示条、hover效果、精致折叠动画
+- **Mac清理** - ProgressRing磁盘可视化、DashboardGrid统计卡片、渐变扫描按钮、卡片式结果列表
+- **Agent监控** - 自定义分段控制器、StatCardView统计概览、ProgressRing活跃度、PillBadge操作类型
+- **APP/依赖/工具管理** - PillBadge筛选、实色圆角操作按钮、CardView确认弹窗
+- **适配检测** - StatCardView统计、ProgressRing扫描进度、PillBadge架构标签
+- **菜单栏** - 渐变Tab指示器、StatCardView硬件卡片、ProgressRing磁盘、精致底部操作栏
+- **设置面板** - 圆角导航+指示条、.cardStyle设置项、SectionHeader分组
 
-- **更新后重新获取权限** - 修复更新安装后系统重新请求权限的问题
-  - **根因**：`cp -R` 不保留扩展属性和ACL，ad-hoc签名每次不同
-  - **修复**：改用 `ditto`（保留资源fork和扩展属性），更新后重新执行 ad-hoc 签名，清除所有 quarantine 属性
-
-### 🐛 遗留修复
-- 更新安装后应用不自动启动（v1.9.4）
-- 磁盘可用空间清理后不更新（v1.9.3）
-- "退出并安装"按钮无效（v1.9.2）
+### 🐛 Bug修复
+- 磁盘空间清理后不更新（永久删除）
+- 更新后权限重置（ditto+codesign）
+- 更新后不自动启动
+- Agent审计扫描卡死
+- OperationMonitor线程爆炸
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',

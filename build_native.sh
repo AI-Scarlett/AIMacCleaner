@@ -3,7 +3,7 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="AIMacCleaner"
-VERSION="1.9.5"
+VERSION="2.0.0"
 BUILD_DIR="/tmp/AIMacCleaner_build"
 DMG_NAME="AIMacCleaner-v${VERSION}-arm64"
 STAGING_DIR="/tmp/AIMacCleaner_dmg_staging"
@@ -27,6 +27,7 @@ SWIFT_FILES=(
     "SettingsView.swift"
     "AIConfigView.swift"
     "Localizer.swift"
+    "Theme.swift"
     "MenuBarMonitor.swift"
     "OperationMonitor.swift"
     "AgentSessionScanner.swift"
