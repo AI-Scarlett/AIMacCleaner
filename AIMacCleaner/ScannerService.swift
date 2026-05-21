@@ -416,6 +416,7 @@ class ScannerService: ObservableObject {
         }.value
 
         scanItems = items
+        refreshDiskInfo()
         isScanning = false
     }
 
@@ -556,6 +557,7 @@ class ScannerService: ObservableObject {
         let result = await callLLM(config: config, dirInfo: dirInfo)
 
         isAiScanning = false
+        refreshDiskInfo()
 
         if result.success, let items = result.items {
             let localIds = Set(scanItems.map(\.id))
@@ -577,6 +579,7 @@ class ScannerService: ObservableObject {
             await startAiScan()
         }
         isEnhancedScanning = false
+        refreshDiskInfo()
     }
 
     // MARK: - App Management
@@ -1582,7 +1585,7 @@ class ScannerService: ObservableObject {
         refreshDiskInfo()
         refreshHardwareInfo()
         checkAndAlert()
-        monitorTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+        monitorTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshDiskInfo()
                 self?.checkAndAlert()
@@ -1639,7 +1642,7 @@ class ScannerService: ObservableObject {
     @Published var updateErrorMessage: String = ""
     @Published var isInstallingUpdate: Bool = false
 
-    let currentVersion = "1.9.2"
+    let currentVersion = "1.9.3"
 
     private var updateCheckTimer: Timer?
     private var downloadSession: URLSession?

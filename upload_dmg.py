@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "1.9.2"
+VERSION = "1.9.3"
 DMG_PATH = f"/tmp/AIMacCleaner-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -33,15 +33,17 @@ if response.status_code == 200:
     print(f"Release {TAG} already exists (id={release_id})")
 else:
     print(f"Creating new release {TAG}...")
-    body_text = """## v1.9.2 修复"退出并安装"按钮点击无效
+    body_text = """## v1.9.3 修复磁盘可用空间清理后不更新
 
 ### 🐛 关键修复
-- **"退出并安装"按钮点击无效果** - 修复更新下载完成后点击"退出并安装"按钮无任何反应的问题
-  - **根因**：`installUpdate()` 使用 `/usr/bin/setsid` 启动安装进程，但 macOS 不自带 `setsid` 命令（Linux专有），导致 `Process.run()` 抛出异常
-  - **修复**：改用 `/bin/bash -c "nohup ... &"` 模式启动独立安装进程，macOS 原生支持
-  - 额外修复：DMG 文件不存在时正确重置 `updateReadyToInstall` 状态，避免按钮残留
+- **磁盘可用空间清理后不更新** - 修复Mac清理扫描删除后，页面磁盘可用空间显示没有变化的问题
+  - 本地扫描/AI扫描/增强扫描完成后自动刷新磁盘信息
+  - 删除操作后延迟2秒+1秒双重刷新，确保文件系统缓存更新
+  - MacCleanerTab 页面出现时立即刷新磁盘信息
+  - 磁盘监控定时器间隔从 5分钟 缩短为 1分钟
 
 ### 🐛 遗留修复
+- "退出并安装"按钮无效（v1.9.2）
 - Agent审计扫描卡死（v1.9.1）
 - OperationMonitor线程爆炸/hang（v1.9.1）
 """

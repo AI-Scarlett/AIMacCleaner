@@ -69,6 +69,7 @@ struct ContentView: View {
             detailContent
         }
         .frame(minWidth: 960, minHeight: 640)
+        .onAppear { service.refreshDiskInfo() }
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(service)
@@ -2048,7 +2049,7 @@ struct MacCleanerTab: View {
     private func performAiScan() async { if service.aiConfig?.hasKey != true { showSettings = true; return }; await service.startAiScan() }
     private func confirmDeleteSelected() { deleteTargetIds = Array(selectedIds); showDeleteConfirm = true }
     private func confirmDeleteSingle(_ item: ScanItem) { deleteTargetIds = [item.id]; showDeleteConfirm = true }
-    private func performDelete() { let s = service.scanItems.filter { deleteTargetIds.contains($0.id) }.reduce(Int64(0)) { $0 + $1.size }; let c = deleteTargetIds.count; Task { let _ = await service.deleteItems(ids: deleteTargetIds); service.removeScannedItems(ids: deleteTargetIds); selectedIds.subtract(deleteTargetIds); deleteTargetIds = []; try? await Task.sleep(nanoseconds: 1_500_000_000); service.refreshDiskInfo(); cleanedSize = s; cleanedCount = c; showCleanResult = true } }
+    private func performDelete() { let s = service.scanItems.filter { deleteTargetIds.contains($0.id) }.reduce(Int64(0)) { $0 + $1.size }; let c = deleteTargetIds.count; Task { let _ = await service.deleteItems(ids: deleteTargetIds); service.removeScannedItems(ids: deleteTargetIds); selectedIds.subtract(deleteTargetIds); deleteTargetIds = []; try? await Task.sleep(nanoseconds: 2_000_000_000); service.refreshDiskInfo(); try? await Task.sleep(nanoseconds: 1_000_000_000); service.refreshDiskInfo(); cleanedSize = s; cleanedCount = c; showCleanResult = true } }
     private func ignoreSelected() { service.ignoreItems(ids: Array(selectedIds)); selectedIds.removeAll() }
     private func toggleIgnore(_ item: ScanItem) { if item.ignored { service.unignoreItems(ids: [item.id]) } else { service.ignoreItems(ids: [item.id]) } }
 }
