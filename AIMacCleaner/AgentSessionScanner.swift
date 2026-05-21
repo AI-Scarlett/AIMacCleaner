@@ -25,6 +25,8 @@ class AgentSessionScanner: ObservableObject {
     @Published var isScanning: Bool = false
     @Published var scanError: String = ""
 
+    weak var localizer: Localizer?
+
     private let fileManager = FileManager.default
     private var dataSources: [AgentDataSource] = []
 
@@ -179,7 +181,7 @@ class AgentSessionScanner: ObservableObject {
     func scanAllAgents() {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            DispatchQueue.main.async { self.isScanning = true; self.scanError = "" }
+            DispatchQueue.main.async { self.scanError = "" }
 
             var merged: [String: DiscoveredAgent] = [:]
 
@@ -284,7 +286,7 @@ class AgentSessionScanner: ObservableObject {
     func scanAgentOps(agentName: String) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            DispatchQueue.main.async { self.isScanning = true; self.scanError = "" }
+            DispatchQueue.main.async { self.scanError = "" }
 
             var allRecords: [AgentOpRecord] = []
             let home = NSHomeDirectory()
@@ -721,9 +723,12 @@ class AgentSessionScanner: ObservableObject {
                         let input = block["input"] as? [String: Any] ?? [:]
                         let targetPath = input["file_path"] as? String
                             ?? input["path"] as? String
-                            ?? input["command"] as? String
                             ?? ""
                         let opType = classifyOpType(toolName)
+                        var detail = ""
+                        if toolName.lowercased().contains("bash") || toolName.lowercased().contains("shell") || toolName.lowercased().contains("command") {
+                            detail = input["command"] as? String ?? ""
+                        }
                         records.append(AgentOpRecord(
                             id: UUID().uuidString,
                             agentName: agentName,
@@ -733,7 +738,7 @@ class AgentSessionScanner: ObservableObject {
                             toolName: toolName,
                             targetPath: targetPath,
                             opType: opType,
-                            detail: ""
+                            detail: detail
                         ))
                     } else if blockType == "text" {
                         let text = block["text"] as? String ?? ""
@@ -753,7 +758,6 @@ class AgentSessionScanner: ObservableObject {
                        let args = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any] {
                         targetPath = args["file_path"] as? String
                             ?? args["path"] as? String
-                            ?? args["command"] as? String
                             ?? ""
                     }
                     let opType = classifyOpType(toolName)
@@ -1196,12 +1200,12 @@ class AgentSessionScanner: ObservableObject {
             id: "trae_snapshot_\(sessionId)",
             agentName: agentName,
             sessionId: sessionId,
-            projectDir: "",
+            projectDir: snapshotDir.path,
             timestamp: date,
             toolName: "snapshot",
-            targetPath: fileCount > 0 ? "\(fileCount)个文件变更" : "会话快照",
+            targetPath: snapshotDir.path,
             opType: "写入",
-            detail: "git快照记录"
+            detail: "\(fileCount)\(localizer?.fileChangeCount ?? "files changed")"
         ))
 
         return records
@@ -1230,9 +1234,9 @@ class AgentSessionScanner: ObservableObject {
             projectDir: allowedPaths.first ?? "",
             timestamp: date,
             toolName: "sandbox",
-            targetPath: allowedPaths.joined(separator: ", ").prefix(100).description,
+            targetPath: allowedPaths.first ?? "",
             opType: "操作",
-            detail: "允许访问: \(allowedPaths.count)个路径"
+            detail: "\(localizer?.allowedPaths ?? "Allowed access"): \(allowedPaths.count)\(localizer?.pathsCount ?? "paths")"
         )]
     }
 
@@ -1420,28 +1424,34 @@ class AgentSessionScanner: ObservableObject {
                       fileOpTools.contains(toolName),
                       let input = block["input"] as? [String: Any] else { continue }
 
-                let targetPath = input["file_path"] as? String
-                    ?? input["path"] as? String
-                    ?? input["pattern"] as? String
-                    ?? input["command"] as? String
-                    ?? ""
-
+                let targetPath: String
                 let opType: String
-                switch toolName {
-                case "Write": opType = "写入"
-                case "Edit", "MultiEdit": opType = "编辑"
-                case "Read": opType = "读取"
-                case "Bash": opType = "执行命令"
-                case "Glob", "Grep": opType = "搜索"
-                default: opType = "操作"
-                }
-
                 let detail: String
                 switch toolName {
-                case "Bash": detail = input["command"] as? String ?? ""
-                case "Edit", "MultiEdit": detail = input["old_string"] as? String ?? ""
-                case "Write": detail = (input["content"] as? String ?? "").prefix(100).description
-                default: detail = ""
+                case "Write":
+                    opType = "写入"
+                    targetPath = input["file_path"] as? String ?? input["path"] as? String ?? cwd
+                    detail = (input["content"] as? String ?? "").prefix(200).description
+                case "Edit", "MultiEdit":
+                    opType = "编辑"
+                    targetPath = input["file_path"] as? String ?? input["path"] as? String ?? cwd
+                    detail = input["old_string"] as? String ?? ""
+                case "Read":
+                    opType = "读取"
+                    targetPath = input["file_path"] as? String ?? input["path"] as? String ?? cwd
+                    detail = ""
+                case "Bash":
+                    opType = "执行命令"
+                    targetPath = cwd
+                    detail = input["command"] as? String ?? ""
+                case "Glob", "Grep":
+                    opType = "搜索"
+                    targetPath = input["pattern"] as? String ?? input["file_path"] as? String ?? input["path"] as? String ?? cwd
+                    detail = ""
+                default:
+                    opType = "操作"
+                    targetPath = input["file_path"] as? String ?? input["path"] as? String ?? cwd
+                    detail = ""
                 }
 
                 records.append(AgentOpRecord(
@@ -1497,9 +1507,12 @@ class AgentSessionScanner: ObservableObject {
                                   let input = block["input"] as? [String: Any] else { continue }
                             let targetPath = input["file_path"] as? String
                                 ?? input["path"] as? String
-                                ?? input["command"] as? String
-                                ?? ""
+                                ?? cwd
                             let opType = classifyOpType(toolName)
+                            var detail = ""
+                            if toolName.lowercased().contains("bash") || toolName.lowercased().contains("shell") {
+                                detail = input["command"] as? String ?? ""
+                            }
                             records.append(AgentOpRecord(
                                 id: UUID().uuidString,
                                 agentName: agentName,
@@ -1509,7 +1522,7 @@ class AgentSessionScanner: ObservableObject {
                                 toolName: toolName,
                                 targetPath: targetPath,
                                 opType: opType,
-                                detail: ""
+                                detail: detail
                             ))
                         } else if blockType == "input_text" || blockType == "text" {
                             let text = block["text"] as? String ?? ""
@@ -1555,7 +1568,9 @@ class AgentSessionScanner: ObservableObject {
                     if let regex = try? NSRegularExpression(pattern: pathPattern, options: .caseInsensitive),
                        let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
                        let range = Range(match.range(at: 1), in: line) {
-                        let path = String(line[range]).trimmingCharacters(in: .whitespaces)
+                        let extracted = String(line[range]).trimmingCharacters(in: .whitespaces)
+                        let path = extracted.hasPrefix("/") ? extracted : extracted
+                        let instruction = String(line.prefix(150)).trimmingCharacters(in: .whitespaces)
                         records.append(AgentOpRecord(
                             id: UUID().uuidString,
                             agentName: agentName,
@@ -1565,7 +1580,7 @@ class AgentSessionScanner: ObservableObject {
                             toolName: "text_action",
                             targetPath: path,
                             opType: opType,
-                            detail: String(line.prefix(200))
+                            detail: instruction
                         ))
                     }
                     break
@@ -1585,6 +1600,24 @@ class AgentSessionScanner: ObservableObject {
         if lower.contains("bash") || lower.contains("shell") || lower.contains("exec") || lower.contains("command") { return "执行命令" }
         if lower.contains("search") || lower.contains("glob") || lower.contains("grep") || lower.contains("find") { return "搜索" }
         return "操作"
+    }
+
+    static func localizedOpType(_ opType: String, localizer: Localizer) -> String {
+        switch opType {
+        case "写入": return localizer.opWrite
+        case "编辑": return localizer.opEdit
+        case "读取": return localizer.opRead
+        case "删除": return localizer.opDelete2
+        case "执行命令": return localizer.opExec
+        case "搜索": return localizer.opSearch
+        case "操作": return localizer.opAction
+        case "对话": return localizer.opDialogue
+        case "新增": return localizer.opNew
+        case "保存": return localizer.opSave
+        case "打开": return localizer.opOpen
+        case "关闭": return localizer.opClose
+        default: return opType
+        }
     }
 
     private func dateFromObjectID(_ oid: String) -> Date? {
@@ -1743,7 +1776,7 @@ class AgentSessionScanner: ObservableObject {
                         projectDir: workspaceFolder,
                         timestamp: date,
                         toolName: "user_input",
-                        targetPath: String(inputText.prefix(100)),
+                        targetPath: workspaceFolder,
                         opType: "对话",
                         detail: String(inputText.prefix(200))
                     ))
@@ -1757,9 +1790,6 @@ class AgentSessionScanner: ObservableObject {
                     let date = dateFromObjectID(sessionId) ?? dbModDate ?? Date()
                     let modelInfo = sessionModelMap[sessionId] ?? ""
                     let modeInfo = sessionModeMap[sessionId] ?? ""
-                    var detail = "agent_type=\(agentType)"
-                    if !modelInfo.isEmpty { detail += " model=\(modelInfo)" }
-                    if !modeInfo.isEmpty { detail += " mode=\(modeInfo)" }
                     records.append(AgentOpRecord(
                         id: "\(url.path)_agentmap_\(sessionId)",
                         agentName: agentName,
@@ -1767,9 +1797,9 @@ class AgentSessionScanner: ObservableObject {
                         projectDir: workspaceFolder,
                         timestamp: date,
                         toolName: "agent_session",
-                        targetPath: agentType,
+                        targetPath: workspaceFolder,
                         opType: "操作",
-                        detail: detail
+                        detail: "agent_type=\(agentType) model=\(modelInfo) mode=\(modeInfo)"
                     ))
                 }
             }
@@ -1783,7 +1813,7 @@ class AgentSessionScanner: ObservableObject {
                     let isCurrent = item["isCurrent"] as? Bool ?? false
                     let date = dateFromObjectID(sessionId) ?? dbModDate ?? Date()
                     let modelInfo = sessionModelMap[sessionId] ?? ""
-                    var detail = isCurrent ? "当前活跃会话" : "历史会话"
+                    var detail = isCurrent ? (localizer?.currentSession ?? "Active session") : (localizer?.historySession ?? "History session")
                     if !modelInfo.isEmpty { detail += " model=\(modelInfo)" }
                     records.append(AgentOpRecord(
                         id: "\(url.path)_icube_\(sessionId)",
@@ -1824,9 +1854,9 @@ class AgentSessionScanner: ObservableObject {
                     projectDir: workspaceFolder,
                     timestamp: date,
                     toolName: "agent_config",
-                    targetPath: agentName2,
+                    targetPath: workspaceFolder,
                     opType: "操作",
-                    detail: "tools=[\(toolNames)] \(desc)"
+                    detail: "agent=\(agentName2) tools=[\(toolNames)] \(desc)"
                 ))
             }
 
@@ -1844,9 +1874,9 @@ class AgentSessionScanner: ObservableObject {
                         projectDir: workspaceFolder,
                         timestamp: subDate,
                         toolName: "session_badge",
-                        targetPath: status,
+                        targetPath: workspaceFolder,
                         opType: "操作",
-                        detail: "status=\(status) workspace_session=\(badgeSessionId)"
+                        detail: "status=\(status) parent_session=\(badgeSessionId)"
                     ))
                 }
             }
@@ -1955,10 +1985,14 @@ class AgentSessionScanner: ObservableObject {
                     let input = block["input"] as? [String: Any] ?? [:]
                     let targetPath = input["file_path"] as? String
                         ?? input["path"] as? String
-                        ?? input["command"] as? String
                         ?? input["pattern"] as? String
-                        ?? ""
+                        ?? cwd
                     let opType = classifyOpType(toolName)
+                    var detail = ""
+                    let lower = toolName.lowercased()
+                    if lower.contains("bash") || lower.contains("shell") || lower.contains("command") {
+                        detail = input["command"] as? String ?? ""
+                    }
                     records.append(AgentOpRecord(
                         id: UUID().uuidString,
                         agentName: agentName,
@@ -1968,7 +2002,7 @@ class AgentSessionScanner: ObservableObject {
                         toolName: toolName,
                         targetPath: targetPath,
                         opType: opType,
-                        detail: ""
+                        detail: detail
                     ))
                 } else if blockType == "input_text" || blockType == "text" {
                     let text = block["text"] as? String ?? ""

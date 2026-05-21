@@ -11,11 +11,12 @@ class IntelMigrationScanner: ObservableObject {
     @Published var armNativeCount: Int = 0
     @Published var totalScanned: Int = 0
 
+    weak var localizer: Localizer?
     private let fileManager = FileManager.default
 
-    var needsMigrationCount: Int { intelOnlyCount }
+    var needsAdaptCount: Int { intelOnlyCount }
 
-    var needsMigrationItems: [IntelAppInfo] {
+    var needsAdaptItems: [IntelAppInfo] {
         items.filter { $0.architecture.isIntel }
     }
 
@@ -24,7 +25,7 @@ class IntelMigrationScanner: ObservableObject {
     }
 
     var totalIntelSize: Int64 {
-        needsMigrationItems.reduce(0) { $0 + $1.size }
+        needsAdaptItems.reduce(0) { $0 + $1.size }
     }
 
     var totalIntelSizeFormatted: String {
@@ -61,7 +62,8 @@ class IntelMigrationScanner: ObservableObject {
             for app in appsCopy {
                 scanned += 1
                 if scanned % 20 == 0 {
-                    await MainActor.run { self.scanProgress = "检测 \(app.displayName) (\(scanned)/\(appsCopy.count))..." }
+                    let detectingLabel = await MainActor.run { self.localizer?.detectingApp ?? "Detecting" }
+                    await MainActor.run { self.scanProgress = "\(detectingLabel) \(app.displayName) (\(scanned)/\(appsCopy.count))..." }
                 }
 
                 var arch: IntelAppInfo.BinaryArchitecture
@@ -315,7 +317,7 @@ class IntelMigrationScanner: ObservableObject {
         let query = "\(name) \(typeHint) apple silicon"
         guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let url = URL(string: "https://duckduckgo.com/?q=\(encodedQuery)") else {
-            return (nil, "搜索链接生成失败")
+            return (nil, "search_link_gen_failed")
         }
         return (url.absoluteString, nil)
     }

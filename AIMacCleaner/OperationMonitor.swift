@@ -12,6 +12,8 @@ class OperationMonitor: ObservableObject {
     @Published var curationMessage: String = ""
     @Published var curationRawResponse: String = ""
 
+    weak var localizer: Localizer?
+
     private var streamRef: FSEventStreamRef?
     private var fileSnapshots: [String: FileSnapshot] = [:]
     private var accessTimes: [String: Date] = [:]
@@ -559,7 +561,7 @@ class OperationMonitor: ObservableObject {
 
         guard let comm = comm else { return "PID:\(pid)" }
 
-        if isSystemProcess(comm) { return "系统进程" }
+        if isSystemProcess(comm) { return localizer?.systemProcess ?? "System Process" }
 
         let combined = (comm + " " + args).lowercased()
         for (displayName, keywords) in agentKeywords {
@@ -670,7 +672,7 @@ class OperationMonitor: ObservableObject {
                 self.targetedPids = allPids
                 self.targetedLsofCache.removeAll()
                 if allPids.isEmpty {
-                    self.targetedErrorMessage = "未找到「\(displayNames)」相关的运行中进程，请确认该程序正在运行"
+                    self.targetedErrorMessage = self.localizer?.processNotFound ?? "No running process found, please confirm the program is running"
                     self.isTargetedMonitoring = false
                     print("[AIMacCleaner] No PIDs found for \(displayNames)")
                 } else {
@@ -678,7 +680,7 @@ class OperationMonitor: ObservableObject {
                     self.targetedErrorMessage = ""
                     print("[AIMacCleaner] Targeted monitoring started for \(displayNames), found \(allPids.count) PIDs")
 
-                    self.targetedMonitorTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                    self.targetedMonitorTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
                         DispatchQueue.global(qos: .userInitiated).async {
                             self?.pollTargetedProcesses()
                         }
@@ -861,25 +863,25 @@ class OperationMonitor: ObservableObject {
                 guard let prev = targetedLsofCache[pid] else {
                     for path in current.files {
                         let sz = current.sizes[path] ?? 0
-                        newOps.append(TargetedFileOp(id: UUID().uuidString, timestamp: now, processComm: current.comm, processPid: pid, targetPath: path, opType: "打开", fileSize: sz))
+                        newOps.append(TargetedFileOp(id: UUID().uuidString, timestamp: now, processComm: current.comm, processPid: pid, targetPath: path, opType: localizer?.opOpen ?? "Open", fileSize: sz))
                     }
                     continue
                 }
 
                 for path in current.files.subtracting(prev.files) {
                     let sz = current.sizes[path] ?? 0
-                    newOps.append(TargetedFileOp(id: UUID().uuidString, timestamp: now, processComm: current.comm, processPid: pid, targetPath: path, opType: "打开", fileSize: sz))
+                    newOps.append(TargetedFileOp(id: UUID().uuidString, timestamp: now, processComm: current.comm, processPid: pid, targetPath: path, opType: localizer?.opOpen ?? "Open", fileSize: sz))
                 }
 
                 for path in prev.files.subtracting(current.files) {
-                    newOps.append(TargetedFileOp(id: UUID().uuidString, timestamp: now, processComm: current.comm, processPid: pid, targetPath: path, opType: "关闭", fileSize: 0))
+                    newOps.append(TargetedFileOp(id: UUID().uuidString, timestamp: now, processComm: current.comm, processPid: pid, targetPath: path, opType: localizer?.opClose ?? "Close", fileSize: 0))
                 }
 
                 for path in current.files.intersection(prev.files) {
                     let curSize = current.sizes[path] ?? 0
                     let prevSize = prev.sizes[path] ?? 0
                     if curSize != prevSize {
-                        let op = curSize > prevSize ? "修改" : "截断"
+                        let op = curSize > prevSize ? (localizer?.opEdit ?? "Modify") : (localizer?.fileTruncated ?? "Truncated")
                         newOps.append(TargetedFileOp(id: UUID().uuidString, timestamp: now, processComm: current.comm, processPid: pid, targetPath: path, opType: op, fileSize: curSize))
                     }
                 }
@@ -887,7 +889,7 @@ class OperationMonitor: ObservableObject {
 
             for (pid, prev) in targetedLsofCache where currentFiles[pid] == nil {
                 for path in prev.files {
-                    newOps.append(TargetedFileOp(id: UUID().uuidString, timestamp: now, processComm: prev.comm, processPid: pid, targetPath: path, opType: "关闭", fileSize: 0))
+                    newOps.append(TargetedFileOp(id: UUID().uuidString, timestamp: now, processComm: prev.comm, processPid: pid, targetPath: path, opType: localizer?.opClose ?? "Close", fileSize: 0))
                 }
             }
 
@@ -913,7 +915,7 @@ class OperationMonitor: ObservableObject {
 
     private func startProcessPoller() {
         processPoller?.invalidate()
-        processPoller = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+        processPoller = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 self?.refreshAllProcessInfo()
             }
@@ -1014,7 +1016,7 @@ class OperationMonitor: ObservableObject {
                     agentName: agentInfo.agentName,
                     operationType: .delete,
                     targetPath: eventPath,
-                    detail: "删除: \((eventPath as NSString).lastPathComponent)",
+                    detail: localizer?.fileDeleted ?? "File deleted",
                     fileSize: 0,
                     processName: agentInfo.processName,
                     toolInfo: agentInfo.toolInfo
@@ -1071,7 +1073,7 @@ class OperationMonitor: ObservableObject {
                             agentName: readAgent,
                             operationType: .read,
                             targetPath: eventPath,
-                            detail: "读取: \((eventPath as NSString).lastPathComponent) (\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))",
+                            detail: "\(localizer?.fileRead ?? "File read") (\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))",
                             fileSize: size,
                             processName: readProc,
                             toolInfo: readTool
@@ -1100,7 +1102,7 @@ class OperationMonitor: ObservableObject {
                     agentName: agentInfo.agentName,
                     operationType: .create,
                     targetPath: eventPath,
-                    detail: "创建: \((eventPath as NSString).lastPathComponent) (\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))",
+                    detail: "\(localizer?.fileCreated ?? "File created") (\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))",
                     fileSize: size,
                     processName: agentInfo.processName,
                     toolInfo: agentInfo.toolInfo
@@ -1190,7 +1192,6 @@ class OperationMonitor: ObservableObject {
     // MARK: - Detail Formatting
 
     private func formatModifyDetail(_ path: String, oldSize: Int64, newSize: Int64) -> String {
-        let fileName = (path as NSString).lastPathComponent
         let diff = newSize - oldSize
         let diffStr: String
         if diff > 0 {
@@ -1198,9 +1199,9 @@ class OperationMonitor: ObservableObject {
         } else if diff < 0 {
             diffStr = "-\(ByteCountFormatter.string(fromByteCount: abs(diff), countStyle: .file))"
         } else {
-            diffStr = "内容已更改"
+            diffStr = localizer?.contentChanged ?? "Content changed"
         }
-        return "修改: \(fileName) (\(diffStr))"
+        return "\(localizer?.fileModified ?? "File modified") (\(diffStr))"
     }
 
     // MARK: - Record Management

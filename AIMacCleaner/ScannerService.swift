@@ -471,7 +471,7 @@ class ScannerService: ObservableObject {
                     if FileManager.default.fileExists(atPath: expanded) {
                         try moveToTrash(atPath: expanded)
                         successCount += 1
-                        deleteResults.append(DeleteItemResult(id: item.id, path: expanded, success: true, message: "已移入回收站"))
+                        deleteResults.append(DeleteItemResult(id: item.id, path: expanded, success: true, message: localizer?.movedToTrash ?? "Moved to Trash"))
                     }
                 } catch {
                     failCount += 1
@@ -543,15 +543,15 @@ class ScannerService: ObservableObject {
 
     func startAiScan() async {
         guard let config = aiConfig, config.hasKey == true, let apiKey = config.apiKey, !apiKey.isEmpty else {
-            errorMessage = "请先配置大模型 API Key"
+            errorMessage = localizer?.configureAPIKeyFirst ?? "Please configure LLM API Key first"
             return
         }
 
         isAiScanning = true
-        aiStatusMessage = "正在收集目录信息..."
+        aiStatusMessage = localizer?.collectingDirInfo ?? "Collecting directory info..."
 
         let dirInfo = collectDirInfo()
-        aiStatusMessage = "正在调用大模型分析..."
+        aiStatusMessage = localizer?.callingAIAnalysis ?? "Calling AI for analysis..."
 
         let result = await callLLM(config: config, dirInfo: dirInfo)
 
@@ -562,9 +562,9 @@ class ScannerService: ObservableObject {
             let newItems = items.filter { !localIds.contains($0.id) }
             scanItems.append(contentsOf: newItems)
             scanItems.sort { $0.size > $1.size }
-            aiStatusMessage = "AI 扫描完成，发现 \(newItems.count) 项"
+            aiStatusMessage = "\(localizer?.aiScanComplete ?? "AI scan complete, found") \(newItems.count) \(localizer?.itemsLabel ?? "items")"
         } else {
-            errorMessage = "AI 扫描失败: \(result.error ?? "未知错误")\n建议使用本地扫描。"
+            errorMessage = "\(localizer?.aiScanFailed ?? "AI scan failed"): \(result.error ?? (localizer?.unknownError ?? "Unknown error"))\n\(localizer?.suggestLocalScan ?? "Suggest using local scan")"
         }
     }
 
@@ -1159,8 +1159,13 @@ class ScannerService: ObservableObject {
     var preventAutoEmptyTrash: Bool = true
     private var monitorTimer: Timer?
     private var hardwareTimer: Timer?
+    var isMonitoring: Bool { monitorTimer != nil }
     private var lastAlertTime: Date = .distantPast
     let operationMonitor = OperationMonitor()
+
+    weak var localizer: Localizer? {
+        didSet { operationMonitor.localizer = localizer }
+    }
 
     @Published var operationRecords: [OperationRecord] = []
 
@@ -1184,7 +1189,7 @@ class ScannerService: ObservableObject {
 
     private func startOperationPolling() {
         stopOperationPolling()
-        operationPollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        operationPollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
                 self.operationRecords = self.operationMonitor.records
@@ -1315,12 +1320,12 @@ class ScannerService: ObservableObject {
         operationMonitor.curationMessage = ""
 
         guard let config = aiConfig, config.hasKey == true else {
-            operationMonitor.curationMessage = "请先配置 AI 模型（设置 → AI 设置）"
+            operationMonitor.curationMessage = localizer?.configureAIModel ?? "Please configure AI model (Settings → AI Settings)"
             return
         }
 
         operationMonitor.isCurating = true
-        operationMonitor.curationMessage = "正在收集原始数据..."
+        operationMonitor.curationMessage = localizer?.collectingRawData ?? "Collecting raw data..."
         operationMonitor.discoverAgentSelfDirs()
 
         let (events, snapshots) = operationMonitor.getRawDataForCuration()
@@ -1329,12 +1334,12 @@ class ScannerService: ObservableObject {
         guard events.count >= 3 else {
             operationMonitor.isCurating = false
             operationMonitor.curationMessage = events.isEmpty
-                ? "暂无监控数据，请先启用 Agent 监控并等待文件操作产生"
-                : "监控数据不足（仅有 \(events.count) 条），继续监控后重试"
+                ? (localizer?.noMonitorData ?? "No monitoring data, please enable Agent monitoring and wait for file operations")
+                : "\(localizer?.insufficientDataPrefix ?? "Insufficient data (only") \(events.count) \(localizer?.continueMonitorRetry ?? "records), continue monitoring and retry")"
             return
         }
 
-        operationMonitor.curationMessage = "正在调用 AI 分析..."
+        operationMonitor.curationMessage = localizer?.callingAIAnalysis ?? "Calling AI for analysis..."
 
         let recentSnaps = snapshots.filter { s in
             if let first = events.first?.timestamp, let last = events.last?.timestamp {
@@ -1365,7 +1370,7 @@ class ScannerService: ObservableObject {
 
         if eventSummary.isEmpty {
             operationMonitor.isCurating = false
-            operationMonitor.curationMessage = "梳理完成：\(events.count) 条事件均在 agent 自身项目目录内，无对外部文件的操作"
+            operationMonitor.curationMessage = "\(localizer?.curationComplete ?? "Curation complete: ")\(events.count) \(localizer?.allInternalOps ?? "events are all within the agent's own project directory, no external file operations")"
             return
         }
 
@@ -1382,7 +1387,7 @@ class ScannerService: ObservableObject {
         }
         print("[AIMacCleaner] curateWithAI: \(recentSnaps.count) recent snaps, \(nonSystemProcs.count) non-system")
         if nonSystemProcs.isEmpty {
-            procSummary = "（无进程快照——请确保 Agent 监控已启用，或重新启用后等待 30 秒再试）"
+            procSummary = "（\(localizer?.noProcessSnapshot ?? "No process snapshots—ensure Agent monitoring is enabled, or re-enable and wait 30 seconds")）"
         } else {
             let grouped = Dictionary(grouping: nonSystemProcs.prefix(200), by: { $0.comm })
             for (comm, procs) in grouped.sorted(by: { $0.1.count > $1.1.count }) {
@@ -1415,7 +1420,7 @@ class ScannerService: ObservableObject {
         guard let apiKey = config.apiKey, !apiKey.isEmpty,
               let apiBase = config.apiBase else {
             operationMonitor.isCurating = false
-            operationMonitor.curationMessage = "AI 配置不完整"
+            operationMonitor.curationMessage = localizer?.aiConfigIncomplete ?? "AI configuration incomplete"
             return
         }
         let base = apiBase.hasSuffix("/v1") ? apiBase : apiBase + "/v1"
@@ -1427,7 +1432,7 @@ class ScannerService: ObservableObject {
         guard let bodyData = try? JSONSerialization.data(withJSONObject: requestBody),
               let url = URL(string: "\(base)/chat/completions") else {
             operationMonitor.isCurating = false
-            operationMonitor.curationMessage = "请求构建失败"
+            operationMonitor.curationMessage = localizer?.requestBuildFailed ?? "Request build failed"
             return
         }
         var request = URLRequest(url: url)
@@ -1441,14 +1446,14 @@ class ScannerService: ObservableObject {
             let (data, resp) = try await URLSession.shared.data(for: request)
             guard let httpResp = resp as? HTTPURLResponse else {
                 operationMonitor.isCurating = false
-                operationMonitor.curationMessage = "网络错误"
+                operationMonitor.curationMessage = localizer?.networkError ?? "Network error"
                 return
             }
             guard httpResp.statusCode == 200 else {
                 operationMonitor.isCurating = false
                 let body = String(data: data, encoding: .utf8) ?? ""
                 print("[AIMacCleaner] API error \(httpResp.statusCode): \(body.prefix(200))")
-                operationMonitor.curationMessage = "API 错误 (\(httpResp.statusCode))"
+                operationMonitor.curationMessage = "\(localizer?.apiError ?? "API error") (\(httpResp.statusCode))"
                 return
             }
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -1456,7 +1461,7 @@ class ScannerService: ObservableObject {
                   let msg = choices.first?["message"] as? [String: Any],
                   let content = msg["content"] as? String else {
                 operationMonitor.isCurating = false
-                operationMonitor.curationMessage = "AI 响应格式错误"
+                operationMonitor.curationMessage = localizer?.aiResponseFormatError ?? "AI response format error"
                 return
             }
 
@@ -1472,17 +1477,17 @@ class ScannerService: ObservableObject {
 
             if curated!.isEmpty {
                 operationMonitor.isCurating = false
-                operationMonitor.curationMessage = "梳理完成：均为系统内部操作，未发现对外部文件的改动"
+                operationMonitor.curationMessage = "\(localizer?.curationComplete ?? "Curation complete: ")\(localizer?.allSystemOps ?? "All are internal system operations, no external file changes detected")"
                 operationMonitor.saveCuratedRecords([])
             } else {
                 operationMonitor.saveCuratedRecords(curated!)
-                operationMonitor.curationMessage = "梳理完成：识别到 \(curated!.count) 条 Agent 操作"
+                operationMonitor.curationMessage = "\(localizer?.curationComplete ?? "Curation complete: ")\(localizer?.identifiedAgentOps ?? "Identified") \(curated!.count) \(localizer?.agentOpsRecords ?? "Agent operations")"
                 operationMonitor.curationRawResponse = ""
                 print("[AIMacCleaner] Curation done: \(curated!.count) records from \(events.count) events")
             }
         } catch {
             operationMonitor.isCurating = false
-            operationMonitor.curationMessage = "网络请求失败: \(error.localizedDescription)"
+            operationMonitor.curationMessage = "\(localizer?.networkRequestFailed ?? "Network request failed"): \(error.localizedDescription)"
             print("[AIMacCleaner] Curation failed: \(error)")
         }
     }
@@ -1521,7 +1526,7 @@ class ScannerService: ObservableObject {
             }
         }
 
-        operationMonitor.curationMessage = "AI 未返回 JSON 数组或对象"
+        operationMonitor.curationMessage = localizer?.aiNoJsonArray ?? "AI did not return JSON array or object"
         print("[AIMacCleaner] --- AI RAW RESPONSE (\(raw.count) chars) ---")
         print(raw)
         print("[AIMacCleaner] --- END RAW RESPONSE ---")
@@ -1551,7 +1556,7 @@ class ScannerService: ObservableObject {
             guard let path = item["path"] as? String,
                   let agent = item["agent"] as? String,
                   let op = item["op"] as? String else { continue }
-            if agent.hasPrefix("系统") || agent.hasPrefix("IDE") { continue }
+            if agent.hasPrefix("系统") || agent.hasPrefix(localizer?.systemPrefix ?? "system") || agent.hasPrefix("IDE") { continue }
             let conf = (item["confidence"] as? NSNumber)?.doubleValue ?? 0.5
             let ev = (item["evidence"] as? String) ?? ""
             let matchedEv = events.first { $0.targetPath == path }
@@ -1572,6 +1577,7 @@ class ScannerService: ObservableObject {
     }
 
     func startMonitoring() {
+        guard !isMonitoring else { return }
         stopMonitoring()
         refreshDiskInfo()
         refreshHardwareInfo()
@@ -1582,7 +1588,7 @@ class ScannerService: ObservableObject {
                 self?.checkAndAlert()
             }
         }
-        hardwareTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+        hardwareTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshHardwareInfo()
             }
@@ -1606,8 +1612,8 @@ class ScannerService: ObservableObject {
         lastAlertTime = now
 
         let content = UNMutableNotificationContent()
-        content.title = "⚠️ 存储空间不足"
-        content.body = "磁盘剩余 \(String(format: "%.1f", disk.freeGb)) GB（\(String(format: "%.0f", freePct))%），建议立即清理"
+        content.title = localizer?.storageWarningTitle ?? "⚠️ Low Storage"
+        content.body = "\(localizer?.storageWarningBody ?? "Disk remaining") \(String(format: "%.1f", disk.freeGb)) GB（\(String(format: "%.0f", freePct))%），\(localizer?.suggestCleanNow ?? "Clean up recommended")"
         content.sound = .defaultCritical
 
         let request = UNNotificationRequest(
@@ -1631,8 +1637,13 @@ class ScannerService: ObservableObject {
     @Published var isDownloadingUpdate: Bool = false
     @Published var updateReadyToInstall: Bool = false
     @Published var updateErrorMessage: String = ""
+    @Published var isInstallingUpdate: Bool = false
 
-    let currentVersion = "1.8.5"
+    let currentVersion = "1.9.0"
+
+    private var updateCheckTimer: Timer?
+    private var downloadSession: URLSession?
+    private var downloadDelegate: DownloadDelegate?
 
     @Published var appUpdates: [UpdateItem] = []
     @Published var isCheckingAppUpdates: Bool = false
@@ -1653,9 +1664,10 @@ class ScannerService: ObservableObject {
         }
     }
 
-    func checkForUpdates() async {
-        isCheckingUpdate = true
-        defer { isCheckingUpdate = false }
+    func checkForUpdates(silent: Bool = false) async {
+        guard !isCheckingUpdate else { return }
+        if !silent { isCheckingUpdate = true }
+        defer { if !silent { isCheckingUpdate = false } }
 
         guard let url = URL(string: "https://api.github.com/repos/AI-Scarlett/AIMacCleaner/releases/latest") else { return }
 
@@ -1682,6 +1694,9 @@ class ScannerService: ObservableObject {
                             break
                         }
                     }
+                }
+                if !silent, !updateDownloadURL.isEmpty, !isDownloadingUpdate, !updateReadyToInstall {
+                    downloadUpdate()
                 }
             } else {
                 updateAvailable = false
@@ -1711,9 +1726,9 @@ class ScannerService: ObservableObject {
         }
     }
 
-    func downloadUpdate() async {
+    func downloadUpdate() {
         guard !updateDownloadURL.isEmpty, let url = URL(string: updateDownloadURL) else {
-            updateErrorMessage = "下载链接无效"
+            updateErrorMessage = localizer?.invalidDownloadLink ?? "Invalid download link"
             return
         }
 
@@ -1730,31 +1745,51 @@ class ScannerService: ObservableObject {
             try? FileManager.default.removeItem(atPath: dmgPath)
         }
 
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            let delegate = DownloadDelegate { progress in
-                Task { @MainActor in
-                    self.updateDownloadProgress = progress
-                }
-            } onComplete: { fileURL, error in
-                Task { @MainActor in
-                    if let fileURL = fileURL {
-                        try? FileManager.default.moveItem(atPath: fileURL.path, toPath: dmgPath)
+        let delegate = DownloadDelegate { [weak self] progress in
+            Task { @MainActor in
+                self?.updateDownloadProgress = progress
+            }
+        } onComplete: { [weak self] fileURL, error in
+            if let fileURL = fileURL {
+                do {
+                    if FileManager.default.fileExists(atPath: dmgPath) {
+                        try FileManager.default.removeItem(atPath: dmgPath)
+                    }
+                    try FileManager.default.moveItem(atPath: fileURL.path, toPath: dmgPath)
+                    Task { @MainActor [weak self] in
+                        guard let self = self else { return }
                         self.updateDownloadProgress = 1.0
                         self.isDownloadingUpdate = false
                         self.updateReadyToInstall = true
-                    } else {
-                        self.isDownloadingUpdate = false
-                        self.updateErrorMessage = "下载失败: \(error?.localizedDescription ?? "未知错误")"
+                        self.downloadSession = nil
+                        self.downloadDelegate = nil
                     }
-                    continuation.resume()
+                } catch {
+                    Task { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        self.isDownloadingUpdate = false
+                        self.updateErrorMessage = "\(localizer?.saveDownloadFailed ?? "Failed to save download"): \(error.localizedDescription)"
+                        self.downloadSession = nil
+                        self.downloadDelegate = nil
+                    }
+                }
+            } else {
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    self.isDownloadingUpdate = false
+                    self.updateErrorMessage = "\(localizer?.downloadFailed ?? "Download failed"): \(error?.localizedDescription ?? (localizer?.unknownError ?? "Unknown error"))"
+                    self.downloadSession = nil
+                    self.downloadDelegate = nil
                 }
             }
-
-            let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
-            let task = session.downloadTask(with: url)
-            delegate.task = task
-            task.resume()
         }
+
+        downloadDelegate = delegate
+        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        downloadSession = session
+        let task = session.downloadTask(with: url)
+        delegate.task = task
+        task.resume()
     }
 
     func installUpdate() {
@@ -1762,15 +1797,17 @@ class ScannerService: ObservableObject {
         let dmgPath = tempDir + "/AIMacCleaner-update.dmg"
 
         guard FileManager.default.fileExists(atPath: dmgPath) else {
-            self.updateErrorMessage = "安装文件不存在，请重新下载"
+            self.updateErrorMessage = localizer?.installFileNotFound ?? "Install file not found, please re-download"
             return
         }
+
+        isInstallingUpdate = true
 
         let mountPoint = "/Volumes/AIMacCleanerUpdate"
         let currentAppPath = Bundle.main.bundlePath
         let appName = Bundle.main.bundleURL.lastPathComponent
         let installedAppPath = "/Applications/\(appName)"
-        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let logPath = tempDir + "/update_install.log"
 
         let targetPath: String
         if currentAppPath.hasPrefix("/Applications/") {
@@ -1781,53 +1818,82 @@ class ScannerService: ObservableObject {
 
         let scriptContent = """
 #!/bin/bash
+set -e
+
 MOUNT_POINT="\(mountPoint)"
 DMG_PATH="\(dmgPath)"
 TARGET_PATH="\(targetPath)"
 APP_NAME="\(appName)"
 TEMP_DIR="\(tempDir)"
-OLD_PID="\(currentPID)"
+LOG_PATH="\(logPath)"
 
-while kill -0 "$OLD_PID" 2>/dev/null; do
-    sleep 0.3
-done
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_PATH"
+}
 
-sleep 1
+log "=== AIMacCleaner Update Installer Started ==="
+log "target: $TARGET_PATH"
+log "dmg: $DMG_PATH"
 
-/usr/bin/hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -nobrowse -quiet
+# Wait for old process to fully exit and release file locks
+sleep 3
 
-if [ $? -ne 0 ]; then
-    osascript -e 'display notification "更新安装失败：无法挂载安装包" with title "AIMacCleaner"'
+# Detach any existing mount
+/usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
+
+# Attach DMG
+log "Mounting DMG..."
+if ! /usr/bin/hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -nobrowse -quiet 2>>"$LOG_PATH"; then
+    log "ERROR: Failed to mount DMG"
+    osascript -e 'display notification "\(localizer?.updateInstallFailedMount ?? "Update install failed: cannot mount installer")" with title "AIMacCleaner"'
     rm -rf "$TEMP_DIR"
     exit 1
 fi
+log "DMG mounted successfully"
 
-UPDATE_APP=$(find "$MOUNT_POINT" -maxdepth 1 -name "*.app" -type d | head -1)
+UPDATE_APP=$(find "$MOUNT_POINT" -maxdepth 1 -name "*.app" -type d 2>/dev/null | head -1)
 
 if [ -z "$UPDATE_APP" ]; then
-    /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet
-    osascript -e 'display notification "更新安装失败：安装包中未找到应用" with title "AIMacCleaner"'
+    log "ERROR: No .app found in DMG"
+    /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
+    osascript -e 'display notification "\(localizer?.updateInstallFailedApp ?? "Update install failed: app not found in installer")" with title "AIMacCleaner"'
     rm -rf "$TEMP_DIR"
     exit 1
 fi
+log "Found app in DMG: $UPDATE_APP"
 
+# Remove old app
 if [ -d "$TARGET_PATH" ]; then
-    rm -rf "$TARGET_PATH"
+    log "Removing old app at $TARGET_PATH"
+    rm -rf "$TARGET_PATH" 2>>"$LOG_PATH"
 fi
 
-cp -R "$UPDATE_APP" "$TARGET_PATH"
-
-if [ $? -ne 0 ]; then
-    osascript -e 'display notification "更新安装失败：无法复制应用" with title "AIMacCleaner"'
-    /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet
+# Copy new app
+log "Copying new app to $TARGET_PATH"
+if ! cp -R "$UPDATE_APP" "$TARGET_PATH" 2>>"$LOG_PATH"; then
+    log "ERROR: Failed to copy new app"
+    /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
+    osascript -e 'display notification "\(localizer?.updateInstallFailedCopy ?? "Update install failed: cannot copy app")" with title "AIMacCleaner"'
     rm -rf "$TEMP_DIR"
     exit 1
 fi
+log "App copied successfully"
 
-/usr/bin/hdiutil detach "$MOUNT_POINT" -quiet
+# Detach DMG
+/usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
+log "DMG detached"
+
+# Cleanup temp files
 rm -rf "$TEMP_DIR"
+log "Temp files cleaned"
+
+# Remove quarantine attribute and launch new app
+xattr -dr com.apple.quarantine "$TARGET_PATH" 2>/dev/null || true
+log "Launching updated app..."
 open "$TARGET_PATH"
-osascript -e 'display notification "已成功更新到最新版本" with title "AIMacCleaner"'
+
+osascript -e 'display notification "\(localizer?.updateSuccess ?? "Successfully updated to latest version")" with title "AIMacCleaner" sound name "Glass"'
+log "=== Update completed successfully ==="
 """
 
         let scriptPath = tempDir + "/update_install.sh"
@@ -1836,12 +1902,13 @@ osascript -e 'display notification "已成功更新到最新版本" with title "
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
         } catch {
             self.updateErrorMessage = "创建安装脚本失败: \(error.localizedDescription)"
+            isInstallingUpdate = false
             return
         }
 
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/bash")
-        task.arguments = [scriptPath]
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/setsid")
+        task.arguments = ["/bin/bash", scriptPath]
         task.standardInput = FileHandle.nullDevice
         task.standardOutput = FileHandle.nullDevice
         task.standardError = FileHandle.nullDevice
@@ -1850,29 +1917,53 @@ osascript -e 'display notification "已成功更新到最新版本" with title "
             try task.run()
         } catch {
             self.updateErrorMessage = "启动安装失败: \(error.localizedDescription)"
+            isInstallingUpdate = false
             return
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            exit(0)
+            NSApp.windows.forEach { $0.orderOut(nil) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                NSApp.terminate(nil)
+            }
         }
     }
 
     func cancelUpdateDownload() {
         isDownloadingUpdate = false
         updateDownloadProgress = 0.0
+        downloadSession?.invalidateAndCancel()
+        downloadSession = nil
+        downloadDelegate = nil
         let tempDir = NSTemporaryDirectory() + "AIMacCleanerUpdate"
         try? FileManager.default.removeItem(atPath: tempDir)
     }
 
+    func startPeriodicUpdateCheck() {
+        stopPeriodicUpdateCheck()
+
+        updateCheckTimer = Timer.scheduledTimer(withTimeInterval: 12 * 3600, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            Task { @MainActor in
+                await self.checkForUpdates(silent: true)
+            }
+        }
+        RunLoop.main.add(updateCheckTimer!, forMode: .common)
+    }
+
+    func stopPeriodicUpdateCheck() {
+        updateCheckTimer?.invalidate()
+        updateCheckTimer = nil
+    }
+
     func analyzeImpactWithAI(apps: [AppInfo]) async {
         guard let config = aiConfig, config.hasKey == true, let apiKey = config.apiKey, !apiKey.isEmpty else {
-            for app in apps { aiAnalysisMap[app.id] = "⚠️ 请先配置大模型 API Key" }
+            for app in apps { aiAnalysisMap[app.id] = localizer?.pleaseConfigureAPIKey ?? "⚠️ Please configure LLM API Key first" }
             return
         }
 
         isAnalyzingImpact = true
-        for app in apps { aiAnalysisMap[app.id] = "🔄 分析中..." }
+        for app in apps { aiAnalysisMap[app.id] = localizer?.analyzingDots ?? "🔄 Analyzing..." }
 
         let itemsDesc = apps.map { app in
             """
@@ -1903,7 +1994,7 @@ osascript -e 'display notification "已成功更新到最新版本" with title "
 
         let apiBase = (config.apiBase ?? "https://api.deepseek.com").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let url = URL(string: "\(apiBase)/v1/chat/completions") else {
-            for app in apps { aiAnalysisMap[app.id] = "❌ 无效的 API 地址" }
+            for app in apps { aiAnalysisMap[app.id] = localizer?.invalidAPIUrl ?? "❌ Invalid API URL" }
             isAnalyzingImpact = false
             return
         }
@@ -1927,14 +2018,14 @@ osascript -e 'display notification "已成功更新到最新版本" with title "
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else {
-                for app in apps { aiAnalysisMap[app.id] = "❌ 无效的 HTTP 响应" }
+                for app in apps { aiAnalysisMap[app.id] = localizer?.invalidHttpResponse ?? "❌ Invalid HTTP response" }
                 isAnalyzingImpact = false
                 return
             }
 
             if http.statusCode != 200 {
                 let bodyStr = String(data: data, encoding: .utf8) ?? ""
-                for app in apps { aiAnalysisMap[app.id] = "❌ API 错误 (\(http.statusCode))" }
+                for app in apps { aiAnalysisMap[app.id] = "❌ \(localizer?.apiError ?? "API error") (\(http.statusCode))" }
                 isAnalyzingImpact = false
                 return
             }
@@ -1942,7 +2033,7 @@ osascript -e 'display notification "已成功更新到最新版本" with title "
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let choices = json["choices"] as? [[String: Any]],
                   let message = choices.first?["message"] as? [String: Any] else {
-                for app in apps { aiAnalysisMap[app.id] = "❌ 大模型返回格式错误" }
+                for app in apps { aiAnalysisMap[app.id] = localizer?.aiModelFormatError ?? "❌ AI model response format error" }
                 isAnalyzingImpact = false
                 return
             }
@@ -1971,7 +2062,7 @@ osascript -e 'display notification "已成功更新到最新版本" with title "
                 }
                 for app in apps {
                     if aiAnalysisMap[app.id]?.hasPrefix("🤖") != true {
-                        aiAnalysisMap[app.id] = "🤖 分析完成（详见原说明）"
+                        aiAnalysisMap[app.id] = localizer?.analysisComplete ?? "🤖 Analysis complete (see original description)"
                     }
                 }
             } else {
@@ -2008,7 +2099,7 @@ osascript -e 'display notification "已成功更新到最新版本" with title "
             }
             return true
         } catch {
-            errorMessage = "卸载失败: \(error.localizedDescription)"
+            errorMessage = "\(localizer?.uninstallFailed ?? "Uninstall failed"): \(error.localizedDescription)"
             return false
         }
     }
@@ -2025,7 +2116,7 @@ osascript -e 'display notification "已成功更新到最新版本" with title "
             }
             return true
         } catch {
-            errorMessage = "卸载失败: \(error.localizedDescription)"
+            errorMessage = "\(localizer?.uninstallFailed ?? "Uninstall failed"): \(error.localizedDescription)"
             return false
         }
     }
@@ -2039,7 +2130,7 @@ osascript -e 'display notification "已成功更新到最新版本" with title "
             }
             return true
         } catch {
-            errorMessage = "重置失败: \(error.localizedDescription)"
+            errorMessage = "\(localizer?.resetAction ?? "Reset failed"): \(error.localizedDescription)"
             return false
         }
     }
@@ -2098,7 +2189,7 @@ osascript -e 'display notification "已成功更新到最新版本" with title "
         let urlString = "\(apiBase)/v1/chat/completions"
 
         guard let url = URL(string: urlString) else {
-            return (success: false, items: nil, error: "无效的 API 地址")
+            return (success: false, items: nil, error: localizer?.invalidAPIUrl ?? "❌ Invalid API URL")
         }
 
         let systemPrompt = """
@@ -2143,7 +2234,7 @@ osascript -e 'display notification "已成功更新到最新版本" with title "
             let (data, response) = try await URLSession.shared.data(for: request)
 
             guard let http = response as? HTTPURLResponse else {
-                return (success: false, items: nil, error: "无效的 HTTP 响应")
+                return (success: false, items: nil, error: localizer?.invalidHttpResponse ?? "❌ Invalid HTTP response")
             }
 
             if http.statusCode != 200 {
@@ -2156,7 +2247,7 @@ osascript -e 'display notification "已成功更新到最新版本" with title "
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let choices = json["choices"] as? [[String: Any]],
                   let message = choices.first?["message"] as? [String: Any] else {
-                return (success: false, items: nil, error: "大模型返回格式错误")
+                return (success: false, items: nil, error: localizer?.aiModelFormatError ?? "❌ AI model response format error")
             }
 
             var content = message["content"] as? String ?? ""

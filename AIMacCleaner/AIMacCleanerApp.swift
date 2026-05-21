@@ -25,6 +25,8 @@ struct AIMacCleanerApp: App {
                 .environmentObject(localizer)
                 .frame(minWidth: 960, minHeight: 640)
                 .onAppear {
+                    appDelegate.service = service
+                    service.localizer = localizer
                     NSApp.setActivationPolicy(.regular)
                     DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.5) { [service] in
                         if monitorEnabled { service.startMonitoring() }
@@ -32,7 +34,8 @@ struct AIMacCleanerApp: App {
                     }
                     Task {
                         try? await Task.sleep(nanoseconds: 2_000_000_000)
-                        await service.checkForUpdates()
+                        await service.checkForUpdates(silent: true)
+                        service.startPeriodicUpdateCheck()
                     }
                 }
         }
@@ -45,7 +48,7 @@ struct AIMacCleanerApp: App {
                 MenuBarMonitor(service: service)
                     .environmentObject(localizer)
             } else {
-                Text("菜单栏监控已关闭")
+                Text(localizer.menuBarMonitorClosed)
                     .padding()
             }
         } label: {
@@ -73,11 +76,16 @@ struct AIMacCleanerApp: App {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindow: NSWindow?
+    var service: ScannerService?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         DispatchQueue.main.async { [weak self] in
             self?.setupWindowDelegate()
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        service?.stopPeriodicUpdateCheck()
     }
 
     private func setupWindowDelegate() {
@@ -107,14 +115,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let window = mainWindow {
             window.makeKeyAndOrderFront(nil)
-        } else {
-            for window in sender.windows {
-                if !window.title.isEmpty && window.className.contains("Window") {
-                    mainWindow = window
-                    window.makeKeyAndOrderFront(nil)
-                    break
-                }
-            }
+        } else if let window = sender.windows.first(where: { !$0.title.isEmpty && $0.className.contains("Window") }) {
+            mainWindow = window
+            window.makeKeyAndOrderFront(nil)
         }
         return true
     }
@@ -128,6 +131,12 @@ class WindowDelegate: NSObject, NSWindowDelegate {
     static let shared = WindowDelegate()
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        let quitBehavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
+        if quitBehavior == "quitAppKeepMenu" {
+            sender.orderOut(nil)
+            NSApp.setActivationPolicy(.accessory)
+            return false
+        }
         sender.orderOut(nil)
         return false
     }

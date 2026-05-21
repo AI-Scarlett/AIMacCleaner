@@ -3,7 +3,7 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="AIMacCleaner"
-VERSION="1.8.5"
+VERSION="1.9.0"
 BUILD_DIR="/tmp/AIMacCleaner_build"
 DMG_NAME="AIMacCleaner-v${VERSION}-arm64"
 STAGING_DIR="/tmp/AIMacCleaner_dmg_staging"
@@ -98,22 +98,20 @@ if [ -d Assets.xcassets ]; then
     cp -R Assets.xcassets "$APP_PATH/Contents/Resources/"
 fi
 
-echo "[3/5] Code signing (ad-hoc)..."
+echo "[3/5] Updating version in Info.plist..."
+if [ -f "$APP_PATH/Contents/Info.plist" ]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true
+    echo "  Version set to $VERSION"
+fi
+
+echo "[4/5] Code signing (ad-hoc)..."
 codesign --force --deep --sign - "$APP_PATH" 2>/dev/null || echo "  Code signing skipped (ad-hoc)"
 echo "  Code signed successfully."
 
-echo "[4/5] Verifying build..."
-BUILT_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Contents/Info.plist" 2>/dev/null || echo "unknown")
-echo "  Built version: $BUILT_VERSION"
-
-if [ "$BUILT_VERSION" != "$VERSION" ]; then
-    echo "  Version mismatch! Fixing to $VERSION..."
-    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_PATH/Contents/Info.plist"
-fi
-
+echo "[5/5] Verifying build..."
 codesign --verify --deep --strict "$APP_PATH" 2>&1 && echo "  Signature valid ✓" || echo "  WARNING: Signature verification failed!"
 
-echo "[5/5] Creating DMG..."
+echo "[6/6] Creating DMG..."
 mkdir -p "$STAGING_DIR"
 cp -R "$APP_PATH" "$STAGING_DIR/"
 ln -s /Applications "$STAGING_DIR/Applications"

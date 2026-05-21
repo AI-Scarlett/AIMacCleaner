@@ -51,7 +51,7 @@ struct SettingsView: View {
             case .ai: localizer.settingsTabAI
             case .features: localizer.settingsTabFeatures
             case .monitor: localizer.settingsTabMonitor
-            case .network: "Network"
+            case .network: localizer.networkLabel
             case .language: localizer.settingsTabLanguage
             case .version: localizer.settingsTabVersion
             }
@@ -61,8 +61,8 @@ struct SettingsView: View {
     let presets: [(name: String, base: String, model: String)] = [
         ("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
         ("OpenAI", "https://api.openai.com", "gpt-4o-mini"),
-        ("智谱 GLM", "https://open.bigmodel.cn/api/paas", "glm-4-flash"),
-        ("通义千问", "https://dashscope.aliyuncs.com/compatible-mode", "qwen-turbo"),
+        ("Zhipu GLM", "https://open.bigmodel.cn/api/paas", "glm-4-flash"),
+        ("Qwen (Tongyi)", "https://dashscope.aliyuncs.com/compatible-mode", "qwen-turbo"),
     ]
 
     var body: some View {
@@ -214,8 +214,8 @@ struct SettingsView: View {
 
             ToggleSetting(
                 icon: "brain.head.profile",
-                title: "AI 自学习 Agent 识别",
-                desc: "调用 AI 自动分析未知进程和目录，持续优化 Agent 监控准确性",
+                title: localizer.aiSelfLearning,
+                desc: localizer.aiSelfLearningDesc,
                 isOn: Binding(
                     get: { service.operationMonitor.aiSelfLearningEnabled },
                     set: { newValue in
@@ -278,9 +278,9 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "network").foregroundColor(.blue)
-                Text("Network Mode").font(.headline)
+                Text(localizer.networkModeTitle).font(.headline)
             }
-            Text("Choose network mode for update checking and AI features")
+            Text(localizer.networkModeDesc)
                 .font(.callout).foregroundColor(.secondary)
 
             VStack(spacing: 10) {
@@ -289,8 +289,8 @@ struct SettingsView: View {
                         .font(.title2)
                         .foregroundColor(networkMode == "internet" ? .blue : .secondary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Internet Mode").font(.body).fontWeight(.medium)
-                        Text("Full internet access for updates, AI scanning, and version checking")
+                        Text(localizer.internetMode).font(.body).fontWeight(.medium)
+                        Text(localizer.internetModeDesc)
                             .font(.caption).foregroundColor(.secondary)
                     }
                     Spacer()
@@ -309,8 +309,8 @@ struct SettingsView: View {
                         .font(.title2)
                         .foregroundColor(networkMode == "intranet" ? .orange : .secondary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Intranet Mode (Offline)").font(.body).fontWeight(.medium)
-                        Text("No internet access. Local scanning only, no update checks")
+                        Text(localizer.intranetMode).font(.body).fontWeight(.medium)
+                        Text(localizer.intranetModeDesc)
                             .font(.caption).foregroundColor(.secondary)
                     }
                     Spacer()
@@ -329,9 +329,9 @@ struct SettingsView: View {
                 Divider()
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.up.circle").foregroundColor(.green)
-                    Text("Update Checking").font(.subheadline).fontWeight(.medium)
+                    Text(localizer.updateChecking).font(.subheadline).fontWeight(.medium)
                 }
-                Text("In internet mode, the app can check for updates of installed apps, AI agents, CLI tools, and dependencies.")
+                Text(localizer.updateCheckingDesc)
                     .font(.caption).foregroundColor(.secondary)
             }
         }
@@ -379,6 +379,7 @@ struct SettingsView: View {
                 Image(systemName: "arrow.up.circle").foregroundColor(.green)
                 Text(localizer.versionUpdate).font(.headline)
             }
+
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {

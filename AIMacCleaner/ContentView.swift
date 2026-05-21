@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct ContentView: View {
     @State private var selectedTab: NavItem = .cleaner
@@ -13,7 +14,7 @@ struct ContentView: View {
         case operations = "Agent 监控"
         case app = "APP 管理"
         case dependency = "依赖管理"
-        case migration = "芯片迁移"
+        case migration = "适配检测"
         case other = "其它工具"
 
         var icon: String {
@@ -45,7 +46,7 @@ struct ContentView: View {
             case .dependency: localizer.navDependency
             case .other: localizer.navOther
             case .operations: localizer.navOperations
-            case .migration: "芯片迁移"
+            case .migration: localizer.navMigration
             }
         }
 
@@ -56,7 +57,7 @@ struct ContentView: View {
             case .dependency: localizer.subDependency
             case .other: localizer.subOther
             case .operations: localizer.subOperations
-            case .migration: "Intel → Apple Silicon"
+            case .migration: localizer.subMigration
             }
         }
     }
@@ -486,7 +487,7 @@ struct OperationLogTab: View {
                             Image(systemName: "brain.head.profile")
                                 .font(.system(size: 9))
                                 .foregroundColor(.purple)
-                            Text("AI 学习中")
+                            Text(localizer.aiLearning)
                                 .font(.caption2)
                                 .foregroundColor(.purple)
                         }
@@ -505,7 +506,7 @@ struct OperationLogTab: View {
                         HStack(spacing: 2) {
                             Image(systemName: "sparkles")
                                 .font(.system(size: 9))
-                            Text(monitor.aiSelfLearningEnabled ? "关闭 AI" : "AI 分析")
+                            Text(monitor.aiSelfLearningEnabled ? localizer.closeAI : localizer.aiAnalysis)
                                 .font(.caption2)
                         }
                         .foregroundColor(monitor.aiSelfLearningEnabled ? .purple : .secondary)
@@ -523,8 +524,8 @@ struct OperationLogTab: View {
 
             HStack(spacing: 8) {
                 Picker("", selection: $viewMode) {
-                    Text("实时监控").tag(0)
-                    Text("审计").tag(1)
+                    Text(localizer.liveMonitor).tag(0)
+                    Text(localizer.audit).tag(1)
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 150)
@@ -539,7 +540,7 @@ struct OperationLogTab: View {
                         } label: {
                             HStack(spacing: 3) {
                                 Image(systemName: "xmark.circle").font(.system(size: 10))
-                                Text("清除结果").font(.caption2)
+                                Text(localizer.clearResults).font(.caption2)
                             }
                             .foregroundColor(.secondary)
                         }
@@ -615,10 +616,10 @@ struct OperationLogTab: View {
                             .buttonStyle(.bordered).controlSize(.regular)
                     } else {
                         VStack(spacing: 4) {
-                            Text("监控已启动，等待文件操作事件...")
+                            Text(localizer.monitoringStarted)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text("请在其他应用中创建、修改或删除文件以产生记录")
+                            Text(localizer.monitoringHint)
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary.opacity(0.7))
                         }
@@ -648,7 +649,7 @@ struct OperationLogTab: View {
                                         .font(.system(size: 9))
                                         .foregroundColor(.secondary)
                                         .lineLimit(1)
-                                        .help("进程: \(pn)")
+                                        .help("\(localizer.processHelp)\(pn)")
                                 }
                             }
                         }
@@ -692,7 +693,19 @@ struct OperationLogTab: View {
                             }
                             .buttonStyle(.plain)
                             .foregroundColor(.accentColor)
-                            .help("复制路径，可在 Finder 中搜索")
+                            .help(localizer.copyPath)
+                            if record.targetPath.hasPrefix("/") {
+                                Button {
+                                    let url = URL(fileURLWithPath: record.targetPath)
+                                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                                } label: {
+                                    Image(systemName: "folder")
+                                        .font(.system(size: 10))
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundColor(.accentColor)
+                                .help(localizer.openInFinder)
+                            }
                         }
                     }
 
@@ -716,8 +729,8 @@ struct OperationLogTab: View {
                     Spacer()
                     Image(systemName: "wand.and.stars")
                         .font(.system(size: 40)).foregroundColor(.secondary.opacity(0.5))
-                    Text("暂无梳理数据").font(.title3).fontWeight(.medium)
-                    Text("点击「立即梳理」通过 AI 分析原始监控数据").font(.caption).foregroundColor(.secondary)
+                    Text(localizer.noCuratedData).font(.title3).fontWeight(.medium)
+                    Text(localizer.noCuratedHint).font(.caption).foregroundColor(.secondary)
                     Spacer()
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -735,7 +748,7 @@ struct OperationLogTab: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(record.agentName)
                                     .font(.caption).fontWeight(.medium).lineLimit(1)
-                                Text("置信度: \(String(format: "%.0f", record.confidence * 100))%")
+                                Text(localizer.confidence + ": \(String(format: "%.0f", record.confidence * 100))%")
                                     .font(.system(size: 9)).foregroundColor(.secondary)
                             }
                         }
@@ -758,6 +771,17 @@ struct OperationLogTab: View {
                                 Image(systemName: "doc.on.doc").font(.system(size: 10))
                             }
                             .buttonStyle(.plain).foregroundColor(.accentColor)
+                            .help(localizer.copyPath)
+                            if record.targetPath.hasPrefix("/") {
+                                Button {
+                                    let url = URL(fileURLWithPath: record.targetPath)
+                                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                                } label: {
+                                    Image(systemName: "folder").font(.system(size: 10))
+                                }
+                                .buttonStyle(.plain).foregroundColor(.accentColor)
+                                .help(localizer.openInFinder)
+                            }
                         }
                     }
 
@@ -771,6 +795,7 @@ struct OperationLogTab: View {
                 .tableStyle(.inset(alternatesRowBackgrounds: true))
             }
         }
+        .onAppear { sessionScanner.localizer = localizer }
     }
 
     @State private var selectedAgentName: String = ""
@@ -860,20 +885,41 @@ struct OperationLogTab: View {
     }
     @State private var selectedAgentForAudit: String?
     @State private var auditFilterAgent: String?
+    @State private var auditFilterTimeRange: TimeRange = .all
+    @State private var auditFilterOpType: String = ""
     @State private var aiSummary: String = ""
     @State private var isGeneratingSummary: Bool = false
 
     private var auditFilteredRecords: [AgentOpRecord] {
+        var result = sessionScanner.opRecords
         if let filter = auditFilterAgent {
-            return sessionScanner.opRecords.filter { $0.agentName == filter }
+            result = result.filter { $0.agentName == filter }
         }
-        return sessionScanner.opRecords
+        if !auditFilterOpType.isEmpty {
+            result = result.filter { $0.opType == auditFilterOpType }
+        }
+        switch auditFilterTimeRange {
+        case .today:
+            let start = Calendar.current.startOfDay(for: Date())
+            result = result.filter { $0.timestamp >= start }
+        case .hour1:
+            result = result.filter { Date().timeIntervalSince($0.timestamp) < 3600 }
+        case .hour6:
+            result = result.filter { Date().timeIntervalSince($0.timestamp) < 21600 }
+        case .day1:
+            result = result.filter { Date().timeIntervalSince($0.timestamp) < 86400 }
+        case .day7:
+            result = result.filter { Date().timeIntervalSince($0.timestamp) < 604800 }
+        case .all:
+            break
+        }
+        return result
     }
 
     private var auditStats: [String: Int] {
         var stats: [String: Int] = [:]
         for rec in auditFilteredRecords {
-            stats["总操作", default: 0] += 1
+            stats[localizer.totalOps, default: 0] += 1
             stats[rec.opType, default: 0] += 1
         }
         return stats
@@ -900,16 +946,16 @@ struct OperationLogTab: View {
                         } label: {
                             HStack(spacing: 3) {
                                 Image(systemName: "chevron.left").font(.system(size: 9))
-                                Text("返回").font(.caption2)
+                                Text(localizer.back).font(.caption2)
                             }
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(.secondary)
 
-                        Text("审计: \(sel)")
+                        Text("\(localizer.audit): \(sel)")
                             .font(.caption).fontWeight(.semibold).foregroundColor(.purple)
                         Text("·").foregroundColor(.secondary)
-                        Text("\(auditFilteredRecords.count) 条记录")
+                        Text("\(auditFilteredRecords.count) \(localizer.auditRecordCount)")
                             .font(.caption).foregroundColor(.secondary)
 
                         Spacer()
@@ -923,7 +969,7 @@ struct OperationLogTab: View {
                                 } else {
                                     Image(systemName: "wand.and.stars").font(.system(size: 9))
                                 }
-                                Text(isGeneratingSummary ? "分析中..." : "AI 分析").font(.caption2)
+                                Text(isGeneratingSummary ? localizer.aiAnalyzing : localizer.aiAnalysis).font(.caption2)
                             }
                             .foregroundColor(.purple)
                         }
@@ -944,13 +990,13 @@ struct OperationLogTab: View {
                                 HStack(spacing: 3) {
                                     Text(key).font(.system(size: 10)).foregroundColor(.secondary)
                                     Text("\(val)").font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                        .foregroundColor(key == "总操作" ? .primary : opTypeColor(key))
+                                        .foregroundColor(key == localizer.totalOps ? .primary : opTypeColor(key))
                                 }
                             }
                             Spacer()
                             if let filter = auditFilterAgent {
                                 HStack(spacing: 3) {
-                                    Text("筛选: \(filter)").font(.system(size: 10)).foregroundColor(.blue)
+                                    Text("\(localizer.filterColon)\(filter)").font(.system(size: 10)).foregroundColor(.blue)
                                     Button {
                                         auditFilterAgent = nil
                                     } label: {
@@ -964,10 +1010,36 @@ struct OperationLogTab: View {
                         .padding(.vertical, 4)
                         .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
 
+                        HStack(spacing: 12) {
+                            Picker(localizer.timeRange, selection: $auditFilterTimeRange) {
+                                ForEach(TimeRange.allCases, id: \.self) { t in
+                                    Text(t.label(localizer)).tag(t)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 110)
+
+                            let auditOpTypes = Array(Set(sessionScanner.opRecords.map(\.opType))).sorted()
+                            Picker(localizer.opTypeLabel, selection: $auditFilterOpType) {
+                                Text(localizer.allTypes).tag("")
+                                ForEach(auditOpTypes, id: \.self) { t in
+                                    Text(t).tag(t)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 110)
+
+                            Text("\(localizer.total) \(auditFilteredRecords.count) \(localizer.recordsCount)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 4)
+
                         if !auditFileStats.isEmpty {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 6) {
-                                    Text("高频文件:").font(.system(size: 9)).foregroundColor(.secondary)
+                                    Text(localizer.highFreqFiles).font(.system(size: 9)).foregroundColor(.secondary)
                                     ForEach(Array(auditFileStats.sorted(by: { $0.value > $1.value }).prefix(8)), id: \.key) { path, count in
                                         HStack(spacing: 2) {
                                             Text(URL(fileURLWithPath: path).lastPathComponent)
@@ -991,7 +1063,7 @@ struct OperationLogTab: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(spacing: 4) {
                                     Image(systemName: "wand.and.stars").font(.system(size: 10)).foregroundColor(.purple)
-                                    Text("AI 分析总结").font(.caption).fontWeight(.semibold).foregroundColor(.purple)
+                                    Text(localizer.aiSummaryTitle).font(.caption).fontWeight(.semibold).foregroundColor(.purple)
                                     Spacer()
                                     Button {
                                         aiSummary = ""
@@ -1017,11 +1089,11 @@ struct OperationLogTab: View {
                     }
 
                     Table(auditFilteredRecords) {
-                        TableColumn("时间") { rec in
+                        TableColumn(localizer.timeCol) { rec in
                             Text(timeStr(rec.timestamp)).font(.system(size: 11)).monospacedDigit()
                         }
                         .width(min: 60, max: 80)
-                        TableColumn("操作") { rec in
+                        TableColumn(localizer.operationCol) { rec in
                             HStack(spacing: 3) {
                                 Text(rec.opType)
                                     .font(.system(size: 10))
@@ -1031,20 +1103,53 @@ struct OperationLogTab: View {
                                     .padding(.vertical, 1)
                                     .background(opTypeColor(rec.opType).opacity(0.1))
                                     .cornerRadius(3)
-                                Text(rec.toolName)
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
                             }
                         }
-                        .width(min: 80, max: 120)
-                        TableColumn("目标路径") { rec in
-                            Text(rec.targetPath).font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
+                        .width(min: 50, max: 70)
+                        TableColumn(localizer.instructionCol) { rec in
+                            Text(rec.toolName)
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                         }
-                        TableColumn("项目") { rec in
+                        .width(min: 60, max: 100)
+                        TableColumn(localizer.targetPathCol) { rec in
+                            HStack(spacing: 4) {
+                                Text(rec.targetPath)
+                                    .font(.system(size: 11))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .help(rec.targetPath)
+                                Button {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(rec.targetPath, forType: .string)
+                                } label: {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.accentColor)
+                                }
+                                .buttonStyle(.plain)
+                                .help(localizer.copyPath)
+                                if !rec.targetPath.isEmpty, rec.targetPath.hasPrefix("/") {
+                                    Button {
+                                        let url = URL(fileURLWithPath: rec.targetPath)
+                                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                                    } label: {
+                                        Image(systemName: "folder")
+                                            .font(.system(size: 9))
+                                            .foregroundColor(.accentColor)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help(localizer.openInFinder)
+                                }
+                            }
+                        }
+                        TableColumn(localizer.projectCol) { rec in
                             Text(rec.projectDir).font(.system(size: 10)).lineLimit(1).truncationMode(.middle).foregroundColor(.secondary)
                         }
                         .width(min: 80, max: 180)
-                        TableColumn("详情") { rec in
+                        TableColumn(localizer.detailCol) { rec in
                             Text(rec.detail).font(.system(size: 10)).lineLimit(1).truncationMode(.tail).foregroundColor(.secondary)
                         }
                     }
@@ -1054,7 +1159,7 @@ struct OperationLogTab: View {
                 VStack(spacing: 16) {
                     Spacer()
                     ProgressView().controlSize(.regular)
-                    Text(selectedAgentForAudit == nil ? "正在扫描 Agent 会话..." : "正在解析 \(selectedAgentForAudit!) 的操作记录...").font(.caption).foregroundColor(.secondary)
+                    Text(selectedAgentForAudit == nil ? localizer.scanAgentSession : "\(localizer.parsingAgentOps) \(selectedAgentForAudit!) \(localizer.operationsRecord)").font(.caption).foregroundColor(.secondary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1064,16 +1169,17 @@ struct OperationLogTab: View {
                         Image(systemName: "doc.text.magnifyingglass")
                             .font(.system(size: 13))
                             .foregroundColor(.purple)
-                        Text("Agent 操作审计").font(.caption).fontWeight(.semibold)
+                        Text(localizer.agentOpAudit).font(.caption).fontWeight(.semibold)
                         Text("·").foregroundColor(.secondary)
-                        Text("\(sessionScanner.discoveredAgents.count) 个 Agent").font(.caption).foregroundColor(.secondary)
+                        Text("\(sessionScanner.discoveredAgents.count) \(localizer.unitAgent)").font(.caption).foregroundColor(.secondary)
                         Spacer()
                         Button {
-                            sessionScanner.scanAllAgents()
+                            sessionScanner.isScanning = true
+                            Task { sessionScanner.scanAllAgents() }
                         } label: {
                             HStack(spacing: 3) {
                                 Image(systemName: "arrow.clockwise").font(.system(size: 9))
-                                Text("刷新扫描").font(.caption2)
+                                Text(localizer.scanRefresh).font(.caption2)
                             }
                         }
                         .buttonStyle(.plain)
@@ -1091,8 +1197,8 @@ struct OperationLogTab: View {
                             Image(systemName: "doc.text.magnifyingglass")
                                 .font(.system(size: 40))
                                 .foregroundColor(.secondary.opacity(0.4))
-                            Text("点击「刷新扫描」发现本机的 Agent 会话记录").font(.caption).foregroundColor(.secondary)
-                            Text("支持 Claude Code、Codex、Trae、Cursor、CodeBuddy、Aider、Cline 等 20+ 种 Agent").font(.system(size: 10)).foregroundColor(.secondary.opacity(0.7))
+                            Text(localizer.scanToDiscover).font(.caption).foregroundColor(.secondary)
+                            Text(localizer.supportedAgents).font(.system(size: 10)).foregroundColor(.secondary.opacity(0.7))
                             Spacer()
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1112,7 +1218,7 @@ struct OperationLogTab: View {
                                                     .font(.body)
                                                     .fontWeight(.medium)
                                                 if customAgentSources.contains(where: { $0.name == agent.name }) {
-                                                    Text("自定义")
+                                                    Text(localizer.customBadge)
                                                         .font(.system(size: 9))
                                                         .foregroundColor(.green)
                                                         .padding(.horizontal, 3)
@@ -1121,11 +1227,11 @@ struct OperationLogTab: View {
                                                 }
                                             }
                                             HStack(spacing: 6) {
-                                                Text("\(agent.sessionCount) 个会话")
+                                                Text("\(agent.sessionCount) \(localizer.unitSession)")
                                                     .font(.system(size: 10))
                                                     .foregroundColor(.secondary)
                                                 if let date = agent.latestActivity {
-                                                    Text("最近: \(timeStr(date))")
+                                                    Text("\(localizer.recentLabel): \(timeStr(date))")
                                                         .font(.system(size: 10))
                                                         .foregroundColor(.secondary)
                                                 }
@@ -1150,18 +1256,23 @@ struct OperationLogTab: View {
                                                     .foregroundColor(.secondary)
                                             }
                                             .buttonStyle(.plain)
-                                            .help("移除自定义 Agent")
+                                            .help(localizer.removeCustomAgent)
                                         }
 
                                         Button {
                                             selectedAgentForAudit = agent.name
                                             auditFilterAgent = nil
+                                            auditFilterTimeRange = .all
+                                            auditFilterOpType = ""
                                             aiSummary = ""
-                                            sessionScanner.scanAgentOps(agentName: agent.name)
+                                            sessionScanner.isScanning = true
+                                            Task {
+                                                sessionScanner.scanAgentOps(agentName: agent.name)
+                                            }
                                         } label: {
                                             HStack(spacing: 3) {
                                                 Image(systemName: "magnifyingglass").font(.system(size: 9))
-                                                Text("审计").font(.caption2)
+                                                Text(localizer.audit).font(.caption2)
                                             }
                                         }
                                         .buttonStyle(.bordered)
@@ -1183,7 +1294,7 @@ struct OperationLogTab: View {
                     VStack(spacing: 8) {
                         HStack(spacing: 4) {
                             Image(systemName: "plus.circle").font(.system(size: 11)).foregroundColor(.green)
-                            Text("添加自定义 Agent").font(.caption).fontWeight(.semibold).foregroundColor(.green)
+                            Text(localizer.addCustomAgent).font(.caption).fontWeight(.semibold).foregroundColor(.green)
                             Spacer()
                         }
 
@@ -1193,7 +1304,7 @@ struct OperationLogTab: View {
                             } label: {
                                 HStack(spacing: 3) {
                                     Image(systemName: "app.badge.plus")
-                                    Text("从已安装的 APP/依赖/工具中选择")
+                                    Text(localizer.selectFromInstalled)
                                 }
                                 .font(.caption)
                             }
@@ -1202,12 +1313,12 @@ struct OperationLogTab: View {
                         }
 
                         HStack(spacing: 8) {
-                            TextField("名称", text: $customAgentName)
+                            TextField(localizer.customAgentName, text: $customAgentName)
                                 .textFieldStyle(.roundedBorder)
                                 .font(.caption)
                                 .frame(width: 100)
 
-                            TextField("会话目录路径 (如 ~/.trae/sessions)", text: $customAgentPath)
+                            TextField(localizer.sessionPathHint, text: $customAgentPath)
                                 .textFieldStyle(.roundedBorder)
                                 .font(.caption)
 
@@ -1233,7 +1344,7 @@ struct OperationLogTab: View {
                             } label: {
                                 HStack(spacing: 3) {
                                     Image(systemName: "plus.circle.fill")
-                                    Text("添加并扫描")
+                                    Text(localizer.addAndScan)
                                 }
                                 .font(.caption)
                             }
@@ -1302,7 +1413,7 @@ struct OperationLogTab: View {
         aiSummary = ""
 
         Task {
-            let agentName = records.first?.agentName ?? "未知"
+            let agentName = records.first?.agentName ?? localizer.unknownAgent
             var opSummary: [String: Int] = [:]
             var fileSummary: [String: Int] = [:]
             var recentOps: [String] = []
@@ -1318,8 +1429,8 @@ struct OperationLogTab: View {
                 recentOps.append("[\(timeStr(rec.timestamp))] \(rec.opType): \(rec.targetPath)")
             }
 
-            let topFiles = fileSummary.sorted { $0.value > $1.value }.prefix(10).map { "\($0.key) (\($0.value)次)" }.joined(separator: "\n")
-            let opCounts = opSummary.map { "\($0.key): \($0.value)次" }.joined(separator: ", ")
+            let topFiles = fileSummary.sorted { $0.value > $1.value }.prefix(10).map { "\($0.key) (\($0.value)\(localizer.timesUnit))" }.joined(separator: "\n")
+            let opCounts = opSummary.map { "\($0.key): \($0.value)\(localizer.timesUnit)" }.joined(separator: ", ")
 
             let prompt = """
             你是一个系统安全分析专家。以下是 Agent「\(agentName)」在本机的操作审计记录，请分析总结：
@@ -1345,7 +1456,7 @@ struct OperationLogTab: View {
             let apiBase = (config.apiBase ?? "https://api.deepseek.com").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             guard let url = URL(string: "\(apiBase)/v1/chat/completions"),
                   let apiKey = config.apiKey else {
-                aiSummary = "API 配置无效"
+                aiSummary = localizer.apiConfigInvalid
                 isGeneratingSummary = false
                 return
             }
@@ -1367,7 +1478,7 @@ struct OperationLogTab: View {
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                    aiSummary = "API 请求失败"
+                    aiSummary = localizer.apiRequestFailed
                     isGeneratingSummary = false
                     return
                 }
@@ -1375,14 +1486,14 @@ struct OperationLogTab: View {
                       let choices = json["choices"] as? [[String: Any]],
                       let content = choices.first?["message"] as? [String: Any],
                       let result = content["content"] as? String else {
-                    aiSummary = "AI 返回格式异常"
+                    aiSummary = localizer.aiFormatError
                     isGeneratingSummary = false
                     return
                 }
                 aiSummary = result
                 isGeneratingSummary = false
             } catch {
-                aiSummary = "请求失败: \(error.localizedDescription)"
+                aiSummary = "\(localizer.requestFailed): \(error.localizedDescription)"
                 isGeneratingSummary = false
             }
         }
@@ -1476,12 +1587,12 @@ struct OperationLogTab: View {
 
     private func opTypeColor(_ op: String) -> Color {
         switch op {
-        case "写入": .red
-        case "编辑": .orange
-        case "读取": .blue
-        case "删除": .red
-        case "执行命令": .purple
-        case "搜索": .cyan
+        case "写入", "Write": .red
+        case "编辑", "Edit": .orange
+        case "读取", "Read": .blue
+        case "删除", "Delete": .red
+        case "执行命令", "Execute": .purple
+        case "搜索", "Search": .cyan
         default: .secondary
         }
     }
@@ -1521,6 +1632,7 @@ struct AddAgentFromAppsSheet: View {
     let existingNames: Set<String>
     let onAdd: (AppInfo) -> Void
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var localizer: Localizer
     @State private var searchText: String = ""
     @State private var selectedApp: AppInfo?
 
@@ -1535,10 +1647,10 @@ struct AddAgentFromAppsSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Text("选择要添加的 Agent / APP / 工具")
+                Text(localizer.selectAgentToAdd)
                     .font(.headline)
                 Spacer()
-                Button("关闭") { dismiss() }
+                Button(localizer.cancelBtn) { dismiss() }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
             }
@@ -1546,7 +1658,7 @@ struct AddAgentFromAppsSheet: View {
 
             Divider()
 
-            TextField("搜索...", text: $searchText)
+            TextField(localizer.searchingPlaceholder, text: $searchText)
                 .textFieldStyle(.roundedBorder)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
@@ -1554,7 +1666,7 @@ struct AddAgentFromAppsSheet: View {
             if filteredApps.isEmpty {
                 VStack(spacing: 8) {
                     Spacer()
-                    Text("没有找到匹配的 APP").foregroundColor(.secondary)
+                    Text(localizer.noMatchingApp).foregroundColor(.secondary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1586,7 +1698,7 @@ struct AddAgentFromAppsSheet: View {
                                         .font(.body)
                                         .fontWeight(.medium)
                                     if existingNames.contains(app.displayName) {
-                                        Text("已添加")
+                                        Text(localizer.alreadyAdded)
                                             .font(.system(size: 9))
                                             .foregroundColor(.green)
                                             .padding(.horizontal, 3)
@@ -1616,11 +1728,11 @@ struct AddAgentFromAppsSheet: View {
 
             HStack {
                 if let app = selectedApp {
-                    Text("已选: \(app.displayName)")
+                    Text("\(localizer.selected): \(app.displayName)")
                         .font(.caption)
                         .foregroundColor(.green)
                 } else {
-                    Text("点击列表选择一个 APP")
+                    Text(localizer.selectAppFromList)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -1633,7 +1745,7 @@ struct AddAgentFromAppsSheet: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "plus.circle.fill")
-                        Text("添加并扫描")
+                        Text(localizer.addAndScan)
                     }
                     .font(.caption)
                 }
@@ -1650,6 +1762,7 @@ struct AddAgentFromAppsSheet: View {
 
 struct TargetedOpsTable: View {
     let ops: [TargetedFileOp]
+    @EnvironmentObject var localizer: Localizer
 
     var filteredOps: [TargetedFileOp] {
         ops.filter { op in
@@ -1664,31 +1777,39 @@ struct TargetedOpsTable: View {
 
     var body: some View {
         Table(filteredOps.prefix(500)) {
-            TableColumn("时间") { op in
+            TableColumn(localizer.timeCol) { op in
                 Text(op.timestamp, style: .time).font(.caption2).monospacedDigit()
             }.width(60)
-            TableColumn("进程") { op in
+            TableColumn(localizer.colProcess) { op in
                 HStack(spacing: 3) {
                     Text(op.processComm).font(.caption).fontWeight(.medium).lineLimit(1)
                     Text("(\(String(op.processPid)))").font(.system(size: 9)).foregroundColor(.secondary)
                 }
             }.width(min: 100)
-            TableColumn("操作") { op in
+            TableColumn(localizer.opCol) { op in
                 HStack(spacing: 3) {
-                    Image(systemName: op.opType == "修改" ? "pencil" : op.opType == "打开" ? "plus.circle" : "xmark.circle")
-                        .font(.caption2).foregroundColor(op.opType == "修改" ? .blue : op.opType == "打开" ? .green : .red)
+                    Image(systemName: op.opType == "修改" || op.opType == "Modify" ? "pencil" : op.opType == "打开" || op.opType == "Open" ? "plus.circle" : "xmark.circle")
+                        .font(.caption2).foregroundColor(op.opType == "修改" || op.opType == "Modify" ? .blue : op.opType == "打开" || op.opType == "Open" ? .green : .red)
                     Text(op.opType).font(.caption2)
                 }
             }.width(50)
-            TableColumn("路径") { op in
+            TableColumn(localizer.colPath) { op in
                 HStack(spacing: 4) {
                     Text(op.targetPath).font(.caption2).lineLimit(1).truncationMode(.middle).help(op.targetPath)
                     Button { NSPasteboard.general.setString(op.targetPath, forType: .string) } label: {
                         Image(systemName: "doc.on.doc").font(.system(size: 9)).foregroundColor(.accentColor)
                     }.buttonStyle(.plain)
+                    if op.targetPath.hasPrefix("/") {
+                        Button {
+                            let url = URL(fileURLWithPath: op.targetPath)
+                            NSWorkspace.shared.activateFileViewerSelecting([url])
+                        } label: {
+                            Image(systemName: "folder").font(.system(size: 9)).foregroundColor(.accentColor)
+                        }.buttonStyle(.plain)
+                    }
                 }
             }
-            TableColumn("大小") { op in
+            TableColumn(localizer.colSize) { op in
                 if op.fileSize > 0 {
                     Text(ByteCountFormatter.string(fromByteCount: op.fileSize, countStyle: .file))
                         .font(.caption2).monospacedDigit().foregroundColor(.secondary)
@@ -1839,17 +1960,17 @@ struct MacCleanerTab: View {
                 .environmentObject(service)
                 .environmentObject(localizer)
         }
-        .alert("确认删除", isPresented: $showDeleteConfirm) {
-            Button("取消", role: .cancel) {}
-            Button("删除", role: .destructive) { performDelete() }
+        .alert(localizer.confirmDelete, isPresented: $showDeleteConfirm) {
+            Button(localizer.cancelBtn, role: .cancel) {}
+            Button(localizer.deleteBtn, role: .destructive) { performDelete() }
         } message: {
             let items = service.scanItems.filter { deleteTargetIds.contains($0.id) }
-            Text("确定删除 \(deleteTargetIds.count) 项（共 \(service.formatSize(items.reduce(Int64(0)) { $0 + $1.size }))）？")
+            Text("\(localizer.confirmDeleteMsg) \(deleteTargetIds.count) \(localizer.itemsLabel) (\(localizer.total) \(service.formatSize(items.reduce(Int64(0)) { $0 + $1.size })))？")
         }
-        .alert("🎉 清理完成", isPresented: $showCleanResult) {
-            Button("确定") {}
+        .alert(localizer.cleanComplete, isPresented: $showCleanResult) {
+            Button(localizer.ok) {}
         } message: {
-            Text("本次清理释放了 \(service.formatSize(cleanedSize))，共清理 \(cleanedCount) 项。")
+            Text("\(localizer.cleanCompleteMsg) \(service.formatSize(cleanedSize))，\(localizer.total) \(cleanedCount) \(localizer.itemsLabel)。")
         }
     }
 
@@ -1857,15 +1978,15 @@ struct MacCleanerTab: View {
         HStack(spacing: 32) {
             if let disk = service.diskInfo {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("磁盘空间").font(.headline)
+                    Text(localizer.diskSpaceLabel).font(.headline)
                     ProgressView(value: disk.usedPct / 100.0).progressViewStyle(.linear).tint(disk.usedPct > 85 ? .red : disk.usedPct > 70 ? .orange : .green)
-                    Text(String(format: "%.1f%% 已使用", disk.usedPct)).font(.caption).foregroundColor(.secondary)
+                    Text("\(String(format: "%.1f%%", disk.usedPct)) \(localizer.usedLabel)").font(.caption).foregroundColor(.secondary)
                 }.frame(maxWidth: 280)
                 HStack(spacing: 28) {
-                    DiskStat(title: "总容量", value: String(format: "%.0f GB", disk.totalGb))
-                    DiskStat(title: "已使用", value: String(format: "%.0f GB", disk.usedGb))
-                    DiskStat(title: "可用", value: String(format: "%.0f GB", disk.freeGb), color: disk.freeGb < 20 ? .red : .green)
-                    DiskStat(title: "可释放", value: service.formatSize(totalCleanable), color: .cyan)
+                    DiskStat(title: localizer.totalCapacity, value: String(format: "%.0f GB", disk.totalGb))
+                    DiskStat(title: localizer.usedLabel, value: String(format: "%.0f GB", disk.usedGb))
+                    DiskStat(title: localizer.available, value: String(format: "%.0f GB", disk.freeGb), color: disk.freeGb < 20 ? .red : .green)
+                    DiskStat(title: localizer.releasable, value: service.formatSize(totalCleanable), color: .cyan)
                 }
                 Spacer()
             }
@@ -1873,18 +1994,18 @@ struct MacCleanerTab: View {
     }
 
     private var scanningOverlay: some View {
-        VStack(spacing: 20) { ProgressView().controlSize(.large); Text("正在扫描存储空间...").font(.title3).fontWeight(.medium); Text("请稍候，正在分析可清理的文件").foregroundColor(.secondary).font(.callout) }
+        VStack(spacing: 20) { ProgressView().controlSize(.large); Text(localizer.scanningStorage).font(.title3).fontWeight(.medium); Text(localizer.scanningStorageHint).foregroundColor(.secondary).font(.callout) }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var welcomeCenter: some View {
         VStack(spacing: 40) {
             Spacer()
-            VStack(spacing: 8) { Image(systemName: "arrow.down.doc.fill").font(.system(size: 48)).foregroundColor(.accentColor.opacity(0.6)); Text("AIMacCleaner").font(.title).fontWeight(.bold); Text("智能清理 Mac 存储空间").foregroundColor(.secondary).font(.callout) }
+            VStack(spacing: 8) { Image(systemName: "arrow.down.doc.fill").font(.system(size: 48)).foregroundColor(.accentColor.opacity(0.6)); Text("AIMacCleaner").font(.title).fontWeight(.bold); Text(localizer.smartCleanDesc).foregroundColor(.secondary).font(.callout) }
             HStack(spacing: 24) {
-                ActionCard(icon: "magnifyingglass", title: "本地扫描", subtitle: "扫描系统缓存、日志等已知可清理目录", color: .blue, isDisabled: service.isScanning) { Task { await service.scanLocal() } }
-                ActionCard(icon: "brain", title: "AI 扫描", subtitle: "大模型补充发现本地规则遗漏的清理项", color: .purple, isDisabled: service.isAiScanning) { Task { await performAiScan() } }
-                ActionCard(icon: "bolt.fill", title: "增强扫描", subtitle: "本地 + AI 双重检测，覆盖最全面", color: .orange, isDisabled: service.isEnhancedScanning) { Task { await service.startEnhancedScan() } }
+                ActionCard(icon: "magnifyingglass", title: localizer.localScan, subtitle: localizer.localScanSubtitle, color: .blue, isDisabled: service.isScanning) { Task { await service.scanLocal() } }
+                ActionCard(icon: "brain", title: localizer.aiScan, subtitle: localizer.aiScanSubtitle, color: .purple, isDisabled: service.isAiScanning) { Task { await performAiScan() } }
+                ActionCard(icon: "bolt.fill", title: localizer.enhancedScan, subtitle: localizer.enhancedScanSubtitle, color: .orange, isDisabled: service.isEnhancedScanning) { Task { await service.startEnhancedScan() } }
             }
             Spacer()
         }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(40)
@@ -1894,11 +2015,11 @@ struct MacCleanerTab: View {
         VStack(spacing: 16) {
             Spacer()
             Image(systemName: "line.3.horizontal.decrease.circle").font(.system(size: 40)).foregroundColor(.secondary.opacity(0.5))
-            Text("当前筛选条件下没有匹配项").font(.title3).fontWeight(.medium)
+            Text(localizer.noMatchesHint).font(.title3).fontWeight(.medium)
             HStack(spacing: 10) {
-                if !filterRisk.isEmpty { Button { filterRisk = "" } label: { Text("清除风险筛选") }.buttonStyle(.bordered).controlSize(.small) }
-                if !filterCategory.isEmpty { Button { filterCategory = "" } label: { Text("清除分类筛选") }.buttonStyle(.bordered).controlSize(.small) }
-                if !searchText.isEmpty { Button { searchText = "" } label: { Text("清除搜索") }.buttonStyle(.bordered).controlSize(.small) }
+                if !filterRisk.isEmpty { Button { filterRisk = "" } label: { Text(localizer.clearRiskFilter) }.buttonStyle(.bordered).controlSize(.small) }
+                if !filterCategory.isEmpty { Button { filterCategory = "" } label: { Text(localizer.clearCategoryFilter) }.buttonStyle(.bordered).controlSize(.small) }
+                if !searchText.isEmpty { Button { searchText = "" } label: { Text(localizer.clearSearch) }.buttonStyle(.bordered).controlSize(.small) }
             }
             Spacer()
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1907,13 +2028,13 @@ struct MacCleanerTab: View {
     private var resultList: some View {
         Table(filteredItems, selection: $selectedIds) {
             TableColumn("✓") { item in Toggle("", isOn: Binding(get: { selectedIds.contains(item.id) }, set: { _ in if selectedIds.contains(item.id) { selectedIds.remove(item.id) } else { selectedIds.insert(item.id) } })).toggleStyle(.checkbox).labelsHidden() }.width(36)
-            TableColumn("名称") { item in HStack(spacing: 6) { if item.ignored { Image(systemName: "eye.slash").foregroundColor(.secondary).font(.caption) }; Text(item.name).fontWeight(.semibold) } }.width(min: 150)
-            TableColumn("来源") { item in Text(item.sourceType.label).font(.caption2).padding(.horizontal, 6).padding(.vertical, 2).background(item.sourceType == .ai ? Color.purple.opacity(0.12) : Color.blue.opacity(0.12)).cornerRadius(4) }.width(50)
-            TableColumn("应用") { item in Text(item.app).font(.caption).foregroundColor(.secondary) }.width(90)
-            TableColumn("风险") { item in HStack(spacing: 3) { Image(systemName: item.riskLevel.systemImage).foregroundColor(riskColor(item.riskLevel)).font(.caption); Text(item.riskLevel.label).font(.caption2).fontWeight(.medium) } }.width(60)
-            TableColumn("大小") { item in Text(service.formatSize(item.size)).fontWeight(.bold).monospacedDigit().foregroundColor(.cyan) }.width(70)
-            TableColumn("说明") { item in Text(item.reason ?? item.riskDesc).font(.caption2).foregroundColor(item.sourceType == .ai ? .purple : .orange).lineLimit(2) }
-            TableColumn("操作") { item in HStack(spacing: 4) {
+            TableColumn(localizer.colName) { item in HStack(spacing: 6) { if item.ignored { Image(systemName: "eye.slash").foregroundColor(.secondary).font(.caption) }; Text(item.name).fontWeight(.semibold) } }.width(min: 150)
+            TableColumn(localizer.colSource) { item in Text(item.sourceType.localizedLabel(localizer)).font(.caption2).padding(.horizontal, 6).padding(.vertical, 2).background(item.sourceType == .ai ? Color.purple.opacity(0.12) : Color.blue.opacity(0.12)).cornerRadius(4) }.width(50)
+            TableColumn(localizer.colApp) { item in Text(item.app).font(.caption).foregroundColor(.secondary) }.width(90)
+            TableColumn(localizer.colRisk) { item in HStack(spacing: 3) { Image(systemName: item.riskLevel.systemImage).foregroundColor(riskColor(item.riskLevel)).font(.caption); Text(item.riskLevel.localizedLabel(localizer)).font(.caption2).fontWeight(.medium) } }.width(60)
+            TableColumn(localizer.colSize) { item in Text(service.formatSize(item.size)).fontWeight(.bold).monospacedDigit().foregroundColor(.cyan) }.width(70)
+            TableColumn(localizer.colDesc) { item in Text(item.reason ?? item.riskDesc).font(.caption2).foregroundColor(item.sourceType == .ai ? .purple : .orange).lineLimit(2) }
+            TableColumn(localizer.colAction) { item in HStack(spacing: 4) {
                 Button { confirmDeleteSingle(item) } label: { Image(systemName: "trash").font(.caption) }.buttonStyle(.bordered).controlSize(.mini).tint(.red)
                 Button { toggleIgnore(item) } label: { Image(systemName: item.ignored ? "eye" : "eye.slash").font(.caption) }.buttonStyle(.bordered).controlSize(.mini)
             } }.width(70)
@@ -1985,7 +2106,7 @@ struct AppManagerTab: View {
         VStack(spacing: 0) {
             PageHeader(
                 icon: filterType.tabIcon,
-                title: filterType.tabLabel,
+                title: filterType.localizedTabLabel(localizer),
                 subtitle: filterType == .app ? localizer.appManagerSubtitle : filterType == .dependency ? localizer.dependencySubtitle : localizer.otherToolsSubtitle,
                 color: filterType.tabColor
             ) {
@@ -1996,7 +2117,7 @@ struct AppManagerTab: View {
                     .buttonStyle(.bordered).controlSize(.small).disabled(service.isScanningApps)
 
                     Button { service.checkAppUpdates() } label: {
-                        HStack(spacing: 4) { Image(systemName: "arrow.up.circle"); Text("Check Updates") }
+                        HStack(spacing: 4) { Image(systemName: "arrow.up.circle"); Text(localizer.checkUpdates) }
                     }
                     .buttonStyle(.bordered).controlSize(.small).tint(.green)
                     .disabled(service.isCheckingAppUpdates)
@@ -2032,7 +2153,7 @@ struct AppManagerTab: View {
                 Spacer()
 
                 if !selectedAppIds.isEmpty {
-                    Text("\(localizer.selected) \(selectedAppIds.count) 项 · \(service.formatSize(selectedTotalSize))").font(.caption).foregroundColor(.blue).fontWeight(.medium)
+                    Text("\(localizer.selected) \(selectedAppIds.count) \(localizer.itemsLabel) · \(service.formatSize(selectedTotalSize))").font(.caption).foregroundColor(.blue).fontWeight(.medium)
                 }
 
                 HStack(spacing: 4) {
@@ -2077,7 +2198,7 @@ struct AppManagerTab: View {
                     Spacer()
                     Image(systemName: filterType == .app ? "app.dashed" : filterType == .dependency ? "cube.box" : "terminal")
                         .font(.system(size: 40)).foregroundColor(.secondary.opacity(0.5))
-                    Text("\(localizer.notFound)\(filterType.label)").font(.title3).fontWeight(.medium)
+                    Text("\(localizer.notFound)\(filterType.localizedLabel(localizer))").font(.title3).fontWeight(.medium)
                     Spacer()
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -2149,7 +2270,7 @@ struct AppManagerTab: View {
         } message: {
             let apps = selectedApps
             let size = pendingAction == .basicUninstall ? apps.reduce(Int64(0)) { $0 + $1.appSize } : apps.reduce(Int64(0)) { $0 + $1.totalSize }
-            Text("\(pendingAction.desc(localizer))\n\n\(localizer.willAction)\(pendingAction.label(localizer)) \(apps.count) \(localizer.total)，共 \(service.formatSize(size))")
+            Text("\(pendingAction.desc(localizer))\n\n\(localizer.willAction)\(pendingAction.label(localizer)) \(apps.count) \(localizer.itemsLabel)，\(localizer.total) \(service.formatSize(size))")
         }
         .alert(localizer.actionDone, isPresented: $showActionResult) {
             Button(localizer.confirmBtn) {}
@@ -2160,10 +2281,10 @@ struct AppManagerTab: View {
         switch cat {
         case "AI Agent": .purple
         case "CLI": .blue
-        case "包管理": .orange
-        case "开发": .green
-        case "应用": .cyan
-        case "其它": .gray
+        case "包管理", "Package Manager": .orange
+        case "开发", "Development": .green
+        case "应用", "Apps": .cyan
+        case "其它", "Other": .gray
         default: .gray
         }
     }
@@ -2194,7 +2315,7 @@ struct AppManagerTab: View {
             }
             service.refreshDiskInfo()
             selectedAppIds.removeAll()
-            actionResultMsg = "\(pendingAction.label(localizer))\(localizer.actionComplete)：成功 \(successCount) 个" + (failCount > 0 ? "，失败 \(failCount) 个" : "")
+            actionResultMsg = "\(pendingAction.label(localizer))\(localizer.actionComplete)：\(localizer.successCount) \(successCount) \(localizer.unitItems)" + (failCount > 0 ? "，\(localizer.failCount) \(failCount) \(localizer.unitItems)" : "")
             showActionResult = true
         }
     }
@@ -2278,10 +2399,10 @@ struct SubCategoryChip: View {
         switch cat {
         case "AI Agent": "cpu"
         case "CLI": "terminal"
-        case "包管理": "cube.box"
-        case "开发": "hammer"
-        case "应用": "app.fill"
-        case "其它": "questionmark.folder"
+        case "包管理", "Package Manager": "cube.box"
+        case "开发", "Development": "hammer"
+        case "应用", "Apps": "app.fill"
+        case "其它", "Other": "questionmark.folder"
         default: "folder"
         }
     }
@@ -2291,6 +2412,7 @@ struct SubCategoryChip: View {
 
 struct SensorMonitorTab: View {
     @ObservedObject var monitor: SensorMonitor
+    @EnvironmentObject var localizer: Localizer
     @State private var filterType: SensorEvent.SensorType?
 
     var filteredEvents: [SensorEvent] {
@@ -2304,8 +2426,8 @@ struct SensorMonitorTab: View {
         VStack(spacing: 0) {
             PageHeader(
                 icon: "video.fill",
-                title: "设备监控",
-                subtitle: "摄像头与麦克风使用监控",
+                title: localizer.deviceMonitor,
+                subtitle: localizer.deviceMonitorSubtitle,
                 color: .red
             ) {
                 HStack(spacing: 8) {
@@ -2313,7 +2435,7 @@ struct SensorMonitorTab: View {
                         HStack(spacing: 4) {
                             Circle().fill(Color.red).frame(width: 6, height: 6)
                             Image(systemName: "video.fill").font(.caption2)
-                            Text(monitor.cameraProcess ?? "摄像头").font(.caption2)
+                            Text(monitor.cameraProcess ?? localizer.camera).font(.caption2)
                         }
                         .foregroundColor(.red)
                         .padding(.horizontal, 8).padding(.vertical, 4)
@@ -2324,7 +2446,7 @@ struct SensorMonitorTab: View {
                         HStack(spacing: 4) {
                             Circle().fill(Color.blue).frame(width: 6, height: 6)
                             Image(systemName: "mic.fill").font(.caption2)
-                            Text(monitor.microphoneProcess ?? "麦克风").font(.caption2)
+                            Text(monitor.microphoneProcess ?? localizer.microphone).font(.caption2)
                         }
                         .foregroundColor(.blue)
                         .padding(.horizontal, 8).padding(.vertical, 4)
@@ -2337,7 +2459,7 @@ struct SensorMonitorTab: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: monitor.isMonitoring ? "stop.circle" : "play.circle")
-                            Text(monitor.isMonitoring ? "停止监控" : "开始监控")
+                            Text(monitor.isMonitoring ? localizer.stopMonitor : localizer.startMonitoringBtn)
                         }
                     }
                     .buttonStyle(.bordered).controlSize(.small)
@@ -2345,7 +2467,7 @@ struct SensorMonitorTab: View {
 
                     if !monitor.events.isEmpty {
                         Button { monitor.clearEvents() } label: {
-                            HStack(spacing: 3) { Image(systemName: "trash"); Text("清空") }
+                            HStack(spacing: 3) { Image(systemName: "trash"); Text(localizer.clear) }
                         }
                         .buttonStyle(.bordered).controlSize(.small).tint(.red)
                     }
@@ -2354,14 +2476,14 @@ struct SensorMonitorTab: View {
 
             HStack(spacing: 12) {
                 HStack(spacing: 6) {
-                    SensorFilterChip(label: "全部", icon: "sensor.fill", color: .gray, isActive: filterType == nil) { filterType = nil }
-                    SensorFilterChip(label: "摄像头", icon: "video.fill", color: .red, isActive: filterType == .camera) { filterType = .camera }
-                    SensorFilterChip(label: "麦克风", icon: "mic.fill", color: .blue, isActive: filterType == .microphone) { filterType = .microphone }
+                    SensorFilterChip(label: localizer.all, icon: "sensor.fill", color: .gray, isActive: filterType == nil) { filterType = nil }
+                    SensorFilterChip(label: localizer.camera, icon: "video.fill", color: .red, isActive: filterType == .camera) { filterType = .camera }
+                    SensorFilterChip(label: localizer.microphone, icon: "mic.fill", color: .blue, isActive: filterType == .microphone) { filterType = .microphone }
                 }
 
                 Spacer()
 
-                Text("\(filteredEvents.count) 条记录").font(.caption).foregroundColor(.secondary)
+                Text("\(filteredEvents.count) \(localizer.recordsCount)").font(.caption).foregroundColor(.secondary)
             }
             .padding(.horizontal, 24).padding(.vertical, 10)
             .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
@@ -2372,9 +2494,9 @@ struct SensorMonitorTab: View {
                     Spacer()
                     Image(systemName: "video.slash")
                         .font(.system(size: 48)).foregroundColor(.secondary.opacity(0.5))
-                    Text("设备监控未启动").font(.title3).fontWeight(.medium)
-                    Text("启动后将监控摄像头和麦克风的使用情况").font(.caption).foregroundColor(.secondary)
-                    Button("开始监控") { monitor.start() }
+                    Text(localizer.deviceMonitorStopped).font(.title3).fontWeight(.medium)
+                    Text(localizer.deviceMonitorHint).font(.caption).foregroundColor(.secondary)
+                    Button(localizer.startMonitoringBtn) { monitor.start() }
                         .buttonStyle(.borderedProminent).tint(.red).controlSize(.regular)
                     Spacer()
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2383,17 +2505,17 @@ struct SensorMonitorTab: View {
                     Spacer()
                     Image(systemName: "checkmark.shield.fill")
                         .font(.system(size: 40)).foregroundColor(.green.opacity(0.6))
-                    Text("未检测到设备调用").font(.title3).fontWeight(.medium)
-                    Text("摄像头和麦克风均未被使用").font(.caption).foregroundColor(.secondary)
+                    Text(localizer.noDeviceCall).font(.title3).fontWeight(.medium)
+                    Text(localizer.noDeviceCallHint).font(.caption).foregroundColor(.secondary)
                     Spacer()
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Table(filteredEvents) {
-                    TableColumn("时间") { event in
+                    TableColumn(localizer.timeCol) { event in
                         Text(event.timestamp, style: .time).font(.caption).monospacedDigit()
                     }.width(65)
 
-                    TableColumn("类型") { event in
+                    TableColumn(localizer.colType) { event in
                         HStack(spacing: 4) {
                             Image(systemName: event.sensorType.icon)
                                 .font(.caption)
@@ -2404,7 +2526,7 @@ struct SensorMonitorTab: View {
                         }
                     }.width(70)
 
-                    TableColumn("进程") { event in
+                    TableColumn(localizer.colProcess) { event in
                         HStack(spacing: 4) {
                             Image(systemName: "app.fill").font(.caption2).foregroundColor(.secondary)
                             Text(event.processName).font(.caption).fontWeight(.medium).lineLimit(1)

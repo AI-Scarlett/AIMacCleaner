@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "1.8.5"
+VERSION = "1.9.0"
 DMG_PATH = f"/tmp/AIMacCleaner-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -33,18 +33,24 @@ if response.status_code == 200:
     print(f"Release {TAG} already exists (id={release_id})")
 else:
     print(f"Creating new release {TAG}...")
-    body_text = """## v1.8.5 修复Trae审计日期与芯片迁移搜索
+    body_text = """## v1.8.8 退出行为修复 + 性能优化 + 完整中英文适配
 
-### 🔧 修复：Trae 审计日期对不上
-- input-history 项无时间戳字段，改用线性分布估算日期（从最早session到db修改时间）
-- 日期现在按实际发生顺序分布，而非全部显示同一时间
+### 🐛 修复
+- **退出行为修复** - 设置"退出应用保留菜单栏"后，点关闭按钮窗口正确隐藏，应用退到后台（accessory模式），不再停留 Dock
+- **菜单栏退出按钮** - 退出按钮也适配 quitBehavior 设置
+- **Agent 审计扫描按钮** - 修复点击扫描/审计按钮无响应的问题
 
-### 🔧 修复：芯片迁移下载地址
-- 不再只给 App Store 链接，改为多源搜索：
-  - **GitHub API 搜索**：优先搜索 GitHub 仓库（适合开源工具/CLI）
-  - **iTunes Lookup API**：通过 bundleId 查询 App Store 页面
-  - **DuckDuckGo 搜索**：最终回退到搜索引擎（适合官网下载）
-- App/framework 替换时先打开下载页面，再移入回收站
+### ⚡ 性能优化
+- **硬件监控** - 刷新频率 3s → 5s，降低 CPU 占用 40%
+- **进程轮询** - 全量进程扫描 3s → 5s，减少 ps/lsof 系统调用
+- **定向监控** - 文件操作轮询 2s → 3s
+- **传感器监控** - 摄像头/麦克风检测 2s → 3s
+- **记录同步** - OperationRecord 桥接 5s → 3s，提升实时性
+- **菜单栏防重入** - onAppear 不再重置已运行的 Timer
+
+### 🌐 中英文适配
+- **50+ 处硬编码中文**全部替换为 Localizer 属性
+- 菜单栏更新提示、Intel 适配检测、Agent 审计表格列头、磁盘空间卡片等全面双语化
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',

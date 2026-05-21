@@ -12,8 +12,8 @@ struct AIConfigView: View {
     let presets: [(name: String, base: String, model: String)] = [
         ("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
         ("OpenAI", "https://api.openai.com", "gpt-4o-mini"),
-        ("智谱 GLM", "https://open.bigmodel.cn/api/paas", "glm-4-flash"),
-        ("通义千问", "https://dashscope.aliyuncs.com/compatible-mode", "qwen-turbo"),
+        ("Zhipu GLM", "https://open.bigmodel.cn/api/paas", "glm-4-flash"),
+        ("Qwen (Tongyi)", "https://dashscope.aliyuncs.com/compatible-mode", "qwen-turbo"),
     ]
 
     var body: some View {
@@ -51,7 +51,7 @@ struct AIConfigView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("💡 推荐配置（点击自动填入）")
+                    Text("💡 " + localizer.recommendedConfig)
                         .font(.caption).fontWeight(.semibold).foregroundColor(.purple)
 
                     ForEach(presets, id: \.name) { preset in
@@ -80,9 +80,9 @@ struct AIConfigView: View {
 
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
+                Button(localizer.cancelBtn) { dismiss() }
                     .buttonStyle(.bordered)
-                Button("保存配置") { saveConfig() }
+                Button(localizer.save) { saveConfig() }
                     .buttonStyle(.borderedProminent)
                     .tint(.purple)
             }

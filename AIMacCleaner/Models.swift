@@ -22,6 +22,13 @@ struct ScanItem: Identifiable, Codable, Hashable {
     enum RiskLevel: String, Codable {
         case safe, caution, dangerous
         var label: String { ["safe": "安全", "caution": "注意", "dangerous": "危险"][rawValue] ?? "未知" }
+        func localizedLabel(_ localizer: Localizer) -> String {
+            switch self {
+            case .safe: return localizer.riskSafe
+            case .caution: return localizer.riskCaution
+            case .dangerous: return localizer.riskDangerous
+            }
+        }
         var systemImage: String { ["safe": "checkmark.circle.fill", "caution": "exclamationmark.triangle.fill", "dangerous": "xmark.circle.fill"][rawValue] ?? "questionmark.circle" }
         var color: String { ["safe": "green", "caution": "orange", "dangerous": "red"][rawValue] ?? "gray" }
     }
@@ -29,6 +36,9 @@ struct ScanItem: Identifiable, Codable, Hashable {
     enum SourceType: String, Codable {
         case local, ai
         var label: String { self == .ai ? "AI" : "本地" }
+        func localizedLabel(_ localizer: Localizer) -> String {
+            self == .ai ? localizer.sourceAI : localizer.sourceLocal
+        }
     }
 }
 
@@ -111,11 +121,27 @@ struct AppInfo: Identifiable, Hashable {
             }
         }
 
+        func localizedLabel(_ localizer: Localizer) -> String {
+            switch self {
+            case .app: return localizer.typeApp
+            case .dependency: return localizer.typeDependency
+            case .other: return localizer.typeOther
+            }
+        }
+
         var tabLabel: String {
             switch self {
             case .app: "APP 管理"
             case .dependency: "依赖管理"
             case .other: "其它工具"
+            }
+        }
+
+        func localizedTabLabel(_ localizer: Localizer) -> String {
+            switch self {
+            case .app: return localizer.appManagerTitle
+            case .dependency: return localizer.dependencyTitle
+            case .other: return localizer.otherToolsTitle
             }
         }
 
@@ -223,6 +249,17 @@ struct OperationRecord: Identifiable, Codable {
             case .move: "orange"
             case .rename: "purple"
             case .read: "teal"
+            }
+        }
+
+        func localizedLabel(_ localizer: Localizer) -> String {
+            switch self {
+            case .create: return localizer.opCreate
+            case .modify: return localizer.opModify
+            case .delete: return localizer.opDelete
+            case .move: return localizer.opMove
+            case .rename: return localizer.opRename
+            case .read: return localizer.opRead
             }
         }
     }
@@ -368,6 +405,13 @@ struct SensorEvent: Identifiable {
             }
         }
 
+        func localizedLabel(_ localizer: Localizer) -> String {
+            switch self {
+            case .camera: return localizer.camera
+            case .microphone: return localizer.microphone
+            }
+        }
+
         var color: Color {
             switch self {
             case .camera: .red
@@ -416,6 +460,15 @@ struct StorageFile: Identifiable {
             case .name: "textformat"
             }
         }
+
+        func localizedLabel(_ localizer: Localizer) -> String {
+            switch self {
+            case .size: return localizer.sortSize
+            case .created: return localizer.sortCreated
+            case .modified: return localizer.sortModified
+            case .name: return localizer.sortName
+            }
+        }
     }
 }
 
@@ -450,6 +503,16 @@ struct IntelAppInfo: Identifiable {
             case .installing: return "正在安装..."
             case .completed: return "已完成"
             case .failed: return "失败"
+            }
+        }
+
+        func localizedLabel(_ localizer: Localizer) -> String {
+            switch self {
+            case .idle: return ""
+            case .uninstalling: return localizer.uninstalling
+            case .installing: return localizer.installing
+            case .completed: return localizer.completed
+            case .failed: return localizer.failed
             }
         }
 
@@ -504,6 +567,26 @@ struct IntelAppInfo: Identifiable {
             case .rosetta: "转译"
             }
         }
+
+        func localizedLabel(_ localizer: Localizer) -> String {
+            switch self {
+            case .x86_64: return "Intel (x86_64)"
+            case .arm64: return "Apple Silicon (arm64)"
+            case .universal: return "Universal"
+            case .unknown: return localizer.unknownArch
+            case .rosetta: return localizer.rosettaTrans
+            }
+        }
+
+        func localizedBadge(_ localizer: Localizer) -> String {
+            switch self {
+            case .x86_64: return "Intel"
+            case .arm64: return "ARM"
+            case .universal: return localizer.universalBinary
+            case .unknown: return "?"
+            case .rosetta: return localizer.translated
+            }
+        }
     }
 
     enum IntelAppType: String, CaseIterable {
@@ -527,6 +610,15 @@ struct IntelAppInfo: Identifiable {
             case .cli: .purple
             case .homebrew: .orange
             case .framework: .brown
+            }
+        }
+
+        func localizedLabel(_ localizer: Localizer) -> String {
+            switch self {
+            case .app: return localizer.appTypeApp
+            case .cli: return localizer.appTypeCLI
+            case .homebrew: return localizer.appTypeHomebrew
+            case .framework: return localizer.appTypeFramework
             }
         }
     }

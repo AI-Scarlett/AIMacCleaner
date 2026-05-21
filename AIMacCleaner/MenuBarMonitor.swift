@@ -83,7 +83,7 @@ struct MenuBarMonitor: View {
                         Image(systemName: "arrow.down.circle")
                             .foregroundColor(.blue)
                             .font(.caption)
-                        Text(String(format: "正在下载更新 %.0f%%", service.updateDownloadProgress * 100))
+                        Text(String(format: "\(localizer.downloadingUpdateFmt) %.0f%%", service.updateDownloadProgress * 100))
                             .font(.caption)
                             .fontWeight(.medium)
                         Spacer()
@@ -103,12 +103,27 @@ struct MenuBarMonitor: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(Color.blue.opacity(0.05))
+            } else if service.isInstallingUpdate {
+                VStack(spacing: 6) {
+                    HStack {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.7)
+                        Text(localizer.installingUpdate)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.orange)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color.orange.opacity(0.05))
             } else if service.updateReadyToInstall {
                 VStack(spacing: 8) {
                     HStack {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(.green)
-                        Text("更新已下载完成")
+                        Text(localizer.updateDownloaded)
                             .font(.caption)
                             .fontWeight(.medium)
                     }
@@ -118,7 +133,7 @@ struct MenuBarMonitor: View {
                         HStack {
                             Image(systemName: "arrow.up.circle.fill")
                                 .foregroundColor(.white)
-                            Text("退出并安装 v\(service.latestVersion)")
+                            Text("\(localizer.quitAndInstall) v\(service.latestVersion)")
                                 .foregroundColor(.white)
                                 .fontWeight(.medium)
                         }
@@ -151,11 +166,11 @@ struct MenuBarMonitor: View {
                         .buttonStyle(.plain)
                     }
                     Button {
-                        Task { await service.downloadUpdate() }
+                        service.downloadUpdate()
                     } label: {
                         HStack {
                             Image(systemName: "arrow.clockwise")
-                            Text("重试下载")
+                            Text(localizer.retryDownload)
                         }
                         .font(.caption2)
                     }
@@ -166,12 +181,12 @@ struct MenuBarMonitor: View {
                 .padding(.vertical, 8)
             } else if service.updateAvailable {
                 Button {
-                    Task { await service.downloadUpdate() }
+                    service.downloadUpdate()
                 } label: {
                     HStack {
                         Image(systemName: "arrow.down.circle.fill")
                             .foregroundColor(.green)
-                        Text("更新到 v\(service.latestVersion)")
+                        Text("\(localizer.updateToVersion) v\(service.latestVersion)")
                             .foregroundColor(.green)
                     }
                     .frame(maxWidth: .infinity)
@@ -230,7 +245,7 @@ struct MenuBarMonitor: View {
                     Circle()
                         .fill(networkMode == "internet" ? Color.green : Color.orange)
                         .frame(width: 5, height: 5)
-                    Text(networkMode == "internet" ? "Internet" : "Offline")
+                    Text(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus)
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
                 }
@@ -244,11 +259,19 @@ struct MenuBarMonitor: View {
                 Spacer()
 
                 Button {
-                    for window in NSApp.windows {
-                        window.orderOut(nil)
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        exit(0)
+                    let behavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
+                    if behavior == "quitAppKeepMenu" {
+                        for window in NSApp.windows where !window.isFloatingPanel && window.level != .floating {
+                            window.orderOut(nil)
+                        }
+                        NSApp.setActivationPolicy(.accessory)
+                    } else {
+                        for window in NSApp.windows {
+                            window.orderOut(nil)
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            NSApp.terminate(nil)
+                        }
                     }
                 } label: {
                     HStack(spacing: 3) {
@@ -342,9 +365,9 @@ struct MenuBarMonitor: View {
                         HStack(spacing: 8) {
                             HardwareStatCard(
                                 icon: "thermometer.medium",
-                                label: "CPU 温度",
+                                label: localizer.cpuTempLabel,
                                 value: String(format: "%.0f°C", temp),
-                                detail: temp > 80 ? "过热" : temp > 60 ? "偏高" : "正常",
+                                detail: temp > 80 ? localizer.overheating : temp > 60 ? localizer.high : localizer.normal,
                                 color: temp > 80 ? .red : temp > 60 ? .orange : .green,
                                 progress: min(temp / 100.0, 1.0)
                             )
@@ -352,16 +375,16 @@ struct MenuBarMonitor: View {
                             if let battery = hw.batteryPercent {
                                 HardwareStatCard(
                                     icon: hw.batteryCharging ? "battery.100.bolt" : "battery.75",
-                                    label: "电池",
+                                    label: localizer.batteryLabel,
                                     value: String(format: "%.0f%%", battery),
-                                    detail: hw.batteryCharging ? "充电中" : (hw.batteryTimeRemaining.map { "\($0)分钟" } ?? "使用中"),
+                                    detail: hw.batteryCharging ? localizer.charging : (hw.batteryTimeRemaining.map { "\($0)\(localizer.minuteUnit)" } ?? localizer.inUse),
                                     color: battery < 20 ? .red : battery < 50 ? .orange : .green,
                                     progress: battery / 100.0
                                 )
                             } else {
                                 HardwareStatCard(
                                     icon: "arrow.up.arrow.down",
-                                    label: "网络",
+                                    label: localizer.networkLabel,
                                     value: "↓\(hw.networkInFormatted)",
                                     detail: "↑\(hw.networkOutFormatted)",
                                     color: .teal,
@@ -374,9 +397,9 @@ struct MenuBarMonitor: View {
                             if let battery = hw.batteryPercent {
                                 HardwareStatCard(
                                     icon: hw.batteryCharging ? "battery.100.bolt" : "battery.75",
-                                    label: "电池",
+                                    label: localizer.batteryLabel,
                                     value: String(format: "%.0f%%", battery),
-                                    detail: hw.batteryCharging ? "充电中" : (hw.batteryTimeRemaining.map { "\($0)分钟" } ?? "使用中"),
+                                    detail: hw.batteryCharging ? localizer.charging : (hw.batteryTimeRemaining.map { "\($0)\(localizer.minuteUnit)" } ?? localizer.inUse),
                                     color: battery < 20 ? .red : battery < 50 ? .orange : .green,
                                     progress: battery / 100.0
                                 )
@@ -384,7 +407,7 @@ struct MenuBarMonitor: View {
 
                             HardwareStatCard(
                                 icon: "arrow.up.arrow.down",
-                                label: "网络",
+                                label: localizer.networkLabel,
                                 value: "↓\(hw.networkInFormatted)",
                                 detail: "↑\(hw.networkOutFormatted)",
                                 color: .teal,
@@ -398,7 +421,7 @@ struct MenuBarMonitor: View {
                             Image(systemName: "app.badge")
                                 .font(.system(size: 9))
                                 .foregroundColor(.secondary)
-                            Text("\(hw.processCount) 进程")
+                            Text("\(hw.processCount) \(localizer.processesLabel)")
                                 .font(.system(size: 9))
                                 .foregroundColor(.secondary)
                         }
@@ -406,7 +429,7 @@ struct MenuBarMonitor: View {
                             Image(systemName: "arrow.up.arrow.down.circle")
                                 .font(.system(size: 9))
                                 .foregroundColor(.secondary)
-                            Text("\(hw.threadCount) 线程")
+                            Text("\(hw.threadCount) \(localizer.threadsLabel)")
                                 .font(.system(size: 9))
                                 .foregroundColor(.secondary)
                         }
@@ -415,7 +438,7 @@ struct MenuBarMonitor: View {
                             Image(systemName: "clock")
                                 .font(.system(size: 9))
                                 .foregroundColor(.secondary)
-                            Text("运行 \(hw.uptimeFormatted)")
+                            Text("\(localizer.runtimeLabel) \(hw.uptimeFormatted)")
                                 .font(.system(size: 9))
                                 .foregroundColor(.secondary)
                         }
@@ -423,7 +446,7 @@ struct MenuBarMonitor: View {
                     .padding(.top, 2)
                 }
             } else {
-                Text("正在获取硬件信息...")
+                Text(localizer.gettingHardwareInfo)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -500,7 +523,7 @@ struct MenuBarMonitor: View {
                 Image(systemName: "bell.badge")
                     .font(.caption)
                     .foregroundColor(.orange)
-                Text("存储警报")
+                Text(localizer.storageAlert)
                     .font(.caption)
                     .fontWeight(.medium)
                 Spacer()
@@ -519,18 +542,18 @@ struct MenuBarMonitor: View {
 
             if monitoringEnabled {
                 HStack {
-                    Text("警报阈值")
+                    Text(localizer.alertThresholdLabel)
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text("剩余 \(Int(alertThreshold))%")
+                    Text("\(localizer.remainingLabel) \(Int(alertThreshold))%")
                         .font(.caption2)
                         .fontWeight(.medium)
                         .foregroundColor(.orange)
                 }
 
                 Slider(value: $alertThreshold, in: 5...30, step: 5) {
-                    Text("阈值")
+                    Text(localizer.thresholdLabel)
                 }
                 .controlSize(.small)
                 .onChange(of: alertThreshold) { _ in
@@ -548,7 +571,7 @@ struct MenuBarMonitor: View {
                 Image(systemName: "eye.fill")
                     .font(.caption)
                     .foregroundColor(.purple)
-                Text("操作监控")
+                Text(localizer.opMonitorLabel)
                     .font(.caption)
                     .fontWeight(.medium)
                 Spacer()
@@ -562,7 +585,7 @@ struct MenuBarMonitor: View {
                 Image(systemName: "trash")
                     .font(.caption)
                     .foregroundColor(.blue)
-                Text("删除移入回收站")
+                Text(localizer.moveToTrash)
                     .font(.caption)
                     .fontWeight(.medium)
                 Spacer()
@@ -579,7 +602,7 @@ struct MenuBarMonitor: View {
                 Image(systemName: "trash.slash")
                     .font(.caption)
                     .foregroundColor(.red)
-                Text("禁止自动清空回收站")
+                Text(localizer.preventAutoEmptyTrash)
                     .font(.caption)
                     .fontWeight(.medium)
                 Spacer()
@@ -600,7 +623,7 @@ struct MenuBarMonitor: View {
     private var operationStatsHeader: some View {
         VStack(spacing: 10) {
             HStack {
-                Text("操作统计")
+                Text(localizer.opStatsLabel)
                     .font(.headline)
                 Spacer()
                 if operationMonitorEnabled {
@@ -608,12 +631,12 @@ struct MenuBarMonitor: View {
                         Circle()
                             .fill(Color.green)
                             .frame(width: 6, height: 6)
-                        Text("监控中")
+                        Text(localizer.monitoringLabel)
                             .font(.caption2)
                             .foregroundColor(.green)
                     }
                 } else {
-                    Text("未启用")
+                    Text(localizer.notEnabledLabel)
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -623,19 +646,19 @@ struct MenuBarMonitor: View {
                 StatCard(
                     icon: "list.bullet",
                     value: "\(service.operationRecords.count)",
-                    label: "总操作",
+                    label: localizer.totalOpsLabel,
                     color: .blue
                 )
                 StatCard(
                     icon: "clock",
                     value: "\(todayOperationCount)",
-                    label: "今日",
+                    label: localizer.todayLabel,
                     color: .green
                 )
                 StatCard(
                     icon: "flame.fill",
                     value: "\(hourOperationCount)",
-                    label: "1小时",
+                    label: localizer.hourLabel,
                     color: .orange
                 )
             }
@@ -649,13 +672,13 @@ struct MenuBarMonitor: View {
                 Image(systemName: "cpu")
                     .font(.caption)
                     .foregroundColor(.purple)
-                Text("Agent 活跃度")
+                Text(localizer.agentActivityLabel)
                     .font(.caption)
                     .fontWeight(.medium)
             }
 
             if agentStats.isEmpty {
-                Text("暂无操作记录")
+                Text(localizer.noOpRecordsLabel)
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .padding(.vertical, 8)
@@ -698,13 +721,13 @@ struct MenuBarMonitor: View {
                 Image(systemName: "chart.pie")
                     .font(.caption)
                     .foregroundColor(.blue)
-                Text("操作类型分布")
+                Text(localizer.opTypeDistLabel)
                     .font(.caption)
                     .fontWeight(.medium)
             }
 
             if service.operationRecords.isEmpty {
-                Text("暂无数据")
+                Text(localizer.noData)
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .padding(.vertical, 8)
@@ -740,12 +763,12 @@ struct MenuBarMonitor: View {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.caption)
                     .foregroundColor(.green)
-                Text("最近操作")
+                Text(localizer.recentOpsLabel)
                     .font(.caption)
                     .fontWeight(.medium)
                 Spacer()
                 if !service.operationRecords.isEmpty {
-                    Text("\(service.operationRecords.count) 条")
+                    Text("\(service.operationRecords.count) \(localizer.recordsUnit)")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -756,10 +779,10 @@ struct MenuBarMonitor: View {
                     Image(systemName: "tray")
                         .font(.title3)
                         .foregroundColor(.secondary.opacity(0.4))
-                    Text("暂无操作记录")
+                    Text(localizer.noOpRecordsLabel)
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    Text("开启监控后将自动记录 Agent 操作")
+                    Text(localizer.startMonitorHint2)
                         .font(.system(size: 9))
                         .foregroundColor(.secondary.opacity(0.6))
                 }
@@ -824,7 +847,7 @@ struct MenuBarMonitor: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: operationMonitorEnabled ? "pause.circle" : "play.circle")
-                        Text(operationMonitorEnabled ? "暂停监控" : "开始监控")
+                        Text(operationMonitorEnabled ? localizer.pauseMonitorLabel : localizer.startMonitorLabel)
                     }
                     .font(.caption2)
                 }
@@ -843,7 +866,7 @@ struct MenuBarMonitor: View {
                         HStack(spacing: 3) {
                             Image(systemName: service.operationMonitor.aiSelfLearningEnabled ? "sparkles" : "brain.head.profile")
                                 .font(.system(size: 8))
-                            Text(service.operationMonitor.aiSelfLearningEnabled ? "关闭AI" : "AI分析")
+                            Text(service.operationMonitor.aiSelfLearningEnabled ? localizer.closeAILabel : localizer.aiAnalysisLabel)
                         }
                         .font(.caption2)
                     }
@@ -860,7 +883,7 @@ struct MenuBarMonitor: View {
                     } label: {
                         HStack(spacing: 3) {
                             Image(systemName: "trash")
-                            Text("清空")
+                            Text(localizer.clear)
                         }
                         .font(.caption2)
                     }
@@ -875,7 +898,7 @@ struct MenuBarMonitor: View {
                     Image(systemName: "brain.head.profile")
                         .font(.system(size: 8))
                         .foregroundColor(.purple)
-                    Text("AI 自学习中...")
+                    Text(localizer.aiSelfLearningStatus)
                         .font(.system(size: 9))
                         .foregroundColor(.purple)
                     Spacer()
@@ -898,7 +921,7 @@ struct MenuBarMonitor: View {
                 } label: {
                     HStack {
                         Image(systemName: "arrow.up.right.and.arrow.down.left")
-                        Text("查看完整记录")
+                        Text(localizer.viewFullLogLabel)
                     }
                     .font(.caption2)
                 }

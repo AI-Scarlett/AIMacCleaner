@@ -18,7 +18,7 @@ class SensorMonitor: ObservableObject {
     func start() {
         guard !isMonitoring else { return }
         isMonitoring = true
-        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             DispatchQueue.global(qos: .utility).async {
                 self?.checkSensors()
             }

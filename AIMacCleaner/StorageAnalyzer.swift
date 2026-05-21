@@ -24,6 +24,15 @@ enum FileRiskLevel: String, Codable {
         case .unknown: "questionmark.circle.fill"
         }
     }
+
+    func localizedLabel(_ localizer: Localizer) -> String {
+        switch self {
+        case .safe: return localizer.cleanableRisk
+        case .caution: return localizer.cautionRisk
+        case .keep: return localizer.keepRisk
+        case .unknown: return localizer.unknownRisk
+        }
+    }
 }
 
 class StorageAnalyzer: ObservableObject {
@@ -33,12 +42,13 @@ class StorageAnalyzer: ObservableObject {
     @Published var totalUsed: Int64 = 0
     @Published var aiAnalysisResult: String?
 
+    weak var localizer: Localizer?
     private let home = NSHomeDirectory()
 
     func scanStorage() async {
         await MainActor.run {
             isScanning = true
-            scanProgress = "正在扫描磁盘..."
+            scanProgress = localizer?.scanningDisk ?? "Scanning disk..."
             categories.removeAll()
         }
 
@@ -54,31 +64,31 @@ class StorageAnalyzer: ObservableObject {
             systemTotal = Int64(totalCap) - Int64(available)
         }
 
-        await MainActor.run { scanProgress = "扫描应用程序..." }
+        await MainActor.run { scanProgress = localizer?.scanningApps ?? "Scanning apps..." }
         let appResult = await scanCategoryWithDu(
-            id: "apps", name: "应用程序", icon: "app.fill", color: .cyan,
+            id: "apps", name: localizer?.appNameApps ?? "Applications", icon: "app.fill", color: .cyan,
             paths: ["/Applications", "\(home)/Applications"]
         )
 
-        await MainActor.run { scanProgress = "扫描文稿..." }
+        await MainActor.run { scanProgress = localizer?.scanningDocs ?? "Scanning documents..." }
         let docsResult = await scanCategoryWithDu(
-            id: "documents", name: "文稿", icon: "doc.fill", color: .blue,
+            id: "documents", name: localizer?.appNameDocs ?? "Documents", icon: "doc.fill", color: .blue,
             paths: [
                 "\(home)/Desktop", "\(home)/Documents", "\(home)/Downloads",
                 "\(home)/Movies", "\(home)/Music", "\(home)/Pictures",
             ]
         )
 
-        await MainActor.run { scanProgress = "计算系统数据..." }
+        await MainActor.run { scanProgress = localizer?.calcSystemData ?? "Calculating system data..." }
         let systemSize = systemTotal - appResult.size - docsResult.size
         let systemDataCat = StorageCategory(
-            id: "system", name: "系统数据", icon: "gearshape.2", color: .gray,
+            id: "system", name: localizer?.appNameSystem ?? "System Data", icon: "gearshape.2", color: .gray,
             size: max(systemSize, 0),
             path: "\(home)/Library",
             files: []
         )
 
-        await MainActor.run { scanProgress = "扫描其它..." }
+        await MainActor.run { scanProgress = localizer?.scanningOther ?? "Scanning other..." }
         var otherPaths: [String] = []
         for item in (try? fm.contentsOfDirectory(atPath: home)) ?? [] {
             if item.hasPrefix(".") { continue }
@@ -91,8 +101,8 @@ class StorageAnalyzer: ObservableObject {
             }
         }
         let otherResult = otherPaths.isEmpty
-            ? StorageCategory(id: "other", name: "其它", icon: "folder.fill", color: .indigo, size: 0, path: home, files: [])
-            : await scanCategoryWithDu(id: "other", name: "其它", icon: "folder.fill", color: .indigo, paths: otherPaths)
+            ? StorageCategory(id: "other", name: localizer?.appNameOther ?? "Other", icon: "folder.fill", color: .indigo, size: 0, path: home, files: [])
+            : await scanCategoryWithDu(id: "other", name: localizer?.appNameOther ?? "Other", icon: "folder.fill", color: .indigo, paths: otherPaths)
 
         let results = [appResult, docsResult, systemDataCat, otherResult].filter { $0.size > 0 || $0.id == "other" }
 
@@ -235,7 +245,7 @@ class StorageAnalyzer: ObservableObject {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
-        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.locale = localizer?.language == .english ? Locale(identifier: "en_US") : Locale(identifier: "zh_CN")
         return formatter.string(from: date)
     }
 }
