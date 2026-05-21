@@ -369,6 +369,10 @@ class OperationMonitor: ObservableObject {
     // MARK: - Process Info Refresh
 
     private func refreshAllProcessInfo() {
+        guard !isRefreshingProcessInfo else { return }
+        isRefreshingProcessInfo = true
+        defer { isRefreshingProcessInfo = false }
+
         stateLock.lock()
         let currentPidComms = allPidCommMap
         stateLock.unlock()
@@ -394,8 +398,13 @@ class OperationMonitor: ObservableObject {
 
         do {
             try task.run()
+            let deadline = DispatchTime.now() + .seconds(3)
+            DispatchQueue.global().asyncAfter(deadline: deadline) {
+                if task.isRunning { task.terminate() }
+            }
             task.waitUntilExit()
-            guard let data = try? pipe.fileHandleForReading.readToEnd(),
+            guard task.terminationStatus == 0 || task.terminationStatus == 1,
+                  let data = try? pipe.fileHandleForReading.readToEnd(),
                   let output = String(data: data, encoding: .utf8) else { return }
 
             for line in output.components(separatedBy: .newlines) {
@@ -476,11 +485,14 @@ class OperationMonitor: ObservableObject {
 
         do {
             try task.run()
-            let deadline = DispatchTime.now() + .seconds(5)
-            DispatchQueue.global().asyncAfter(deadline: deadline) { task.terminate() }
+            let deadline = DispatchTime.now() + .seconds(3)
+            DispatchQueue.global().asyncAfter(deadline: deadline) {
+                if task.isRunning { task.terminate() }
+            }
             task.waitUntilExit()
 
-            guard let data = try? pipe.fileHandleForReading.readToEnd(),
+            guard task.terminationStatus == 0 || task.terminationStatus == 1,
+                  let data = try? pipe.fileHandleForReading.readToEnd(),
                   let output = String(data: data, encoding: .utf8) else { return }
 
             var newPidOpenFiles: [pid_t: Set<String>] = [:]
@@ -912,6 +924,7 @@ class OperationMonitor: ObservableObject {
     // MARK: - Process Poller
 
     private var processPoller: Timer?
+    private var isRefreshingProcessInfo = false
 
     private func startProcessPoller() {
         processPoller?.invalidate()

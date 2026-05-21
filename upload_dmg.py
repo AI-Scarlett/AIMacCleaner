@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "1.9.0"
+VERSION = "1.9.1"
 DMG_PATH = f"/tmp/AIMacCleaner-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -33,24 +33,20 @@ if response.status_code == 200:
     print(f"Release {TAG} already exists (id={release_id})")
 else:
     print(f"Creating new release {TAG}...")
-    body_text = """## v1.8.8 退出行为修复 + 性能优化 + 完整中英文适配
+    body_text = """## v1.9.1 修复Agent审计扫描卡死 + OperationMonitor线程爆炸
 
-### 🐛 修复
-- **退出行为修复** - 设置"退出应用保留菜单栏"后，点关闭按钮窗口正确隐藏，应用退到后台（accessory模式），不再停留 Dock
-- **菜单栏退出按钮** - 退出按钮也适配 quitBehavior 设置
-- **Agent 审计扫描按钮** - 修复点击扫描/审计按钮无响应的问题
-
-### ⚡ 性能优化
-- **硬件监控** - 刷新频率 3s → 5s，降低 CPU 占用 40%
-- **进程轮询** - 全量进程扫描 3s → 5s，减少 ps/lsof 系统调用
-- **定向监控** - 文件操作轮询 2s → 3s
-- **传感器监控** - 摄像头/麦克风检测 2s → 3s
-- **记录同步** - OperationRecord 桥接 5s → 3s，提升实时性
-- **菜单栏防重入** - onAppear 不再重置已运行的 Timer
-
-### 🌐 中英文适配
-- **50+ 处硬编码中文**全部替换为 Localizer 属性
-- 菜单栏更新提示、Intel 适配检测、Agent 审计表格列头、磁盘空间卡片等全面双语化
+### 🐛 关键修复
+- **Agent审计扫描卡死** - 修复扫描一直持续无法完成的问题
+  - 添加防重入机制（`isScanningAgents`/`isScanningOps`），防止重复触发扫描
+  - 使用 `defer` 确保 `isScanning` 一定会被重置为 false
+  - 降低文件遍历深度限制（10→8），减少遍历时间
+  - 添加文件数量限制（每source最多500个文件），避免遍历超大目录卡死
+  
+- **OperationMonitor线程爆炸** - 修复应用hang/卡死（dispatch线程达到软限制64）
+  - 添加 `isRefreshingProcessInfo` 防重入标志，防止多个 `ps`/`lsof` 命令同时执行
+  - 给 `ps` 命令添加3秒超时保护，超时后自动 terminate
+  - 给 `lsof` 命令超时从5秒优化为3秒，添加 `isRunning` 检查
+  - 检查 `terminationStatus` 确保只处理正常完成的命令输出
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',

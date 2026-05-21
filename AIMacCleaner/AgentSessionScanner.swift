@@ -29,6 +29,8 @@ class AgentSessionScanner: ObservableObject {
 
     private let fileManager = FileManager.default
     private var dataSources: [AgentDataSource] = []
+    private var isScanningAgents = false
+    private var isScanningOps = false
 
     init() {
         registerBuiltInSources()
@@ -181,6 +183,15 @@ class AgentSessionScanner: ObservableObject {
     func scanAllAgents() {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
+
+            self.isScanningAgents = true
+            defer {
+                DispatchQueue.main.async {
+                    self.isScanningAgents = false
+                    self.isScanning = false
+                }
+            }
+
             DispatchQueue.main.async { self.scanError = "" }
 
             var merged: [String: DiscoveredAgent] = [:]
@@ -197,14 +208,18 @@ class AgentSessionScanner: ObservableObject {
                     self.fileManager.fileExists(atPath: basePath, isDirectory: &isDir)
                     guard isDir.boolValue else { continue }
 
-                    let depthLimit = 10
+                    let depthLimit = 8
                     var sessionCount = 0
                     var latestDate: Date?
                     var projectDirs = Set<String>()
+                    var fileCount = 0
 
                     guard let enumerator = self.fileManager.enumerator(at: URL(fileURLWithPath: basePath), includingPropertiesForKeys: nil) else { continue }
 
                     for case let itemURL as URL in enumerator {
+                        fileCount += 1
+                        if fileCount > 500 { break }
+
                         let path = itemURL.path
                         let relPath = String(path.dropFirst(basePath.count + 1))
                         let components = relPath.components(separatedBy: "/")
@@ -277,7 +292,6 @@ class AgentSessionScanner: ObservableObject {
 
             DispatchQueue.main.async {
                 self.discoveredAgents = results
-                self.isScanning = false
                 print("[AgentSessionScanner] Found \(results.count) agents with sessions")
             }
         }
@@ -286,6 +300,18 @@ class AgentSessionScanner: ObservableObject {
     func scanAgentOps(agentName: String) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
+
+            guard !self.isScanningOps else {
+                print("[AgentSessionScanner] scanAgentOps already in progress, skipping")
+                DispatchQueue.main.async { self.isScanning = false }
+                return
+            }
+            self.isScanningOps = true
+            defer {
+                self.isScanningOps = false
+                DispatchQueue.main.async { self.isScanning = false }
+            }
+
             DispatchQueue.main.async { self.scanError = "" }
 
             var allRecords: [AgentOpRecord] = []
@@ -325,7 +351,6 @@ class AgentSessionScanner: ObservableObject {
 
             DispatchQueue.main.async {
                 self.opRecords = allRecords
-                self.isScanning = false
                 print("[AgentSessionScanner] Found \(allRecords.count) op records for \(agentName)")
             }
         }
@@ -337,7 +362,7 @@ class AgentSessionScanner: ObservableObject {
         for case let url as URL in enumerator {
             let relPath = String(url.path.dropFirst(dir.count + 1))
             let depth = relPath.components(separatedBy: "/").count
-            if depth > 10 {
+            if depth > 8 {
                 enumerator.skipDescendants()
                 continue
             }

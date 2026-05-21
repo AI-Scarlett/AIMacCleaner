@@ -3,7 +3,7 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="AIMacCleaner"
-VERSION="1.9.0"
+VERSION="1.9.1"
 BUILD_DIR="/tmp/AIMacCleaner_build"
 DMG_NAME="AIMacCleaner-v${VERSION}-arm64"
 STAGING_DIR="/tmp/AIMacCleaner_dmg_staging"
