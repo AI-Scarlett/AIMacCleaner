@@ -561,4 +561,5 @@ extension Localizer {
     var analysisComplete: String { t("🤖 分析完成（详见原说明）", en: "🤖 Analysis complete (see original description)") }
     var uninstallFailed: String { t("卸载失败", en: "Uninstall failed") }
     var systemPrefix: String { t("系统", en: "system") }
+    var deleted: String { t("已删除", en: "Deleted") }
 }

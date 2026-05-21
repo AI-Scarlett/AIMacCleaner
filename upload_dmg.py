@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "1.9.4"
+VERSION = "1.9.5"
 DMG_PATH = f"/tmp/AIMacCleaner-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -33,18 +33,22 @@ if response.status_code == 200:
     print(f"Release {TAG} already exists (id={release_id})")
 else:
     print(f"Creating new release {TAG}...")
-    body_text = """## v1.9.4 修复更新安装后应用不自动启动
+    body_text = """## v1.9.5 修复磁盘空间不更新 + 更新后权限重置
 
 ### 🐛 关键修复
-- **更新安装后应用不自动启动** - 修复"退出并安装"完成后新版本不自动打开的问题
-  - **根因**：安装脚本中 `rm -rf "$TEMP_DIR"` 在 `open "$TARGET_PATH"` 之前执行，删除了日志目录，导致后续 `log` 写入失败，`set -e` 使脚本立即退出，`open` 命令永远不会被执行
-  - **修复**：将临时文件清理移到 `open` 启动命令之后执行
+- **磁盘空间清理后不更新** - 修复Mac清理删除后"可用"和"已使用"不变化的问题
+  - **根因**：删除操作使用 `moveToTrash`（移到回收站），文件仍在磁盘上
+  - **修复**：Mac清理的删除操作改为永久删除（缓存/日志等不需要恢复），磁盘空间立即释放
+  - APP管理/依赖管理的卸载操作仍使用移到回收站
+
+- **更新后重新获取权限** - 修复更新安装后系统重新请求权限的问题
+  - **根因**：`cp -R` 不保留扩展属性和ACL，ad-hoc签名每次不同
+  - **修复**：改用 `ditto`（保留资源fork和扩展属性），更新后重新执行 ad-hoc 签名，清除所有 quarantine 属性
 
 ### 🐛 遗留修复
+- 更新安装后应用不自动启动（v1.9.4）
 - 磁盘可用空间清理后不更新（v1.9.3）
 - "退出并安装"按钮无效（v1.9.2）
-- Agent审计扫描卡死（v1.9.1）
-- OperationMonitor线程爆炸/hang（v1.9.1）
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',

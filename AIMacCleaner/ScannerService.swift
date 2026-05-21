@@ -449,7 +449,7 @@ class ScannerService: ObservableObject {
 
     // MARK: - Delete
 
-    func deleteItems(ids: [String]) async -> DeleteResult {
+    func deleteItems(ids: [String], permanent: Bool = false) async -> DeleteResult {
         var deleteResults: [DeleteItemResult] = []
         var successCount = 0
         var failCount = 0
@@ -470,9 +470,13 @@ class ScannerService: ObservableObject {
             for expanded in pathsToDelete {
                 do {
                     if FileManager.default.fileExists(atPath: expanded) {
-                        try moveToTrash(atPath: expanded)
+                        if permanent {
+                            try FileManager.default.removeItem(atPath: expanded)
+                        } else {
+                            try moveToTrash(atPath: expanded)
+                        }
                         successCount += 1
-                        deleteResults.append(DeleteItemResult(id: item.id, path: expanded, success: true, message: localizer?.movedToTrash ?? "Moved to Trash"))
+                        deleteResults.append(DeleteItemResult(id: item.id, path: expanded, success: true, message: permanent ? (localizer?.deleted ?? "Deleted") : (localizer?.movedToTrash ?? "Moved to Trash")))
                     }
                 } catch {
                     failCount += 1
@@ -1642,7 +1646,7 @@ class ScannerService: ObservableObject {
     @Published var updateErrorMessage: String = ""
     @Published var isInstallingUpdate: Bool = false
 
-    let currentVersion = "1.9.4"
+    let currentVersion = "1.9.5"
 
     private var updateCheckTimer: Timer?
     private var downloadSession: URLSession?
@@ -1872,9 +1876,9 @@ if [ -d "$TARGET_PATH" ]; then
     rm -rf "$TARGET_PATH" 2>>"$LOG_PATH"
 fi
 
-# Copy new app
+# Copy new app (ditto preserves resource forks, extended attributes, and ACLs)
 log "Copying new app to $TARGET_PATH"
-if ! cp -R "$UPDATE_APP" "$TARGET_PATH" 2>>"$LOG_PATH"; then
+if ! /usr/bin/ditto "$UPDATE_APP" "$TARGET_PATH" 2>>"$LOG_PATH"; then
     log "ERROR: Failed to copy new app"
     /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
     osascript -e 'display notification "\(localizer?.updateInstallFailedCopy ?? "Update install failed: cannot copy app")" with title "AIMacCleaner"'
@@ -1887,8 +1891,9 @@ log "App copied successfully"
 /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
 log "DMG detached"
 
-# Remove quarantine attribute and launch new app
-xattr -dr com.apple.quarantine "$TARGET_PATH" 2>/dev/null || true
+# Remove quarantine attribute, re-sign, and launch new app
+xattr -cr "$TARGET_PATH" 2>/dev/null || true
+/usr/bin/codesign --force --deep --sign - "$TARGET_PATH" 2>>"$LOG_PATH" || true
 log "Launching updated app..."
 open "$TARGET_PATH"
 
@@ -2093,6 +2098,14 @@ rm -rf "$TEMP_DIR"
         } else {
             try fm.removeItem(atPath: path)
         }
+    }
+
+    func emptyTrashIfAllowed() {
+        guard trashInsteadOfDelete && !preventAutoEmptyTrash else { return }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/bash")
+        task.arguments = ["-c", "osascript -e 'tell application \"Finder\" to empty trash' 2>/dev/null"]
+        try? task.run()
     }
 
     func basicUninstall(app: AppInfo) async -> Bool {
