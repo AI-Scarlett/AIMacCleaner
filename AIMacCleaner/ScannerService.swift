@@ -1639,7 +1639,7 @@ class ScannerService: ObservableObject {
     @Published var updateErrorMessage: String = ""
     @Published var isInstallingUpdate: Bool = false
 
-    let currentVersion = "1.9.1"
+    let currentVersion = "1.9.2"
 
     private var updateCheckTimer: Timer?
     private var downloadSession: URLSession?
@@ -1797,6 +1797,7 @@ class ScannerService: ObservableObject {
         let dmgPath = tempDir + "/AIMacCleaner-update.dmg"
 
         guard FileManager.default.fileExists(atPath: dmgPath) else {
+            self.updateReadyToInstall = false
             self.updateErrorMessage = localizer?.installFileNotFound ?? "Install file not found, please re-download"
             return
         }
@@ -1907,8 +1908,8 @@ log "=== Update completed successfully ==="
         }
 
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/setsid")
-        task.arguments = ["/bin/bash", scriptPath]
+        task.executableURL = URL(fileURLWithPath: "/bin/bash")
+        task.arguments = ["-c", "nohup /bin/bash \"\(scriptPath)\" >/dev/null 2>&1 &"]
         task.standardInput = FileHandle.nullDevice
         task.standardOutput = FileHandle.nullDevice
         task.standardError = FileHandle.nullDevice

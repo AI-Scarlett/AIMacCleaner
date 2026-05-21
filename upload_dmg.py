@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "1.9.1"
+VERSION = "1.9.2"
 DMG_PATH = f"/tmp/AIMacCleaner-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -33,20 +33,17 @@ if response.status_code == 200:
     print(f"Release {TAG} already exists (id={release_id})")
 else:
     print(f"Creating new release {TAG}...")
-    body_text = """## v1.9.1 修复Agent审计扫描卡死 + OperationMonitor线程爆炸
+    body_text = """## v1.9.2 修复"退出并安装"按钮点击无效
 
 ### 🐛 关键修复
-- **Agent审计扫描卡死** - 修复扫描一直持续无法完成的问题
-  - 添加防重入机制（`isScanningAgents`/`isScanningOps`），防止重复触发扫描
-  - 使用 `defer` 确保 `isScanning` 一定会被重置为 false
-  - 降低文件遍历深度限制（10→8），减少遍历时间
-  - 添加文件数量限制（每source最多500个文件），避免遍历超大目录卡死
-  
-- **OperationMonitor线程爆炸** - 修复应用hang/卡死（dispatch线程达到软限制64）
-  - 添加 `isRefreshingProcessInfo` 防重入标志，防止多个 `ps`/`lsof` 命令同时执行
-  - 给 `ps` 命令添加3秒超时保护，超时后自动 terminate
-  - 给 `lsof` 命令超时从5秒优化为3秒，添加 `isRunning` 检查
-  - 检查 `terminationStatus` 确保只处理正常完成的命令输出
+- **"退出并安装"按钮点击无效果** - 修复更新下载完成后点击"退出并安装"按钮无任何反应的问题
+  - **根因**：`installUpdate()` 使用 `/usr/bin/setsid` 启动安装进程，但 macOS 不自带 `setsid` 命令（Linux专有），导致 `Process.run()` 抛出异常
+  - **修复**：改用 `/bin/bash -c "nohup ... &"` 模式启动独立安装进程，macOS 原生支持
+  - 额外修复：DMG 文件不存在时正确重置 `updateReadyToInstall` 状态，避免按钮残留
+
+### 🐛 遗留修复
+- Agent审计扫描卡死（v1.9.1）
+- OperationMonitor线程爆炸/hang（v1.9.1）
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',
