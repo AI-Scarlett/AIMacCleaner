@@ -1642,7 +1642,7 @@ class ScannerService: ObservableObject {
     @Published var updateErrorMessage: String = ""
     @Published var isInstallingUpdate: Bool = false
 
-    let currentVersion = "1.9.3"
+    let currentVersion = "1.9.4"
 
     private var updateCheckTimer: Timer?
     private var downloadSession: URLSession?
@@ -1887,10 +1887,6 @@ log "App copied successfully"
 /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
 log "DMG detached"
 
-# Cleanup temp files
-rm -rf "$TEMP_DIR"
-log "Temp files cleaned"
-
 # Remove quarantine attribute and launch new app
 xattr -dr com.apple.quarantine "$TARGET_PATH" 2>/dev/null || true
 log "Launching updated app..."
@@ -1898,6 +1894,9 @@ open "$TARGET_PATH"
 
 osascript -e 'display notification "\(localizer?.updateSuccess ?? "Successfully updated to latest version")" with title "AIMacCleaner" sound name "Glass"'
 log "=== Update completed successfully ==="
+
+# Cleanup temp files after launch
+rm -rf "$TEMP_DIR"
 """
 
         let scriptPath = tempDir + "/update_install.sh"

@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "1.9.3"
+VERSION = "1.9.4"
 DMG_PATH = f"/tmp/AIMacCleaner-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -33,16 +33,15 @@ if response.status_code == 200:
     print(f"Release {TAG} already exists (id={release_id})")
 else:
     print(f"Creating new release {TAG}...")
-    body_text = """## v1.9.3 修复磁盘可用空间清理后不更新
+    body_text = """## v1.9.4 修复更新安装后应用不自动启动
 
 ### 🐛 关键修复
-- **磁盘可用空间清理后不更新** - 修复Mac清理扫描删除后，页面磁盘可用空间显示没有变化的问题
-  - 本地扫描/AI扫描/增强扫描完成后自动刷新磁盘信息
-  - 删除操作后延迟2秒+1秒双重刷新，确保文件系统缓存更新
-  - MacCleanerTab 页面出现时立即刷新磁盘信息
-  - 磁盘监控定时器间隔从 5分钟 缩短为 1分钟
+- **更新安装后应用不自动启动** - 修复"退出并安装"完成后新版本不自动打开的问题
+  - **根因**：安装脚本中 `rm -rf "$TEMP_DIR"` 在 `open "$TARGET_PATH"` 之前执行，删除了日志目录，导致后续 `log` 写入失败，`set -e` 使脚本立即退出，`open` 命令永远不会被执行
+  - **修复**：将临时文件清理移到 `open` 启动命令之后执行
 
 ### 🐛 遗留修复
+- 磁盘可用空间清理后不更新（v1.9.3）
 - "退出并安装"按钮无效（v1.9.2）
 - Agent审计扫描卡死（v1.9.1）
 - OperationMonitor线程爆炸/hang（v1.9.1）
