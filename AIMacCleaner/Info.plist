@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Agent守望</string>
+	<string>AgentWatch</string>
 	<key>CFBundleExecutable</key>
 	<string>AIMacCleaner</string>
 	<key>CFBundleIconFile</key>

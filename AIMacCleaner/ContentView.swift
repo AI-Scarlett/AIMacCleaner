@@ -387,56 +387,57 @@ struct ContentView: View {
                 }
                 .padding(.vertical, Theme.Spacing.lg)
             } else {
-                HStack(spacing: 0) {
-                    Button { showSettings = true } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                            .frame(width: 28, height: 28)
-                            .background(
-                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                    .fill(Theme.Colors.cardHover)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .help(localizer.settings)
-
-                    Spacer()
-
-                    languageToggleButton
-
-                    networkStatusBadge
-
-                    Button {
-                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                            sidebarCollapsed = true
+                VStack(spacing: Theme.Spacing.sm) {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Button { showSettings = true } label: {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .frame(width: 24, height: 24)
+                                .background(
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                        .fill(Theme.Colors.cardHover)
+                                )
                         }
-                    } label: {
-                        Image(systemName: "sidebar.left")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                            .frame(width: 28, height: 28)
-                            .background(
-                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                    .fill(Theme.Colors.cardHover)
-                            )
+                        .buttonStyle(.plain)
+                        .help(localizer.settings)
+
+                        languageToggleButton
+
+                        Spacer()
+
+                        networkStatusBadge
+
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                sidebarCollapsed = true
+                            }
+                        } label: {
+                            Image(systemName: "sidebar.left")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                                .frame(width: 24, height: 24)
+                                .background(
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                        .fill(Theme.Colors.cardHover)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help(localizer.collapseSidebar)
                     }
-                    .buttonStyle(.plain)
-                    .help(localizer.collapseSidebar)
+
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Circle()
+                            .fill(Theme.Colors.success)
+                            .frame(width: 5, height: 5)
+                        Text("v\(service.currentVersion)")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                        Spacer()
+                    }
                 }
                 .padding(.horizontal, Theme.Spacing.lg)
                 .padding(.vertical, Theme.Spacing.md)
-
-                HStack(spacing: Theme.Spacing.xs) {
-                    Circle()
-                        .fill(Theme.Colors.success)
-                        .frame(width: 5, height: 5)
-                    Text("v\(service.currentVersion)")
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                }
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.bottom, Theme.Spacing.md)
             }
         }
     }
@@ -450,7 +451,7 @@ struct ContentView: View {
             }
         }
         .pickerStyle(.menu)
-        .frame(width: sidebarCollapsed ? 36 : 72)
+        .frame(width: sidebarCollapsed ? 36 : 80)
     }
 
     private var networkStatusBadge: some View {

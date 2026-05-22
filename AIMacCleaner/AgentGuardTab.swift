@@ -11,6 +11,8 @@ struct AgentGuardTab: View {
     @State private var reportPeriod = 0
     @State private var showReportSheet = false
     @State private var generatedReport: AuditReport?
+    @State private var newBlacklistPattern = ""
+    @State private var newWhitelistPattern = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,8 +30,9 @@ struct AgentGuardTab: View {
                 case 0: dashboardView
                 case 1: alertCenterView
                 case 2: alertRulesView
-                case 3: protectedDirsView
-                case 4: trendChartView
+                case 3: commandRulesView
+                case 4: protectedDirsView
+                case 5: trendChartView
                 default: dashboardView
                 }
             }
@@ -37,12 +40,15 @@ struct AgentGuardTab: View {
     }
 
     private var segmentPicker: some View {
-        HStack(spacing: 0) {
-            SegmentButton(title: localizer.guardDashboard, icon: "gauge", index: 0, selected: $selectedSegment)
-            SegmentButton(title: localizer.alertCenter, icon: "bell.badge", index: 1, selected: $selectedSegment)
-            SegmentButton(title: localizer.alertRules, icon: "slider.horizontal.3", index: 2, selected: $selectedSegment)
-            SegmentButton(title: localizer.protectedDirs, icon: "folder.badge.eye", index: 3, selected: $selectedSegment)
-            SegmentButton(title: localizer.trendChart, icon: "chart.line.uptrend.xyaxis", index: 4, selected: $selectedSegment)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                SegmentButton(title: localizer.guardDashboard, icon: "gauge", index: 0, selected: $selectedSegment)
+                SegmentButton(title: localizer.alertCenter, icon: "bell.badge", index: 1, selected: $selectedSegment)
+                SegmentButton(title: localizer.alertRules, icon: "slider.horizontal.3", index: 2, selected: $selectedSegment)
+                SegmentButton(title: localizer.commandRules, icon: "terminal", index: 3, selected: $selectedSegment)
+                SegmentButton(title: localizer.protectedDirs, icon: "folder.badge.eye", index: 4, selected: $selectedSegment)
+                SegmentButton(title: localizer.trendChart, icon: "chart.line.uptrend.xyaxis", index: 5, selected: $selectedSegment)
+            }
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.md)
@@ -341,6 +347,163 @@ struct AgentGuardTab: View {
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.lg)
+    }
+
+    // MARK: - Command Rules
+
+    private var commandRulesView: some View {
+        VStack(spacing: Theme.Spacing.lg) {
+            toggleRule(title: localizer.enableCommandBlacklist, isOn: Binding(
+                get: { service.guardFeature.alertRule.commandBlacklistEnabled },
+                set: { service.guardFeature.alertRule.commandBlacklistEnabled = $0; service.guardFeature.saveAlertRule() }
+            ))
+
+            if service.guardFeature.alertRule.commandBlacklistEnabled {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    HStack {
+                        Text(localizer.commandBlacklist)
+                            .font(Theme.Font.subheadline)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text("(\(service.guardFeature.commandBlacklist.count))")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                        Spacer()
+                    }
+
+                    HStack(spacing: Theme.Spacing.sm) {
+                        TextField(localizer.newCommandPattern, text: $newBlacklistPattern)
+                            .textFieldStyle(.roundedBorder)
+                            .font(Theme.Font.caption)
+                            .onSubmit {
+                                if !newBlacklistPattern.isEmpty {
+                                    service.guardFeature.addBlacklistRule(pattern: newBlacklistPattern, severity: .warning)
+                                    newBlacklistPattern = ""
+                                }
+                            }
+                        Button {
+                            if !newBlacklistPattern.isEmpty {
+                                service.guardFeature.addBlacklistRule(pattern: newBlacklistPattern, severity: .warning)
+                                newBlacklistPattern = ""
+                            }
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Theme.Colors.accent)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    ForEach(service.guardFeature.commandBlacklist) { rule in
+                        commandRuleRow(rule: rule, isBlacklist: true)
+                    }
+                }
+                .padding(Theme.Spacing.lg)
+                .background(Theme.Colors.cardBg)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            }
+
+            Divider()
+
+            toggleRule(title: localizer.enableCommandWhitelist, isOn: Binding(
+                get: { service.guardFeature.alertRule.commandWhitelistEnabled },
+                set: { service.guardFeature.alertRule.commandWhitelistEnabled = $0; service.guardFeature.saveAlertRule() }
+            ))
+
+            if service.guardFeature.alertRule.commandWhitelistEnabled {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    HStack {
+                        Text(localizer.commandWhitelist)
+                            .font(Theme.Font.subheadline)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text("(\(service.guardFeature.commandWhitelist.count))")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                        Spacer()
+                    }
+
+                    HStack(spacing: Theme.Spacing.sm) {
+                        TextField(localizer.newCommandPattern, text: $newWhitelistPattern)
+                            .textFieldStyle(.roundedBorder)
+                            .font(Theme.Font.caption)
+                            .onSubmit {
+                                if !newWhitelistPattern.isEmpty {
+                                    service.guardFeature.addWhitelistRule(pattern: newWhitelistPattern)
+                                    newWhitelistPattern = ""
+                                }
+                            }
+                        Button {
+                            if !newWhitelistPattern.isEmpty {
+                                service.guardFeature.addWhitelistRule(pattern: newWhitelistPattern)
+                                newWhitelistPattern = ""
+                            }
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Theme.Colors.success)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    if service.guardFeature.commandWhitelist.isEmpty {
+                        Text(localizer.noWhitelistRules)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    } else {
+                        ForEach(service.guardFeature.commandWhitelist) { rule in
+                            commandRuleRow(rule: rule, isBlacklist: false)
+                        }
+                    }
+                }
+                .padding(Theme.Spacing.lg)
+                .background(Theme.Colors.cardBg)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.lg)
+    }
+
+    private func commandRuleRow(rule: CommandRule, isBlacklist: Bool) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: isBlacklist ? "xmark.circle.fill" : "checkmark.circle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(isBlacklist ? severityColor(rule.severity) : Theme.Colors.success)
+            Text(rule.pattern)
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if !rule.note.isEmpty {
+                Text("— \(rule.note)")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if isBlacklist {
+                Image(systemName: rule.severity.icon)
+                    .font(.system(size: 10))
+                    .foregroundStyle(severityColor(rule.severity))
+            }
+            Button {
+                if isBlacklist {
+                    service.guardFeature.removeBlacklistRule(id: rule.id)
+                } else {
+                    service.guardFeature.removeWhitelistRule(id: rule.id)
+                }
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.Colors.danger)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .fill(isBlacklist ? severityColor(rule.severity).opacity(0.04) : Theme.Colors.success.opacity(0.04))
+        )
     }
 
     // MARK: - Protected Dirs

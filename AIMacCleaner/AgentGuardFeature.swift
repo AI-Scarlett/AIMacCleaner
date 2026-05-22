@@ -60,6 +60,24 @@ struct AlertRule: Codable {
     var doNotDisturbEndHour: Int = 7
     var notificationEnabled: Bool = true
     var alertCooldownSeconds: Double = 60.0
+    var commandBlacklistEnabled: Bool = true
+    var commandWhitelistEnabled: Bool = false
+}
+
+struct CommandRule: Identifiable, Codable {
+    let id: String
+    var pattern: String
+    var isRegex: Bool
+    var severity: GuardAlert.AlertSeverity
+    var note: String
+
+    init(pattern: String, isRegex: Bool = false, severity: GuardAlert.AlertSeverity = .critical, note: String = "") {
+        self.id = UUID().uuidString
+        self.pattern = pattern
+        self.isRegex = isRegex
+        self.severity = severity
+        self.note = note
+    }
 }
 
 struct SensitiveFileRule {
@@ -149,12 +167,16 @@ class AgentGuardFeature: ObservableObject {
     @Published var protectedDirs: [String] = []
     @Published var processLifecycleEvents: [ProcessLifecycleEvent] = []
     @Published var hourlyStats: [HourlyStats] = []
+    @Published var commandBlacklist: [CommandRule] = []
+    @Published var commandWhitelist: [CommandRule] = []
 
     private let alertsPath = NSHomeDirectory() + "/.aimaccleaner_alerts.json"
     private let alertRulePath = NSHomeDirectory() + "/.aimaccleaner_alert_rule.json"
     private let protectedDirsPath = NSHomeDirectory() + "/.aimaccleaner_protected_dirs.json"
     private let lifecyclePath = NSHomeDirectory() + "/.aimaccleaner_lifecycle.json"
     private let hourlyStatsPath = NSHomeDirectory() + "/.aimaccleaner_hourly_stats.json"
+    private let blacklistPath = NSHomeDirectory() + "/.aimaccleaner_cmd_blacklist.json"
+    private let whitelistPath = NSHomeDirectory() + "/.aimaccleaner_cmd_whitelist.json"
     private let maxAlerts = 500
     private let maxLifecycleEvents = 1000
     private let maxHourlyStats = 168
@@ -172,6 +194,12 @@ class AgentGuardFeature: ObservableObject {
         loadProtectedDirs()
         loadLifecycleEvents()
         loadHourlyStats()
+        loadCommandBlacklist()
+        loadCommandWhitelist()
+        if commandBlacklist.isEmpty {
+            commandBlacklist = CommandRule.defaultBlacklist
+            saveCommandBlacklist()
+        }
     }
 
     // MARK: - F25/F26 Batch Operation Alert
@@ -696,6 +724,74 @@ class AgentGuardFeature: ObservableObject {
         alerts.filter { $0.severity == .critical }.count
     }
 
+    // MARK: - Command Blacklist/Whitelist
+
+    func checkCommandBlacklist(command: String, agentName: String) {
+        guard alertRule.commandBlacklistEnabled else { return }
+        let cmdLower = command.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        for rule in commandBlacklist {
+            let matched: Bool
+            if rule.isRegex {
+                matched = (try? Regex(rule.pattern).firstMatch(in: cmdLower)) != nil
+            } else {
+                matched = cmdLower.contains(rule.pattern.lowercased())
+            }
+            if matched {
+                let key = "cmd_blacklist_\(rule.id)"
+                if shouldFireAlert(key: key) {
+                    let alert = GuardAlert(
+                        id: UUID().uuidString,
+                        timestamp: Date(),
+                        alertType: .sensitiveContent,
+                        severity: rule.severity,
+                        title: localizer?.commandBlacklistAlertTitle ?? "Blacklisted Command Detected",
+                        message: String(format: localizer?.commandBlacklistAlertMsg ?? "Agent %@ executed blacklisted command: %@", agentName, rule.pattern),
+                        agentName: agentName,
+                        targetPath: command,
+                        detail: rule.note.isEmpty ? "Pattern: \(rule.pattern)" : rule.note
+                    )
+                    fireAlert(alert)
+                }
+                return
+            }
+        }
+    }
+
+    func isCommandWhitelisted(command: String) -> Bool {
+        guard alertRule.commandWhitelistEnabled, !commandWhitelist.isEmpty else { return true }
+        let cmdLower = command.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        for rule in commandWhitelist {
+            if rule.isRegex {
+                if (try? Regex(rule.pattern).firstMatch(in: cmdLower)) != nil { return true }
+            } else {
+                if cmdLower.contains(rule.pattern.lowercased()) { return true }
+            }
+        }
+        return false
+    }
+
+    func addBlacklistRule(pattern: String, isRegex: Bool = false, severity: GuardAlert.AlertSeverity = .critical, note: String = "") {
+        let rule = CommandRule(pattern: pattern, isRegex: isRegex, severity: severity, note: note)
+        commandBlacklist.append(rule)
+        saveCommandBlacklist()
+    }
+
+    func removeBlacklistRule(id: String) {
+        commandBlacklist.removeAll { $0.id == id }
+        saveCommandBlacklist()
+    }
+
+    func addWhitelistRule(pattern: String, isRegex: Bool = false, note: String = "") {
+        let rule = CommandRule(pattern: pattern, isRegex: isRegex, severity: .info, note: note)
+        commandWhitelist.append(rule)
+        saveCommandWhitelist()
+    }
+
+    func removeWhitelistRule(id: String) {
+        commandWhitelist.removeAll { $0.id == id }
+        saveCommandWhitelist()
+    }
+
     // MARK: - Persistence
 
     private func loadAlerts() {
@@ -753,4 +849,46 @@ class AgentGuardFeature: ObservableObject {
         guard let data = try? JSONEncoder().encode(hourlyStats) else { return }
         try? data.write(to: URL(fileURLWithPath: hourlyStatsPath))
     }
+
+    private func loadCommandBlacklist() {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: blacklistPath)),
+              let decoded = try? JSONDecoder().decode([CommandRule].self, from: data) else { return }
+        commandBlacklist = decoded
+    }
+
+    func saveCommandBlacklist() {
+        guard let data = try? JSONEncoder().encode(commandBlacklist) else { return }
+        try? data.write(to: URL(fileURLWithPath: blacklistPath))
+    }
+
+    private func loadCommandWhitelist() {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: whitelistPath)),
+              let decoded = try? JSONDecoder().decode([CommandRule].self, from: data) else { return }
+        commandWhitelist = decoded
+    }
+
+    func saveCommandWhitelist() {
+        guard let data = try? JSONEncoder().encode(commandWhitelist) else { return }
+        try? data.write(to: URL(fileURLWithPath: whitelistPath))
+    }
+}
+
+extension CommandRule {
+    static let defaultBlacklist: [CommandRule] = [
+        CommandRule(pattern: "rm -rf /", severity: .critical, note: "Recursive root delete"),
+        CommandRule(pattern: "rm -rf ~", severity: .critical, note: "Recursive home delete"),
+        CommandRule(pattern: "rm -rf ~/", severity: .critical, note: "Recursive home directory delete"),
+        CommandRule(pattern: "mkfs", severity: .critical, note: "Filesystem format"),
+        CommandRule(pattern: "dd if=", severity: .critical, note: "Raw disk write"),
+        CommandRule(pattern: ":(){ :|:& };:", severity: .critical, note: "Fork bomb"),
+        CommandRule(pattern: "chmod -R 777 /", severity: .critical, note: "Recursive permission change on root"),
+        CommandRule(pattern: "chown -R", severity: .warning, note: "Recursive ownership change"),
+        CommandRule(pattern: "curl | sh", severity: .warning, note: "Pipe remote script to shell"),
+        CommandRule(pattern: "curl | bash", severity: .warning, note: "Pipe remote script to bash"),
+        CommandRule(pattern: "wget | sh", severity: .warning, note: "Download and execute script"),
+        CommandRule(pattern: "> /dev/sd", severity: .critical, note: "Write directly to disk device"),
+        CommandRule(pattern: "sudo rm", severity: .warning, note: "Sudo delete"),
+        CommandRule(pattern: "launchctl unload", severity: .warning, note: "Unload launch daemon"),
+        CommandRule(pattern: "killall", severity: .info, note: "Kill all processes by name"),
+    ]
 }

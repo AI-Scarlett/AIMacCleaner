@@ -167,13 +167,19 @@ struct StatCardView: View {
                     Text(title)
                         .font(Theme.Font.captionMedium)
                         .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                     Text(value)
                         .font(Theme.Font.title2Bold)
                         .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                     if let subtitle = subtitle {
                         Text(subtitle)
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Colors.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
                 }
 
@@ -185,6 +191,7 @@ struct StatCardView: View {
                         .foregroundStyle(trend.color)
                 }
             }
+            .frame(minHeight: 68)
         }
     }
 }
