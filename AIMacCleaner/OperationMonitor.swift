@@ -26,7 +26,7 @@ class OperationMonitor: ObservableObject {
     private var lastCleanupTime: Date = .distantPast
 
     private var allPidOpenFiles: [pid_t: Set<String>] = [:]
-    private var allPidCommMap: [pid_t: String] = [:]
+    @Published var allPidCommMap: [pid_t: String] = [:]
     private var allPidArgsMap: [pid_t: String] = [:]
     private var ppidMap: [pid_t: pid_t] = [:]
     private var agentComms: Set<String> = []
@@ -35,10 +35,10 @@ class OperationMonitor: ObservableObject {
     private let cacheMaxSize = 5000
     private let cacheTTL: TimeInterval = 15.0
 
-    private var activeAgentNames: Set<String> = []
+    @Published var activeAgentNames: Set<String> = []
     private(set) var agentSelfDirs: Set<String> = []
     private var selfDirDiscoveryTime: Date = .distantPast
-    private var processSnapshots: [ProcessSnapshot] = []
+    @Published var processSnapshots: [ProcessSnapshot] = []
     private var lastCurationRecordIndex: Int = 0
 
     let agentKeywords: [(String, [String])] = [
@@ -143,9 +143,7 @@ class OperationMonitor: ObservableObject {
         ]
 
         var agentNamesLower: [String] = []
-        stateLock.lock()
         let agents = activeAgentNames
-        stateLock.unlock()
         for name in agents {
             agentNamesLower.append(name.lowercased())
         }
@@ -199,12 +197,14 @@ class OperationMonitor: ObservableObject {
 
     func getUnknownAgentSamples() -> [(comm: String, args: String, paths: [String], pid: pid_t)] {
         stateLock.lock()
-        defer { stateLock.unlock() }
+        let pidOpenFiles = allPidOpenFiles
+        let pidArgs = allPidArgsMap
+        stateLock.unlock()
 
         var samples: [(comm: String, args: String, paths: [String], pid: pid_t)] = []
         let knownNames = activeAgentNames.union(["systemd", "kernel_task"])
 
-        for (pid, files) in allPidOpenFiles {
+        for (pid, files) in pidOpenFiles {
             guard let comm = allPidCommMap[pid] else { continue }
             if isSystemProcess(comm) { continue }
 
@@ -217,7 +217,7 @@ class OperationMonitor: ObservableObject {
                     return !fl.contains("/library/") && !fl.hasPrefix("/system/") && !fl.hasPrefix("/private/")
                 }
                 if userFiles.count >= 2 {
-                    let args = allPidArgsMap[pid] ?? ""
+                    let args = pidArgs[pid] ?? ""
                     samples.append((comm, args, Array(userFiles.prefix(10)), pid))
                 }
             }
@@ -229,18 +229,18 @@ class OperationMonitor: ObservableObject {
     func learnAgentKeyword(displayName: String, keywords: [String], dirs: [String]) {
         guard !displayName.isEmpty, !keywords.isEmpty else { return }
         stateLock.lock()
-        activeAgentNames.insert(displayName)
         for dir in dirs where !dir.isEmpty {
             agentSelfDirs.insert(dir)
         }
         selfDirDiscoveryTime = Date()
         stateLock.unlock()
+        DispatchQueue.main.async { [weak self] in
+            self?.activeAgentNames.insert(displayName)
+        }
         print("[AIMacCleaner] AI learned new agent: \(displayName) keywords: \(keywords) dirs: \(dirs)")
     }
 
     func getRawDataForCuration() -> (events: [OperationRecord], snapshots: [ProcessSnapshot]) {
-        stateLock.lock()
-        defer { stateLock.unlock() }
         let startIndex = lastCurationRecordIndex
         lastCurationRecordIndex = records.count
         return (Array(records[startIndex..<records.count]), processSnapshots)
@@ -438,13 +438,18 @@ class OperationMonitor: ObservableObject {
         }
 
         stateLock.lock()
-        allPidCommMap = newPidCommMap
         allPidArgsMap = newPidArgsMap
         ppidMap = newPpidMap
         agentComms = newAgentComms
-        let agentsChanged = activeAgentNames != newActiveAgents
-        activeAgentNames = newActiveAgents
         stateLock.unlock()
+
+        let agentsChanged = activeAgentNames != newActiveAgents
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.allPidCommMap = newPidCommMap
+            self.activeAgentNames = newActiveAgents
+        }
 
         refreshLsofData()
 
@@ -452,10 +457,11 @@ class OperationMonitor: ObservableObject {
         let snapshot = newPidCommMap.map { (pid, comm) in
             ProcessSnapshot(timestamp: now, pid: pid, ppid: newPpidMap[pid] ?? 0, comm: comm, args: newPidArgsMap[pid] ?? "")
         }
-        stateLock.lock()
-        processSnapshots.append(contentsOf: snapshot)
-        if processSnapshots.count > 10000 { processSnapshots = Array(processSnapshots.suffix(8000)) }
-        stateLock.unlock()
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.processSnapshots.append(contentsOf: snapshot)
+            if self.processSnapshots.count > 10000 { self.processSnapshots = Array(self.processSnapshots.suffix(8000)) }
+        }
 
         if agentsChanged || Date().timeIntervalSince(selfDirDiscoveryTime) > 30.0 {
             discoverAgentSelfDirs()
@@ -468,9 +474,7 @@ class OperationMonitor: ObservableObject {
     }
 
     private func refreshLsofData() {
-        stateLock.lock()
         let pidCommMap = allPidCommMap
-        stateLock.unlock()
 
         let processCount = pidCommMap.count
         guard processCount > 0 else { return }
@@ -526,33 +530,39 @@ class OperationMonitor: ObservableObject {
             stateLock.lock()
             allPidOpenFiles = newPidOpenFiles
             lastLsofRefresh = Date()
+            stateLock.unlock()
 
+            let localPidCommMap = allPidCommMap
             let now = Date()
             var newCacheEntries = 0
             for (pid, files) in newPidOpenFiles {
-                let procName = allPidCommMap[pid] ?? ""
+                let procName = localPidCommMap[pid] ?? ""
                 if isSystemProcess(procName) { continue }
 
                 let agentName = resolveAgentNameForPid(pid)
+                stateLock.lock()
                 let args = allPidArgsMap[pid] ?? ""
+                stateLock.unlock()
                 let tool = extractToolInfo(comm: procName, args: args)
 
                 for file in files {
                     if shouldSkipPath(file) { continue }
                     let key = file
+                    stateLock.lock()
                     if fileAgentCache[key] == nil || fileAgentCache[key]?.pid != pid {
                         fileAgentCache[key] = (agentName, procName, tool, now, pid)
                         newCacheEntries += 1
                     }
+                    stateLock.unlock()
                 }
             }
 
+            stateLock.lock()
             fileAgentCache = fileAgentCache.filter { now.timeIntervalSince($0.value.cachedAt) < cacheTTL }
             if fileAgentCache.count > cacheMaxSize {
                 let sorted = fileAgentCache.sorted { $0.value.cachedAt > $1.value.cachedAt }
                 fileAgentCache = Dictionary(uniqueKeysWithValues: sorted.prefix(cacheMaxSize).map { ($0.key, $0.value) })
             }
-
             stateLock.unlock()
 
             print("[AIMacCleaner] lsof: \(newPidOpenFiles.count) PIDs, \(newPidOpenFiles.values.map{$0.count}.reduce(0,+)) files, cache: \(fileAgentCache.count) entries, new: \(newCacheEntries)")
@@ -565,11 +575,13 @@ class OperationMonitor: ObservableObject {
 
     private func resolveAgentNameForPid(_ pid: pid_t) -> String {
         stateLock.lock()
-        let comm = allPidCommMap[pid]
         let args = allPidArgsMap[pid] ?? ""
         let localPpidMap = ppidMap
-        let localComms = allPidCommMap
+        let localArgsMap = allPidArgsMap
         stateLock.unlock()
+
+        let comm = allPidCommMap[pid]
+        let localComms = allPidCommMap
 
         guard let comm = comm else { return "PID:\(pid)" }
 
@@ -596,7 +608,7 @@ class OperationMonitor: ObservableObject {
                 current = ppid
                 depth += 1
                 if let parentComm = localComms[current] {
-                    let parentCombined = (parentComm + " " + (allPidArgsMap[current] ?? "")).lowercased()
+                    let parentCombined = (parentComm + " " + (localArgsMap[current] ?? "")).lowercased()
                     for (displayName, keywords) in agentKeywords {
                         for kw in keywords {
                             if parentCombined.contains(kw) {
