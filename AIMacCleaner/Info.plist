@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Agent卫士</string>
+	<string>Agent守望</string>
 	<key>CFBundleExecutable</key>
 	<string>AIMacCleaner</string>
 	<key>CFBundleIconFile</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>AgentGuard</string>
+	<string>AgentWatch</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -33,8 +33,8 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>AgentGuard 需要访问系统信息以监控硬件状态</string>
+	<string>AgentWatch 需要访问系统信息以监控硬件状态</string>
 	<key>NSSystemAdministrationUsageDescription</key>
-	<string>AgentGuard 需要系统管理权限以清理系统缓存文件</string>
+	<string>AgentWatch 需要系统管理权限以清理系统缓存文件</string>
 </dict>
 </plist>

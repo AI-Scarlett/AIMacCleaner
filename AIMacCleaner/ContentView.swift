@@ -7,16 +7,26 @@ struct ContentView: View {
     @EnvironmentObject var localizer: Localizer
     @State private var showSettings = false
     @State private var sidebarCollapsed = false
+    @State private var toolboxExpanded = false
     @State private var hoveredItem: NavItem?
     @AppStorage("networkMode") private var networkMode = "internet"
 
     enum NavItem: String, CaseIterable {
         case operations = "Agent 监控"
+        case agentGuard = "Agent 守护"
+        case toolbox = "工具箱"
         case cleaner = "Mac 清理"
         case app = "APP 管理"
         case dependency = "依赖管理"
         case other = "其它工具"
         case migration = "适配检测"
+
+        var isSubItem: Bool {
+            switch self {
+            case .cleaner, .app, .dependency, .other, .migration: return true
+            default: return false
+            }
+        }
 
         var icon: String {
             switch self {
@@ -25,6 +35,8 @@ struct ContentView: View {
             case .dependency: "cube.box"
             case .other: "terminal"
             case .operations: "cpu"
+            case .agentGuard: "eye.circle.fill"
+            case .toolbox: "wrench.and.screwdriver.fill"
             case .migration: "arrow.triangle.2.circlepath"
             }
         }
@@ -36,6 +48,8 @@ struct ContentView: View {
             case .dependency: .orange
             case .other: .gray
             case .operations: .green
+            case .agentGuard: .orange
+            case .toolbox: .blue
             case .migration: .purple
             }
         }
@@ -47,6 +61,8 @@ struct ContentView: View {
             case .dependency: localizer.navDependency
             case .other: localizer.navOther
             case .operations: localizer.navOperations
+            case .agentGuard: localizer.navAgentGuard
+            case .toolbox: localizer.navToolbox
             case .migration: localizer.navMigration
             }
         }
@@ -58,6 +74,8 @@ struct ContentView: View {
             case .dependency: localizer.subDependency
             case .other: localizer.subOther
             case .operations: localizer.subOperations
+            case .agentGuard: localizer.subAgentGuard
+            case .toolbox: localizer.subToolbox
             case .migration: localizer.subMigration
             }
         }
@@ -113,7 +131,7 @@ struct ContentView: View {
         HStack(spacing: 0) {
             if !sidebarCollapsed {
                 HStack(spacing: Theme.Spacing.sm) {
-                    Image(systemName: "shield.lefthalf.filled")
+                    Image(systemName: "eye.circle.fill")
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(Theme.Gradients.accent)
                     Text(localizer.appName)
@@ -122,7 +140,7 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
             } else {
-                Image(systemName: "shield.lefthalf.filled")
+                Image(systemName: "eye.circle.fill")
                     .font(.system(size: Theme.Sidebar.iconSize, weight: .semibold))
                     .foregroundStyle(Theme.Gradients.accent)
                     .frame(maxWidth: .infinity)
@@ -151,26 +169,119 @@ struct ContentView: View {
                     .padding(.bottom, Theme.Spacing.xs)
             }
 
-            ForEach(NavItem.allCases, id: \.self) { item in
-                Button {
-                    selectedTab = item
-                } label: {
-                    Group {
-                        if sidebarCollapsed {
-                            sidebarCollapsedItem(item)
-                        } else {
-                            sidebarExpandedItem(item)
+            ForEach(NavItem.allCases.filter { !$0.isSubItem }, id: \.self) { item in
+                if item == .toolbox && !sidebarCollapsed {
+                    toolboxSection
+                } else if item != .toolbox || sidebarCollapsed {
+                    Button {
+                        if item == .toolbox {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                toolboxExpanded.toggle()
+                            }
                         }
+                        selectedTab = item
+                    } label: {
+                        Group {
+                            if sidebarCollapsed {
+                                sidebarCollapsedItem(item)
+                            } else {
+                                sidebarExpandedItem(item)
+                            }
+                        }
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onHover { hovering in
-                    hoveredItem = hovering ? item : nil
+                    .buttonStyle(.plain)
+                    .onHover { hovering in
+                        hoveredItem = hovering ? item : nil
+                    }
                 }
             }
         }
         .padding(.horizontal, sidebarCollapsed ? Theme.Spacing.xs : Theme.Spacing.sm)
+    }
+
+    private var toolboxSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                    toolboxExpanded.toggle()
+                }
+                if !toolboxExpanded {
+                    selectedTab = .toolbox
+                }
+            } label: {
+                HStack(spacing: Theme.Spacing.sm + 2) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(selectedTab == .toolbox || toolboxExpanded ? NavItem.toolbox.color : Color.clear)
+                        .frame(width: 3, height: Theme.Sidebar.itemHeight * 0.5)
+
+                    Image(systemName: NavItem.toolbox.icon)
+                        .font(.system(size: Theme.Sidebar.iconSize * 0.65, weight: (selectedTab == .toolbox || toolboxExpanded) ? .semibold : .medium))
+                        .foregroundStyle((selectedTab == .toolbox || toolboxExpanded) ? NavItem.toolbox.color : (hoveredItem == .toolbox ? Theme.Colors.textPrimary : Theme.Colors.textSecondary))
+                        .frame(width: Theme.Sidebar.iconSize)
+
+                    Text(NavItem.toolbox.label(localizer))
+                        .font(.system(size: 13))
+                        .fontWeight((selectedTab == .toolbox || toolboxExpanded) ? .semibold : .regular)
+                        .foregroundStyle((selectedTab == .toolbox || toolboxExpanded) ? Theme.Colors.textPrimary : (hoveredItem == .toolbox ? Theme.Colors.textPrimary : Theme.Colors.textSecondary))
+
+                    Spacer()
+
+                    Image(systemName: toolboxExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.md + 1)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Sidebar.itemRadius)
+                        .fill((selectedTab == .toolbox || toolboxExpanded) ? NavItem.toolbox.color.opacity(0.1) : (hoveredItem == .toolbox ? Theme.Colors.cardHover : Color.clear))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Sidebar.itemRadius)
+                        .stroke((selectedTab == .toolbox || toolboxExpanded) ? NavItem.toolbox.color.opacity(0.2) : Color.clear, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                hoveredItem = hovering ? .toolbox : nil
+            }
+
+            if toolboxExpanded {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach([NavItem.cleaner, .app, .dependency, .other, .migration], id: \.self) { item in
+                        Button {
+                            selectedTab = item
+                        } label: {
+                            HStack(spacing: Theme.Spacing.sm) {
+                                Image(systemName: item.icon)
+                                    .font(.system(size: 11, weight: selectedTab == item ? .semibold : .regular))
+                                    .foregroundStyle(selectedTab == item ? item.color : Theme.Colors.textTertiary)
+                                    .frame(width: 16)
+
+                                Text(item.label(localizer))
+                                    .font(.system(size: 12))
+                                    .fontWeight(selectedTab == item ? .semibold : .regular)
+                                    .foregroundStyle(selectedTab == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
+
+                                Spacer()
+                            }
+                            .padding(.horizontal, Theme.Spacing.md + Theme.Spacing.lg)
+                            .padding(.vertical, Theme.Spacing.sm + 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                    .fill(selectedTab == item ? item.color.opacity(0.08) : Color.clear)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { hovering in
+                            hoveredItem = hovering ? item : nil
+                        }
+                    }
+                }
+                .padding(.top, Theme.Spacing.xs)
+            }
+        }
     }
 
     private func sidebarExpandedItem(_ item: NavItem) -> some View {
@@ -264,6 +375,7 @@ struct ContentView: View {
                             )
                     }
                     .buttonStyle(.plain)
+                    .help(localizer.settings)
 
                     languageToggleButton
 
@@ -275,95 +387,75 @@ struct ContentView: View {
                 }
                 .padding(.vertical, Theme.Spacing.lg)
             } else {
-                VStack(spacing: Theme.Spacing.sm) {
-                    HStack(spacing: Theme.Spacing.md) {
-                        Button { showSettings = true } label: {
-                            HStack(spacing: Theme.Spacing.xs + 1) {
-                                Image(systemName: "gearshape")
-                                    .font(.system(size: 11))
-                                Text(localizer.settings)
-                                    .font(.system(size: 11))
-                            }
+                HStack(spacing: 0) {
+                    Button { showSettings = true } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 14))
                             .foregroundStyle(Theme.Colors.textSecondary)
-                            .padding(.horizontal, Theme.Spacing.sm)
-                            .padding(.vertical, Theme.Spacing.xs + 1)
+                            .frame(width: 28, height: 28)
                             .background(
                                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                     .fill(Theme.Colors.cardHover)
                             )
-                        }
-                        .buttonStyle(.plain)
-
-                        Spacer()
-
-                        languageToggleButton
-
-                        networkStatusBadge
                     }
+                    .buttonStyle(.plain)
+                    .help(localizer.settings)
 
-                    HStack(spacing: Theme.Spacing.md) {
-                        Button {
-                            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                                sidebarCollapsed = true
-                            }
-                        } label: {
-                            HStack(spacing: Theme.Spacing.xs) {
-                                Image(systemName: "sidebar.left")
-                                    .font(.system(size: 10, weight: .medium))
-                                Text(localizer.collapseSidebar)
-                                    .font(.system(size: 10))
-                            }
+                    Spacer()
+
+                    languageToggleButton
+
+                    networkStatusBadge
+
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            sidebarCollapsed = true
+                        }
+                    } label: {
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Theme.Colors.textTertiary)
-                            .padding(.horizontal, Theme.Spacing.sm)
-                            .padding(.vertical, Theme.Spacing.xs)
+                            .frame(width: 28, height: 28)
                             .background(
                                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                     .fill(Theme.Colors.cardHover)
                             )
-                        }
-                        .buttonStyle(.plain)
-
-                        Spacer()
-
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Circle()
-                                .fill(Theme.Colors.success)
-                                .frame(width: 5, height: 5)
-                            Text("v\(service.currentVersion)")
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(Theme.Colors.textTertiary)
-                        }
                     }
+                    .buttonStyle(.plain)
+                    .help(localizer.collapseSidebar)
                 }
                 .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.md)
+
+                HStack(spacing: Theme.Spacing.xs) {
+                    Circle()
+                        .fill(Theme.Colors.success)
+                        .frame(width: 5, height: 5)
+                    Text("v\(service.currentVersion)")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.bottom, Theme.Spacing.md)
             }
         }
     }
 
     private var languageToggleButton: some View {
-        Button {
-            withAnimation(.none) {
-                localizer.language = localizer.language == .simplifiedChinese ? .english : .simplifiedChinese
+        Picker("", selection: $localizer.language) {
+            ForEach(AppLanguage.allCases, id: \.self) { lang in
+                Text(lang.nativeName)
+                    .font(.system(size: 10))
+                    .tag(lang)
             }
-        } label: {
-            Text(localizer.langToggleText)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.Colors.accent)
-                .padding(.horizontal, sidebarCollapsed ? 6 : 8)
-                .padding(.vertical, 2)
-                .background(
-                    Capsule()
-                        .fill(Theme.Colors.accent.opacity(0.12))
-                )
         }
-        .buttonStyle(.plain)
-        .help(localizer.language == .simplifiedChinese ? "Switch to English" : "切换到中文")
+        .pickerStyle(.menu)
+        .frame(width: sidebarCollapsed ? 36 : 72)
     }
 
     private var networkStatusBadge: some View {
         HStack(spacing: 3) {
-            Image(systemName: networkMode == "internet" ? "globe" : "lock.shield")
+            Image(systemName: networkMode == "internet" ? "globe" : "lock.circle")
                 .font(.system(size: 9))
                 .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
             if !sidebarCollapsed {
@@ -397,6 +489,12 @@ struct ContentView: View {
                 .environmentObject(localizer)
         case .operations:
             OperationLogTab(monitor: service.operationMonitor)
+                .environmentObject(localizer)
+        case .agentGuard:
+            AgentGuardTab()
+                .environmentObject(localizer)
+        case .toolbox:
+            ToolboxTab()
                 .environmentObject(localizer)
         case .migration:
             IntelMigrationTab()
@@ -447,6 +545,83 @@ struct PageHeader: View {
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.lg)
         .background(Theme.Colors.background)
+    }
+}
+
+// MARK: - Toolbox Tab
+
+struct ToolboxTab: View {
+    @EnvironmentObject var localizer: Localizer
+    @EnvironmentObject var service: ScannerService
+    @State private var selectedTool = 0
+
+    private let tools: [(icon: String, title: (Localizer) -> String, subtitle: (Localizer) -> String, color: Color)] = [
+        ("arrow.down.doc.fill", { $0.navCleaner }, { $0.subCleaner }, .blue),
+        ("app.badge", { $0.navApp }, { $0.subApp }, .cyan),
+        ("cube.box", { $0.navDependency }, { $0.subDependency }, .orange),
+        ("terminal", { $0.navOther }, { $0.subOther }, .gray),
+        ("arrow.triangle.2.circlepath", { $0.navMigration }, { $0.subMigration }, .purple),
+    ]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PageHeader(
+                icon: "wrench.and.screwdriver.fill",
+                title: localizer.navToolbox,
+                subtitle: localizer.subToolbox,
+                color: .blue
+            )
+
+            ScrollView {
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: Theme.Spacing.lg),
+                    GridItem(.flexible(), spacing: Theme.Spacing.lg),
+                    GridItem(.flexible(), spacing: Theme.Spacing.lg)
+                ], spacing: Theme.Spacing.lg) {
+                    ForEach(Array(tools.enumerated()), id: \.offset) { index, tool in
+                        toolCard(index: index, tool: tool)
+                    }
+                }
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.vertical, Theme.Spacing.lg)
+            }
+        }
+    }
+
+    private func toolCard(index: Int, tool: (icon: String, title: (Localizer) -> String, subtitle: (Localizer) -> String, color: Color)) -> some View {
+        Button {
+            selectedTool = index
+        } label: {
+            VStack(spacing: Theme.Spacing.md) {
+                Image(systemName: tool.icon)
+                    .font(.system(size: 28))
+                    .foregroundStyle(tool.color)
+                    .frame(width: 52, height: 52)
+                    .background(tool.color.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+
+                Text(tool.title(localizer))
+                    .font(Theme.Font.subheadlineMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .lineLimit(1)
+
+                Text(tool.subtitle(localizer))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(Theme.Spacing.lg)
+            .background(Theme.Colors.cardBg)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                    .stroke(tool.color.opacity(0.12), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -2449,7 +2624,7 @@ struct MacCleanerTab: View {
         VStack(spacing: Theme.Spacing.xxl) {
             Spacer()
             VStack(spacing: Theme.Spacing.md) {
-                Image(systemName: "shield.lefthalf.filled")
+                Image(systemName: "eye.circle.fill")
                     .font(.system(size: 48))
                     .foregroundStyle(Theme.Colors.accent.opacity(0.6))
                 Text(localizer.appName)
@@ -3448,7 +3623,7 @@ struct SensorMonitorTab: View {
             } else if filteredEvents.isEmpty {
                 VStack(spacing: 16) {
                     Spacer()
-                    Image(systemName: "checkmark.shield.fill")
+                    Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 40)).foregroundColor(.green.opacity(0.6))
                     Text(localizer.noDeviceCall).font(.title3).fontWeight(.medium)
                     Text(localizer.noDeviceCallHint).font(.caption).foregroundColor(.secondary)

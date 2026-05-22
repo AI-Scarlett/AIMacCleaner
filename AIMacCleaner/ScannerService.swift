@@ -1169,9 +1169,13 @@ class ScannerService: ObservableObject {
     var isMonitoring: Bool { monitorTimer != nil }
     private var lastAlertTime: Date = .distantPast
     let operationMonitor = OperationMonitor()
+    let guardFeature = AgentGuardFeature()
 
     weak var localizer: Localizer? {
-        didSet { operationMonitor.localizer = localizer }
+        didSet {
+            operationMonitor.localizer = localizer
+            guardFeature.localizer = localizer
+        }
     }
 
     @Published var operationRecords: [OperationRecord] = []
@@ -1199,7 +1203,17 @@ class ScannerService: ObservableObject {
         operationPollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
+                let prevCount = self.operationRecords.count
                 self.operationRecords = self.operationMonitor.records
+                if self.operationRecords.count > prevCount {
+                    let newRecords = Array(self.operationRecords.prefix(self.operationRecords.count - prevCount))
+                    for record in newRecords {
+                        self.guardFeature.checkBatchOperation(record: record)
+                        self.guardFeature.checkSensitiveFile(record: record)
+                        self.guardFeature.checkProtectedDir(record: record)
+                        self.guardFeature.recordStats(record)
+                    }
+                }
             }
         }
     }
@@ -1853,7 +1867,7 @@ sleep 3
 log "Mounting DMG..."
 if ! /usr/bin/hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -nobrowse -quiet 2>>"$LOG_PATH"; then
     log "ERROR: Failed to mount DMG"
-    osascript -e 'display notification "\(localizer?.updateInstallFailedMount ?? "Update install failed: cannot mount installer")" with title "AgentGuard"'
+    osascript -e 'display notification "\(localizer?.updateInstallFailedMount ?? "Update install failed: cannot mount installer")" with title "AgentWatch"'
     rm -rf "$TEMP_DIR"
     exit 1
 fi
@@ -1864,7 +1878,7 @@ UPDATE_APP=$(find "$MOUNT_POINT" -maxdepth 1 -name "*.app" -type d 2>/dev/null |
 if [ -z "$UPDATE_APP" ]; then
     log "ERROR: No .app found in DMG"
     /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
-    osascript -e 'display notification "\(localizer?.updateInstallFailedApp ?? "Update install failed: app not found in installer")" with title "AgentGuard"'
+    osascript -e 'display notification "\(localizer?.updateInstallFailedApp ?? "Update install failed: app not found in installer")" with title "AgentWatch"'
     rm -rf "$TEMP_DIR"
     exit 1
 fi
@@ -1881,7 +1895,7 @@ log "Copying new app to $TARGET_PATH"
 if ! /usr/bin/ditto "$UPDATE_APP" "$TARGET_PATH" 2>>"$LOG_PATH"; then
     log "ERROR: Failed to copy new app"
     /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
-    osascript -e 'display notification "\(localizer?.updateInstallFailedCopy ?? "Update install failed: cannot copy app")" with title "AgentGuard"'
+    osascript -e 'display notification "\(localizer?.updateInstallFailedCopy ?? "Update install failed: cannot copy app")" with title "AgentWatch"'
     rm -rf "$TEMP_DIR"
     exit 1
 fi
@@ -1897,7 +1911,7 @@ xattr -cr "$TARGET_PATH" 2>/dev/null || true
 log "Launching updated app..."
 open "$TARGET_PATH"
 
-osascript -e 'display notification "\(localizer?.updateSuccess ?? "Successfully updated to latest version")" with title "AgentGuard" sound name "Glass"'
+osascript -e 'display notification "\(localizer?.updateSuccess ?? "Successfully updated to latest version")" with title "AgentWatch" sound name "Glass"'
 log "=== Update completed successfully ==="
 
 # Cleanup temp files after launch

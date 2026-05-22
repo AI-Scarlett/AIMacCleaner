@@ -220,7 +220,7 @@ struct MenuBarMonitor: View {
                 Button {
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentGuard") || $0.title.contains("Agent卫士") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
+                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("Agent守望") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
                         window.makeKeyAndOrderFront(nil)
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -997,7 +997,7 @@ struct MenuBarMonitor: View {
                 Button {
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentGuard") || $0.title.contains("Agent卫士") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
+                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("Agent守望") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
                         window.makeKeyAndOrderFront(nil)
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {

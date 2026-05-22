@@ -396,7 +396,7 @@ struct SettingsView: View {
                 .onTapGesture { networkMode = "internet" }
 
                 HStack(spacing: Theme.Spacing.md) {
-                    Image(systemName: "lock.shield")
+                    Image(systemName: "lock.circle")
                         .font(Theme.Font.title2)
                         .foregroundStyle(networkMode == "intranet" ? Theme.Colors.warning : Theme.Colors.textTertiary)
                     VStack(alignment: .leading, spacing: 2) {

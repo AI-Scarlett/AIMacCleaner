@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 DMG_PATH = f"/tmp/AgentGuard-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -33,24 +33,32 @@ if response.status_code == 200:
     print(f"Release {TAG} already exists (id={release_id})")
 else:
     print(f"Creating new release {TAG}...")
-    body_text = """## v2.0.0 全面UI商业化重构 - 现代SaaS仪表盘风格
+    body_text = """## v2.1.0 国际化修复 + 图标重设计 + 布局优化
 
-### 🎨 UI全面重构
-- **设计系统** - 新增 Theme.swift 统一设计系统（颜色/字体/间距/圆角/阴影/渐变）
-- **侧边栏** - 渐变Logo、彩色指示条、hover效果、精致折叠动画
-- **Mac清理** - ProgressRing磁盘可视化、DashboardGrid统计卡片、渐变扫描按钮、卡片式结果列表
-- **Agent监控** - 自定义分段控制器、StatCardView统计概览、ProgressRing活跃度、PillBadge操作类型
-- **APP/依赖/工具管理** - PillBadge筛选、实色圆角操作按钮、CardView确认弹窗
-- **适配检测** - StatCardView统计、ProgressRing扫描进度、PillBadge架构标签
-- **菜单栏** - 渐变Tab指示器、StatCardView硬件卡片、ProgressRing磁盘、精致底部操作栏
-- **设置面板** - 圆角导航+指示条、.cardStyle设置项、SectionHeader分组
+### 🌐 国际化修复
+- 修复任务栏Agent监控硬编中文（OperationType.rawValue→localizedLabel）
+- 修复适配检测/其它工具/依赖管理硬编中文（subCategory→localizedSubCategory）
+- 修复IntelMigrationTab硬编中文（IntelAppType.rawValue→localizedLabel）
+- 修复Models.swift confidenceLabel硬编中文
+- 修复ScannerService.swift AI提示词硬编中文→英文
+- 修复窗口标题匹配"Agent守护"→"Agent卫士"
+- 新增localizedSubCategory/localizedConfidence/langToggleText到Localizer
+- 新增flag/label属性到AppLanguage枚举
+- 默认语言从中文改为英文
 
-### 🐛 Bug修复
-- 磁盘空间清理后不更新（永久删除）
-- 更新后权限重置（ditto+codesign）
-- 更新后不自动启动
-- Agent审计扫描卡死
-- OperationMonitor线程爆炸
+### 🎨 图标重设计
+- 全新原创六边形哨兵之眼图标（不使用SF Symbols，无版权风险）
+- 蓝紫渐变背景+青色虹膜+电路纹理
+- 重新生成所有尺寸图标文件
+
+### 📐 布局优化
+- 任务栏弹窗宽度340→360pt
+- Agent统计行名称宽度80→90pt，添加truncationMode
+- 操作类型胶囊添加lineLimit+minimumScaleFactor防止换行
+- 最近操作列表优化间距和截断
+- 操作控制栏按钮添加minimumScaleFactor
+- 硬件概览底部统计行添加lineLimit
+- 设置语言选择器改为横向滚动+提取languageButton函数
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',

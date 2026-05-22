@@ -33,12 +33,12 @@ enum AppLanguage: String, CaseIterable {
 
     var appName: String {
         switch self {
-        case .simplifiedChinese: return "Agent卫士"
-        case .english: return "AgentGuard"
-        case .traditionalChinese: return "Agent衛士"
-        case .japanese: return "Agentガード"
-        case .korean: return "Agent가드"
-        case .maltese: return "AgentGuard"
+        case .simplifiedChinese: return "Agent守望"
+        case .english: return "AgentWatch"
+        case .traditionalChinese: return "Agent守望"
+        case .japanese: return "Agentウォッチ"
+        case .korean: return "Agent워치"
+        case .maltese: return "AgentWatch"
         }
     }
 
@@ -244,7 +244,7 @@ extension Localizer {
     var clearResults: String { t("清除结果", en: "Clear Results") }
     var viewFullLog: String { t("查看完整记录", en: "View Full Log") }
     var quitApp: String { t("退出", en: "Quit") }
-    var openAIMacCleaner: String { t("打开 Agent卫士", en: "Open AgentGuard", zhHant: "打開 Agent衛士", ja: "AgentGuardを開く", ko: "AgentGuard 열기", mt: "Open AgentGuard") }
+    var openAIMacCleaner: String { t("打开 Agent守望", en: "Open AgentWatch", zhHant: "打開 Agent守望", ja: "AgentWatchを開く", ko: "AgentWatch 열기", mt: "Open AgentWatch") }
     var checkForUpdate: String { t("检查更新", en: "Check for Updates") }
     var checkingUpdate: String { t("检查中...", en: "Checking...") }
     var running: String { t("运行中", en: "Running") }
@@ -658,4 +658,81 @@ extension Localizer {
     var uninstallFailed: String { t("卸载失败", en: "Uninstall failed") }
     var systemPrefix: String { t("系统", en: "system") }
     var deleted: String { t("已删除", en: "Deleted") }
+
+    var navAgentGuard: String { t("Agent 守护", en: "Agent Guard") }
+    var subAgentGuard: String { t("AI Agent 安全监控与防护", en: "AI Agent Security Monitoring & Protection") }
+    var guardDashboard: String { t("守护概览", en: "Guard Dashboard") }
+    var alertCenter: String { t("告警中心", en: "Alert Center") }
+    var alertRules: String { t("告警规则", en: "Alert Rules") }
+    var protectedDirs: String { t("保护目录", en: "Protected Dirs") }
+    var trendChart: String { t("趋势图", en: "Trends") }
+    var exportData: String { t("导出数据", en: "Export Data") }
+    var auditReport: String { t("审计报告", en: "Audit Report") }
+    var processLifecycle: String { t("进程生命周期", en: "Process Lifecycle") }
+    var processLaunch: String { t("启动", en: "Launch") }
+    var processExit: String { t("退出", en: "Exit") }
+    var batchDeleteAlertTitle: String { t("批量删除告警", en: "Batch Delete Alert") }
+    var batchDeleteAlertMsg: String { t("在短时间内检测到大量文件删除操作", en: "Mass file deletion detected in a short period") }
+    var batchModifyAlertTitle: String { t("批量修改告警", en: "Batch Modify Alert") }
+    var batchModifyAlertMsg: String { t("在短时间内检测到大量文件修改操作", en: "Mass file modification detected in a short period") }
+    var sensitiveFileAlertTitle: String { t("敏感文件访问", en: "Sensitive File Access") }
+    var sensitiveFileAlertMsg: String { t("Agent 访问了敏感文件", en: "Agent accessed a sensitive file") }
+    var sensitiveContentAlertTitle: String { t("敏感内容检测", en: "Sensitive Content Detected") }
+    var sensitiveContentAlertMsg: String { t("Agent 修改了包含敏感信息的文件", en: "Agent modified a file containing sensitive information") }
+    var protectedDirAlertTitle: String { t("保护目录访问", en: "Protected Directory Access") }
+    var protectedDirAlertMsg: String { t("Agent 在保护目录中执行了操作", en: "Agent performed an operation in a protected directory") }
+    var processLaunchAlertTitle: String { t("Agent 进程启动", en: "Agent Process Launched") }
+    var processLaunchAlertMsg: String { t("检测到新的 Agent 进程", en: "New agent process detected") }
+    var batchDeleteThreshold: String { t("批量删除阈值", en: "Batch Delete Threshold") }
+    var batchModifyThreshold: String { t("批量修改阈值", en: "Batch Modify Threshold") }
+    var timeWindowSeconds: String { t("时间窗口(秒)", en: "Time Window (sec)") }
+    var alertCooldown: String { t("告警冷却(秒)", en: "Alert Cooldown (sec)") }
+    var enableSensitiveFile: String { t("启用敏感文件检测", en: "Enable Sensitive File Detection") }
+    var enableSensitiveContent: String { t("启用敏感内容检测", en: "Enable Sensitive Content Detection") }
+    var enableProcessAlert: String { t("启用进程启停告警", en: "Enable Process Lifecycle Alert") }
+    var enableProtectedDir: String { t("启用保护目录告警", en: "Enable Protected Dir Alert") }
+    var enableNotification: String { t("启用系统通知", en: "Enable Notifications") }
+    var doNotDisturb: String { t("免打扰模式", en: "Do Not Disturb") }
+    var dndTimeRange: String { t("免打扰时段", en: "DND Period") }
+    var addProtectedDir: String { t("添加保护目录", en: "Add Protected Directory") }
+    var removeDir: String { t("移除", en: "Remove") }
+    var noProtectedDirs: String { t("暂无保护目录", en: "No Protected Directories") }
+    var noProtectedDirsHint: String { t("添加需要保护的目录，当 Agent 访问时将触发告警", en: "Add directories to protect. Alerts will fire when agents access them") }
+    var unreadAlerts: String { t("未读告警", en: "Unread Alerts") }
+    var criticalAlerts: String { t("严重告警", en: "Critical Alerts") }
+    var totalAlerts: String { t("总告警", en: "Total Alerts") }
+    var markAllRead: String { t("全部标为已读", en: "Mark All Read") }
+    var clearAllAlerts: String { t("清空告警", en: "Clear All") }
+    var noAlerts: String { t("暂无告警", en: "No Alerts") }
+    var noAlertsHint: String { t("一切正常，未检测到异常操作", en: "All clear, no abnormal operations detected") }
+    var exportCSV: String { t("导出 CSV", en: "Export CSV") }
+    var exportJSON: String { t("导出 JSON", en: "Export JSON") }
+    var exportAlertsCSV: String { t("导出告警 CSV", en: "Export Alerts CSV") }
+    var generateReport: String { t("生成报告", en: "Generate Report") }
+    var reportPeriod: String { t("报告周期", en: "Report Period") }
+    var last24h: String { t("最近24小时", en: "Last 24 Hours") }
+    var last7d: String { t("最近7天", en: "Last 7 Days") }
+    var last30d: String { t("最近30天", en: "Last 30 Days") }
+    var allTime: String { t("全部时间", en: "All Time") }
+    var opsCount: String { t("操作数", en: "Operations") }
+    var alertCount: String { t("告警数", en: "Alerts") }
+    var agentBreakdown: String { t("Agent 分布", en: "Agent Breakdown") }
+    var opTypeBreakdown: String { t("操作类型分布", en: "Op Type Breakdown") }
+    var topAffectedPaths: String { t("最受影响路径", en: "Top Affected Paths") }
+    var severityInfo: String { t("信息", en: "Info") }
+    var severityWarning: String { t("警告", en: "Warning") }
+    var severityCritical: String { t("严重", en: "Critical") }
+    var filterAll: String { t("全部", en: "All") }
+    var filterInfo: String { t("信息", en: "Info") }
+    var filterWarning: String { t("警告", en: "Warning") }
+    var filterCritical: String { t("严重", en: "Critical") }
+    var hourlyTrend: String { t("每小时趋势", en: "Hourly Trend") }
+    var createOps: String { t("创建", en: "Create") }
+    var modifyOps: String { t("修改", en: "Modify") }
+    var deleteOps: String { t("删除", en: "Delete") }
+    var readOps: String { t("读取", en: "Read") }
+    var operationsUnit: String { t("次操作", en: "ops") }
+    var selectDirectory: String { t("选择目录", en: "Select Directory") }
+    var navToolbox: String { t("工具箱", en: "Toolbox") }
+    var subToolbox: String { t("系统清理与应用管理", en: "System Cleanup & App Management") }
 }

@@ -24,6 +24,8 @@
 		A1B2C3D4E5F6A7B8C9D0E1F3 /* Localizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7A8B9C0D1E2F3A4B5C6D7E8 /* Localizer.swift */; };
 		BB11CC22DD33EE44FF55AA66 /* IntelMigrationScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC22DD33EE44FF55AA66BB77 /* IntelMigrationScanner.swift */; };
 		DD33EE44FF55AA66BB77CC88 /* IntelMigrationTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE44FF55AA66BB77CC88DD99 /* IntelMigrationTab.swift */; };
+		GA1HB2IC3JD4KE5LF6MG7NH8 /* AgentGuardFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = HA2IB3JC4KD5LE6MF7NG8OI9 /* AgentGuardFeature.swift */; };
+		IA3JB4KC5LD6ME7NF8OG9PJ0 /* AgentGuardTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = JA4KC5LD6ME7NF8OG9PH0QJ1 /* AgentGuardTab.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +46,8 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		F7A8B9C0D1E2F3A4B5C6D7E8 /* Localizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localizer.swift; sourceTree = "<group>"; };
 		CC22DD33EE44FF55AA66BB77 /* IntelMigrationScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntelMigrationScanner.swift; sourceTree = "<group>"; };
 		EE44FF55AA66BB77CC88DD99 /* IntelMigrationTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntelMigrationTab.swift; sourceTree = "<group>"; };
+		HA2IB3JC4KD5LE6MF7NG8OI9 /* AgentGuardFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGuardFeature.swift; sourceTree = "<group>"; };
+		JA4KC5LD6ME7NF8OG9PH0QJ1 /* AgentGuardTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGuardTab.swift; sourceTree = "<group>"; };
 		FF55AA66BB77CC88DD99EE00 /* AIMacCleaner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIMacCleaner.entitlements; sourceTree = "<group>"; };
 		FD0E8A971151EDD2952E2662 /* AIMacCleaner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIMacCleaner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AABBCCDDEEFF001122334455 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -88,6 +92,8 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 			C3109E2D93F7928BE4CFFF2F /* Models.swift */,
 				8B4C9D0E1F2A3B4C5D6E7F8A /* ScanRules.swift */,
 				F15EC33FFB79FB101CE80521 /* ScannerService.swift */,
+				HA2IB3JC4KD5LE6MF7NG8OI9 /* AgentGuardFeature.swift */,
+				JA4KC5LD6ME7NF8OG9PH0QJ1 /* AgentGuardTab.swift */,
 			);
 			path = AIMacCleaner;
 			sourceTree = "<group>";
@@ -177,6 +183,8 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				DD8768E775E3FCAEE527E7C9 /* Models.swift in Sources */,
 				7A3B8C9D0E1F2A3B4C5D6E7F /* ScanRules.swift in Sources */,
 				BE25C05BB068770416C5ED04 /* ScannerService.swift in Sources */,
+				GA1HB2IC3JD4KE5LF6MG7NH8 /* AgentGuardFeature.swift in Sources */,
+				IA3JB4KC5LD6ME7NF8OG9PJ0 /* AgentGuardTab.swift in Sources */,
 			2A3B4C5D6E7F8A9B0C1D2E3F /* Theme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
