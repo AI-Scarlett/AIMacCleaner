@@ -33,12 +33,12 @@ enum AppLanguage: String, CaseIterable {
 
     var appName: String {
         switch self {
-        case .simplifiedChinese: return "Agent守望"
-        case .english: return "AgentWatch"
-        case .traditionalChinese: return "Agent守望"
-        case .japanese: return "Agentウォッチ"
-        case .korean: return "Agent워치"
-        case .maltese: return "AgentWatch"
+        case .simplifiedChinese: return "Agent卫士"
+        case .english: return "AgentGuard"
+        case .traditionalChinese: return "Agent衛士"
+        case .japanese: return "Agentガード"
+        case .korean: return "Agent가드"
+        case .maltese: return "AgentGuard"
         }
     }
 
@@ -244,7 +244,7 @@ extension Localizer {
     var clearResults: String { t("清除结果", en: "Clear Results", zhHant: "清除結果", ja: "結果をクリア", ko: "결과 지우기", mt: "Clear Results") }
     var viewFullLog: String { t("查看完整记录", en: "View Full Log", zhHant: "檢視完整記錄", ja: "完全なログを表示", ko: "전체 기록 보기", mt: "View Full Log") }
     var quitApp: String { t("退出", en: "Quit", zhHant: "退出", ja: "終了", ko: "종료", mt: "Quit") }
-    var openAIMacCleaner: String { t("打开 Agent守望", en: "Open AgentWatch", zhHant: "打開 Agent守望", ja: "AgentWatchを開く", ko: "AgentWatch 열기", mt: "Open AgentWatch") }
+    var openAIMacCleaner: String { t("打开 Agent卫士", en: "Open AgentGuard", zhHant: "打開 Agent衛士", ja: "AgentGuardを開く", ko: "AgentGuard 열기", mt: "Open AgentGuard") }
     var checkForUpdate: String { t("检查更新", en: "Check for Updates", zhHant: "檢查更新", ja: "アップデートを確認", ko: "업데이트 확인", mt: "Check for Updates") }
     var checkingUpdate: String { t("检查中...", en: "Checking...", zhHant: "檢查中...", ja: "確認中...", ko: "확인 중...", mt: "Checking...") }
     var running: String { t("运行中", en: "Running", zhHant: "執行中", ja: "実行中", ko: "실행 중", mt: "Running") }

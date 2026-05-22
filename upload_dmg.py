@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "2.1.2"
+VERSION = "2.1.3"
 DMG_PATH = f"/tmp/AgentGuard-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -33,32 +33,26 @@ if response.status_code == 200:
     print(f"Release {TAG} already exists (id={release_id})")
 else:
     print(f"Creating new release {TAG}...")
-    body_text = """## v2.1.1 Agent守护模块 + UI重构 + 多语言下拉 + 图标重设计
+    body_text = """## v2.1.2 命令守护三分类 + 自动发现 + 描述后果
 
-### 🛡️ Agent 守护模块（全新）
-- **批量操作预警**：短时间内大量删除/修改文件自动告警（阈值可调）
-- **敏感文件识别**：检测 .env、私钥、证书、凭证等敏感文件被 Agent 访问
-- **敏感内容检测**：扫描文件内容中的 API Key、Token、密码等敏感模式（19种规则）
-- **保护目录设置**：标记受保护目录，Agent 访问时触发告警
-- **系统通知**：macOS 原生通知推送，严重告警使用 Critical Sound
-- **告警规则配置**：批量阈值、时间窗口、冷却时间、各检测开关均可调
-- **免打扰时段**：支持跨午夜时段（如 23:00-07:00）
-- **日志导出**：支持 CSV/JSON 格式导出操作记录和告警记录
-- **审计报告**：一键生成 Agent 分布、操作类型分布、最受影响路径等报告
-- **历史趋势图**：Swift Charts 柱状图展示最近 48 小时操作趋势
+### 🛡️ 命令守护（全新设计）
+- **三分类体系**: 黑名单(禁止执行) / 白名单(允许执行) / 未分类(执行后警告)
+- **命令自动发现**: 从Agent监控操作中提取命令，自动生成功能描述和后果说明
+- **46种命令描述库**: 涵盖 rm/git/npm/pip/brew/docker/sudo 等常见命令
+- **31条默认规则**: 14条黑名单 + 16条白名单 + 1条未分类
+- **一键移动**: 在黑名单/白名单/未分类之间自由切换
+- **命令说明**: 每条规则显示功能描述和执行后果
+- **来源标记**: 默认/发现/自定义三种来源标签
 
-### 🎨 UI 重构
-- **侧边栏重构**：核心功能（Agent监控+守护）+ 工具箱折叠子项
-- **侧边栏底部精简**：移除多余文字仅保留图标，hover 显示 tooltip
-- **图表尺寸统一**：StatCard 固定 minHeight、趋势图 min/max 约束
-- **文字换行修复**：告警标题/消息/详情/路径添加 lineLimit + truncationMode
+### 🌐 全面国际化
+- 579个字符串补全6种语言(中/英/繁/日/韩/马耳他)
+- 繁体中文使用OpenCC精确转换
 
-### 🌐 多语言下拉
-- 语言切换从按钮改为下拉框，支持全部 6 种语言（中/英/繁/日/韩/马耳他）
-
-### 🔔 图标重设计
-- 替换所有 shield 图标为 eye 系列图标，避免版权风险
-- 品牌重命名：AgentGuard → AgentWatch，Agent卫士 → Agent守望
+### 🎨 UI优化
+- 侧边栏底部2行布局
+- 图表尺寸统一
+- APP名称更新为AgentWatch
+- 全新哨兵之眼风格图标
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',

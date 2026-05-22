@@ -168,6 +168,7 @@ struct StatCardView: View {
                         .font(Theme.Font.captionMedium)
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                         .truncationMode(.tail)
                     Text(value)
                         .font(Theme.Font.title2Bold)

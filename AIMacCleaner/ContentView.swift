@@ -771,8 +771,8 @@ struct OperationLogTab: View {
                 }
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                DashboardGrid(columns: 4) {
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Theme.Spacing.sm) {
                     StatCardView(
                         icon: "list.bullet.clipboard",
                         iconColor: Theme.Colors.info,
@@ -780,6 +780,7 @@ struct OperationLogTab: View {
                         value: "\(monitor.records.count)",
                         subtitle: nil
                     )
+                    .frame(maxWidth: .infinity, minHeight: 68)
                     StatCardView(
                         icon: "sun.max",
                         iconColor: Theme.Colors.warning,
@@ -787,6 +788,7 @@ struct OperationLogTab: View {
                         value: "\(todayRecordCount)",
                         subtitle: nil
                     )
+                    .frame(maxWidth: .infinity, minHeight: 68)
                     StatCardView(
                         icon: "clock",
                         iconColor: Theme.Colors.success,
@@ -794,6 +796,7 @@ struct OperationLogTab: View {
                         value: "\(hourRecordCount)",
                         subtitle: nil
                     )
+                    .frame(maxWidth: .infinity, minHeight: 68)
                     CardView {
                         VStack(spacing: Theme.Spacing.sm) {
                             ProgressRing(
@@ -808,6 +811,7 @@ struct OperationLogTab: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
+                    .frame(maxWidth: .infinity, minHeight: 68)
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
                 .padding(.vertical, Theme.Spacing.md)

@@ -220,7 +220,7 @@ struct MenuBarMonitor: View {
                 Button {
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("Agent守望") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
+                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("Agent卫士") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
                         window.makeKeyAndOrderFront(nil)
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -285,22 +285,15 @@ struct MenuBarMonitor: View {
 
                 Spacer()
 
-                Button {
-                    withAnimation(.none) {
-                        localizer.language = localizer.language == .simplifiedChinese ? .english : .simplifiedChinese
+                Picker("", selection: $localizer.language) {
+                    ForEach(AppLanguage.allCases, id: \.self) { lang in
+                        Text(lang.nativeName)
+                            .font(.system(size: 10))
+                            .tag(lang)
                     }
-                } label: {
-                    Text(localizer.langToggleText)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.accent)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule()
-                                .fill(Theme.Colors.accent.opacity(0.12))
-                        )
                 }
-                .buttonStyle(.plain)
+                .pickerStyle(.menu)
+                .frame(width: 72)
 
                 Button {
                     let behavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
@@ -391,6 +384,7 @@ struct MenuBarMonitor: View {
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
+                    .frame(minHeight: 72)
                     .cardStyle(padding: Theme.Spacing.md)
 
                     VStack(spacing: Theme.Spacing.xs) {
@@ -410,6 +404,7 @@ struct MenuBarMonitor: View {
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
+                    .frame(minHeight: 72)
                     .cardStyle(padding: Theme.Spacing.md)
 
                     if let temp = hw.cpuTemperature {
@@ -430,6 +425,7 @@ struct MenuBarMonitor: View {
                                 .font(Theme.Font.caption)
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         }
+                        .frame(minHeight: 72)
                         .cardStyle(padding: Theme.Spacing.md)
                     }
 
@@ -451,6 +447,7 @@ struct MenuBarMonitor: View {
                                 .font(Theme.Font.caption)
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         }
+                        .frame(minHeight: 72)
                         .cardStyle(padding: Theme.Spacing.md)
                     }
 
@@ -471,6 +468,7 @@ struct MenuBarMonitor: View {
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
+                    .frame(minHeight: 72)
                     .cardStyle(padding: Theme.Spacing.md)
                 }
 
@@ -836,9 +834,28 @@ struct MenuBarMonitor: View {
         VStack(spacing: Theme.Spacing.xs) {
             SectionHeader(title: localizer.recentOpsLabel, icon: "clock.arrow.circlepath") {
                 if !service.operationRecords.isEmpty {
-                    Text("\(service.operationRecords.count) \(localizer.recordsUnit)")
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Button {
+                        NSApp.setActivationPolicy(.regular)
+                        NSApp.activate(ignoringOtherApps: true)
+                        if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("Agent卫士") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
+                            window.makeKeyAndOrderFront(nil)
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            if let menuWindow = NSApp.windows.first(where: { $0.isFloatingPanel || $0.level == .floating }) {
+                                menuWindow.orderOut(nil)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 2) {
+                            Text("\(service.operationRecords.count) \(localizer.recordsUnit)")
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                            Image(systemName: "arrow.up.right.and.arrow.down.left")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Theme.Colors.accent)
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -991,35 +1008,6 @@ struct MenuBarMonitor: View {
                         .foregroundStyle(Theme.Colors.purple)
                     Spacer()
                 }
-            }
-
-            HStack {
-                Button {
-                    NSApp.setActivationPolicy(.regular)
-                    NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("Agent守望") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
-                        window.makeKeyAndOrderFront(nil)
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        if let menuWindow = NSApp.windows.first(where: { $0.isFloatingPanel || $0.level == .floating }) {
-                            menuWindow.orderOut(nil)
-                        }
-                    }
-                } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Image(systemName: "arrow.up.right.and.arrow.down.left")
-                        Text(localizer.viewFullLogLabel)
-                    }
-                    .font(Theme.Font.captionMedium)
-                    .foregroundStyle(Theme.Colors.accent)
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, Theme.Spacing.xs)
-                    .background(Theme.Colors.accent.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
             }
         }
         .padding(.horizontal, Theme.Spacing.lg)
