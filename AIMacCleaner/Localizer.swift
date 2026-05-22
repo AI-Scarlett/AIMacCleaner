@@ -744,4 +744,19 @@ extension Localizer {
     var noWhitelistRules: String { t("暂无白名单规则", en: "No whitelist rules", zhHant: "暫無白名單規則", ja: "ホワイトリストルールなし", ko: "화이트리스트 규칙 없음", mt: "No whitelist rules") }
     var commandBlacklistAlertTitle: String { t("黑名单命令检测", en: "Blacklisted Command Detected", zhHant: "黑名單命令檢測", ja: "ブラックリストコマンド検出", ko: "블랙리스트 명령 감지", mt: "Blacklisted Command Detected") }
     var commandBlacklistAlertMsg: String { t("Agent 执行了黑名单命令", en: "Agent executed a blacklisted command", zhHant: "Agent 執行了黑名單命令", ja: "Agentがブラックリストコマンドを実行しました", ko: "Agent가 블랙리스트 명령을 실행했습니다", mt: "Agent executed a blacklisted command") }
+    var commandUnclassified: String { t("未分类命令", en: "Unclassified Commands", zhHant: "未分類命令", ja: "未分類コマンド", ko: "미분류 명령", mt: "Unclassified Commands") }
+    var commandUnclassifiedAlertTitle: String { t("未分类命令检测", en: "Unclassified Command", zhHant: "未分類命令檢測", ja: "未分類コマンド検出", ko: "미분류 명령 감지", mt: "Unclassified Command") }
+    var commandUnclassifiedAlertMsg: String { t("Agent 执行了未分类命令", en: "Agent executed an unclassified command", zhHant: "Agent 執行了未分類命令", ja: "Agentが未分類コマンドを実行しました", ko: "Agent가 미분류 명령을 실행했습니다", mt: "Agent executed an unclassified command") }
+    var enableCommandGuard: String { t("启用命令守护", en: "Enable Command Guard", zhHant: "啟用命令守護", ja: "コマンドガードを有効化", ko: "명령 가드 활성화", mt: "Enable Command Guard") }
+    var blacklistLabel: String { t("黑名单", en: "Blacklist", zhHant: "黑名單", ja: "ブラックリスト", ko: "블랙리스트", mt: "Blacklist") }
+    var whitelistLabel: String { t("白名单", en: "Whitelist", zhHant: "白名單", ja: "ホワイトリスト", ko: "화이트리스트", mt: "Whitelist") }
+    var unclassifiedLabel: String { t("未分类", en: "Unclassified", zhHant: "未分類", ja: "未分類", ko: "미분류", mt: "Unclassified") }
+    var moveToBlacklist: String { t("加入黑名单", en: "Blacklist", zhHant: "加入黑名單", ja: "ブラックリストへ", ko: "블랙리스트", mt: "Blacklist") }
+    var moveToWhitelist: String { t("加入白名单", en: "Whitelist", zhHant: "加入白名單", ja: "ホワイトリストへ", ko: "화이트리스트", mt: "Whitelist") }
+    var moveToUnclassified: String { t("移至未分类", en: "Unclassify", zhHant: "移至未分類", ja: "未分類へ", ko: "미분류로", mt: "Unclassify") }
+    var sourceDefault: String { t("默认", en: "Default", zhHant: "預設", ja: "デフォルト", ko: "기본", mt: "Default") }
+    var sourceDiscovered: String { t("发现", en: "Discovered", zhHant: "發現", ja: "検出", ko: "발견", mt: "Discovered") }
+    var sourceCustom: String { t("自定义", en: "Custom", zhHant: "自訂", ja: "カスタム", ko: "사용자 정의", mt: "Custom") }
+    var noUnclassifiedRules: String { t("暂无未分类命令", en: "No unclassified commands yet", zhHant: "暫無未分類命令", ja: "未分類コマンドなし", ko: "미분류 명령 없음", mt: "No unclassified commands yet") }
+    var addCustomCommand: String { t("添加自定义命令", en: "Add Custom Command", zhHant: "添加自訂命令", ja: "カスタムコマンド追加", ko: "사용자 명령 추가", mt: "Add Custom Command") }
 }

@@ -12,7 +12,6 @@ struct AgentGuardTab: View {
     @State private var showReportSheet = false
     @State private var generatedReport: AuditReport?
     @State private var newBlacklistPattern = ""
-    @State private var newWhitelistPattern = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -353,157 +352,266 @@ struct AgentGuardTab: View {
 
     private var commandRulesView: some View {
         VStack(spacing: Theme.Spacing.lg) {
-            toggleRule(title: localizer.enableCommandBlacklist, isOn: Binding(
-                get: { service.guardFeature.alertRule.commandBlacklistEnabled },
-                set: { service.guardFeature.alertRule.commandBlacklistEnabled = $0; service.guardFeature.saveAlertRule() }
+            toggleRule(title: localizer.enableCommandGuard, isOn: Binding(
+                get: { service.guardFeature.alertRule.commandGuardEnabled },
+                set: { service.guardFeature.alertRule.commandGuardEnabled = $0; service.guardFeature.saveAlertRule() }
             ))
 
-            if service.guardFeature.alertRule.commandBlacklistEnabled {
-                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                    HStack {
-                        Text(localizer.commandBlacklist)
-                            .font(Theme.Font.subheadline)
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                        Text("(\(service.guardFeature.commandBlacklist.count))")
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                        Spacer()
-                    }
+            if service.guardFeature.alertRule.commandGuardEnabled {
+                commandSectionHeader(
+                    icon: "xmark.octagon.fill",
+                    title: localizer.commandBlacklist,
+                    count: service.guardFeature.blacklistRules.count,
+                    color: Theme.Colors.danger
+                )
 
-                    HStack(spacing: Theme.Spacing.sm) {
-                        TextField(localizer.newCommandPattern, text: $newBlacklistPattern)
-                            .textFieldStyle(.roundedBorder)
-                            .font(Theme.Font.caption)
-                            .onSubmit {
-                                if !newBlacklistPattern.isEmpty {
-                                    service.guardFeature.addBlacklistRule(pattern: newBlacklistPattern, severity: .warning)
-                                    newBlacklistPattern = ""
-                                }
-                            }
-                        Button {
-                            if !newBlacklistPattern.isEmpty {
-                                service.guardFeature.addBlacklistRule(pattern: newBlacklistPattern, severity: .warning)
-                                newBlacklistPattern = ""
-                            }
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 14))
-                                .foregroundStyle(Theme.Colors.accent)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                ForEach(service.guardFeature.blacklistRules) { rule in
+                    commandRuleCard(rule: rule)
+                }
 
-                    ForEach(service.guardFeature.commandBlacklist) { rule in
-                        commandRuleRow(rule: rule, isBlacklist: true)
+                commandSectionHeader(
+                    icon: "checkmark.circle.fill",
+                    title: localizer.commandWhitelist,
+                    count: service.guardFeature.whitelistRules.count,
+                    color: Theme.Colors.success
+                )
+
+                ForEach(service.guardFeature.whitelistRules) { rule in
+                    commandRuleCard(rule: rule)
+                }
+
+                commandSectionHeader(
+                    icon: "exclamationmark.triangle.fill",
+                    title: localizer.commandUnclassified,
+                    count: service.guardFeature.unclassifiedRules.count,
+                    color: Theme.Colors.warning
+                )
+
+                if service.guardFeature.unclassifiedRules.isEmpty {
+                    Text(localizer.noUnclassifiedRules)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                        .padding(Theme.Spacing.md)
+                        .frame(maxWidth: .infinity)
+                        .background(Theme.Colors.cardBg)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                } else {
+                    ForEach(service.guardFeature.unclassifiedRules) { rule in
+                        commandRuleCard(rule: rule)
                     }
                 }
-                .padding(Theme.Spacing.lg)
-                .background(Theme.Colors.cardBg)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-            }
 
-            Divider()
+                Divider()
 
-            toggleRule(title: localizer.enableCommandWhitelist, isOn: Binding(
-                get: { service.guardFeature.alertRule.commandWhitelistEnabled },
-                set: { service.guardFeature.alertRule.commandWhitelistEnabled = $0; service.guardFeature.saveAlertRule() }
-            ))
-
-            if service.guardFeature.alertRule.commandWhitelistEnabled {
-                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                    HStack {
-                        Text(localizer.commandWhitelist)
-                            .font(Theme.Font.subheadline)
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                        Text("(\(service.guardFeature.commandWhitelist.count))")
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                        Spacer()
-                    }
-
-                    HStack(spacing: Theme.Spacing.sm) {
-                        TextField(localizer.newCommandPattern, text: $newWhitelistPattern)
-                            .textFieldStyle(.roundedBorder)
-                            .font(Theme.Font.caption)
-                            .onSubmit {
-                                if !newWhitelistPattern.isEmpty {
-                                    service.guardFeature.addWhitelistRule(pattern: newWhitelistPattern)
-                                    newWhitelistPattern = ""
-                                }
-                            }
-                        Button {
-                            if !newWhitelistPattern.isEmpty {
-                                service.guardFeature.addWhitelistRule(pattern: newWhitelistPattern)
-                                newWhitelistPattern = ""
-                            }
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 14))
-                                .foregroundStyle(Theme.Colors.success)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    if service.guardFeature.commandWhitelist.isEmpty {
-                        Text(localizer.noWhitelistRules)
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                    } else {
-                        ForEach(service.guardFeature.commandWhitelist) { rule in
-                            commandRuleRow(rule: rule, isBlacklist: false)
-                        }
-                    }
-                }
-                .padding(Theme.Spacing.lg)
-                .background(Theme.Colors.cardBg)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                addCommandForm
             }
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.lg)
     }
 
-    private func commandRuleRow(rule: CommandRule, isBlacklist: Bool) -> some View {
+    private func commandSectionHeader(icon: String, title: String, count: Int, color: Color) -> some View {
         HStack(spacing: Theme.Spacing.sm) {
-            Image(systemName: isBlacklist ? "xmark.circle.fill" : "checkmark.circle.fill")
+            Image(systemName: icon)
                 .font(.system(size: 12))
-                .foregroundStyle(isBlacklist ? severityColor(rule.severity) : Theme.Colors.success)
-            Text(rule.pattern)
-                .font(Theme.Font.caption)
+                .foregroundStyle(color)
+            Text(title)
+                .font(Theme.Font.subheadlineMedium)
                 .foregroundStyle(Theme.Colors.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            if !rule.note.isEmpty {
-                Text("— \(rule.note)")
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.Colors.textTertiary)
-                    .lineLimit(1)
-            }
+            Text("(\(count))")
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textTertiary)
             Spacer()
-            if isBlacklist {
-                Image(systemName: rule.severity.icon)
-                    .font(.system(size: 10))
-                    .foregroundStyle(severityColor(rule.severity))
-            }
-            Button {
-                if isBlacklist {
-                    service.guardFeature.removeBlacklistRule(id: rule.id)
-                } else {
-                    service.guardFeature.removeWhitelistRule(id: rule.id)
-                }
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.Colors.danger)
-            }
-            .buttonStyle(.plain)
         }
-        .padding(.horizontal, Theme.Spacing.md)
-        .padding(.vertical, Theme.Spacing.sm)
+        .padding(.top, Theme.Spacing.sm)
+    }
+
+    private func commandRuleCard(rule: CommandRule) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            HStack(spacing: Theme.Spacing.sm) {
+                listTypeBadge(rule.listType)
+
+                Text(rule.pattern)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer()
+
+                sourceBadge(rule.source)
+
+                Button {
+                    service.guardFeature.removeCommandRule(id: rule.id)
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.Colors.danger.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if !rule.commandDesc.isEmpty {
+                HStack(spacing: Theme.Spacing.xs) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Text(rule.commandDesc)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+
+            if !rule.consequence.isEmpty {
+                HStack(spacing: Theme.Spacing.xs) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 9))
+                        .foregroundStyle(rule.listType == .blacklist ? Theme.Colors.danger.opacity(0.7) : Theme.Colors.warning.opacity(0.7))
+                    Text(rule.consequence)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: Theme.Spacing.xs) {
+                if rule.listType != .blacklist {
+                    Button {
+                        service.guardFeature.moveCommandToBlacklist(id: rule.id)
+                    } label: {
+                        HStack(spacing: 2) {
+                            Image(systemName: "xmark.circle")
+                                .font(.system(size: 9))
+                            Text(localizer.moveToBlacklist)
+                                .font(.system(size: 10))
+                        }
+                        .foregroundStyle(Theme.Colors.danger)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Theme.Colors.danger.opacity(0.08))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if rule.listType != .whitelist {
+                    Button {
+                        service.guardFeature.moveCommandToWhitelist(id: rule.id)
+                    } label: {
+                        HStack(spacing: 2) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.system(size: 9))
+                            Text(localizer.moveToWhitelist)
+                                .font(.system(size: 10))
+                        }
+                        .foregroundStyle(Theme.Colors.success)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Theme.Colors.success.opacity(0.08))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if rule.listType != .unclassified {
+                    Button {
+                        service.guardFeature.moveCommandToUnclassified(id: rule.id)
+                    } label: {
+                        HStack(spacing: 2) {
+                            Image(systemName: "questionmark.circle")
+                                .font(.system(size: 9))
+                            Text(localizer.moveToUnclassified)
+                                .font(.system(size: 10))
+                        }
+                        .foregroundStyle(Theme.Colors.warning)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Theme.Colors.warning.opacity(0.08))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(Theme.Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .fill(isBlacklist ? severityColor(rule.severity).opacity(0.04) : Theme.Colors.success.opacity(0.04))
+                .fill(listTypeColor(rule.listType).opacity(0.04))
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(listTypeColor(rule.listType).opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private var addCommandForm: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Text(localizer.addCustomCommand)
+                .font(Theme.Font.subheadlineMedium)
+                .foregroundStyle(Theme.Colors.textPrimary)
+
+            HStack(spacing: Theme.Spacing.sm) {
+                TextField(localizer.newCommandPattern, text: $newBlacklistPattern)
+                    .textFieldStyle(.roundedBorder)
+                    .font(Theme.Font.caption)
+                Button {
+                    if !newBlacklistPattern.isEmpty {
+                        service.guardFeature.addCommandRule(pattern: newBlacklistPattern, listType: .unclassified)
+                        newBlacklistPattern = ""
+                    }
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Theme.Colors.accent)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(Theme.Spacing.lg)
+        .background(Theme.Colors.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+    }
+
+    private func listTypeBadge(_ type: CommandRule.ListType) -> some View {
+        let (icon, text, color) = switch type {
+        case .blacklist: ("xmark.octagon.fill", localizer.blacklistLabel, Theme.Colors.danger)
+        case .whitelist: ("checkmark.circle.fill", localizer.whitelistLabel, Theme.Colors.success)
+        case .unclassified: ("exclamationmark.triangle.fill", localizer.unclassifiedLabel, Theme.Colors.warning)
+        }
+        return HStack(spacing: 2) {
+            Image(systemName: icon)
+                .font(.system(size: 8))
+            Text(text)
+                .font(.system(size: 9, weight: .semibold))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background(color.opacity(0.1))
+        .clipShape(Capsule())
+    }
+
+    private func sourceBadge(_ source: CommandRule.Source) -> some View {
+        let text = switch source {
+        case .default: localizer.sourceDefault
+        case .discovered: localizer.sourceDiscovered
+        case .custom: localizer.sourceCustom
+        }
+        return Text(text)
+            .font(.system(size: 9))
+            .foregroundStyle(Theme.Colors.textTertiary)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(Theme.Colors.cardHover)
+            .clipShape(Capsule())
+    }
+
+    private func listTypeColor(_ type: CommandRule.ListType) -> Color {
+        switch type {
+        case .blacklist: return Theme.Colors.danger
+        case .whitelist: return Theme.Colors.success
+        case .unclassified: return Theme.Colors.warning
+        }
     }
 
     // MARK: - Protected Dirs

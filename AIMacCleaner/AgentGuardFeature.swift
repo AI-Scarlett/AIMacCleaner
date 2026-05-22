@@ -60,23 +60,38 @@ struct AlertRule: Codable {
     var doNotDisturbEndHour: Int = 7
     var notificationEnabled: Bool = true
     var alertCooldownSeconds: Double = 60.0
-    var commandBlacklistEnabled: Bool = true
-    var commandWhitelistEnabled: Bool = false
+    var commandGuardEnabled: Bool = true
 }
 
 struct CommandRule: Identifiable, Codable {
     let id: String
     var pattern: String
     var isRegex: Bool
-    var severity: GuardAlert.AlertSeverity
-    var note: String
+    var listType: ListType
+    var commandDesc: String
+    var consequence: String
+    var source: Source
 
-    init(pattern: String, isRegex: Bool = false, severity: GuardAlert.AlertSeverity = .critical, note: String = "") {
+    enum ListType: String, Codable {
+        case blacklist = "blacklist"
+        case whitelist = "whitelist"
+        case unclassified = "unclassified"
+    }
+
+    enum Source: String, Codable {
+        case `default` = "default"
+        case discovered = "discovered"
+        case custom = "custom"
+    }
+
+    init(pattern: String, isRegex: Bool = false, listType: ListType = .unclassified, commandDesc: String = "", consequence: String = "", source: Source = .custom) {
         self.id = UUID().uuidString
         self.pattern = pattern
         self.isRegex = isRegex
-        self.severity = severity
-        self.note = note
+        self.listType = listType
+        self.commandDesc = commandDesc
+        self.consequence = consequence
+        self.source = source
     }
 }
 
@@ -167,16 +182,14 @@ class AgentGuardFeature: ObservableObject {
     @Published var protectedDirs: [String] = []
     @Published var processLifecycleEvents: [ProcessLifecycleEvent] = []
     @Published var hourlyStats: [HourlyStats] = []
-    @Published var commandBlacklist: [CommandRule] = []
-    @Published var commandWhitelist: [CommandRule] = []
+    @Published var commandRules: [CommandRule] = []
 
     private let alertsPath = NSHomeDirectory() + "/.aimaccleaner_alerts.json"
     private let alertRulePath = NSHomeDirectory() + "/.aimaccleaner_alert_rule.json"
     private let protectedDirsPath = NSHomeDirectory() + "/.aimaccleaner_protected_dirs.json"
     private let lifecyclePath = NSHomeDirectory() + "/.aimaccleaner_lifecycle.json"
     private let hourlyStatsPath = NSHomeDirectory() + "/.aimaccleaner_hourly_stats.json"
-    private let blacklistPath = NSHomeDirectory() + "/.aimaccleaner_cmd_blacklist.json"
-    private let whitelistPath = NSHomeDirectory() + "/.aimaccleaner_cmd_whitelist.json"
+    private let commandRulesPath = NSHomeDirectory() + "/.aimaccleaner_cmd_rules.json"
     private let maxAlerts = 500
     private let maxLifecycleEvents = 1000
     private let maxHourlyStats = 168
@@ -194,11 +207,10 @@ class AgentGuardFeature: ObservableObject {
         loadProtectedDirs()
         loadLifecycleEvents()
         loadHourlyStats()
-        loadCommandBlacklist()
-        loadCommandWhitelist()
-        if commandBlacklist.isEmpty {
-            commandBlacklist = CommandRule.defaultBlacklist
-            saveCommandBlacklist()
+        loadCommandRules()
+        if commandRules.isEmpty {
+            commandRules = CommandRule.defaultRules
+            saveCommandRules()
         }
     }
 
@@ -724,72 +736,197 @@ class AgentGuardFeature: ObservableObject {
         alerts.filter { $0.severity == .critical }.count
     }
 
-    // MARK: - Command Blacklist/Whitelist
+    // MARK: - Command Guard
 
-    func checkCommandBlacklist(command: String, agentName: String) {
-        guard alertRule.commandBlacklistEnabled else { return }
+    var blacklistRules: [CommandRule] {
+        commandRules.filter { $0.listType == .blacklist }
+    }
+
+    var whitelistRules: [CommandRule] {
+        commandRules.filter { $0.listType == .whitelist }
+    }
+
+    var unclassifiedRules: [CommandRule] {
+        commandRules.filter { $0.listType == .unclassified }
+    }
+
+    enum CommandCheckResult {
+        case allowed
+        case blocked(CommandRule)
+        case warning(CommandRule)
+        case unknown
+    }
+
+    func checkCommand(command: String, agentName: String) -> CommandCheckResult {
+        guard alertRule.commandGuardEnabled else { return .allowed }
         let cmdLower = command.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        for rule in commandBlacklist {
-            let matched: Bool
-            if rule.isRegex {
-                matched = (try? Regex(rule.pattern).firstMatch(in: cmdLower)) != nil
-            } else {
-                matched = cmdLower.contains(rule.pattern.lowercased())
-            }
-            if matched {
+
+        for rule in commandRules where rule.listType == .blacklist {
+            if matchCommand(cmdLower, rule: rule) {
                 let key = "cmd_blacklist_\(rule.id)"
                 if shouldFireAlert(key: key) {
                     let alert = GuardAlert(
                         id: UUID().uuidString,
                         timestamp: Date(),
                         alertType: .sensitiveContent,
-                        severity: rule.severity,
-                        title: localizer?.commandBlacklistAlertTitle ?? "Blacklisted Command Detected",
-                        message: String(format: localizer?.commandBlacklistAlertMsg ?? "Agent %@ executed blacklisted command: %@", agentName, rule.pattern),
+                        severity: .critical,
+                        title: localizer?.commandBlacklistAlertTitle ?? "Blacklisted Command Blocked",
+                        message: String(format: localizer?.commandBlacklistAlertMsg ?? "Agent %@ attempted blacklisted command: %@", agentName, rule.pattern),
                         agentName: agentName,
                         targetPath: command,
-                        detail: rule.note.isEmpty ? "Pattern: \(rule.pattern)" : rule.note
+                        detail: rule.consequence.isEmpty ? "Pattern: \(rule.pattern)" : rule.consequence
                     )
                     fireAlert(alert)
                 }
-                return
+                return .blocked(rule)
             }
+        }
+
+        for rule in commandRules where rule.listType == .whitelist {
+            if matchCommand(cmdLower, rule: rule) {
+                return .allowed
+            }
+        }
+
+        for rule in commandRules where rule.listType == .unclassified {
+            if matchCommand(cmdLower, rule: rule) {
+                let key = "cmd_unclassified_\(rule.id)"
+                if shouldFireAlert(key: key) {
+                    let alert = GuardAlert(
+                        id: UUID().uuidString,
+                        timestamp: Date(),
+                        alertType: .sensitiveContent,
+                        severity: .warning,
+                        title: localizer?.commandUnclassifiedAlertTitle ?? "Unclassified Command",
+                        message: String(format: localizer?.commandUnclassifiedAlertMsg ?? "Agent %@ executed unclassified command: %@", agentName, rule.pattern),
+                        agentName: agentName,
+                        targetPath: command,
+                        detail: rule.consequence.isEmpty ? "Pattern: \(rule.pattern)" : rule.consequence
+                    )
+                    fireAlert(alert)
+                }
+                return .warning(rule)
+            }
+        }
+
+        return .unknown
+    }
+
+    private func matchCommand(_ cmdLower: String, rule: CommandRule) -> Bool {
+        if rule.isRegex {
+            return (try? Regex(rule.pattern).firstMatch(in: cmdLower)) != nil
+        } else {
+            return cmdLower.contains(rule.pattern.lowercased())
         }
     }
 
-    func isCommandWhitelisted(command: String) -> Bool {
-        guard alertRule.commandWhitelistEnabled, !commandWhitelist.isEmpty else { return true }
-        let cmdLower = command.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        for rule in commandWhitelist {
-            if rule.isRegex {
-                if (try? Regex(rule.pattern).firstMatch(in: cmdLower)) != nil { return true }
-            } else {
-                if cmdLower.contains(rule.pattern.lowercased()) { return true }
+    func discoverCommand(pattern: String, agentName: String) {
+        let normalized = pattern.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+        if commandRules.contains(where: { $0.pattern.lowercased() == normalized }) { return }
+
+        let desc = guessCommandDescription(normalized)
+        let rule = CommandRule(
+            pattern: normalized,
+            listType: .unclassified,
+            commandDesc: desc.function,
+            consequence: desc.consequence,
+            source: .discovered
+        )
+        commandRules.append(rule)
+        saveCommandRules()
+    }
+
+    private func guessCommandDescription(_ cmd: String) -> (function: String, consequence: String) {
+        let map: [(patterns: [String], function: String, consequence: String)] = [
+            (["rm "], "Delete files", "Files will be permanently removed"),
+            (["rm -rf", "rm -r"], "Recursive force delete", "Entire directory trees will be deleted without confirmation"),
+            (["mkdir "], "Create directory", "New directory will be created"),
+            (["cp ", "copy "], "Copy files", "Files will be duplicated to target location"),
+            (["mv ", "move "], "Move/rename files", "Files will be moved or renamed"),
+            (["chmod "], "Change file permissions", "File access permissions will be modified"),
+            (["chown "], "Change file ownership", "File owner/group will be changed"),
+            (["cat "], "Display file contents", "File contents will be read and displayed"),
+            (["grep ", "rg ", "ag "], "Search text in files", "Will search for patterns in files"),
+            (["find "], "Search for files", "Will locate files matching criteria"),
+            (["curl "], "Download from URL", "Data will be fetched from a remote server"),
+            (["wget "], "Download file", "File will be downloaded from the internet"),
+            (["git "], "Git version control", "Repository operations will be performed"),
+            (["npm ", "yarn ", "pnpm "], "Package manager", "Node.js packages will be installed/modified"),
+            (["pip ", "pip3 "], "Python package manager", "Python packages will be installed/modified"),
+            (["brew "], "Homebrew package manager", "macOS packages will be installed/modified"),
+            (["docker "], "Docker container management", "Containers/images will be created or modified"),
+            (["sudo "], "Execute with superuser privileges", "Command runs with elevated system permissions"),
+            (["kill ", "killall "], "Terminate process", "Running processes will be stopped"),
+            (["launchctl "], "Launch daemon control", "System services will be loaded/unloaded"),
+            (["defaults "], "macOS defaults system", "System/application preferences will be modified"),
+            (["ln -s", "symlink"], "Create symbolic link", "A link to another file will be created"),
+            (["tar "], "Archive/extract files", "Files will be compressed or extracted"),
+            (["zip ", "unzip "], "Compress/extract ZIP", "Files will be archived or extracted"),
+            (["sed "], "Stream editor", "File contents will be modified in-place or streamed"),
+            (["awk "], "Text processing", "Text data will be processed and transformed"),
+            (["xcodebuild "], "Build Xcode project", "Project will be compiled and built"),
+            (["swift "], "Run Swift", "Swift code will be compiled or executed"),
+            (["python ", "python3 "], "Run Python", "Python script will be executed"),
+            (["node "], "Run Node.js", "JavaScript will be executed"),
+            (["sh ", "bash ", "zsh "], "Execute shell script", "Shell commands will be run"),
+            (["echo "], "Print text", "Text will be output to console or file"),
+            (["touch "], "Create empty file", "New empty file will be created or timestamp updated"),
+            (["head ", "tail "], "View file head/tail", "Beginning or end of file will be displayed"),
+            (["wc "], "Count lines/words", "File statistics will be calculated"),
+            (["sort "], "Sort lines", "Lines will be sorted alphabetically or numerically"),
+            (["uniq "], "Remove duplicates", "Duplicate adjacent lines will be removed"),
+            (["diff "], "Compare files", "Differences between files will be shown"),
+            (["ps "], "List processes", "Running processes will be displayed"),
+            (["top ", "htop "], "Monitor processes", "System resource usage will be displayed"),
+            (["df "], "Disk free space", "Available disk space will be shown"),
+            (["du "], "Disk usage", "Directory sizes will be calculated"),
+            (["which "], "Locate command", "Path to executable will be found"),
+            (["env "], "Show environment", "Environment variables will be displayed"),
+            (["export "], "Set environment variable", "Shell variable will be exported"),
+            (["source "], "Execute script in current shell", "Script will run in current shell context"),
+        ]
+
+        for entry in map {
+            for p in entry.patterns {
+                if cmd.hasPrefix(p) || cmd.contains(" \(p)") {
+                    return (entry.function, entry.consequence)
+                }
             }
         }
-        return false
+        return ("Unknown command", "Effect of this command is not documented")
     }
 
-    func addBlacklistRule(pattern: String, isRegex: Bool = false, severity: GuardAlert.AlertSeverity = .critical, note: String = "") {
-        let rule = CommandRule(pattern: pattern, isRegex: isRegex, severity: severity, note: note)
-        commandBlacklist.append(rule)
-        saveCommandBlacklist()
+    func moveCommandToBlacklist(id: String) {
+        if let idx = commandRules.firstIndex(where: { $0.id == id }) {
+            commandRules[idx].listType = .blacklist
+            saveCommandRules()
+        }
     }
 
-    func removeBlacklistRule(id: String) {
-        commandBlacklist.removeAll { $0.id == id }
-        saveCommandBlacklist()
+    func moveCommandToWhitelist(id: String) {
+        if let idx = commandRules.firstIndex(where: { $0.id == id }) {
+            commandRules[idx].listType = .whitelist
+            saveCommandRules()
+        }
     }
 
-    func addWhitelistRule(pattern: String, isRegex: Bool = false, note: String = "") {
-        let rule = CommandRule(pattern: pattern, isRegex: isRegex, severity: .info, note: note)
-        commandWhitelist.append(rule)
-        saveCommandWhitelist()
+    func moveCommandToUnclassified(id: String) {
+        if let idx = commandRules.firstIndex(where: { $0.id == id }) {
+            commandRules[idx].listType = .unclassified
+            saveCommandRules()
+        }
     }
 
-    func removeWhitelistRule(id: String) {
-        commandWhitelist.removeAll { $0.id == id }
-        saveCommandWhitelist()
+    func addCommandRule(pattern: String, listType: CommandRule.ListType, commandDesc: String = "", consequence: String = "") {
+        let rule = CommandRule(pattern: pattern, listType: listType, commandDesc: commandDesc, consequence: consequence, source: .custom)
+        commandRules.append(rule)
+        saveCommandRules()
+    }
+
+    func removeCommandRule(id: String) {
+        commandRules.removeAll { $0.id == id }
+        saveCommandRules()
     }
 
     // MARK: - Persistence
@@ -850,45 +987,51 @@ class AgentGuardFeature: ObservableObject {
         try? data.write(to: URL(fileURLWithPath: hourlyStatsPath))
     }
 
-    private func loadCommandBlacklist() {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: blacklistPath)),
+    private func loadCommandRules() {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: commandRulesPath)),
               let decoded = try? JSONDecoder().decode([CommandRule].self, from: data) else { return }
-        commandBlacklist = decoded
+        commandRules = decoded
     }
 
-    func saveCommandBlacklist() {
-        guard let data = try? JSONEncoder().encode(commandBlacklist) else { return }
-        try? data.write(to: URL(fileURLWithPath: blacklistPath))
-    }
-
-    private func loadCommandWhitelist() {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: whitelistPath)),
-              let decoded = try? JSONDecoder().decode([CommandRule].self, from: data) else { return }
-        commandWhitelist = decoded
-    }
-
-    func saveCommandWhitelist() {
-        guard let data = try? JSONEncoder().encode(commandWhitelist) else { return }
-        try? data.write(to: URL(fileURLWithPath: whitelistPath))
+    func saveCommandRules() {
+        guard let data = try? JSONEncoder().encode(commandRules) else { return }
+        try? data.write(to: URL(fileURLWithPath: commandRulesPath))
     }
 }
 
 extension CommandRule {
-    static let defaultBlacklist: [CommandRule] = [
-        CommandRule(pattern: "rm -rf /", severity: .critical, note: "Recursive root delete"),
-        CommandRule(pattern: "rm -rf ~", severity: .critical, note: "Recursive home delete"),
-        CommandRule(pattern: "rm -rf ~/", severity: .critical, note: "Recursive home directory delete"),
-        CommandRule(pattern: "mkfs", severity: .critical, note: "Filesystem format"),
-        CommandRule(pattern: "dd if=", severity: .critical, note: "Raw disk write"),
-        CommandRule(pattern: ":(){ :|:& };:", severity: .critical, note: "Fork bomb"),
-        CommandRule(pattern: "chmod -R 777 /", severity: .critical, note: "Recursive permission change on root"),
-        CommandRule(pattern: "chown -R", severity: .warning, note: "Recursive ownership change"),
-        CommandRule(pattern: "curl | sh", severity: .warning, note: "Pipe remote script to shell"),
-        CommandRule(pattern: "curl | bash", severity: .warning, note: "Pipe remote script to bash"),
-        CommandRule(pattern: "wget | sh", severity: .warning, note: "Download and execute script"),
-        CommandRule(pattern: "> /dev/sd", severity: .critical, note: "Write directly to disk device"),
-        CommandRule(pattern: "sudo rm", severity: .warning, note: "Sudo delete"),
-        CommandRule(pattern: "launchctl unload", severity: .warning, note: "Unload launch daemon"),
-        CommandRule(pattern: "killall", severity: .info, note: "Kill all processes by name"),
+    static let defaultRules: [CommandRule] = [
+        CommandRule(pattern: "rm -rf /", listType: .blacklist, commandDesc: "Recursive root delete", consequence: "Will delete ALL files on the entire system, making it unrecoverable", source: .default),
+        CommandRule(pattern: "rm -rf ~", listType: .blacklist, commandDesc: "Recursive home delete", consequence: "Will delete ALL user files including documents, photos, and configuration", source: .default),
+        CommandRule(pattern: "rm -rf ~/", listType: .blacklist, commandDesc: "Recursive home directory delete", consequence: "Will delete entire home directory tree without confirmation", source: .default),
+        CommandRule(pattern: "mkfs", listType: .blacklist, commandDesc: "Format filesystem", consequence: "Will destroy all data on the target disk/partition", source: .default),
+        CommandRule(pattern: "dd if=", listType: .blacklist, commandDesc: "Raw disk write", consequence: "Can overwrite disk data at the block level, causing data loss", source: .default),
+        CommandRule(pattern: ":(){ :|:& };:", listType: .blacklist, commandDesc: "Fork bomb", consequence: "Will exhaust system resources, causing system freeze or crash", source: .default),
+        CommandRule(pattern: "chmod -R 777 /", listType: .blacklist, commandDesc: "Recursive permission change on root", consequence: "Makes ALL system files world-readable/writable, massive security breach", source: .default),
+        CommandRule(pattern: "> /dev/sd", listType: .blacklist, commandDesc: "Write directly to disk device", consequence: "Will corrupt or destroy disk data at the device level", source: .default),
+        CommandRule(pattern: "chown -R", listType: .blacklist, commandDesc: "Recursive ownership change", consequence: "Changes owner of all files in directory tree, may break system", source: .default),
+        CommandRule(pattern: "curl | sh", listType: .blacklist, commandDesc: "Pipe remote script to shell", consequence: "Downloads and executes untrusted code from the internet", source: .default),
+        CommandRule(pattern: "curl | bash", listType: .blacklist, commandDesc: "Pipe remote script to bash", consequence: "Downloads and executes untrusted code from the internet", source: .default),
+        CommandRule(pattern: "wget | sh", listType: .blacklist, commandDesc: "Download and execute script", consequence: "Downloads and runs arbitrary code without verification", source: .default),
+        CommandRule(pattern: "sudo rm", listType: .blacklist, commandDesc: "Sudo delete", consequence: "Deletes files with superuser privileges, bypassing protections", source: .default),
+        CommandRule(pattern: "launchctl unload", listType: .blacklist, commandDesc: "Unload launch daemon", consequence: "Stops system services, may cause system instability", source: .default),
+        CommandRule(pattern: "killall", listType: .unclassified, commandDesc: "Kill all processes by name", consequence: "Terminates all processes matching the name, may cause data loss", source: .default),
+        CommandRule(pattern: "git ", listType: .whitelist, commandDesc: "Git version control", consequence: "Standard repository operations (commit, push, pull, etc.)", source: .default),
+        CommandRule(pattern: "npm ", listType: .whitelist, commandDesc: "Node.js package manager", consequence: "Installs or manages Node.js dependencies", source: .default),
+        CommandRule(pattern: "pip ", listType: .whitelist, commandDesc: "Python package manager", consequence: "Installs or manages Python packages", source: .default),
+        CommandRule(pattern: "brew ", listType: .whitelist, commandDesc: "Homebrew package manager", consequence: "Installs or manages macOS software packages", source: .default),
+        CommandRule(pattern: "ls ", listType: .whitelist, commandDesc: "List directory contents", consequence: "Displays files and directories, read-only operation", source: .default),
+        CommandRule(pattern: "cat ", listType: .whitelist, commandDesc: "Display file contents", consequence: "Reads and displays file content, read-only operation", source: .default),
+        CommandRule(pattern: "echo ", listType: .whitelist, commandDesc: "Print text", consequence: "Outputs text to console or file, generally safe", source: .default),
+        CommandRule(pattern: "grep ", listType: .whitelist, commandDesc: "Search text patterns", consequence: "Searches for patterns in files, read-only operation", source: .default),
+        CommandRule(pattern: "find ", listType: .whitelist, commandDesc: "Search for files", consequence: "Locates files matching criteria, read-only operation", source: .default),
+        CommandRule(pattern: "mkdir ", listType: .whitelist, commandDesc: "Create directory", consequence: "Creates a new directory, safe operation", source: .default),
+        CommandRule(pattern: "touch ", listType: .whitelist, commandDesc: "Create empty file", consequence: "Creates empty file or updates timestamp, safe operation", source: .default),
+        CommandRule(pattern: "cp ", listType: .whitelist, commandDesc: "Copy files", consequence: "Duplicates files to target location", source: .default),
+        CommandRule(pattern: "mv ", listType: .whitelist, commandDesc: "Move/rename files", consequence: "Moves or renames files", source: .default),
+        CommandRule(pattern: "which ", listType: .whitelist, commandDesc: "Locate command path", consequence: "Shows path to executable, read-only", source: .default),
+        CommandRule(pattern: "ps ", listType: .whitelist, commandDesc: "List processes", consequence: "Displays running processes, read-only", source: .default),
+        CommandRule(pattern: "df ", listType: .whitelist, commandDesc: "Disk free space", consequence: "Shows available disk space, read-only", source: .default),
+        CommandRule(pattern: "du ", listType: .whitelist, commandDesc: "Disk usage", consequence: "Calculates directory sizes, read-only", source: .default),
     ]
 }
