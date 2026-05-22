@@ -3,7 +3,7 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="AIMacCleaner"
-VERSION="2.1.0"
+VERSION="2.1.1"
 BUILD_DIR="/tmp/AIMacCleaner_build"
 DMG_NAME="AgentGuard-v${VERSION}-arm64"
 STAGING_DIR="/tmp/AIMacCleaner_dmg_staging"
@@ -35,6 +35,8 @@ SWIFT_FILES=(
     "IntelMigrationTab.swift"
     "SensorMonitor.swift"
     "ScanRules.swift"
+    "AgentGuardFeature.swift"
+    "AgentGuardTab.swift"
 )
 
 cd "$PROJECT_DIR/AIMacCleaner"
