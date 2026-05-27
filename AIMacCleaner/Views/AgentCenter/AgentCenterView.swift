@@ -8,21 +8,21 @@ struct AgentCenterView: View {
     @State private var selectedAgentId: String?
     @State private var searchText: String = ""
     @State private var filterStatus: AdapterStatus?
-    @State private var selectedSection: AgentCenterSection = .integrations
+    @State private var selectedSection: AgentCenterSection = .approvals
 
     private enum AgentCenterSection: String, CaseIterable {
-        case integrations
         case approvals
+        case integrations
     }
 
     var body: some View {
         VStack(spacing: 0) {
             headerSection
             Divider()
-            if selectedSection == .integrations {
-                agentListContent
-            } else {
+            if selectedSection == .approvals {
                 approvalsContent
+            } else {
+                agentListContent
             }
         }
     }
@@ -66,8 +66,8 @@ struct AgentCenterView: View {
             }
 
             Picker("", selection: $selectedSection) {
-                Text(localizer.agentCenterIntegrations).tag(AgentCenterSection.integrations)
                 Text(localizer.agentCenterApprovals).tag(AgentCenterSection.approvals)
+                Text(localizer.agentCenterIntegrations).tag(AgentCenterSection.integrations)
             }
             .pickerStyle(.segmented)
             .controlSize(.small)
