@@ -72,26 +72,81 @@ struct AIMacCleanerApp: App {
     private var menuBarLabel: some View {
         if let disk = service.diskInfo {
             HStack(spacing: 3) {
-                AppIconMenuBarImage()
+                MenuBarShieldEyeIcon()
                 Text(String(format: "%.0f%%", 100.0 - disk.usedPct))
             }
         } else {
-            AppIconMenuBarImage()
+            MenuBarShieldEyeIcon()
         }
     }
 }
 
-struct AppIconMenuBarImage: View {
-    private var image: NSImage {
-        NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
-    }
-
+struct MenuBarShieldEyeIcon: View {
     var body: some View {
-        Image(nsImage: image)
-            .resizable()
-            .interpolation(.high)
-            .aspectRatio(contentMode: .fit)
-            .frame(width: 16, height: 16)
+        ZStack {
+            MenuBarShieldShape()
+                .stroke(style: StrokeStyle(lineWidth: 1.9, lineCap: .round, lineJoin: .round))
+                .frame(width: 15, height: 16)
+
+            MenuBarEyeShape()
+                .stroke(style: StrokeStyle(lineWidth: 1.45, lineCap: .round, lineJoin: .round))
+                .frame(width: 10.5, height: 6.8)
+                .offset(y: -0.4)
+
+            Circle()
+                .frame(width: 2.3, height: 2.3)
+                .offset(y: -0.4)
+        }
+        .foregroundStyle(.primary.opacity(0.86))
+        .frame(width: 17, height: 17)
+        .accessibilityHidden(true)
+    }
+}
+
+struct MenuBarShieldShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let top = CGPoint(x: rect.midX, y: rect.minY + rect.height * 0.08)
+        let rightShoulder = CGPoint(x: rect.maxX - rect.width * 0.12, y: rect.minY + rect.height * 0.27)
+        let rightSide = CGPoint(x: rect.maxX - rect.width * 0.16, y: rect.minY + rect.height * 0.62)
+        let bottom = CGPoint(x: rect.midX, y: rect.maxY - rect.height * 0.06)
+        let leftSide = CGPoint(x: rect.minX + rect.width * 0.16, y: rect.minY + rect.height * 0.62)
+        let leftShoulder = CGPoint(x: rect.minX + rect.width * 0.12, y: rect.minY + rect.height * 0.27)
+
+        path.move(to: top)
+        path.addCurve(to: rightShoulder,
+                      control1: CGPoint(x: rect.midX + rect.width * 0.16, y: rect.minY + rect.height * 0.18),
+                      control2: CGPoint(x: rect.maxX - rect.width * 0.25, y: rect.minY + rect.height * 0.26))
+        path.addCurve(to: rightSide,
+                      control1: CGPoint(x: rect.maxX - rect.width * 0.05, y: rect.minY + rect.height * 0.34),
+                      control2: CGPoint(x: rect.maxX - rect.width * 0.06, y: rect.minY + rect.height * 0.53))
+        path.addCurve(to: bottom,
+                      control1: CGPoint(x: rect.maxX - rect.width * 0.22, y: rect.minY + rect.height * 0.77),
+                      control2: CGPoint(x: rect.midX + rect.width * 0.17, y: rect.maxY - rect.height * 0.12))
+        path.addCurve(to: leftSide,
+                      control1: CGPoint(x: rect.midX - rect.width * 0.17, y: rect.maxY - rect.height * 0.12),
+                      control2: CGPoint(x: rect.minX + rect.width * 0.22, y: rect.minY + rect.height * 0.77))
+        path.addCurve(to: leftShoulder,
+                      control1: CGPoint(x: rect.minX + rect.width * 0.06, y: rect.minY + rect.height * 0.53),
+                      control2: CGPoint(x: rect.minX + rect.width * 0.05, y: rect.minY + rect.height * 0.34))
+        path.addCurve(to: top,
+                      control1: CGPoint(x: rect.minX + rect.width * 0.25, y: rect.minY + rect.height * 0.26),
+                      control2: CGPoint(x: rect.midX - rect.width * 0.16, y: rect.minY + rect.height * 0.18))
+        return path
+    }
+}
+
+struct MenuBarEyeShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.addCurve(to: CGPoint(x: rect.maxX, y: rect.midY),
+                      control1: CGPoint(x: rect.minX + rect.width * 0.26, y: rect.minY),
+                      control2: CGPoint(x: rect.maxX - rect.width * 0.26, y: rect.minY))
+        path.addCurve(to: CGPoint(x: rect.minX, y: rect.midY),
+                      control1: CGPoint(x: rect.maxX - rect.width * 0.26, y: rect.maxY),
+                      control2: CGPoint(x: rect.minX + rect.width * 0.26, y: rect.maxY))
+        return path
     }
 }
 
