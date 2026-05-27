@@ -2,12 +2,16 @@ import SwiftUI
 import Foundation
 
 enum AppLanguage: String, CaseIterable {
-    case simplifiedChinese = "zh-Hans"
     case english = "en"
+    case simplifiedChinese = "zh-Hans"
     case traditionalChinese = "zh-Hant"
     case japanese = "ja"
     case korean = "ko"
     case maltese = "mt"
+
+    static var allCases: [AppLanguage] {
+        [.english, .simplifiedChinese, .traditionalChinese, .japanese, .korean, .maltese]
+    }
 
     var displayName: String {
         switch self {
@@ -107,6 +111,103 @@ class Localizer: ObservableObject {
         }
     }
 
+    func localizedAppDescription(_ desc: String, name: String = "") -> String {
+        let n = name.isEmpty ? "" : name
+        if desc.contains("npm 全局安装") { return t("npm 全局安装的 \(n) 包", en: "Globally installed npm package \(n)", zhHant: "npm 全域安裝的 \(n) 套件", ja: "グローバルにインストールされた npm パッケージ \(n)", ko: "전역 설치된 npm 패키지 \(n)", mt: "Globally installed npm package \(n)") }
+        if desc.contains("pip 安装") { return t("pip 安装的 \(n) 包", en: "pip package \(n)", zhHant: "pip 安裝的 \(n) 套件", ja: "pip パッケージ \(n)", ko: "pip 패키지 \(n)", mt: "pip package \(n)") }
+        if desc.contains("通过 Homebrew 安装") { return t("通过 Homebrew 安装的 \(n)", en: "\(n) installed by Homebrew", zhHant: "透過 Homebrew 安裝的 \(n)", ja: "Homebrew でインストールされた \(n)", ko: "Homebrew로 설치된 \(n)", mt: "\(n) installed by Homebrew") }
+        if desc.contains("AI编程助手") { return t("AI 编程助手", en: "AI coding assistant", zhHant: "AI 編程助手", ja: "AIコーディングアシスタント", ko: "AI 코딩 도우미", mt: "AI coding assistant") }
+        if desc.contains("命令行工具") { return t("命令行工具", en: "Command line tool", zhHant: "命令列工具", ja: "コマンドラインツール", ko: "명령줄 도구", mt: "Command line tool") }
+        if desc.contains("包管理") { return t("包管理工具", en: "Package management tool", zhHant: "套件管理工具", ja: "パッケージ管理ツール", ko: "패키지 관리 도구", mt: "Package management tool") }
+        return desc
+    }
+
+    func localizedRiskDescription(_ desc: String, name: String = "") -> String {
+        let n = name.isEmpty ? "" : name
+        if desc.contains("卸载后依赖此包的Python项目将无法运行") { return t("卸载后依赖此包的 Python 项目将无法运行", en: "Python projects depending on this package may stop working after uninstall.", zhHant: "解除安裝後，依賴此套件的 Python 專案可能無法執行。", ja: "アンインストール後、このパッケージに依存する Python プロジェクトが動作しなくなる可能性があります。", ko: "제거 후 이 패키지에 의존하는 Python 프로젝트가 동작하지 않을 수 있습니다.", mt: "Python projects depending on this package may stop working after uninstall.") }
+        if desc.contains("卸载后依赖此包的项目将无法运行") { return t("卸载后依赖此包的项目将无法运行", en: "Projects depending on this package may stop working after uninstall.", zhHant: "解除安裝後，依賴此套件的專案可能無法執行。", ja: "アンインストール後、このパッケージに依存するプロジェクトが動作しなくなる可能性があります。", ko: "제거 후 이 패키지에 의존하는 프로젝트가 동작하지 않을 수 있습니다.", mt: "Projects depending on this package may stop working after uninstall.") }
+        if desc.contains("可安全卸载") { return t("可安全卸载，重新安装后需重新配置", en: "Safe to uninstall; configuration may be required after reinstall.", zhHant: "可安全解除安裝，重新安裝後需重新配置。", ja: "安全にアンインストールできます。再インストール後に再設定が必要な場合があります。", ko: "안전하게 제거할 수 있으며 재설치 후 재설정이 필요할 수 있습니다.", mt: "Safe to uninstall; configuration may be required after reinstall.") }
+        if desc.contains("未知目录") { return t("未知目录，删除前请确认其用途", en: "Unknown directory. Confirm its purpose before deleting.", zhHant: "未知目錄，刪除前請確認用途。", ja: "不明なディレクトリです。削除前に用途を確認してください。", ko: "알 수 없는 디렉터리입니다. 삭제 전 용도를 확인하세요.", mt: "Unknown directory. Confirm its purpose before deleting.") }
+        if desc.contains("将不可用") { return t("卸载后 \(n) 可能不可用", en: "\(n) may stop working after uninstall.", zhHant: "解除安裝後 \(n) 可能無法使用。", ja: "アンインストール後、\(n) が使用できなくなる可能性があります。", ko: "제거 후 \(n)이 동작하지 않을 수 있습니다.", mt: "\(n) may stop working after uninstall.") }
+        if desc.contains("仅删除缓存") { return t("仅删除缓存，不影响书签、密码、历史记录。删除后网页首次加载会稍慢。", en: "Only cached data is removed. Bookmarks, passwords, and history stay intact. Initial page loads may be slightly slower afterward.", zhHant: "僅刪除快取，不影響書籤、密碼與歷史記錄。刪除後網頁首次載入可能稍慢。", ja: "キャッシュのみを削除します。ブックマーク、パスワード、履歴には影響しません。削除後は最初の読み込みがやや遅くなる場合があります。", ko: "캐시만 삭제합니다. 북마크, 비밀번호, 기록에는 영향이 없습니다. 이후 첫 페이지 로딩이 약간 느려질 수 있습니다.", mt: "Only cached data is removed. Bookmarks, passwords, and history stay intact. Initial page loads may be slightly slower afterward.") }
+        if desc.contains("需重新登录") { return t("包含 IndexedDB 和 Local Storage，部分网站登录状态可能丢失，需重新登录。", en: "Includes IndexedDB and Local Storage. Some website sign-ins may be lost and require logging in again.", zhHant: "包含 IndexedDB 與 Local Storage，部分網站登入狀態可能遺失，需重新登入。", ja: "IndexedDB と Local Storage を含むため、一部サイトのログイン状態が失われ、再ログインが必要になる場合があります。", ko: "IndexedDB 및 Local Storage를 포함하므로 일부 사이트 로그인 상태가 사라져 다시 로그인해야 할 수 있습니다.", mt: "Includes IndexedDB and Local Storage. Some website sign-ins may be lost and require logging in again.") }
+        if desc.contains("首次启动会稍慢") { return t("删除后首次启动会稍慢。", en: "The first launch after cleanup may be slightly slower.", zhHant: "刪除後首次啟動可能稍慢。", ja: "削除後の初回起動はやや遅くなる場合があります。", ko: "정리 후 첫 실행이 약간 느려질 수 있습니다.", mt: "The first launch after cleanup may be slightly slower.") }
+        if desc.contains("会自动重建") { return t("删除后会自动重建，不影响正常使用。", en: "It will be rebuilt automatically after deletion and should not affect normal use.", zhHant: "刪除後會自動重建，不影響正常使用。", ja: "削除後は自動的に再構築され、通常の使用には影響しません。", ko: "삭제 후 자동으로 다시 생성되며 정상 사용에는 영향이 없습니다.", mt: "It will be rebuilt automatically after deletion and should not affect normal use.") }
+        if desc.contains("下次") && desc.contains("会重新下载") { return t("删除后，下次使用时会重新下载。", en: "After deletion, the data will be downloaded again the next time it is needed.", zhHant: "刪除後，下次使用時會重新下載。", ja: "削除後、次回必要になった際に再ダウンロードされます。", ko: "삭제 후 필요할 때 다시 다운로드됩니다.", mt: "After deletion, the data will be downloaded again the next time it is needed.") }
+        if desc.contains("不影响聊天记录") { return t("删除后不影响聊天记录。", en: "Deleting this will not affect chat history.", zhHant: "刪除後不影響聊天記錄。", ja: "削除してもチャット履歴には影響しません。", ko: "삭제해도 채팅 기록에는 영향이 없습니다.", mt: "Deleting this will not affect chat history.") }
+        if desc.contains("不影响文档") { return t("删除后不影响文档。", en: "Deleting this will not affect documents.", zhHant: "刪除後不影響文件。", ja: "削除しても書類には影響しません。", ko: "삭제해도 문서에는 영향이 없습니다.", mt: "Deleting this will not affect documents.") }
+        if desc.contains("无法回溯历史版本") { return t("删除后将无法回溯历史归档版本。", en: "After deletion, historical archived versions can no longer be restored.", zhHant: "刪除後將無法回溯歷史封存版本。", ja: "削除後、過去のアーカイブ版に戻せなくなります。", ko: "삭제 후 과거 아카이브 버전으로 되돌릴 수 없습니다.", mt: "After deletion, historical archived versions can no longer be restored.") }
+        return desc
+    }
+
+    func localizedScanRule(_ rule: ScanRule) -> (name: String, category: String, app: String, riskDesc: String) {
+        let category = localizedSubCategory(rule.category)
+        let app: String
+        switch rule.app {
+        case "多个 Agent":
+            app = t("多个 Agent", en: "Multiple Agents", zhHant: "多個 Agent", ja: "複数のAgent", ko: "여러 Agent", mt: "Multiple Agents")
+        case "飞书/Lark":
+            app = "Lark/Feishu"
+        default:
+            app = rule.app
+        }
+
+        let name: String
+        switch rule.id {
+        case "cache_browser_chrome": name = t("Chrome 浏览器缓存", en: "Chrome browser cache", zhHant: "Chrome 瀏覽器快取", ja: "Chrome ブラウザキャッシュ", ko: "Chrome 브라우저 캐시", mt: "Chrome browser cache")
+        case "cache_browser_chrome_data": name = t("Chrome 用户数据缓存", en: "Chrome user data cache", zhHant: "Chrome 使用者資料快取", ja: "Chrome ユーザーデータキャッシュ", ko: "Chrome 사용자 데이터 캐시", mt: "Chrome user data cache")
+        case "cache_lark": name = t("飞书缓存", en: "Lark cache", zhHant: "飛書快取", ja: "Lark キャッシュ", ko: "Lark 캐시", mt: "Lark cache")
+        case "data_lark_deployments": name = t("飞书更新包", en: "Lark update packages", zhHant: "飛書更新包", ja: "Lark 更新パッケージ", ko: "Lark 업데이트 패키지", mt: "Lark update packages")
+        case "data_lark_aha": name = t("飞书运行时数据", en: "Lark runtime data", zhHant: "飛書執行時資料", ja: "Lark ランタイムデータ", ko: "Lark 런타임 데이터", mt: "Lark runtime data")
+        case "cache_claude_vm": name = t("Claude Code 虚拟机沙箱", en: "Claude Code VM sandbox", zhHant: "Claude Code 虛擬機沙箱", ja: "Claude Code VM サンドボックス", ko: "Claude Code VM 샌드박스", mt: "Claude Code VM sandbox")
+        case "cache_claude": name = t("Claude Code 缓存", en: "Claude Code cache", zhHant: "Claude Code 快取", ja: "Claude Code キャッシュ", ko: "Claude Code 캐시", mt: "Claude Code cache")
+        case "cache_photo_analysis": name = t("照片分析索引缓存", en: "Photos analysis index cache", zhHant: "照片分析索引快取", ja: "写真分析インデックスキャッシュ", ko: "사진 분석 인덱스 캐시", mt: "Photos analysis index cache")
+        case "cache_updater_packages": name = t("Agent 更新包缓存", en: "Agent updater package cache", zhHant: "Agent 更新包快取", ja: "Agent 更新パッケージキャッシュ", ko: "Agent 업데이트 패키지 캐시", mt: "Agent updater package cache")
+        case "log_trae": name = t("Trae CN 日志", en: "Trae CN logs", zhHant: "Trae CN 日誌", ja: "Trae CN ログ", ko: "Trae CN 로그", mt: "Trae CN logs")
+        case "log_codebuddy": name = t("CodeBuddy CN 日志", en: "CodeBuddy CN logs", zhHant: "CodeBuddy CN 日誌", ja: "CodeBuddy CN ログ", ko: "CodeBuddy CN 로그", mt: "CodeBuddy CN logs")
+        case "cache_trae": name = t("Trae CN 缓存", en: "Trae CN cache", zhHant: "Trae CN 快取", ja: "Trae CN キャッシュ", ko: "Trae CN 캐시", mt: "Trae CN cache")
+        case "cache_codebuddy": name = t("CodeBuddy CN 缓存", en: "CodeBuddy CN cache", zhHant: "CodeBuddy CN 快取", ja: "CodeBuddy CN キャッシュ", ko: "CodeBuddy CN 캐시", mt: "CodeBuddy CN cache")
+        case "cache_electron": name = t("Electron 框架缓存", en: "Electron framework cache", zhHant: "Electron 框架快取", ja: "Electron フレームワークキャッシュ", ko: "Electron 프레임워크 캐시", mt: "Electron framework cache")
+        case "cache_pip": name = t("pip 缓存", en: "pip cache", zhHant: "pip 快取", ja: "pip キャッシュ", ko: "pip 캐시", mt: "pip cache")
+        case "cache_homebrew": name = t("Homebrew 下载缓存", en: "Homebrew download cache", zhHant: "Homebrew 下載快取", ja: "Homebrew ダウンロードキャッシュ", ko: "Homebrew 다운로드 캐시", mt: "Homebrew download cache")
+        case "cache_npm": name = t("npm 缓存", en: "npm cache", zhHant: "npm 快取", ja: "npm キャッシュ", ko: "npm 캐시", mt: "npm cache")
+        case "cache_pnpm": name = t("pnpm 缓存", en: "pnpm cache", zhHant: "pnpm 快取", ja: "pnpm キャッシュ", ko: "pnpm 캐시", mt: "pnpm cache")
+        case "cache_quark": name = t("夸克浏览器缓存", en: "Quark browser cache", zhHant: "夸克瀏覽器快取", ja: "Quark ブラウザキャッシュ", ko: "Quark 브라우저 캐시", mt: "Quark browser cache")
+        case "cache_wechat": name = t("微信缓存", en: "WeChat cache", zhHant: "微信快取", ja: "WeChat キャッシュ", ko: "WeChat 캐시", mt: "WeChat cache")
+        case "cache_qq": name = t("QQ 缓存", en: "QQ cache", zhHant: "QQ 快取", ja: "QQ キャッシュ", ko: "QQ 캐시", mt: "QQ cache")
+        case "cache_wps": name = t("WPS 缓存", en: "WPS cache", zhHant: "WPS 快取", ja: "WPS キャッシュ", ko: "WPS 캐시", mt: "WPS cache")
+        case "system_logs": name = t("系统日志", en: "System logs", zhHant: "系統日誌", ja: "システムログ", ko: "시스템 로그", mt: "System logs")
+        case "cache_geoservices": name = t("地理位置服务缓存", en: "Location services cache", zhHant: "定位服務快取", ja: "位置情報サービスキャッシュ", ko: "위치 서비스 캐시", mt: "Location services cache")
+        case "cache_huawei": name = t("华为相关缓存", en: "Huawei-related cache", zhHant: "華為相關快取", ja: "Huawei 関連キャッシュ", ko: "Huawei 관련 캐시", mt: "Huawei-related cache")
+        case "cache_hap_installer": name = t("HAP 安装器缓存", en: "HAP installer cache", zhHant: "HAP 安裝器快取", ja: "HAP インストーラキャッシュ", ko: "HAP 설치 프로그램 캐시", mt: "HAP installer cache")
+        case "data_trae_solo": name = t("Trae SOLO 数据", en: "Trae SOLO data", zhHant: "Trae SOLO 資料", ja: "Trae SOLO データ", ko: "Trae SOLO 데이터", mt: "Trae SOLO data")
+        case "cache_doubao": name = t("豆包缓存", en: "Doubao cache", zhHant: "豆包快取", ja: "Doubao キャッシュ", ko: "Doubao 캐시", mt: "Doubao cache")
+        case "cache_qianwen": name = t("通义千问缓存", en: "Qianwen cache", zhHant: "通義千問快取", ja: "Qianwen キャッシュ", ko: "Qianwen 캐시", mt: "Qianwen cache")
+        case "cache_crebee": name = t("Crebee 缓存", en: "Crebee cache", zhHant: "Crebee 快取", ja: "Crebee キャッシュ", ko: "Crebee 캐시", mt: "Crebee cache")
+        case "cache_codebuddy_ext": name = t("CodeBuddy 扩展缓存", en: "CodeBuddy extension cache", zhHant: "CodeBuddy 擴充快取", ja: "CodeBuddy 拡張キャッシュ", ko: "CodeBuddy 확장 캐시", mt: "CodeBuddy extension cache")
+        case "cache_codearts": name = t("CodeArts Agent 缓存", en: "CodeArts Agent cache", zhHant: "CodeArts Agent 快取", ja: "CodeArts Agent キャッシュ", ko: "CodeArts Agent 캐시", mt: "CodeArts Agent cache")
+        case "cache_master_desktop": name = t("Master Desktop 缓存", en: "Master Desktop cache", zhHant: "Master Desktop 快取", ja: "Master Desktop キャッシュ", ko: "Master Desktop 캐시", mt: "Master Desktop cache")
+        case "cache_qclaw": name = t("QClaw 缓存", en: "QClaw cache", zhHant: "QClaw 快取", ja: "QClaw キャッシュ", ko: "QClaw 캐시", mt: "QClaw cache")
+        case "cache_dingtalk": name = t("钉钉缓存", en: "DingTalk cache", zhHant: "釘釘快取", ja: "DingTalk キャッシュ", ko: "DingTalk 캐시", mt: "DingTalk cache")
+        case "cache_xmind": name = t("XMind 缓存", en: "XMind cache", zhHant: "XMind 快取", ja: "XMind キャッシュ", ko: "XMind 캐시", mt: "XMind cache")
+        case "cache_yarn": name = t("Yarn 缓存", en: "Yarn cache", zhHant: "Yarn 快取", ja: "Yarn キャッシュ", ko: "Yarn 캐시", mt: "Yarn cache")
+        case "cache_cargo": name = t("Cargo 缓存", en: "Cargo cache", zhHant: "Cargo 快取", ja: "Cargo キャッシュ", ko: "Cargo 캐시", mt: "Cargo cache")
+        case "cache_gradle": name = t("Gradle 缓存", en: "Gradle cache", zhHant: "Gradle 快取", ja: "Gradle キャッシュ", ko: "Gradle 캐시", mt: "Gradle cache")
+        case "cache_maven": name = t("Maven 缓存", en: "Maven cache", zhHant: "Maven 快取", ja: "Maven キャッシュ", ko: "Maven 캐시", mt: "Maven cache")
+        case "cache_cocoapods": name = t("CocoaPods 缓存", en: "CocoaPods cache", zhHant: "CocoaPods 快取", ja: "CocoaPods キャッシュ", ko: "CocoaPods 캐시", mt: "CocoaPods cache")
+        case "cache_go_build": name = t("Go 构建缓存", en: "Go build cache", zhHant: "Go 建置快取", ja: "Go ビルドキャッシュ", ko: "Go 빌드 캐시", mt: "Go build cache")
+        case "cache_docker": name = t("Docker 镜像和容器", en: "Docker images and containers", zhHant: "Docker 映像與容器", ja: "Docker イメージとコンテナ", ko: "Docker 이미지 및 컨테이너", mt: "Docker images and containers")
+        case "cache_xcode_derived": name = t("Xcode DerivedData", en: "Xcode DerivedData", zhHant: "Xcode DerivedData", ja: "Xcode DerivedData", ko: "Xcode DerivedData", mt: "Xcode DerivedData")
+        case "cache_xcode_archives": name = t("Xcode Archives", en: "Xcode archives", zhHant: "Xcode 封存", ja: "Xcode アーカイブ", ko: "Xcode 아카이브", mt: "Xcode archives")
+        case "cache_android": name = t("Android SDK 缓存", en: "Android SDK cache", zhHant: "Android SDK 快取", ja: "Android SDK キャッシュ", ko: "Android SDK 캐시", mt: "Android SDK cache")
+        case "cache_unity": name = t("Unity 缓存", en: "Unity cache", zhHant: "Unity 快取", ja: "Unity キャッシュ", ko: "Unity 캐시", mt: "Unity cache")
+        default: name = rule.name
+        }
+
+        let riskDesc = localizedRiskDescription(rule.riskDesc, name: app)
+        return (name, category, app, riskDesc)
+    }
+
     func localizedConfidence(_ level: String) -> String {
         switch level {
         case "高": return highConf
@@ -139,7 +240,7 @@ extension Localizer {
 
     var featureToggles: String { t("功能开关", en: "Feature Toggles", zhHant: "功能開關", ja: "機能切替", ko: "기능 토글", mt: "Feature Toggles") }
     var menuBarMonitor: String { t("菜单栏监控", en: "Menu Bar Monitor", zhHant: "選單欄監控", ja: "メニューバーモニター", ko: "메뉴 막대 모니터", mt: "Menu Bar Monitor") }
-    var menuBarMonitorDesc: String { t("在菜单栏显示系统资源监控", en: "Show system resource monitoring in menu bar", zhHant: "在選單欄顯示系統資源監控", ja: "メニューバーにシステムリソースモニタリングを表示", ko: "메뉴 막대에 시스템 리소스 모니터링 표시", mt: "Show system resource monitoring in menu bar") }
+    var menuBarMonitorDesc: String { t("在菜单栏显示系统资源监控", en: "Show system resource monitoring in the menu bar", zhHant: "在選單欄顯示系統資源監控", ja: "メニューバーにシステムリソースモニタリングを表示", ko: "메뉴 막대에 시스템 리소스 모니터링 표시", mt: "Show system resource monitoring in the menu bar") }
     var sensorMonitor: String { t("设备监控", en: "Device Monitor", zhHant: "裝置監控", ja: "デバイスモニター", ko: "장치 모니터", mt: "Device Monitor") }
     var sensorMonitorDesc: String { t("监控摄像头和麦克风调用", en: "Monitor camera and microphone usage", zhHant: "監控攝像頭和麥克風呼叫", ja: "カメラとマイクの使用をモニタリング", ko: "카메라 및 마이크 사용 모니터링", mt: "Monitor camera and microphone usage") }
     var operationMonitor: String { t("操作记录", en: "Operation Monitor", zhHant: "操作記錄", ja: "操作記録", ko: "작업 기록", mt: "Operation Monitor") }
@@ -149,6 +250,10 @@ extension Localizer {
     var storageAlertThreshold: String { t("存储警告阈值", en: "Storage Alert Threshold", zhHant: "儲存警告閾值", ja: "ストレージ警告しきい値", ko: "저장소 경고 임계값", mt: "Storage Alert Threshold") }
     var trashInsteadOfDelete: String { t("使用回收站", en: "Use Trash", zhHant: "使用回收站", ja: "ゴミ箱を使用", ko: "휴지통 사용", mt: "Use Trash") }
     var trashInsteadOfDeleteDesc: String { t("删除文件时移入回收站而非直接删除", en: "Move files to Trash instead of permanent delete", zhHant: "刪除檔案時移入回收站而非直接刪除", ja: "ファイルを完全削除ではなくゴミ箱に移動", ko: "영구 삭제 대신 휴지통으로 파일 이동", mt: "Move files to Trash instead of permanent delete") }
+    var maxOperationRecords: String { t("操作记录保留时间", en: "Operation Record Retention", zhHant: "操作記錄保留時間", ja: "操作記録の保持時間", ko: "작업 기록 보관 시간", mt: "Operation Record Retention") }
+    var customHours: String { t("自定义小时", en: "Custom Hours", zhHant: "自訂小時", ja: "カスタム時間", ko: "사용자 지정 시간", mt: "Custom Hours") }
+    var retentionHoursHint: String { t("最多 360 小时，超出会自动限制", en: "Up to 360 hours; larger values are limited automatically", zhHant: "最多 360 小時，超出會自動限制", ja: "最大360時間、超過分は自動制限", ko: "최대 360시간, 초과 값은 자동 제한됨", mt: "Up to 360 hours; larger values are limited automatically") }
+    var hoursUnit: String { t("小时", en: "h", zhHant: "小時", ja: "時間", ko: "시간", mt: "h") }
 
     var versionUpdate: String { t("版本与更新", en: "Version & Updates", zhHant: "版本與更新", ja: "バージョンと更新", ko: "버전 및 업데이트", mt: "Version & Updates") }
     var currentVersion: String { t("当前版本", en: "Current Version", zhHant: "當前版本", ja: "現在のバージョン", ko: "현재 버전", mt: "Current Version") }
@@ -439,7 +544,7 @@ extension Localizer {
     var itemsLabel: String { t("项", en: "items", zhHant: "項", ja: "項目", ko: "항목", mt: "items") }
     var clickScanToDetect: String { t("点击\"扫描\"开始检测", en: "Click \"Scan\" to start detection", zhHant: "點擊\"掃描\"開始檢測", ja: "「スキャン」をクリックして検出開始", ko: "\"스캔\"을 클릭하여 감지 시작", mt: "Click \"Scan\" to start detection") }
     var scanDesc1: String { t("将扫描所有已安装的APP、依赖和CLI工具的CPU架构", en: "Scan CPU architecture of all installed apps, deps and CLI tools", zhHant: "將掃描所有已安裝的APP、依賴和CLI工具的CPU架構", ja: "インストール済みアプリ、依存、CLIツールのCPUアーキテクチャをスキャン", ko: "설치된 모든 앱, 의존성, CLI 도구의 CPU 아키텍처를 스캔", mt: "Scan CPU architecture of all installed apps, deps and CLI tools") }
-    var scanDesc2: String { t("检测哪些需要适配当前 Apple Silicon 芯片", en: "Detect which need adaptation for current Apple Silicon chip", zhHant: "檢測哪些需要適配當前 Apple Silicon 晶片", ja: "現在のApple Siliconチップに適応が必要なものを検出", ko: "현재 Apple Silicon 칩에 적응이 필요한 항목 감지", mt: "Detect which need adaptation for current Apple Silicon chip") }
+    var scanDesc2: String { t("检测哪些需要适配当前 Apple Silicon 芯片", en: "Detect which need adaptation for the current Apple Silicon chip", zhHant: "檢測哪些需要適配當前 Apple Silicon 晶片", ja: "現在のApple Siliconチップに適応が必要なものを検出", ko: "현재 Apple Silicon 칩에 적응이 필요한 항목 감지", mt: "Detect which need adaptation for the current Apple Silicon chip") }
     var firstScanHint: String { t("请稍候，首次扫描需要获取所有应用信息", en: "Please wait, first scan needs to fetch all app info", zhHant: "請稍候，首次掃描需要獲取所有應用資訊", ja: "お待ちください、初回スキャンは全アプリ情報を取得します", ko: "잠시만 기다려 주세요, 첫 스캔은 모든 앱 정보를 가져옵니다", mt: "Please wait, first scan needs to fetch all app info") }
     var detectingArch: String { t("正在检测CPU架构...", en: "Detecting CPU architecture...", zhHant: "正在檢測CPU架構...", ja: "CPUアーキテクチャを検出中...", ko: "CPU 아키텍처 감지 중...", mt: "Detecting CPU architecture...") }
     var allAdapted: String { t("所有应用均已适配 Apple Silicon", en: "All apps are adapted for Apple Silicon", zhHant: "所有應用均已適配 Apple Silicon", ja: "すべてのアプリがApple Siliconに適応済み", ko: "모든 앱이 Apple Silicon에 적응됨", mt: "All apps are adapted for Apple Silicon") }
@@ -454,6 +559,10 @@ extension Localizer {
     var unitSession: String { t("个会话", en: " sessions", zhHant: "個會話", ja: "セッション", ko: "개 세션", mt: " sessions") }
     var recentLabel: String { t("最近", en: "Recent", zhHant: "最近", ja: "最近", ko: "최근", mt: "Recent") }
     var addAndScan: String { t("添加并扫描", en: "Add & Scan", zhHant: "新增並掃描", ja: "追加してスキャン", ko: "추가 후 스캔", mt: "Add & Scan") }
+    var tabApps: String { t("应用", en: "Apps", zhHant: "應用", ja: "アプリ", ko: "앱", mt: "Apps") }
+    var tabDeps: String { t("依赖", en: "Deps", zhHant: "依賴", ja: "依存", ko: "의존성", mt: "Deps") }
+    var tabOther: String { t("其它", en: "Other", zhHant: "其它", ja: "その他", ko: "기타", mt: "Other") }
+    var tabManual: String { t("手动", en: "Manual", zhHant: "手動", ja: "手動", ko: "수동", mt: "Manual") }
     var selectAgentToAdd: String { t("选择要添加的 Agent / APP / 工具", en: "Select Agent / App / Tool to add", zhHant: "選擇要新增的 Agent / APP / 工具", ja: "追加するAgent/アプリ/ツールを選択", ko: "추가할 Agent/앱/도구 선택", mt: "Select Agent / App / Tool to add") }
     var noMatchingApp: String { t("没有找到匹配的 APP", en: "No matching app found", zhHant: "沒有找到匹配的 APP", ja: "一致するアプリが見つかりません", ko: "일치하는 앱을 찾을 수 없음", mt: "No matching app found") }
     var alreadyAdded: String { t("已添加", en: "Already added", zhHant: "已新增", ja: "追加済み", ko: "추가됨", mt: "Already added") }
@@ -465,7 +574,7 @@ extension Localizer {
     var targetPathCol: String { t("目标路径", en: "Target Path", zhHant: "目標路徑", ja: "対象パス", ko: "대상 경로", mt: "Target Path") }
     var projectCol: String { t("项目", en: "Project", zhHant: "專案", ja: "プロジェクト", ko: "프로젝트", mt: "Project") }
     var detailCol: String { t("详情", en: "Detail", zhHant: "詳情", ja: "詳細", ko: "상세", mt: "Detail") }
-    var localScanSubtitle: String { t("扫描系统缓存、日志等已知可清理目录", en: "Scan known cleanable dirs like system caches, logs", zhHant: "掃描系統快取、日誌等已知可清理目錄", ja: "システムキャッシュやログ等の既知のクリーンアップ可能ディレクトリをスキャン", ko: "시스템 캐시, 로그 등 알려진 정리 가능 디렉토리 스캔", mt: "Scan known cleanable dirs like system caches, logs") }
+    var localScanSubtitle: String { t("扫描系统缓存、日志等已知可清理目录", en: "Scan known cleanable directories like system caches and logs", zhHant: "掃描系統快取、日誌等已知可清理目錄", ja: "システムキャッシュやログ等の既知のクリーンアップ可能ディレクトリをスキャン", ko: "시스템 캐시, 로그 등 알려진 정리 가능 디렉토리 스캔", mt: "Scan known cleanable directories like system caches and logs") }
     var aiScanSubtitle: String { t("大模型补充发现本地规则遗漏的清理项", en: "AI supplements local rules to find missed items", zhHant: "大模型補充發現本地規則遺漏的清理項", ja: "AIがローカルルールで見落としたクリーンアップ項目を補完", ko: "AI가 로컬 규칙에서 누락된 정리 항목을 보완", mt: "AI supplements local rules to find missed items") }
     var enhancedScanSubtitle: String { t("本地 + AI 双重检测，覆盖最全面", en: "Local + AI dual detection, most comprehensive coverage", zhHant: "本地 + AI 雙重檢測，覆蓋最全面", ja: "ローカル+AIの二重検出、最も包括的なカバレッジ", ko: "로컬 + AI 이중 감지, 가장 포괄적인 커버리지", mt: "Local + AI dual detection, most comprehensive coverage") }
 
@@ -522,6 +631,23 @@ extension Localizer {
     var recentOpsLabel: String { t("最近操作", en: "Recent Operations", zhHant: "最近操作", ja: "最近の操作", ko: "최근 작업", mt: "Recent Operations") }
     var recordsUnit: String { t("条", en: "records", zhHant: "條", ja: "件", ko: "건", mt: "records") }
     var startMonitorHint2: String { t("开启监控后将自动记录 Agent 操作", en: "Agent operations will be recorded once monitoring starts", zhHant: "開啟監控後將自動記錄 Agent 操作", ja: "モニタリング開始後、Agentの操作を自動記録します", ko: "모니터링 시작 후 Agent 작업을 자동 기록합니다", mt: "Agent operations will be recorded once monitoring starts") }
+    var permissionExpired: String { t("需要授权 Agent 数据目录，才能读取历史命令、审计记录并继续实时监控", en: "Authorize agent data folders to read command history, audit records, and continue live monitoring.", zhHant: "需要授權 Agent 資料目錄，才能讀取歷史命令、審計記錄並繼續即時監控", ja: "コマンド履歴、監査記録、リアルタイム監視を有効にするにはAgentデータフォルダの許可が必要です。", ko: "명령 기록, 감사 기록, 실시간 모니터링을 위해 Agent 데이터 폴더 권한이 필요합니다.", mt: "Authorize agent data folders to read command history, audit records, and continue live monitoring.") }
+    var reauthorize: String { t("重新授权", en: "Re-authorize", zhHant: "重新授權", ja: "再認証", ko: "다시 인증", mt: "Re-authorize") }
+    var selectMonitorDirs: String { t("请选择主目录或 Agent 数据目录（例如 ~/.codex、~/.claude，也可按住 ⌘ 多选需要监控的项目目录）", en: "Select your Home folder or agent data folders such as ~/.codex and ~/.claude. Hold ⌘ to select multiple project folders.", zhHant: "請選擇主目錄或 Agent 資料目錄（例如 ~/.codex、~/.claude，也可按住 ⌘ 多選需要監控的專案目錄）", ja: "ホームフォルダ、または ~/.codex や ~/.claude などのAgentデータフォルダを選択してください。⌘キーで複数のプロジェクトフォルダも選択できます。", ko: "홈 폴더 또는 ~/.codex, ~/.claude 같은 Agent 데이터 폴더를 선택하세요. ⌘ 키로 여러 프로젝트 폴더를 선택할 수 있습니다.", mt: "Select your Home folder or agent data folders such as ~/.codex and ~/.claude. Hold ⌘ to select multiple project folders.") }
+    var totalCount: String { t("总次数", en: "Total", zhHant: "總次數", ja: "合計", ko: "총횟수", mt: "Total") }
+    var todayCount: String { t("当日", en: "Today", zhHant: "當日", ja: "今日", ko: "오늘", mt: "Today") }
+    var lastCalledBy: String { t("调用者", en: "Called by", zhHant: "調用者", ja: "呼出元", ko: "호출자", mt: "Called by") }
+    var batchDeleteDesc: String { t("在指定时间窗口内删除文件数超过此阈值时触发告警", en: "Alert when files deleted within the time window exceed this threshold", zhHant: "在指定時間窗口內刪除檔案數超過此閾值時觸發告警", ja: "指定時間内に削除されたファイル数がこの閾値を超えた時にアラート", ko: "지정된 시간 내 삭제 파일 수가 이 임계값을 초과하면 알림", mt: "Alert when files deleted within the time window exceed this threshold") }
+    var batchModifyDesc: String { t("在指定时间窗口内修改文件数超过此阈值时触发告警", en: "Alert when files modified within the time window exceed this threshold", zhHant: "在指定時間窗口內修改檔案數超過此閾值時觸發告警", ja: "指定時間内に変更されたファイル数がこの閾値を超えた時にアラート", ko: "지정된 시간 내 수정 파일 수가 이 임계값을 초과하면 알림", mt: "Alert when files modified within the time window exceed this threshold") }
+    var timeWindowDesc: String { t("批量操作告警的统计时间窗口（秒）", en: "Time window (seconds) for counting batch operations", zhHant: "批量操作告警的統計時間窗口（秒）", ja: "一括操作アラートの集計時間枠（秒）", ko: "일괄 작업 알림의 통계 시간 범위(초)", mt: "Time window (seconds) for counting batch operations") }
+    var alertCooldownDesc: String { t("同一类型告警的最小间隔时间，避免频繁告警", en: "Minimum interval between same-type alerts to avoid spam", zhHant: "同一類型告警的最小間隔時間，避免頻繁告警", ja: "同じタイプのアラートの最小間隔時間", ko: "동일 유형 알림의 최소 간격 시간", mt: "Minimum interval between same-type alerts to avoid spam") }
+    var sensitiveFileDesc: String { t("检测AI Agent对敏感文件（密钥、证书、配置等）的访问操作", en: "Detect AI Agent access to sensitive files (keys, certs, configs, etc.)", zhHant: "檢測AI Agent對敏感檔案（密鑰、證書、配置等）的存取操作", ja: "AIエージェントによる機密ファイル（鍵、証明書、設定など）へのアクセスを検出", ko: "AI 에이전트의 민감한 파일(키, 인증서, 설정 등) 접근 감지", mt: "Detect AI Agent access to sensitive files (keys, certs, configs, etc.)") }
+    var sensitiveContentDesc: String { t("检测AI Agent执行的高风险命令（如rm -rf、chmod 777等）", en: "Detect high-risk commands executed by AI Agents (e.g., rm -rf, chmod 777)", zhHant: "檢測AI Agent執行的高風險命令（如rm -rf、chmod 777等）", ja: "AIエージェントによる高リスクコマンド（rm -rf、chmod 777など）を検出", ko: "AI 에이전트의 고위험 명령(rm -rf, chmod 777 등) 감지", mt: "Detect high-risk commands executed by AI Agents (e.g., rm -rf, chmod 777)") }
+    var processAlertDesc: String { t("当检测到新的AI Agent进程启动时发送通知", en: "Send notification when a new AI Agent process is detected", zhHant: "當檢測到新的AI Agent進程啟動時發送通知", ja: "新しいAIエージェントプロセスを検出した時に通知", ko: "새로운 AI 에이전트 프로세스 감지 시 알림", mt: "Send notification when a new AI Agent process is detected") }
+    var protectedDirDesc: String { t("监控受保护目录中的文件操作，未经授权的访问将触发告警", en: "Monitor file operations in protected directories; unauthorized access triggers alerts", zhHant: "監控受保護目錄中的檔案操作，未經授權的存取將觸發告警", ja: "保護対象ディレクトリのファイル操作を監視し、不正アクセス時にアラート", ko: "보호된 디렉토리의 파일 작업 모니터링, 무단 접근 시 알림", mt: "Monitor file operations in protected directories; unauthorized access triggers alerts") }
+    var notificationDesc: String { t("启用系统通知推送告警信息", en: "Enable system notifications for alert messages", zhHant: "啟用系統通知推送告警資訊", ja: "アラートメッセージのシステム通知を有効化", ko: "알림 메시지에 대한 시스템 알림 활성화", mt: "Enable system notifications for alert messages") }
+    var doNotDisturbDesc: String { t("开启后暂停所有告警通知，监控仍继续记录", en: "Pause all alert notifications; monitoring continues recording in background", zhHant: "開啟後暫停所有告警通知，監控仍繼續記錄", ja: "すべてのアラート通知を一時停止（監視は記録を継続）", ko: "모든 알림 일시정지, 모니터링은 계속 기록됨", mt: "Pause all alert notifications; monitoring continues recording in background") }
+    var hour: String { t("时", en: "Hour", zhHant: "時", ja: "時間", ko: "시간", mt: "Hour") }
     var pauseMonitorLabel: String { t("暂停监控", en: "Pause Monitoring", zhHant: "暫停監控", ja: "モニタリング一時停止", ko: "모니터링 일시정지", mt: "Pause Monitoring") }
     var startMonitorLabel: String { t("开始监控", en: "Start Monitoring", zhHant: "開始監控", ja: "モニタリング開始", ko: "모니터링 시작", mt: "Start Monitoring") }
     var closeAILabel: String { t("关闭 AI", en: "Close AI", zhHant: "關閉 AI", ja: "AIを閉じる", ko: "AI 닫기", mt: "Close AI") }
@@ -661,6 +787,43 @@ extension Localizer {
 
     var navAgentGuard: String { t("Agent 守护", en: "Agent Guard", zhHant: "Agent 守護", ja: "Agentガード", ko: "Agent 가드", mt: "Agent Guard") }
     var subAgentGuard: String { t("AI Agent 安全监控与防护", en: "AI Agent Security Monitoring & Protection", zhHant: "AI Agent 安全監控與防護", ja: "AI Agentセキュリティモニタリング＆プロテクション", ko: "AI Agent 보안 모니터링 및 보호", mt: "AI Agent Security Monitoring & Protection") }
+    var navAgentCenter: String { t("Agent 中心", en: "Agent Center", zhHant: "Agent 中心", ja: "Agentセンター", ko: "Agent 센터", mt: "Agent Center") }
+    var subAgentCenter: String { t("Agent 集成、Hook 与会话管理", en: "Agent integrations, hooks, and sessions", zhHant: "Agent 整合、Hook 與會話管理", ja: "Agent統合、Hook、セッション管理", ko: "Agent 통합, Hook 및 세션 관리", mt: "Agent integrations, hooks, and sessions") }
+    var agentCenterIntegrations: String { t("集成", en: "Integrations", zhHant: "整合", ja: "統合", ko: "통합", mt: "Integrations") }
+    var agentCenterApprovals: String { t("审批", en: "Approvals", zhHant: "審批", ja: "承認", ko: "승인", mt: "Approvals") }
+    var agentCenterRefresh: String { t("刷新", en: "Refresh", zhHant: "重新整理", ja: "更新", ko: "새로고침", mt: "Refresh") }
+    var agentCenterInstallAll: String { t("安装全部 Hook", en: "Install All Hooks", zhHant: "安裝全部 Hook", ja: "すべてのHookをインストール", ko: "모든 Hook 설치", mt: "Install All Hooks") }
+    var agentCenterSearch: String { t("搜索 Agent...", en: "Search agents...", zhHant: "搜尋 Agent...", ja: "Agentを検索...", ko: "Agent 검색...", mt: "Search agents...") }
+    var agentCenterAll: String { t("全部", en: "All", zhHant: "全部", ja: "すべて", ko: "전체", mt: "All") }
+    var agentCenterActive: String { t("已接入", en: "Active", zhHant: "已接入", ja: "接続済み", ko: "활성", mt: "Active") }
+    var agentCenterInstalled: String { t("已安装", en: "Installed", zhHant: "已安裝", ja: "インストール済み", ko: "설치됨", mt: "Installed") }
+    var agentCenterUnavailable: String { t("未发现", en: "Not Found", zhHant: "未發現", ja: "未検出", ko: "찾을 수 없음", mt: "Not Found") }
+    var agentCenterInstallHook: String { t("安装 Hook", en: "Install Hook", zhHant: "安裝 Hook", ja: "Hookをインストール", ko: "Hook 설치", mt: "Install Hook") }
+    var agentCenterRemoveHook: String { t("移除 Hook", en: "Remove Hook", zhHant: "移除 Hook", ja: "Hookを削除", ko: "Hook 제거", mt: "Remove Hook") }
+    var agentCenterNoApprovals: String { t("暂无待审批事项", en: "No pending approvals", zhHant: "暫無待審批事項", ja: "保留中の承認はありません", ko: "대기 중인 승인이 없습니다", mt: "No pending approvals") }
+    var agentCenterPendingApprovalsHint: String { t("安装 Hook 后，权限请求、问题和计划审批会在这里和灵动岛中出现。", en: "After hooks are installed, permission requests, questions, and plan approvals appear here and in the island.", zhHant: "安裝 Hook 後，權限請求、問題和計劃審批會在這裡和靈動島中出現。", ja: "Hookをインストールすると、権限リクエスト、質問、計画承認がここ とアイランドに表示されます。", ko: "Hook 설치 후 권한 요청, 질문, 계획 승인이 여기와 아일랜드에 표시됩니다.", mt: "After hooks are installed, permission requests, questions, and plan approvals appear here and in the island.") }
+    var agentCenterPermission: String { t("权限请求", en: "Permission", zhHant: "權限請求", ja: "権限", ko: "권한", mt: "Permission") }
+    var agentCenterQuestion: String { t("问题", en: "Question", zhHant: "問題", ja: "質問", ko: "질문", mt: "Question") }
+    var agentCenterPlan: String { t("计划审批", en: "Plan", zhHant: "計劃審批", ja: "計画", ko: "계획", mt: "Plan") }
+    var agentCenterActiveSummary: String { t("已接入", en: "active", zhHant: "已接入", ja: "接続済み", ko: "활성", mt: "active") }
+    var agentCenterInstalledSummary: String { t("已安装", en: "installed", zhHant: "已安裝", ja: "インストール済み", ko: "설치됨", mt: "installed") }
+    var agentCenterAvailableSummary: String { t("可用", en: "available", zhHant: "可用", ja: "利用可能", ko: "사용 가능", mt: "available") }
+    var agentApprovalNext: String { t("下一个", en: "Next", zhHant: "下一個", ja: "次", ko: "다음", mt: "Next") }
+    var agentApprovalShowSessions: String { t("查看审批会话", en: "Show approval sessions", zhHant: "查看審批會話", ja: "承認セッションを表示", ko: "승인 세션 보기", mt: "Show approval sessions") }
+    var agentPermissionRequest: String { t("权限请求", en: "Permission Request", zhHant: "權限請求", ja: "権限リクエスト", ko: "권한 요청", mt: "Permission Request") }
+    var agentWantsToUseTool: String { t("想使用", en: "wants to use", zhHant: "想使用", ja: "が使用しようとしています", ko: "사용하려고 합니다", mt: "wants to use") }
+    var agentChanges: String { t("变更", en: "Changes", zhHant: "變更", ja: "変更", ko: "변경", mt: "Changes") }
+    var agentOptions: String { t("选项", en: "Options", zhHant: "選項", ja: "オプション", ko: "옵션", mt: "Options") }
+    var agentAlwaysAllowTool: String { t("始终允许此工具", en: "Always allow this tool", zhHant: "始終允許此工具", ja: "このツールを常に許可", ko: "이 도구 항상 허용", mt: "Always allow this tool") }
+    var agentAllow: String { t("允许", en: "Allow", zhHant: "允許", ja: "許可", ko: "허용", mt: "Allow") }
+    var agentDeny: String { t("拒绝", en: "Deny", zhHant: "拒絕", ja: "拒否", ko: "거부", mt: "Deny") }
+    var agentReject: String { t("拒绝", en: "Reject", zhHant: "拒絕", ja: "却下", ko: "거부", mt: "Reject") }
+    var agentApprove: String { t("批准", en: "Approve", zhHant: "批准", ja: "承認", ko: "승인", mt: "Approve") }
+    var agentModifyApprove: String { t("修改并批准", en: "Modify & Approve", zhHant: "修改並批准", ja: "修正して承認", ko: "수정 후 승인", mt: "Modify & Approve") }
+    var agentFeedbackPlaceholder: String { t("反馈信息（可选）", en: "Feedback message (optional)", zhHant: "回饋資訊（可選）", ja: "フィードバック（任意）", ko: "피드백 메시지(선택)", mt: "Feedback message (optional)") }
+    var agentRequestedPermissions: String { t("请求的权限", en: "Requested Permissions", zhHant: "請求的權限", ja: "要求された権限", ko: "요청된 권한", mt: "Requested Permissions") }
+    var agentCancel: String { t("取消", en: "Cancel", zhHant: "取消", ja: "キャンセル", ko: "취소", mt: "Cancel") }
+    var agentSubmit: String { t("提交", en: "Submit", zhHant: "提交", ja: "送信", ko: "제출", mt: "Submit") }
     var guardDashboard: String { t("守护概览", en: "Guard Dashboard", zhHant: "守護概覽", ja: "ガード概要", ko: "가드 개요", mt: "Guard Dashboard") }
     var alertCenter: String { t("告警中心", en: "Alert Center", zhHant: "告警中心", ja: "アラートセンター", ko: "알림 센터", mt: "Alert Center") }
     var alertRules: String { t("告警规则", en: "Alert Rules", zhHant: "告警規則", ja: "アラートルール", ko: "알림 규칙", mt: "Alert Rules") }
@@ -727,15 +890,20 @@ extension Localizer {
     var filterWarning: String { t("警告", en: "Warning", zhHant: "警告", ja: "警告", ko: "경고", mt: "Warning") }
     var filterCritical: String { t("严重", en: "Critical", zhHant: "嚴重", ja: "重大", ko: "심각", mt: "Critical") }
     var hourlyTrend: String { t("每小时趋势", en: "Hourly Trend", zhHant: "每小時趨勢", ja: "時間別トレンド", ko: "시간별 추이", mt: "Hourly Trend") }
+    var rangeAll: String { t("全部", en: "All", zhHant: "全部", ja: "すべて", ko: "전체", mt: "All") }
+    var rangeToday: String { t("当日", en: "Today", zhHant: "當日", ja: "今日", ko: "오늘", mt: "Today") }
+    var rangeRealtime: String { t("实时", en: "Realtime", zhHant: "即時", ja: "リアルタイム", ko: "실시간", mt: "Realtime") }
     var createOps: String { t("创建", en: "Create", zhHant: "建立", ja: "作成", ko: "생성", mt: "Create") }
     var modifyOps: String { t("修改", en: "Modify", zhHant: "修改", ja: "変更", ko: "수정", mt: "Modify") }
     var deleteOps: String { t("删除", en: "Delete", zhHant: "刪除", ja: "削除", ko: "삭제", mt: "Delete") }
     var readOps: String { t("读取", en: "Read", zhHant: "讀取", ja: "読み取り", ko: "읽기", mt: "Read") }
+    var executeOps: String { t("执行", en: "Execute", zhHant: "執行", ja: "実行", ko: "실행", mt: "Execute") }
     var operationsUnit: String { t("次操作", en: "ops", zhHant: "次操作", ja: "回操作", ko: "회 작업", mt: "ops") }
     var selectDirectory: String { t("选择目录", en: "Select Directory", zhHant: "選擇目錄", ja: "ディレクトリを選択", ko: "디렉토리 선택", mt: "Select Directory") }
     var navToolbox: String { t("工具箱", en: "Toolbox", zhHant: "工具箱", ja: "ツールボックス", ko: "도구 상자", mt: "Toolbox") }
     var subToolbox: String { t("系统清理与应用管理", en: "System Cleanup & App Management", zhHant: "系統清理與應用管理", ja: "システムクリーンアップ＆アプリ管理", ko: "시스템 정리 및 앱 관리", mt: "System Cleanup & App Management") }
-    var commandRules: String { t("命令规则", en: "Cmd Rules", zhHant: "命令規則", ja: "コマンドルール", ko: "명령 규칙", mt: "Cmd Rules") }
+    var commandRules: String { t("命令规则", en: "Command Rules", zhHant: "命令規則", ja: "コマンドルール", ko: "명령 규칙", mt: "Command Rules") }
+    var commandRulesDesc: String { t("命令规则用于监控和管控 AI Agent 执行的命令。黑名单中的命令将被拦截并告警，白名单中的命令允许正常执行，未分类的命令将被记录。", en: "Command rules monitor and control commands executed by AI Agents. Blacklisted commands will be blocked and alerted, whitelisted commands are allowed, and unclassified commands are logged.", zhHant: "命令規則用於監控和管控 AI Agent 執行的命令。黑名單中的命令將被攔截並告警，白名單中的命令允許正常執行，未分類的命令將被記錄。", ja: "コマンドルールは、AI Agentが実行するコマンドを監視・制御します。ブラックリストのコマンドはブロック・警告され、ホワイトリストのコマンドは許可され、未分類のコマンドは記録されます。", ko: "명령 규칙은 AI Agent가 실행하는 명령을 모니터링하고 제어합니다. 블랙리스트 명령은 차단 및 경고되고, 화이트리스트 명령은 허용되며, 미분류 명령은 기록됩니다.", mt: "Command rules monitor and control commands executed by AI Agents. Blacklisted commands will be blocked and alerted, whitelisted commands are allowed, and unclassified commands are logged.") }
     var commandBlacklist: String { t("命令黑名单", en: "Command Blacklist", zhHant: "命令黑名單", ja: "コマンドブラックリスト", ko: "명령 블랙리스트", mt: "Command Blacklist") }
     var commandWhitelist: String { t("命令白名单", en: "Command Whitelist", zhHant: "命令白名單", ja: "コマンドホワイトリスト", ko: "명령 화이트리스트", mt: "Command Whitelist") }
     var enableCommandBlacklist: String { t("启用命令黑名单", en: "Enable Command Blacklist", zhHant: "啟用命令黑名單", ja: "コマンドブラックリストを有効化", ko: "명령 블랙리스트 활성화", mt: "Enable Command Blacklist") }
@@ -759,4 +927,88 @@ extension Localizer {
     var sourceCustom: String { t("自定义", en: "Custom", zhHant: "自訂", ja: "カスタム", ko: "사용자 정의", mt: "Custom") }
     var noUnclassifiedRules: String { t("暂无未分类命令", en: "No unclassified commands yet", zhHant: "暫無未分類命令", ja: "未分類コマンドなし", ko: "미분류 명령 없음", mt: "No unclassified commands yet") }
     var addCustomCommand: String { t("添加自定义命令", en: "Add Custom Command", zhHant: "添加自訂命令", ja: "カスタムコマンド追加", ko: "사용자 명령 추가", mt: "Add Custom Command") }
+    var openAppStoreUpdate: String { t("前往 App Store 更新", en: "Open App Store to Update", zhHant: "前往 App Store 更新", ja: "App Storeを開いてアップデート", ko: "App Store에서 업데이트", mt: "Open App Store to Update") }
+
+    var cmdDeleteFiles: String { t("删除文件", en: "Delete files", zhHant: "刪除檔案", ja: "ファイルを削除", ko: "파일 삭제", mt: "Delete files") }
+    var cmdRecursiveDelete: String { t("递归强制删除", en: "Recursive force delete", zhHant: "遞迴強制刪除", ja: "再帰的強制削除", ko: "재귀 강제 삭제", mt: "Recursive force delete") }
+    var cmdDeleteFilesCon: String { t("文件将被永久删除", en: "Files will be permanently removed", zhHant: "檔案將被永久刪除", ja: "ファイルが永久に削除されます", ko: "파일이 영구 삭제됩니다", mt: "Files will be permanently removed") }
+    var cmdRecursiveDeleteCon: String { t("整个目录树将被无条件删除", en: "Entire directory trees will be deleted without confirmation", zhHant: "整個目錄樹將被無條件刪除", ja: "ディレクトリツリー全体が確認なしで削除されます", ko: "전체 디렉토리 트리가 확인 없이 삭제됩니다", mt: "Entire directory trees will be deleted without confirmation") }
+    var cmdCreateDir: String { t("创建目录", en: "Create directory", zhHant: "建立目錄", ja: "ディレクトリ作成", ko: "디렉토리 생성", mt: "Create directory") }
+    var cmdCreateDirCon: String { t("将创建新的目录", en: "New directory will be created", zhHant: "將建立新的目錄", ja: "新しいディレクトリが作成されます", ko: "새 디렉토리가 생성됩니다", mt: "New directory will be created") }
+    var cmdCopyFiles: String { t("复制文件", en: "Copy files", zhHant: "複製檔案", ja: "ファイルをコピー", ko: "파일 복사", mt: "Copy files") }
+    var cmdCopyFilesCon: String { t("文件将被复制到目标位置", en: "Files will be duplicated to target location", zhHant: "檔案將被複製到目標位置", ja: "ファイルが対象位置にコピーされます", ko: "파일이 대상 위치에 복사됩니다", mt: "Files will be duplicated to target location") }
+    var cmdMoveFiles: String { t("移动/重命名文件", en: "Move/rename files", zhHant: "移動/重新命名檔案", ja: "ファイルを移動/リネーム", ko: "파일 이동/이름 변경", mt: "Move/rename files") }
+    var cmdMoveFilesCon: String { t("文件将被移动或重命名", en: "Files will be moved or renamed", zhHant: "檔案將被移動或重新命名", ja: "ファイルが移動またはリネームされます", ko: "파일이 이동되거나 이름이 변경됩니다", mt: "Files will be moved or renamed") }
+    var cmdChmod: String { t("修改文件权限", en: "Change file permissions", zhHant: "修改檔案權限", ja: "ファイル権限を変更", ko: "파일 권한 변경", mt: "Change file permissions") }
+    var cmdChmodCon: String { t("文件访问权限将被修改", en: "File access permissions will be modified", zhHant: "檔案存取權限將被修改", ja: "ファイルのアクセス権限が変更されます", ko: "파일 접근 권한이 수정됩니다", mt: "File access permissions will be modified") }
+    var cmdChown: String { t("修改文件所有者", en: "Change file ownership", zhHant: "修改檔案擁有者", ja: "ファイル所有者を変更", ko: "파일 소유자 변경", mt: "Change file ownership") }
+    var cmdChownCon: String { t("文件所有者/所属组将被更改", en: "File owner/group will be changed", zhHant: "檔案擁有者/群組將被更改", ja: "ファイルの所有者/グループが変更されます", ko: "파일 소유자/그룹이 변경됩니다", mt: "File owner/group will be changed") }
+    var cmdCatFile: String { t("显示文件内容", en: "Display file contents", zhHant: "顯示檔案內容", ja: "ファイル内容を表示", ko: "파일 내용 표시", mt: "Display file contents") }
+    var cmdCatFileCon: String { t("文件内容将被读取并显示", en: "File contents will be read and displayed", zhHant: "檔案內容將被讀取並顯示", ja: "ファイルの内容が読み取られて表示されます", ko: "파일 내용이 읽혀서 표시됩니다", mt: "File contents will be read and displayed") }
+    var cmdSearchText: String { t("搜索文件中的文本", en: "Search text in files", zhHant: "搜尋檔案中的文字", ja: "ファイル内テキスト検索", ko: "파일 내 텍스트 검색", mt: "Search text in files") }
+    var cmdSearchTextCon: String { t("将在文件中搜索匹配模式", en: "Will search for patterns in files", zhHant: "將在檔案中搜尋匹配模式", ja: "ファイル内のパターンを検索します", ko: "파일에서 패턴을 검색합니다", mt: "Will search for patterns in files") }
+    var cmdSearchFiles: String { t("搜索文件", en: "Search for files", zhHant: "搜尋檔案", ja: "ファイルを検索", ko: "파일 검색", mt: "Search for files") }
+    var cmdSearchFilesCon: String { t("将定位符合条件的文件", en: "Will locate files matching criteria", zhHant: "將定位符合條件的檔案", ja: "条件に一致するファイルを検索します", ko: "조건에 맞는 파일을 찾습니다", mt: "Will locate files matching criteria") }
+    var cmdDownload: String { t("从URL下载", en: "Download from URL", zhHant: "從URL下載", ja: "URLからダウンロード", ko: "URL에서 다운로드", mt: "Download from URL") }
+    var cmdDownloadCon: String { t("将从远程服务器获取数据", en: "Data will be fetched from a remote server", zhHant: "將從遠端伺服器獲取資料", ja: "リモートサーバーからデータを取得します", ko: "원격 서버에서 데이터를 가져옵니다", mt: "Data will be fetched from a remote server") }
+    var cmdDownloadFile: String { t("下载文件", en: "Download file", zhHant: "下載檔案", ja: "ダウンロード", ko: "파일 다운로드", mt: "Download file") }
+    var cmdDownloadFileCon: String { t("将从互联网下载文件", en: "File will be downloaded from the internet", zhHant: "將從網際網路下載檔案", ja: "インターネットからファイルをダウンロードします", ko: "인터넷에서 파일을 다운로드합니다", mt: "File will be downloaded from the internet") }
+    var cmdGit: String { t("Git版本控制", en: "Git version control", zhHant: "Git版本控制", ja: "Git バージョン管理", ko: "Git 버전 관리", mt: "Git version control") }
+    var cmdGitCon: String { t("将执行代码仓库操作", en: "Repository operations will be performed", zhHant: "將執行程式碼儲存庫操作", ja: "リポジトリ操作が実行されます", ko: "저장소 작업이 실행됩니다", mt: "Repository operations will be performed") }
+    var cmdPkgMgr: String { t("包管理器", en: "Package manager", zhHant: "套件管理器", ja: "パッケージマネージャー", ko: "패키지 관리자", mt: "Package manager") }
+    var cmdNodePkgCon: String { t("将安装或修改Node.js依赖包", en: "Node.js packages will be installed/modified", zhHant: "將安裝或修改Node.js依賴套件", ja: "Node.jsパッケージがインストール/変更されます", ko: "Node.js 패키지가 설치/수정됩니다", mt: "Node.js packages will be installed/modified") }
+    var cmdPyPkgCon: String { t("将安装或修改Python包", en: "Python packages will be installed/modified", zhHant: "將安裝或修改Python套件", ja: "Pythonパッケージがインストール/変更されます", ko: "Python 패키지가 설치/수정됩니다", mt: "Python packages will be installed/modified") }
+    var cmdBrew: String { t("Homebrew包管理器", en: "Homebrew package manager", zhHant: "Homebrew套件管理器", ja: "Homebrewパッケージマネージャー", ko: "Homebrew 패키지 관리자", mt: "Homebrew package manager") }
+    var cmdBrewCon: String { t("将安装或修改macOS软件包", en: "macOS packages will be installed/modified", zhHant: "將安裝或修改macOS套件", ja: "macOSパッケージがインストール/変更されます", ko: "macOS 패키지가 설치/수정됩니다", mt: "macOS packages will be installed/modified") }
+    var cmdDocker: String { t("Docker容器管理", en: "Docker container management", zhHant: "Docker容器管理", ja: "Dockerコンテナ管理", ko: "Docker 컨테이너 관리", mt: "Docker container management") }
+    var cmdDockerCon: String { t("容器/镜像将被创建或修改", en: "Containers/images will be created or modified", zhHant: "容器/映像將被建立或修改", ja: "コンテナ/イメージが作成または変更されます", ko: "컨테이너/이미지가 생성 또는 수정됩니다", mt: "Containers/images will be created or modified") }
+    var cmdSudo: String { t("以超级用户权限执行", en: "Execute with superuser privileges", zhHant: "以超級使用者權限執行", ja: "スーパーユーザー権限で実行", ko: "슈퍼유저 권한으로 실행", mt: "Execute with superuser privileges") }
+    var cmdSudoCon: String { t("命令将以提升的系统权限运行", en: "Command runs with elevated system permissions", zhHant: "命令將以提升的系統權限執行", ja: "コマンドが昇格されたシステム権限で実行されます", ko: "명령이 상승된 시스템 권한으로 실행됩니다", mt: "Command runs with elevated system permissions") }
+    var cmdKill: String { t("终止进程", en: "Terminate process", zhHant: "終止程序", ja: "プロセスを終了", ko: "프로세스 종료", mt: "Terminate process") }
+    var cmdKillCon: String { t("正在运行的进程将被停止", en: "Running processes will be stopped", zhHant: "正在執行的程序將被停止", ja: "実行中のプロセスが停止されます", ko: "실행 중인 프로세스가 중지됩니다", mt: "Running processes will be stopped") }
+    var cmdLaunchctl: String { t("启动守护进程控制", en: "Launch daemon control", zhHant: "啟動守護程序控制", ja: "起動デーモン制御", ko: "런치 데몬 제어", mt: "Launch daemon control") }
+    var cmdLaunchctlCon: String { t("系统服务将被加载或卸载", en: "System services will be loaded/unloaded", zhHant: "系統服務將被載入或卸載", ja: "システムサービスがロード/アンロードされます", ko: "시스템 서비스가 로드/언로드됩니다", mt: "System services will be loaded/unloaded") }
+    var cmdDefaults: String { t("macOS默认设置", en: "macOS defaults system", zhHant: "macOS預設設定", ja: "macOSデフォルト設定", ko: "macOS 기본 설정", mt: "macOS defaults system") }
+    var cmdDefaultsCon: String { t("系统/应用偏好设置将被修改", en: "System/application preferences will be modified", zhHant: "系統/應用偏好設定將被修改", ja: "システム/アプリケーション設定が変更されます", ko: "시스템/앱 환경설정이 수정됩니다", mt: "System/application preferences will be modified") }
+    var cmdSymlink: String { t("创建符号链接", en: "Create symbolic link", zhHant: "建立符號連結", ja: "シンボリックリンク作成", ko: "심볼릭 링크 생성", mt: "Create symbolic link") }
+    var cmdSymlinkCon: String { t("将创建指向另一个文件的链接", en: "A link to another file will be created", zhHant: "將建立指向另一個檔案的連結", ja: "別のファイルへのリンクが作成されます", ko: "다른 파일에 대한 링크가 생성됩니다", mt: "A link to another file will be created") }
+    var cmdArchive: String { t("归档/解压文件", en: "Archive/extract files", zhHant: "封存/解壓檔案", ja: "ファイルのアーカイブ/展開", ko: "파일 보관/압축 해제", mt: "Archive/extract files") }
+    var cmdArchiveCon: String { t("文件将被压缩或解压", en: "Files will be compressed or extracted", zhHant: "檔案將被壓縮或解壓", ja: "ファイルが圧縮または展開されます", ko: "파일이 압축되거나 압축이 해제됩니다", mt: "Files will be compressed or extracted") }
+    var cmdZip: String { t("压缩/解压ZIP", en: "Compress/extract ZIP", zhHant: "壓縮/解壓ZIP", ja: "ZIPの圧縮/展開", ko: "ZIP 압축/해제", mt: "Compress/extract ZIP") }
+    var cmdZipCon: String { t("文件将被压缩或解压", en: "Files will be archived or extracted", zhHant: "檔案將被壓縮或解壓", ja: "ファイルがアーカイブまたは展開されます", ko: "파일이 보관되거나 압축 해제됩니다", mt: "Files will be archived or extracted") }
+    var cmdSed: String { t("流编辑器", en: "Stream editor", zhHant: "串流編輯器", ja: "ストリームエディタ", ko: "스트림 에디터", mt: "Stream editor") }
+    var cmdSedCon: String { t("文件内容将被就地修改或流式处理", en: "File contents will be modified in-place or streamed", zhHant: "檔案內容將被就地修改或串流處理", ja: "ファイル内容がインプレースまたはストリームで変更されます", ko: "파일 내용이 제자리에서 수정되거나 스트리밍됩니다", mt: "File contents will be modified in-place or streamed") }
+    var cmdAwk: String { t("文本处理", en: "Text processing", zhHant: "文字處理", ja: "テキスト処理", ko: "텍스트 처리", mt: "Text processing") }
+    var cmdAwkCon: String { t("文本数据将被处理和转换", en: "Text data will be processed and transformed", zhHant: "文字資料將被處理和轉換", ja: "テキストデータが処理・変換されます", ko: "텍스트 데이터가 처리 및 변환됩니다", mt: "Text data will be processed and transformed") }
+    var cmdXcode: String { t("构建Xcode项目", en: "Build Xcode project", zhHant: "構建Xcode專案", ja: "Xcodeプロジェクトをビルド", ko: "Xcode 프로젝트 빌드", mt: "Build Xcode project") }
+    var cmdXcodeCon: String { t("项目将被编译和构建", en: "Project will be compiled and built", zhHant: "專案將被編譯和構建", ja: "プロジェクトがコンパイル・ビルドされます", ko: "프로젝트가 컴파일 및 빌드됩니다", mt: "Project will be compiled and built") }
+    var cmdSwift: String { t("运行Swift", en: "Run Swift", zhHant: "執行Swift", ja: "Swiftを実行", ko: "Swift 실행", mt: "Run Swift") }
+    var cmdSwiftCon: String { t("Swift代码将被编译或执行", en: "Swift code will be compiled or executed", zhHant: "Swift程式碼將被編譯或執行", ja: "Swiftコードがコンパイルまたは実行されます", ko: "Swift 코드가 컴파일되거나 실행됩니다", mt: "Swift code will be compiled or executed") }
+    var cmdPython: String { t("运行Python", en: "Run Python", zhHant: "執行Python", ja: "Pythonを実行", ko: "Python 실행", mt: "Run Python") }
+    var cmdPythonCon: String { t("Python脚本将被执行", en: "Python script will be executed", zhHant: "Python指令碼將被執行", ja: "Pythonスクリプトが実行されます", ko: "Python 스크립트가 실행됩니다", mt: "Python script will be executed") }
+    var cmdNode: String { t("运行Node.js", en: "Run Node.js", zhHant: "執行Node.js", ja: "Node.jsを実行", ko: "Node.js 실행", mt: "Run Node.js") }
+    var cmdNodeCon: String { t("JavaScript将被执行", en: "JavaScript will be executed", zhHant: "JavaScript將被執行", ja: "JavaScriptが実行されます", ko: "JavaScriptが実行されます", mt: "JavaScript will be executed") }
+    var cmdShell: String { t("执行Shell脚本", en: "Execute shell script", zhHant: "執行Shell指令碼", ja: "シェルスクリプトを実行", ko: "셸 스크립트 실행", mt: "Execute shell script") }
+    var cmdShellCon: String { t("Shell命令将被执行", en: "Shell commands will be run", zhHant: "Shell命令將被執行", ja: "シェルコマンドが実行されます", ko: "셸 명령이 실행됩니다", mt: "Shell commands will be run") }
+    var cmdEcho: String { t("输出文本", en: "Print text", zhHant: "輸出文字", ja: "テキストを出力", ko: "텍스트 출력", mt: "Print text") }
+    var cmdEchoCon: String { t("文本将被输出到控制台或文件", en: "Text will be output to console or file", zhHant: "文字將被輸出到控制台或檔案", ja: "テキストがコンソールまたはファイルに出力されます", ko: "텍스트가 콘솔 또는 파일에 출력됩니다", mt: "Text will be output to console or file") }
+    var cmdTouch: String { t("创建空文件", en: "Create empty file", zhHant: "建立空檔案", ja: "空ファイルを作成", ko: "빈 파일 생성", mt: "Create empty file") }
+    var cmdTouchCon: String { t("将创建新的空文件或更新时间戳", en: "New empty file will be created or timestamp updated", zhHant: "將建立新的空檔案或更新時間戳", ja: "新しい空ファイルが作成されるか、タイムスタンプが更新されます", ko: "새 빈 파일이 생성되거나 타임스탬프가 업데이트됩니다", mt: "New empty file will be created or timestamp updated") }
+    var cmdHeadTail: String { t("查看文件头部/尾部", en: "View file head/tail", zhHant: "查看檔案頭部/尾部", ja: "ファイルの先頭/末尾を表示", ko: "파일 헤드/테일 보기", mt: "View file head/tail") }
+    var cmdHeadTailCon: String { t("将显示文件的开头或结尾部分", en: "Beginning or end of file will be displayed", zhHant: "將顯示檔案的開頭或結尾部分", ja: "ファイルの先頭または末尾が表示されます", ko: "파일의 시작 또는 끝 부분이 표시됩니다", mt: "Beginning or end of file will be displayed") }
+    var cmdWc: String { t("统计行数/词数", en: "Count lines/words", zhHant: "統計行數/詞數", ja: "行数/単語数をカウント", ko: "행/단어 수 계산", mt: "Count lines/words") }
+    var cmdWcCon: String { t("将计算文件统计信息", en: "File statistics will be calculated", zhHant: "將計算檔案統計資訊", ja: "ファイルの統計情報が計算されます", ko: "파일 통계가 계산됩니다", mt: "File statistics will be calculated") }
+    var cmdSort: String { t("排序行", en: "Sort lines", zhHant: "排序行", ja: "行をソート", ko: "행 정렬", mt: "Sort lines") }
+    var cmdSortCon: String { t("行将按字母或数字排序", en: "Lines will be sorted alphabetically or numerically", zhHant: "行將按字母或數字排序", ja: "行がアルファベット順または数字順にソートされます", ko: "행이 알파벳 또는 숫자순으로 정렬됩니다", mt: "Lines will be sorted alphabetically or numerically") }
+    var cmdUniq: String { t("去重", en: "Remove duplicates", zhHant: "去除重複", ja: "重複を削除", ko: "중복 제거", mt: "Remove duplicates") }
+    var cmdUniqCon: String { t("相邻的重复行将被移除", en: "Duplicate adjacent lines will be removed", zhHant: "相鄰的重複行將被移除", ja: "隣接する重複行が削除されます", ko: "인접한 중복 행이 제거됩니다", mt: "Duplicate adjacent lines will be removed") }
+    var cmdDiff: String { t("比较文件", en: "Compare files", zhHant: "比較檔案", ja: "ファイルを比較", ko: "파일 비교", mt: "Compare files") }
+    var cmdDiffCon: String { t("将显示文件之间的差异", en: "Differences between files will be shown", zhHant: "將顯示檔案之間的差異", ja: "ファイル間の差異が表示されます", ko: "파일 간의 차이가 표시됩니다", mt: "Differences between files will be shown") }
+    var cmdSafe: String { t("安全操作", en: "Safe operation", zhHant: "安全操作", ja: "安全な操作", ko: "안전한 작업", mt: "Safe operation") }
+    var cmdReadOnly: String { t("只读操作", en: "Read-only operation", zhHant: "唯讀操作", ja: "読み取り専用操作", ko: "읽기 전용 작업", mt: "Read-only operation") }
+    var cmdListDir: String { t("列出目录内容", en: "List directory contents", zhHant: "列出目錄內容", ja: "ディレクトリ内容を一覧", ko: "디렉토리 내용 나열", mt: "List directory contents") }
+    var cmdLocate: String { t("定位命令路径", en: "Locate command path", zhHant: "定位命令路徑", ja: "コマンドパスを検索", ko: "명령 경로 찾기", mt: "Locate command path") }
+    var cmdListProc: String { t("列出进程", en: "List processes", zhHant: "列出程序", ja: "プロセス一覧", ko: "프로세스 나열", mt: "List processes") }
+    var cmdDiskFree: String { t("磁盘剩余空间", en: "Disk free space", zhHant: "磁碟剩餘空間", ja: "ディスク空き容量", ko: "디스크 여유 공간", mt: "Disk free space") }
+    var cmdDiskUsage: String { t("磁盘使用量", en: "Disk usage", zhHant: "磁碟使用量", ja: "ディスク使用量", ko: "디스크 사용량", mt: "Disk usage") }
 }

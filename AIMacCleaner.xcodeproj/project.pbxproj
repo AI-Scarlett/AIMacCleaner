@@ -26,6 +26,39 @@
 		DD33EE44FF55AA66BB77CC88 /* IntelMigrationTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE44FF55AA66BB77CC88DD99 /* IntelMigrationTab.swift */; };
 		GA1HB2IC3JD4KE5LF6MG7NH8 /* AgentGuardFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = HA2IB3JC4KD5LE6MF7NG8OI9 /* AgentGuardFeature.swift */; };
 		IA3JB4KC5LD6ME7NF8OG9PJ0 /* AgentGuardTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = JA4KC5LD6ME7NF8OG9PH0QJ1 /* AgentGuardTab.swift */; };
+		C7D8E9F0A1B2C3D4E5F6A7B8 /* SandboxPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E9F0A1B2C3D4E5F6A7B8C9 /* SandboxPaths.swift */; };
+		E1F2A3B4C5D6E7F8091A2B3C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F2A3B4C5D6E7F8091A2B3C4D /* PrivacyInfo.xcprivacy */; };
+		B117E0A1AEF225339E28D092 /* AgentEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F117E0A1AEF225339E28D092 /* AgentEvent.swift */; };
+		B1CB3C538A176AD4ED450956 /* AgentSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CB3C538A176AD4ED450956 /* AgentSession.swift */; };
+		B1F179E6445DAA91CF594B73 /* AgentAdapterProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F179E6445DAA91CF594B73 /* AgentAdapterProtocol.swift */; };
+		B16E798A4C6A4134CB96A86E /* AgentProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16E798A4C6A4134CB96A86E /* AgentProfile.swift */; };
+		B11489EBA07AFF91901E5BDC /* RemoteSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11489EBA07AFF91901E5BDC /* RemoteSession.swift */; };
+		B1712D8634BF4A5E29CE347D /* HookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1712D8634BF4A5E29CE347D /* HookServer.swift */; };
+		B19D9C30A5F322BBB46336EF /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19D9C30A5F322BBB46336EF /* SessionStore.swift */; };
+		B1743DD40B02E12CB2B88BD8 /* DisplayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1743DD40B02E12CB2B88BD8 /* DisplayController.swift */; };
+		B1CB1C1EC5D8A8B7339E9AFD /* BridgeCLI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CB1C1EC5D8A8B7339E9AFD /* BridgeCLI.swift */; };
+		B175BC6C9C2E7D3F2CACDC8F /* HookInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = F175BC6C9C2E7D3F2CACDC8F /* HookInstaller.swift */; };
+		B19948494C5C9A903E5553A2 /* AgentRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19948494C5C9A903E5553A2 /* AgentRegistry.swift */; };
+		B147EC1A687B39963FE96595 /* ClaudeCodeAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F147EC1A687B39963FE96595 /* ClaudeCodeAdapter.swift */; };
+		B12F105F2E5B94DAD7EF232A /* CodexGeminiCursorAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F12F105F2E5B94DAD7EF232A /* CodexGeminiCursorAdapter.swift */; };
+		B145B686AD7E5C0C3633409D /* TraeQoderCodeBuddyAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F145B686AD7E5C0C3633409D /* TraeQoderCodeBuddyAdapter.swift */; };
+		B1436AA450765168B656E482 /* RemainingAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1436AA450765168B656E482 /* RemainingAdapters.swift */; };
+		B16326838149DB3E2EEAC577 /* IslandViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16326838149DB3E2EEAC577 /* IslandViewModel.swift */; };
+		B1644250F9446255A8A3A49C /* SessionsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1644250F9446255A8A3A49C /* SessionsViewModel.swift */; };
+		B1CDA887DE2C3C9AF8CA6AD1 /* IslandView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CDA887DE2C3C9AF8CA6AD1 /* IslandView.swift */; };
+		B1D3658381C75AE6F3229EC4 /* IslandWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D3658381C75AE6F3229EC4 /* IslandWindow.swift */; };
+		B1F50987BDD1446308F935DB /* PermissionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F50987BDD1446308F935DB /* PermissionSheet.swift */; };
+		B13BBC98F9975B3EA1519592 /* QuestionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13BBC98F9975B3EA1519592 /* QuestionSheet.swift */; };
+		B153B9A761DC9ACB510520EA /* PlanApprovalSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F153B9A761DC9ACB510520EA /* PlanApprovalSheet.swift */; };
+		B18AAFE634153E0AB06DA48E /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18AAFE634153E0AB06DA48E /* SessionDetailView.swift */; };
+		B1392AC20DE265F58CE10AB5 /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1392AC20DE265F58CE10AB5 /* SettingsViews.swift */; };
+		B13E668BF2E559285340D67D /* AgentCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13E668BF2E559285340D67D /* AgentCenterView.swift */; };
+		B1A95FA8F48DAA383602B812 /* SoundEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A95FA8F48DAA383602B812 /* SoundEngine.swift */; };
+		B18AAF155FE208940D0068B0 /* WebhookNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18AAF155FE208940D0068B0 /* WebhookNotifier.swift */; };
+		B1F081C0D25DCA024DE764FB /* RemoteManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F081C0D25DCA024DE764FB /* RemoteManager.swift */; };
+		B114AC07FB1218B1D5F4C9AC /* GlobalShortcutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F114AC07FB1218B1D5F4C9AC /* GlobalShortcutService.swift */; };
+		B1DE3880A0446E246F14E423 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1DE3880A0446E246F14E423 /* NetworkMonitor.swift */; };
+		B116459B8B7913107AAE0C86 /* ConversationWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -48,9 +81,42 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		EE44FF55AA66BB77CC88DD99 /* IntelMigrationTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntelMigrationTab.swift; sourceTree = "<group>"; };
 		HA2IB3JC4KD5LE6MF7NG8OI9 /* AgentGuardFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGuardFeature.swift; sourceTree = "<group>"; };
 		JA4KC5LD6ME7NF8OG9PH0QJ1 /* AgentGuardTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGuardTab.swift; sourceTree = "<group>"; };
+		D8E9F0A1B2C3D4E5F6A7B8C9 /* SandboxPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandboxPaths.swift; sourceTree = "<group>"; };
+		F2A3B4C5D6E7F8091A2B3C4D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		FF55AA66BB77CC88DD99EE00 /* AIMacCleaner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIMacCleaner.entitlements; sourceTree = "<group>"; };
 		FD0E8A971151EDD2952E2662 /* AIMacCleaner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgentGuard.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AABBCCDDEEFF001122334455 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F117E0A1AEF225339E28D092 /* AgentEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/AgentEvent.swift; sourceTree = "<group>"; };
+		F1CB3C538A176AD4ED450956 /* AgentSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/AgentSession.swift; sourceTree = "<group>"; };
+		F1F179E6445DAA91CF594B73 /* AgentAdapterProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/AgentAdapterProtocol.swift; sourceTree = "<group>"; };
+		F16E798A4C6A4134CB96A86E /* AgentProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/AgentProfile.swift; sourceTree = "<group>"; };
+		F11489EBA07AFF91901E5BDC /* RemoteSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/RemoteSession.swift; sourceTree = "<group>"; };
+		F1712D8634BF4A5E29CE347D /* HookServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Engine/HookServer.swift; sourceTree = "<group>"; };
+		F19D9C30A5F322BBB46336EF /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Engine/SessionStore.swift; sourceTree = "<group>"; };
+		F1743DD40B02E12CB2B88BD8 /* DisplayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Engine/DisplayController.swift; sourceTree = "<group>"; };
+		F1CB1C1EC5D8A8B7339E9AFD /* BridgeCLI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Engine/BridgeCLI.swift; sourceTree = "<group>"; };
+		F175BC6C9C2E7D3F2CACDC8F /* HookInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Adapters/HookInstaller.swift; sourceTree = "<group>"; };
+		F19948494C5C9A903E5553A2 /* AgentRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Adapters/AgentRegistry.swift; sourceTree = "<group>"; };
+		F147EC1A687B39963FE96595 /* ClaudeCodeAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Adapters/ClaudeCodeAdapter.swift; sourceTree = "<group>"; };
+		F12F105F2E5B94DAD7EF232A /* CodexGeminiCursorAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Adapters/CodexGeminiCursorAdapter.swift; sourceTree = "<group>"; };
+		F145B686AD7E5C0C3633409D /* TraeQoderCodeBuddyAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Adapters/TraeQoderCodeBuddyAdapter.swift; sourceTree = "<group>"; };
+		F1436AA450765168B656E482 /* RemainingAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Adapters/RemainingAdapters.swift; sourceTree = "<group>"; };
+		F16326838149DB3E2EEAC577 /* IslandViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModels/IslandViewModel.swift; sourceTree = "<group>"; };
+		F1644250F9446255A8A3A49C /* SessionsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModels/SessionsViewModel.swift; sourceTree = "<group>"; };
+		F1CDA887DE2C3C9AF8CA6AD1 /* IslandView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Island/IslandView.swift; sourceTree = "<group>"; };
+		F1D3658381C75AE6F3229EC4 /* IslandWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Island/IslandWindow.swift; sourceTree = "<group>"; };
+		F1F50987BDD1446308F935DB /* PermissionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Island/PermissionSheet.swift; sourceTree = "<group>"; };
+		F13BBC98F9975B3EA1519592 /* QuestionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Island/QuestionSheet.swift; sourceTree = "<group>"; };
+		F153B9A761DC9ACB510520EA /* PlanApprovalSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Island/PlanApprovalSheet.swift; sourceTree = "<group>"; };
+		F18AAFE634153E0AB06DA48E /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Island/SessionDetailView.swift; sourceTree = "<group>"; };
+		F1392AC20DE265F58CE10AB5 /* SettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Settings/SettingsViews.swift; sourceTree = "<group>"; };
+		F13E668BF2E559285340D67D /* AgentCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/AgentCenter/AgentCenterView.swift; sourceTree = "<group>"; };
+		F1A95FA8F48DAA383602B812 /* SoundEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/SoundEngine.swift; sourceTree = "<group>"; };
+		F18AAF155FE208940D0068B0 /* WebhookNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/WebhookNotifier.swift; sourceTree = "<group>"; };
+		F1F081C0D25DCA024DE764FB /* RemoteManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/RemoteManager.swift; sourceTree = "<group>"; };
+		F114AC07FB1218B1D5F4C9AC /* GlobalShortcutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/GlobalShortcutService.swift; sourceTree = "<group>"; };
+		F1DE3880A0446E246F14E423 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/NetworkMonitor.swift; sourceTree = "<group>"; };
+		F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ConversationWatcher.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -94,6 +160,39 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				F15EC33FFB79FB101CE80521 /* ScannerService.swift */,
 				HA2IB3JC4KD5LE6MF7NG8OI9 /* AgentGuardFeature.swift */,
 				JA4KC5LD6ME7NF8OG9PH0QJ1 /* AgentGuardTab.swift */,
+				D8E9F0A1B2C3D4E5F6A7B8C9 /* SandboxPaths.swift */,
+				F2A3B4C5D6E7F8091A2B3C4D /* PrivacyInfo.xcprivacy */,
+				F117E0A1AEF225339E28D092 /* AgentEvent.swift */,
+				F1CB3C538A176AD4ED450956 /* AgentSession.swift */,
+				F1F179E6445DAA91CF594B73 /* AgentAdapterProtocol.swift */,
+				F16E798A4C6A4134CB96A86E /* AgentProfile.swift */,
+				F11489EBA07AFF91901E5BDC /* RemoteSession.swift */,
+				F1712D8634BF4A5E29CE347D /* HookServer.swift */,
+				F19D9C30A5F322BBB46336EF /* SessionStore.swift */,
+				F1743DD40B02E12CB2B88BD8 /* DisplayController.swift */,
+				F1CB1C1EC5D8A8B7339E9AFD /* BridgeCLI.swift */,
+				F175BC6C9C2E7D3F2CACDC8F /* HookInstaller.swift */,
+				F19948494C5C9A903E5553A2 /* AgentRegistry.swift */,
+				F147EC1A687B39963FE96595 /* ClaudeCodeAdapter.swift */,
+				F12F105F2E5B94DAD7EF232A /* CodexGeminiCursorAdapter.swift */,
+				F145B686AD7E5C0C3633409D /* TraeQoderCodeBuddyAdapter.swift */,
+				F1436AA450765168B656E482 /* RemainingAdapters.swift */,
+				F16326838149DB3E2EEAC577 /* IslandViewModel.swift */,
+				F1644250F9446255A8A3A49C /* SessionsViewModel.swift */,
+				F1CDA887DE2C3C9AF8CA6AD1 /* IslandView.swift */,
+				F1D3658381C75AE6F3229EC4 /* IslandWindow.swift */,
+				F1F50987BDD1446308F935DB /* PermissionSheet.swift */,
+				F13BBC98F9975B3EA1519592 /* QuestionSheet.swift */,
+				F153B9A761DC9ACB510520EA /* PlanApprovalSheet.swift */,
+				F18AAFE634153E0AB06DA48E /* SessionDetailView.swift */,
+				F1392AC20DE265F58CE10AB5 /* SettingsViews.swift */,
+				F13E668BF2E559285340D67D /* AgentCenterView.swift */,
+				F1A95FA8F48DAA383602B812 /* SoundEngine.swift */,
+				F18AAF155FE208940D0068B0 /* WebhookNotifier.swift */,
+				F1F081C0D25DCA024DE764FB /* RemoteManager.swift */,
+				F114AC07FB1218B1D5F4C9AC /* GlobalShortcutService.swift */,
+				F1DE3880A0446E246F14E423 /* NetworkMonitor.swift */,
+				F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */,
 			);
 			path = AIMacCleaner;
 			sourceTree = "<group>";
@@ -158,6 +257,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 			buildActionMask = 2147483647;
 			files = (
 				CBCF198FD371A93A86185BEC /* Assets.xcassets in Resources */,
+				E1F2A3B4C5D6E7F8091A2B3C /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -185,6 +285,38 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				BE25C05BB068770416C5ED04 /* ScannerService.swift in Sources */,
 				GA1HB2IC3JD4KE5LF6MG7NH8 /* AgentGuardFeature.swift in Sources */,
 				IA3JB4KC5LD6ME7NF8OG9PJ0 /* AgentGuardTab.swift in Sources */,
+				C7D8E9F0A1B2C3D4E5F6A7B8 /* SandboxPaths.swift in Sources */,
+				B117E0A1AEF225339E28D092 /* AgentEvent.swift in Sources */,
+				B1CB3C538A176AD4ED450956 /* AgentSession.swift in Sources */,
+				B1F179E6445DAA91CF594B73 /* AgentAdapterProtocol.swift in Sources */,
+				B16E798A4C6A4134CB96A86E /* AgentProfile.swift in Sources */,
+				B11489EBA07AFF91901E5BDC /* RemoteSession.swift in Sources */,
+				B1712D8634BF4A5E29CE347D /* HookServer.swift in Sources */,
+				B19D9C30A5F322BBB46336EF /* SessionStore.swift in Sources */,
+				B1743DD40B02E12CB2B88BD8 /* DisplayController.swift in Sources */,
+				B1CB1C1EC5D8A8B7339E9AFD /* BridgeCLI.swift in Sources */,
+				B175BC6C9C2E7D3F2CACDC8F /* HookInstaller.swift in Sources */,
+				B19948494C5C9A903E5553A2 /* AgentRegistry.swift in Sources */,
+				B147EC1A687B39963FE96595 /* ClaudeCodeAdapter.swift in Sources */,
+				B12F105F2E5B94DAD7EF232A /* CodexGeminiCursorAdapter.swift in Sources */,
+				B145B686AD7E5C0C3633409D /* TraeQoderCodeBuddyAdapter.swift in Sources */,
+				B1436AA450765168B656E482 /* RemainingAdapters.swift in Sources */,
+				B16326838149DB3E2EEAC577 /* IslandViewModel.swift in Sources */,
+				B1644250F9446255A8A3A49C /* SessionsViewModel.swift in Sources */,
+				B1CDA887DE2C3C9AF8CA6AD1 /* IslandView.swift in Sources */,
+				B1D3658381C75AE6F3229EC4 /* IslandWindow.swift in Sources */,
+				B1F50987BDD1446308F935DB /* PermissionSheet.swift in Sources */,
+				B13BBC98F9975B3EA1519592 /* QuestionSheet.swift in Sources */,
+				B153B9A761DC9ACB510520EA /* PlanApprovalSheet.swift in Sources */,
+				B18AAFE634153E0AB06DA48E /* SessionDetailView.swift in Sources */,
+				B1392AC20DE265F58CE10AB5 /* SettingsViews.swift in Sources */,
+				B13E668BF2E559285340D67D /* AgentCenterView.swift in Sources */,
+				B1A95FA8F48DAA383602B812 /* SoundEngine.swift in Sources */,
+				B18AAF155FE208940D0068B0 /* WebhookNotifier.swift in Sources */,
+				B1F081C0D25DCA024DE764FB /* RemoteManager.swift in Sources */,
+				B114AC07FB1218B1D5F4C9AC /* GlobalShortcutService.swift in Sources */,
+				B1DE3880A0446E246F14E423 /* NetworkMonitor.swift in Sources */,
+				B116459B8B7913107AAE0C86 /* ConversationWatcher.swift in Sources */,
 			2A3B4C5D6E7F8A9B0C1D2E3F /* Theme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -196,12 +328,12 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_STYLE = Manual;
-				COMBINE_HIDPI_IMAGES = YES;
-				CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_HARDENED_RUNTIME = NO;
+					CODE_SIGN_STYLE = Automatic;
+					COMBINE_HIDPI_IMAGES = YES;
+					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
+					CURRENT_PROJECT_VERSION = 4;
+					DEVELOPMENT_TEAM = UQ87N2WZ76;
+					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
 			INFOPLIST_KEY_CFBundleDisplayName = AgentGuard;
 			INFOPLIST_KEY_LSMinimumSystemVersion = 13.0;
@@ -210,7 +342,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 1.6.3;
+			MARKETING_VERSION = 2.0.0;
 			OPTIMIZATION_LEVEL = "-O";
 				PRODUCT_BUNDLE_IDENTIFIER = com.aimaccleaner.app;
 				PRODUCT_NAME = AgentGuard;
@@ -342,12 +474,12 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_STYLE = Manual;
-				COMBINE_HIDPI_IMAGES = YES;
-				CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_HARDENED_RUNTIME = NO;
+					CODE_SIGN_STYLE = Automatic;
+					COMBINE_HIDPI_IMAGES = YES;
+					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
+					CURRENT_PROJECT_VERSION = 4;
+					DEVELOPMENT_TEAM = UQ87N2WZ76;
+					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
 			INFOPLIST_KEY_CFBundleDisplayName = AgentGuard;
 			INFOPLIST_KEY_LSMinimumSystemVersion = 13.0;
@@ -356,7 +488,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 1.6.4;
+			MARKETING_VERSION = 2.0.0;
 			OPTIMIZATION_LEVEL = "-Onone";
 				PRODUCT_BUNDLE_IDENTIFIER = com.aimaccleaner.app;
 				PRODUCT_NAME = AgentGuard;

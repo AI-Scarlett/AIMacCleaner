@@ -1,9 +1,55 @@
 import Foundation
 import Combine
-import UserNotifications
+@preconcurrency import UserNotifications
 import AppKit
 import IOKit
 import IOKit.ps
+import Security
+
+private enum KeychainStore {
+    private static let service = "com.aimaccleaner.app.ai"
+    private static let account = "default-api-key"
+
+    static func loadAPIKey() -> String? {
+        var query = baseQuery()
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data,
+              let key = String(data: data, encoding: .utf8),
+              !key.isEmpty else {
+            return nil
+        }
+        return key
+    }
+
+    static func saveAPIKey(_ key: String) {
+        let data = Data(key.utf8)
+        var query = baseQuery()
+        let attributes: [String: Any] = [kSecValueData as String: data]
+
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            query[kSecValueData as String] = data
+            query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            SecItemAdd(query as CFDictionary, nil)
+        }
+    }
+
+    static func deleteAPIKey() {
+        SecItemDelete(baseQuery() as CFDictionary)
+    }
+
+    private static func baseQuery() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+    }
+}
 
 @MainActor
 class ScannerService: ObservableObject {
@@ -20,12 +66,16 @@ class ScannerService: ObservableObject {
     @Published var isScanningApps = false
 
     private var ignoredIds: Set<String> = []
-    private let ignoreFilePath = NSHomeDirectory() + "/.aimaccleaner_ignore.json"
-    private let aiConfigFilePath = NSHomeDirectory() + "/.aimaccleaner_ai.json"
+    private var ignoreFilePath: String { SandboxPaths.shared.ignoreListPath }
+    private var aiConfigFilePath: String { SandboxPaths.shared.aiConfigPath }
+    private var scanBookmarksPath: String { SandboxPaths.shared.scanBookmarksPath }
+    private var authorizedScanRoots: Set<String> = []
+    private var hasRestoredScanBookmarks = false
 
     init() {
         loadIgnores()
         loadAIConfigFromDisk()
+        operationMonitor.guardFeature = guardFeature
         diskInfo = getDiskInfoNative()
         hardwareInfo = safeGetHardwareInfo()
     }
@@ -54,7 +104,7 @@ class ScannerService: ObservableObject {
     }
 
     private func getDiskInfoFallback() -> DiskInfo? {
-        for path in ["/System/Volumes/Data", NSHomeDirectory(), "/"] {
+        for path in ["/System/Volumes/Data", SandboxPaths.realHomeDirectory, "/"] {
             let url = URL(fileURLWithPath: path)
             let keys: Set<URLResourceKey> = [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey]
             if let values = try? url.resourceValues(forKeys: keys),
@@ -272,7 +322,7 @@ class ScannerService: ObservableObject {
         guard let powerSourcesInfo = IOPSCopyPowerSourcesInfo() else { return }
         let powerSources = powerSourcesInfo.takeRetainedValue()
         guard let powerSourcesList = IOPSCopyPowerSourcesList(powerSources) else { return }
-        let list = powerSourcesList.takeRetainedValue() as? [CFTypeRef] ?? []
+        let list = powerSourcesList.takeRetainedValue() as [CFTypeRef]
 
         for ps in list {
             guard let desc = IOPSGetPowerSourceDescription(powerSources, ps)?.takeUnretainedValue() as? [String: Any] else { continue }
@@ -330,8 +380,7 @@ class ScannerService: ObservableObject {
             let ifaName = addr.ifa_name
             guard let namePtr = ifaName else { ptr = addr.ifa_next; continue }
 
-            let name: String
-            do { name = String(cString: namePtr) } catch { ptr = addr.ifa_next; continue }
+            let name = String(cString: namePtr)
 
             if name != "lo0",
                let ifaAddr = addr.ifa_addr,
@@ -368,8 +417,17 @@ class ScannerService: ObservableObject {
     func scanLocal() async {
         isScanning = true
         errorMessage = nil
+        restoreScanAccessFromBookmarks()
+
+        if authorizedScanRoots.isEmpty, !requestLocalScanAccess() {
+            errorMessage = localizer?.selectMonitorDirs ?? "Please select folders to scan"
+            isScanning = false
+            return
+        }
 
         let savedIgnores = ignoredIds
+        let roots = authorizedScanRoots
+        let currentLocalizer = localizer
 
         let items = await Task.detached(priority: .userInitiated) {
             var results: [ScanItem] = []
@@ -381,10 +439,11 @@ class ScannerService: ObservableObject {
                 var realPath = ""
 
                 for path in rule.paths {
-                    let expanded = NSString(string: path).expandingTildeInPath
+                    let expanded = Self.expandUserPath(path)
                     var isDir: ObjCBool = false
 
                     guard fm.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue else { continue }
+                    guard Self.isPathWithinAuthorizedRoots(expanded, roots: roots) else { continue }
 
                     realPath = expanded
                     let (size, count) = Self.calculateDirectorySizeStatic(at: expanded)
@@ -393,14 +452,15 @@ class ScannerService: ObservableObject {
                 }
 
                 guard totalSize > 0 else { continue }
+                let localizedRule = currentLocalizer?.localizedScanRule(rule)
 
                 results.append(ScanItem(
                     id: rule.id,
-                    name: rule.name,
-                    category: rule.category,
-                    app: rule.app,
+                    name: localizedRule?.name ?? rule.name,
+                    category: localizedRule?.category ?? rule.category,
+                    app: localizedRule?.app ?? rule.app,
                     risk: rule.risk,
-                    riskDesc: rule.riskDesc,
+                    riskDesc: localizedRule?.riskDesc ?? rule.riskDesc,
                     path: rule.paths.first ?? "",
                     realPath: realPath,
                     size: totalSize,
@@ -418,6 +478,84 @@ class ScannerService: ObservableObject {
         scanItems = items
         refreshDiskInfo()
         isScanning = false
+    }
+
+    nonisolated private static func expandUserPath(_ path: String) -> String {
+        if path == "~" { return SandboxPaths.realHomeDirectory }
+        if path.hasPrefix("~/") {
+            return SandboxPaths.realHomeDirectory + String(path.dropFirst())
+        }
+        return NSString(string: path).expandingTildeInPath
+    }
+
+    nonisolated private static func isPathWithinAuthorizedRoots(_ path: String, roots: Set<String>) -> Bool {
+        guard !roots.isEmpty else { return false }
+        let normalized = URL(fileURLWithPath: path).standardizedFileURL.path
+        for root in roots {
+            let r = URL(fileURLWithPath: root).standardizedFileURL.path
+            if normalized == r || normalized.hasPrefix(r + "/") { return true }
+        }
+        return false
+    }
+
+    private func restoreScanAccessFromBookmarks() {
+        guard !hasRestoredScanBookmarks else { return }
+        defer { hasRestoredScanBookmarks = true }
+
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: scanBookmarksPath)),
+              let bookmarks = try? JSONDecoder().decode([String: Data].self, from: data) else { return }
+
+        var restored: Set<String> = []
+        var refreshed = bookmarks
+
+        for (path, bookmark) in bookmarks {
+            do {
+                var stale = false
+                let url = try URL(resolvingBookmarkData: bookmark, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale)
+                guard url.startAccessingSecurityScopedResource() else { continue }
+                restored.insert(url.path)
+                if stale, let newBookmark = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
+                    refreshed.removeValue(forKey: path)
+                    refreshed[url.path] = newBookmark
+                }
+            } catch {
+                continue
+            }
+        }
+
+        if let encoded = try? JSONEncoder().encode(refreshed) {
+            try? encoded.write(to: URL(fileURLWithPath: scanBookmarksPath))
+        }
+        authorizedScanRoots = restored
+    }
+
+    private func requestLocalScanAccess() -> Bool {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.directoryURL = URL(fileURLWithPath: SandboxPaths.realHomeDirectory)
+        panel.prompt = localizer?.localScan ?? "Local Scan"
+        panel.message = localizer?.selectMonitorDirs ?? "Select folders to scan (Home or Library is recommended)"
+
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return false }
+
+        var bookmarks: [String: Data] = [:]
+        for url in panel.urls {
+            _ = url.startAccessingSecurityScopedResource()
+            do {
+                let bookmark = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+                bookmarks[url.path] = bookmark
+                authorizedScanRoots.insert(url.path)
+            } catch {
+                print("[AIMacCleaner] Failed to create scan bookmark for \(url.path): \(error)")
+            }
+        }
+
+        if !bookmarks.isEmpty, let encoded = try? JSONEncoder().encode(bookmarks) {
+            try? encoded.write(to: URL(fileURLWithPath: scanBookmarksPath))
+        }
+        return !authorizedScanRoots.isEmpty
     }
 
     nonisolated private static func calculateDirectorySizeStatic(at path: String) -> (Int64, Int) {
@@ -460,11 +598,11 @@ class ScannerService: ObservableObject {
             var pathsToDelete: [String] = []
 
             if let rule = SCAN_RULES.first(where: { $0.id == item.id }) {
-                pathsToDelete = rule.paths.map { NSString(string: $0).expandingTildeInPath }
+                pathsToDelete = rule.paths.map { Self.expandUserPath($0) }
             } else if let realPath = item.realPath, !realPath.isEmpty {
                 pathsToDelete = [realPath]
             } else {
-                pathsToDelete = [NSString(string: item.path).expandingTildeInPath]
+                pathsToDelete = [Self.expandUserPath(item.path)]
             }
 
             for expanded in pathsToDelete {
@@ -529,19 +667,43 @@ class ScannerService: ObservableObject {
     // MARK: - AI Config
 
     func loadAIConfigFromDisk() {
+        let storedKey = KeychainStore.loadAPIKey()
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: aiConfigFilePath)),
-              let config = try? JSONDecoder().decode(AIConfig.self, from: data) else {
-            aiConfig = AIConfig(apiBase: "https://api.deepseek.com", apiKey: nil, model: "deepseek-chat", hasKey: false)
+              var config = try? JSONDecoder().decode(AIConfig.self, from: data) else {
+            aiConfig = AIConfig(apiBase: "https://api.openai.com", apiKey: storedKey, model: "gpt-4o-mini", hasKey: storedKey?.isEmpty == false)
             return
         }
-        aiConfig = config
+
+        if let legacyKey = config.apiKey, !legacyKey.isEmpty {
+            KeychainStore.saveAPIKey(legacyKey)
+            config = AIConfig(apiBase: config.apiBase, apiKey: nil, model: config.model, hasKey: true)
+            saveAIConfigMetadata(config)
+        }
+
+        let apiKey = KeychainStore.loadAPIKey()
+        aiConfig = AIConfig(
+            apiBase: config.apiBase ?? "https://api.openai.com",
+            apiKey: apiKey,
+            model: config.model ?? "gpt-4o-mini",
+            hasKey: apiKey?.isEmpty == false
+        )
     }
 
     func saveAIConfig(apiBase: String, apiKey: String, model: String) {
-        let config = AIConfig(apiBase: apiBase, apiKey: apiKey, model: model, hasKey: !apiKey.isEmpty)
+        if apiKey.isEmpty {
+            KeychainStore.deleteAPIKey()
+        } else {
+            KeychainStore.saveAPIKey(apiKey)
+        }
+
+        let config = AIConfig(apiBase: apiBase, apiKey: nil, model: model, hasKey: !apiKey.isEmpty)
+        saveAIConfigMetadata(config)
+        aiConfig = AIConfig(apiBase: apiBase, apiKey: apiKey.isEmpty ? nil : apiKey, model: model, hasKey: !apiKey.isEmpty)
+    }
+
+    private func saveAIConfigMetadata(_ config: AIConfig) {
         guard let data = try? JSONEncoder().encode(config) else { return }
         try? data.write(to: URL(fileURLWithPath: aiConfigFilePath))
-        aiConfig = config
     }
 
     // MARK: - AI Scan
@@ -598,7 +760,7 @@ class ScannerService: ObservableObject {
             let appDirs = [
                 "/Applications",
                 "/Applications/Utilities",
-                NSHomeDirectory() + "/Applications",
+                SandboxPaths.realHomeDirectory + "/Applications",
             ]
 
             for appDir in appDirs {
@@ -616,7 +778,7 @@ class ScannerService: ObservableObject {
             self.scanCLIAndAgents(fm: fm, results: &results, seen: &seenIds)
             self.scanDynamicCLITools(fm: fm, results: &results, seen: &seenIds)
 
-            let home = NSHomeDirectory()
+            let home = SandboxPaths.realHomeDirectory
             for i in results.indices where results[i].appType == .other && results[i].appPath.hasSuffix(".app") {
                 let plistPath = (results[i].appPath as NSString).appendingPathComponent("Contents/Info.plist")
                 guard let plistData = fm.contents(atPath: plistPath),
@@ -699,7 +861,7 @@ class ScannerService: ObservableObject {
             }
 
             let (appSize, _) = Self.calculateDirectorySizeStatic(at: appPath)
-            let home = NSHomeDirectory()
+            let home = SandboxPaths.realHomeDirectory
             var cacheSize: Int64 = 0
             var dataSize: Int64 = 0
 
@@ -725,7 +887,7 @@ class ScannerService: ObservableObject {
                 id: bundleId,
                 name: appName,
                 displayName: appName,
-                desc: "\(appName) 应用程序",
+                desc: "\(appName) Application",
                 bundleId: bundleId,
                 appPath: appPath,
                 iconPath: iconPath,
@@ -735,9 +897,9 @@ class ScannerService: ObservableObject {
                 dataSize: dataSize,
                 totalSize: appSize + cacheSize + dataSize,
                 appType: .app,
-                subCategory: "应用",
+                subCategory: "Apps",
                 risk: "safe",
-                riskDesc: "已安装的应用程序",
+                riskDesc: "Installed Application",
                 canUninstall: true,
                 canClean: cacheSize > 0,
                 canReset: cacheSize > 0 || dataSize > 0
@@ -746,7 +908,7 @@ class ScannerService: ObservableObject {
     }
 
     nonisolated private func scanCLIAndAgents(fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
 
         struct CLITool {
             let name: String
@@ -765,8 +927,8 @@ class ScannerService: ObservableObject {
 
         let cliTools: [CLITool] = [
             CLITool(name: "Homebrew", displayName: "Homebrew 包管理器", desc: "macOS/Linux 包管理工具，通过终端安装软件", id: "cli.homebrew", paths: ["/opt/homebrew", "/usr/local/Cellar"], appType: .other, subCategory: "CLI", risk: "caution", riskDesc: "卸载后所有通过brew安装的工具将不可用", canUninstall: true, canClean: true, canReset: false),
-            CLITool(name: "Node.js / npm", displayName: "Node.js 运行环境", desc: "JavaScript 运行时和包管理器", id: "cli.nodejs", paths: ["\(home)/.nvm", "\(home)/.npm", "\(home)/.pnpm-store", "\(home)/.yarn"], appType: .dependency, subCategory: "包管理", risk: "caution", riskDesc: "卸载后Node.js项目将无法运行", canUninstall: true, canClean: true, canReset: true),
-            CLITool(name: "Python (pyenv)", displayName: "Python 版本管理", desc: "Python 多版本管理工具和pip缓存", id: "cli.pyenv", paths: ["\(home)/.pyenv", "\(home)/.cache/pip"], appType: .dependency, subCategory: "包管理", risk: "caution", riskDesc: "卸载后Python项目将无法运行", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "Node.js / npm", displayName: "Node.js 运行环境", desc: "JavaScript 运行时和包管理器", id: "cli.nodejs", paths: ["\(home)/.nvm", "\(home)/.npm", "\(home)/.pnpm-store", "\(home)/.yarn", "\(home)/Library/pnpm", "/opt/homebrew/lib/node_modules", "/usr/local/lib/node_modules"], appType: .dependency, subCategory: "包管理", risk: "caution", riskDesc: "卸载后Node.js项目将无法运行", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "Python (pyenv)", displayName: "Python 版本管理", desc: "Python 多版本管理工具和pip缓存", id: "cli.pyenv", paths: ["\(home)/.pyenv", "\(home)/.cache/pip", "\(home)/Library/Python", "\(home)/.local/pipx", "\(home)/.conda"], appType: .dependency, subCategory: "包管理", risk: "caution", riskDesc: "卸载后Python项目将无法运行", canUninstall: true, canClean: true, canReset: true),
             CLITool(name: "Rust (rustup)", displayName: "Rust 工具链", desc: "Rust 编程语言和Cargo包管理器", id: "cli.rustup", paths: ["\(home)/.rustup", "\(home)/.cargo"], appType: .dependency, subCategory: "包管理", risk: "caution", riskDesc: "卸载后Rust项目将无法编译", canUninstall: true, canClean: true, canReset: false),
             CLITool(name: "Go", displayName: "Go 语言环境", desc: "Go 编程语言和构建缓存", id: "cli.go", paths: ["\(home)/go", "\(home)/.cache/go-build"], appType: .dependency, subCategory: "包管理", risk: "caution", riskDesc: "卸载后Go项目将无法编译", canUninstall: true, canClean: true, canReset: false),
             CLITool(name: "Docker", displayName: "Docker 容器", desc: "容器化平台，包含镜像和容器数据", id: "cli.docker", paths: ["\(home)/Library/Containers/com.docker.docker", "\(home)/.docker"], appType: .other, subCategory: "CLI", risk: "caution", riskDesc: "卸载后所有Docker容器和镜像将丢失", canUninstall: true, canClean: true, canReset: true),
@@ -778,11 +940,11 @@ class ScannerService: ObservableObject {
             CLITool(name: "豆包", displayName: "豆包 AI 助手", desc: "字节跳动AI助手", id: "agent.doubao", paths: ["/Applications/豆包.app"], appType: .other, subCategory: "AI Agent", risk: "safe", riskDesc: "可安全卸载", canUninstall: true, canClean: true, canReset: true),
             CLITool(name: "通义千问", displayName: "通义千问 AI", desc: "阿里云AI助手", id: "agent.qwen", paths: ["/Applications/通义千问.app"], appType: .other, subCategory: "AI Agent", risk: "safe", riskDesc: "可安全卸载", canUninstall: true, canClean: true, canReset: true),
             CLITool(name: "Xcode Developer", displayName: "Xcode 开发者数据", desc: "Xcode编译缓存、派生数据和归档", id: "dev.xcode-dev", paths: ["\(home)/Library/Developer"], appType: .dependency, subCategory: "开发", risk: "caution", riskDesc: "删除后Xcode需重新编译项目", canUninstall: false, canClean: true, canReset: true),
-            CLITool(name: "Android SDK", displayName: "Android SDK", desc: "Android开发工具包", id: "dev.android", paths: ["\(home)/Library/Android"], appType: .dependency, subCategory: "开发", risk: "caution", riskDesc: "卸载后Android项目将无法编译", canUninstall: true, canClean: true, canReset: false),
+            CLITool(name: "Android SDK", displayName: "Android SDK", desc: "Android开发工具包", id: "dev.android", paths: ["\(home)/Library/Android", "\(home)/.android"], appType: .dependency, subCategory: "开发", risk: "caution", riskDesc: "卸载后Android项目将无法编译", canUninstall: true, canClean: true, canReset: false),
             CLITool(name: "Unity", displayName: "Unity 引擎", desc: "游戏开发引擎缓存", id: "dev.unity", paths: ["\(home)/Library/Unity"], appType: .dependency, subCategory: "开发", risk: "safe", riskDesc: "Unity编辑器缓存，可安全清理", canUninstall: false, canClean: true, canReset: true),
             CLITool(name: "Gradle", displayName: "Gradle 构建工具", desc: "Java/Android项目构建工具和缓存", id: "cli.gradle", paths: ["\(home)/.gradle"], appType: .dependency, subCategory: "包管理", risk: "safe", riskDesc: "构建缓存可安全清理，下次构建会重新下载", canUninstall: true, canClean: true, canReset: true),
             CLITool(name: "Maven", displayName: "Maven 构建工具", desc: "Java项目构建工具和本地仓库", id: "cli.maven", paths: ["\(home)/.m2"], appType: .dependency, subCategory: "包管理", risk: "caution", riskDesc: "本地仓库删除后需重新下载所有依赖", canUninstall: true, canClean: true, canReset: true),
-            CLITool(name: "CocoaPods", displayName: "CocoaPods 依赖管理", desc: "iOS/macOS依赖管理工具和仓库缓存", id: "cli.cocoapods", paths: ["\(home)/.cocoapods"], appType: .dependency, subCategory: "包管理", risk: "safe", riskDesc: "仓库缓存可安全清理", canUninstall: true, canClean: true, canReset: true),
+            CLITool(name: "CocoaPods", displayName: "CocoaPods 依赖管理", desc: "iOS/macOS依赖管理工具和仓库缓存", id: "cli.cocoapods", paths: ["\(home)/.cocoapods", "\(home)/Library/Caches/CocoaPods"], appType: .dependency, subCategory: "包管理", risk: "safe", riskDesc: "仓库缓存可安全清理", canUninstall: true, canClean: true, canReset: true),
         ]
 
         for tool in cliTools {
@@ -794,13 +956,17 @@ class ScannerService: ObservableObject {
             for path in tool.paths {
                 let expanded = NSString(string: path).expandingTildeInPath
                 let (s, _) = Self.calculateDirectorySizeStatic(at: expanded)
-                if s > 0 {
+                if s > 0 || fm.fileExists(atPath: expanded) {
                     totalSize += s
                     if realPath.isEmpty { realPath = expanded }
                 }
             }
 
-            guard totalSize > 0 else { continue }
+            if realPath.isEmpty, let commandPath = Self.installedCommandPath(forToolId: tool.id) {
+                realPath = commandPath
+            }
+
+            guard totalSize > 0 || !realPath.isEmpty else { continue }
             seen.insert(tool.id)
 
             results.append(AppInfo(
@@ -812,10 +978,10 @@ class ScannerService: ObservableObject {
                 appPath: realPath,
                 iconPath: nil,
                 version: nil,
-                appSize: totalSize,
-                cacheSize: 0,
-                dataSize: 0,
-                totalSize: totalSize,
+                    appSize: totalSize,
+                    cacheSize: 0,
+                    dataSize: 0,
+                    totalSize: totalSize,
                 appType: tool.appType,
                 subCategory: tool.subCategory,
                 risk: tool.risk,
@@ -829,8 +995,37 @@ class ScannerService: ObservableObject {
         self.scanDynamicAgents(fm: fm, results: &results, seen: &seen)
     }
 
+    nonisolated private static func installedCommandPath(forToolId id: String) -> String? {
+        let commandMap: [String: [String]] = [
+            "cli.homebrew": ["brew"],
+            "cli.nodejs": ["node", "npm", "pnpm", "yarn"],
+            "cli.pyenv": ["pyenv", "python3", "pip3"],
+            "cli.rustup": ["rustup", "cargo", "rustc"],
+            "cli.go": ["go"],
+            "cli.docker": ["docker"],
+            "dev.xcode-dev": ["xcodebuild"],
+            "dev.android": ["adb", "sdkmanager"],
+            "dev.unity": ["unity"],
+            "cli.gradle": ["gradle"],
+            "cli.maven": ["mvn"],
+            "cli.cocoapods": ["pod"],
+        ]
+        guard let names = commandMap[id] else { return nil }
+        let dirs = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/local/sbin", "/usr/bin", "/bin"]
+        let fm = FileManager.default
+        for name in names {
+            for dir in dirs {
+                let path = (dir as NSString).appendingPathComponent(name)
+                if fm.isExecutableFile(atPath: path) {
+                    return path
+                }
+            }
+        }
+        return nil
+    }
+
     nonisolated private func scanDynamicAgents(fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
 
         let agentKeywords: [(String, String, String)] = [
             ("trae", "Trae AI 编程助手", "字节跳动AI编程IDE"),
@@ -882,6 +1077,10 @@ class ScannerService: ObservableObject {
             ".bash_profile.swn", ".bash_profile.swo", ".bash_profile.swp",
             ".swiftpm", ".mono", ".gem", ".config", ".cups", ".EventSDK",
             ".aimaccleaner_ai.json", ".aimaccleaner_ignore.json", ".aimaccleaner_last_response.txt",
+            ".aimaccleaner_operations_v2.json", ".aimaccleaner_curated.json", ".aimaccleaner_monitor.json",
+            ".aimaccleaner_bookmarks.json", ".aimaccleaner_alerts.json", ".aimaccleaner_alert_rule.json",
+            ".aimaccleaner_protected_dirs.json", ".aimaccleaner_lifecycle.json", ".aimaccleaner_hourly_stats.json",
+            ".aimaccleaner_cmd_rules.json", ".aimaccleaner_custom_agents.json", ".aimaccleaner_snapshots.json",
             ".maccleaner_ai.json", ".pcr-stats.json", ".claude.json",
         ]
 
@@ -926,7 +1125,7 @@ class ScannerService: ObservableObject {
             guard fm.fileExists(atPath: dirPath, isDirectory: &isDir), isDir.boolValue else { continue }
 
             let (size, _) = Self.calculateDirectorySizeStatic(at: dirPath)
-            guard size > 1048576 else { continue }
+            guard size > 1048576 || fm.isReadableFile(atPath: dirPath) else { continue }
 
             let dirLower = dirName.lowercased().replacingOccurrences(of: ".", with: "")
 
@@ -969,7 +1168,7 @@ class ScannerService: ObservableObject {
                 var iconPath: String? = nil
                 var appSize: Int64 = 0
                 var cacheSize: Int64 = 0
-                var dataSize: Int64 = size
+                let dataSize: Int64 = size
                 var bundleId = agentId
 
                 let knownAppPaths = Set(results.filter { $0.appType == .other && $0.appPath.hasSuffix(".app") }.map { $0.appPath.lowercased() })
@@ -1057,7 +1256,7 @@ class ScannerService: ObservableObject {
     }
 
     nonisolated private func scanDynamicCLITools(fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
 
         let brewDirs = ["/opt/homebrew/Cellar", "/usr/local/Cellar"]
         for brewDir in brewDirs {
@@ -1067,7 +1266,6 @@ class ScannerService: ObservableObject {
                 guard !seen.contains(id) else { continue }
                 let pkgPath = (brewDir as NSString).appendingPathComponent(pkg)
                 let (size, _) = Self.calculateDirectorySizeStatic(at: pkgPath)
-                guard size > 0 else { continue }
                 seen.insert(id)
                 results.append(AppInfo(
                     id: id, name: pkg, displayName: pkg, desc: "通过 Homebrew 安装的 \(pkg)",
@@ -1101,7 +1299,12 @@ class ScannerService: ObservableObject {
             }
         }
 
-        let pipPaths = ["\(home)/Library/Python"]
+        let pipPaths = [
+            "\(home)/Library/Python",
+            "\(home)/.pyenv/versions",
+            "\(home)/.local/pipx/venvs",
+            "\(home)/.conda/envs"
+        ]
         for pipBase in pipPaths {
             let expanded = NSString(string: pipBase).expandingTildeInPath
             guard let versions = try? fm.contentsOfDirectory(atPath: expanded) else { continue }
@@ -1115,13 +1318,35 @@ class ScannerService: ObservableObject {
     nonisolated private func scanNpmModules(at path: String, fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
         guard let modules = try? fm.contentsOfDirectory(atPath: path) else { return }
         for mod in modules {
-            let id = "npm.\(mod)"
-            guard !seen.contains(id) else { continue }
             let modPath = (path as NSString).appendingPathComponent(mod)
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: modPath, isDirectory: &isDir), isDir.boolValue else { continue }
+
+            if mod.hasPrefix("@"), let scoped = try? fm.contentsOfDirectory(atPath: modPath) {
+                for child in scoped {
+                    let childPath = (modPath as NSString).appendingPathComponent(child)
+                    var childIsDir: ObjCBool = false
+                    guard fm.fileExists(atPath: childPath, isDirectory: &childIsDir), childIsDir.boolValue else { continue }
+                    let packageName = "\(mod)/\(child)"
+                    let id = "npm.\(packageName)"
+                    guard !seen.contains(id) else { continue }
+                    let (size, _) = Self.calculateDirectorySizeStatic(at: childPath)
+                    seen.insert(id)
+                    results.append(AppInfo(
+                        id: id, name: packageName, displayName: packageName, desc: "npm 全局安装的 \(packageName) 包",
+                        bundleId: id,
+                        appPath: childPath, iconPath: nil, version: nil,
+                        appSize: size, cacheSize: 0, dataSize: 0, totalSize: size,
+                        appType: .dependency, subCategory: "包管理", risk: "caution", riskDesc: "卸载后依赖此包的项目将无法运行",
+                        canUninstall: true, canClean: false, canReset: false
+                    ))
+                }
+                continue
+            }
+
+            let id = "npm.\(mod)"
+            guard !seen.contains(id) else { continue }
             let (size, _) = Self.calculateDirectorySizeStatic(at: modPath)
-            guard size > 0 else { continue }
             seen.insert(id)
             results.append(AppInfo(
                 id: id, name: mod, displayName: mod, desc: "npm 全局安装的 \(mod) 包",
@@ -1135,15 +1360,30 @@ class ScannerService: ObservableObject {
     }
 
     nonisolated private func scanPipPackages(at path: String, fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
+        var sitePackagePaths = [path]
+        if !fm.fileExists(atPath: path), let enumerator = fm.enumerator(atPath: (path as NSString).deletingLastPathComponent) {
+            for case let rel as String in enumerator {
+                if rel.hasSuffix("site-packages") {
+                    sitePackagePaths.append(((path as NSString).deletingLastPathComponent as NSString).appendingPathComponent(rel))
+                }
+            }
+        }
+
+        for sitePath in Set(sitePackagePaths) {
+            scanPipPackagesInSiteDirectory(at: sitePath, fm: fm, results: &results, seen: &seen)
+        }
+    }
+
+    nonisolated private func scanPipPackagesInSiteDirectory(at path: String, fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
         guard let packages = try? fm.contentsOfDirectory(atPath: path) else { return }
         for pkg in packages {
+            guard !pkg.hasSuffix(".dist-info"), !pkg.hasSuffix(".egg-info"), pkg != "__pycache__" else { continue }
             let id = "pip.\(pkg)"
             guard !seen.contains(id) else { continue }
             let pkgPath = (path as NSString).appendingPathComponent(pkg)
             var isDir: ObjCBool = false
             if fm.fileExists(atPath: pkgPath, isDirectory: &isDir), isDir.boolValue {
                 let (size, _) = Self.calculateDirectorySizeStatic(at: pkgPath)
-                guard size > 0 else { continue }
                 seen.insert(id)
                 results.append(AppInfo(
                     id: id, name: pkg, displayName: pkg, desc: "pip 安装的 \(pkg) 包",
@@ -1170,49 +1410,167 @@ class ScannerService: ObservableObject {
     private var lastAlertTime: Date = .distantPast
     let operationMonitor = OperationMonitor()
     let guardFeature = AgentGuardFeature()
+    @Published var isImportingAgentHistory = false
 
     weak var localizer: Localizer? {
         didSet {
             operationMonitor.localizer = localizer
+            operationMonitor.guardFeature = guardFeature
             guardFeature.localizer = localizer
         }
     }
 
     @Published var operationRecords: [OperationRecord] = []
+    private var processedOperationRecordIDs: Set<String> = []
+    private var lastAgentHistoryImportTime: Date = .distantPast
+    private var recordsClearCutoff: Date {
+        if let d = UserDefaults.standard.object(forKey: "operationRecordsClearedAt") as? Date { return d }
+        return .distantPast
+    }
 
     func startOperationMonitor() {
         operationMonitor.start()
         operationRecords = operationMonitor.records
+        processedOperationRecordIDs = Set(operationRecords.map(\.id))
+        guardFeature.rebuildAnalytics(from: operationRecords)
         startOperationPolling()
     }
 
+    func ensureAgentGuardDataPipeline() {
+        if !operationMonitor.isMonitoring {
+            startOperationMonitor()
+            UserDefaults.standard.set(true, forKey: "operationMonitorEnabled")
+        } else {
+            operationRecords = operationMonitor.records
+            guardFeature.rebuildAnalytics(from: operationRecords)
+            startOperationPolling()
+        }
+        importKnownAgentHistory()
+    }
+
     func stopOperationMonitor() {
+        operationMonitor.saveRecords()
+        guardFeature.saveHourlyStats()
         operationMonitor.stop()
         stopOperationPolling()
     }
 
     func clearOperationRecords() {
+        UserDefaults.standard.set(Date(), forKey: "operationRecordsClearedAt")
         operationMonitor.clearRecords()
         operationRecords = []
+        processedOperationRecordIDs.removeAll()
+        lastAgentHistoryImportTime = Date()
+        guardFeature.rebuildAnalytics(from: [])
+    }
+
+    func ingestAgentSessionRecords(_ records: [AgentOpRecord]) {
+        let cutoff = recordsClearCutoff
+        let converted = records
+            .filter { $0.timestamp >= cutoff }
+            .compactMap { convertAgentSessionRecord($0) }
+        guard !converted.isEmpty else { return }
+        operationMonitor.mergeHistoricalRecords(converted)
+        operationRecords = operationMonitor.records
+        processedOperationRecordIDs = Set(operationRecords.map(\.id))
+        guardFeature.rebuildAnalytics(from: operationRecords)
+    }
+
+    func importKnownAgentHistory() {
+        guard !isImportingAgentHistory else { return }
+        guard Date().timeIntervalSince(lastAgentHistoryImportTime) > 600 else { return }
+        lastAgentHistoryImportTime = Date()
+        isImportingAgentHistory = true
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let scanner = AgentSessionScanner()
+            let records = scanner.collectAllAgentOps(limit: 10000)
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.ingestAgentSessionRecords(records)
+                self.isImportingAgentHistory = false
+            }
+        }
+    }
+
+    private func convertAgentSessionRecord(_ record: AgentOpRecord) -> OperationRecord? {
+        let target = record.targetPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = record.detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty || !detail.isEmpty else { return nil }
+
+        let opType = operationType(from: record.opType, toolName: record.toolName, detail: detail)
+        let normalizedTarget = target.isEmpty ? detail : target
+        return OperationRecord(
+            id: "agent_session_\(record.id)",
+            timestamp: record.timestamp,
+            agentName: record.agentName,
+            operationType: opType,
+            targetPath: normalizedTarget,
+            detail: detail.isEmpty ? normalizedTarget : detail,
+            fileSize: 0,
+            processName: record.toolName,
+            toolInfo: record.sessionId
+        )
+    }
+
+    private func operationType(from opType: String, toolName: String, detail: String) -> OperationRecord.OperationType {
+        let combined = "\(opType) \(toolName) \(detail)".lowercased()
+        if combined.contains("delete") || combined.contains("remove") || combined.contains("trash") || combined.contains("rm ") {
+            return .delete
+        }
+        if combined.contains("write") || combined.contains("create") || combined.contains("new_file") || combined.contains("touch ") || combined.contains("mkdir ") {
+            return .create
+        }
+        if combined.contains("edit") || combined.contains("modify") || combined.contains("update") || combined.contains("patch") {
+            return .modify
+        }
+        if combined.contains("rename") {
+            return .rename
+        }
+        if combined.contains("move") || combined.contains(" mv ") {
+            return .move
+        }
+        if combined.contains("execute") || combined.contains("bash") || combined.contains("shell") || combined.contains("command") {
+            return .execute
+        }
+        if combined.contains("read") || combined.contains("search") || combined.contains("grep") || combined.contains("glob") {
+            return .read
+        }
+        return .modify
     }
 
     private var operationPollTimer: Timer?
+    private var lastAutoSaveTime: Date = .distantPast
 
     private func startOperationPolling() {
         stopOperationPolling()
         operationPollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
-                let prevCount = self.operationRecords.count
-                self.operationRecords = self.operationMonitor.records
-                if self.operationRecords.count > prevCount {
-                    let newRecords = Array(self.operationRecords.prefix(self.operationRecords.count - prevCount))
+                let currentRecords = self.operationMonitor.records
+                let newRecords = currentRecords.filter { !self.processedOperationRecordIDs.contains($0.id) }
+                self.operationRecords = currentRecords
+                self.processedOperationRecordIDs = Set(currentRecords.map(\.id))
+                if !newRecords.isEmpty {
                     for record in newRecords {
                         self.guardFeature.checkBatchOperation(record: record)
                         self.guardFeature.checkSensitiveFile(record: record)
                         self.guardFeature.checkProtectedDir(record: record)
                         self.guardFeature.recordStats(record)
                     }
+                }
+                self.guardFeature.checkProcessLifecycle(
+                    currentPids: Set(self.operationMonitor.allPidCommMap.keys),
+                    pidCommMap: self.operationMonitor.allPidCommMap,
+                    pidArgsMap: self.operationMonitor.allPidArgsMap,
+                    ppidMap: self.operationMonitor.ppidMap,
+                    agentKeywords: self.operationMonitor.agentKeywords
+                )
+
+                if Date().timeIntervalSince(self.lastAutoSaveTime) > 30 {
+                    self.guardFeature.saveHourlyStats()
+                    self.guardFeature.saveAlerts()
+                    self.guardFeature.saveCommandRules()
+                    self.lastAutoSaveTime = Date()
                 }
             }
         }
@@ -1272,7 +1630,7 @@ class ScannerService: ObservableObject {
 
         guard let apiKey = config.apiKey, !apiKey.isEmpty, let apiBase = config.apiBase?.hasSuffix("/v1") == true ? config.apiBase : (config.apiBase ?? "") + "/v1" else { return }
         let requestBody: [String: Any] = [
-            "model": config.model ?? "deepseek-chat",
+            "model": config.model ?? "gpt-4o-mini",
             "messages": [["role": "user", "content": prompt]],
             "temperature": 0.3, "max_tokens": 1000
         ]
@@ -1371,7 +1729,6 @@ class ScannerService: ObservableObject {
         }
 
         let selfDirs = operationMonitor.agentSelfDirs
-        let homeDir = NSHomeDirectory()
         let knownAgentParentDirs = Set(selfDirs.map { ($0 as NSString).deletingLastPathComponent }).union(selfDirs)
 
         var eventSummary = ""
@@ -1446,7 +1803,7 @@ class ScannerService: ObservableObject {
         }
         let base = apiBase.hasSuffix("/v1") ? apiBase : apiBase + "/v1"
         let requestBody: [String: Any] = [
-            "model": config.model ?? "deepseek-chat",
+            "model": config.model ?? "gpt-4o-mini",
             "messages": [["role": "user", "content": prompt]],
             "temperature": 0.1, "max_tokens": 4000
         ]
@@ -1635,7 +1992,7 @@ class ScannerService: ObservableObject {
         let content = UNMutableNotificationContent()
         content.title = localizer?.storageWarningTitle ?? "⚠️ Low Storage"
         content.body = "\(localizer?.storageWarningBody ?? "Disk remaining") \(String(format: "%.1f", disk.freeGb)) GB（\(String(format: "%.0f", freePct))%），\(localizer?.suggestCleanNow ?? "Clean up recommended")"
-        content.sound = .defaultCritical
+        content.sound = .default
 
         let request = UNNotificationRequest(
             identifier: "aimaccleaner.storage.alert",
@@ -1643,340 +2000,44 @@ class ScannerService: ObservableObject {
             trigger: nil
         )
 
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("Notification error: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    @Published var latestVersion: String = ""
-    @Published var isCheckingUpdate: Bool = false
-    @Published var updateAvailable: Bool = false
-    @Published var updateDownloadURL: String = ""
-    @Published var updateDownloadProgress: Double = 0.0
-    @Published var isDownloadingUpdate: Bool = false
-    @Published var updateReadyToInstall: Bool = false
-    @Published var updateErrorMessage: String = ""
-    @Published var isInstallingUpdate: Bool = false
-
-    let currentVersion = "2.1.3"
-
-    private var updateCheckTimer: Timer?
-    private var downloadSession: URLSession?
-    private var downloadDelegate: DownloadDelegate?
-
-    @Published var appUpdates: [UpdateItem] = []
-    @Published var isCheckingAppUpdates: Bool = false
-
-    struct UpdateItem: Identifiable {
-        let id = UUID().uuidString
-        let name: String
-        let currentVersion: String
-        let latestVersion: String
-        let type: UpdateType
-        let updateCommand: String?
-        
-        enum UpdateType: String {
-            case app = "App"
-            case agent = "Agent"
-            case cli = "CLI"
-            case dependency = "Dependency"
-        }
-    }
-
-    func checkForUpdates(silent: Bool = false) async {
-        guard !isCheckingUpdate else { return }
-        if !silent { isCheckingUpdate = true }
-        defer { if !silent { isCheckingUpdate = false } }
-
-        guard let url = URL(string: "https://api.github.com/repos/AI-Scarlett/AIMacCleaner/releases/latest") else { return }
-
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 15
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return }
-
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let tagName = json["tag_name"] as? String else { return }
-
-            let remoteVersion = tagName.trimmingCharacters(in: CharacterSet(charactersIn: "v"))
-            latestVersion = remoteVersion
-
-            if compareVersions(remoteVersion, currentVersion) > 0 {
-                updateAvailable = true
-                if let assets = json["assets"] as? [[String: Any]] {
-                    for asset in assets {
-                        if let name = asset["name"] as? String, name.hasSuffix(".dmg"),
-                           let downloadURL = asset["browser_download_url"] as? String {
-                            updateDownloadURL = downloadURL
-                            break
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                center.add(request) { error in
+                    if let error = error {
+                        print("Notification error: \(error.localizedDescription)")
+                    }
+                }
+            case .notDetermined:
+                center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+                    if let error = error {
+                        print("Notification authorization error: \(error.localizedDescription)")
+                    }
+                    guard granted else { return }
+                    center.add(request) { error in
+                        if let error = error {
+                            print("Notification error: \(error.localizedDescription)")
                         }
                     }
                 }
-                if !silent, !updateDownloadURL.isEmpty, !isDownloadingUpdate, !updateReadyToInstall {
-                    downloadUpdate()
-                }
-            } else {
-                updateAvailable = false
-            }
-        } catch {
-            return
-        }
-    }
-
-    private func compareVersions(_ v1: String, _ v2: String) -> Int {
-        let parts1 = v1.split(separator: ".").compactMap { Int($0) }
-        let parts2 = v2.split(separator: ".").compactMap { Int($0) }
-        for i in 0..<max(parts1.count, parts2.count) {
-            let p1 = i < parts1.count ? parts1[i] : 0
-            let p2 = i < parts2.count ? parts2[i] : 0
-            if p1 > p2 { return 1 }
-            if p1 < p2 { return -1 }
-        }
-        return 0
-    }
-
-    func openDownloadPage() {
-        if !updateDownloadURL.isEmpty {
-            if let url = URL(string: updateDownloadURL) { NSWorkspace.shared.open(url) }
-        } else {
-            if let url = URL(string: "https://github.com/AI-Scarlett/AIMacCleaner/releases") { NSWorkspace.shared.open(url) }
-        }
-    }
-
-    func downloadUpdate() {
-        guard !updateDownloadURL.isEmpty, let url = URL(string: updateDownloadURL) else {
-            updateErrorMessage = localizer?.invalidDownloadLink ?? "Invalid download link"
-            return
-        }
-
-        isDownloadingUpdate = true
-        updateDownloadProgress = 0.0
-        updateErrorMessage = ""
-        updateReadyToInstall = false
-
-        let tempDir = NSTemporaryDirectory() + "AIMacCleanerUpdate"
-        try? FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
-        let dmgPath = tempDir + "/AIMacCleaner-update.dmg"
-
-        if FileManager.default.fileExists(atPath: dmgPath) {
-            try? FileManager.default.removeItem(atPath: dmgPath)
-        }
-
-        let delegate = DownloadDelegate { [weak self] progress in
-            Task { @MainActor in
-                self?.updateDownloadProgress = progress
-            }
-        } onComplete: { [weak self] fileURL, error in
-            if let fileURL = fileURL {
-                do {
-                    if FileManager.default.fileExists(atPath: dmgPath) {
-                        try FileManager.default.removeItem(atPath: dmgPath)
-                    }
-                    try FileManager.default.moveItem(atPath: fileURL.path, toPath: dmgPath)
-                    Task { @MainActor [weak self] in
-                        guard let self = self else { return }
-                        self.updateDownloadProgress = 1.0
-                        self.isDownloadingUpdate = false
-                        self.updateReadyToInstall = true
-                        self.downloadSession = nil
-                        self.downloadDelegate = nil
-                    }
-                } catch {
-                    Task { @MainActor [weak self] in
-                        guard let self = self else { return }
-                        self.isDownloadingUpdate = false
-                        self.updateErrorMessage = "\(localizer?.saveDownloadFailed ?? "Failed to save download"): \(error.localizedDescription)"
-                        self.downloadSession = nil
-                        self.downloadDelegate = nil
-                    }
-                }
-            } else {
-                Task { @MainActor [weak self] in
-                    guard let self = self else { return }
-                    self.isDownloadingUpdate = false
-                    self.updateErrorMessage = "\(localizer?.downloadFailed ?? "Download failed"): \(error?.localizedDescription ?? (localizer?.unknownError ?? "Unknown error"))"
-                    self.downloadSession = nil
-                    self.downloadDelegate = nil
-                }
-            }
-        }
-
-        downloadDelegate = delegate
-        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
-        downloadSession = session
-        let task = session.downloadTask(with: url)
-        delegate.task = task
-        task.resume()
-    }
-
-    func installUpdate() {
-        let tempDir = NSTemporaryDirectory() + "AIMacCleanerUpdate"
-        let dmgPath = tempDir + "/AIMacCleaner-update.dmg"
-
-        guard FileManager.default.fileExists(atPath: dmgPath) else {
-            self.updateReadyToInstall = false
-            self.updateErrorMessage = localizer?.installFileNotFound ?? "Install file not found, please re-download"
-            return
-        }
-
-        isInstallingUpdate = true
-
-        let mountPoint = "/Volumes/AIMacCleanerUpdate"
-        let currentAppPath = Bundle.main.bundlePath
-        let appName = Bundle.main.bundleURL.lastPathComponent
-        let installedAppPath = "/Applications/\(appName)"
-        let logPath = tempDir + "/update_install.log"
-
-        let targetPath: String
-        if currentAppPath.hasPrefix("/Applications/") {
-            targetPath = currentAppPath
-        } else {
-            targetPath = installedAppPath
-        }
-
-        let scriptContent = """
-#!/bin/bash
-set -e
-
-MOUNT_POINT="\(mountPoint)"
-DMG_PATH="\(dmgPath)"
-TARGET_PATH="\(targetPath)"
-APP_NAME="\(appName)"
-TEMP_DIR="\(tempDir)"
-LOG_PATH="\(logPath)"
-
-log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_PATH"
-}
-
-log "=== AIMacCleaner Update Installer Started ==="
-log "target: $TARGET_PATH"
-log "dmg: $DMG_PATH"
-
-# Wait for old process to fully exit and release file locks
-sleep 3
-
-# Detach any existing mount
-/usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
-
-# Attach DMG
-log "Mounting DMG..."
-if ! /usr/bin/hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -nobrowse -quiet 2>>"$LOG_PATH"; then
-    log "ERROR: Failed to mount DMG"
-    osascript -e 'display notification "\(localizer?.updateInstallFailedMount ?? "Update install failed: cannot mount installer")" with title "AgentWatch"'
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
-log "DMG mounted successfully"
-
-UPDATE_APP=$(find "$MOUNT_POINT" -maxdepth 1 -name "*.app" -type d 2>/dev/null | head -1)
-
-if [ -z "$UPDATE_APP" ]; then
-    log "ERROR: No .app found in DMG"
-    /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
-    osascript -e 'display notification "\(localizer?.updateInstallFailedApp ?? "Update install failed: app not found in installer")" with title "AgentWatch"'
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
-log "Found app in DMG: $UPDATE_APP"
-
-# Remove old app
-if [ -d "$TARGET_PATH" ]; then
-    log "Removing old app at $TARGET_PATH"
-    rm -rf "$TARGET_PATH" 2>>"$LOG_PATH"
-fi
-
-# Copy new app (ditto preserves resource forks, extended attributes, and ACLs)
-log "Copying new app to $TARGET_PATH"
-if ! /usr/bin/ditto "$UPDATE_APP" "$TARGET_PATH" 2>>"$LOG_PATH"; then
-    log "ERROR: Failed to copy new app"
-    /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
-    osascript -e 'display notification "\(localizer?.updateInstallFailedCopy ?? "Update install failed: cannot copy app")" with title "AgentWatch"'
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
-log "App copied successfully"
-
-# Detach DMG
-/usr/bin/hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
-log "DMG detached"
-
-# Remove quarantine attribute, re-sign, and launch new app
-xattr -cr "$TARGET_PATH" 2>/dev/null || true
-/usr/bin/codesign --force --deep --sign - "$TARGET_PATH" 2>>"$LOG_PATH" || true
-log "Launching updated app..."
-open "$TARGET_PATH"
-
-osascript -e 'display notification "\(localizer?.updateSuccess ?? "Successfully updated to latest version")" with title "AgentWatch" sound name "Glass"'
-log "=== Update completed successfully ==="
-
-# Cleanup temp files after launch
-rm -rf "$TEMP_DIR"
-"""
-
-        let scriptPath = tempDir + "/update_install.sh"
-        do {
-            try scriptContent.write(toFile: scriptPath, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
-        } catch {
-            self.updateErrorMessage = "创建安装脚本失败: \(error.localizedDescription)"
-            isInstallingUpdate = false
-            return
-        }
-
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/bash")
-        task.arguments = ["-c", "nohup /bin/bash \"\(scriptPath)\" >/dev/null 2>&1 &"]
-        task.standardInput = FileHandle.nullDevice
-        task.standardOutput = FileHandle.nullDevice
-        task.standardError = FileHandle.nullDevice
-
-        do {
-            try task.run()
-        } catch {
-            self.updateErrorMessage = "启动安装失败: \(error.localizedDescription)"
-            isInstallingUpdate = false
-            return
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            NSApp.windows.forEach { $0.orderOut(nil) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                NSApp.terminate(nil)
+            default:
+                break
             }
         }
     }
 
-    func cancelUpdateDownload() {
-        isDownloadingUpdate = false
-        updateDownloadProgress = 0.0
-        downloadSession?.invalidateAndCancel()
-        downloadSession = nil
-        downloadDelegate = nil
-        let tempDir = NSTemporaryDirectory() + "AIMacCleanerUpdate"
-        try? FileManager.default.removeItem(atPath: tempDir)
-    }
-
-    func startPeriodicUpdateCheck() {
-        stopPeriodicUpdateCheck()
-
-        updateCheckTimer = Timer.scheduledTimer(withTimeInterval: 12 * 3600, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            Task { @MainActor in
-                await self.checkForUpdates(silent: true)
-            }
+    let currentVersion: String = {
+        if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+            return version
         }
-        RunLoop.main.add(updateCheckTimer!, forMode: .common)
-    }
-
-    func stopPeriodicUpdateCheck() {
-        updateCheckTimer?.invalidate()
-        updateCheckTimer = nil
-    }
+        if let path = Bundle.main.path(forResource: "Info", ofType: "plist"),
+           let dict = NSDictionary(contentsOfFile: path),
+           let version = dict["CFBundleShortVersionString"] as? String {
+            return version
+        }
+        return "unknown"
+    }()
 
     func analyzeImpactWithAI(apps: [AppInfo]) async {
         guard let config = aiConfig, config.hasKey == true, let apiKey = config.apiKey, !apiKey.isEmpty else {
@@ -2014,7 +2075,7 @@ rm -rf "$TEMP_DIR"
         \(itemsDesc)
         """
 
-        let apiBase = (config.apiBase ?? "https://api.deepseek.com").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let apiBase = (config.apiBase ?? "https://api.openai.com").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let url = URL(string: "\(apiBase)/v1/chat/completions") else {
             for app in apps { aiAnalysisMap[app.id] = localizer?.invalidAPIUrl ?? "❌ Invalid API URL" }
             isAnalyzingImpact = false
@@ -2022,7 +2083,7 @@ rm -rf "$TEMP_DIR"
         }
 
         let body: [String: Any] = [
-            "model": config.model ?? "deepseek-chat",
+            "model": config.model ?? "gpt-4o-mini",
             "messages": [
                 ["role": "user", "content": prompt]
             ],
@@ -2046,7 +2107,6 @@ rm -rf "$TEMP_DIR"
             }
 
             if http.statusCode != 200 {
-                let bodyStr = String(data: data, encoding: .utf8) ?? ""
                 for app in apps { aiAnalysisMap[app.id] = "❌ \(localizer?.apiError ?? "API error") (\(http.statusCode))" }
                 isAnalyzingImpact = false
                 return
@@ -2116,17 +2176,137 @@ rm -rf "$TEMP_DIR"
 
     func emptyTrashIfAllowed() {
         guard trashInsteadOfDelete && !preventAutoEmptyTrash else { return }
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/bash")
-        task.arguments = ["-c", "osascript -e 'tell application \"Finder\" to empty trash' 2>/dev/null"]
-        try? task.run()
+        let script = NSAppleScript(source: "tell application \"Finder\" to empty trash")
+        var error: NSDictionary?
+        script?.executeAndReturnError(&error)
+    }
+
+    private enum ManagedAppAction {
+        case reset
+        case basicUninstall
+        case fullUninstall
+    }
+
+    private func existingPaths(_ paths: [String]) -> [String] {
+        let fm = FileManager.default
+        var seen = Set<String>()
+        return paths.compactMap { path in
+            let expanded = Self.expandUserPath(path)
+            guard !expanded.isEmpty, !seen.contains(expanded), fm.fileExists(atPath: expanded) else { return nil }
+            seen.insert(expanded)
+            return expanded
+        }
+    }
+
+    private func standardAppSupportPaths(for app: AppInfo) -> (cache: [String], data: [String], install: [String]) {
+        let install = app.appPath.isEmpty ? [] : [app.appPath]
+        return (app.cachePaths, app.dataPaths, install)
+    }
+
+    private func managedPaths(for app: AppInfo, action: ManagedAppAction) -> [String] {
+        let home = SandboxPaths.realHomeDirectory
+        let standard = standardAppSupportPaths(for: app)
+        let id = app.id.lowercased()
+        let bundle = app.bundleId.lowercased()
+        let name = (app.name + " " + app.displayName).lowercased()
+
+        func candidates(install: [String] = [], cache: [String] = [], data: [String] = []) -> [String] {
+            switch action {
+            case .reset:
+                return existingPaths(cache + data)
+            case .basicUninstall:
+                return existingPaths(install.isEmpty ? standard.install : install)
+            case .fullUninstall:
+                return existingPaths(install + cache + data + standard.install + standard.cache + standard.data)
+            }
+        }
+
+        if id.contains("cli.nodejs") {
+            return candidates(
+                install: ["\(home)/.nvm", "/opt/homebrew/lib/node_modules", "/usr/local/lib/node_modules"],
+                cache: ["\(home)/.npm", "\(home)/.pnpm-store", "\(home)/.yarn", "\(home)/Library/pnpm"],
+                data: ["\(home)/Library/Caches/node-gyp", "\(home)/Library/Caches/npm"]
+            )
+        }
+        if id.contains("cli.pyenv") {
+            return candidates(
+                install: ["\(home)/.pyenv", "\(home)/.local/pipx", "\(home)/.conda"],
+                cache: ["\(home)/.cache/pip"],
+                data: ["\(home)/Library/Python"]
+            )
+        }
+        if id.contains("cli.rustup") {
+            return candidates(install: ["\(home)/.rustup", "\(home)/.cargo"], cache: ["\(home)/.cargo/registry/cache", "\(home)/.cargo/git/checkouts"])
+        }
+        if id.contains("cli.go") {
+            return candidates(install: ["\(home)/go"], cache: ["\(home)/.cache/go-build"])
+        }
+        if id.contains("cli.docker") {
+            return candidates(install: ["\(home)/Library/Containers/com.docker.docker"], cache: ["\(home)/Library/Caches/com.docker.docker"], data: ["\(home)/.docker"])
+        }
+        if id.contains("cli.gradle") || id.contains("dotdir..gradle") {
+            return candidates(install: ["\(home)/.gradle"], cache: ["\(home)/.gradle/caches"])
+        }
+        if id.contains("cli.maven") || id.contains("dotdir..m2") {
+            return candidates(install: ["\(home)/.m2"], cache: ["\(home)/.m2/repository"])
+        }
+        if id.contains("cli.cocoapods") {
+            return candidates(install: ["\(home)/.cocoapods"], cache: ["\(home)/Library/Caches/CocoaPods"])
+        }
+        if id.contains("dev.xcode-dev") {
+            return candidates(cache: ["\(home)/Library/Developer/Xcode/DerivedData", "\(home)/Library/Developer/Xcode/Archives"], data: ["\(home)/Library/Developer"])
+        }
+        if id.contains("dev.android") {
+            return candidates(install: ["\(home)/Library/Android"], cache: ["\(home)/.gradle/caches"], data: ["\(home)/.android"])
+        }
+        if id.contains("dev.unity") {
+            return candidates(cache: ["\(home)/Library/Unity/cache"], data: ["\(home)/Library/Unity"])
+        }
+
+        if id.contains("agent.trae") || name.contains("trae") || bundle.contains("trae") {
+            return candidates(
+                install: ["/Applications/Trae.app", "/Applications/Trae CN.app", "\(home)/Applications/Trae.app"],
+                cache: ["\(home)/Library/Caches/Trae", "\(home)/Library/Caches/TraeCN", "\(home)/Library/Caches/com.trae"],
+                data: ["\(home)/Library/Application Support/Trae", "\(home)/Library/Application Support/TraeCN", "\(home)/Library/Preferences/com.trae.plist", "\(home)/Library/Saved Application State/com.trae.savedState"]
+            )
+        }
+        if id.contains("agent.codebuddy") || name.contains("codebuddy") || bundle.contains("codebuddy") {
+            return candidates(
+                install: ["/Applications/CodeBuddy.app", "\(home)/Applications/CodeBuddy.app"],
+                cache: ["\(home)/Library/Caches/CodeBuddy", "\(home)/Library/Caches/CodeBuddyCN", "\(home)/Library/Caches/com.tencent.codebuddy"],
+                data: ["\(home)/Library/Application Support/CodeBuddy", "\(home)/Library/Application Support/CodeBuddyCN", "\(home)/Library/Preferences/com.tencent.codebuddy.plist"]
+            )
+        }
+        if id.contains("agent.claude") || name.contains("claude") || bundle.contains("claude") {
+            return candidates(
+                install: ["/Applications/Claude.app", "\(home)/Applications/Claude.app"],
+                cache: ["\(home)/Library/Caches/Claude", "\(home)/Library/Caches/com.anthropic.claude"],
+                data: ["\(home)/.claude", "\(home)/.config/claude", "\(home)/Library/Application Support/Claude", "\(home)/Library/Application Support/Claude-3p", "\(home)/Library/Preferences/com.anthropic.claude.plist"]
+            )
+        }
+        if id.contains("agent.openclaw") || name.contains("openclaw") || bundle.contains("openclaw") {
+            return candidates(
+                install: ["/Applications/OpenClaw.app", "\(home)/Applications/OpenClaw.app"],
+                cache: ["\(home)/Library/Caches/OpenClaw", "\(home)/Library/Caches/openclaw"],
+                data: ["\(home)/.openclaw", "\(home)/Library/Application Support/OpenClaw", "\(home)/Library/Preferences/openclaw.plist"]
+            )
+        }
+        if id.contains("agent.hermes") || name.contains("hermes") || bundle.contains("hermes") {
+            return candidates(
+                install: ["/Applications/Hermes.app", "\(home)/Applications/Hermes.app"],
+                cache: ["\(home)/Library/Caches/Hermes", "\(home)/Library/Caches/hermes"],
+                data: ["\(home)/.hermes", "\(home)/Library/Application Support/Hermes", "\(home)/Library/Preferences/hermes.plist"]
+            )
+        }
+
+        return candidates(install: standard.install, cache: standard.cache, data: standard.data)
     }
 
     func basicUninstall(app: AppInfo) async -> Bool {
         do {
-            if FileManager.default.fileExists(atPath: app.appPath) {
-                try moveToTrash(atPath: app.appPath)
-            }
+            let paths = managedPaths(for: app, action: .basicUninstall)
+            guard !paths.isEmpty else { return false }
+            for path in paths { try moveToTrash(atPath: path) }
             return true
         } catch {
             errorMessage = "\(localizer?.uninstallFailed ?? "Uninstall failed"): \(error.localizedDescription)"
@@ -2136,14 +2316,9 @@ rm -rf "$TEMP_DIR"
 
     func fullUninstall(app: AppInfo) async -> Bool {
         do {
-            if FileManager.default.fileExists(atPath: app.appPath) {
-                try moveToTrash(atPath: app.appPath)
-            }
-            for path in app.relatedPaths {
-                if FileManager.default.fileExists(atPath: path) {
-                    try moveToTrash(atPath: path)
-                }
-            }
+            let paths = managedPaths(for: app, action: .fullUninstall)
+            guard !paths.isEmpty else { return false }
+            for path in paths { try moveToTrash(atPath: path) }
             return true
         } catch {
             errorMessage = "\(localizer?.uninstallFailed ?? "Uninstall failed"): \(error.localizedDescription)"
@@ -2153,11 +2328,9 @@ rm -rf "$TEMP_DIR"
 
     func resetApp(app: AppInfo) async -> Bool {
         do {
-            for path in app.cachePaths + app.dataPaths {
-                if FileManager.default.fileExists(atPath: path) {
-                    try moveToTrash(atPath: path)
-                }
-            }
+            let paths = managedPaths(for: app, action: .reset)
+            guard !paths.isEmpty else { return false }
+            for path in paths { try moveToTrash(atPath: path) }
             return true
         } catch {
             errorMessage = "\(localizer?.resetAction ?? "Reset failed"): \(error.localizedDescription)"
@@ -2215,7 +2388,7 @@ rm -rf "$TEMP_DIR"
     }
 
     private func callLLM(config: AIConfig, dirInfo: String) async -> (success: Bool, items: [ScanItem]?, error: String?) {
-        let apiBase = (config.apiBase ?? "https://api.deepseek.com").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let apiBase = (config.apiBase ?? "https://api.openai.com").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let urlString = "\(apiBase)/v1/chat/completions"
 
         guard let url = URL(string: urlString) else {
@@ -2244,7 +2417,7 @@ rm -rf "$TEMP_DIR"
         """
 
         let body: [String: Any] = [
-            "model": config.model ?? "deepseek-chat",
+            "model": config.model ?? "gpt-4o-mini",
             "messages": [
                 ["role": "system", "content": systemPrompt],
                 ["role": "user", "content": "以下是我的 Mac 目录结构和大小说明，请分析哪些可以清理：\n\(dirInfo)"],
@@ -2286,7 +2459,7 @@ rm -rf "$TEMP_DIR"
             if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 if !reasoningContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     let retryBody: [String: Any] = [
-                        "model": config.model ?? "deepseek-chat",
+                        "model": config.model ?? "gpt-4o-mini",
                         "messages": [
                             ["role": "system", "content": systemPrompt],
                             ["role": "user", "content": "以下是我的 Mac 目录结构和大小说明，请分析哪些可以清理：\n\(dirInfo)"],
@@ -2324,7 +2497,7 @@ rm -rf "$TEMP_DIR"
             }
 
             let rawContent = content
-            let logPath = NSHomeDirectory() + "/.aimaccleaner_last_response.txt"
+            let logPath = SandboxPaths.shared.lastResponsePath
             try? rawContent.write(toFile: logPath, atomically: true, encoding: .utf8)
 
             let jsonStr = extractJSON(from: rawContent)
@@ -2452,7 +2625,7 @@ rm -rf "$TEMP_DIR"
         let fm = FileManager.default
 
         for (i, item) in items.enumerated() {
-            let path = (item["path"] as? String ?? "").replacingOccurrences(of: "~", with: NSHomeDirectory())
+            let path = (item["path"] as? String ?? "").replacingOccurrences(of: "~", with: SandboxPaths.realHomeDirectory)
             let expanded = NSString(string: path).expandingTildeInPath
             var size: Int64 = 0
             var fileCount = 0
@@ -2492,146 +2665,4 @@ rm -rf "$TEMP_DIR"
         return "\(bytes) B"
     }
 
-    // MARK: - App & Tool Update Checker
-
-    func checkAppUpdates() {
-        let mode = UserDefaults.standard.string(forKey: "networkMode") ?? "internet"
-        guard mode == "internet" else { return }
-        
-        isCheckingAppUpdates = true
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self = self else { return }
-            var updates: [UpdateItem] = []
-            
-            updates.append(contentsOf: self.checkCLIUpdates())
-            updates.append(contentsOf: self.checkHomebrewUpdates())
-            updates.append(contentsOf: self.checkNodeUpdates())
-            
-            DispatchQueue.main.async {
-                self.appUpdates = updates
-                self.isCheckingAppUpdates = false
-            }
-        }
-    }
-
-    private func checkCLIUpdates() -> [UpdateItem] {
-        var updates: [UpdateItem] = []
-        let checks: [(String, String, String, UpdateItem.UpdateType, String?)] = [
-            ("claude --version 2>&1", "Claude", "cli/claude", .agent, "npm update -g @anthropic-ai/claude-code"),
-            ("cursor --version 2>&1", "Cursor", "cli/cursor", .agent, nil),
-            ("gh --version 2>&1", "GitHub CLI", "cli/gh", .cli, "brew upgrade gh"),
-            ("git --version 2>&1", "Git", "cli/git", .cli, "brew upgrade git"),
-            ("python3 --version 2>&1", "Python3", "cli/python3", .cli, "brew upgrade python3"),
-            ("node --version 2>&1", "Node.js", "cli/node", .cli, "brew upgrade node"),
-            ("cargo --version 2>&1", "Cargo", "cli/cargo", .cli, "rustup update"),
-            ("go version 2>&1", "Go", "cli/go", .cli, "brew upgrade go"),
-            ("deno --version 2>&1", "Deno", "cli/deno", .cli, "deno upgrade"),
-        ]
-        
-        for (cmd, name, _, type, updateCmd) in checks {
-            let current = runShellCommand(cmd)
-            guard !current.isEmpty else { continue }
-            let version = extractVersion(from: current)
-            guard !version.isEmpty else { continue }
-        }
-        
-        return updates
-    }
-
-    private func checkHomebrewUpdates() -> [UpdateItem] {
-        var updates: [UpdateItem] = []
-        let output = runShellCommand("brew outdated 2>/dev/null")
-        guard !output.isEmpty else { return updates }
-        
-        for line in output.components(separatedBy: .newlines) {
-            let parts = line.split(separator: " ")
-            guard parts.count >= 1 else { continue }
-            let name = String(parts[0])
-            let currentVer = parts.count >= 2 ? String(parts[1]).trimmingCharacters(in: CharacterSet(charactersIn: "()")) : "?"
-            let latestVer = parts.count >= 3 ? String(parts[2]).trimmingCharacters(in: CharacterSet(charactersIn: "<")) : "?"
-            updates.append(UpdateItem(
-                name: name,
-                currentVersion: currentVer,
-                latestVersion: latestVer,
-                type: .dependency,
-                updateCommand: "brew upgrade \(name)"
-            ))
-        }
-        return updates
-    }
-
-    private func checkNodeUpdates() -> [UpdateItem] {
-        var updates: [UpdateItem] = []
-        let output = runShellCommand("npm outdated -g 2>/dev/null")
-        guard !output.isEmpty else { return updates }
-        
-        for line in output.components(separatedBy: .newlines).dropFirst() {
-            let parts = line.split(separator: " ")
-            guard parts.count >= 3 else { continue }
-            let name = String(parts[0])
-            let current = String(parts[1])
-            let latest = String(parts[2])
-            if current != latest {
-                updates.append(UpdateItem(
-                    name: name,
-                    currentVersion: current,
-                    latestVersion: latest,
-                    type: .dependency,
-                    updateCommand: "npm update -g \(name)"
-                ))
-            }
-        }
-        return updates
-    }
-
-    private func runShellCommand(_ command: String) -> String {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/bash")
-        task.arguments = ["-c", command]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-        do {
-            try task.run()
-            task.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        } catch {
-            return ""
-        }
-    }
-
-    private func extractVersion(from output: String) -> String {
-        let pattern = "[0-9]+\\.[0-9]+(\\.[0-9]+)?"
-        guard let range = output.range(of: pattern, options: .regularExpression) else { return "" }
-        return String(output[range])
-    }
-}
-
-class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
-    let onProgress: (Double) -> Void
-    let onComplete: (URL?, Error?) -> Void
-    var task: URLSessionDownloadTask?
-
-    init(onProgress: @escaping (Double) -> Void, onComplete: @escaping (URL?, Error?) -> Void) {
-        self.onProgress = onProgress
-        self.onComplete = onComplete
-    }
-
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        if totalBytesExpectedToWrite > 0 {
-            let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-            onProgress(min(progress, 0.99))
-        }
-    }
-
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        onComplete(location, nil)
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error = error {
-            onComplete(nil, error)
-        }
-    }
 }

@@ -1,15 +1,9 @@
 #!/usr/bin/env python3
 import math
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 SIZE = 1024
 CENTER = SIZE // 2
-
-def create_gradient_circle(draw, cx, cy, r, color_inner, color_outer):
-    for i in range(r, 0, -1):
-        t = i / r
-        color = tuple(int(color_inner[j] * (1 - t) + color_outer[j] * t) for j in range(3))
-        draw.ellipse([cx - i, cy - i, cx + i, cy + i], fill=color)
 
 def draw_hexagon(draw, cx, cy, r, fill=None, outline=None, width=1):
     points = []
@@ -69,6 +63,24 @@ def draw_circuit_lines(draw, cx, cy, hex_r):
         dot_r = 6
         draw.ellipse([x2 - dot_r, y2 - dot_r, x2 + dot_r, y2 + dot_r], fill=(80, 140, 220))
 
+def load_font(size):
+    font_paths = [
+        '/System/Library/Fonts/HelveticaNeue.ttc',
+        '/System/Library/Fonts/SFNSMono.ttf',
+        '/System/Library/Fonts/Geneva.ttf',
+        '/System/Library/Fonts/Optima.ttc',
+    ]
+    for fp in font_paths:
+        try:
+            return ImageFont.truetype(fp, size)
+        except Exception:
+            continue
+    try:
+        return ImageFont.truetype('/System/Library/Fonts/HelveticaNeue.ttc', size)
+    except Exception:
+        pass
+    return ImageFont.load_default()
+
 def create_icon():
     img = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -90,26 +102,27 @@ def create_icon():
     img = Image.composite(bg, img, mask)
     draw = ImageDraw.Draw(img)
 
-    hex_r = SIZE * 0.34
+    symbol_cy = CENTER - 80
+    hex_r = SIZE * 0.28
     hex_inner_r = hex_r * 0.92
 
     for i in range(int(hex_r * 1.1), int(hex_inner_r), -1):
         t = (i - hex_inner_r) / (hex_r * 1.1 - hex_inner_r)
         alpha = int(40 * (1 - t))
-        draw_hexagon(draw, CENTER, CENTER, i, fill=(40, 60, 120, alpha))
+        draw_hexagon(draw, CENTER, symbol_cy, i, fill=(40, 60, 120, alpha))
 
-    draw_hexagon(draw, CENTER, CENTER, int(hex_r), fill=(25, 35, 70, 230),
+    draw_hexagon(draw, CENTER, symbol_cy, int(hex_r), fill=(25, 35, 70, 230),
                  outline=(80, 130, 220), width=4)
-    draw_hexagon(draw, CENTER, CENTER, int(hex_inner_r), fill=(20, 28, 55, 200),
+    draw_hexagon(draw, CENTER, symbol_cy, int(hex_inner_r), fill=(20, 28, 55, 200),
                  outline=(60, 100, 180, 150), width=2)
 
-    draw_circuit_lines(draw, CENTER, CENTER, hex_r)
+    draw_circuit_lines(draw, CENTER, symbol_cy, hex_r)
 
-    eye_w = SIZE * 0.18
-    eye_h = SIZE * 0.11
-    iris_r = int(SIZE * 0.065)
-    pupil_r = int(SIZE * 0.03)
-    draw_eye(draw, CENTER, CENTER, int(eye_w), int(eye_h), pupil_r, iris_r)
+    eye_w = SIZE * 0.15
+    eye_h = SIZE * 0.085
+    iris_r = int(SIZE * 0.054)
+    pupil_r = int(SIZE * 0.024)
+    draw_eye(draw, CENTER, symbol_cy, int(eye_w), int(eye_h), pupil_r, iris_r)
 
     glow = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
     glow_draw = ImageDraw.Draw(glow)
@@ -117,7 +130,7 @@ def create_icon():
     for i in range(glow_r, 0, -1):
         t = i / glow_r
         alpha = int(30 * (1 - t))
-        glow_draw.ellipse([CENTER - i, CENTER - i, CENTER + i, CENTER + i],
+        glow_draw.ellipse([CENTER - i, symbol_cy - i, CENTER + i, symbol_cy + i],
                           fill=(0, 200, 255, alpha))
     img = Image.alpha_composite(img, glow)
 
@@ -125,9 +138,26 @@ def create_icon():
     for i in range(6):
         angle = math.radians(60 * i + 30)
         x = CENTER + hex_r * 0.78 * math.cos(angle)
-        y = CENTER + hex_r * 0.78 * math.sin(angle)
+        y = symbol_cy + hex_r * 0.78 * math.sin(angle)
         dot_r = 5
         draw.ellipse([x - dot_r, y - dot_r, x + dot_r, y + dot_r], fill=(0, 200, 255, 180))
+
+    text_y = symbol_cy + hex_r + 60
+    font = load_font(88)
+    text = "AgentGuard"
+
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
+    tx = (SIZE - tw) // 2
+
+    for dx in [-2, -1, 0, 1, 2]:
+        for dy in [-2, -1, 0, 1, 2]:
+            if dx == 0 and dy == 0:
+                continue
+            draw.text((tx + dx, text_y + dy), text, fill=(0, 0, 0, 160), font=font)
+
+    draw.text((tx, text_y), text, fill=(220, 245, 255), font=font)
 
     img = Image.composite(img, Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0)), mask)
 
@@ -147,7 +177,7 @@ if __name__ == '__main__':
         'icon_32.png': 32,
         'icon_32_2x.png': 64,
         'icon_128.png': 128,
-        'icon_128_2x.png': 256,
+        'icon_128_2x.png':  256,
         'icon_256.png': 256,
         'icon_256_2x.png': 512,
         'icon_512.png': 512,
@@ -159,4 +189,7 @@ if __name__ == '__main__':
         resize_and_save(icon, size, path)
         print(f'Saved {name} ({size}x{size})')
 
+    preview_path = '/tmp/AgentGuard_icon_preview.png'
+    icon.save(preview_path, 'PNG')
+    print(f'Preview saved to: {preview_path}')
     print('All icon sizes generated!')

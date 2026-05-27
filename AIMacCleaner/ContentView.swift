@@ -11,15 +11,20 @@ struct ContentView: View {
     @State private var hoveredItem: NavItem?
     @AppStorage("networkMode") private var networkMode = "internet"
 
+    private var isToolboxSubItemSelected: Bool {
+        [.cleaner, .app, .dependency, .other, .migration].contains(selectedTab)
+    }
+
     enum NavItem: String, CaseIterable {
-        case operations = "Agent 监控"
-        case agentGuard = "Agent 守护"
-        case toolbox = "工具箱"
-        case cleaner = "Mac 清理"
-        case app = "APP 管理"
-        case dependency = "依赖管理"
-        case other = "其它工具"
-        case migration = "适配检测"
+        case agentGuard = "agentGuard"
+        case agentCenter = "agentCenter"
+        case operations = "operations"
+        case toolbox = "toolbox"
+        case cleaner = "cleaner"
+        case app = "app"
+        case dependency = "dependency"
+        case other = "other"
+        case migration = "migration"
 
         var isSubItem: Bool {
             switch self {
@@ -36,6 +41,7 @@ struct ContentView: View {
             case .other: "terminal"
             case .operations: "cpu"
             case .agentGuard: "eye.circle.fill"
+            case .agentCenter: "point.3.connected.trianglepath.dotted"
             case .toolbox: "wrench.and.screwdriver.fill"
             case .migration: "arrow.triangle.2.circlepath"
             }
@@ -49,6 +55,7 @@ struct ContentView: View {
             case .other: .gray
             case .operations: .green
             case .agentGuard: .orange
+            case .agentCenter: .teal
             case .toolbox: .blue
             case .migration: .purple
             }
@@ -62,6 +69,7 @@ struct ContentView: View {
             case .other: localizer.navOther
             case .operations: localizer.navOperations
             case .agentGuard: localizer.navAgentGuard
+            case .agentCenter: localizer.navAgentCenter
             case .toolbox: localizer.navToolbox
             case .migration: localizer.navMigration
             }
@@ -75,6 +83,7 @@ struct ContentView: View {
             case .other: localizer.subOther
             case .operations: localizer.subOperations
             case .agentGuard: localizer.subAgentGuard
+            case .agentCenter: localizer.subAgentCenter
             case .toolbox: localizer.subToolbox
             case .migration: localizer.subMigration
             }
@@ -131,18 +140,20 @@ struct ContentView: View {
         HStack(spacing: 0) {
             if !sidebarCollapsed {
                 HStack(spacing: Theme.Spacing.sm) {
-                    Image(systemName: "eye.circle.fill")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(Theme.Gradients.accent)
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .frame(width: 24, height: 24)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
                     Text(localizer.appName)
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Theme.Gradients.accent)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
             } else {
-                Image(systemName: "eye.circle.fill")
-                    .font(.system(size: Theme.Sidebar.iconSize, weight: .semibold))
-                    .foregroundStyle(Theme.Gradients.accent)
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: Theme.Sidebar.iconSize + 2, height: Theme.Sidebar.iconSize + 2)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
                     .frame(maxWidth: .infinity)
             }
         }
@@ -178,8 +189,10 @@ struct ContentView: View {
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                                 toolboxExpanded.toggle()
                             }
+                            selectedTab = .cleaner
+                        } else {
+                            selectedTab = item
                         }
-                        selectedTab = item
                     } label: {
                         Group {
                             if sidebarCollapsed {
@@ -206,24 +219,21 @@ struct ContentView: View {
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                     toolboxExpanded.toggle()
                 }
-                if !toolboxExpanded {
-                    selectedTab = .toolbox
-                }
             } label: {
                 HStack(spacing: Theme.Spacing.sm + 2) {
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(selectedTab == .toolbox || toolboxExpanded ? NavItem.toolbox.color : Color.clear)
+                        .fill(Color.clear)
                         .frame(width: 3, height: Theme.Sidebar.itemHeight * 0.5)
 
                     Image(systemName: NavItem.toolbox.icon)
-                        .font(.system(size: Theme.Sidebar.iconSize * 0.65, weight: (selectedTab == .toolbox || toolboxExpanded) ? .semibold : .medium))
-                        .foregroundStyle((selectedTab == .toolbox || toolboxExpanded) ? NavItem.toolbox.color : (hoveredItem == .toolbox ? Theme.Colors.textPrimary : Theme.Colors.textSecondary))
+                        .font(.system(size: Theme.Sidebar.iconSize * 0.65, weight: .medium))
+                        .foregroundStyle(hoveredItem == .toolbox ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
                         .frame(width: Theme.Sidebar.iconSize)
 
                     Text(NavItem.toolbox.label(localizer))
                         .font(.system(size: 13))
-                        .fontWeight((selectedTab == .toolbox || toolboxExpanded) ? .semibold : .regular)
-                        .foregroundStyle((selectedTab == .toolbox || toolboxExpanded) ? Theme.Colors.textPrimary : (hoveredItem == .toolbox ? Theme.Colors.textPrimary : Theme.Colors.textSecondary))
+                        .fontWeight(.regular)
+                        .foregroundStyle(hoveredItem == .toolbox ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
 
                     Spacer()
 
@@ -235,11 +245,7 @@ struct ContentView: View {
                 .padding(.vertical, Theme.Spacing.md + 1)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Sidebar.itemRadius)
-                        .fill((selectedTab == .toolbox || toolboxExpanded) ? NavItem.toolbox.color.opacity(0.1) : (hoveredItem == .toolbox ? Theme.Colors.cardHover : Color.clear))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Sidebar.itemRadius)
-                        .stroke((selectedTab == .toolbox || toolboxExpanded) ? NavItem.toolbox.color.opacity(0.2) : Color.clear, lineWidth: 1)
+                        .fill(hoveredItem == .toolbox ? Theme.Colors.cardHover : Color.clear)
                 )
             }
             .buttonStyle(.plain)
@@ -291,14 +297,15 @@ struct ContentView: View {
                 .frame(width: 3, height: Theme.Sidebar.itemHeight * 0.5)
 
             Image(systemName: item.icon)
-                .font(.system(size: Theme.Sidebar.iconSize * 0.65, weight: selectedTab == item ? .semibold : .medium))
+                .font(.system(size: Theme.Sidebar.iconSize * 0.65, weight: .medium))
                 .foregroundStyle(selectedTab == item ? item.color : (hoveredItem == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary))
                 .frame(width: Theme.Sidebar.iconSize)
 
             Text(item.label(localizer))
-                .font(.system(size: 13))
-                .fontWeight(selectedTab == item ? .semibold : .regular)
+                .font(.system(size: 12))
+                .fontWeight(.regular)
                 .foregroundStyle(selectedTab == item ? Theme.Colors.textPrimary : (hoveredItem == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary))
+                .lineLimit(1)
 
             Spacer()
 
@@ -355,11 +362,6 @@ struct ContentView: View {
                         Image(systemName: "sidebar.right")
                             .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(Theme.Colors.textSecondary)
-                            .frame(width: 32, height: 32)
-                            .background(
-                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                    .fill(Theme.Colors.cardHover)
-                            )
                     }
                     .buttonStyle(.plain)
                     .help(localizer.expandSidebar)
@@ -368,21 +370,18 @@ struct ContentView: View {
                         Image(systemName: "gearshape")
                             .font(.system(size: 14))
                             .foregroundStyle(Theme.Colors.textSecondary)
-                            .frame(width: 32, height: 32)
-                            .background(
-                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                    .fill(Theme.Colors.cardHover)
-                            )
                     }
                     .buttonStyle(.plain)
                     .help(localizer.settings)
 
                     languageToggleButton
 
-                    networkStatusBadge
+                    Image(systemName: networkMode == "internet" ? "globe" : "lock.circle")
+                        .font(.system(size: 9))
+                        .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
 
                     Text("v\(service.currentVersion)")
-                        .font(Theme.Font.caption)
+                        .font(.system(size: 9))
                         .foregroundStyle(Theme.Colors.textTertiary)
                 }
                 .padding(.vertical, Theme.Spacing.lg)
@@ -391,13 +390,8 @@ struct ContentView: View {
                     HStack(spacing: Theme.Spacing.sm) {
                         Button { showSettings = true } label: {
                             Image(systemName: "gearshape")
-                                .font(.system(size: 12))
+                                .font(.system(size: 14))
                                 .foregroundStyle(Theme.Colors.textSecondary)
-                                .frame(width: 24, height: 24)
-                                .background(
-                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                        .fill(Theme.Colors.cardHover)
-                                )
                         }
                         .buttonStyle(.plain)
                         .help(localizer.settings)
@@ -405,8 +399,18 @@ struct ContentView: View {
                         languageToggleButton
 
                         Spacer()
+                    }
 
-                        networkStatusBadge
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Image(systemName: networkMode == "internet" ? "globe" : "lock.circle")
+                            .font(.system(size: 10))
+                            .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
+
+                        Text("v\(service.currentVersion)")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+
+                        Spacer()
 
                         Button {
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
@@ -414,26 +418,11 @@ struct ContentView: View {
                             }
                         } label: {
                             Image(systemName: "sidebar.left")
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(Theme.Colors.textTertiary)
-                                .frame(width: 24, height: 24)
-                                .background(
-                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                        .fill(Theme.Colors.cardHover)
-                                )
                         }
                         .buttonStyle(.plain)
                         .help(localizer.collapseSidebar)
-                    }
-
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Circle()
-                            .fill(Theme.Colors.success)
-                            .frame(width: 5, height: 5)
-                        Text("v\(service.currentVersion)")
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                        Spacer()
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.lg)
@@ -451,7 +440,7 @@ struct ContentView: View {
             }
         }
         .pickerStyle(.menu)
-        .frame(width: sidebarCollapsed ? 36 : 80)
+        .frame(minWidth: sidebarCollapsed ? 36 : 60, maxWidth: sidebarCollapsed ? 36 : 100)
     }
 
     private var networkStatusBadge: some View {
@@ -493,6 +482,9 @@ struct ContentView: View {
                 .environmentObject(localizer)
         case .agentGuard:
             AgentGuardTab()
+                .environmentObject(localizer)
+        case .agentCenter:
+            AgentCenterView()
                 .environmentObject(localizer)
         case .toolbox:
             ToolboxTab()
@@ -690,11 +682,11 @@ struct OperationLogTab: View {
     }
 
     var agentNames: [String] {
-        Array(Set(monitor.records.map(\.agentName))).sorted()
+        Array(Set(allOperationRecords.filter(isDisplayableAgentRecord).map(\.agentName))).sorted()
     }
 
     var filteredRecords: [OperationRecord] {
-        var result = monitor.records
+        var result = allOperationRecords.filter(isDisplayableAgentRecord)
         if !filterAgent.isEmpty {
             result = result.filter { $0.agentName == filterAgent }
         }
@@ -727,19 +719,42 @@ struct OperationLogTab: View {
         return result
     }
 
+    private var displayedRecords: [OperationRecord] {
+        Array(filteredRecords.prefix(1000))
+    }
+
     private var agentActivityProgress: Double {
         guard !agentNames.isEmpty else { return 0 }
-        let recentAgents = Set(monitor.records.filter { Date().timeIntervalSince($0.timestamp) < 3600 }.map(\.agentName)).count
+        let recentAgents = Set(allOperationRecords.filter { isDisplayableAgentRecord($0) && Date().timeIntervalSince($0.timestamp) < 3600 }.map(\.agentName)).count
         return Double(recentAgents) / Double(agentNames.count)
     }
 
     private var todayRecordCount: Int {
         let start = Calendar.current.startOfDay(for: Date())
-        return monitor.records.filter { $0.timestamp >= start }.count
+        return allOperationRecords.filter { isDisplayableAgentRecord($0) && $0.timestamp >= start }.count
     }
 
     private var hourRecordCount: Int {
-        monitor.records.filter { Date().timeIntervalSince($0.timestamp) < 3600 }.count
+        allOperationRecords.filter { isDisplayableAgentRecord($0) && Date().timeIntervalSince($0.timestamp) < 3600 }.count
+    }
+
+    private var allOperationRecords: [OperationRecord] {
+        let records = service.operationRecords.isEmpty ? monitor.records : service.operationRecords
+        // `OperationMonitor` keeps records in newest-first order already.
+        return records
+    }
+
+    private func isDisplayableAgentRecord(_ record: OperationRecord) -> Bool {
+        let name = record.agentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty || name == "—" { return false }
+        if name == localizer.systemProcess || name.localizedCaseInsensitiveContains("system process") { return false }
+        let nonAgentToolNames: Set<String> = [
+            "Node.js", "Python", "npm", "npx", "Yarn", "pnpm", "Cargo", "Rust",
+            "Deno", "Bun", "Go", "Swift", "Java", "Gradle", "Maven", "Make",
+            "CMake", "Xcode", "Git", "Docker", "pip", "pip3", "Clang",
+            "rsync", "cp", "mv", "rm", "zip", "tar", "mkdir"
+        ]
+        return !nonAgentToolNames.contains(name)
     }
 
     var body: some View {
@@ -751,7 +766,7 @@ struct OperationLogTab: View {
                 color: .green
             ) {
                 HStack(spacing: 8) {
-                    Button { monitor.start() } label: {
+                    Button { service.ensureAgentGuardDataPipeline() } label: {
                         HStack(spacing: 4) {
                             Image(systemName: monitor.isMonitoring ? "record.circle.fill" : "record.circle")
                             Text(monitor.isMonitoring ? localizer.monitoring : localizer.startMonitoring)
@@ -762,7 +777,7 @@ struct OperationLogTab: View {
                     .tint(monitor.isMonitoring ? .green : .blue)
                     .disabled(monitor.isMonitoring)
 
-                    Button { monitor.clearRecords() } label: {
+                    Button { service.clearOperationRecords() } label: {
                         HStack(spacing: 3) { Image(systemName: "trash"); Text(localizer.clear) }
                     }
                     .buttonStyle(.bordered)
@@ -771,40 +786,42 @@ struct OperationLogTab: View {
                 }
             }
 
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.Spacing.sm), count: 4), spacing: Theme.Spacing.sm) {
-                    StatCardView(
-                        icon: "list.bullet.clipboard",
-                        iconColor: Theme.Colors.info,
-                        title: localizer.totalOps,
-                        value: "\(monitor.records.count)",
-                        subtitle: nil
-                    )
-                    StatCardView(
-                        icon: "sun.max",
-                        iconColor: Theme.Colors.warning,
-                        title: localizer.timeToday,
-                        value: "\(todayRecordCount)",
-                        subtitle: nil
-                    )
-                    StatCardView(
-                        icon: "clock",
-                        iconColor: Theme.Colors.success,
-                        title: localizer.time1h,
-                        value: "\(hourRecordCount)",
-                        subtitle: nil
-                    )
-                    StatCardView(
-                        icon: "cpu",
-                        iconColor: Theme.Colors.purple,
-                        title: localizer.unitAgent,
-                        value: "\(agentNames.count)",
-                        subtitle: nil
-                    )
-                }
-                .frame(minHeight: 68)
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.vertical, Theme.Spacing.md)
+            HStack(spacing: Theme.Spacing.sm) {
+                StatCardView(
+                    icon: "list.bullet.clipboard",
+                    iconColor: Theme.Colors.info,
+                    title: localizer.totalOps,
+                    value: "\(allOperationRecords.count)",
+                    subtitle: nil
+                )
+                StatCardView(
+                    icon: "sun.max",
+                    iconColor: Theme.Colors.warning,
+                    title: localizer.timeToday,
+                    value: "\(todayRecordCount)",
+                    subtitle: nil
+                )
+                StatCardView(
+                    icon: "clock",
+                    iconColor: Theme.Colors.success,
+                    title: localizer.time1h,
+                    value: "\(hourRecordCount)",
+                    subtitle: nil
+                )
+                StatCardView(
+                    icon: "cpu",
+                    iconColor: Theme.Colors.purple,
+                    title: localizer.unitAgent,
+                    value: "\(agentNames.count)",
+                    subtitle: nil
+                )
+            }
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.top, Theme.Spacing.sm)
+            .padding(.bottom, 0)
+
+            if monitor.needsReauthorization {
+                agentMonitorAuthorizationBanner
             }
 
             if monitor.isMonitoring {
@@ -812,7 +829,7 @@ struct OperationLogTab: View {
                     Circle().fill(Theme.Colors.success).frame(width: 6, height: 6)
                     Text(localizer.monitoring).font(Theme.Font.caption).foregroundColor(Theme.Colors.success)
                     Text("·").foregroundColor(Theme.Colors.textTertiary)
-                    Text("\(monitor.records.count) \(localizer.records)").font(Theme.Font.caption).foregroundColor(Theme.Colors.textTertiary)
+                    Text("\(allOperationRecords.count) \(localizer.records)").font(Theme.Font.caption).foregroundColor(Theme.Colors.textTertiary)
                     Spacer()
                     if monitor.aiSelfLearningEnabled {
                         PillBadge(text: localizer.aiLearning, color: Theme.Colors.purple)
@@ -924,23 +941,55 @@ struct OperationLogTab: View {
         }
         .frame(minWidth: 600, minHeight: 400)
         .onAppear {
-            if !monitor.isMonitoring { monitor.start() }
+            service.ensureAgentGuardDataPipeline()
             monitor.loadCurated()
             if monitor.autoCurationInterval > 0 { service.startAutoCuration() }
         }
     }
 
+    private var agentMonitorAuthorizationBanner: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            Image(systemName: "folder.badge.questionmark")
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.Colors.warning)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(localizer.permissionExpired)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(localizer.selectMonitorDirs)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+            Button {
+                monitor.requestAccessForStalePaths()
+                service.importKnownAgentHistory()
+            } label: {
+                Label(localizer.reauthorize, systemImage: "lock.open")
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.vertical, Theme.Spacing.xs + 1)
+                    .background(Theme.Colors.warning)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(Theme.Colors.warning.opacity(0.08))
+    }
+
     private var liveView: some View {
         VStack(spacing: 0) {
             HStack(spacing: Theme.Spacing.md) {
-                FilterSearchBar(placeholder: localizer.searchFiles, text: $searchText)
-                    .frame(width: 200)
-
                 Picker(localizer.agentLabel, selection: $filterAgent) {
                     Text(localizer.allAgents).tag("")
                     ForEach(agentNames, id: \.self) { Text($0).tag($0) }
                 }
                 .labelsHidden()
+                .frame(minWidth: 140)
 
                 Picker(localizer.opTypeLabel, selection: $filterOpType) {
                     Text(localizer.allTypes).tag(nil as OperationRecord.OperationType?)
@@ -949,15 +998,39 @@ struct OperationLogTab: View {
                     }
                 }
                 .labelsHidden()
+                .frame(minWidth: 140)
 
                 Picker(localizer.timeRange, selection: $filterTimeRange) {
                     ForEach(TimeRange.allCases, id: \.self) { Text($0.label(localizer)).tag($0) }
                 }
                 .labelsHidden()
+                .frame(minWidth: 120)
 
                 Spacer()
 
-                Text("\(filteredRecords.count) \(localizer.recordsCount)")
+                Button {
+                    let content = service.guardFeature.exportRecordsAsCSV(records: filteredRecords)
+                    _ = service.guardFeature.saveExport(content: content, filename: "agent-monitor-records.csv")
+                } label: {
+                    Label(localizer.exportCSV, systemImage: "square.and.arrow.up")
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(filteredRecords.isEmpty)
+
+                Button {
+                    let content = service.guardFeature.exportRecordsAsJSON(records: filteredRecords)
+                    _ = service.guardFeature.saveExport(content: content, filename: "agent-monitor-records.json")
+                } label: {
+                    Label(localizer.exportJSON, systemImage: "doc.text")
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(filteredRecords.isEmpty)
+
+                Text("\(displayedRecords.count)/\(filteredRecords.count) \(localizer.recordsCount)")
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
@@ -967,7 +1040,7 @@ struct OperationLogTab: View {
 
             Divider()
 
-            if filteredRecords.isEmpty {
+            if displayedRecords.isEmpty {
                 VStack(spacing: Theme.Spacing.lg) {
                     Spacer()
                     Image(systemName: "cpu")
@@ -999,7 +1072,7 @@ struct OperationLogTab: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: Theme.Spacing.sm) {
-                        ForEach(filteredRecords) { record in
+                        ForEach(displayedRecords) { record in
                             HStack(spacing: Theme.Spacing.md) {
                                 Text(record.timestamp, style: .time)
                                     .font(Theme.Font.caption)
@@ -1185,6 +1258,25 @@ struct OperationLogTab: View {
         }
     }
 
+    private func addCustomAgent() {
+        let name = customAgentName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        let dirs = sessionScanner.searchJSONLDirs(forAgentName: name, bundlePath: nil)
+        var paths: [String]
+        if !customAgentPath.isEmpty {
+            paths = [customAgentPath]
+        } else if !dirs.isEmpty {
+            paths = dirs
+        } else {
+            let home = SandboxPaths.realHomeDirectory
+            let lower = name.lowercased().replacingOccurrences(of: " ", with: "")
+            paths = [home + "/.\(lower)", home + "/Library/Application Support/\(name)", home + "/.config/\(lower)"]
+        }
+        saveCustomAgentSource(CustomAgentSource(name: name, searchPaths: paths, addedAt: Date()))
+        customAgentName = ""
+        customAgentPath = ""
+    }
+
     private func saveCustomAgentSource(_ source: CustomAgentSource) {
         var sources = customAgentSources
         if let idx = sources.firstIndex(where: { $0.name == source.name }) {
@@ -1193,7 +1285,7 @@ struct OperationLogTab: View {
             sources.append(source)
         }
         customAgentSourcesData = (try? JSONEncoder().encode(sources)) ?? Data()
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = source.searchPaths.map { $0.replacingOccurrences(of: "~", with: home) }
         let isVSCode = paths.contains { $0.contains("Library/Application Support") || $0.contains("globalStorage") }
         let ds = AgentDataSource(
@@ -1220,11 +1312,51 @@ struct OperationLogTab: View {
         sessionScanner.scanAllAgents()
     }
 
+    private func registerInstalledAgentSources() {
+        let agentApps = service.installedApps.filter { $0.subCategory == "AI Agent" }
+        for app in agentApps {
+            let dirs = sessionScanner.searchJSONLDirs(forAgentName: app.displayName, bundlePath: app.appPath)
+            var paths = dirs
+            if paths.isEmpty {
+                let home = SandboxPaths.realHomeDirectory
+                let lowerName = app.name.lowercased().replacingOccurrences(of: " ", with: "")
+                let lowerDisplay = app.displayName.lowercased().replacingOccurrences(of: " ", with: "")
+                paths = [
+                    app.appPath,
+                    home + "/.\(lowerName)",
+                    home + "/.\(lowerDisplay)",
+                    home + "/Library/Application Support/\(app.displayName)",
+                    home + "/Library/Application Support/\(app.name)",
+                    home + "/.config/\(lowerName)",
+                ]
+            }
+            let existingPaths = paths.filter { !$0.isEmpty }
+            let isVSCode = existingPaths.contains { $0.contains("Library/Application Support") || $0.contains("globalStorage") }
+            let ds = AgentDataSource(
+                agentName: app.displayName,
+                searchPaths: existingPaths,
+                isCustom: true,
+                isVSCodeType: isVSCode,
+                parser: { [sessionScanner] url, agentName in
+                    let ext = url.pathExtension
+                    if ext == "vscdb" {
+                        return sessionScanner.parseVscdbSQLite(url: url, agentName: agentName)
+                    } else if ext == "json" && url.path.contains("file-changes") {
+                        return sessionScanner.parseFileChangesJSON(url: url, agentName: agentName)
+                    } else {
+                        return sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
+                    }
+                }
+            )
+            sessionScanner.registerSource(ds)
+        }
+    }
+
     private func addAgentAndSearch(_ app: AppInfo) {
         let dirs = sessionScanner.searchJSONLDirs(forAgentName: app.displayName, bundlePath: app.appPath)
         var finalPaths: [String]
         if dirs.isEmpty {
-            let home = NSHomeDirectory()
+            let home = SandboxPaths.realHomeDirectory
             let lower = app.name.lowercased().replacingOccurrences(of: " ", with: "")
             finalPaths = [
                 home + "/.\(lower)",
@@ -1262,7 +1394,12 @@ struct OperationLogTab: View {
     @State private var isGeneratingSummary: Bool = false
 
     private var auditFilteredRecords: [AgentOpRecord] {
-        var result = sessionScanner.opRecords
+        var result = sessionScanner.opRecords.filter { record in
+            let hasTarget = !record.targetPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let hasDetail = !record.detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let hasOpType = !record.opType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return hasTarget || hasDetail || hasOpType
+        }
         if let filter = auditFilterAgent {
             result = result.filter { $0.agentName == filter }
         }
@@ -1397,7 +1534,7 @@ struct OperationLogTab: View {
                                 }
                             }
                             .pickerStyle(.menu)
-                            .frame(width: 110)
+                            .frame(minWidth: 130)
 
                             let auditOpTypes = Array(Set(sessionScanner.opRecords.map(\.opType))).sorted()
                             Picker(localizer.opTypeLabel, selection: $auditFilterOpType) {
@@ -1407,7 +1544,7 @@ struct OperationLogTab: View {
                                 }
                             }
                             .pickerStyle(.menu)
-                            .frame(width: 110)
+                            .frame(minWidth: 130)
 
                             Text("\(localizer.total) \(auditFilteredRecords.count) \(localizer.recordsCount)")
                                 .font(Theme.Font.caption)
@@ -1556,6 +1693,39 @@ struct OperationLogTab: View {
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let sel = selectedAgentForAudit {
+                VStack(spacing: Theme.Spacing.lg) {
+                    HStack {
+                        Button {
+                            selectedAgentForAudit = nil
+                            aiSummary = ""
+                            auditFilterAgent = nil
+                        } label: {
+                            HStack(spacing: Theme.Spacing.xs) {
+                                Image(systemName: "chevron.left").font(.system(size: 9))
+                                Text(localizer.back).font(Theme.Font.caption)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(Theme.Colors.textSecondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.top, Theme.Spacing.sm)
+
+                    Spacer()
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 40))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Text("\(localizer.audit): \(sel)")
+                        .font(Theme.Font.subheadlineMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(localizer.noOpRecordsLabel)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 0) {
                     HStack(spacing: Theme.Spacing.sm) {
@@ -1569,6 +1739,24 @@ struct OperationLogTab: View {
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Colors.textSecondary)
                         Spacer()
+                        Button {
+                            showAddAgentSheet = true
+                        } label: {
+                            HStack(spacing: Theme.Spacing.xs) {
+                                Image(systemName: "plus.circle.fill")
+                                Text(localizer.addCustomAgent)
+                            }
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.success)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.xs + 1)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                    .fill(Theme.Colors.success.opacity(0.1))
+                            )
+                        }
+                        .buttonStyle(.plain)
+
                         Button {
                             sessionScanner.isScanning = true
                             Task { sessionScanner.scanAllAgents() }
@@ -1690,99 +1878,47 @@ struct OperationLogTab: View {
                             .padding(Theme.Spacing.lg)
                         }
                     }
-
-                    Divider()
-
-                    VStack(spacing: Theme.Spacing.sm) {
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Image(systemName: "plus.circle").font(.system(size: 11)).foregroundColor(Theme.Colors.success)
-                            Text(localizer.addCustomAgent).font(Theme.Font.captionMedium).foregroundStyle(Theme.Colors.success)
-                            Spacer()
-                        }
-
-                        if !allMonitorableApps.isEmpty {
-                            Button {
-                                showAddAgentSheet = true
-                            } label: {
-                                HStack(spacing: Theme.Spacing.xs) {
-                                    Image(systemName: "app.badge.plus")
-                                    Text(localizer.selectFromInstalled)
-                                }
-                                .font(Theme.Font.caption)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-
-                        HStack(spacing: Theme.Spacing.sm) {
-                            TextField(localizer.customAgentName, text: $customAgentName)
-                                .textFieldStyle(.roundedBorder)
-                                .font(Theme.Font.caption)
-                                .frame(width: 100)
-
-                            TextField(localizer.sessionPathHint, text: $customAgentPath)
-                                .textFieldStyle(.roundedBorder)
-                                .font(Theme.Font.caption)
-
-                            Button {
-                                let name = customAgentName.trimmingCharacters(in: .whitespaces)
-                                guard !name.isEmpty else { return }
-                                let existingNames = Set(sessionScanner.discoveredAgents.map(\.name))
-                                guard !existingNames.contains(name) else { return }
-                                let dirs = sessionScanner.searchJSONLDirs(forAgentName: name, bundlePath: nil)
-                                var paths: [String]
-                                if !customAgentPath.isEmpty {
-                                    paths = [customAgentPath]
-                                } else if !dirs.isEmpty {
-                                    paths = dirs
-                                } else {
-                                    let home = NSHomeDirectory()
-                                    let lower = name.lowercased().replacingOccurrences(of: " ", with: "")
-                                    paths = [home + "/.\(lower)", home + "/Library/Application Support/\(name)", home + "/.config/\(lower)"]
-                                }
-                                saveCustomAgentSource(CustomAgentSource(name: name, searchPaths: paths, addedAt: Date()))
-                                customAgentName = ""
-                                customAgentPath = ""
-                            } label: {
-                                HStack(spacing: Theme.Spacing.xs) {
-                                    Image(systemName: "plus.circle.fill")
-                                    Text(localizer.addAndScan)
-                                }
-                                .font(Theme.Font.caption)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, Theme.Spacing.md)
-                                .padding(.vertical, Theme.Spacing.xs + 1)
-                                .background(Theme.Gradients.success)
-                                .clipShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(customAgentName.trimmingCharacters(in: .whitespaces).isEmpty)
-                        }
-                    }
-                    .padding(.horizontal, Theme.Spacing.xl)
-                    .padding(.vertical, Theme.Spacing.sm)
-                    .background(Theme.Colors.sidebarBg.opacity(0.3))
                 }
             }
         }
         .sheet(isPresented: $showAddAgentSheet) {
-            AddAgentFromAppsSheet(
-                apps: allMonitorableApps,
+            AddAgentSheetView(
+                localizer: localizer,
+                apps: allMonitorableApps.filter { $0.appType == .app },
+                deps: allMonitorableApps.filter { $0.appType == .dependency },
+                others: allMonitorableApps.filter { $0.appType == .other },
                 existingNames: Set(sessionScanner.discoveredAgents.map(\.name)),
-                onAdd: { app in
+                onAddApp: { app in
                     addAgentAndSearch(app)
                     showAddAgentSheet = false
+                },
+                onAddManual: { name, path in
+                    customAgentName = name
+                    customAgentPath = path
+                    addCustomAgent()
+                    if !name.isEmpty { showAddAgentSheet = false }
                 }
             )
         }
         .onAppear {
             loadCustomAgentSources()
+            Task {
+                if service.installedApps.isEmpty {
+                    await service.scanInstalledApps()
+                }
+                registerInstalledAgentSources()
+                sessionScanner.isScanning = true
+                sessionScanner.scanAllAgents()
+            }
+        }
+        .onChange(of: sessionScanner.opRecords.map(\.id)) { _ in
+            service.ingestAgentSessionRecords(sessionScanner.opRecords)
         }
     }
 
     private func loadCustomAgentSources() {
         let sources = customAgentSources
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         for src in sources {
             let paths = src.searchPaths.map { $0.replacingOccurrences(of: "~", with: home) }
             let isVSCode = paths.contains { $0.contains("Library/Application Support") || $0.contains("globalStorage") }
@@ -1837,7 +1973,31 @@ struct OperationLogTab: View {
             let topFiles = fileSummary.sorted { $0.value > $1.value }.prefix(10).map { "\($0.key) (\($0.value)\(localizer.timesUnit))" }.joined(separator: "\n")
             let opCounts = opSummary.map { "\($0.key): \($0.value)\(localizer.timesUnit)" }.joined(separator: ", ")
 
-            let prompt = """
+            let isEnglish = localizer.language == .english
+            let prompt: String
+            if isEnglish {
+                prompt = """
+            You are a system security analyst. Here are the audit records for Agent "\(agentName)":
+
+            Operation Stats: \(opCounts)
+            Total Operations: \(records.count)
+
+            Top 10 Most Accessed Files:
+            \(topFiles)
+
+            Recent Operations:
+            \(recentOps.joined(separator: "\n"))
+
+            Please summarize:
+            1. What is this Agent primarily doing?
+            2. Are there any high-risk operations (writing to sensitive directories, deleting files, executing dangerous commands)?
+            3. What is the main scope of file operations (which projects/directories are affected)?
+            4. Security recommendations
+
+            Be concise and do not use markdown formatting.
+            """
+            } else {
+                prompt = """
             你是一个系统安全分析专家。以下是 Agent「\(agentName)」在本机的操作审计记录，请分析总结：
 
             操作统计: \(opCounts)
@@ -1857,8 +2017,9 @@ struct OperationLogTab: View {
 
             请简洁明了，不要用markdown格式。
             """
+            }
 
-            let apiBase = (config.apiBase ?? "https://api.deepseek.com").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            let apiBase = (config.apiBase ?? "https://api.openai.com").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             guard let url = URL(string: "\(apiBase)/v1/chat/completions"),
                   let apiKey = config.apiKey else {
                 aiSummary = localizer.apiConfigInvalid
@@ -1867,7 +2028,7 @@ struct OperationLogTab: View {
             }
 
             let body: [String: Any] = [
-                "model": config.model ?? "deepseek-chat",
+                "model": config.model ?? "gpt-4o-mini",
                 "messages": [["role": "user", "content": prompt]],
                 "temperature": 0.3,
                 "max_tokens": 2048,
@@ -1992,12 +2153,12 @@ struct OperationLogTab: View {
 
     private func opTypeColor(_ op: String) -> Color {
         switch op {
-        case "写入", "Write": .red
-        case "编辑", "Edit": .orange
-        case "读取", "Read": .blue
-        case "删除", "Delete": .red
-        case "执行命令", "Execute": .purple
-        case "搜索", "Search": .cyan
+        case "Write", "写入": .red
+        case "Edit", "编辑": .orange
+        case "Read", "读取": .blue
+        case "Delete", "删除": .red
+        case "Execute", "执行命令": .purple
+        case "Search", "搜索": .cyan
         default: .secondary
         }
     }
@@ -2028,64 +2189,54 @@ struct OperationLogTab: View {
         case .move: .orange
         case .rename: .purple
         case .read: .cyan
+        case .execute: .purple
         }
     }
 }
 
-struct AddAgentFromAppsSheet: View {
+struct AddAgentSheetView: View {
+    let localizer: Localizer
     let apps: [AppInfo]
+    let deps: [AppInfo]
+    let others: [AppInfo]
     let existingNames: Set<String>
-    let onAdd: (AppInfo) -> Void
+    let onAddApp: (AppInfo) -> Void
+    let onAddManual: (String, String) -> Void
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject var localizer: Localizer
+    @State private var selectedTab: Int = 0
     @State private var searchText: String = ""
     @State private var selectedApp: AppInfo?
+    @State private var manualName: String = ""
+    @State private var manualPath: String = ""
 
-    private var filteredApps: [AppInfo] {
-        if searchText.isEmpty { return apps }
-        return apps.filter {
+    private func appList(_ items: [AppInfo]) -> some View {
+        let filtered = searchText.isEmpty ? items : items.filter {
             $0.displayName.localizedCaseInsensitiveContains(searchText) ||
             $0.name.localizedCaseInsensitiveContains(searchText)
         }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Text(localizer.selectAgentToAdd)
-                    .font(.headline)
-                Spacer()
-                Button(localizer.cancelBtn) { dismiss() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-            }
-            .padding(16)
-
-            Divider()
-
-            TextField(localizer.searchingPlaceholder, text: $searchText)
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-
-            if filteredApps.isEmpty {
-                VStack(spacing: 8) {
+        return Group {
+            if filtered.isEmpty {
+                VStack(spacing: Theme.Spacing.sm) {
                     Spacer()
-                    Text(localizer.noMatchingApp).foregroundColor(.secondary)
+                    Image(systemName: "tray")
+                        .font(.system(size: 32))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Text(localizer.noMatchingApp)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
                     Spacer()
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(selection: Binding(
                     get: { selectedApp?.id },
                     set: { id in
-                        if let id = id, let app = apps.first(where: { $0.id == id }) {
+                        if let id = id, let app = (apps + deps + others).first(where: { $0.id == id }) {
                             selectedApp = app
                         }
                     }
                 )) {
-                    ForEach(filteredApps) { app in
-                        HStack(spacing: 8) {
+                    ForEach(filtered) { app in
+                        HStack(spacing: Theme.Spacing.sm) {
                             if let iconPath = app.iconPath, let img = NSImage(contentsOfFile: iconPath) {
                                 Image(nsImage: img)
                                     .resizable()
@@ -2111,15 +2262,9 @@ struct AddAgentFromAppsSheet: View {
                                             .cornerRadius(2)
                                     }
                                 }
-                                HStack(spacing: 4) {
-                                    Text(localizer.localizedSubCategory(app.subCategory))
-                                        .font(.system(size: 9))
-                                        .foregroundColor(.secondary)
-                                    Text("·").foregroundColor(.secondary)
-                                    Text(app.name)
-                                        .font(.system(size: 9))
-                                        .foregroundColor(.secondary)
-                                }
+                                Text(app.subCategory)
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.secondary)
                             }
                             Spacer()
                         }
@@ -2128,40 +2273,129 @@ struct AddAgentFromAppsSheet: View {
                 }
                 .listStyle(.inset)
             }
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: Theme.Spacing.md) {
+                Text(localizer.addCustomAgent)
+                    .font(Theme.Font.headline)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                        .font(.system(size: 18))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(Theme.Spacing.lg)
+
+            HStack(spacing: 0) {
+                ForEach(Array([(0, localizer.tabApps, "app"), (1, localizer.tabDeps, "puzzlepiece.extension"), (2, localizer.tabOther, "wrench.and.screwdriver"), (3, localizer.tabManual, "keyboard")].enumerated()), id: \.offset) { _, tab in
+                    Button {
+                        selectedTab = tab.0
+                        selectedApp = nil
+                        searchText = ""
+                    } label: {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Image(systemName: tab.2)
+                                .font(.system(size: 11))
+                            Text(tab.1)
+                                .font(Theme.Font.captionMedium)
+                        }
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .background(selectedTab == tab.0 ? Theme.Colors.info.opacity(0.12) : Color.clear)
+                        .foregroundStyle(selectedTab == tab.0 ? Theme.Colors.info : Theme.Colors.textSecondary)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.bottom, Theme.Spacing.sm)
 
             Divider()
 
-            HStack {
-                if let app = selectedApp {
-                    Text("\(localizer.selected): \(app.displayName)")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                } else {
-                    Text(localizer.selectAppFromList)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            if selectedTab == 3 {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    Text(localizer.customAgentName)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    TextField(localizer.customAgentName, text: $manualName)
+                        .textFieldStyle(.roundedBorder)
+
+                    Text(localizer.sessionPathHint)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    TextField(localizer.sessionPathHint, text: $manualPath)
+                        .textFieldStyle(.roundedBorder)
+
+                    Spacer()
+
+                    Button {
+                        onAddManual(manualName, manualPath)
+                    } label: {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Image(systemName: "plus.circle.fill")
+                            Text(localizer.addAndScan)
+                        }
+                        .font(Theme.Font.body)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .background(Theme.Gradients.success)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(manualName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
-                Spacer()
-                Button {
+                .padding(Theme.Spacing.lg)
+            } else {
+                TextField(localizer.searchingPlaceholder, text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.vertical, Theme.Spacing.sm)
+
+                let currentItems = selectedTab == 0 ? apps : selectedTab == 1 ? deps : others
+                appList(currentItems)
+
+                Divider()
+
+                HStack {
                     if let app = selectedApp {
-                        if existingNames.contains(app.displayName) { return }
-                        onAdd(app)
+                        Text("\(localizer.selected): \(app.displayName)")
+                            .font(Theme.Font.caption)
+                            .foregroundColor(.green)
+                    } else {
+                        Text(localizer.selectAppFromList)
+                            .font(Theme.Font.caption)
+                            .foregroundColor(.secondary)
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus.circle.fill")
-                        Text(localizer.addAndScan)
+                    Spacer()
+                    Button {
+                        if let app = selectedApp {
+                            if existingNames.contains(app.displayName) { return }
+                            onAddApp(app)
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus.circle.fill")
+                            Text(localizer.addAndScan)
+                        }
+                        .font(Theme.Font.caption)
                     }
-                    .font(.caption)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .tint(.green)
+                    .disabled(selectedApp == nil || (selectedApp != nil && existingNames.contains(selectedApp!.displayName)))
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
-                .tint(.green)
-                .disabled(selectedApp == nil || (selectedApp != nil && existingNames.contains(selectedApp!.displayName)))
+                .padding(Theme.Spacing.lg)
             }
-            .padding(16)
         }
-        .frame(minWidth: 500, minHeight: 400)
+        .frame(minWidth: 520, minHeight: 420)
     }
 }
 
@@ -2193,9 +2427,11 @@ struct TargetedOpsTable: View {
             }.width(min: 100)
             TableColumn(localizer.opCol) { op in
                 HStack(spacing: 3) {
-                    Image(systemName: op.opType == "修改" || op.opType == "Modify" ? "pencil" : op.opType == "打开" || op.opType == "Open" ? "plus.circle" : "xmark.circle")
-                        .font(.caption2).foregroundColor(op.opType == "修改" || op.opType == "Modify" ? .blue : op.opType == "打开" || op.opType == "Open" ? .green : .red)
-                    Text(op.opType).font(.caption2)
+                    Image(systemName: targetedOpIcon(op.opType))
+                        .font(.caption2)
+                        .foregroundColor(targetedOpColor(op.opType))
+                    Text(targetedOpLabel(op.opType))
+                        .font(.caption2)
                 }
             }.width(50)
             TableColumn(localizer.colPath) { op in
@@ -2222,6 +2458,31 @@ struct TargetedOpsTable: View {
             }.width(70)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: true))
+    }
+
+    private func targetedOpLabel(_ opType: String) -> String {
+        switch opType {
+        case "Modify", "修改": return localizer.modifyOps
+        case "Open", "打开": return localizer.opOpen
+        case "Delete", "删除": return localizer.deleteOps
+        default: return opType
+        }
+    }
+
+    private func targetedOpIcon(_ opType: String) -> String {
+        switch opType {
+        case "Modify", "修改": return "pencil"
+        case "Open", "打开": return "plus.circle"
+        default: return "xmark.circle"
+        }
+    }
+
+    private func targetedOpColor(_ opType: String) -> Color {
+        switch opType {
+        case "Modify", "修改": return .blue
+        case "Open", "打开": return .green
+        default: return .red
+        }
     }
 }
 
@@ -2295,7 +2556,7 @@ struct MacCleanerTab: View {
                             Text(localizer.aiScan)
                                 .font(Theme.Font.subheadlineMedium)
                         }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .padding(.horizontal, Theme.Spacing.md)
                         .padding(.vertical, Theme.Spacing.sm)
                         .background(LinearGradient(
@@ -2548,56 +2809,41 @@ struct MacCleanerTab: View {
     private var diskCard: some View {
         Group {
             if let disk = service.diskInfo {
-                CardView(padding: Theme.Spacing.lg, cornerRadius: Theme.Radius.lg) {
-                    HStack(spacing: Theme.Spacing.xl) {
-                        VStack(spacing: Theme.Spacing.sm) {
-                            ProgressRing(
-                                progress: disk.usedPct / 100.0,
-                                lineWidth: 12,
-                                size: 120,
-                                showLabel: true
-                            )
-                            Text(localizer.diskSpaceLabel)
-                                .font(Theme.Font.captionMedium)
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                        }
+                HStack(spacing: Theme.Spacing.lg) {
+                    VStack(spacing: Theme.Spacing.xs) {
+                        ProgressRing(
+                            progress: disk.usedPct / 100.0,
+                            lineWidth: 10,
+                            size: 80,
+                            showLabel: true
+                        )
+                        Text(localizer.diskSpaceLabel)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                    }
+                    .frame(width: 100)
 
-                        DashboardGrid(columns: 4) {
-                            StatCardView(
-                                icon: "internaldrive",
-                                iconColor: Theme.Colors.info,
-                                title: localizer.totalCapacity,
-                                value: String(format: "%.0f GB", disk.totalGb),
-                                subtitle: nil
-                            )
-                            StatCardView(
-                                icon: "arrow.down.circle.fill",
-                                iconColor: Theme.Colors.warning,
-                                title: localizer.usedLabel,
-                                value: String(format: "%.0f GB", disk.usedGb),
-                                subtitle: String(format: "%.1f%%", disk.usedPct)
-                            )
-                            StatCardView(
-                                icon: "arrow.up.circle.fill",
-                                iconColor: disk.freeGb < 20 ? Theme.Colors.danger : Theme.Colors.success,
-                                title: localizer.available,
-                                value: String(format: "%.0f GB", disk.freeGb),
-                                subtitle: nil
-                            )
-                            StatCardView(
-                                icon: "sparkles",
-                                iconColor: Theme.Colors.cyan,
-                                title: localizer.releasable,
-                                value: service.formatSize(totalCleanable),
-                                subtitle: nil
-                            )
+                    VStack(spacing: Theme.Spacing.xs) {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            CompactStatItem(icon: "internaldrive", iconColor: Theme.Colors.info, title: localizer.totalCapacity, value: String(format: "%.0f GB", disk.totalGb))
+                            CompactStatItem(icon: "arrow.down.circle.fill", iconColor: Theme.Colors.warning, title: localizer.usedLabel, value: String(format: "%.0f GB (%.1f%%)", disk.usedGb, disk.usedPct))
                         }
-
-                        Spacer()
+                        HStack(spacing: Theme.Spacing.sm) {
+                            CompactStatItem(icon: "arrow.up.circle.fill", iconColor: disk.freeGb < 20 ? Theme.Colors.danger : Theme.Colors.success, title: localizer.available, value: String(format: "%.0f GB", disk.freeGb))
+                            CompactStatItem(icon: "sparkles", iconColor: Theme.Colors.cyan, title: localizer.releasable, value: service.formatSize(totalCleanable))
+                        }
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.sm)
+                .padding(.vertical, Theme.Spacing.md)
+                .background(Theme.Colors.cardBg)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+                )
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.xs)
             }
         }
     }
@@ -2803,7 +3049,24 @@ struct MacCleanerTab: View {
     private func performAiScan() async { if service.aiConfig?.hasKey != true { showSettings = true; return }; await service.startAiScan() }
     private func confirmDeleteSelected() { deleteTargetIds = Array(selectedIds); showDeleteConfirm = true }
     private func confirmDeleteSingle(_ item: ScanItem) { deleteTargetIds = [item.id]; showDeleteConfirm = true }
-    private func performDelete() { let s = service.scanItems.filter { deleteTargetIds.contains($0.id) }.reduce(Int64(0)) { $0 + $1.size }; let c = deleteTargetIds.count; Task { let _ = await service.deleteItems(ids: deleteTargetIds, permanent: true); service.removeScannedItems(ids: deleteTargetIds); selectedIds.subtract(deleteTargetIds); deleteTargetIds = []; try? await Task.sleep(nanoseconds: 2_000_000_000); service.refreshDiskInfo(); try? await Task.sleep(nanoseconds: 1_000_000_000); service.refreshDiskInfo(); cleanedSize = s; cleanedCount = c; showCleanResult = true } }
+    private func performDelete() {
+        let targets = service.scanItems.filter { deleteTargetIds.contains($0.id) }
+        Task {
+            let result = await service.deleteItems(ids: deleteTargetIds, permanent: true)
+            let succeededIds = Set((result.results ?? []).filter { $0.success == true }.compactMap { $0.id })
+            let cleanedItems = targets.filter { succeededIds.contains($0.id) }
+            service.removeScannedItems(ids: Array(succeededIds))
+            selectedIds.subtract(succeededIds)
+            deleteTargetIds = []
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            service.refreshDiskInfo()
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            service.refreshDiskInfo()
+            cleanedSize = cleanedItems.reduce(Int64(0)) { $0 + $1.size }
+            cleanedCount = cleanedItems.count
+            showCleanResult = true
+        }
+    }
     private func ignoreSelected() { service.ignoreItems(ids: Array(selectedIds)); selectedIds.removeAll() }
     private func toggleIgnore(_ item: ScanItem) { if item.ignored { service.unignoreItems(ids: [item.id]) } else { service.ignoreItems(ids: [item.id]) } }
 }
@@ -2858,7 +3121,7 @@ struct AppRowCard: View {
                         PillBadge(text: localizer.localizedSubCategory(app.subCategory), color: subCategoryColor(app.subCategory), size: .small)
                     }
                 }
-                Text(app.desc)
+                Text(localizer.localizedAppDescription(app.desc, name: app.displayName))
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .lineLimit(1)
@@ -2883,7 +3146,7 @@ struct AppRowCard: View {
                     .lineLimit(1)
                     .frame(maxWidth: 120, alignment: .leading)
             } else {
-                Text(app.riskDesc)
+                Text(localizer.localizedRiskDescription(app.riskDesc, name: app.displayName))
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.warning)
                     .lineLimit(1)
@@ -2899,32 +3162,17 @@ struct AppRowCard: View {
             HStack(spacing: Theme.Spacing.xs) {
                 if app.canClean || app.canReset {
                     Button { onAction(.reset) } label: {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.warning)
-                            .frame(width: 28, height: 28)
-                            .background(Theme.Colors.warning.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        rowActionLabel(icon: "arrow.counterclockwise", title: localizer.resetAction, color: Theme.Colors.warning)
                     }
                     .buttonStyle(.plain)
                 }
                 if app.canUninstall {
                     Button { onAction(.basicUninstall) } label: {
-                        Image(systemName: "xmark.circle")
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.info)
-                            .frame(width: 28, height: 28)
-                            .background(Theme.Colors.info.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        rowActionLabel(icon: "xmark.circle", title: localizer.basicUninstall, color: Theme.Colors.info)
                     }
                     .buttonStyle(.plain)
                     Button { onAction(.fullUninstall) } label: {
-                        Image(systemName: "trash")
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.danger)
-                            .frame(width: 28, height: 28)
-                            .background(Theme.Colors.danger.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        rowActionLabel(icon: "trash", title: localizer.fullUninstall, color: Theme.Colors.danger)
                     }
                     .buttonStyle(.plain)
                 }
@@ -2942,6 +3190,24 @@ struct AppRowCard: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .onHover { isHovered = $0 }
+    }
+
+    private func rowActionLabel(icon: String, title: String, color: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.78))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(Color.white.opacity(0.22), lineWidth: 0.5)
+        )
     }
 }
 
@@ -2961,7 +3227,9 @@ struct AppManagerTab: View {
     enum AppAction: String, CaseIterable {
         case reset, basicUninstall, fullUninstall
         var icon: String { switch self { case .reset: "arrow.counterclockwise"; case .basicUninstall: "xmark.circle"; case .fullUninstall: "trash" } }
-        var color: Color { switch self { case .reset: .orange; case .basicUninstall: .blue; case .fullUninstall: .red } }
+        var color: Color { switch self { case .reset: Theme.Colors.warning; case .basicUninstall: Theme.Colors.info; case .fullUninstall: Theme.Colors.danger } }
+        var labelColor: Color { .white }
+        var isDestructivePrimary: Bool { self == .fullUninstall }
         func label(_ localizer: Localizer) -> String { switch self {
         case .reset: return localizer.resetAction
         case .basicUninstall: return localizer.basicUninstall
@@ -3002,46 +3270,24 @@ struct AppManagerTab: View {
             ) {
                 HStack(spacing: Theme.Spacing.sm) {
                     Button { Task { await service.scanInstalledApps() } } label: {
-                        HStack(spacing: Theme.Spacing.xs) { Image(systemName: "arrow.clockwise"); Text(localizer.refresh) }
-                            .font(Theme.Font.captionMedium)
-                            .foregroundStyle(Theme.Colors.accent)
-                            .padding(.horizontal, Theme.Spacing.md)
-                            .padding(.vertical, Theme.Spacing.xs + 1)
-                            .background(Theme.Colors.accent.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        topActionLabel(icon: "arrow.clockwise", title: localizer.refresh, color: Theme.Colors.info)
                     }
                     .buttonStyle(.plain)
                     .disabled(service.isScanningApps)
                     .opacity(service.isScanningApps ? 0.5 : 1)
 
-                    Button { service.checkAppUpdates() } label: {
-                        HStack(spacing: Theme.Spacing.xs) { Image(systemName: "arrow.up.circle"); Text(localizer.checkUpdates) }
-                            .font(Theme.Font.captionMedium)
-                            .foregroundStyle(Theme.Colors.success)
-                            .padding(.horizontal, Theme.Spacing.md)
-                            .padding(.vertical, Theme.Spacing.xs + 1)
-                            .background(Theme.Colors.success.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(service.isCheckingAppUpdates)
-                    .opacity(service.isCheckingAppUpdates ? 0.5 : 1)
-
                     Button {
                         let apps = service.installedApps.filter { selectedAppIds.contains($0.id) }
                         if !apps.isEmpty { Task { await service.analyzeImpactWithAI(apps: apps) } }
                     } label: {
-                        HStack(spacing: Theme.Spacing.xs) { Image(systemName: "sparkles"); Text(localizer.aiAnalysis) }
-                            .font(Theme.Font.captionMedium)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, Theme.Spacing.md)
-                            .padding(.vertical, Theme.Spacing.xs + 1)
-                            .background(Theme.Colors.purple.opacity(0.85))
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        topActionLabel(
+                            icon: "sparkles",
+                            title: localizer.aiAnalysis,
+                            color: Theme.Colors.purple,
+                            isUnavailable: selectedAppIds.isEmpty || service.isAnalyzingImpact
+                        )
                     }
                     .buttonStyle(.plain)
-                    .disabled(selectedAppIds.isEmpty || service.isAnalyzingImpact)
-                    .opacity(selectedAppIds.isEmpty || service.isAnalyzingImpact ? 0.5 : 1)
                 }
             }
 
@@ -3058,13 +3304,6 @@ struct AppManagerTab: View {
                     iconColor: Theme.Colors.info,
                     title: localizer.sizeCol,
                     value: service.formatSize(filteredApps.reduce(Int64(0)) { $0 + $1.totalSize }),
-                    subtitle: nil
-                )
-                StatCardView(
-                    icon: "arrow.triangle.2.circlepath",
-                    iconColor: Theme.Colors.warning,
-                    title: localizer.checkUpdates,
-                    value: "\(service.appUpdates.filter { $0.type == .app }.count)",
                     subtitle: nil
                 )
                 StatCardView(
@@ -3165,40 +3404,25 @@ struct AppManagerTab: View {
 
                 HStack(spacing: Theme.Spacing.xs) {
                     Button { selectedAppIds = Set(filteredApps.map(\.id)) } label: {
-                        Text(localizer.selectAllBtn)
-                            .font(Theme.Font.captionMedium)
-                            .foregroundStyle(Theme.Colors.accent)
-                            .padding(.horizontal, Theme.Spacing.md)
-                            .padding(.vertical, Theme.Spacing.xs + 1)
-                            .background(Theme.Colors.accent.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        toolbarActionLabel(icon: "checkmark.circle", title: localizer.selectAllBtn, color: Theme.Colors.info, isPrimary: false)
                     }
                     .buttonStyle(.plain)
                     Button { selectedAppIds.removeAll() } label: {
-                        Text(localizer.cancelBtn)
-                            .font(Theme.Font.captionMedium)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                            .padding(.horizontal, Theme.Spacing.md)
-                            .padding(.vertical, Theme.Spacing.xs + 1)
-                            .background(Theme.Colors.textTertiary.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        toolbarActionLabel(icon: "xmark.circle", title: localizer.cancelBtn, color: Theme.Colors.textSecondary, isPrimary: false)
                     }
                     .buttonStyle(.plain)
                 }
 
                 ForEach(AppAction.allCases, id: \.self) { action in
-                    Button { pendingAction = action; pendingAppIds = Array(selectedAppIds); showActionConfirm = true } label: {
-                        HStack(spacing: Theme.Spacing.xs) { Image(systemName: action.icon); Text(action.label(localizer)) }
-                            .font(Theme.Font.captionMedium)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, Theme.Spacing.md)
-                            .padding(.vertical, Theme.Spacing.xs + 1)
-                            .background(action.color.opacity(0.85))
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    Button {
+                        guard !selectedAppIds.isEmpty else { return }
+                        pendingAction = action
+                        pendingAppIds = Array(selectedAppIds)
+                        showActionConfirm = true
+                    } label: {
+                        bulkOperationLabel(action: action, isUnavailable: selectedAppIds.isEmpty)
                     }
                     .buttonStyle(.plain)
-                    .disabled(selectedAppIds.isEmpty)
-                    .opacity(selectedAppIds.isEmpty ? 0.5 : 1)
                 }
             }
             .padding(.horizontal, Theme.Spacing.xl)
@@ -3270,7 +3494,7 @@ struct AppManagerTab: View {
                                 .font(Theme.Font.headline)
                                 .foregroundStyle(Theme.Colors.textPrimary)
 
-                            let apps = selectedApps
+                            let apps = service.installedApps.filter { pendingAppIds.contains($0.id) }
                             let size = pendingAction == .basicUninstall ? apps.reduce(Int64(0)) { $0 + $1.appSize } : apps.reduce(Int64(0)) { $0 + $1.totalSize }
 
                             VStack(spacing: Theme.Spacing.xs) {
@@ -3362,10 +3586,10 @@ struct AppManagerTab: View {
         switch cat {
         case "AI Agent": .purple
         case "CLI": .blue
-        case "包管理", "Package Manager": .orange
-        case "开发", "Development": .green
-        case "应用", "Apps": .cyan
-        case "其它", "Other": .gray
+        case "Package Manager", "包管理": .orange
+        case "Development", "开发": .green
+        case "Apps", "应用": .cyan
+        case "Other", "其它": .gray
         default: .gray
         }
     }
@@ -3374,12 +3598,78 @@ struct AppManagerTab: View {
         switch cat {
         case "AI Agent": "cpu"
         case "CLI": "terminal"
-        case "包管理", "Package Manager": "cube.box"
-        case "开发", "Development": "hammer"
-        case "应用", "Apps": "app.fill"
-        case "其它", "Other": "questionmark.folder"
+        case "Package Manager", "包管理": "cube.box"
+        case "Development", "开发": "hammer"
+        case "Apps", "应用": "app.fill"
+        case "Other", "其它": "questionmark.folder"
         default: "folder"
         }
+    }
+
+    private func topActionLabel(icon: String, title: String, color: Color, isUnavailable: Bool = false) -> some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+            Text(title)
+                .font(Theme.Font.subheadlineMedium)
+                .fontWeight(.semibold)
+                .lineLimit(1)
+                .minimumScaleFactor(0.86)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, 7)
+        .frame(minHeight: 32)
+        .background(color.opacity(isUnavailable ? 0.62 : 0.76))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(Color.white.opacity(isUnavailable ? 0.28 : 0.34), lineWidth: 0.8)
+        )
+        .shadow(color: color.opacity(isUnavailable ? 0.12 : 0.2), radius: 5, y: 2)
+    }
+
+    private func bulkOperationLabel(action: AppAction, isUnavailable: Bool = false) -> some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            Image(systemName: action.icon)
+                .font(.system(size: 12, weight: .semibold))
+            Text(action.label(localizer))
+                .font(Theme.Font.captionMedium)
+                .fontWeight(.semibold)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, 6)
+        .frame(minHeight: 28)
+        .background(action.color.opacity(isUnavailable ? 0.62 : 0.76))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(Color.white.opacity(isUnavailable ? 0.28 : 0.34), lineWidth: 0.9)
+        )
+        .shadow(color: action.color.opacity(isUnavailable ? 0.12 : 0.22), radius: 5, y: 2)
+    }
+
+    private func toolbarActionLabel(icon: String, title: String, color: Color, isPrimary: Bool) -> some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+            Text(title)
+                .font(Theme.Font.captionMedium)
+                .lineLimit(1)
+        }
+        .foregroundStyle(isPrimary ? .white : color)
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, 6)
+        .frame(minHeight: 28)
+        .background(isPrimary ? color : color.opacity(0.11))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(isPrimary ? Color.white.opacity(0.16) : color.opacity(0.28), lineWidth: 0.7)
+        )
     }
 
     private func performAction() {
@@ -3687,5 +3977,3 @@ struct SensorFilterChip: View {
         .buttonStyle(.plain)
     }
 }
-
-

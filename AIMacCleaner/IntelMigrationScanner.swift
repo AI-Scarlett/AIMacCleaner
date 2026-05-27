@@ -12,8 +12,6 @@ class IntelMigrationScanner: ObservableObject {
     @Published var totalScanned: Int = 0
 
     weak var localizer: Localizer?
-    private let fileManager = FileManager.default
-
     var needsAdaptCount: Int { intelOnlyCount }
 
     var needsAdaptItems: [IntelAppInfo] {
@@ -62,8 +60,9 @@ class IntelMigrationScanner: ObservableObject {
             for app in appsCopy {
                 scanned += 1
                 if scanned % 20 == 0 {
+                    let progressScanned = scanned
                     let detectingLabel = await MainActor.run { self.localizer?.detectingApp ?? "Detecting" }
-                    await MainActor.run { self.scanProgress = "\(detectingLabel) \(app.displayName) (\(scanned)/\(appsCopy.count))..." }
+                    await MainActor.run { self.scanProgress = "\(detectingLabel) \(app.displayName) (\(progressScanned)/\(appsCopy.count))..." }
                 }
 
                 var arch: IntelAppInfo.BinaryArchitecture
@@ -73,7 +72,7 @@ class IntelMigrationScanner: ObservableObject {
                 if app.appPath.hasSuffix(".app") {
                     arch = self.detectAppArchitecture(appPath: app.appPath)
                     appType = .app
-                } else if app.appPath.contains("Cellar") || app.appPath.contains("homebrew") || app.subCategory.contains("包管理") {
+                } else if app.appPath.contains("Cellar") || app.appPath.contains("homebrew") || app.subCategory.contains("Package Manager") {
                     if app.appPath.contains("/usr/local/Cellar") || app.appPath.contains("/usr/local/Homebrew") {
                         arch = .x86_64
                     } else if app.appPath.contains("/opt/homebrew/Cellar") || app.appPath.contains("/opt/homebrew") {
@@ -118,12 +117,18 @@ class IntelMigrationScanner: ObservableObject {
                 ))
             }
 
+            let finalResults = results
+            let finalIntelCount = iCount
+            let finalUniversalCount = uCount
+            let finalArmCount = aCount
+            let finalScanned = scanned
+
             await MainActor.run {
-                self.items = results
-                self.intelOnlyCount = iCount
-                self.universalCount = uCount
-                self.armNativeCount = aCount
-                self.totalScanned = scanned
+                self.items = finalResults
+                self.intelOnlyCount = finalIntelCount
+                self.universalCount = finalUniversalCount
+                self.armNativeCount = finalArmCount
+                self.totalScanned = finalScanned
                 self.isScanning = false
                 self.scanProgress = ""
             }
@@ -155,54 +160,63 @@ class IntelMigrationScanner: ObservableObject {
             return .unknown
         }
 
-        let task = Process()
-        task.launchPath = "/usr/bin/lipo"
-        task.arguments = ["-info", binaryPath]
+        guard let handle = FileHandle(forReadingAtPath: binaryPath) else { return .unknown }
+        defer { try? handle.close() }
 
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
+        let magicData = handle.readData(ofLength: 4)
+        guard magicData.count == 4 else { return .unknown }
 
-        do {
-            try task.run()
-            task.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
+        let magic = magicData.withUnsafeBytes { $0.load(as: UInt32.self) }
 
-            if output.contains("x86_64") && output.contains("arm64") {
-                return .universal
+        if magic == 0xcafebabe || magic == CFSwapInt32(0xcafebabe) {
+            handle.seek(toFileOffset: 0)
+            let headerData = handle.readData(ofLength: 8)
+            guard headerData.count == 8 else { return .unknown }
+            let ncmds = headerData.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
+                ptr.load(fromByteOffset: 4, as: UInt32.self)
             }
-            if output.contains("x86_64") {
-                return .x86_64
-            }
-            if output.contains("arm64") {
-                return .arm64
-            }
-        } catch {}
+            let swapped = CFSwapInt32(ncmds)
+            let fatCount = magic == 0xcafebabe ? ncmds : swapped
 
-        let task2 = Process()
-        task2.launchPath = "/usr/bin/file"
-        task2.arguments = [binaryPath]
-
-        let pipe2 = Pipe()
-        task2.standardOutput = pipe2
-
-        do {
-            try task2.run()
-            task2.waitUntilExit()
-            let data = pipe2.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-
-            if output.contains("universal") || (output.contains("x86_64") && output.contains("arm64")) {
-                return .universal
+            var hasX86 = false
+            var hasArm = false
+            for i in 0..<min(fatCount, 20) {
+                handle.seek(toFileOffset: 8 + UInt64(i) * 20)
+                let archData = handle.readData(ofLength: 4)
+                guard archData.count == 4 else { break }
+                let cpuType = archData.withUnsafeBytes { $0.load(as: UInt32.self) }
+                let swappedCpu = CFSwapInt32(cpuType)
+                let ct = magic == 0xcafebabe ? cpuType : swappedCpu
+                if ct == 0x01000007 { hasX86 = true }
+                if ct == 0x0100000c { hasArm = true }
             }
-            if output.contains("x86_64") {
-                return .x86_64
-            }
-            if output.contains("arm64") {
-                return .arm64
-            }
-        } catch {}
+
+            if hasX86 && hasArm { return .universal }
+            if hasX86 { return .x86_64 }
+            if hasArm { return .arm64 }
+            return .unknown
+        }
+
+        if magic == 0xfeedfacf {
+            handle.seek(toFileOffset: 4)
+            let cpuData = handle.readData(ofLength: 4)
+            guard cpuData.count == 4 else { return .unknown }
+            let cpuType = cpuData.withUnsafeBytes { $0.load(as: UInt32.self) }
+            if cpuType == 0x01000007 { return .x86_64 }
+            if cpuType == 0x0100000c { return .arm64 }
+            return .unknown
+        }
+
+        if magic == CFSwapInt32(0xfeedfacf) {
+            handle.seek(toFileOffset: 4)
+            let cpuData = handle.readData(ofLength: 4)
+            guard cpuData.count == 4 else { return .unknown }
+            let cpuType = cpuData.withUnsafeBytes { $0.load(as: UInt32.self) }
+            let swappedCpu = CFSwapInt32(cpuType)
+            if swappedCpu == 0x01000007 { return .x86_64 }
+            if swappedCpu == 0x0100000c { return .arm64 }
+            return .unknown
+        }
 
         return .unknown
     }
@@ -235,21 +249,6 @@ class IntelMigrationScanner: ObservableObject {
         case .homebrew:
             return ("brew install \(name)", nil)
         case .cli:
-            if FileManager.default.fileExists(atPath: "/opt/homebrew/bin/brew") {
-                let task = Process()
-                task.launchPath = "/opt/homebrew/bin/brew"
-                task.arguments = ["search", name]
-                let pipe = Pipe()
-                task.standardOutput = pipe
-                if let _ = try? task.run() {
-                    task.waitUntilExit()
-                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                    let output = String(data: data, encoding: .utf8) ?? ""
-                    if output.contains(name) {
-                        return ("brew install \(name)", nil)
-                    }
-                }
-            }
             let ghResult = searchGitHubRepos(query: name)
             if let url = ghResult {
                 return (url, nil)
@@ -329,7 +328,6 @@ class IntelMigrationScanner: ObservableObject {
         items[idx].replaceProgress = 0.1
 
         let appPath = items[idx].path
-        let appName = items[idx].name
         let displayName = items[idx].displayName
         let appType = items[idx].appType
         let bundleId = items[idx].bundleId
@@ -347,25 +345,18 @@ class IntelMigrationScanner: ObservableObject {
 
             switch appType {
             case .homebrew:
-                let uninstall = Process()
-                uninstall.executableURL = URL(fileURLWithPath: "/usr/local/bin/brew")
-                uninstall.arguments = ["uninstall", appName]
-                try? uninstall.run()
-                uninstall.waitUntilExit()
-
                 await MainActor.run {
                     if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
-                        self.items[idx2].replaceProgress = 0.5
+                        self.items[idx2].replaceProgress = 0.3
                         self.items[idx2].replaceState = .installing
                     }
                 }
-
-                let install = Process()
-                install.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/brew")
-                install.arguments = ["install", appName]
-                try? install.run()
-                install.waitUntilExit()
-                success = true
+                if let urlStr = downloadURL, let url = URL(string: urlStr) {
+                    await MainActor.run { _ = NSWorkspace.shared.open(url) }
+                    success = true
+                } else {
+                    success = false
+                }
 
             case .app:
                 await MainActor.run {
@@ -375,7 +366,7 @@ class IntelMigrationScanner: ObservableObject {
                 }
 
                 if let urlStr = downloadURL, let url = URL(string: urlStr) {
-                    await MainActor.run { NSWorkspace.shared.open(url) }
+                    await MainActor.run { _ = NSWorkspace.shared.open(url) }
                 }
 
                 await MainActor.run {
@@ -385,7 +376,7 @@ class IntelMigrationScanner: ObservableObject {
                 }
 
                 var resultURL: NSURL?
-                try? self.fileManager.trashItem(at: URL(fileURLWithPath: appPath), resultingItemURL: &resultURL)
+                try? FileManager.default.trashItem(at: URL(fileURLWithPath: appPath), resultingItemURL: &resultURL)
 
                 await MainActor.run {
                     if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
@@ -397,7 +388,7 @@ class IntelMigrationScanner: ObservableObject {
                 success = downloadURL != nil
 
             case .cli:
-                try? self.fileManager.removeItem(atPath: appPath)
+                try? FileManager.default.removeItem(atPath: appPath)
 
                 await MainActor.run {
                     if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
@@ -406,16 +397,8 @@ class IntelMigrationScanner: ObservableObject {
                     }
                 }
 
-                let brewPath = "/opt/homebrew/bin/brew"
-                if self.fileManager.fileExists(atPath: brewPath) {
-                    let install = Process()
-                    install.executableURL = URL(fileURLWithPath: brewPath)
-                    install.arguments = ["install", appName]
-                    try? install.run()
-                    install.waitUntilExit()
-                    success = true
-                } else if let urlStr = downloadURL, let url = URL(string: urlStr) {
-                    await MainActor.run { NSWorkspace.shared.open(url) }
+                if let urlStr = downloadURL, let url = URL(string: urlStr) {
+                    await MainActor.run { _ = NSWorkspace.shared.open(url) }
                     success = true
                 } else {
                     success = false
@@ -429,7 +412,7 @@ class IntelMigrationScanner: ObservableObject {
                 }
 
                 if let urlStr = downloadURL, let url = URL(string: urlStr) {
-                    await MainActor.run { NSWorkspace.shared.open(url) }
+                    await MainActor.run { _ = NSWorkspace.shared.open(url) }
                 }
 
                 await MainActor.run {
@@ -439,7 +422,7 @@ class IntelMigrationScanner: ObservableObject {
                 }
 
                 var resultURL: NSURL?
-                try? self.fileManager.trashItem(at: URL(fileURLWithPath: appPath), resultingItemURL: &resultURL)
+                try? FileManager.default.trashItem(at: URL(fileURLWithPath: appPath), resultingItemURL: &resultURL)
 
                 await MainActor.run {
                     if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
@@ -451,11 +434,12 @@ class IntelMigrationScanner: ObservableObject {
                 success = downloadURL != nil
             }
 
+            let finalSuccess = success
             await MainActor.run {
                 if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
                     self.items[idx2].replaceProgress = 1.0
-                    self.items[idx2].replaceState = success ? .completed : .failed
-                    if success {
+                    self.items[idx2].replaceState = finalSuccess ? .completed : .failed
+                    if finalSuccess {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                             self.items.removeAll { $0.id == itemId }
                             self.intelOnlyCount = max(0, self.intelOnlyCount - 1)
@@ -471,15 +455,11 @@ class IntelMigrationScanner: ObservableObject {
             switch item.appType {
             case .app, .framework:
                 var resultURL: NSURL?
-                try fileManager.trashItem(at: URL(fileURLWithPath: item.path), resultingItemURL: &resultURL)
+                try FileManager.default.trashItem(at: URL(fileURLWithPath: item.path), resultingItemURL: &resultURL)
             case .cli:
-                try fileManager.removeItem(atPath: item.path)
+                try FileManager.default.removeItem(atPath: item.path)
             case .homebrew:
-                let task = Process()
-                task.launchPath = "/usr/local/bin/brew"
-                task.arguments = ["uninstall", item.name]
-                try task.run()
-                task.waitUntilExit()
+                break
             }
             items.removeAll { $0.id == item.id }
             if item.architecture.isIntel { intelOnlyCount = max(0, intelOnlyCount - 1) }

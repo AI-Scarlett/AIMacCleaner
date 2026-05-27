@@ -4,6 +4,14 @@ import AppKit
 import UserNotifications
 
 struct AgentGuardTab: View {
+
+    struct HourlyStatPoint: Identifiable {
+        let id = UUID()
+        let hour: Date
+        let count: Int
+        let type: String
+    }
+
     @EnvironmentObject var localizer: Localizer
     @EnvironmentObject var service: ScannerService
     @State private var selectedSegment = 0
@@ -12,6 +20,15 @@ struct AgentGuardTab: View {
     @State private var showReportSheet = false
     @State private var generatedReport: AuditReport?
     @State private var newBlacklistPattern = ""
+    @State private var showCreateOps = true
+    @State private var showModifyOps = true
+    @State private var showDeleteOps = true
+    @State private var showReadOps = true
+    @State private var showExecuteOps = true
+    @State private var chartTimeRange = 0
+    @State private var chartHoverDate: Date?
+    @State private var toastMessage: String = ""
+    @State private var showToast = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,10 +48,31 @@ struct AgentGuardTab: View {
                 case 2: alertRulesView
                 case 3: commandRulesView
                 case 4: protectedDirsView
-                case 5: trendChartView
                 default: dashboardView
                 }
             }
+        }
+        .overlay(alignment: .top) {
+            if showToast {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14))
+                    Text(toastMessage)
+                        .font(Theme.Font.captionMedium)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Theme.Colors.success)
+                .clipShape(Capsule())
+                .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                .padding(.top, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: showToast)
+        .onAppear {
+            service.ensureAgentGuardDataPipeline()
         }
     }
 
@@ -46,7 +84,6 @@ struct AgentGuardTab: View {
                 SegmentButton(title: localizer.alertRules, icon: "slider.horizontal.3", index: 2, selected: $selectedSegment)
                 SegmentButton(title: localizer.commandRules, icon: "terminal", index: 3, selected: $selectedSegment)
                 SegmentButton(title: localizer.protectedDirs, icon: "folder.badge.eye", index: 4, selected: $selectedSegment)
-                SegmentButton(title: localizer.trendChart, icon: "chart.line.uptrend.xyaxis", index: 5, selected: $selectedSegment)
             }
         }
         .padding(.horizontal, Theme.Spacing.xl)
@@ -58,6 +95,10 @@ struct AgentGuardTab: View {
 
     private var dashboardView: some View {
         VStack(spacing: Theme.Spacing.lg) {
+            if service.operationMonitor.needsReauthorization {
+                reauthorizationBanner
+            }
+
             HStack(spacing: Theme.Spacing.lg) {
                 StatCard(
                     title: localizer.unreadAlerts,
@@ -85,15 +126,42 @@ struct AgentGuardTab: View {
                 )
             }
 
+            dashboardTrendChart
+
             recentAlertsPreview
 
-            HStack(alignment: .top, spacing: Theme.Spacing.lg) {
-                quickActionsCard
-                processLifecycleCard
-            }
+            quickActionsCard
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.lg)
+    }
+
+    private var reauthorizationBanner: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 16))
+                .foregroundStyle(Theme.Colors.warning)
+            Text(localizer.permissionExpired)
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textPrimary)
+            Spacer()
+            Button {
+                service.operationMonitor.requestAccessForStalePaths()
+                service.importKnownAgentHistory()
+            } label: {
+                Text(localizer.reauthorize)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Theme.Colors.accent)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.Colors.warning.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
     }
 
     private var recentAlertsPreview: some View {
@@ -136,45 +204,21 @@ struct AgentGuardTab: View {
                 .font(Theme.Font.subheadline)
                 .foregroundStyle(Theme.Colors.textPrimary)
 
-            VStack(spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.sm) {
                 actionButton(title: localizer.exportCSV, icon: "doc.text") {
                     let csv = service.guardFeature.exportRecordsAsCSV(records: service.operationRecords)
-                    service.guardFeature.saveExport(content: csv, filename: "agent_operations.csv")
+                    _ = service.guardFeature.saveExport(content: csv, filename: "agent_operations.csv")
                 }
                 actionButton(title: localizer.exportJSON, icon: "doc.richtext") {
                     let json = service.guardFeature.exportRecordsAsJSON(records: service.operationRecords)
-                    service.guardFeature.saveExport(content: json, filename: "agent_operations.json")
+                    _ = service.guardFeature.saveExport(content: json, filename: "agent_operations.json")
                 }
                 actionButton(title: localizer.exportAlertsCSV, icon: "bell.and.text") {
                     let csv = service.guardFeature.exportAlertsAsCSV()
-                    service.guardFeature.saveExport(content: csv, filename: "agent_alerts.csv")
+                    _ = service.guardFeature.saveExport(content: csv, filename: "agent_alerts.csv")
                 }
                 actionButton(title: localizer.generateReport, icon: "doc.text.magnifyingglass") {
                     generateReport()
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Theme.Spacing.lg)
-        .background(Theme.Colors.cardBg)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-    }
-
-    private var processLifecycleCard: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            Text(localizer.processLifecycle)
-                .font(Theme.Font.subheadline)
-                .foregroundStyle(Theme.Colors.textPrimary)
-
-            if service.guardFeature.processLifecycleEvents.isEmpty {
-                Text(localizer.noData)
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.Colors.textTertiary)
-            } else {
-                VStack(spacing: Theme.Spacing.xs) {
-                    ForEach(service.guardFeature.processLifecycleEvents.prefix(8)) { event in
-                        lifecycleRow(event)
-                    }
                 }
             }
         }
@@ -229,7 +273,7 @@ struct AgentGuardTab: View {
 
     private var alertRulesView: some View {
         VStack(spacing: Theme.Spacing.lg) {
-            ruleSection(title: localizer.batchDeleteThreshold) {
+            ruleSection(title: localizer.batchDeleteThreshold, description: localizer.batchDeleteDesc) {
                 HStack {
                     Slider(value: Binding(
                         get: { Double(service.guardFeature.alertRule.batchDeleteThreshold) },
@@ -242,7 +286,7 @@ struct AgentGuardTab: View {
                 }
             }
 
-            ruleSection(title: localizer.batchModifyThreshold) {
+            ruleSection(title: localizer.batchModifyThreshold, description: localizer.batchModifyDesc) {
                 HStack {
                     Slider(value: Binding(
                         get: { Double(service.guardFeature.alertRule.batchModifyThreshold) },
@@ -255,7 +299,7 @@ struct AgentGuardTab: View {
                 }
             }
 
-            ruleSection(title: localizer.timeWindowSeconds) {
+            ruleSection(title: localizer.timeWindowSeconds, description: localizer.timeWindowDesc) {
                 HStack {
                     Slider(value: Binding(
                         get: { service.guardFeature.alertRule.batchTimeWindowSeconds },
@@ -268,7 +312,7 @@ struct AgentGuardTab: View {
                 }
             }
 
-            ruleSection(title: localizer.alertCooldown) {
+            ruleSection(title: localizer.alertCooldown, description: localizer.alertCooldownDesc) {
                 HStack {
                     Slider(value: Binding(
                         get: { service.guardFeature.alertRule.alertCooldownSeconds },
@@ -283,34 +327,34 @@ struct AgentGuardTab: View {
 
             Divider()
 
-            toggleRule(title: localizer.enableSensitiveFile, isOn: Binding(
+            toggleRule(title: localizer.enableSensitiveFile, description: localizer.sensitiveFileDesc, isOn: Binding(
                 get: { service.guardFeature.alertRule.sensitiveFileDetectionEnabled },
                 set: { service.guardFeature.alertRule.sensitiveFileDetectionEnabled = $0; service.guardFeature.saveAlertRule() }
             ))
 
-            toggleRule(title: localizer.enableSensitiveContent, isOn: Binding(
+            toggleRule(title: localizer.enableSensitiveContent, description: localizer.sensitiveContentDesc, isOn: Binding(
                 get: { service.guardFeature.alertRule.sensitiveContentDetectionEnabled },
                 set: { service.guardFeature.alertRule.sensitiveContentDetectionEnabled = $0; service.guardFeature.saveAlertRule() }
             ))
 
-            toggleRule(title: localizer.enableProcessAlert, isOn: Binding(
+            toggleRule(title: localizer.enableProcessAlert, description: localizer.processAlertDesc, isOn: Binding(
                 get: { service.guardFeature.alertRule.processLaunchAlertEnabled },
                 set: { service.guardFeature.alertRule.processLaunchAlertEnabled = $0; service.guardFeature.saveAlertRule() }
             ))
 
-            toggleRule(title: localizer.enableProtectedDir, isOn: Binding(
+            toggleRule(title: localizer.enableProtectedDir, description: localizer.protectedDirDesc, isOn: Binding(
                 get: { service.guardFeature.alertRule.protectedDirAlertEnabled },
                 set: { service.guardFeature.alertRule.protectedDirAlertEnabled = $0; service.guardFeature.saveAlertRule() }
             ))
 
-            toggleRule(title: localizer.enableNotification, isOn: Binding(
+            toggleRule(title: localizer.enableNotification, description: localizer.notificationDesc, isOn: Binding(
                 get: { service.guardFeature.alertRule.notificationEnabled },
                 set: { service.guardFeature.alertRule.notificationEnabled = $0; service.guardFeature.saveAlertRule() }
             ))
 
             Divider()
 
-            toggleRule(title: localizer.doNotDisturb, isOn: Binding(
+            toggleRule(title: localizer.doNotDisturb, description: localizer.doNotDisturbDesc, isOn: Binding(
                 get: { service.guardFeature.alertRule.doNotDisturbEnabled },
                 set: { service.guardFeature.alertRule.doNotDisturbEnabled = $0; service.guardFeature.saveAlertRule() }
             ))
@@ -356,6 +400,17 @@ struct AgentGuardTab: View {
                 get: { service.guardFeature.alertRule.commandGuardEnabled },
                 set: { service.guardFeature.alertRule.commandGuardEnabled = $0; service.guardFeature.saveAlertRule() }
             ))
+
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Colors.info)
+                Text(localizer.commandRulesDesc)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, Theme.Spacing.md)
 
             if service.guardFeature.alertRule.commandGuardEnabled {
                 commandSectionHeader(
@@ -456,7 +511,7 @@ struct AgentGuardTab: View {
                     Image(systemName: "info.circle")
                         .font(.system(size: 9))
                         .foregroundStyle(Theme.Colors.textTertiary)
-                    Text(rule.commandDesc)
+                    Text(service.guardFeature.localizeCommandDesc(rule.commandDesc, localizer: localizer))
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .lineLimit(1)
@@ -468,7 +523,7 @@ struct AgentGuardTab: View {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.system(size: 9))
                         .foregroundStyle(rule.listType == .blacklist ? Theme.Colors.danger.opacity(0.7) : Theme.Colors.warning.opacity(0.7))
-                    Text(rule.consequence)
+                    Text(service.guardFeature.localizeCommandDesc(rule.consequence, localizer: localizer))
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textTertiary)
                         .lineLimit(2)
@@ -476,60 +531,88 @@ struct AgentGuardTab: View {
                 }
             }
 
-            HStack(spacing: Theme.Spacing.xs) {
-                if rule.listType != .blacklist {
-                    Button {
-                        service.guardFeature.moveCommandToBlacklist(id: rule.id)
-                    } label: {
-                        HStack(spacing: 2) {
-                            Image(systemName: "xmark.circle")
-                                .font(.system(size: 9))
-                            Text(localizer.moveToBlacklist)
+            HStack {
+                HStack(spacing: Theme.Spacing.sm) {
+                    if rule.listType != .blacklist {
+                        Button {
+                            service.guardFeature.moveCommandToBlacklist(id: rule.id)
+                            showCommandToast(localizer.moveToBlacklist)
+                        } label: {
+                            Label(localizer.moveToBlacklist, systemImage: "xmark.octagon")
                                 .font(.system(size: 10))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Theme.Colors.danger)
+                                .clipShape(Capsule())
                         }
-                        .foregroundStyle(Theme.Colors.danger)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Theme.Colors.danger.opacity(0.08))
-                        .clipShape(Capsule())
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    if rule.listType != .whitelist {
+                        Button {
+                            service.guardFeature.moveCommandToWhitelist(id: rule.id)
+                            showCommandToast(localizer.moveToWhitelist)
+                        } label: {
+                            Label(localizer.moveToWhitelist, systemImage: "checkmark.circle")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Theme.Colors.success)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if rule.listType != .unclassified {
+                        Button {
+                            service.guardFeature.moveCommandToUnclassified(id: rule.id)
+                            showCommandToast(localizer.moveToUnclassified)
+                        } label: {
+                            Label(localizer.moveToUnclassified, systemImage: "questionmark.circle")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.black.opacity(0.82))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Theme.Colors.warning)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                if rule.listType != .whitelist {
-                    Button {
-                        service.guardFeature.moveCommandToWhitelist(id: rule.id)
-                    } label: {
-                        HStack(spacing: 2) {
-                            Image(systemName: "checkmark.circle")
-                                .font(.system(size: 9))
-                            Text(localizer.moveToWhitelist)
-                                .font(.system(size: 10))
-                        }
-                        .foregroundStyle(Theme.Colors.success)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Theme.Colors.success.opacity(0.08))
-                        .clipShape(Capsule())
+
+                Spacer()
+
+                HStack(spacing: Theme.Spacing.lg) {
+                    VStack(alignment: .center, spacing: 2) {
+                        Text("\(rule.totalCallCount)")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text(localizer.totalCount)
+                            .font(.system(size: 9))
+                            .foregroundStyle(Theme.Colors.textTertiary)
                     }
-                    .buttonStyle(.plain)
-                }
-                if rule.listType != .unclassified {
-                    Button {
-                        service.guardFeature.moveCommandToUnclassified(id: rule.id)
-                    } label: {
-                        HStack(spacing: 2) {
-                            Image(systemName: "questionmark.circle")
-                                .font(.system(size: 9))
-                            Text(localizer.moveToUnclassified)
-                                .font(.system(size: 10))
-                        }
-                        .foregroundStyle(Theme.Colors.warning)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Theme.Colors.warning.opacity(0.08))
-                        .clipShape(Capsule())
+                    VStack(alignment: .center, spacing: 2) {
+                        Text("\(rule.todayCallCount)")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Theme.Colors.accent)
+                        Text(localizer.todayCount)
+                            .font(.system(size: 9))
+                            .foregroundStyle(Theme.Colors.textTertiary)
                     }
-                    .buttonStyle(.plain)
+                    if !rule.lastCalledBy.isEmpty {
+                        let agentName = String(rule.lastCalledBy.split(separator: "|").last ?? "")
+                        if !agentName.isEmpty {
+                            VStack(alignment: .center, spacing: 2) {
+                                Text(agentName)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Theme.Colors.info)
+                                    .lineLimit(1)
+                                Text(localizer.lastCalledBy)
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -654,75 +737,358 @@ struct AgentGuardTab: View {
         .padding(.vertical, Theme.Spacing.lg)
     }
 
-    // MARK: - Trend Chart
+    // MARK: - Dashboard Trend Chart
 
-    private var trendChartView: some View {
-        VStack(spacing: Theme.Spacing.lg) {
-            Text(localizer.hourlyTrend)
-                .font(Theme.Font.subheadline)
-                .foregroundStyle(Theme.Colors.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+    private var dashboardTrendChart: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack {
+                Text(localizer.hourlyTrend)
+                    .font(Theme.Font.subheadline)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Spacer()
+                HStack(spacing: 2) {
+                    chartRangeButton(title: localizer.rangeAll, index: 0)
+                    chartRangeButton(title: localizer.rangeToday, index: 1)
+                    chartRangeButton(title: localizer.rangeRealtime, index: 2)
+                }
+                Divider().frame(height: 14)
+                HStack(spacing: Theme.Spacing.sm) {
+                    Button { showCreateOps.toggle() } label: {
+                        HStack(spacing: 3) {
+                            Circle().fill(showCreateOps ? Color.green : Color.gray.opacity(0.4)).frame(width: 7, height: 7)
+                            Text(localizer.createOps).font(.system(size: 10)).foregroundStyle(showCreateOps ? Theme.Colors.textPrimary : Theme.Colors.textTertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    Button { showModifyOps.toggle() } label: {
+                        HStack(spacing: 3) {
+                            Circle().fill(showModifyOps ? Color.orange : Color.gray.opacity(0.4)).frame(width: 7, height: 7)
+                            Text(localizer.modifyOps).font(.system(size: 10)).foregroundStyle(showModifyOps ? Theme.Colors.textPrimary : Theme.Colors.textTertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    Button { showDeleteOps.toggle() } label: {
+                        HStack(spacing: 3) {
+                            Circle().fill(showDeleteOps ? Color.red : Color.gray.opacity(0.4)).frame(width: 7, height: 7)
+                            Text(localizer.deleteOps).font(.system(size: 10)).foregroundStyle(showDeleteOps ? Theme.Colors.textPrimary : Theme.Colors.textTertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    Button { showReadOps.toggle() } label: {
+                        HStack(spacing: 3) {
+                            Circle().fill(showReadOps ? Color.blue : Color.gray.opacity(0.4)).frame(width: 7, height: 7)
+                            Text(localizer.readOps).font(.system(size: 10)).foregroundStyle(showReadOps ? Theme.Colors.textPrimary : Theme.Colors.textTertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    Button { showExecuteOps.toggle() } label: {
+                        HStack(spacing: 3) {
+                            Circle().fill(showExecuteOps ? Color.purple : Color.gray.opacity(0.4)).frame(width: 7, height: 7)
+                            Text(localizer.executeOps).font(.system(size: 10)).foregroundStyle(showExecuteOps ? Theme.Colors.textPrimary : Theme.Colors.textTertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
 
-            if service.guardFeature.hourlyStats.isEmpty {
+            if filteredStats.isEmpty {
                 emptyStateView(icon: "chart.line.uptrend.xyaxis", message: localizer.noData, hint: localizer.startMonitorHint2, color: Theme.Colors.textTertiary)
             } else {
-                let recentStats = Array(service.guardFeature.hourlyStats.suffix(48))
-                Chart {
-                    ForEach(recentStats) { stat in
-                        BarMark(
-                            x: .value("Hour", stat.hour, unit: .hour),
-                            y: .value(localizer.createOps, stat.createCount)
-                        )
-                        .foregroundStyle(Color.green.opacity(0.6))
+                dashboardChartContent
+            }
+        }
+        .padding(Theme.Spacing.lg)
+        .background(Theme.Colors.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+    }
 
-                        BarMark(
-                            x: .value("Hour", stat.hour, unit: .hour),
-                            y: .value(localizer.modifyOps, stat.modifyCount)
-                        )
-                        .foregroundStyle(Color.orange.opacity(0.6))
+    private func chartRangeButton(title: String, index: Int) -> some View {
+        Button { chartTimeRange = index } label: {
+            Text(title)
+                .font(.system(size: 10))
+                .foregroundStyle(chartTimeRange == index ? Theme.Colors.accent : Theme.Colors.textTertiary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(chartTimeRange == index ? Theme.Colors.accent.opacity(0.12) : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+    }
 
-                        BarMark(
-                            x: .value("Hour", stat.hour, unit: .hour),
-                            y: .value(localizer.deleteOps, stat.deleteCount)
-                        )
-                        .foregroundStyle(Color.red.opacity(0.6))
+    private var filteredStats: [HourlyStats] {
+        let now = Date()
+        if chartTimeRange == 2 {
+            return realtimeStats
+        }
+        let all = service.guardFeature.hourlyStats
+        switch chartTimeRange {
+        case 1:
+            let startOfToday = Calendar.current.startOfDay(for: now)
+            return all.filter { $0.hour >= startOfToday }
+        default:
+            return all
+        }
+    }
+
+    private var realtimeStats: [HourlyStats] {
+        let calendar = Calendar.current
+        let endMinute = calendar.dateInterval(of: .minute, for: Date())?.start ?? Date()
+        let startMinute = endMinute.addingTimeInterval(-3600)
+        let records = service.operationRecords.filter { $0.timestamp >= startMinute && $0.timestamp <= endMinute.addingTimeInterval(60) }
+        var buckets: [Date: HourlyStats] = [:]
+
+        for offset in 0...60 {
+            guard let minute = calendar.date(byAdding: .minute, value: offset, to: startMinute) else { continue }
+            buckets[minute] = HourlyStats(id: ISO8601DateFormatter().string(from: minute), hour: minute)
+        }
+
+        for record in records {
+            let minute = calendar.dateInterval(of: .minute, for: record.timestamp)?.start ?? record.timestamp
+            let id = ISO8601DateFormatter().string(from: minute)
+            var stats = buckets[minute] ?? HourlyStats(id: id, hour: minute)
+            switch record.operationType {
+            case .create: stats.createCount += 1
+            case .modify: stats.modifyCount += 1
+            case .delete: stats.deleteCount += 1
+            case .read: stats.readCount += 1
+            case .move: stats.moveCount += 1
+            case .rename: stats.renameCount += 1
+            case .execute: stats.executeCount += 1
+            }
+            buckets[minute] = stats
+        }
+
+        return buckets.values.sorted { $0.hour < $1.hour }
+    }
+
+    private var chartXDomain: ClosedRange<Date> {
+        let calendar = Calendar.current
+        let now = Date()
+        switch chartTimeRange {
+        case 2:
+            let endMinute = calendar.dateInterval(of: .minute, for: now)?.start ?? now
+            return endMinute.addingTimeInterval(-3600)...endMinute
+        case 1:
+            return calendar.startOfDay(for: now)...now
+        default:
+            let stats = filteredStats
+            guard let first = stats.first?.hour else {
+                let end = calendar.dateInterval(of: .hour, for: now)?.start ?? now
+                return end.addingTimeInterval(-3600)...end
+            }
+            let last = max(stats.last?.hour ?? first, now)
+            return first...last
+        }
+    }
+
+    @ViewBuilder
+    private var dashboardChartContent: some View {
+        let stats = filteredStats
+        let yMax = max(1, stats.flatMap { [$0.createCount, $0.modifyCount, $0.deleteCount, $0.readCount, $0.executeCount] }.max() ?? 1) + 1
+        let allPoints = stats.flatMap { stat -> [HourlyStatPoint] in
+            var pts: [HourlyStatPoint] = []
+            if showCreateOps { pts.append(HourlyStatPoint(hour: stat.hour, count: stat.createCount, type: "Create")) }
+            if showModifyOps { pts.append(HourlyStatPoint(hour: stat.hour, count: stat.modifyCount, type: "Modify")) }
+            if showDeleteOps { pts.append(HourlyStatPoint(hour: stat.hour, count: stat.deleteCount, type: "Delete")) }
+            if showReadOps { pts.append(HourlyStatPoint(hour: stat.hour, count: stat.readCount, type: "Read")) }
+            if showExecuteOps { pts.append(HourlyStatPoint(hour: stat.hour, count: stat.executeCount, type: "Execute")) }
+            return pts
+        }
+        let activeDomain = allPoints.map(\.type).reduce(into: Set<String>()) { $0.insert($1) }.sorted()
+        let colorMap: [String: Color] = ["Create": .green, "Modify": .orange, "Delete": .red, "Read": .blue, "Execute": .purple]
+        let activeRange = activeDomain.compactMap { colorMap[$0] }
+        let hoverPoints = nearestChartPoints(in: allPoints, to: chartHoverDate)
+
+        let strideCount: Int = {
+            switch chartTimeRange {
+            case 0: return stats.count > 48 ? 12 : (stats.count > 24 ? 6 : 3)
+            case 1: return stats.count > 12 ? 3 : 1
+            case 2: return 1
+            default: return 3
+            }
+        }()
+
+        Chart {
+            ForEach(allPoints) { point in
+                LineMark(
+                    x: .value(localizer.hour, point.hour),
+                    y: .value(localizer.opsCount, point.count)
+                )
+                .foregroundStyle(by: .value("Type", point.type))
+                .interpolationMethod(.linear)
+                .lineStyle(StrokeStyle(lineWidth: 2))
+
+                if hoverPoints.contains(where: { $0.id == point.id }) {
+                    PointMark(
+                        x: .value(localizer.hour, point.hour),
+                        y: .value(localizer.opsCount, point.count)
+                    )
+                    .foregroundStyle(by: .value("Type", point.type))
+                    .symbolSize(42)
+                }
+            }
+
+            if let firstHoverPoint = hoverPoints.first {
+                RuleMark(x: .value(localizer.hour, firstHoverPoint.hour))
+                    .foregroundStyle(Theme.Colors.textSecondary.opacity(0.45))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    .annotation(position: .top, alignment: .leading) {
+                        chartHoverTooltip(points: hoverPoints)
+                    }
+            }
+        }
+        .chartForegroundStyleScale(domain: activeDomain, range: activeRange)
+        .chartXScale(domain: chartXDomain)
+        .chartYScale(domain: 0...yMax)
+        .chartLegend(.hidden)
+        .chartYAxis {
+            AxisMarks(position: .leading) {
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.primary.opacity(0.15))
+                AxisValueLabel().font(.system(size: 9))
+            }
+        }
+        .chartXAxis {
+            if chartTimeRange == 2 {
+                AxisMarks(values: .stride(by: .minute, count: 10)) { value in
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.primary.opacity(0.15))
+                    AxisValueLabel(anchor: .top) {
+                        if let date = value.as(Date.self) {
+                            Text(chartAxisTimeLabel(date))
+                                .font(.system(size: 9))
+                        }
                     }
                 }
-                .chartForegroundStyleScale([
-                    localizer.createOps: Color.green.opacity(0.6),
-                    localizer.modifyOps: Color.orange.opacity(0.6),
-                    localizer.deleteOps: Color.red.opacity(0.6)
-                ])
-                .chartYAxis {
-                    AxisMarks(position: .leading) { _ in
-                        AxisValueLabel()
-                            .font(.system(size: 9))
+            } else {
+                AxisMarks(values: .stride(by: .hour, count: strideCount)) { value in
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.primary.opacity(0.15))
+                    AxisValueLabel(anchor: .top) {
+                        if let date = value.as(Date.self) {
+                            Text(chartAxisTimeLabel(date))
+                                .font(.system(size: chartTimeRange == 0 ? 8 : 9))
+                        }
                     }
-                }
-                .chartXAxis {
-                    AxisMarks(values: .stride(by: .hour, count: 6)) { _ in
-                        AxisGridLine()
-                        AxisValueLabel(format: .dateTime.hour())
-                            .font(.system(size: 9))
-                    }
-                }
-                .frame(minHeight: 200, maxHeight: 280)
-                .padding(Theme.Spacing.lg)
-                .background(Theme.Colors.cardBg)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-
-                HStack(spacing: Theme.Spacing.lg) {
-                    legendItem(color: .green, label: localizer.createOps)
-                    legendItem(color: .orange, label: localizer.modifyOps)
-                    legendItem(color: .red, label: localizer.deleteOps)
                 }
             }
         }
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, Theme.Spacing.lg)
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                Rectangle()
+                    .fill(Color.clear)
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            let plotFrame = geometry[proxy.plotAreaFrame]
+                            let x = location.x - plotFrame.origin.x
+                            guard x >= 0, x <= plotFrame.width,
+                                  let date: Date = proxy.value(atX: x) else {
+                                chartHoverDate = nil
+                                return
+                            }
+                            chartHoverDate = nearestChartDate(in: allPoints, to: date)
+                        case .ended:
+                            chartHoverDate = nil
+                        }
+                    }
+            }
+        }
+        .frame(minHeight: 200, maxHeight: 260)
+        .padding(.bottom, 8)
+    }
+
+    private func nearestChartDate(in points: [HourlyStatPoint], to date: Date) -> Date? {
+        points.min { lhs, rhs in
+            abs(lhs.hour.timeIntervalSince(date)) < abs(rhs.hour.timeIntervalSince(date))
+        }?.hour
+    }
+
+    private func nearestChartPoints(in points: [HourlyStatPoint], to date: Date?) -> [HourlyStatPoint] {
+        guard let date = date else { return [] }
+        let sameTime = points.filter { abs($0.hour.timeIntervalSince(date)) < 0.5 }
+        return sameTime.sorted { $0.type < $1.type }
+    }
+
+    private func chartHoverTooltip(points: [HourlyStatPoint]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let date = points.first?.hour {
+                Text(chartHoverTimeLabel(date))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+            }
+            ForEach(points) { point in
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(chartColor(for: point.type))
+                        .frame(width: 6, height: 6)
+                    Text(chartLabel(for: point.type))
+                        .font(.system(size: 10))
+                    Text("\(point.count)")
+                        .font(.system(size: 10, weight: .bold))
+                        .monospacedDigit()
+                }
+                .foregroundStyle(Theme.Colors.textPrimary)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Theme.Colors.cardBg.opacity(0.96))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
+    }
+
+    private func chartColor(for type: String) -> Color {
+        switch type {
+        case "Create": return .green
+        case "Modify": return .orange
+        case "Delete": return .red
+        case "Read": return .blue
+        case "Execute": return .purple
+        default: return .secondary
+        }
+    }
+
+    private func chartLabel(for type: String) -> String {
+        switch type {
+        case "Create": return localizer.createOps
+        case "Modify": return localizer.modifyOps
+        case "Delete": return localizer.deleteOps
+        case "Read": return localizer.readOps
+        case "Execute": return localizer.executeOps
+        default: return type
+        }
+    }
+
+    private func chartHoverTimeLabel(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = chartTimeRange == 0 ? .short : .none
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private func chartAxisTimeLabel(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.calendar = Calendar.current
+        formatter.timeZone = .current
+        formatter.dateFormat = chartTimeRange == 0 ? "MM-dd HH:mm" : "HH:mm"
+        return formatter.string(from: date)
     }
 
     // MARK: - Audit Report Sheet
+
+    private func showCommandToast(_ action: String) {
+        toastMessage = "\(action) ✓"
+        withAnimation { showToast = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            withAnimation { showToast = false }
+        }
+    }
 
     private func generateReport() {
         let now = Date()
@@ -845,7 +1211,7 @@ struct AgentGuardTab: View {
         } label: {
             Text(label)
                 .font(Theme.Font.caption)
-                .foregroundStyle(alertFilter == severity ? .white : Theme.Colors.textSecondary)
+                .foregroundStyle(alertFilter == severity ? .primary : Theme.Colors.textSecondary)
                 .padding(.horizontal, Theme.Spacing.sm)
                 .padding(.vertical, Theme.Spacing.xs)
                 .background(
@@ -872,11 +1238,17 @@ struct AgentGuardTab: View {
         .padding(.vertical, Theme.Spacing.xl)
     }
 
-    private func ruleSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func ruleSection<Content: View>(title: String, description: String = "", @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             Text(title)
                 .font(Theme.Font.caption)
                 .foregroundStyle(Theme.Colors.textSecondary)
+            if !description.isEmpty {
+                Text(description)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             content()
         }
         .padding(Theme.Spacing.lg)
@@ -884,15 +1256,23 @@ struct AgentGuardTab: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
     }
 
-    private func toggleRule(title: String, isOn: Binding<Bool>) -> some View {
-        HStack {
-            Text(title)
-                .font(Theme.Font.caption)
-                .foregroundStyle(Theme.Colors.textPrimary)
-            Spacer()
-            Toggle("", isOn: isOn)
-                .toggleStyle(.switch)
-                .controlSize(.small)
+    private func toggleRule(title: String, description: String = "", isOn: Binding<Bool>) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(title)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Spacer()
+                Toggle("", isOn: isOn)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
+            if !description.isEmpty {
+                Text(description)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.sm)
@@ -902,19 +1282,22 @@ struct AgentGuardTab: View {
 
     private func actionButton(title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: Theme.Spacing.sm) {
+            HStack(spacing: 3) {
                 Image(systemName: icon)
-                    .font(.system(size: 11))
+                    .font(.system(size: 9))
                 Text(title)
-                    .font(Theme.Font.caption)
+                    .font(.system(size: 10))
             }
-            .foregroundStyle(Theme.Colors.accent)
-            .padding(.horizontal, Theme.Spacing.md)
-            .padding(.vertical, Theme.Spacing.sm)
-            .frame(maxWidth: .infinity)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .fill(Theme.Colors.accent.opacity(0.08))
+                    .fill(Theme.Colors.accent)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .stroke(Color.white.opacity(0.24), lineWidth: 0.8)
             )
         }
         .buttonStyle(.plain)
@@ -928,27 +1311,6 @@ struct AgentGuardTab: View {
             Text(label)
                 .font(Theme.Font.caption)
                 .foregroundStyle(Theme.Colors.textSecondary)
-        }
-    }
-
-    private func lifecycleRow(_ event: ProcessLifecycleEvent) -> some View {
-        let isLaunch = event.eventType == .launch
-        return HStack(spacing: Theme.Spacing.sm) {
-            Image(systemName: isLaunch ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
-                .font(.system(size: 10))
-                .foregroundStyle(isLaunch ? Theme.Colors.success : Theme.Colors.textTertiary)
-            Text(event.agentName)
-                .font(Theme.Font.caption)
-                .foregroundStyle(Theme.Colors.textPrimary)
-                .lineLimit(1)
-            Spacer()
-            Text(event.comm)
-                .font(Theme.Font.caption)
-                .foregroundStyle(Theme.Colors.textTertiary)
-                .lineLimit(1)
-            Text(event.timestamp, style: .time)
-                .font(Theme.Font.caption)
-                .foregroundStyle(Theme.Colors.textTertiary)
         }
     }
 
@@ -999,12 +1361,12 @@ struct SegmentButton: View {
                 Text(title)
                     .font(.system(size: 11, weight: selected == index ? .semibold : .regular))
             }
-            .foregroundStyle(selected == index ? Theme.Colors.warning : Theme.Colors.textTertiary)
+            .foregroundStyle(selected == index ? .white : Theme.Colors.textTertiary)
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .fill(selected == index ? Theme.Colors.warning.opacity(0.1) : Color.clear)
+                    .fill(selected == index ? Theme.Colors.warning : Color.clear)
             )
         }
         .buttonStyle(.plain)

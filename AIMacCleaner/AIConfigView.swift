@@ -37,7 +37,7 @@ struct AIConfigView: View {
 
                 Group {
                     LabeledContent(localizer.apiBase) {
-                        TextField("https://api.deepseek.com", text: $apiBase)
+                        TextField("https://api.openai.com", text: $apiBase)
                             .textFieldStyle(.roundedBorder).frame(width: 300)
                     }
                     LabeledContent(localizer.apiKey) {
@@ -45,7 +45,7 @@ struct AIConfigView: View {
                             .textFieldStyle(.roundedBorder).frame(width: 300)
                     }
                     LabeledContent(localizer.modelName) {
-                        TextField("deepseek-chat", text: $model)
+                        TextField("gpt-4o-mini", text: $model)
                             .textFieldStyle(.roundedBorder).frame(width: 300)
                     }
                 }
@@ -94,9 +94,9 @@ struct AIConfigView: View {
 
     private func loadConfig() {
         if let config = service.aiConfig {
-            apiBase = config.apiBase ?? "https://api.deepseek.com"
+            apiBase = config.apiBase ?? "https://api.openai.com"
             apiKey = config.apiKey ?? ""
-            model = config.model ?? "deepseek-chat"
+            model = config.model ?? "gpt-4o-mini"
         }
     }
 

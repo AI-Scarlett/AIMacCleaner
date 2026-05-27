@@ -101,7 +101,7 @@ class SensorMonitor: ObservableObject {
     private func getCameraUsingApps() -> [AppInfo] {
         var result: [AppInfo] = []
         let windowList = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
-        let cameraIndicators = ["FaceTime", "Zoom", "Microsoft Teams", "Google Meet", "Webex", "Skype", "OBS", "Discord", "Slack", "腾讯会议", "钉钉", "飞书"]
+        let cameraIndicators = ["FaceTime", "Zoom", "Microsoft Teams", "Google Meet", "Webex", "Skype", "OBS", "Discord", "Slack", "Tencent Meeting", "DingTalk", "Feishu"]
 
         for window in windowList {
             guard let pid = window[kCGWindowOwnerPID as String] as? Int32,
@@ -131,7 +131,7 @@ class SensorMonitor: ObservableObject {
 
     private func getMicrophoneUsingApps() -> [AppInfo] {
         var result: [AppInfo] = []
-        let micIndicators = ["FaceTime", "Zoom", "Microsoft Teams", "Google Meet", "Webex", "Skype", "Discord", "Slack", "腾讯会议", "钉钉", "飞书", "OBS", "GarageBand", "Logic Pro", "VoiceMemos", "语音备忘录"]
+        let micIndicators = ["FaceTime", "Zoom", "Microsoft Teams", "Google Meet", "Webex", "Skype", "Discord", "Slack", "Tencent Meeting", "DingTalk", "Feishu", "OBS", "GarageBand", "Logic Pro", "VoiceMemos", "Voice Memos"]
 
         let windowList = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
         for window in windowList {

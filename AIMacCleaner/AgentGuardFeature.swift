@@ -1,5 +1,5 @@
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 import AppKit
 
 struct GuardAlert: Identifiable, Codable {
@@ -71,6 +71,9 @@ struct CommandRule: Identifiable, Codable {
     var commandDesc: String
     var consequence: String
     var source: Source
+    var totalCallCount: Int
+    var todayCallCount: Int
+    var lastCalledBy: String
 
     enum ListType: String, Codable {
         case blacklist = "blacklist"
@@ -84,7 +87,7 @@ struct CommandRule: Identifiable, Codable {
         case custom = "custom"
     }
 
-    init(pattern: String, isRegex: Bool = false, listType: ListType = .unclassified, commandDesc: String = "", consequence: String = "", source: Source = .custom) {
+    init(pattern: String, isRegex: Bool = false, listType: ListType = .unclassified, commandDesc: String = "", consequence: String = "", source: Source = .custom, totalCallCount: Int = 0, todayCallCount: Int = 0, lastCalledBy: String = "") {
         self.id = UUID().uuidString
         self.pattern = pattern
         self.isRegex = isRegex
@@ -92,6 +95,36 @@ struct CommandRule: Identifiable, Codable {
         self.commandDesc = commandDesc
         self.consequence = consequence
         self.source = source
+        self.totalCallCount = totalCallCount
+        self.todayCallCount = todayCallCount
+        self.lastCalledBy = lastCalledBy
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case pattern
+        case isRegex
+        case listType
+        case commandDesc
+        case consequence
+        case source
+        case totalCallCount
+        case todayCallCount
+        case lastCalledBy
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        pattern = try container.decodeIfPresent(String.self, forKey: .pattern) ?? ""
+        isRegex = try container.decodeIfPresent(Bool.self, forKey: .isRegex) ?? false
+        listType = try container.decodeIfPresent(ListType.self, forKey: .listType) ?? .unclassified
+        commandDesc = try container.decodeIfPresent(String.self, forKey: .commandDesc) ?? ""
+        consequence = try container.decodeIfPresent(String.self, forKey: .consequence) ?? ""
+        source = try container.decodeIfPresent(Source.self, forKey: .source) ?? .custom
+        totalCallCount = try container.decodeIfPresent(Int.self, forKey: .totalCallCount) ?? 0
+        todayCallCount = try container.decodeIfPresent(Int.self, forKey: .todayCallCount) ?? 0
+        lastCalledBy = try container.decodeIfPresent(String.self, forKey: .lastCalledBy) ?? ""
     }
 }
 
@@ -160,6 +193,7 @@ struct HourlyStats: Identifiable, Codable {
     var readCount: Int = 0
     var moveCount: Int = 0
     var renameCount: Int = 0
+    var executeCount: Int = 0
 }
 
 struct AuditReport {
@@ -184,12 +218,12 @@ class AgentGuardFeature: ObservableObject {
     @Published var hourlyStats: [HourlyStats] = []
     @Published var commandRules: [CommandRule] = []
 
-    private let alertsPath = NSHomeDirectory() + "/.aimaccleaner_alerts.json"
-    private let alertRulePath = NSHomeDirectory() + "/.aimaccleaner_alert_rule.json"
-    private let protectedDirsPath = NSHomeDirectory() + "/.aimaccleaner_protected_dirs.json"
-    private let lifecyclePath = NSHomeDirectory() + "/.aimaccleaner_lifecycle.json"
-    private let hourlyStatsPath = NSHomeDirectory() + "/.aimaccleaner_hourly_stats.json"
-    private let commandRulesPath = NSHomeDirectory() + "/.aimaccleaner_cmd_rules.json"
+    private var alertsPath: String { SandboxPaths.shared.alertsPath }
+    private var alertRulePath: String { SandboxPaths.shared.alertRulePath }
+    private var protectedDirsPath: String { SandboxPaths.shared.protectedDirsPath }
+    private var lifecyclePath: String { SandboxPaths.shared.lifecyclePath }
+    private var hourlyStatsPath: String { SandboxPaths.shared.hourlyStatsPath }
+    private var commandRulesPath: String { SandboxPaths.shared.cmdRulesPath }
     private let maxAlerts = 500
     private let maxLifecycleEvents = 1000
     private let maxHourlyStats = 168
@@ -198,6 +232,8 @@ class AgentGuardFeature: ObservableObject {
     private var recentModifyEvents: [Date] = []
     private var lastAlertTimes: [String: Date] = [:]
     private var knownPids: Set<pid_t> = []
+    private var knownAgentPids: [pid_t: String] = [:]
+    private var lastStatsSaveTime: Date = .distantPast
 
     weak var localizer: Localizer?
 
@@ -418,7 +454,25 @@ class AgentGuardFeature: ObservableObject {
     // MARK: - F04 Process Lifecycle
 
     func checkProcessLifecycle(currentPids: Set<pid_t>, pidCommMap: [pid_t: String], pidArgsMap: [pid_t: String], ppidMap: [pid_t: pid_t], agentKeywords: [(String, [String])]) {
-        guard alertRule.processLaunchAlertEnabled else { return }
+        if knownPids.isEmpty {
+            knownPids = currentPids
+            for pid in currentPids {
+                if let comm = pidCommMap[pid] {
+                    let args = pidArgsMap[pid] ?? ""
+                    let lowerAll = (comm + " " + args).lowercased()
+                    for (displayName, kws) in agentKeywords {
+                        for kw in kws {
+                            if lowerAll.contains(kw) {
+                                knownAgentPids[pid] = displayName
+                                break
+                            }
+                        }
+                        if knownAgentPids[pid] != nil { break }
+                    }
+                }
+            }
+            return
+        }
 
         let newPids = currentPids.subtracting(knownPids)
         let exitedPids = knownPids.subtracting(currentPids)
@@ -429,7 +483,11 @@ class AgentGuardFeature: ObservableObject {
             let ppid = ppidMap[pid] ?? 0
             let agentName = resolveAgentName(comm: comm, args: args, ppid: ppid, pidCommMap: pidCommMap, pidArgsMap: pidArgsMap, ppidMap: ppidMap, agentKeywords: agentKeywords)
 
-            guard agentName != (localizer?.systemProcess ?? "System Process") else { continue }
+            let lowerAll = (comm + " " + args).lowercased()
+            let isAgent = agentKeywords.contains { _, kws in kws.contains { lowerAll.contains($0) } }
+            guard isAgent else { continue }
+
+            knownAgentPids[pid] = agentName
 
             let event = ProcessLifecycleEvent(
                 id: UUID().uuidString,
@@ -443,34 +501,38 @@ class AgentGuardFeature: ObservableObject {
             )
             processLifecycleEvents.insert(event, at: 0)
 
-            let key = "process_launch_\(agentName)"
-            if shouldFireAlert(key: key) {
-                let alert = GuardAlert(
-                    id: UUID().uuidString,
-                    timestamp: Date(),
-                    alertType: .processLaunch,
-                    severity: .info,
-                    title: localizer?.processLaunchAlertTitle ?? "Agent Process Launched",
-                    message: String(format: localizer?.processLaunchAlertMsg ?? "%@ started (PID: %d)", agentName, pid),
-                    agentName: agentName,
-                    targetPath: comm,
-                    detail: "PPID: \(ppid) Comm: \(comm)"
-                )
-                fireAlert(alert)
+            if alertRule.processLaunchAlertEnabled {
+                let key = "process_launch_\(agentName)"
+                if shouldFireAlert(key: key) {
+                    let alert = GuardAlert(
+                        id: UUID().uuidString,
+                        timestamp: Date(),
+                        alertType: .processLaunch,
+                        severity: .info,
+                        title: localizer?.processLaunchAlertTitle ?? "Agent Process Launched",
+                        message: String(format: localizer?.processLaunchAlertMsg ?? "%@ started (PID: %d)", agentName, pid),
+                        agentName: agentName,
+                        targetPath: comm,
+                        detail: "PPID: \(ppid) Comm: \(comm)"
+                    )
+                    fireAlert(alert)
+                }
             }
         }
 
         for pid in exitedPids {
-            let comm = "PID:\(pid)"
+            guard let agentName = knownAgentPids[pid] else { continue }
+            knownAgentPids.removeValue(forKey: pid)
+            let comm = pidCommMap[pid] ?? "PID:\(pid)"
             let event = ProcessLifecycleEvent(
                 id: UUID().uuidString,
                 timestamp: Date(),
                 eventType: .exit,
                 pid: pid,
-                ppid: 0,
+                ppid: ppidMap[pid] ?? 0,
                 comm: comm,
                 args: "",
-                agentName: "—"
+                agentName: agentName
             )
             processLifecycleEvents.insert(event, at: 0)
         }
@@ -480,6 +542,7 @@ class AgentGuardFeature: ObservableObject {
         }
 
         knownPids = currentPids
+        saveLifecycleEvents()
     }
 
     private func resolveAgentName(comm: String, args: String, ppid: pid_t, pidCommMap: [pid_t: String], pidArgsMap: [pid_t: String], ppidMap: [pid_t: pid_t], agentKeywords: [(String, [String])]) -> String {
@@ -509,6 +572,7 @@ class AgentGuardFeature: ObservableObject {
             case .read: hourlyStats[idx].readCount += 1
             case .move: hourlyStats[idx].moveCount += 1
             case .rename: hourlyStats[idx].renameCount += 1
+            case .execute: hourlyStats[idx].executeCount += 1
             }
         } else {
             var stats = HourlyStats(id: hourKey, hour: hourStart)
@@ -519,6 +583,7 @@ class AgentGuardFeature: ObservableObject {
             case .read: stats.readCount = 1
             case .move: stats.moveCount = 1
             case .rename: stats.renameCount = 1
+            case .execute: stats.executeCount = 1
             }
             hourlyStats.append(stats)
         }
@@ -527,14 +592,57 @@ class AgentGuardFeature: ObservableObject {
             hourlyStats.sort { $0.hour < $1.hour }
             hourlyStats = Array(hourlyStats.suffix(maxHourlyStats))
         }
+
+        let now = Date()
+        if now.timeIntervalSince(lastStatsSaveTime) > 30 {
+            saveHourlyStats()
+            lastStatsSaveTime = now
+        }
+    }
+
+    func rebuildAnalytics(from records: [OperationRecord]) {
+        let existingRules = commandRules
+        hourlyStats = []
+        lastStatsSaveTime = .distantFuture
+        commandRules = existingRules.map { rule in
+            var reset = rule
+            reset.totalCallCount = 0
+            reset.todayCallCount = 0
+            reset.lastCalledBy = ""
+            return reset
+        }
+
+        for record in records.sorted(by: { $0.timestamp < $1.timestamp }) {
+            recordStats(record)
+            guard record.operationType == .execute else { continue }
+            let command = record.detail.isEmpty ? record.targetPath : record.detail
+            _ = recordObservedCommand(command: command, agentName: record.agentName, timestamp: record.timestamp, shouldSave: false)
+        }
+
+        lastStatsSaveTime = .distantPast
+        saveHourlyStats()
+        saveCommandRules()
     }
 
     // MARK: - F37 Export
 
+    private func isAuditableAgentRecord(_ record: OperationRecord) -> Bool {
+        let name = record.agentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty || name == "—" { return false }
+        if name == (localizer?.systemProcess ?? "System Process") || name.localizedCaseInsensitiveContains("system process") { return false }
+        let nonAgentToolNames: Set<String> = [
+            "Node.js", "Python", "npm", "npx", "Yarn", "pnpm", "Cargo", "Rust",
+            "Deno", "Bun", "Go", "Swift", "Java", "Gradle", "Maven", "Make",
+            "CMake", "Xcode", "Git", "Docker", "pip", "pip3", "Clang",
+            "rsync", "cp", "mv", "rm", "zip", "tar", "mkdir"
+        ]
+        return !nonAgentToolNames.contains(name)
+    }
+
     func exportRecordsAsCSV(records: [OperationRecord]) -> String {
         var lines = ["ID,Timestamp,Agent,Operation,Path,Detail,FileSize,ProcessName,ToolInfo"]
         let formatter = ISO8601DateFormatter()
-        for r in records {
+        for r in records.filter(isAuditableAgentRecord) {
             let fields = [
                 r.id,
                 formatter.string(from: r.timestamp),
@@ -555,7 +663,7 @@ class AgentGuardFeature: ObservableObject {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        guard let data = try? encoder.encode(records) else { return "[]" }
+        guard let data = try? encoder.encode(records.filter(isAuditableAgentRecord)) else { return "[]" }
         return String(data: data, encoding: .utf8) ?? "[]"
     }
 
@@ -593,7 +701,7 @@ class AgentGuardFeature: ObservableObject {
     // MARK: - F38 Audit Report
 
     func generateAuditReport(records: [OperationRecord], startTime: Date, endTime: Date) -> AuditReport {
-        let filtered = records.filter { $0.timestamp >= startTime && $0.timestamp <= endTime }
+        let filtered = records.filter { isAuditableAgentRecord($0) && $0.timestamp >= startTime && $0.timestamp <= endTime }
         let periodAlerts = alerts.filter { $0.timestamp >= startTime && $0.timestamp <= endTime }
 
         var agentBreakdown: [String: Int] = [:]
@@ -674,23 +782,37 @@ class AgentGuardFeature: ObservableObject {
         let content = UNMutableNotificationContent()
         content.title = alert.title
         content.body = alert.message
-        switch alert.severity {
-        case .critical:
-            content.sound = .defaultCritical
-        case .warning:
-            content.sound = .default
-        case .info:
-            content.sound = nil
-        }
+        content.sound = alert.severity == .info ? nil : .default
 
         let request = UNNotificationRequest(
             identifier: "agentguard_\(alert.alertType.rawValue)_\(alert.id)",
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("[AgentWatch] Notification error: \(error.localizedDescription)")
+
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                center.add(request) { error in
+                    if let error = error {
+                        print("[AgentWatch] Notification error: \(error.localizedDescription)")
+                    }
+                }
+            case .notDetermined:
+                center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+                    if let error = error {
+                        print("[AgentWatch] Notification authorization error: \(error.localizedDescription)")
+                    }
+                    guard granted else { return }
+                    center.add(request) { error in
+                        if let error = error {
+                            print("[AgentWatch] Notification error: \(error.localizedDescription)")
+                        }
+                    }
+                }
+            default:
+                break
             }
         }
     }
@@ -757,14 +879,17 @@ class AgentGuardFeature: ObservableObject {
         case unknown
     }
 
-    func checkCommand(command: String, agentName: String) -> CommandCheckResult {
+    func checkCommand(command: String, agentName: String, timestamp: Date = Date(), shouldSave: Bool = true) -> CommandCheckResult {
         guard alertRule.commandGuardEnabled else { return .allowed }
         let cmdLower = command.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cmdLower.isEmpty else { return .allowed }
 
-        for rule in commandRules where rule.listType == .blacklist {
-            if matchCommand(cmdLower, rule: rule) {
+        for i in commandRules.indices where commandRules[i].listType == .blacklist {
+            if matchCommand(cmdLower, rule: commandRules[i]) {
+                incrementRuleCount(at: i, agentName: agentName, timestamp: timestamp, shouldSave: shouldSave)
+                let rule = commandRules[i]
                 let key = "cmd_blacklist_\(rule.id)"
-                if shouldFireAlert(key: key) {
+                if shouldSave && shouldFireAlert(key: key) {
                     let alert = GuardAlert(
                         id: UUID().uuidString,
                         timestamp: Date(),
@@ -782,16 +907,19 @@ class AgentGuardFeature: ObservableObject {
             }
         }
 
-        for rule in commandRules where rule.listType == .whitelist {
-            if matchCommand(cmdLower, rule: rule) {
+        for i in commandRules.indices where commandRules[i].listType == .whitelist {
+            if matchCommand(cmdLower, rule: commandRules[i]) {
+                incrementRuleCount(at: i, agentName: agentName, timestamp: timestamp, shouldSave: shouldSave)
                 return .allowed
             }
         }
 
-        for rule in commandRules where rule.listType == .unclassified {
-            if matchCommand(cmdLower, rule: rule) {
+        for i in commandRules.indices where commandRules[i].listType == .unclassified {
+            if matchCommand(cmdLower, rule: commandRules[i]) {
+                incrementRuleCount(at: i, agentName: agentName, timestamp: timestamp, shouldSave: shouldSave)
+                let rule = commandRules[i]
                 let key = "cmd_unclassified_\(rule.id)"
-                if shouldFireAlert(key: key) {
+                if shouldSave && shouldFireAlert(key: key) {
                     let alert = GuardAlert(
                         id: UUID().uuidString,
                         timestamp: Date(),
@@ -812,6 +940,130 @@ class AgentGuardFeature: ObservableObject {
         return .unknown
     }
 
+    @discardableResult
+    func recordObservedCommand(command: String, agentName: String, timestamp: Date = Date(), shouldSave: Bool = true) -> CommandCheckResult {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .allowed }
+        let result = checkCommand(command: trimmed, agentName: agentName, timestamp: timestamp, shouldSave: shouldSave)
+        if case .unknown = result {
+            discoverCommand(pattern: normalizedCommandPattern(trimmed), agentName: agentName, shouldSave: shouldSave)
+            if let idx = commandRules.firstIndex(where: { $0.pattern == normalizedCommandPattern(trimmed) }) {
+                incrementRuleCount(at: idx, agentName: agentName, timestamp: timestamp, shouldSave: shouldSave)
+            }
+        }
+        return result
+    }
+
+    func checkAgentEvent(_ event: AgentHookEvent) {
+        let agentName = agentName(for: event)
+        let now = Date()
+
+        switch event {
+        case .toolUse(_, let toolName, let toolInput, let toolTarget, _):
+            let target = toolTarget ?? toolInput
+            let record = OperationRecord(
+                id: "hook_\(event.sessionId)_\(now.timeIntervalSince1970)",
+                timestamp: now,
+                agentName: agentName,
+                operationType: operationTypeForHookTool(toolName: toolName, target: target, input: toolInput),
+                targetPath: target.isEmpty ? toolName : target,
+                detail: toolInput,
+                fileSize: 0,
+                processName: toolName,
+                toolInfo: event.sessionId
+            )
+            checkBatchOperation(record: record)
+            checkSensitiveFile(record: record)
+            checkProtectedDir(record: record)
+            recordStats(record)
+            if record.operationType == .execute {
+                _ = recordObservedCommand(command: record.detail.isEmpty ? record.targetPath : record.detail, agentName: agentName, timestamp: now)
+            }
+
+        case .shellExecutionStart(_, let command, let cwd):
+            _ = recordObservedCommand(command: command, agentName: agentName, timestamp: now)
+            let record = OperationRecord(
+                id: "hook_shell_\(event.sessionId)_\(now.timeIntervalSince1970)",
+                timestamp: now,
+                agentName: agentName,
+                operationType: .execute,
+                targetPath: cwd.isEmpty ? command : cwd,
+                detail: command,
+                fileSize: 0,
+                processName: "shell",
+                toolInfo: event.sessionId
+            )
+            recordStats(record)
+
+        case .mcpExecutionStart(_, let serverName, let toolName, let arguments):
+            let record = OperationRecord(
+                id: "hook_mcp_\(event.sessionId)_\(now.timeIntervalSince1970)",
+                timestamp: now,
+                agentName: agentName,
+                operationType: .execute,
+                targetPath: "\(serverName).\(toolName)",
+                detail: arguments,
+                fileSize: 0,
+                processName: toolName,
+                toolInfo: event.sessionId
+            )
+            recordStats(record)
+
+        default:
+            break
+        }
+    }
+
+    private func agentName(for event: AgentHookEvent) -> String {
+        if case .sessionStart(_, _, _, _, let agentType) = event {
+            let trimmed = agentType.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "Agent Center" : trimmed
+        }
+        return "Agent Center"
+    }
+
+    private func operationTypeForHookTool(toolName: String, target: String, input: String) -> OperationRecord.OperationType {
+        let combined = "\(toolName) \(target) \(input)".lowercased()
+        if combined.contains("delete") || combined.contains("remove") || combined.contains("trash") || combined.contains("rm ") {
+            return .delete
+        }
+        if combined.contains("read") || combined.contains("grep") || combined.contains("search") || combined.contains("glob") {
+            return .read
+        }
+        if combined.contains("write") || combined.contains("create") || combined.contains("touch ") || combined.contains("mkdir ") {
+            return .create
+        }
+        if combined.contains("rename") {
+            return .rename
+        }
+        if combined.contains("move") || combined.contains(" mv ") {
+            return .move
+        }
+        if combined.contains("bash") || combined.contains("shell") || combined.contains("command") || combined.contains("execute") {
+            return .execute
+        }
+        return .modify
+    }
+
+    private func incrementRuleCount(at index: Int, agentName: String, timestamp: Date = Date(), shouldSave: Bool = true) {
+        commandRules[index].totalCallCount += 1
+        let isToday = Calendar.current.isDateInToday(timestamp)
+        let todayStr = DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .none)
+        let lastDateStr = commandRules[index].lastCalledBy.isEmpty ? "" : String(commandRules[index].lastCalledBy.split(separator: "|").first ?? "")
+        if isToday {
+            if todayStr == lastDateStr {
+                commandRules[index].todayCallCount += 1
+            } else {
+                commandRules[index].todayCallCount = 1
+            }
+        }
+        let callDateStr = DateFormatter.localizedString(from: timestamp, dateStyle: .short, timeStyle: .none)
+        commandRules[index].lastCalledBy = callDateStr + "|" + agentName
+        if shouldSave {
+            saveCommandRules()
+        }
+    }
+
     private func matchCommand(_ cmdLower: String, rule: CommandRule) -> Bool {
         if rule.isRegex {
             return (try? Regex(rule.pattern).firstMatch(in: cmdLower)) != nil
@@ -820,7 +1072,7 @@ class AgentGuardFeature: ObservableObject {
         }
     }
 
-    func discoverCommand(pattern: String, agentName: String) {
+    func discoverCommand(pattern: String, agentName: String, shouldSave: Bool = true) {
         let normalized = pattern.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return }
         if commandRules.contains(where: { $0.pattern.lowercased() == normalized }) { return }
@@ -834,7 +1086,19 @@ class AgentGuardFeature: ObservableObject {
             source: .discovered
         )
         commandRules.append(rule)
-        saveCommandRules()
+        if shouldSave {
+            saveCommandRules()
+        }
+    }
+
+    private func normalizedCommandPattern(_ command: String) -> String {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "|;&"))
+        let firstToken = trimmed.components(separatedBy: separators).first ?? trimmed
+        let basename = (firstToken as NSString).lastPathComponent
+        let root = basename.isEmpty ? firstToken : basename
+        return root.lowercased() + " "
     }
 
     private func guessCommandDescription(_ cmd: String) -> (function: String, consequence: String) {
@@ -897,9 +1161,102 @@ class AgentGuardFeature: ObservableObject {
         return ("Unknown command", "Effect of this command is not documented")
     }
 
+    func localizeCommandDesc(_ desc: String, localizer: Localizer) -> String {
+        let map: [String: String] = [
+            "Delete files": localizer.cmdDeleteFiles,
+            "Recursive force delete": localizer.cmdRecursiveDelete,
+            "Files will be permanently removed": localizer.cmdDeleteFilesCon,
+            "Entire directory trees will be deleted without confirmation": localizer.cmdRecursiveDeleteCon,
+            "Create directory": localizer.cmdCreateDir,
+            "New directory will be created": localizer.cmdCreateDirCon,
+            "Copy files": localizer.cmdCopyFiles,
+            "Files will be duplicated to target location": localizer.cmdCopyFilesCon,
+            "Move/rename files": localizer.cmdMoveFiles,
+            "Files will be moved or renamed": localizer.cmdMoveFilesCon,
+            "Change file permissions": localizer.cmdChmod,
+            "File access permissions will be modified": localizer.cmdChmodCon,
+            "Change file ownership": localizer.cmdChown,
+            "File owner/group will be changed": localizer.cmdChownCon,
+            "Display file contents": localizer.cmdCatFile,
+            "File contents will be read and displayed": localizer.cmdCatFileCon,
+            "Search text in files": localizer.cmdSearchText,
+            "Will search for patterns in files": localizer.cmdSearchTextCon,
+            "Search for files": localizer.cmdSearchFiles,
+            "Will locate files matching criteria": localizer.cmdSearchFilesCon,
+            "Download from URL": localizer.cmdDownload,
+            "Data will be fetched from a remote server": localizer.cmdDownloadCon,
+            "Download file": localizer.cmdDownloadFile,
+            "File will be downloaded from the internet": localizer.cmdDownloadFileCon,
+            "Git version control": localizer.cmdGit,
+            "Repository operations will be performed": localizer.cmdGitCon,
+            "Package manager": localizer.cmdPkgMgr,
+            "Node.js packages will be installed/modified": localizer.cmdNodePkgCon,
+            "Python packages will be installed/modified": localizer.cmdPyPkgCon,
+            "Homebrew package manager": localizer.cmdBrew,
+            "macOS packages will be installed/modified": localizer.cmdBrewCon,
+            "Docker container management": localizer.cmdDocker,
+            "Containers/images will be created or modified": localizer.cmdDockerCon,
+            "Execute with superuser privileges": localizer.cmdSudo,
+            "Command runs with elevated system permissions": localizer.cmdSudoCon,
+            "Terminate process": localizer.cmdKill,
+            "Running processes will be stopped": localizer.cmdKillCon,
+            "Launch daemon control": localizer.cmdLaunchctl,
+            "System services will be loaded/unloaded": localizer.cmdLaunchctlCon,
+            "macOS defaults system": localizer.cmdDefaults,
+            "System/application preferences will be modified": localizer.cmdDefaultsCon,
+            "Create symbolic link": localizer.cmdSymlink,
+            "A link to another file will be created": localizer.cmdSymlinkCon,
+            "Archive/extract files": localizer.cmdArchive,
+            "Files will be compressed or extracted": localizer.cmdArchiveCon,
+            "Compress/extract ZIP": localizer.cmdZip,
+            "Files will be archived or extracted": localizer.cmdZipCon,
+            "Stream editor": localizer.cmdSed,
+            "File contents will be modified in-place or streamed": localizer.cmdSedCon,
+            "Text processing": localizer.cmdAwk,
+            "Text data will be processed and transformed": localizer.cmdAwkCon,
+            "Build Xcode project": localizer.cmdXcode,
+            "Project will be compiled and built": localizer.cmdXcodeCon,
+            "Run Swift": localizer.cmdSwift,
+            "Swift code will be compiled or executed": localizer.cmdSwiftCon,
+            "Run Python": localizer.cmdPython,
+            "Python script will be executed": localizer.cmdPythonCon,
+            "Run Node.js": localizer.cmdNode,
+            "JavaScript will be executed": localizer.cmdNodeCon,
+            "Execute shell script": localizer.cmdShell,
+            "Shell commands will be run": localizer.cmdShellCon,
+            "Print text": localizer.cmdEcho,
+            "Text will be output to console or file": localizer.cmdEchoCon,
+            "Create empty file": localizer.cmdTouch,
+            "New empty file will be created or timestamp updated": localizer.cmdTouchCon,
+            "View file head/tail": localizer.cmdHeadTail,
+            "Beginning or end of file will be displayed": localizer.cmdHeadTailCon,
+            "Count lines/words": localizer.cmdWc,
+            "File statistics will be calculated": localizer.cmdWcCon,
+            "Sort lines": localizer.cmdSort,
+            "Lines will be sorted alphabetically or numerically": localizer.cmdSortCon,
+            "Remove duplicates": localizer.cmdUniq,
+            "Duplicate adjacent lines will be removed": localizer.cmdUniqCon,
+            "Compare files": localizer.cmdDiff,
+            "Differences between files will be shown": localizer.cmdDiffCon,
+            "Safe operation": localizer.cmdSafe,
+            "Read-only operation": localizer.cmdReadOnly,
+            "List directory contents": localizer.cmdListDir,
+            "Locate command path": localizer.cmdLocate,
+            "List processes": localizer.cmdListProc,
+            "Disk free space": localizer.cmdDiskFree,
+            "Disk usage": localizer.cmdDiskUsage,
+            "Standard repository operations (commit, push, pull, etc.)": localizer.cmdGitCon,
+            "Installs or manages Node.js dependencies": localizer.cmdNodePkgCon,
+            "Installs or manages Python packages": localizer.cmdPyPkgCon,
+            "Installs or manages macOS software packages": localizer.cmdBrewCon,
+        ]
+        return map[desc] ?? desc
+    }
+
     func moveCommandToBlacklist(id: String) {
         if let idx = commandRules.firstIndex(where: { $0.id == id }) {
             commandRules[idx].listType = .blacklist
+            objectWillChange.send()
             saveCommandRules()
         }
     }
@@ -907,6 +1264,7 @@ class AgentGuardFeature: ObservableObject {
     func moveCommandToWhitelist(id: String) {
         if let idx = commandRules.firstIndex(where: { $0.id == id }) {
             commandRules[idx].listType = .whitelist
+            objectWillChange.send()
             saveCommandRules()
         }
     }
@@ -914,6 +1272,7 @@ class AgentGuardFeature: ObservableObject {
     func moveCommandToUnclassified(id: String) {
         if let idx = commandRules.firstIndex(where: { $0.id == id }) {
             commandRules[idx].listType = .unclassified
+            objectWillChange.send()
             saveCommandRules()
         }
     }
@@ -937,7 +1296,7 @@ class AgentGuardFeature: ObservableObject {
         alerts = decoded
     }
 
-    private func saveAlerts() {
+    func saveAlerts() {
         guard let data = try? JSONEncoder().encode(alerts) else { return }
         try? data.write(to: URL(fileURLWithPath: alertsPath))
     }
@@ -969,6 +1328,9 @@ class AgentGuardFeature: ObservableObject {
               let decoded = try? JSONDecoder().decode([ProcessLifecycleEvent].self, from: data) else { return }
         processLifecycleEvents = decoded
         knownPids = Set(decoded.filter { $0.eventType == .launch }.map { $0.pid })
+        for event in decoded where event.eventType == .launch {
+            knownAgentPids[event.pid] = event.agentName
+        }
     }
 
     func saveLifecycleEvents() {

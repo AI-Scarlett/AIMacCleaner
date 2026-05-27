@@ -13,7 +13,7 @@ def get_github_token():
             return line.split('=', 1)[1]
     return None
 
-VERSION = "2.1.3"
+VERSION = "1.0.0"
 DMG_PATH = f"/tmp/AgentGuard-v{VERSION}-arm64.dmg"
 REPO = "AI-Scarlett/AIMacCleaner"
 TAG = f"v{VERSION}"
@@ -33,26 +33,22 @@ if response.status_code == 200:
     print(f"Release {TAG} already exists (id={release_id})")
 else:
     print(f"Creating new release {TAG}...")
-    body_text = """## v2.1.2 命令守护三分类 + 自动发现 + 描述后果
+    body_text = """## v1.0.0 AgentGuard 首个 App Store 版本
 
-### 🛡️ 命令守护（全新设计）
-- **三分类体系**: 黑名单(禁止执行) / 白名单(允许执行) / 未分类(执行后警告)
-- **命令自动发现**: 从Agent监控操作中提取命令，自动生成功能描述和后果说明
-- **46种命令描述库**: 涵盖 rm/git/npm/pip/brew/docker/sudo 等常见命令
-- **31条默认规则**: 14条黑名单 + 16条白名单 + 1条未分类
-- **一键移动**: 在黑名单/白名单/未分类之间自由切换
-- **命令说明**: 每条规则显示功能描述和执行后果
-- **来源标记**: 默认/发现/自定义三种来源标签
+### 🎨 布局优化
+- Agent监控：图表改为一行显示，去除下方多余留白
+- Mac清理：重新设计磁盘信息卡片布局，ProgressRing与统计项同行显示
+- 新增CompactStatItem组件，解决4个统计卡片叠加覆盖问题
+- 顶部功能按钮不再被遮挡
 
-### 🌐 全面国际化
-- 579个字符串补全6种语言(中/英/繁/日/韩/马耳他)
-- 繁体中文使用OpenCC精确转换
+### ⚙️ 可配置项
+- 操作记录最大条数改为可配置（500-10000），在设置>监控中调整
+- 使用UserDefaults持久化配置
 
-### 🎨 UI优化
-- 侧边栏底部2行布局
-- 图表尺寸统一
-- APP名称更新为AgentWatch
-- 全新哨兵之眼风格图标
+### 🖥️ APP名称和图标
+- APP名称统一为AgentGuard
+- 重新生成应用图标（哨兵之眼风格）
+- Icon文件位置: Assets.xcassets/AppIcon.appiconset/
 """
     create_response = requests.post(
         f'https://api.github.com/repos/{REPO}/releases',

@@ -120,7 +120,7 @@ struct IntelMigrationTab: View {
             Button(localizer.cancelBtn, role: .cancel) {}
             Button(localizer.replaceBtn, role: .destructive) {
                 if let app = pendingReplaceApp {
-                    _ = scanner.uninstallAndReplace(item: app)
+                    scanner.uninstallAndReplace(item: app)
                 }
             }
         } message: {

@@ -2,10 +2,21 @@ import SwiftUI
 import Foundation
 
 enum FileRiskLevel: String, Codable {
-    case safe = "可清理"
-    case caution = "谨慎清理"
-    case keep = "保留"
-    case unknown = "未知"
+    case safe = "Cleanable"
+    case caution = "Clean with Caution"
+    case keep = "Keep"
+    case unknown = "Unknown"
+
+    init(from decoder: Decoder) throws {
+        let rawValue = try decoder.singleValueContainer().decode(String.self)
+        switch rawValue {
+        case "Cleanable", "可清理": self = .safe
+        case "Clean with Caution", "谨慎清理": self = .caution
+        case "Keep", "保留": self = .keep
+        case "Unknown", "未知": self = .unknown
+        default: self = .unknown
+        }
+    }
 
     var color: Color {
         switch self {
@@ -43,8 +54,6 @@ class StorageAnalyzer: ObservableObject {
     @Published var aiAnalysisResult: String?
 
     weak var localizer: Localizer?
-    private let home = NSHomeDirectory()
-
     func scanStorage() async {
         await MainActor.run {
             isScanning = true
@@ -53,16 +62,18 @@ class StorageAnalyzer: ObservableObject {
         }
 
         let fm = FileManager.default
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
 
-        var systemTotal: Int64 = 0
         let url = URL(fileURLWithPath: "/")
         let keys: Set<URLResourceKey> = [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey]
-        if let values = try? url.resourceValues(forKeys: keys),
-           let totalCap = values.volumeTotalCapacity,
-           let available = values.volumeAvailableCapacityForImportantUsage {
-            systemTotal = Int64(totalCap) - Int64(available)
-        }
+        let systemTotal: Int64 = {
+            guard let values = try? url.resourceValues(forKeys: keys),
+                  let totalCap = values.volumeTotalCapacity,
+                  let available = values.volumeAvailableCapacityForImportantUsage else {
+                return 0
+            }
+            return Int64(totalCap) - Int64(available)
+        }()
 
         await MainActor.run { scanProgress = localizer?.scanningApps ?? "Scanning apps..." }
         let appResult = await scanCategoryWithDu(
@@ -119,46 +130,26 @@ class StorageAnalyzer: ObservableObject {
             var totalSize: Int64 = 0
             var files: [StorageFile] = []
             let fm = FileManager.default
-            let home = NSHomeDirectory()
             let maxFiles = 2000
 
             for path in paths {
                 let expanded = NSString(string: path).expandingTildeInPath
                 guard fm.fileExists(atPath: expanded) else { continue }
 
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/du")
-                process.arguments = ["-sk", expanded]
-                let pipe = Pipe()
-                process.standardOutput = pipe
-                process.standardError = FileHandle.nullDevice
-                try? process.run()
-                process.waitUntilExit()
-
-                if let data = try? pipe.fileHandleForReading.readToEnd(),
-                   let output = String(data: data, encoding: .utf8) {
-                    let lines = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines)
-                    for line in lines {
-                        let parts = line.components(separatedBy: .whitespaces)
-                        if parts.count >= 2 {
-                            let sizeKB = Int64(parts[0]) ?? 0
-                            let dirPath = parts.dropFirst().joined(separator: " ")
-                            if sizeKB > 0 {
-                                totalSize += sizeKB * 1024
-                                if sizeKB > 1024 && files.count < maxFiles {
-                                    let name = (dirPath as NSString).lastPathComponent
-                                    let attrs = try? fm.attributesOfItem(atPath: dirPath)
-                                    let created = attrs?[.creationDate] as? Date
-                                    let modified = attrs?[.modificationDate] as? Date
-                                    var isDir: ObjCBool = false
-                                    let isDirectory = fm.fileExists(atPath: dirPath, isDirectory: &isDir) && isDir.boolValue
-                                    files.append(StorageFile(
-                                        id: dirPath, name: name, path: dirPath, size: sizeKB * 1024,
-                                        createdDate: created, modifiedDate: modified, isDirectory: isDirectory
-                                    ))
-                                }
-                            }
-                        }
+                let sizeKB = Self.calculateDirectorySize(expanded) / 1024
+                if sizeKB > 0 {
+                    totalSize += sizeKB * 1024
+                    if sizeKB > 1024 && files.count < maxFiles {
+                        let name = (expanded as NSString).lastPathComponent
+                        let attrs = try? fm.attributesOfItem(atPath: expanded)
+                        let created = attrs?[.creationDate] as? Date
+                        let modified = attrs?[.modificationDate] as? Date
+                        var isDir: ObjCBool = false
+                        let isDirectory = fm.fileExists(atPath: expanded, isDirectory: &isDir) && isDir.boolValue
+                        files.append(StorageFile(
+                            id: expanded, name: name, path: expanded, size: sizeKB * 1024,
+                            createdDate: created, modifiedDate: modified, isDirectory: isDirectory
+                        ))
                     }
                 }
             }
@@ -168,6 +159,24 @@ class StorageAnalyzer: ObservableObject {
 
             return StorageCategory(id: id, name: name, icon: icon, color: color, size: totalSize, path: paths.first ?? "", files: files)
         }.value
+    }
+
+    private static func calculateDirectorySize(_ path: String) -> Int64 {
+        let fm = FileManager.default
+        var totalSize: Int64 = 0
+        if let enumerator = fm.enumerator(atPath: path) {
+            for case let file as String in enumerator {
+                let fullPath = (path as NSString).appendingPathComponent(file)
+                var isDir: ObjCBool = false
+                if fm.fileExists(atPath: fullPath, isDirectory: &isDir), !isDir.boolValue {
+                    if let attrs = try? fm.attributesOfItem(atPath: fullPath),
+                       let size = attrs[.size] as? Int64 {
+                        totalSize += size
+                    }
+                }
+            }
+        }
+        return totalSize
     }
 
     func analyzeFileWithAI(file: StorageFile, config: AIConfig) async -> String? {
@@ -184,7 +193,7 @@ class StorageAnalyzer: ObservableObject {
         2. 是否可以删除？(可以删除/谨慎删除/不要删除)
         3. 删除后有什么影响？
         """
-        let requestBody: [String: Any] = ["model": config.model ?? "deepseek-chat", "messages": [["role": "user", "content": prompt]], "temperature": 0.3, "max_tokens": 300]
+        let requestBody: [String: Any] = ["model": config.model ?? "gpt-4o-mini", "messages": [["role": "user", "content": prompt]], "temperature": 0.3, "max_tokens": 300]
         guard let bodyData = try? JSONSerialization.data(withJSONObject: requestBody) else { return nil }
         let urlString = apiBase.hasSuffix("/v1") ? "\(apiBase)/chat/completions" : "\(apiBase)/v1/chat/completions"
         guard let url = URL(string: urlString) else { return nil }
@@ -220,7 +229,7 @@ class StorageAnalyzer: ObservableObject {
         3. 哪些需要谨慎处理？
         4. 预计可释放多少空间？
         """
-        let requestBody: [String: Any] = ["model": config.model ?? "deepseek-chat", "messages": [["role": "user", "content": prompt]], "temperature": 0.3, "max_tokens": 500]
+        let requestBody: [String: Any] = ["model": config.model ?? "gpt-4o-mini", "messages": [["role": "user", "content": prompt]], "temperature": 0.3, "max_tokens": 500]
         guard let bodyData = try? JSONSerialization.data(withJSONObject: requestBody) else { return nil }
         let urlString = apiBase.hasSuffix("/v1") ? "\(apiBase)/chat/completions" : "\(apiBase)/v1/chat/completions"
         guard let url = URL(string: urlString) else { return nil }

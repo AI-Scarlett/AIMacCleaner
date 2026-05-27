@@ -1,0 +1,169 @@
+import Foundation
+
+enum HookInstallHealth {
+    case healthy
+    case installed
+    case notInstalled
+    case error
+    case settingsCorrupted
+}
+
+actor HookInstaller {
+    private let blockStart = "# [AGENTGUARD-START]"
+    private let blockEnd = "# [AGENTGUARD-END]"
+    private let marker = "agentguard-bridge"
+
+    func ensureBridgeBinary() throws -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let destDir = home.appendingPathComponent(".agentguard/bin")
+        let destPath = destDir.appendingPathComponent("agentguard-bridge")
+
+        if FileManager.default.fileExists(atPath: destPath.path) {
+            return destPath.path
+        }
+
+        try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+
+        let resourceURL: URL? = Bundle.main.url(forResource: "agentguard-bridge", withExtension: nil)
+                ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/agentguard-bridge")
+        guard let url = resourceURL else {
+            throw AgentError.hookInstallFailed("Bridge binary not found in bundle")
+        }
+
+        if !FileManager.default.fileExists(atPath: url.path) {
+            let pwd = FileManager.default.currentDirectoryPath
+            let devBridge = URL(fileURLWithPath: pwd).appendingPathComponent("agentguard-bridge")
+            if FileManager.default.fileExists(atPath: devBridge.path) {
+                try FileManager.default.copyItem(at: devBridge, to: destPath)
+                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destPath.path)
+                return destPath.path
+            }
+            throw AgentError.hookInstallFailed("Bridge binary not found at \(url.path)")
+        }
+
+        try FileManager.default.copyItem(at: url, to: destPath)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destPath.path)
+        return destPath.path
+    }
+
+    func shellQuote(_ value: String) -> String {
+        if value.isEmpty { return "''" }
+        if value.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "/._-:=@".contains($0)) }) {
+            return value
+        }
+        return "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
+    }
+
+    func hookCommand(bridgePath: String, label: String, agentId: String) -> String {
+        let env = "/usr/bin/env"
+        let socket = "AGENTGUARD_SOCKET=/tmp/agentguard.sock"
+        let port = "AGENTGUARD_PORT=17893"
+        let agLabel = "AGENTGUARD_AGENT=\(label)"
+        let agId = "AGENTGUARD_ENGINE_ID=\(agentId)"
+        let bridge = bridgePath
+        return "\(env) \(socket) \(port) \(agLabel) \(agId) \(bridge)"
+    }
+
+    func injectJSONHooks(at configPath: URL, events: [HookEventDescriptor], hookCommand: String) throws {
+        var config = readJSON(at: configPath)
+        var hooks = config["hooks"] as? [String: [[String: Any]]] ?? [:]
+
+        for event in events {
+            var entries = hooks[event.name] ?? []
+            entries.removeAll { entry in
+                guard let cmd = entry["command"] as? String else { return false }
+                return cmd.contains(marker)
+            }
+            entries.append(["command": hookCommand])
+            hooks[event.name] = entries
+        }
+
+        config["hooks"] = hooks
+        try writeJSON(config, at: configPath)
+    }
+
+    func removeJSONHooks(at configPath: URL) throws {
+        var config = readJSON(at: configPath)
+        guard var hooks = config["hooks"] as? [String: [[String: Any]]] else { return }
+
+        for (eventName, var entries) in hooks {
+            entries.removeAll { entry in
+                guard let cmd = entry["command"] as? String else { return false }
+                return cmd.contains(marker)
+            }
+            if entries.isEmpty {
+                hooks.removeValue(forKey: eventName)
+            } else {
+                hooks[eventName] = entries
+            }
+        }
+
+        config["hooks"] = hooks.isEmpty ? nil : hooks
+        try writeJSON(config, at: configPath)
+    }
+
+    func injectYAMLHooks(at configPath: URL, events: [HookEventDescriptor], hookCommand: String) throws {
+        var content = (try? String(contentsOf: configPath, encoding: .utf8)) ?? ""
+        content = stripSentinelBlock(from: content)
+
+        var lines = [blockStart, "hooks:"]
+        for event in events {
+            lines.append("  \(event.name):")
+            lines.append("    - command: \"\(hookCommand)\"")
+        }
+        lines.append(blockEnd)
+
+        let result = content.trimmingCharacters(in: .whitespacesAndNewlines) + "\n" + lines.joined(separator: "\n")
+        try atomicWrite(result, to: configPath)
+    }
+
+    func removeYAMLHooks(at configPath: URL) throws {
+        guard FileManager.default.fileExists(atPath: configPath.path) else { return }
+        let content = try String(contentsOf: configPath, encoding: .utf8)
+        guard content.contains(marker) else { return }
+        let stripped = stripSentinelBlock(from: content)
+        try atomicWrite(stripped, to: configPath)
+    }
+
+    func checkHealth(at configPath: URL) -> HookInstallHealth {
+        guard FileManager.default.fileExists(atPath: configPath.path) else { return .notInstalled }
+        guard let content = try? String(contentsOf: configPath, encoding: .utf8) else { return .settingsCorrupted }
+        if content.contains(marker) { return .healthy }
+        return .notInstalled
+    }
+
+    private func readJSON(at path: URL) -> [String: Any] {
+        guard let data = try? Data(contentsOf: path),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return [:]
+        }
+        return json
+    }
+
+    private func writeJSON(_ json: [String: Any], at path: URL) throws {
+        let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+        try atomicWrite(String(data: data, encoding: .utf8) ?? "{}", to: path)
+    }
+
+    private func stripSentinelBlock(from content: String) -> String {
+        var result = ""
+        var inside = false
+        for line in content.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == blockStart { inside = true; continue }
+            if trimmed == blockEnd { inside = false; continue }
+            if !inside { result += line + "\n" }
+        }
+        return result
+    }
+
+    private func atomicWrite(_ content: String, to path: URL) throws {
+        let tmpPath = path.appendingPathExtension("tmp")
+        try content.write(to: tmpPath, atomically: true, encoding: .utf8)
+        if FileManager.default.fileExists(atPath: path.path) {
+            _ = try FileManager.default.replaceItemAt(path, withItemAt: tmpPath)
+        } else {
+            try FileManager.default.moveItem(at: tmpPath, to: path)
+        }
+    }
+}

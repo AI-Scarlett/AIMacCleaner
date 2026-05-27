@@ -11,8 +11,8 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab = .ai
 
     @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
-    @AppStorage("sensorMonitorEnabled") private var sensorMonitorEnabled = true
-    @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = true
+    @AppStorage("sensorMonitorEnabled") private var sensorMonitorEnabled = false
+    @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = false
     @AppStorage("networkMode") private var networkMode = "internet"
     @AppStorage("quitBehavior") private var quitBehavior: String = "quitAll"
 
@@ -181,7 +181,7 @@ struct SettingsView: View {
                     Text(localizer.apiBase)
                         .font(Theme.Font.captionMedium)
                         .foregroundStyle(Theme.Colors.textSecondary)
-                    TextField("https://api.deepseek.com", text: $apiBase)
+                    TextField("https://api.openai.com", text: $apiBase)
                         .textFieldStyle(.plain)
                         .font(Theme.Font.body)
                         .padding(Theme.Spacing.sm)
@@ -213,7 +213,7 @@ struct SettingsView: View {
                     Text(localizer.modelName)
                         .font(Theme.Font.captionMedium)
                         .foregroundStyle(Theme.Colors.textSecondary)
-                    TextField("deepseek-chat", text: $model)
+                    TextField("gpt-4o-mini", text: $model)
                         .textFieldStyle(.plain)
                         .font(Theme.Font.body)
                         .padding(Theme.Spacing.sm)
@@ -354,6 +354,42 @@ struct SettingsView: View {
                         set: { service.trashInsteadOfDelete = $0 }
                     )
                 )
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    Text(localizer.maxOperationRecords)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    Picker("", selection: Binding(
+                        get: {
+                            [12, 48, 72, 96].contains(service.operationMonitor.recordRetentionHours) ? service.operationMonitor.recordRetentionHours : 0
+                        },
+                        set: { value in
+                            service.operationMonitor.recordRetentionHours = value > 0 ? value : 120
+                        }
+                    )) {
+                        Text("12\(localizer.hoursUnit)").tag(12)
+                        Text("48\(localizer.hoursUnit)").tag(48)
+                        Text("72\(localizer.hoursUnit)").tag(72)
+                        Text("96\(localizer.hoursUnit)").tag(96)
+                        Text(localizer.customHours).tag(0)
+                    }
+                    .pickerStyle(.segmented)
+
+                    if ![12, 48, 72, 96].contains(service.operationMonitor.recordRetentionHours) {
+                        Stepper(value: Binding(
+                            get: { service.operationMonitor.recordRetentionHours },
+                            set: { service.operationMonitor.recordRetentionHours = min(max($0, 1), 360) }
+                        ), in: 1...360, step: 1) {
+                            Text("\(service.operationMonitor.recordRetentionHours) \(localizer.hoursUnit)")
+                                .font(Theme.Font.captionMedium)
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                    }
+                    Text(localizer.retentionHoursHint)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
             }
             .cardStyle()
         }
@@ -499,56 +535,21 @@ struct SettingsView: View {
                             .fill(Theme.Colors.success)
                             .frame(width: 6, height: 6)
                     }
-                    if service.updateAvailable {
-                        HStack(spacing: Theme.Spacing.sm) {
-                            Image(systemName: "arrow.down.circle.fill")
-                                .foregroundStyle(Theme.Colors.info)
-                                .font(Theme.Font.caption)
-                            Text(localizer.newVersionAvailable + service.latestVersion)
-                                .font(Theme.Font.captionMedium)
-                                .foregroundStyle(Theme.Colors.info)
-                        }
-                    } else if service.isCheckingUpdate {
-                        HStack(spacing: Theme.Spacing.sm) {
-                            ProgressView().controlSize(.mini)
-                            Text(localizer.downloadingUpdate)
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                        }
-                    }
                 }
                 Spacer()
-                Button {
-                    Task { await service.checkForUpdates() }
-                } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Image(systemName: "arrow.clockwise")
-                        Text(localizer.checkUpdate)
-                    }
-                    .font(Theme.Font.captionMedium)
-                    .foregroundStyle(Theme.Colors.accent)
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, Theme.Spacing.xs + 1)
-                    .background(Theme.Colors.accent.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                }
-                .buttonStyle(.plain)
-                .disabled(service.isCheckingUpdate)
-                .opacity(service.isCheckingUpdate ? 0.5 : 1)
-
-                if service.updateAvailable {
+                if let appStoreURL {
                     Button {
-                        service.openDownloadPage()
+                        NSWorkspace.shared.open(appStoreURL)
                     } label: {
                         HStack(spacing: Theme.Spacing.xs) {
-                            Image(systemName: "arrow.down.circle")
-                            Text(localizer.downloadUpdate)
+                            Image(systemName: "arrow.up.circle")
+                            Text(localizer.checkUpdate)
                         }
                         .font(Theme.Font.captionMedium)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.Colors.accent)
                         .padding(.horizontal, Theme.Spacing.md)
                         .padding(.vertical, Theme.Spacing.xs + 1)
-                        .background(Theme.Gradients.accent)
+                        .background(Theme.Colors.accent.opacity(0.1))
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     }
                     .buttonStyle(.plain)
@@ -558,11 +559,19 @@ struct SettingsView: View {
         }
     }
 
+    private var appStoreURL: URL? {
+        guard let appStoreID = Bundle.main.object(forInfoDictionaryKey: "AppStoreID") as? String,
+              appStoreID.range(of: #"^\d+$"#, options: .regularExpression) != nil else {
+            return nil
+        }
+        return URL(string: "macappstore://apps.apple.com/app/id\(appStoreID)")
+    }
+
     private func loadConfig() {
         if let config = service.aiConfig {
-            apiBase = config.apiBase ?? "https://api.deepseek.com"
+            apiBase = config.apiBase ?? "https://api.openai.com"
             apiKey = config.apiKey ?? ""
-            model = config.model ?? "deepseek-chat"
+            model = config.model ?? "gpt-4o-mini"
         }
     }
 

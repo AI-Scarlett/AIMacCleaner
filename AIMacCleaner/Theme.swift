@@ -197,6 +197,45 @@ struct StatCardView: View {
     }
 }
 
+struct CompactStatItem: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(iconColor)
+                .frame(width: 28, height: 28)
+                .background(iconColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(1)
+                Text(value)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(Theme.Colors.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+        )
+    }
+}
+
 struct ProgressRing: View {
     let progress: Double
     let lineWidth: CGFloat

@@ -91,136 +91,11 @@ struct MenuBarMonitor: View {
 
     private var popoverFooter: some View {
         VStack(spacing: 0) {
-            if service.isDownloadingUpdate {
-                VStack(spacing: Theme.Spacing.sm) {
-                    HStack {
-                        Image(systemName: "arrow.down.circle")
-                            .foregroundStyle(Theme.Colors.info)
-                            .font(Theme.Font.caption)
-                        Text(String(format: "\(localizer.downloadingUpdateFmt) %.0f%%", service.updateDownloadProgress * 100))
-                            .font(Theme.Font.captionMedium)
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                        Spacer()
-                        Button {
-                            service.cancelUpdateDownload()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(Theme.Colors.textTertiary)
-                                .font(Theme.Font.caption)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    ProgressView(value: service.updateDownloadProgress)
-                        .progressViewStyle(.linear)
-                        .tint(Theme.Colors.info)
-                }
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.sm)
-                .background(Theme.Colors.info.opacity(0.05))
-            } else if service.isInstallingUpdate {
-                VStack(spacing: Theme.Spacing.sm) {
-                    HStack {
-                        ProgressView()
-                            .controlSize(.small)
-                            .scaleEffect(0.7)
-                        Text(localizer.installingUpdate)
-                            .font(Theme.Font.captionMedium)
-                            .foregroundStyle(Theme.Colors.warning)
-                    }
-                }
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.sm)
-                .background(Theme.Colors.warning.opacity(0.05))
-            } else if service.updateReadyToInstall {
-                VStack(spacing: Theme.Spacing.sm) {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(Theme.Colors.success)
-                        Text(localizer.updateDownloaded)
-                            .font(Theme.Font.captionMedium)
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                    }
-                    Button {
-                        service.installUpdate()
-                    } label: {
-                        HStack {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .foregroundStyle(.white)
-                            Text("\(localizer.quitAndInstall) v\(service.latestVersion)")
-                                .foregroundStyle(.white)
-                                .font(Theme.Font.captionMedium)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Theme.Spacing.sm)
-                        .background(Theme.Gradients.success)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.sm)
-                .background(Theme.Colors.success.opacity(0.05))
-            } else if !service.updateErrorMessage.isEmpty {
-                VStack(spacing: Theme.Spacing.sm) {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Theme.Colors.warning)
-                        Text(service.updateErrorMessage)
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.warning)
-                        Spacer()
-                        Button {
-                            service.updateErrorMessage = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(Theme.Colors.textTertiary)
-                                .font(Theme.Font.caption)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    Button {
-                        service.downloadUpdate()
-                    } label: {
-                        HStack {
-                            Image(systemName: "arrow.clockwise")
-                            Text(localizer.retryDownload)
-                        }
-                        .font(Theme.Font.captionMedium)
-                        .foregroundStyle(Theme.Colors.accent)
-                        .padding(.horizontal, Theme.Spacing.md)
-                        .padding(.vertical, Theme.Spacing.xs)
-                        .background(Theme.Colors.accent.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.sm)
-            } else if service.updateAvailable {
-                Button {
-                    service.downloadUpdate()
-                } label: {
-                    HStack {
-                        Image(systemName: "arrow.down.circle.fill")
-                        Text("\(localizer.updateToVersion) v\(service.latestVersion)")
-                    }
-                    .font(Theme.Font.captionMedium)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Theme.Spacing.sm)
-                    .background(Theme.Gradients.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.top, Theme.Spacing.sm)
-            }
-
             HStack(spacing: Theme.Spacing.sm) {
                 Button {
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("Agent卫士") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
+                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("AgentGuard") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
                         window.makeKeyAndOrderFront(nil)
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -241,28 +116,6 @@ struct MenuBarMonitor: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
                 .buttonStyle(.plain)
-
-                Button {
-                    Task { await service.checkForUpdates() }
-                } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                        Text(localizer.checkForUpdate)
-                    }
-                    .font(Theme.Font.captionMedium)
-                    .foregroundStyle(Theme.Colors.textSecondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Theme.Spacing.xs + 1)
-                    .background(Theme.Colors.cardBg)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(service.isCheckingUpdate || service.isDownloadingUpdate)
-                .opacity(service.isCheckingUpdate || service.isDownloadingUpdate ? 0.5 : 1)
             }
             .padding(.horizontal, Theme.Spacing.lg)
             .padding(.top, Theme.Spacing.sm)
@@ -366,110 +219,51 @@ struct MenuBarMonitor: View {
             SectionHeader(title: localizer.hardwareMonitor, icon: "gauge.open.with.lines.needle.84percent")
 
             if let hw = service.hardwareInfo {
-                DashboardGrid(columns: 2, spacing: Theme.Spacing.sm) {
-                    VStack(spacing: Theme.Spacing.xs) {
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Image(systemName: "cpu")
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(Theme.Colors.statusColor(for: hw.cpuUsage / 100.0))
-                            Text(localizer.cpuLabel)
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                        }
-                        Text(String(format: "%.0f%%", hw.cpuUsage))
-                            .font(Theme.Font.title2Bold)
-                            .monospacedDigit()
-                            .foregroundStyle(Theme.Colors.statusColor(for: hw.cpuUsage / 100.0))
-                        Text("\(hw.cpuCoreCount) " + localizer.coresLabel)
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                    }
-                    .frame(minHeight: 72)
-                    .cardStyle(padding: Theme.Spacing.md)
-
-                    VStack(spacing: Theme.Spacing.xs) {
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Image(systemName: "memorychip")
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(Theme.Colors.statusColor(for: hw.memoryPressurePct / 100.0))
-                            Text(localizer.memoryLabel)
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                        }
-                        Text(String(format: "%.0f%%", hw.memoryPressurePct))
-                            .font(Theme.Font.title2Bold)
-                            .monospacedDigit()
-                            .foregroundStyle(Theme.Colors.statusColor(for: hw.memoryPressurePct / 100.0))
-                        Text(String(format: "%.1f/%.0fG", hw.memoryUsedGb, hw.memoryTotalGb))
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                    }
-                    .frame(minHeight: 72)
-                    .cardStyle(padding: Theme.Spacing.md)
-
+                let displayItems: [( icon: String, iconColor: Color, title: String, value: String, subtitle: String, valueColor: Color )] = {
+                    var items: [( icon: String, iconColor: Color, title: String, value: String, subtitle: String, valueColor: Color )] = [
+                        ("cpu", Theme.Colors.statusColor(for: hw.cpuUsage / 100.0), localizer.cpuLabel, String(format: "%.0f%%", hw.cpuUsage), "\(hw.cpuCoreCount) " + localizer.coresLabel, Theme.Colors.statusColor(for: hw.cpuUsage / 100.0)),
+                        ("memorychip", Theme.Colors.statusColor(for: hw.memoryPressurePct / 100.0), localizer.memoryLabel, String(format: "%.0f%%", hw.memoryPressurePct), String(format: "%.1f/%.0fG", hw.memoryUsedGb, hw.memoryTotalGb), Theme.Colors.statusColor(for: hw.memoryPressurePct / 100.0)),
+                    ]
                     if let temp = hw.cpuTemperature {
-                        VStack(spacing: Theme.Spacing.xs) {
-                            HStack(spacing: Theme.Spacing.xs) {
-                                Image(systemName: "thermometer.medium")
-                                    .font(Theme.Font.caption)
-                                    .foregroundStyle(Theme.Colors.statusColor(for: min(temp / 100.0, 1.0)))
-                                Text(localizer.cpuTempLabel)
-                                    .font(Theme.Font.caption)
-                                    .foregroundStyle(Theme.Colors.textSecondary)
-                            }
-                            Text(String(format: "%.0f°C", temp))
-                                .font(Theme.Font.title2Bold)
-                                .monospacedDigit()
-                                .foregroundStyle(Theme.Colors.statusColor(for: min(temp / 100.0, 1.0)))
-                            Text(temp > 80 ? localizer.overheating : temp > 60 ? localizer.high : localizer.normal)
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(Theme.Colors.textTertiary)
-                        }
-                        .frame(minHeight: 72)
-                        .cardStyle(padding: Theme.Spacing.md)
+                        items.append(("thermometer.medium", Theme.Colors.statusColor(for: min(temp / 100.0, 1.0)), localizer.cpuTempLabel, String(format: "%.0f°C", temp), temp > 80 ? localizer.overheating : temp > 60 ? localizer.high : localizer.normal, Theme.Colors.statusColor(for: min(temp / 100.0, 1.0))))
                     }
-
                     if let battery = hw.batteryPercent {
+                        items.append((hw.batteryCharging ? "battery.100.bolt" : "battery.75", Theme.Colors.statusColor(for: 1.0 - battery / 100.0), localizer.batteryLabel, String(format: "%.0f%%", battery), hw.batteryCharging ? localizer.charging : (hw.batteryTimeRemaining.map { "\($0)\(localizer.minuteUnit)" } ?? localizer.inUse), Theme.Colors.statusColor(for: 1.0 - battery / 100.0)))
+                    }
+                    items.append(("arrow.up.arrow.down", Theme.Colors.teal, localizer.networkLabel, "↓\(hw.networkInFormatted)", "↑\(hw.networkOutFormatted)", Theme.Colors.teal))
+                    return items
+                }()
+
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: Theme.Spacing.sm),
+                    GridItem(.flexible(), spacing: Theme.Spacing.sm)
+                ], spacing: Theme.Spacing.sm) {
+                    ForEach(Array(displayItems.enumerated()), id: \.offset) { _, item in
                         VStack(spacing: Theme.Spacing.xs) {
+                            Spacer(minLength: 0)
                             HStack(spacing: Theme.Spacing.xs) {
-                                Image(systemName: hw.batteryCharging ? "battery.100.bolt" : "battery.75")
+                                Image(systemName: item.icon)
                                     .font(Theme.Font.caption)
-                                    .foregroundStyle(Theme.Colors.statusColor(for: 1.0 - battery / 100.0))
-                                Text(localizer.batteryLabel)
+                                    .foregroundStyle(item.iconColor)
+                                Text(item.title)
                                     .font(Theme.Font.caption)
                                     .foregroundStyle(Theme.Colors.textSecondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
                             }
-                            Text(String(format: "%.0f%%", battery))
+                            Text(item.value)
                                 .font(Theme.Font.title2Bold)
                                 .monospacedDigit()
-                                .foregroundStyle(Theme.Colors.statusColor(for: 1.0 - battery / 100.0))
-                            Text(hw.batteryCharging ? localizer.charging : (hw.batteryTimeRemaining.map { "\($0)\(localizer.minuteUnit)" } ?? localizer.inUse))
+                                .foregroundStyle(item.valueColor)
+                            Text(item.subtitle)
                                 .font(Theme.Font.caption)
                                 .foregroundStyle(Theme.Colors.textTertiary)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
                         }
-                        .frame(minHeight: 72)
-                        .cardStyle(padding: Theme.Spacing.md)
+                        .frame(maxWidth: .infinity, minHeight: 76, maxHeight: 76)
+                        .cardStyle(padding: Theme.Spacing.sm)
                     }
-
-                    VStack(spacing: Theme.Spacing.xs) {
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Image(systemName: "arrow.up.arrow.down")
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(Theme.Colors.teal)
-                            Text(localizer.networkLabel)
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                        }
-                        Text("↓\(hw.networkInFormatted)")
-                            .font(Theme.Font.title2Bold)
-                            .monospacedDigit()
-                            .foregroundStyle(Theme.Colors.teal)
-                        Text("↑\(hw.networkOutFormatted)")
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                    }
-                    .frame(minHeight: 72)
-                    .cardStyle(padding: Theme.Spacing.md)
                 }
 
                 HStack(spacing: Theme.Spacing.md) {
@@ -702,7 +496,7 @@ struct MenuBarMonitor: View {
                     icon: "list.bullet",
                     iconColor: Theme.Colors.info,
                     title: localizer.totalOpsLabel,
-                    value: "\(service.operationRecords.count)"
+                    value: "\(displayableOperationRecords.count)"
                 )
                 compactStatCard(
                     icon: "clock",
@@ -832,8 +626,16 @@ struct MenuBarMonitor: View {
 
     private var recentOperations: some View {
         VStack(spacing: Theme.Spacing.xs) {
-            SectionHeader(title: localizer.recentOpsLabel, icon: "clock.arrow.circlepath") {
-                if !service.operationRecords.isEmpty {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(Theme.Font.subheadline)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                Text(localizer.recentOpsLabel)
+                    .font(Theme.Font.subheadlineMedium)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                Spacer()
+
+                if !displayableOperationRecords.isEmpty {
                     Button {
                         NSApp.setActivationPolicy(.regular)
                         NSApp.activate(ignoringOtherApps: true)
@@ -847,7 +649,7 @@ struct MenuBarMonitor: View {
                         }
                     } label: {
                         HStack(spacing: 2) {
-                            Text("\(service.operationRecords.count) \(localizer.recordsUnit)")
+                            Text("\(displayableOperationRecords.count) \(localizer.recordsUnit)")
                                 .font(Theme.Font.caption)
                                 .foregroundStyle(Theme.Colors.textTertiary)
                             Image(systemName: "arrow.up.right.and.arrow.down.left")
@@ -859,7 +661,7 @@ struct MenuBarMonitor: View {
                 }
             }
 
-            if service.operationRecords.isEmpty {
+            if displayableOperationRecords.isEmpty {
                 VStack(spacing: Theme.Spacing.xs) {
                     Image(systemName: "tray")
                         .font(.title3)
@@ -941,7 +743,7 @@ struct MenuBarMonitor: View {
                             .minimumScaleFactor(0.8)
                     }
                     .font(Theme.Font.captionMedium)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, Theme.Spacing.sm)
                     .padding(.vertical, Theme.Spacing.xs)
                     .background(operationMonitorEnabled ? Theme.Colors.warning.opacity(0.85) : Theme.Colors.success.opacity(0.85))
@@ -979,7 +781,7 @@ struct MenuBarMonitor: View {
 
                 Spacer()
 
-                if !service.operationRecords.isEmpty {
+                if !displayableOperationRecords.isEmpty {
                     Button {
                         service.clearOperationRecords()
                     } label: {
@@ -1018,11 +820,11 @@ struct MenuBarMonitor: View {
 
     private var todayOperationCount: Int {
         let start = Calendar.current.startOfDay(for: Date())
-        return service.operationRecords.filter { $0.timestamp >= start }.count
+        return displayableOperationRecords.filter { $0.timestamp >= start }.count
     }
 
     private var hourOperationCount: Int {
-        service.operationRecords.filter { Date().timeIntervalSince($0.timestamp) < 3600 }.count
+        displayableOperationRecords.filter { Date().timeIntervalSince($0.timestamp) < 3600 }.count
     }
 
     private struct AgentStat: Identifiable {
@@ -1034,7 +836,7 @@ struct MenuBarMonitor: View {
 
     private var agentStats: [AgentStat] {
         var counts: [String: Int] = [:]
-        for record in service.operationRecords {
+        for record in displayableOperationRecords {
             counts[record.agentName, default: 0] += 1
         }
         return counts.sorted { $0.value > $1.value }.enumerated().map { index, entry in
@@ -1051,7 +853,7 @@ struct MenuBarMonitor: View {
 
     private var typeStats: [TypeStat] {
         var counts: [OperationRecord.OperationType: Int] = [:]
-        for record in service.operationRecords {
+        for record in displayableOperationRecords {
             counts[record.operationType, default: 0] += 1
         }
         return OperationRecord.OperationType.allCases.compactMap { type in
@@ -1064,12 +866,27 @@ struct MenuBarMonitor: View {
     }
 
     private var recentRecords: [OperationRecord] {
-        Array(service.operationRecords.prefix(5))
+        Array(displayableOperationRecords.prefix(5))
     }
 
     private var topAgentStats: [AgentStat] {
         let stats = agentStats
         return Array(stats.prefix(min(5, stats.count)))
+    }
+
+    private var displayableOperationRecords: [OperationRecord] {
+        service.operationRecords.filter { record in
+            let name = record.agentName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if name.isEmpty || name == "—" { return false }
+            if name == localizer.systemProcess || name.localizedCaseInsensitiveContains("system process") { return false }
+            let nonAgentToolNames: Set<String> = [
+                "Node.js", "Python", "npm", "npx", "Yarn", "pnpm", "Cargo", "Rust",
+                "Deno", "Bun", "Go", "Swift", "Java", "Gradle", "Maven", "Make",
+                "CMake", "Xcode", "Git", "Docker", "pip", "pip3", "Clang",
+                "rsync", "cp", "mv", "rm", "zip", "tar", "mkdir"
+            ]
+            return !nonAgentToolNames.contains(name)
+        }
     }
 
     // MARK: - Helper Functions
@@ -1088,6 +905,7 @@ struct MenuBarMonitor: View {
         case .move: .orange
         case .rename: .purple
         case .read: .cyan
+        case .execute: .purple
         }
     }
 
@@ -1097,7 +915,7 @@ struct MenuBarMonitor: View {
     }
 
     private func settingsPath() -> String {
-        NSHomeDirectory() + "/.aimaccleaner_monitor.json"
+        SandboxPaths.shared.monitorPath
     }
 
     private func loadSettings() {
@@ -1128,4 +946,3 @@ struct MenuBarMonitor: View {
         try? data.write(to: URL(fileURLWithPath: settingsPath()))
     }
 }
-

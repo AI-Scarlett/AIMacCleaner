@@ -7,7 +7,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>AgentGuard</string>
 	<key>CFBundleExecutable</key>
-	<string>AIMacCleaner</string>
+	<string>AgentGuard</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
@@ -19,22 +19,22 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.1.3</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>LSUIElement</key>
 	<false/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2025. All rights reserved.</string>
+	<string>Copyright © 2025 AI-Scarlett. All rights reserved.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>AgentWatch 需要访问系统信息以监控硬件状态</string>
-	<key>NSSystemAdministrationUsageDescription</key>
-	<string>AgentWatch 需要系统管理权限以清理系统缓存文件</string>
 </dict>
 </plist>

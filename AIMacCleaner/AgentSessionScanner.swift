@@ -37,7 +37,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     func searchJSONLDirs(forAgentName name: String, bundlePath: String?) -> [String] {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let lower = name.lowercased().replacingOccurrences(of: " ", with: "")
         let displayName = name
         let candidates = [
@@ -173,6 +173,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     func registerSource(_ source: AgentDataSource) {
+        dataSources.removeAll { $0.agentName == source.agentName && $0.isCustom == source.isCustom }
         dataSources.append(source)
     }
 
@@ -197,7 +198,14 @@ class AgentSessionScanner: ObservableObject {
             var merged: [String: DiscoveredAgent] = [:]
 
             for source in self.dataSources {
-                let home = NSHomeDirectory()
+                if source.agentName == "Codex" {
+                    if let codexAgent = self.discoverCodexAgent() {
+                        merged[codexAgent.name] = codexAgent
+                    }
+                    continue
+                }
+
+                let home = SandboxPaths.realHomeDirectory
                 let expandedPaths = source.searchPaths.map { $0.replacingOccurrences(of: "~", with: home) }
 
                 var sourceHasResults = false
@@ -218,7 +226,7 @@ class AgentSessionScanner: ObservableObject {
 
                     for case let itemURL as URL in enumerator {
                         fileCount += 1
-                        if fileCount > 500 { break }
+                        if fileCount > 5000 { break }
 
                         let path = itemURL.path
                         let relPath = String(path.dropFirst(basePath.count + 1))
@@ -264,7 +272,7 @@ class AgentSessionScanner: ObservableObject {
                         let combined = DiscoveredAgent(
                             id: source.agentName + "_" + basePath,
                             name: source.agentName,
-                            sessionCount: (existing?.sessionCount ?? 0) + sessionCount,
+                            sessionCount: sessionCount + (existing?.sessionCount ?? 0),
                             latestActivity: [latestDate, existing?.latestActivity].compactMap { $0 }.max(),
                             projectDirs: projectDirs.union(Set(existing?.projectDirs ?? [])).sorted(),
                             dataPath: basePath
@@ -315,7 +323,7 @@ class AgentSessionScanner: ObservableObject {
             DispatchQueue.main.async { self.scanError = "" }
 
             var allRecords: [AgentOpRecord] = []
-            let home = NSHomeDirectory()
+            let home = SandboxPaths.realHomeDirectory
 
             let matchingSources = self.dataSources.filter { $0.agentName == agentName }
             print("[AgentSessionScanner] scanAgentOps: \(agentName), found \(matchingSources.count) data sources")
@@ -349,11 +357,63 @@ class AgentSessionScanner: ObservableObject {
             allRecords.sort { $0.timestamp > $1.timestamp }
             if allRecords.count > 10000 { allRecords = Array(allRecords.prefix(10000)) }
 
+            if allRecords.isEmpty, agentName == "Codex" {
+                allRecords.append(AgentOpRecord(
+                    id: "codex_authorization_required",
+                    agentName: "Codex",
+                    sessionId: "sandbox",
+                    projectDir: home + "/.codex",
+                    timestamp: Date(),
+                    toolName: "authorization",
+                    targetPath: home + "/.codex",
+                    opType: "Action",
+                    detail: "Codex data exists, but the App Store sandbox requires user authorization before reading ~/.codex session logs."
+                ))
+            }
+
             DispatchQueue.main.async {
                 self.opRecords = allRecords
                 print("[AgentSessionScanner] Found \(allRecords.count) op records for \(agentName)")
             }
         }
+    }
+
+    func collectAllAgentOps(limit: Int = 10000) -> [AgentOpRecord] {
+        var allRecords: [AgentOpRecord] = []
+        for source in dataSources {
+            allRecords.append(contentsOf: collectAgentOps(for: source))
+            if allRecords.count > limit * 2 {
+                allRecords.sort { $0.timestamp > $1.timestamp }
+                allRecords = Array(allRecords.prefix(limit))
+            }
+        }
+        allRecords.sort { $0.timestamp > $1.timestamp }
+        if allRecords.count > limit {
+            allRecords = Array(allRecords.prefix(limit))
+        }
+        return allRecords
+    }
+
+    private func collectAgentOps(for source: AgentDataSource) -> [AgentOpRecord] {
+        let home = SandboxPaths.realHomeDirectory
+        let expandedPaths = source.searchPaths.map { $0.replacingOccurrences(of: "~", with: home) }
+        var records: [AgentOpRecord] = []
+
+        for basePath in expandedPaths {
+            guard fileManager.fileExists(atPath: basePath) else { continue }
+            var isDir: ObjCBool = false
+            fileManager.fileExists(atPath: basePath, isDirectory: &isDir)
+            if isDir.boolValue {
+                let urls = findSessionFiles(in: basePath, pattern: source.filePattern)
+                for url in urls {
+                    records.append(contentsOf: source.parser(url, source.agentName))
+                }
+            } else {
+                records.append(contentsOf: source.parser(URL(fileURLWithPath: basePath), source.agentName))
+            }
+        }
+
+        return records
     }
 
     private func findSessionFiles(in dir: String, pattern: String) -> [URL] {
@@ -388,6 +448,140 @@ class AgentSessionScanner: ObservableObject {
         return results
     }
 
+    private func discoverCodexAgent() -> DiscoveredAgent? {
+        let home = SandboxPaths.realHomeDirectory
+        let codexDir = home + "/.codex"
+        let sessionsDir = codexDir + "/sessions"
+        guard fileManager.fileExists(atPath: codexDir) else { return nil }
+
+        let rolloutFiles = fileManager.fileExists(atPath: sessionsDir) ? findSessionFiles(in: sessionsDir, pattern: ".jsonl") : []
+        var activityCount = 0
+        var latestActivity: Date?
+        var projectDirs = Set<String>()
+
+        for url in rolloutFiles {
+            let summary = summarizeCodexRollout(url: url)
+            activityCount += max(summary.activityCount, 1)
+            if let latest = summary.latestActivity, latestActivity == nil || latest > latestActivity! {
+                latestActivity = latest
+            }
+            projectDirs.formUnion(summary.projectDirs)
+        }
+
+        let stateSummary = summarizeCodexStateDB(path: codexDir + "/state_5.sqlite")
+        activityCount = max(activityCount, stateSummary.threadCount)
+        if let latest = stateSummary.latestActivity, latestActivity == nil || latest > latestActivity! {
+            latestActivity = latest
+        }
+        projectDirs.formUnion(stateSummary.projectDirs)
+
+        let logsSummary = summarizeCodexLogsDB(path: codexDir + "/logs_2.sqlite")
+        activityCount = max(activityCount, logsSummary.activityCount)
+        if let latest = logsSummary.latestActivity, latestActivity == nil || latest > latestActivity! {
+            latestActivity = latest
+        }
+
+        return DiscoveredAgent(
+            id: "Codex_\(codexDir)",
+            name: "Codex",
+            sessionCount: max(activityCount, rolloutFiles.count, 1),
+            latestActivity: latestActivity,
+            projectDirs: Array(projectDirs).sorted(),
+            dataPath: codexDir
+        )
+    }
+
+    private func summarizeCodexRollout(url: URL) -> (activityCount: Int, latestActivity: Date?, projectDirs: Set<String>) {
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return (0, nil, []) }
+        var activityCount = 0
+        var latestActivity: Date?
+        var projectDirs = Set<String>()
+
+        for line in content.components(separatedBy: "\n") {
+            guard let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+
+            if let ts = parseTimestamp(json["timestamp"] as? String), latestActivity == nil || ts > latestActivity! {
+                latestActivity = ts
+            }
+
+            let type = json["type"] as? String ?? ""
+            if type == "session_meta", let payload = json["payload"] as? [String: Any], let cwd = payload["cwd"] as? String, !cwd.isEmpty {
+                projectDirs.insert(cwd)
+            } else if type == "turn_context", let payload = json["payload"] as? [String: Any], let cwd = payload["cwd"] as? String, !cwd.isEmpty {
+                projectDirs.insert(cwd)
+            }
+
+            if type == "response_item", let payload = json["payload"] as? [String: Any] {
+                let payloadType = payload["type"] as? String ?? ""
+                let role = payload["role"] as? String ?? ""
+                if payloadType == "function_call" || role == "user" || role == "assistant" {
+                    activityCount += 1
+                }
+            } else if type == "event_msg", let payload = json["payload"] as? [String: Any] {
+                let eventType = payload["type"] as? String ?? ""
+                if eventType == "user_message" || eventType == "agent_message" {
+                    activityCount += 1
+                }
+            }
+        }
+
+        return (activityCount, latestActivity, projectDirs)
+    }
+
+    private func summarizeCodexStateDB(path: String) -> (threadCount: Int, latestActivity: Date?, projectDirs: Set<String>) {
+        guard fileManager.fileExists(atPath: path), fileManager.isReadableFile(atPath: path) else { return (0, nil, []) }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return (0, nil, []) }
+        defer { sqlite3_close(db) }
+
+        var threadCount = 0
+        var latestActivity: Date?
+        var projectDirs = Set<String>()
+        let sql = "SELECT cwd, updated_at, updated_at_ms FROM threads ORDER BY updated_at DESC"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return (0, nil, []) }
+        defer { sqlite3_finalize(stmt) }
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            threadCount += 1
+            if let cwdPtr = sqlite3_column_text(stmt, 0) {
+                let cwd = String(cString: cwdPtr)
+                if !cwd.isEmpty { projectDirs.insert(cwd) }
+            }
+
+            let updatedAt = sqlite3_column_int64(stmt, 1)
+            let updatedAtMs = sqlite3_column_int64(stmt, 2)
+            let interval = updatedAtMs > 0 ? TimeInterval(updatedAtMs) / 1000.0 : TimeInterval(updatedAt)
+            if interval > 0 {
+                let date = Date(timeIntervalSince1970: interval)
+                if latestActivity == nil || date > latestActivity! { latestActivity = date }
+            }
+        }
+
+        return (threadCount, latestActivity, projectDirs)
+    }
+
+    private func summarizeCodexLogsDB(path: String) -> (activityCount: Int, latestActivity: Date?) {
+        guard fileManager.fileExists(atPath: path), fileManager.isReadableFile(atPath: path) else { return (0, nil) }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return (0, nil) }
+        defer { sqlite3_close(db) }
+
+        let count = sqliteInt(db, "SELECT COUNT(*) FROM logs WHERE feedback_log_body LIKE '%codex.op=%' OR feedback_log_body LIKE '%function_call%' OR feedback_log_body LIKE '%tool_call%'")
+        let latest = sqliteInt(db, "SELECT MAX(ts) FROM logs")
+        let latestDate = latest > 0 ? Date(timeIntervalSince1970: TimeInterval(latest)) : nil
+        return (count, latestDate)
+    }
+
+    private func sqliteInt(_ db: OpaquePointer?, _ sql: String) -> Int {
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return 0 }
+        return Int(sqlite3_column_int64(stmt, 0))
+    }
+
     private func findJSONLFiles(in dir: String) -> [URL] {
         var results: [URL] = []
         guard let enumerator = fileManager.enumerator(at: URL(fileURLWithPath: dir), includingPropertiesForKeys: nil) else { return results }
@@ -406,10 +600,11 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerClaudeCode() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.claude/projects",
-            home + "/.config/claude/projects"
+            home + "/.config/claude/projects",
+            home + "/.claude/tasks"
         ]
         let source = AgentDataSource(
             agentName: "Claude Code",
@@ -423,23 +618,25 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerCodex() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
-            home + "/.codex/sessions"
+            home + "/.codex/sessions",
+            home + "/.codex/state_5.sqlite",
+            home + "/.codex/logs_2.sqlite"
         ]
         let source = AgentDataSource(
             agentName: "Codex",
             searchPaths: paths,
             filePattern: ".jsonl",
             parser: { [weak self] url, name in
-                self?.parseCodexJSONL(url: url, agentName: name) ?? []
+                self?.parseCodexDataSource(url: url, agentName: name) ?? []
             }
         )
         dataSources.append(source)
     }
 
     private func registerKimi() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.kimi/sessions",
             home + "/.kimi/user-history",
@@ -455,7 +652,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerAider() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let source = AgentDataSource(
             agentName: "Aider",
             searchPaths: [home + "/.aider"],
@@ -467,10 +664,10 @@ class AgentSessionScanner: ObservableObject {
                 for (i, line) in lines.enumerated() {
                     if line.hasPrefix("##### ") || line.contains("ADDED:") || line.contains("EDITED:") || line.contains("DELETED:") {
                         let opType: String
-                        if line.contains("ADDED") { opType = "新增" }
-                        else if line.contains("EDITED") { opType = "编辑" }
-                        else if line.contains("DELETED") { opType = "删除" }
-                        else { opType = "操作" }
+                        if line.contains("ADDED") { opType = "Create" }
+                        else if line.contains("EDITED") { opType = "Edit" }
+                        else if line.contains("DELETED") { opType = "Delete" }
+                        else { opType = "Action" }
                         records.append(AgentOpRecord(
                             id: "\(url.path)_\(i)",
                             agentName: name,
@@ -491,7 +688,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerCline() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.cline/tasks"
         ]
@@ -507,7 +704,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerGeminiCLI() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.gemini"
         ]
@@ -523,7 +720,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerOpenCode() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.opencode"
         ]
@@ -539,7 +736,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerOpenClaw() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.openclaw/agents",
             home + "/.openclaw/workspace",
@@ -556,7 +753,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerHermes() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.hermes/sessions",
             home + "/.hermes/memories",
@@ -584,7 +781,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerCrewAI() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/Library/Application Support/CrewAI",
             home + "/.crewai",
@@ -601,7 +798,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerAutoGen() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.autogenstudio",
         ]
@@ -617,7 +814,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerOpenHands() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.openhands",
             home + "/.conversations",
@@ -634,7 +831,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerDify() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.dify",
             home + "/.dify/sandbox",
@@ -650,7 +847,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerMetaGPT() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.metagpt",
             home + "/.metagpt/workspace",
@@ -666,7 +863,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerCAMEL() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.camel",
             home + "/.camel/sessions",
@@ -682,7 +879,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerDeerFlow() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.deer-flow",
             home + "/.deerflow",
@@ -698,7 +895,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerHuginn() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.huginn",
             home + "/huginn",
@@ -715,7 +912,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerBrowserUse() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let paths = [
             home + "/.browser-use",
         ]
@@ -868,7 +1065,7 @@ class AgentSessionScanner: ObservableObject {
                 timestamp: ts,
                 toolName: "session",
                 targetPath: "",
-                opType: "对话",
+                opType: "Chat",
                 detail: "model=\(model) platform=\(platform)"
             ))
         }
@@ -915,7 +1112,7 @@ class AgentSessionScanner: ObservableObject {
                         timestamp: date,
                         toolName: "session",
                         targetPath: title,
-                        opType: "对话",
+                        opType: "Chat",
                         detail: "model=\(model) platform=\(platform)"
                     ))
                 }
@@ -969,7 +1166,7 @@ class AgentSessionScanner: ObservableObject {
                         timestamp: Date(),
                         toolName: table,
                         targetPath: "",
-                        opType: "操作",
+                        opType: "Action",
                         detail: String(detail.prefix(200))
                     ))
                 }
@@ -1032,7 +1229,7 @@ class AgentSessionScanner: ObservableObject {
                             timestamp: ts,
                             toolName: table,
                             targetPath: "",
-                            opType: "对话",
+                            opType: "Chat",
                             detail: String(detail.prefix(200))
                         ))
                     }
@@ -1089,7 +1286,7 @@ class AgentSessionScanner: ObservableObject {
                 timestamp: ts,
                 toolName: "session",
                 targetPath: "",
-                opType: "对话",
+                opType: "Chat",
                 detail: ""
             ))
         }
@@ -1098,7 +1295,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerTrae() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let traePaths = [
             "Trae CN": home + "/Library/Application Support/Trae CN",
             "Trae": home + "/Library/Application Support/Trae",
@@ -1229,7 +1426,7 @@ class AgentSessionScanner: ObservableObject {
             timestamp: date,
             toolName: "snapshot",
             targetPath: snapshotDir.path,
-            opType: "写入",
+            opType: "Write",
             detail: "\(fileCount)\(localizer?.fileChangeCount ?? "files changed")"
         ))
 
@@ -1260,7 +1457,7 @@ class AgentSessionScanner: ObservableObject {
             timestamp: date,
             toolName: "sandbox",
             targetPath: allowedPaths.first ?? "",
-            opType: "操作",
+            opType: "Action",
             detail: "\(localizer?.allowedPaths ?? "Allowed access"): \(allowedPaths.count)\(localizer?.pathsCount ?? "paths")"
         )]
     }
@@ -1297,15 +1494,17 @@ class AgentSessionScanner: ObservableObject {
             }
 
             let opType: String
-            if source.contains("编辑") || source.contains("edit") || source.contains("Edit") {
-                opType = "编辑"
-            } else if source.contains("保存") || source.contains("save") || source.contains("Save") {
-                opType = "写入"
-            } else if source.contains("删除") || source.contains("delete") {
-                opType = "删除"
+            if source.contains("Edit") || source.contains("edit") {
+                opType = "Edit"
+            } else if source.contains("Save") || source.contains("save") {
+                opType = "Write"
+            } else if source.contains("Delete") || source.contains("delete") {
+                opType = "Delete"
             } else {
-                opType = "编辑"
+                opType = "Edit"
             }
+
+            let displayDetail = source.isEmpty ? opType : source
 
             records.append(AgentOpRecord(
                 id: "trae_history_\(dirName)_\(entryId)",
@@ -1314,9 +1513,9 @@ class AgentSessionScanner: ObservableObject {
                 projectDir: "",
                 timestamp: date,
                 toolName: "file_edit",
-                targetPath: resourcePath,
+                targetPath: resourcePath.isEmpty ? dirName : resourcePath,
                 opType: opType,
-                detail: source
+                detail: displayDetail
             ))
         }
 
@@ -1324,7 +1523,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func registerGenericAutoDiscovery() {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         let vscodeAgents: Set<String> = ["Trae", "Cursor", "CodeBuddy", "Windsurf", "Kimi", "Lingma", "Augment", "Continue", "Cody", "Amazon Q", "Roo Code", "Tabnine"]
 
         let knownDirs: [(String, String)] = [
@@ -1454,27 +1653,27 @@ class AgentSessionScanner: ObservableObject {
                 let detail: String
                 switch toolName {
                 case "Write":
-                    opType = "写入"
+                    opType = "Write"
                     targetPath = input["file_path"] as? String ?? input["path"] as? String ?? cwd
                     detail = (input["content"] as? String ?? "").prefix(200).description
                 case "Edit", "MultiEdit":
-                    opType = "编辑"
+                    opType = "Edit"
                     targetPath = input["file_path"] as? String ?? input["path"] as? String ?? cwd
                     detail = input["old_string"] as? String ?? ""
                 case "Read":
-                    opType = "读取"
+                    opType = "Read"
                     targetPath = input["file_path"] as? String ?? input["path"] as? String ?? cwd
                     detail = ""
                 case "Bash":
-                    opType = "执行命令"
+                    opType = "Execute"
                     targetPath = cwd
                     detail = input["command"] as? String ?? ""
                 case "Glob", "Grep":
-                    opType = "搜索"
+                    opType = "Search"
                     targetPath = input["pattern"] as? String ?? input["file_path"] as? String ?? input["path"] as? String ?? cwd
                     detail = ""
                 default:
-                    opType = "操作"
+                    opType = "Action"
                     targetPath = input["file_path"] as? String ?? input["path"] as? String ?? cwd
                     detail = ""
                 }
@@ -1508,7 +1707,7 @@ class AgentSessionScanner: ObservableObject {
 
             let type = json["type"] as? String ?? ""
 
-            if type == "turn_context" {
+            if type == "session_meta" || type == "turn_context" {
                 if let payload = json["payload"] as? [String: Any] {
                     cwd = payload["cwd"] as? String ?? cwd
                 }
@@ -1517,12 +1716,16 @@ class AgentSessionScanner: ObservableObject {
             if type == "response_item" {
                 guard let payload = json["payload"] as? [String: Any] else { continue }
                 let payloadType = payload["type"] as? String ?? ""
+                let ts = parseTimestamp(json["timestamp"] as? String) ?? Date()
 
-                if payloadType == "message" {
+                if payloadType == "function_call" || payloadType == "custom_tool_call" {
+                    if let record = codexFunctionCallRecord(payload: payload, agentName: agentName, sessionId: sessionId, cwd: cwd, ts: ts) {
+                        records.append(record)
+                    }
+                } else if payloadType == "message" {
                     let role = payload["role"] as? String ?? ""
                     guard role == "assistant" else { continue }
                     let contentBlocks = payload["content"] as? [[String: Any]] ?? []
-                    let ts = parseTimestamp(json["timestamp"] as? String) ?? Date()
 
                     for block in contentBlocks {
                         let blockType = block["type"] as? String ?? ""
@@ -1574,14 +1777,248 @@ class AgentSessionScanner: ObservableObject {
         return records
     }
 
+    private func parseCodexDataSource(url: URL, agentName: String) -> [AgentOpRecord] {
+        let fileName = url.lastPathComponent
+        if fileName == "state_5.sqlite" {
+            return parseCodexStateDBRecords(url: url, agentName: agentName)
+        }
+        if fileName == "logs_2.sqlite" {
+            return parseCodexLogDBRecords(url: url, agentName: agentName)
+        }
+        return parseCodexJSONL(url: url, agentName: agentName)
+    }
+
+    private func parseCodexStateDBRecords(url: URL, agentName: String) -> [AgentOpRecord] {
+        guard fileManager.fileExists(atPath: url.path), fileManager.isReadableFile(atPath: url.path) else { return [] }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_close(db) }
+
+        let sql = """
+        SELECT id, rollout_path, cwd, title, updated_at, updated_at_ms, model, reasoning_effort, preview
+        FROM threads
+        ORDER BY updated_at DESC
+        LIMIT 1000;
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        var records: [AgentOpRecord] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let threadId = sqliteText(stmt, 0)
+            let rolloutPath = sqliteText(stmt, 1)
+            let cwd = sqliteText(stmt, 2)
+            let title = sqliteText(stmt, 3)
+            let updatedAt = sqlite3_column_int64(stmt, 4)
+            let updatedAtMs = sqlite3_column_int64(stmt, 5)
+            let model = sqliteText(stmt, 6)
+            let effort = sqliteText(stmt, 7)
+            let preview = sqliteText(stmt, 8)
+            let interval = updatedAtMs > 0 ? TimeInterval(updatedAtMs) / 1000.0 : TimeInterval(updatedAt)
+            let ts = interval > 0 ? Date(timeIntervalSince1970: interval) : Date()
+            let detail = [title, preview, model, effort].filter { !$0.isEmpty }.joined(separator: " | ")
+
+            records.append(AgentOpRecord(
+                id: "codex_thread_\(threadId)",
+                agentName: agentName,
+                sessionId: threadId,
+                projectDir: cwd,
+                timestamp: ts,
+                toolName: "thread",
+                targetPath: rolloutPath.isEmpty ? cwd : rolloutPath,
+                opType: "Session",
+                detail: detail.isEmpty ? "Codex thread activity" : String(detail.prefix(300))
+            ))
+        }
+        return records
+    }
+
+    private func parseCodexLogDBRecords(url: URL, agentName: String) -> [AgentOpRecord] {
+        guard fileManager.fileExists(atPath: url.path), fileManager.isReadableFile(atPath: url.path) else { return [] }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_close(db) }
+
+        let sql = """
+        SELECT id, ts, thread_id, target, feedback_log_body
+        FROM logs
+        WHERE feedback_log_body LIKE '%function_call%'
+           OR feedback_log_body LIKE '%tool_call%'
+           OR feedback_log_body LIKE '%codex.op=%'
+           OR feedback_log_body LIKE '%exec_command%'
+           OR feedback_log_body LIKE '%apply_patch%'
+           OR feedback_log_body LIKE '%response.function_call_arguments.done%'
+        ORDER BY ts DESC
+        LIMIT 2000;
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        var records: [AgentOpRecord] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let rowId = sqlite3_column_int64(stmt, 0)
+            let tsRaw = sqlite3_column_int64(stmt, 1)
+            let threadId = sqliteText(stmt, 2)
+            let target = sqliteText(stmt, 3)
+            let body = sqliteText(stmt, 4)
+            let ts = tsRaw > 0 ? Date(timeIntervalSince1970: TimeInterval(tsRaw)) : Date()
+            let argumentsText = codexArgumentsTextFromLog(body)
+            let parsedArgs = parseJSONString(argumentsText) ?? [:]
+            let tool = codexToolNameFromLog(body: body, parsedArgs: parsedArgs, rawArguments: argumentsText)
+            let fallbackTarget = codexTargetFromLog(body: body, fallback: target)
+            records.append(AgentOpRecord(
+                id: "codex_log_\(rowId)",
+                agentName: agentName,
+                sessionId: threadId.isEmpty ? "logs_2" : threadId,
+                projectDir: "",
+                timestamp: ts,
+                toolName: tool,
+                targetPath: codexTargetPath(toolName: tool, args: parsedArgs, rawArguments: argumentsText, cwd: fallbackTarget),
+                opType: classifyOpType(tool),
+                detail: String(codexDetail(toolName: tool, args: parsedArgs, rawArguments: argumentsText.isEmpty ? body : argumentsText).prefix(300))
+            ))
+        }
+        return records
+    }
+
+    private func sqliteText(_ stmt: OpaquePointer?, _ index: Int32) -> String {
+        guard let ptr = sqlite3_column_text(stmt, index) else { return "" }
+        return String(cString: ptr)
+    }
+
+    private func codexToolNameFromLog(body: String, parsedArgs: [String: Any] = [:], rawArguments: String = "") -> String {
+        let lower = body.lowercased()
+        if parsedArgs["cmd"] != nil || parsedArgs["command"] != nil { return "exec_command" }
+        if rawArguments.contains("*** Begin Patch") { return "apply_patch" }
+        if lower.contains("apply_patch") { return "apply_patch" }
+        if lower.contains("exec_command") { return "exec_command" }
+        if lower.contains("function_call") { return "function_call" }
+        if lower.contains("tool_call") { return "tool_call" }
+        return "codex"
+    }
+
+    private func codexTargetFromLog(body: String, fallback: String) -> String {
+        if let path = firstPathLikeToken(in: body) {
+            return path
+        }
+        return fallback
+    }
+
+    private func firstPathLikeToken(in text: String) -> String? {
+        let pattern = #"(/Users/[^"'\s,;]+|~\/[^"'\s,;]+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return String(text[range])
+    }
+
+    private func codexArgumentsTextFromLog(_ body: String) -> String {
+        let prefix = "SSE event: "
+        let jsonText = body.hasPrefix(prefix) ? String(body.dropFirst(prefix.count)) : body
+        if let data = jsonText.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let args = json["arguments"] as? String {
+            return args
+        }
+        return ""
+    }
+
+    private func parseJSONString(_ text: String) -> [String: Any]? {
+        guard !text.isEmpty, let data = text.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    private func codexFunctionCallRecord(payload: [String: Any], agentName: String, sessionId: String, cwd: String, ts: Date) -> AgentOpRecord? {
+        let rawName = payload["name"] as? String ?? ""
+        guard !rawName.isEmpty else { return nil }
+
+        let argumentsText = payload["arguments"] as? String ?? payload["input"] as? String ?? ""
+        let parsedArgs: [String: Any]
+        if let data = argumentsText.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            parsedArgs = json
+        } else {
+            parsedArgs = [:]
+        }
+
+        let displayName = rawName.replacingOccurrences(of: "functions.", with: "")
+        let targetPath = codexTargetPath(toolName: displayName, args: parsedArgs, rawArguments: argumentsText, cwd: cwd)
+        let detail = codexDetail(toolName: displayName, args: parsedArgs, rawArguments: argumentsText)
+
+        return AgentOpRecord(
+            id: UUID().uuidString,
+            agentName: agentName,
+            sessionId: sessionId,
+            projectDir: stringArg(parsedArgs, ["workdir", "cwd"]) ?? cwd,
+            timestamp: ts,
+            toolName: displayName,
+            targetPath: targetPath,
+            opType: classifyOpType(displayName),
+            detail: String(detail.prefix(300))
+        )
+    }
+
+    private func codexTargetPath(toolName: String, args: [String: Any], rawArguments: String, cwd: String) -> String {
+        if let path = stringArg(args, ["file", "path", "filepath", "file_path"]), !path.isEmpty {
+            return path
+        }
+        if let workdir = stringArg(args, ["workdir", "cwd"]), !workdir.isEmpty {
+            return workdir
+        }
+        if toolName.contains("apply_patch"),
+           let patchedFile = firstPatchedFile(in: rawArguments) {
+            return patchedFile.hasPrefix("/") ? patchedFile : (cwd.isEmpty ? patchedFile : "\(cwd)/\(patchedFile)")
+        }
+        return cwd
+    }
+
+    private func codexDetail(toolName: String, args: [String: Any], rawArguments: String) -> String {
+        if let command = stringArg(args, ["cmd", "command"]), !command.isEmpty { return command }
+        if let chars = stringArg(args, ["chars"]), !chars.isEmpty { return chars }
+        if let query = stringArg(args, ["query", "pattern"]), !query.isEmpty { return query }
+        if toolName.contains("apply_patch") { return firstPatchSummary(in: rawArguments) ?? "apply_patch" }
+        return rawArguments
+    }
+
+    private func stringArg(_ args: [String: Any], _ keys: [String]) -> String? {
+        for key in keys {
+            if let value = args[key] as? String { return value }
+            if let value = args[key] { return "\(value)" }
+        }
+        return nil
+    }
+
+    private func firstPatchedFile(in text: String) -> String? {
+        for line in text.components(separatedBy: "\n") {
+            let prefixes = ["*** Update File: ", "*** Add File: ", "*** Delete File: "]
+            for prefix in prefixes where line.hasPrefix(prefix) {
+                return String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return nil
+    }
+
+    private func firstPatchSummary(in text: String) -> String? {
+        for line in text.components(separatedBy: "\n") {
+            if line.hasPrefix("*** Update File: ") || line.hasPrefix("*** Add File: ") || line.hasPrefix("*** Delete File: ") {
+                return line
+            }
+        }
+        return nil
+    }
+
     private func extractOpsFromText(_ text: String, agentName: String, sessionId: String, cwd: String, ts: Date) -> [AgentOpRecord] {
         var records: [AgentOpRecord] = []
         let patterns: [(String, [String], String)] = [
-            ("写入", ["write", "created", "wrote", "saved"], #"(?:to|at|in|→)\s+[`\"']?(/[^\s`\"']+)[`\"']?"#),
-            ("编辑", ["edit", "modified", "updated", "changed"], #"(?:file|at|in|→)\s+[`\"']?(/[^\s`\"']+)[`\"']?"#),
-            ("读取", ["read", "viewed", "opened", "checked"], #"(?:file|at|in|→)\s+[`\"']?(/[^\s`\"']+)[`\"']?"#),
-            ("删除", ["delete", "removed", "deleted"], #"(?:file|at|in|→)\s+[`\"']?(/[^\s`\"']+)[`\"']?"#),
-            ("执行命令", ["ran ", "executed", "command", "shell", "bash"], #"(?:ran|executed|command|bash|shell)[:\s]+[`\"']?([^`\"'\n]+)[`\"']?"#),
+            ("Write", ["write", "created", "wrote", "saved"], #"(?:to|at|in|→)\s+[`\"']?(/[^\s`\"']+)[`\"']?"#),
+            ("Edit", ["edit", "modified", "updated", "changed"], #"(?:file|at|in|→)\s+[`\"']?(/[^\s`\"']+)[`\"']?"#),
+            ("Read", ["read", "viewed", "opened", "checked"], #"(?:file|at|in|→)\s+[`\"']?(/[^\s`\"']+)[`\"']?"#),
+            ("Delete", ["delete", "removed", "deleted"], #"(?:file|at|in|→)\s+[`\"']?(/[^\s`\"']+)[`\"']?"#),
+            ("Execute", ["ran ", "executed", "command", "shell", "bash"], #"(?:ran|executed|command|bash|shell)[:\s]+[`\"']?([^`\"'\n]+)[`\"']?"#),
         ]
 
         let lines = text.components(separatedBy: "\n")
@@ -1618,29 +2055,29 @@ class AgentSessionScanner: ObservableObject {
 
     private func classifyOpType(_ toolName: String) -> String {
         let lower = toolName.lowercased()
-        if lower.contains("write") || lower.contains("create") { return "写入" }
-        if lower.contains("edit") || lower.contains("update") { return "编辑" }
-        if lower.contains("read") || lower.contains("view") || lower.contains("get") { return "读取" }
-        if lower.contains("delete") || lower.contains("remove") { return "删除" }
-        if lower.contains("bash") || lower.contains("shell") || lower.contains("exec") || lower.contains("command") { return "执行命令" }
-        if lower.contains("search") || lower.contains("glob") || lower.contains("grep") || lower.contains("find") { return "搜索" }
-        return "操作"
+        if lower.contains("write") || lower.contains("create") { return "Write" }
+        if lower.contains("edit") || lower.contains("update") || lower.contains("apply_patch") { return "Edit" }
+        if lower.contains("read") || lower.contains("view") || lower.contains("get") { return "Read" }
+        if lower.contains("delete") || lower.contains("remove") { return "Delete" }
+        if lower.contains("bash") || lower.contains("shell") || lower.contains("exec") || lower.contains("command") || lower == "js" { return "Execute" }
+        if lower.contains("search") || lower.contains("glob") || lower.contains("grep") || lower.contains("find") { return "Search" }
+        return "Action"
     }
 
     static func localizedOpType(_ opType: String, localizer: Localizer) -> String {
         switch opType {
-        case "写入": return localizer.opWrite
-        case "编辑": return localizer.opEdit
-        case "读取": return localizer.opRead
-        case "删除": return localizer.opDelete2
-        case "执行命令": return localizer.opExec
-        case "搜索": return localizer.opSearch
-        case "操作": return localizer.opAction
-        case "对话": return localizer.opDialogue
-        case "新增": return localizer.opNew
-        case "保存": return localizer.opSave
-        case "打开": return localizer.opOpen
-        case "关闭": return localizer.opClose
+        case "Write": return localizer.opWrite
+        case "Edit": return localizer.opEdit
+        case "Read": return localizer.opRead
+        case "Delete": return localizer.opDelete2
+        case "Execute": return localizer.opExec
+        case "Search": return localizer.opSearch
+        case "Action": return localizer.opAction
+        case "Chat": return localizer.opDialogue
+        case "Create": return localizer.opNew
+        case "Save": return localizer.opSave
+        case "Open": return localizer.opOpen
+        case "Close": return localizer.opClose
         default: return opType
         }
     }
@@ -1741,7 +2178,7 @@ class AgentSessionScanner: ObservableObject {
                             timestamp: date,
                             toolName: "chat_session",
                             targetPath: title.isEmpty ? lastMessage.prefix(100).description : title,
-                            opType: "对话",
+                            opType: "Chat",
                             detail: workspaceFolder
                         ))
                     }
@@ -1761,7 +2198,7 @@ class AgentSessionScanner: ObservableObject {
                                     timestamp: date,
                                     toolName: "chat_session",
                                     targetPath: workspaceFolder,
-                                    opType: "对话",
+                                    opType: "Chat",
                                     detail: ""
                                 ))
                             }
@@ -1802,7 +2239,7 @@ class AgentSessionScanner: ObservableObject {
                         timestamp: date,
                         toolName: "user_input",
                         targetPath: workspaceFolder,
-                        opType: "对话",
+                        opType: "Chat",
                         detail: String(inputText.prefix(200))
                     ))
                 }
@@ -1823,7 +2260,7 @@ class AgentSessionScanner: ObservableObject {
                         timestamp: date,
                         toolName: "agent_session",
                         targetPath: workspaceFolder,
-                        opType: "操作",
+                        opType: "Action",
                         detail: "agent_type=\(agentType) model=\(modelInfo) mode=\(modeInfo)"
                     ))
                 }
@@ -1848,7 +2285,7 @@ class AgentSessionScanner: ObservableObject {
                         timestamp: date,
                         toolName: isCurrent ? "current_session" : "session",
                         targetPath: workspaceFolder,
-                        opType: "操作",
+                        opType: "Action",
                         detail: detail
                     ))
                 }
@@ -1880,7 +2317,7 @@ class AgentSessionScanner: ObservableObject {
                     timestamp: date,
                     toolName: "agent_config",
                     targetPath: workspaceFolder,
-                    opType: "操作",
+                    opType: "Action",
                     detail: "agent=\(agentName2) tools=[\(toolNames)] \(desc)"
                 ))
             }
@@ -1900,7 +2337,7 @@ class AgentSessionScanner: ObservableObject {
                         timestamp: subDate,
                         toolName: "session_badge",
                         targetPath: workspaceFolder,
-                        opType: "操作",
+                        opType: "Action",
                         detail: "status=\(status) parent_session=\(badgeSessionId)"
                     ))
                 }
@@ -1924,14 +2361,14 @@ class AgentSessionScanner: ObservableObject {
 
         let opType: String
         switch changeType.lowercased() {
-        case "create": opType = "写入"
-        case "edit", "modify", "update": opType = "编辑"
-        case "delete", "remove": opType = "删除"
+        case "create": opType = "Write"
+        case "edit", "modify", "update": opType = "Edit"
+        case "delete", "remove": opType = "Delete"
         default:
-            if addedLines > 0 && removedLines == 0 { opType = "写入" }
-            else if addedLines > 0 && removedLines > 0 { opType = "编辑" }
-            else if removedLines > 0 && addedLines == 0 { opType = "删除" }
-            else { opType = "编辑" }
+            if addedLines > 0 && removedLines == 0 { opType = "Write" }
+            else if addedLines > 0 && removedLines > 0 { opType = "Edit" }
+            else if removedLines > 0 && addedLines == 0 { opType = "Delete" }
+            else { opType = "Edit" }
         }
 
         let date: Date
@@ -1981,7 +2418,7 @@ class AgentSessionScanner: ObservableObject {
                 ?? parseTimestamp(json["createdAt"] as? String)
                 ?? Date()
 
-            if type == "turn_context" {
+            if type == "session_meta" || type == "turn_context" {
                 if let payload = json["payload"] as? [String: Any] {
                     cwd = payload["cwd"] as? String ?? cwd
                 }

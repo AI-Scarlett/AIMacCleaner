@@ -21,7 +21,7 @@ struct ScanItem: Identifiable, Codable, Hashable {
 
     enum RiskLevel: String, Codable {
         case safe, caution, dangerous
-        var label: String { ["safe": "安全", "caution": "注意", "dangerous": "危险"][rawValue] ?? "未知" }
+        var label: String { ["safe": "Safe", "caution": "Caution", "dangerous": "Danger"][rawValue] ?? "Unknown" }
         func localizedLabel(_ localizer: Localizer) -> String {
             switch self {
             case .safe: return localizer.riskSafe
@@ -31,13 +31,32 @@ struct ScanItem: Identifiable, Codable, Hashable {
         }
         var systemImage: String { ["safe": "checkmark.circle.fill", "caution": "exclamationmark.triangle.fill", "dangerous": "xmark.circle.fill"][rawValue] ?? "questionmark.circle" }
         var color: String { ["safe": "green", "caution": "orange", "dangerous": "red"][rawValue] ?? "gray" }
+
+        init(from decoder: Decoder) throws {
+            let rawValue = try decoder.singleValueContainer().decode(String.self)
+            switch rawValue {
+            case "safe", "安全": self = .safe
+            case "caution", "注意", "警告": self = .caution
+            case "dangerous", "危险": self = .dangerous
+            default: self = .caution
+            }
+        }
     }
 
     enum SourceType: String, Codable {
         case local, ai
-        var label: String { self == .ai ? "AI" : "本地" }
+        var label: String { self == .ai ? "AI" : "Local" }
         func localizedLabel(_ localizer: Localizer) -> String {
             self == .ai ? localizer.sourceAI : localizer.sourceLocal
+        }
+
+        init(from decoder: Decoder) throws {
+            let rawValue = try decoder.singleValueContainer().decode(String.self)
+            switch rawValue {
+            case "local", "本地": self = .local
+            case "ai", "AI", "智能": self = .ai
+            default: self = .local
+            }
         }
     }
 }
@@ -113,11 +132,21 @@ struct AppInfo: Identifiable, Hashable {
         case dependency = "dependency"
         case other = "other"
 
+        init(from decoder: Decoder) throws {
+            let rawValue = try decoder.singleValueContainer().decode(String.self)
+            switch rawValue {
+            case "app", "应用", "应用程序": self = .app
+            case "dependency", "依赖": self = .dependency
+            case "other", "其它", "其他": self = .other
+            default: self = .other
+            }
+        }
+
         var label: String {
             switch self {
-            case .app: "应用"
-            case .dependency: "依赖"
-            case .other: "其它"
+            case .app: "App"
+            case .dependency: "Dependency"
+            case .other: "Other"
             }
         }
 
@@ -131,9 +160,9 @@ struct AppInfo: Identifiable, Hashable {
 
         var tabLabel: String {
             switch self {
-            case .app: "APP 管理"
-            case .dependency: "依赖管理"
-            case .other: "其它工具"
+            case .app: "App Management"
+            case .dependency: "Dependencies"
+            case .other: "Other Tools"
             }
         }
 
@@ -163,7 +192,7 @@ struct AppInfo: Identifiable, Hashable {
     }
 
     var relatedPaths: [String] {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         var paths: [String] = []
         if !appPath.hasSuffix(".app") && appPath.hasPrefix(home) {
             paths.append(appPath)
@@ -184,7 +213,7 @@ struct AppInfo: Identifiable, Hashable {
     }
 
     var cachePaths: [String] {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         return [
             "\(home)/Library/Caches/\(bundleId)",
             "\(home)/Library/HTTPStorages/\(bundleId)",
@@ -193,7 +222,7 @@ struct AppInfo: Identifiable, Hashable {
     }
 
     var dataPaths: [String] {
-        let home = NSHomeDirectory()
+        let home = SandboxPaths.realHomeDirectory
         var paths: [String] = []
         if !appPath.hasSuffix(".app") && appPath.hasPrefix(home) {
             paths.append(appPath)
@@ -223,12 +252,13 @@ struct OperationRecord: Identifiable, Codable {
     let toolInfo: String?
 
     enum OperationType: String, Codable, CaseIterable {
-        case create = "创建"
-        case modify = "修改"
-        case delete = "删除"
-        case move = "移动"
-        case rename = "重命名"
-        case read = "读取"
+        case create = "Create"
+        case modify = "Modify"
+        case delete = "Delete"
+        case move = "Move"
+        case rename = "Rename"
+        case read = "Read"
+        case execute = "Execute"
 
         var icon: String {
             switch self {
@@ -238,6 +268,7 @@ struct OperationRecord: Identifiable, Codable {
             case .move: "arrow.right.circle.fill"
             case .rename: "text.cursor.input"
             case .read: "eye.circle.fill"
+            case .execute: "terminal.circle.fill"
             }
         }
 
@@ -249,6 +280,7 @@ struct OperationRecord: Identifiable, Codable {
             case .move: "orange"
             case .rename: "purple"
             case .read: "teal"
+            case .execute: "purple"
             }
         }
 
@@ -260,6 +292,7 @@ struct OperationRecord: Identifiable, Codable {
             case .move: return localizer.opMove
             case .rename: return localizer.opRename
             case .read: return localizer.opRead
+            case .execute: return localizer.opExec
             }
         }
     }
@@ -400,9 +433,18 @@ struct SensorEvent: Identifiable {
     let pid: Int32
     let bundleId: String?
 
-    enum SensorType: String, CaseIterable {
-        case camera = "摄像头"
-        case microphone = "麦克风"
+    enum SensorType: String, Codable, CaseIterable {
+        case camera = "Camera"
+        case microphone = "Microphone"
+
+        init(from decoder: Decoder) throws {
+            let rawValue = try decoder.singleValueContainer().decode(String.self)
+            switch rawValue {
+            case "Camera", "摄像头": self = .camera
+            case "Microphone", "麦克风": self = .microphone
+            default: self = .camera
+            }
+        }
 
         var icon: String {
             switch self {
@@ -453,10 +495,10 @@ struct StorageFile: Identifiable {
     var sizeFormatted: String { ByteCountFormatter.string(fromByteCount: size, countStyle: .file) }
 
     enum SortField: String, CaseIterable {
-        case size = "大小"
-        case created = "添加日期"
-        case modified = "修改日期"
-        case name = "名称"
+        case size = "Size"
+        case created = "Date Added"
+        case modified = "Date Modified"
+        case name = "Name"
 
         var icon: String {
             switch self {
