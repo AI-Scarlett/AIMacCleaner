@@ -24,6 +24,45 @@ actor SessionStore {
         return session
     }
 
+    private func ensureSessionForPendingRequest(
+        sessionId: String,
+        agentType: String = "Agent Center",
+        project: String = "Approval Request",
+        cwd: String = "",
+        terminal: String = ""
+    ) {
+        guard !sessionId.isEmpty, sessions[sessionId] == nil else { return }
+        sessions[sessionId] = SessionState(
+            id: sessionId,
+            agentType: agentType,
+            project: project,
+            cwd: cwd,
+            terminal: terminal,
+            startedAt: Date()
+        )
+    }
+
+    func seedPendingSession(
+        sessionId: String,
+        agentType: String,
+        project: String,
+        cwd: String,
+        terminal: String = ""
+    ) {
+        ensureSessionForPendingRequest(
+            sessionId: sessionId,
+            agentType: agentType,
+            project: project,
+            cwd: cwd,
+            terminal: terminal
+        )
+        sessions[sessionId]?.agentType = agentType
+        if !project.isEmpty { sessions[sessionId]?.project = project }
+        if !cwd.isEmpty { sessions[sessionId]?.cwd = cwd }
+        if !terminal.isEmpty { sessions[sessionId]?.terminal = terminal }
+        Task { await notifyChange() }
+    }
+
     func handleEvent(_ event: AgentHookEvent) async {
         let sessionId = event.sessionId
         if !sessionId.isEmpty, sessions[sessionId] == nil {
@@ -47,7 +86,7 @@ actor SessionStore {
             sessions[id]?.phase = .done
             sessions[id]?.endedAt = Date()
             Task {
-                try? await Task.sleep(nanoseconds: UInt64(sessionEndCleanupSeconds * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: UInt64(doneSessionCleanupSeconds * 1_000_000_000))
                 cleanupDoneSession(id)
             }
 
@@ -76,6 +115,12 @@ actor SessionStore {
         case .permissionRequest(let id, let toolName, let diff, let options):
             sessions[id]?.pendingPermission = PendingPermission(toolName: toolName, toolInput: "", diff: diff, options: options)
             sessions[id]?.phase = .waitingApproval
+            addApprovalHistory(
+                id,
+                kind: "permission",
+                title: toolName,
+                detail: diff ?? ""
+            )
 
         case .askQuestion(let id, let question, let options, let descriptions, let header, let multiSelect, let questions):
             sessions[id]?.pendingQuestion = PendingQuestion(
@@ -83,10 +128,22 @@ actor SessionStore {
                 header: header, multiSelect: multiSelect, questions: questions
             )
             sessions[id]?.phase = .waitingInput
+            addApprovalHistory(
+                id,
+                kind: "question",
+                title: header ?? question,
+                detail: question
+            )
 
         case .planApproval(let id, let title, let content, let permissions):
             sessions[id]?.pendingPlan = PendingPlan(title: title, content: content, permissions: permissions)
             sessions[id]?.phase = .waitingApproval
+            addApprovalHistory(
+                id,
+                kind: "plan",
+                title: title,
+                detail: content
+            )
 
         case .tokenUsage(let id, let input, let output, let cacheRead, let cacheCreate):
             sessions[id]?.tokens.input += input
@@ -173,11 +230,19 @@ actor SessionStore {
     }
 
     func setPendingPermission(_ sessionId: String, _ permission: PendingPermission?) {
+        ensureSessionForPendingRequest(sessionId: sessionId)
         if let perm = permission {
             sessions[sessionId]?.pendingPermission = perm
             sessions[sessionId]?.phase = .waitingApproval
+            addApprovalHistory(
+                sessionId,
+                kind: "permission",
+                title: perm.toolName,
+                detail: perm.diff ?? perm.toolInput
+            )
         } else {
             sessions[sessionId]?.pendingPermission = nil
+            resolveLatestApprovalHistory(sessionId, kind: "permission")
             if sessions[sessionId]?.phase == .waitingApproval {
                 sessions[sessionId]?.phase = .idle
             }
@@ -186,11 +251,19 @@ actor SessionStore {
     }
 
     func setPendingQuestion(_ sessionId: String, _ question: PendingQuestion?) {
+        ensureSessionForPendingRequest(sessionId: sessionId)
         if let q = question {
             sessions[sessionId]?.pendingQuestion = q
             sessions[sessionId]?.phase = .waitingInput
+            addApprovalHistory(
+                sessionId,
+                kind: "question",
+                title: q.header ?? q.question,
+                detail: q.question
+            )
         } else {
             sessions[sessionId]?.pendingQuestion = nil
+            resolveLatestApprovalHistory(sessionId, kind: "question")
             if sessions[sessionId]?.phase == .waitingInput {
                 sessions[sessionId]?.phase = .idle
             }
@@ -199,11 +272,19 @@ actor SessionStore {
     }
 
     func setPendingPlan(_ sessionId: String, _ plan: PendingPlan?) {
+        ensureSessionForPendingRequest(sessionId: sessionId)
         if let p = plan {
             sessions[sessionId]?.pendingPlan = p
             sessions[sessionId]?.phase = .waitingApproval
+            addApprovalHistory(
+                sessionId,
+                kind: "plan",
+                title: p.title,
+                detail: p.content
+            )
         } else {
             sessions[sessionId]?.pendingPlan = nil
+            resolveLatestApprovalHistory(sessionId, kind: "plan")
             if sessions[sessionId]?.phase == .waitingApproval {
                 sessions[sessionId]?.phase = .idle
             }
@@ -227,6 +308,10 @@ actor SessionStore {
     func observe(onChange: @escaping @MainActor ([SessionState]) -> Void) -> UUID {
         let id = UUID()
         onChangeCallbacks.append((id, onChange))
+        let snapshot = getAllSessions()
+        Task { @MainActor in
+            onChange(snapshot)
+        }
         return id
     }
 
@@ -237,6 +322,38 @@ actor SessionStore {
     private func cleanupDoneSession(_ id: String) {
         sessions.removeValue(forKey: id)
         Task { await notifyChange() }
+    }
+
+    private func addApprovalHistory(_ sessionId: String, kind: String, title: String, detail: String) {
+        guard var session = sessions[sessionId] else { return }
+        if let latest = session.approvalHistory.last,
+           latest.isPending,
+           latest.kind == kind,
+           latest.title == title,
+           latest.detail == detail {
+            return
+        }
+
+        session.approvalHistory.append(
+            ApprovalHistoryRecord(
+                kind: kind,
+                title: title,
+                detail: detail
+            )
+        )
+        if session.approvalHistory.count > 100 {
+            session.approvalHistory.removeFirst(session.approvalHistory.count - 100)
+        }
+        sessions[sessionId] = session
+    }
+
+    private func resolveLatestApprovalHistory(_ sessionId: String, kind: String) {
+        guard var session = sessions[sessionId],
+              let index = session.approvalHistory.lastIndex(where: { $0.kind == kind && $0.isPending })
+        else { return }
+
+        session.approvalHistory[index].resolvedAt = Date()
+        sessions[sessionId] = session
     }
 
     private func notifyChange() async {

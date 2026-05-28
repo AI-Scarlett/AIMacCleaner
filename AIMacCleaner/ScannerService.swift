@@ -502,8 +502,12 @@ class ScannerService: ObservableObject {
         guard !hasRestoredScanBookmarks else { return }
         defer { hasRestoredScanBookmarks = true }
 
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: scanBookmarksPath)),
-              let bookmarks = try? JSONDecoder().decode([String: Data].self, from: data) else { return }
+        var bookmarks = readBookmarkFile(scanBookmarksPath)
+        let monitorBookmarks = readBookmarkFile(SandboxPaths.shared.bookmarksPath)
+        for (path, data) in monitorBookmarks where bookmarks[path] == nil {
+            bookmarks[path] = data
+        }
+        guard !bookmarks.isEmpty else { return }
 
         var restored: Set<String> = []
         var refreshed = bookmarks
@@ -529,6 +533,12 @@ class ScannerService: ObservableObject {
         authorizedScanRoots = restored
     }
 
+    private func readBookmarkFile(_ path: String) -> [String: Data] {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let bookmarks = try? JSONDecoder().decode([String: Data].self, from: data) else { return [:] }
+        return bookmarks
+    }
+
     private func requestLocalScanAccess() -> Bool {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -540,7 +550,7 @@ class ScannerService: ObservableObject {
 
         guard panel.runModal() == .OK, !panel.urls.isEmpty else { return false }
 
-        var bookmarks: [String: Data] = [:]
+        var bookmarks = readBookmarkFile(scanBookmarksPath)
         for url in panel.urls {
             _ = url.startAccessingSecurityScopedResource()
             do {

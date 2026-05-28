@@ -15,9 +15,9 @@ class IslandWindowController {
     }
 
     func createWindow() -> NSWindow {
-        let panel = NSPanel(
+        let panel = IslandPanel(
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 48),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
@@ -29,7 +29,7 @@ class IslandWindowController {
         panel.hasShadow = true
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
-        panel.isMovableByWindowBackground = false
+        panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
         panel.ignoresMouseEvents = false
 
@@ -84,9 +84,15 @@ class IslandWindowController {
     var currentWindow: NSWindow? { window }
 }
 
+private final class IslandPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
 class IslandHostingView: NSHostingView<AnyView> {
     weak var displayController: DisplayController?
     weak var islandViewModel: IslandViewModel?
+    private var lastDragLocation: NSPoint?
 
     required init(rootView: AnyView) {
         super.init(rootView: rootView)
@@ -128,5 +134,46 @@ class IslandHostingView: NSHostingView<AnyView> {
             userInfo: nil
         )
         addTrackingArea(trackingArea)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKey()
+        lastDragLocation = NSEvent.mouseLocation
+        super.mouseDown(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        if isEditingText {
+            super.mouseDragged(with: event)
+            return
+        }
+
+        guard let window = window else {
+            super.mouseDragged(with: event)
+            return
+        }
+        let current = NSEvent.mouseLocation
+        if let last = lastDragLocation {
+            let dx = current.x - last.x
+            let dy = current.y - last.y
+            var frame = window.frame
+            frame.origin.x += dx
+            frame.origin.y += dy
+            window.setFrameOrigin(frame.origin)
+            lastDragLocation = current
+        } else {
+            window.performDrag(with: event)
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        lastDragLocation = nil
+        super.mouseUp(with: event)
+    }
+
+    private var isEditingText: Bool {
+        guard let firstResponder = window?.firstResponder else { return false }
+        return firstResponder is NSTextView || firstResponder is NSTextField
     }
 }

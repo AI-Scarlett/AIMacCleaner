@@ -19,6 +19,7 @@ struct SettingsView: View {
     enum SettingsTab: String, CaseIterable {
         case ai = "AI"
         case features = "Features"
+        case lab = "Lab"
         case monitor = "Monitor"
         case network = "Network"
         case language = "Language"
@@ -28,6 +29,7 @@ struct SettingsView: View {
             switch self {
             case .ai: "brain"
             case .features: "switch.2"
+            case .lab: "flask"
             case .monitor: "bell.badge"
             case .network: "network"
             case .language: "globe"
@@ -39,6 +41,7 @@ struct SettingsView: View {
             switch self {
             case .ai: "AI"
             case .features: "Features"
+            case .lab: "Lab"
             case .monitor: "Monitor"
             case .network: "Network"
             case .language: "Language"
@@ -50,6 +53,7 @@ struct SettingsView: View {
             switch self {
             case .ai: localizer.settingsTabAI
             case .features: localizer.settingsTabFeatures
+            case .lab: localizer.settingsTabLab
             case .monitor: localizer.settingsTabMonitor
             case .network: localizer.networkLabel
             case .language: localizer.settingsTabLanguage
@@ -127,6 +131,7 @@ struct SettingsView: View {
                         switch selectedTab {
                         case .ai: aiSection
                         case .features: featuresSection
+                        case .lab: labSection
                         case .monitor: monitorSection
                         case .network: networkSection
                         case .language: languageSection
@@ -395,6 +400,69 @@ struct SettingsView: View {
         }
     }
 
+    private var labSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            SectionHeader(title: localizer.labSettingsTitle, icon: "flask")
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text(localizer.labSettingsDesc)
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+
+                Label(localizer.labSettingsNotice, systemImage: "exclamationmark.triangle.fill")
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.warning)
+            }
+            .cardStyle()
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text(localizer.labFeaturesOverview)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+
+                VStack(spacing: Theme.Spacing.sm) {
+                    LabFeatureRow(
+                        icon: "house.fill",
+                        color: .teal,
+                        title: localizer.navAgentCenter,
+                        desc: localizer.labFeatureAgentCenterDesc
+                    )
+                    LabFeatureRow(
+                        icon: "arrow.down.doc.fill",
+                        color: .blue,
+                        title: localizer.navCleaner,
+                        desc: localizer.labFeatureCleanerDesc
+                    )
+                    LabFeatureRow(
+                        icon: "app.badge",
+                        color: .cyan,
+                        title: localizer.navApp,
+                        desc: localizer.labFeatureAppDesc
+                    )
+                    LabFeatureRow(
+                        icon: "cube.box",
+                        color: .orange,
+                        title: localizer.navDependency,
+                        desc: localizer.labFeatureDependencyDesc
+                    )
+                    LabFeatureRow(
+                        icon: "terminal",
+                        color: .gray,
+                        title: localizer.navOther,
+                        desc: localizer.labFeatureOtherDesc
+                    )
+                    LabFeatureRow(
+                        icon: "arrow.triangle.2.circlepath",
+                        color: .purple,
+                        title: localizer.navMigration,
+                        desc: localizer.labFeatureMigrationDesc
+                    )
+                }
+            }
+            .cardStyle()
+        }
+    }
+
     private var networkSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             SectionHeader(title: localizer.networkModeTitle, icon: "network")
@@ -610,6 +678,37 @@ struct ToggleSetting: View {
             Toggle("", isOn: $isOn)
                 .toggleStyle(.switch)
                 .labelsHidden()
+        }
+        .padding(.vertical, Theme.Spacing.xs)
+    }
+}
+
+struct LabFeatureRow: View {
+    let icon: String
+    let color: Color
+    let title: String
+    let desc: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.md) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 28, height: 28)
+                .background(color.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(desc)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
         }
         .padding(.vertical, Theme.Spacing.xs)
     }

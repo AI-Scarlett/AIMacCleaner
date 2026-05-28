@@ -26,11 +26,7 @@ actor HookInstaller {
 
         let resourceURL: URL? = Bundle.main.url(forResource: "agentguard-bridge", withExtension: nil)
                 ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/agentguard-bridge")
-        guard let url = resourceURL else {
-            throw AgentError.hookInstallFailed("Bridge binary not found in bundle")
-        }
-
-        if !FileManager.default.fileExists(atPath: url.path) {
+        guard let url = resourceURL, FileManager.default.fileExists(atPath: url.path) else {
             let pwd = FileManager.default.currentDirectoryPath
             let devBridge = URL(fileURLWithPath: pwd).appendingPathComponent("agentguard-bridge")
             if FileManager.default.fileExists(atPath: devBridge.path) {
@@ -38,12 +34,31 @@ actor HookInstaller {
                 try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destPath.path)
                 return destPath.path
             }
-            throw AgentError.hookInstallFailed("Bridge binary not found at \(url.path)")
+            try writeFallbackBridge(to: destPath)
+            return destPath.path
         }
 
         try FileManager.default.copyItem(at: url, to: destPath)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destPath.path)
         return destPath.path
+    }
+
+    private func writeFallbackBridge(to destPath: URL) throws {
+        let script = """
+        #!/bin/sh
+        port="${AGENTGUARD_PORT:-17893}"
+        payload="$(cat)"
+        if [ -z "$payload" ]; then
+          exit 0
+        fi
+        if command -v nc >/dev/null 2>&1; then
+          printf '%s\\n' "$payload" | nc 127.0.0.1 "$port"
+        else
+          exit 1
+        fi
+        """
+        try script.write(to: destPath, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destPath.path)
     }
 
     func shellQuote(_ value: String) -> String {
@@ -158,6 +173,8 @@ actor HookInstaller {
     }
 
     private func atomicWrite(_ content: String, to path: URL) throws {
+        let dir = path.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let tmpPath = path.appendingPathExtension("tmp")
         try content.write(to: tmpPath, atomically: true, encoding: .utf8)
         if FileManager.default.fileExists(atPath: path.path) {

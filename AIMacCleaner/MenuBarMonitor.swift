@@ -3,6 +3,7 @@ import SwiftUI
 struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
+    @EnvironmentObject var islandViewModel: IslandViewModel
     @State private var selectedTab: MonitorTab = .operations
     @AppStorage("networkMode") private var networkMode = "internet"
     @State private var alertThreshold: Double = 10.0
@@ -41,7 +42,11 @@ struct MenuBarMonitor: View {
         .frame(width: 360)
         .onAppear {
             loadSettings()
-            if monitoringEnabled { service.startMonitoring() }
+            if monitoringEnabled {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    service.startMonitoring()
+                }
+            }
         }
     }
 
@@ -50,9 +55,7 @@ struct MenuBarMonitor: View {
             ForEach(MonitorTab.allCases, id: \.self) { tab in
                 let isSelected = selectedTab == tab
                 Button {
-                    withAnimation(.spring(duration: 0.3)) {
-                        selectedTab = tab
-                    }
+                    selectedTab = tab
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: tab == .operations ? "chart.bar" : "gauge.open.with.lines.needle.84percent")
@@ -93,19 +96,16 @@ struct MenuBarMonitor: View {
         VStack(spacing: 0) {
             HStack(spacing: Theme.Spacing.sm) {
                 Button {
+                    dismissMenuBarPopoverSoon()
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
                     if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("AgentGuard") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
                         window.makeKeyAndOrderFront(nil)
                     }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        if let menuWindow = NSApp.windows.first(where: { $0.isFloatingPanel || $0.level == .floating }) {
-                            menuWindow.orderOut(nil)
-                        }
-                    }
                 } label: {
                     HStack(spacing: Theme.Spacing.xs) {
-                        Image(systemName: "arrow.down.doc.fill")
+                        MenuBarShieldEyeIcon(color: .white)
+                            .frame(width: 14, height: 14)
                         Text(localizer.openAIMacCleaner)
                     }
                     .font(Theme.Font.captionMedium)
@@ -113,6 +113,27 @@ struct MenuBarMonitor: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Theme.Spacing.xs + 1)
                     .background(Theme.Colors.accent.opacity(0.85))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    dismissMenuBarPopoverSoon()
+                    NotificationCenter.default.post(name: .agentCenterShouldInitialize, object: nil)
+                    islandViewModel.lastStatusText = localizer.navAgentCenter
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        islandViewModel.show(level: islandViewModel.approvalQueueCount > 0 ? .expanded : .compact)
+                    }
+                } label: {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "capsule.portrait.tophalf.filled")
+                        Text(localizer.agentCenterShowIsland)
+                    }
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.purple)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Theme.Spacing.xs + 1)
+                    .background(Theme.Colors.purple.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
                 .buttonStyle(.plain)
@@ -150,7 +171,7 @@ struct MenuBarMonitor: View {
 
                 Button {
                     let behavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
-                    if behavior == "quitAppKeepMenu" {
+                    if behavior == "quitAppOnly" || behavior == "quitAppKeepMenu" {
                         for window in NSApp.windows where !window.isFloatingPanel && window.level != .floating {
                             window.orderOut(nil)
                         }
@@ -311,34 +332,50 @@ struct MenuBarMonitor: View {
             SectionHeader(title: localizer.diskSpaceLabel, icon: "internaldrive")
 
             if let disk = service.diskInfo {
-                HStack(spacing: Theme.Spacing.lg) {
-                    ProgressRing(
-                        progress: disk.usedPct / 100.0,
-                        lineWidth: 6,
-                        size: 56,
-                        color: diskColor(pct: disk.usedPct)
-                    )
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(String(format: "%.0f%%", disk.usedPct))
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(diskColor(pct: disk.usedPct))
 
-                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(localizer.usedLabel)
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                            Text(String(format: "%.0f GB / %.0f GB", disk.usedGb, disk.totalGb))
-                                .font(Theme.Font.subheadlineMedium)
-                                .monospacedDigit()
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                        }
+                        Text(localizer.usedLabel)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(localizer.available)
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                            Text(String(format: "%.0f GB", disk.freeGb))
-                                .font(Theme.Font.subheadlineMedium)
-                                .monospacedDigit()
-                                .foregroundStyle(disk.freeGb < 20 ? Theme.Colors.danger : Theme.Colors.success)
+                        Spacer()
+
+                        Text(String(format: "%.0f GB / %.0f GB", disk.usedGb, disk.totalGb))
+                            .font(Theme.Font.captionMedium)
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                    }
+
+                    GeometryReader { proxy in
+                        let progress = min(max(disk.usedPct / 100.0, 0), 1)
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Theme.Colors.separator.opacity(0.45))
+                            Capsule()
+                                .fill(diskColor(pct: disk.usedPct))
+                                .frame(width: max(8, proxy.size.width * progress))
                         }
+                    }
+                    .frame(height: 10)
+                    .accessibilityLabel(localizer.diskSpaceLabel)
+                    .accessibilityValue(String(format: "%.0f%% %@", disk.usedPct, localizer.usedLabel))
+
+                    HStack {
+                        Text(localizer.available)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+
+                        Spacer()
+
+                        Text(String(format: "%.0f GB", disk.freeGb))
+                            .font(Theme.Font.subheadlineMedium)
+                            .monospacedDigit()
+                            .foregroundStyle(disk.freeGb < 20 ? Theme.Colors.danger : Theme.Colors.success)
                     }
                 }
                 .cardStyle(padding: Theme.Spacing.md)
@@ -877,7 +914,7 @@ struct MenuBarMonitor: View {
     private var displayableOperationRecords: [OperationRecord] {
         service.operationRecords.filter { record in
             let name = record.agentName.trimmingCharacters(in: .whitespacesAndNewlines)
-            if name.isEmpty || name == "—" { return false }
+            if name.isEmpty || name == "—" || name == "Unattributed Agent" { return false }
             if name == localizer.systemProcess || name.localizedCaseInsensitiveContains("system process") { return false }
             let nonAgentToolNames: Set<String> = [
                 "Node.js", "Python", "npm", "npx", "Yarn", "pnpm", "Cargo", "Rust",
@@ -912,6 +949,17 @@ struct MenuBarMonitor: View {
     private func agentStatColor(index: Int) -> Color {
         let colors: [Color] = [.blue, .purple, .green, .orange, .cyan, .pink, .indigo, .teal]
         return colors[index % colors.count]
+    }
+
+    private func dismissMenuBarPopoverSoon() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            let islandWindow = (NSApp.delegate as? AppDelegate)?.islandWindowController?.currentWindow
+            for window in NSApp.windows where window !== islandWindow {
+                if window.isFloatingPanel || window.level != .normal {
+                    window.orderOut(nil)
+                }
+            }
+        }
     }
 
     private func settingsPath() -> String {

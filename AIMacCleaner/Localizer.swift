@@ -239,6 +239,16 @@ extension Localizer {
     var recommendedConfig: String { t("推荐配置（点击自动填入）", en: "Recommended presets (click to auto-fill)", zhHant: "推薦配置（點選自動填入）", ja: "推奨設定（クリックで自動入力）", ko: "추천 설정 (클릭 시 자동 입력)", mt: "Recommended presets (click to auto-fill)") }
 
     var featureToggles: String { t("功能开关", en: "Feature Toggles", zhHant: "功能開關", ja: "機能切替", ko: "기능 토글", mt: "Feature Toggles") }
+    var labSettingsTitle: String { t("实验室说明", en: "Lab Overview", zhHant: "實驗室說明", ja: "ラボ概要", ko: "실험실 안내", mt: "Lab Overview") }
+    var labSettingsDesc: String { t("实验室中的功能处于持续迭代阶段，交互、能力范围、收费方式和入口位置都可能根据反馈进行调整。", en: "Features in Lab are still evolving. Their interaction model, capability scope, pricing model, and entry points may change based on feedback.", zhHant: "實驗室中的功能仍在持續迭代，互動方式、能力範圍、收費模式與入口位置都可能依據回饋調整。", ja: "ラボ内の機能は継続的に進化中です。操作方法、対応範囲、課金方式、導線はフィードバックに応じて変更される場合があります。", ko: "실험실 기능은 계속 개선 중입니다. 상호작용 방식, 기능 범위, 과금 방식, 진입 경로는 피드백에 따라 바뀔 수 있습니다.", mt: "Features in Lab are still evolving. Their interaction model, capability scope, pricing model, and entry points may change based on feedback.") }
+    var labSettingsNotice: String { t("这些功能可能随时调整、下线，或改为单独收费。", en: "These features may be adjusted, removed, or moved to separate paid plans at any time.", zhHant: "這些功能可能隨時調整、下線，或改為單獨收費。", ja: "これらの機能は、随時調整・終了、または個別課金へ変更される可能性があります。", ko: "이 기능들은 언제든 조정되거나 제거되거나 별도 유료 기능으로 전환될 수 있습니다.", mt: "These features may be adjusted, removed, or moved to separate paid plans at any time.") }
+    var labFeaturesOverview: String { t("当前实验室包含以下 6 个功能：", en: "The current Lab includes these 6 features:", zhHant: "目前實驗室包含以下 6 個功能：", ja: "現在のラボには次の6機能が含まれます。", ko: "현재 실험실에는 다음 6개 기능이 포함됩니다.", mt: "The current Lab includes these 6 features:") }
+    var labFeatureAgentCenterDesc: String { t("统一查看 Agent 接入状态、Hook 安装情况、审批记录和会话流转。", en: "A central place to review agent integrations, hook installation status, approvals, and session flows.", zhHant: "統一查看 Agent 接入狀態、Hook 安裝情況、審批記錄與會話流轉。", ja: "Agent連携、Hook導入状況、承認履歴、セッション遷移をまとめて確認できます。", ko: "Agent 연동 상태, Hook 설치 현황, 승인 기록, 세션 흐름을 한곳에서 확인합니다.", mt: "A central place to review agent integrations, hook installation status, approvals, and session flows.") }
+    var labFeatureCleanerDesc: String { t("扫描缓存、日志、更新包和其它可清理数据，帮助释放磁盘空间。", en: "Scans caches, logs, updater packages, and other removable data to help free disk space.", zhHant: "掃描快取、日誌、更新包與其它可清理資料，協助釋放磁碟空間。", ja: "キャッシュ、ログ、更新パッケージなどをスキャンし、空き容量の確保を支援します。", ko: "캐시, 로그, 업데이트 패키지 등 정리 가능한 데이터를 스캔해 디스크 공간 확보를 돕습니다.", mt: "Scans caches, logs, updater packages, and other removable data to help free disk space.") }
+    var labFeatureAppDesc: String { t("管理已安装应用，并提供卸载、重置或缓存清理等实验性操作。", en: "Manages installed apps and offers experimental actions such as uninstall, reset, or cache cleanup.", zhHant: "管理已安裝應用，並提供解除安裝、重置或快取清理等實驗性操作。", ja: "インストール済みアプリを管理し、アンインストール、リセット、キャッシュ整理などの実験的操作を提供します。", ko: "설치된 앱을 관리하고 제거, 초기화, 캐시 정리 같은 실험적 작업을 제공합니다.", mt: "Manages installed apps and offers experimental actions such as uninstall, reset, or cache cleanup.") }
+    var labFeatureDependencyDesc: String { t("识别开发环境中的依赖和工具链，辅助做清理、重置与风险判断。", en: "Identifies development dependencies and toolchains to support cleanup, reset, and risk assessment.", zhHant: "識別開發環境中的依賴與工具鏈，輔助進行清理、重置與風險判斷。", ja: "開発環境の依存関係やツールチェーンを識別し、整理・リセット・リスク判断を支援します。", ko: "개발 환경의 의존성과 툴체인을 식별해 정리, 초기화, 위험 판단을 돕습니다.", mt: "Identifies development dependencies and toolchains to support cleanup, reset, and risk assessment.") }
+    var labFeatureOtherDesc: String { t("集中管理命令行工具和零散组件，适合处理不属于标准应用的数据目录。", en: "Manages CLI tools and miscellaneous components that do not fit neatly into standard app categories.", zhHant: "集中管理命令列工具與零散元件，適合處理不屬於標準應用分類的資料目錄。", ja: "CLIツールや雑多なコンポーネントをまとめて管理し、標準的なアプリ分類に入らないデータを扱えます。", ko: "CLI 도구와 기타 구성요소를 관리하며 일반 앱 분류에 들어가지 않는 데이터 디렉터리를 다룹니다.", mt: "Manages CLI tools and miscellaneous components that do not fit neatly into standard app categories.") }
+    var labFeatureMigrationDesc: String { t("检查应用和组件对 Apple Silicon 的适配情况，帮助识别 Rosetta 依赖与架构问题。", en: "Checks Apple Silicon compatibility to help identify Rosetta dependencies and architecture issues.", zhHant: "檢查應用與元件對 Apple Silicon 的適配情況，協助識別 Rosetta 依賴與架構問題。", ja: "Apple Silicon への対応状況を確認し、Rosetta依存やアーキテクチャ問題の特定を支援します。", ko: "Apple Silicon 호환성을 점검해 Rosetta 의존성과 아키텍처 문제를 식별합니다.", mt: "Checks Apple Silicon compatibility to help identify Rosetta dependencies and architecture issues.") }
     var menuBarMonitor: String { t("菜单栏监控", en: "Menu Bar Monitor", zhHant: "選單欄監控", ja: "メニューバーモニター", ko: "메뉴 막대 모니터", mt: "Menu Bar Monitor") }
     var menuBarMonitorDesc: String { t("在菜单栏显示系统资源监控", en: "Show system resource monitoring in the menu bar", zhHant: "在選單欄顯示系統資源監控", ja: "メニューバーにシステムリソースモニタリングを表示", ko: "메뉴 막대에 시스템 리소스 모니터링 표시", mt: "Show system resource monitoring in the menu bar") }
     var sensorMonitor: String { t("设备监控", en: "Device Monitor", zhHant: "裝置監控", ja: "デバイスモニター", ko: "장치 모니터", mt: "Device Monitor") }
@@ -419,6 +429,7 @@ extension Localizer {
 
     var settingsTabAI: String { t("AI", en: "AI", zhHant: "AI", ja: "AI", ko: "AI", mt: "AI") }
     var settingsTabFeatures: String { t("功能", en: "Features", zhHant: "功能", ja: "機能", ko: "기능", mt: "Features") }
+    var settingsTabLab: String { t("实验室", en: "Lab", zhHant: "實驗室", ja: "ラボ", ko: "실험실", mt: "Lab") }
     var settingsTabMonitor: String { t("监控", en: "Monitor", zhHant: "監控", ja: "モニター", ko: "모니터", mt: "Monitor") }
     var settingsTabLanguage: String { t("语言", en: "Language", zhHant: "語言", ja: "言語", ko: "언어", mt: "Language") }
     var settingsTabVersion: String { t("版本", en: "Version", zhHant: "版本", ja: "版本", ko: "Version", mt: "Version") }
@@ -453,6 +464,12 @@ extension Localizer {
     var total: String { t("共", en: "Total", zhHant: "共", ja: "合計", ko: "총", mt: "Total") }
 
     var nameCol: String { t("名称", en: "Name", zhHant: "名稱", ja: "名前", ko: "이름", mt: "Name") }
+    var status: String { t("状态", en: "Status", zhHant: "狀態", ja: "状態", ko: "상태", mt: "Status") }
+    var sourceCol: String { t("来源", en: "Source", zhHant: "來源", ja: "ソース", ko: "소스", mt: "Source") }
+    var categoryCol: String { t("分类", en: "Category", zhHant: "分類", ja: "カテゴリ", ko: "분류", mt: "Category") }
+    var descriptionCol: String { t("说明", en: "Description", zhHant: "說明", ja: "説明", ko: "설명", mt: "Description") }
+    var versionCol: String { t("版本", en: "Version", zhHant: "版本", ja: "バージョン", ko: "버전", mt: "Version") }
+    var archCol: String { t("架构", en: "Arch", zhHant: "架構", ja: "アーキテクチャ", ko: "아키텍처", mt: "Arch") }
     var riskCol: String { t("风险", en: "Risk", zhHant: "風險", ja: "リスク", ko: "위험", mt: "Risk") }
     var impactCol: String { t("影响说明", en: "Impact", zhHant: "影響說明", ja: "影響", ko: "영향", mt: "Impact") }
     var sizeCol: String { t("大小", en: "Size", zhHant: "大小", ja: "サイズ", ko: "크기", mt: "Size") }
@@ -737,6 +754,8 @@ extension Localizer {
     var opsRecord: String { t("的操作记录...", en: "operations...", zhHant: "的操作記錄...", ja: "の操作記録...", ko: "의 작업 기록...", mt: "operations...") }
     var colType: String { t("类型", en: "Type", zhHant: "型別", ja: "タイプ", ko: "유형", mt: "Type") }
     var colProcess: String { t("进程", en: "Process", zhHant: "程序", ja: "プロセス", ko: "프로세스", mt: "Process") }
+    var colPID: String { t("PID", en: "PID", zhHant: "PID", ja: "PID", ko: "PID", mt: "PID") }
+    var colBundleID: String { t("Bundle ID", en: "Bundle ID", zhHant: "Bundle ID", ja: "Bundle ID", ko: "Bundle ID", mt: "Bundle ID") }
     var colPath: String { t("路径", en: "Path", zhHant: "路徑", ja: "パス", ko: "경로", mt: "Path") }
     var colSize: String { t("大小", en: "Size", zhHant: "大小", ja: "サイズ", ko: "크기", mt: "Size") }
     var colName: String { t("名称", en: "Name", zhHant: "名稱", ja: "名前", ko: "이름", mt: "Name") }
@@ -800,11 +819,32 @@ extension Localizer {
     var agentCenterUnavailable: String { t("未发现", en: "Not Found", zhHant: "未發現", ja: "未検出", ko: "찾을 수 없음", mt: "Not Found") }
     var agentCenterInstallHook: String { t("安装 Hook", en: "Install Hook", zhHant: "安裝 Hook", ja: "Hookをインストール", ko: "Hook 설치", mt: "Install Hook") }
     var agentCenterRemoveHook: String { t("移除 Hook", en: "Remove Hook", zhHant: "移除 Hook", ja: "Hookを削除", ko: "Hook 제거", mt: "Remove Hook") }
+    var agentCenterConnect: String { t("接入", en: "Connect", zhHant: "接入", ja: "接続", ko: "연결", mt: "Connect") }
+    var agentCenterDisconnect: String { t("移除接入", en: "Disconnect", zhHant: "移除接入", ja: "接続解除", ko: "연결 해제", mt: "Disconnect") }
+    var agentCenterConnecting: String { t("处理中", en: "Working", zhHant: "處理中", ja: "処理中", ko: "처리 중", mt: "Working") }
+    var agentCenterHookHint: String { t("接入会写入该 Agent 的 Hook 配置，用于捕获权限请求、问题和计划审批。", en: "Connect writes this agent's hook config so permission requests, questions, and plan approvals can be captured.", zhHant: "接入會寫入該 Agent 的 Hook 配置，用於捕獲權限請求、問題和計劃審批。", ja: "接続すると、このAgentのHook設定を書き込み、権限リクエスト、質問、計画承認を取得します。", ko: "연결은 이 Agent의 Hook 설정을 기록해 권한 요청, 질문, 계획 승인을 캡처합니다.", mt: "Connect writes this agent's hook config so permission requests, questions, and plan approvals can be captured.") }
+    var agentCenterHookStatus: String { t("Hook 状态", en: "Hook Status", zhHant: "Hook 狀態", ja: "Hook状態", ko: "Hook 상태", mt: "Hook Status") }
+    var agentCenterHookUnsupported: String { t("当前 Agent 暂不支持 Hook 接入", en: "This agent does not support hook connection yet.", zhHant: "目前 Agent 暫不支援 Hook 接入", ja: "このAgentはまだHook接続に対応していません。", ko: "이 Agent는 아직 Hook 연결을 지원하지 않습니다.", mt: "This agent does not support hook connection yet.") }
+    var agentCenterUnsupported: String { t("暂不支持", en: "Unsupported", zhHant: "暫不支援", ja: "未対応", ko: "미지원", mt: "Unsupported") }
+    var agentCenterShowIsland: String { t("显示灵动岛", en: "Show Island", zhHant: "顯示靈動島", ja: "アイランドを表示", ko: "아일랜드 표시", mt: "Show Island") }
+    var islandExpand: String { t("展开", en: "Expand", zhHant: "展開", ja: "展開", ko: "펼치기", mt: "Expand") }
+    var agentCenterPending: String { t("待审批", en: "Pending", zhHant: "待審批", ja: "保留中", ko: "대기", mt: "Pending") }
+    var agentCenterHistory: String { t("历史", en: "History", zhHant: "歷史", ja: "履歴", ko: "기록", mt: "History") }
     var agentCenterNoApprovals: String { t("暂无待审批事项", en: "No pending approvals", zhHant: "暫無待審批事項", ja: "保留中の承認はありません", ko: "대기 중인 승인이 없습니다", mt: "No pending approvals") }
+    var agentCenterNoApprovalHistory: String { t("暂无审批历史", en: "No approval history", zhHant: "暫無審批歷史", ja: "承認履歴はありません", ko: "승인 기록이 없습니다", mt: "No approval history") }
+    var agentCenterApprovalHistoryHint: String { t("这里会保留最近的 Agent 会话和已处理审批，方便回看。", en: "Recent agent sessions and handled approvals stay here for review.", zhHant: "這裡會保留最近的 Agent 會話和已處理審批，方便回看。", ja: "最近のAgentセッションと処理済み承認をここで確認できます。", ko: "최근 Agent 세션과 처리된 승인을 여기에서 다시 볼 수 있습니다.", mt: "Recent agent sessions and handled approvals stay here for review.") }
     var agentCenterPendingApprovalsHint: String { t("安装 Hook 后，权限请求、问题和计划审批会在这里和灵动岛中出现。", en: "After hooks are installed, permission requests, questions, and plan approvals appear here and in the island.", zhHant: "安裝 Hook 後，權限請求、問題和計劃審批會在這裡和靈動島中出現。", ja: "Hookをインストールすると、権限リクエスト、質問、計画承認がここ とアイランドに表示されます。", ko: "Hook 설치 후 권한 요청, 질문, 계획 승인이 여기와 아일랜드에 표시됩니다.", mt: "After hooks are installed, permission requests, questions, and plan approvals appear here and in the island.") }
     var agentCenterPermission: String { t("权限请求", en: "Permission", zhHant: "權限請求", ja: "権限", ko: "권한", mt: "Permission") }
     var agentCenterQuestion: String { t("问题", en: "Question", zhHant: "問題", ja: "質問", ko: "질문", mt: "Question") }
+    var agentCenterTextReply: String { t("文字回复", en: "Text Reply", zhHant: "文字回覆", ja: "テキスト返信", ko: "텍스트 답변", mt: "Text Reply") }
     var agentCenterPlan: String { t("计划审批", en: "Plan", zhHant: "計劃審批", ja: "計画", ko: "계획", mt: "Plan") }
+    var agentCenterPhaseReady: String { t("就绪", en: "Ready", zhHant: "就緒", ja: "準備完了", ko: "준비됨", mt: "Ready") }
+    var agentCenterPhaseIdle: String { t("空闲", en: "Idle", zhHant: "閒置", ja: "アイドル", ko: "대기 중", mt: "Idle") }
+    var agentCenterPhaseRunning: String { t("运行中", en: "Running", zhHant: "執行中", ja: "実行中", ko: "실행 중", mt: "Running") }
+    var agentCenterPhaseCompacting: String { t("压缩中", en: "Compacting", zhHant: "壓縮中", ja: "圧縮中", ko: "압축 중", mt: "Compacting") }
+    var agentCenterPhaseDone: String { t("已完成", en: "Done", zhHant: "已完成", ja: "完了", ko: "완료", mt: "Done") }
+    var agentCenterPhaseError: String { t("异常", en: "Error", zhHant: "異常", ja: "エラー", ko: "오류", mt: "Error") }
+    var agentCenterPhaseInterrupted: String { t("已中断", en: "Interrupted", zhHant: "已中斷", ja: "中断済み", ko: "중단됨", mt: "Interrupted") }
     var agentCenterActiveSummary: String { t("已接入", en: "active", zhHant: "已接入", ja: "接続済み", ko: "활성", mt: "active") }
     var agentCenterInstalledSummary: String { t("已安装", en: "installed", zhHant: "已安裝", ja: "インストール済み", ko: "설치됨", mt: "installed") }
     var agentCenterAvailableSummary: String { t("可用", en: "available", zhHant: "可用", ja: "利用可能", ko: "사용 가능", mt: "available") }
@@ -814,9 +854,64 @@ extension Localizer {
     var agentWantsToUseTool: String { t("想使用", en: "wants to use", zhHant: "想使用", ja: "が使用しようとしています", ko: "사용하려고 합니다", mt: "wants to use") }
     var agentChanges: String { t("变更", en: "Changes", zhHant: "變更", ja: "変更", ko: "변경", mt: "Changes") }
     var agentOptions: String { t("选项", en: "Options", zhHant: "選項", ja: "オプション", ko: "옵션", mt: "Options") }
+    var agentCustomReply: String { t("文字回复", en: "Text Reply", zhHant: "文字回覆", ja: "テキスト返信", ko: "텍스트 답변", mt: "Text Reply") }
+    var agentCustomReplyPlaceholder: String { t("输入补充说明或新的任务指令", en: "Type extra notes or a new task instruction", zhHant: "輸入補充說明或新的任務指令", ja: "補足説明または新しいタスク指示を入力", ko: "추가 설명 또는 새 작업 지시를 입력", mt: "Type extra notes or a new task instruction") }
+    var agentSendReply: String { t("发送回复", en: "Send Reply", zhHant: "傳送回覆", ja: "返信を送信", ko: "답변 보내기", mt: "Send Reply") }
+    var agentNoSessionSelected: String { t("未选择会话", en: "No session selected", zhHant: "未選擇會話", ja: "セッション未選択", ko: "세션이 선택되지 않음", mt: "No session selected") }
+    var agentSessionDetail: String { t("会话详情", en: "Session Detail", zhHant: "會話詳情", ja: "セッション詳細", ko: "세션 상세", mt: "Session Detail") }
+    var agentGuardReady: String { t("AgentGuard 就绪", en: "AgentGuard Ready", zhHant: "AgentGuard 就緒", ja: "AgentGuard 準備完了", ko: "AgentGuard 준비됨", mt: "AgentGuard Ready") }
+    var agentPinIsland: String { t("固定灵动岛", en: "Pin island", zhHant: "固定靈動島", ja: "アイランドを固定", ko: "아일랜드 고정", mt: "Pin island") }
+    var agentDetailOverview: String { t("概览", en: "Overview", zhHant: "概覽", ja: "概要", ko: "개요", mt: "Overview") }
+    var agentDetailTools: String { t("工具", en: "Tools", zhHant: "工具", ja: "ツール", ko: "도구", mt: "Tools") }
+    var agentDetailSubagents: String { t("子 Agent", en: "Subagents", zhHant: "子 Agent", ja: "サブAgent", ko: "하위 Agent", mt: "Subagents") }
+    var agentDetailEvents: String { t("事件", en: "Events", zhHant: "事件", ja: "イベント", ko: "이벤트", mt: "Events") }
+    var agentProject: String { t("项目", en: "Project", zhHant: "專案", ja: "プロジェクト", ko: "프로젝트", mt: "Project") }
+    var agentDuration: String { t("耗时", en: "Duration", zhHant: "耗時", ja: "所要時間", ko: "소요 시간", mt: "Duration") }
+    var agentPhase: String { t("阶段", en: "Phase", zhHant: "階段", ja: "フェーズ", ko: "단계", mt: "Phase") }
+    var agentTokenUsage: String { t("Token 用量", en: "Token Usage", zhHant: "Token 用量", ja: "Token使用量", ko: "Token 사용량", mt: "Token Usage") }
+    var agentTokenInput: String { t("输入", en: "Input", zhHant: "輸入", ja: "入力", ko: "입력", mt: "Input") }
+    var agentTokenOutput: String { t("输出", en: "Output", zhHant: "輸出", ja: "出力", ko: "출력", mt: "Output") }
+    var agentTokenCacheRead: String { t("缓存读取", en: "Cache Read", zhHant: "快取讀取", ja: "キャッシュ読取", ko: "캐시 읽기", mt: "Cache Read") }
+    var agentTokenCacheCreate: String { t("缓存写入", en: "Cache Create", zhHant: "快取寫入", ja: "キャッシュ作成", ko: "캐시 생성", mt: "Cache Create") }
+    var agentRateLimits: String { t("限额", en: "Rate Limits", zhHant: "限額", ja: "レート制限", ko: "사용 한도", mt: "Rate Limits") }
+    var agentContextWindow: String { t("上下文窗口", en: "Context Window", zhHant: "上下文視窗", ja: "コンテキストウィンドウ", ko: "컨텍스트 창", mt: "Context Window") }
+    var agentTotalInput: String { t("总输入", en: "Total Input", zhHant: "總輸入", ja: "総入力", ko: "총 입력", mt: "Total Input") }
+    var agentTotalOutput: String { t("总输出", en: "Total Output", zhHant: "總輸出", ja: "総出力", ko: "총 출력", mt: "Total Output") }
+    var agentWindowSize: String { t("窗口大小", en: "Window Size", zhHant: "視窗大小", ja: "ウィンドウサイズ", ko: "창 크기", mt: "Window Size") }
+    func agentContextUsed(_ percent: Int) -> String { t("已使用 \(percent)%", en: "\(percent)% used", zhHant: "已使用 \(percent)%", ja: "\(percent)% 使用済み", ko: "\(percent)% 사용됨", mt: "\(percent)% used") }
+    var agentNoToolExecutions: String { t("暂无工具执行记录", en: "No tool executions recorded", zhHant: "暫無工具執行記錄", ja: "ツール実行記録はありません", ko: "도구 실행 기록 없음", mt: "No tool executions recorded") }
+    var agentNoSubagents: String { t("暂无子 Agent", en: "No subagents spawned", zhHant: "暫無子 Agent", ja: "サブAgentはありません", ko: "하위 Agent 없음", mt: "No subagents spawned") }
+    var agentRawEventsHint: String { t("原始 Hook 事件日志可在会话中心查看", en: "Raw hook event log available in Session Center", zhHant: "原始 Hook 事件日誌可在會話中心查看", ja: "Raw Hookイベントログはセッションセンターで確認できます", ko: "원시 Hook 이벤트 로그는 세션 센터에서 볼 수 있습니다", mt: "Raw hook event log available in Session Center") }
+    var agentPhaseReady: String { t("就绪", en: "Ready", zhHant: "就緒", ja: "準備完了", ko: "준비됨", mt: "Ready") }
+    var agentPhaseIdle: String { t("空闲", en: "Idle", zhHant: "閒置", ja: "アイドル", ko: "유휴", mt: "Idle") }
+    var agentPhaseProcessing: String { t("运行中", en: "Running", zhHant: "執行中", ja: "実行中", ko: "실행 중", mt: "Running") }
+    var agentPhaseCompacting: String { t("压缩中", en: "Compacting", zhHant: "壓縮中", ja: "圧縮中", ko: "압축 중", mt: "Compacting") }
+    var agentPhaseDone: String { t("已完成", en: "Done", zhHant: "已完成", ja: "完了", ko: "완료", mt: "Done") }
+    var agentPhaseError: String { t("错误", en: "Error", zhHant: "錯誤", ja: "エラー", ko: "오류", mt: "Error") }
+    var agentPhaseInterrupted: String { t("已中断", en: "Interrupted", zhHant: "已中斷", ja: "中断済み", ko: "중단됨", mt: "Interrupted") }
+    func agentSeconds(_ value: Int) -> String { t("\(value)秒", en: "\(value)s", zhHant: "\(value)秒", ja: "\(value)秒", ko: "\(value)초", mt: "\(value)s") }
+    func agentMinutes(_ value: Int) -> String { t("\(value)分", en: "\(value)m", zhHant: "\(value)分", ja: "\(value)分", ko: "\(value)분", mt: "\(value)m") }
+    func agentHours(_ value: Int) -> String { t("\(value)小时", en: "\(value)h", zhHant: "\(value)小時", ja: "\(value)時間", ko: "\(value)시간", mt: "\(value)h") }
+    func agentDays(_ value: Int) -> String { t("\(value)天", en: "\(value)d", zhHant: "\(value)天", ja: "\(value)日", ko: "\(value)일", mt: "\(value)d") }
+    func agentAgo(_ value: String) -> String { t("\(value)前", en: "\(value) ago", zhHant: "\(value)前", ja: "\(value)前", ko: "\(value) 전", mt: "\(value) ago") }
     var agentAlwaysAllowTool: String { t("始终允许此工具", en: "Always allow this tool", zhHant: "始終允許此工具", ja: "このツールを常に許可", ko: "이 도구 항상 허용", mt: "Always allow this tool") }
     var agentAllow: String { t("允许", en: "Allow", zhHant: "允許", ja: "許可", ko: "허용", mt: "Allow") }
     var agentDeny: String { t("拒绝", en: "Deny", zhHant: "拒絕", ja: "拒否", ko: "거부", mt: "Deny") }
+    var agentPermissionYes: String { t("是", en: "Yes", zhHant: "是", ja: "はい", ko: "예", mt: "Yes") }
+    var agentPermissionYesAlways: String { t("是（以后允许）", en: "Yes (always allow)", zhHant: "是（以後允許）", ja: "はい（今後も許可）", ko: "예(앞으로 허용)", mt: "Yes (always allow)") }
+    var agentPermissionNo: String { t("否", en: "No", zhHant: "否", ja: "いいえ", ko: "아니요", mt: "No") }
+    var agentPermissionNoWithReason: String { t("否（填理由或其它命令）", en: "No (add reason or instruction)", zhHant: "否（填理由或其它命令）", ja: "いいえ（理由または別指示）", ko: "아니요(이유 또는 다른 명령 입력)", mt: "No (add reason or instruction)") }
+    var agentPermissionSubmitNoWithReason: String { t("提交否（理由或其它命令）", en: "Submit No", zhHant: "提交否（理由或其它命令）", ja: "いいえを送信", ko: "아니요 제출", mt: "Submit No") }
+    var agentDenyReasonOrInstruction: String { t("拒绝理由或补充任务指令", en: "Deny reason or follow-up instruction", zhHant: "拒絕理由或補充任務指令", ja: "拒否理由または追加タスク指示", ko: "거부 이유 또는 추가 작업 지시", mt: "Deny reason or follow-up instruction") }
+    var agentDenyReasonPlaceholder: String { t("可填写拒绝原因，也可以写新的任务指令", en: "Add a reason, or type a new task instruction", zhHant: "可填寫拒絕原因，也可以寫新的任務指令", ja: "理由、または新しいタスク指示を入力", ko: "이유를 추가하거나 새 작업 지시를 입력", mt: "Add a reason, or type a new task instruction") }
+    var agentExternalApprovalTitle: String { t("外部审批请求", en: "External approval request", zhHant: "外部審批請求", ja: "外部承認リクエスト", ko: "외부 승인 요청", mt: "External approval request") }
+    var agentExternalApprovalHint: String { t("请回到来源 Agent 完成批准或拒绝。AgentGuard 会在这里保留提醒和历史。", en: "Return to the source agent to approve or reject it. AgentGuard keeps the reminder and history here.", zhHant: "請回到來源 Agent 完成批准或拒絕。AgentGuard 會在這裡保留提醒和歷史。", ja: "元のAgentに戻って承認または拒否してください。AgentGuardはここに通知と履歴を残します。", ko: "원본 Agent로 돌아가 승인 또는 거부하세요. AgentGuard는 여기에서 알림과 기록을 유지합니다.", mt: "Return to the source agent to approve or reject it. AgentGuard keeps the reminder and history here.") }
+    var agentOpenSourceApp: String { t("打开来源应用", en: "Open Source App", zhHant: "開啟來源應用", ja: "元アプリを開く", ko: "원본 앱 열기", mt: "Open Source App") }
+    var agentMarkHandled: String { t("标记已处理", en: "Mark Handled", zhHant: "標記已處理", ja: "処理済みにする", ko: "처리됨 표시", mt: "Mark Handled") }
+    var agentDesignPreview: String { t("设计稿预览", en: "Design Preview", zhHant: "設計稿預覽", ja: "デザインプレビュー", ko: "디자인 미리보기", mt: "Design Preview") }
+    var agentOpenImage: String { t("打开图片", en: "Open Image", zhHant: "開啟圖片", ja: "画像を開く", ko: "이미지 열기", mt: "Open Image") }
+    var agentRevealImage: String { t("在 Finder 中显示", en: "Reveal in Finder", zhHant: "在 Finder 中顯示", ja: "Finderで表示", ko: "Finder에서 보기", mt: "Reveal in Finder") }
+    var agentImageMissing: String { t("图片文件不可访问", en: "Image file is not accessible", zhHant: "圖片檔案不可存取", ja: "画像ファイルにアクセスできません", ko: "이미지 파일에 접근할 수 없음", mt: "Image file is not accessible") }
     var agentReject: String { t("拒绝", en: "Reject", zhHant: "拒絕", ja: "却下", ko: "거부", mt: "Reject") }
     var agentApprove: String { t("批准", en: "Approve", zhHant: "批准", ja: "承認", ko: "승인", mt: "Approve") }
     var agentModifyApprove: String { t("修改并批准", en: "Modify & Approve", zhHant: "修改並批准", ja: "修正して承認", ko: "수정 후 승인", mt: "Modify & Approve") }
@@ -824,6 +919,7 @@ extension Localizer {
     var agentRequestedPermissions: String { t("请求的权限", en: "Requested Permissions", zhHant: "請求的權限", ja: "要求された権限", ko: "요청된 권한", mt: "Requested Permissions") }
     var agentCancel: String { t("取消", en: "Cancel", zhHant: "取消", ja: "キャンセル", ko: "취소", mt: "Cancel") }
     var agentSubmit: String { t("提交", en: "Submit", zhHant: "提交", ja: "送信", ko: "제출", mt: "Submit") }
+    var add: String { t("添加", en: "Add", zhHant: "新增", ja: "追加", ko: "추가", mt: "Add") }
     var guardDashboard: String { t("守护概览", en: "Guard Dashboard", zhHant: "守護概覽", ja: "ガード概要", ko: "가드 개요", mt: "Guard Dashboard") }
     var alertCenter: String { t("告警中心", en: "Alert Center", zhHant: "告警中心", ja: "アラートセンター", ko: "알림 센터", mt: "Alert Center") }
     var alertRules: String { t("告警规则", en: "Alert Rules", zhHant: "告警規則", ja: "アラートルール", ko: "알림 규칙", mt: "Alert Rules") }
@@ -856,6 +952,60 @@ extension Localizer {
     var enableProtectedDir: String { t("启用保护目录告警", en: "Enable Protected Dir Alert", zhHant: "啟用保護目錄告警", ja: "保護ディレクトリアラートを有効化", ko: "보호 디렉토리 알림 활성화", mt: "Enable Protected Dir Alert") }
     var enableNotification: String { t("启用系统通知", en: "Enable Notifications", zhHant: "啟用系統通知", ja: "通知を有効化", ko: "알림 활성화", mt: "Enable Notifications") }
     var doNotDisturb: String { t("免打扰模式", en: "Do Not Disturb", zhHant: "免打擾模式", ja: "非通知モード", ko: "방해 금지 모드", mt: "Do Not Disturb") }
+    var enableSounds: String { t("启用声音", en: "Enable Sounds", zhHant: "啟用聲音", ja: "サウンドを有効化", ko: "소리 활성화", mt: "Enable Sounds") }
+    var soundVolume: String { t("音量：", en: "Volume:", zhHant: "音量：", ja: "音量：", ko: "볼륨:", mt: "Volume:") }
+    var muteDuringDND: String { t("免打扰时静音", en: "Mute during Do Not Disturb", zhHant: "免打擾時靜音", ja: "非通知モード中はミュート", ko: "방해 금지 중 음소거", mt: "Mute during Do Not Disturb") }
+    var eventSounds: String { t("事件声音", en: "Event Sounds", zhHant: "事件聲音", ja: "イベントサウンド", ko: "이벤트 소리", mt: "Event Sounds") }
+    var soundNone: String { t("无", en: "None", zhHant: "無", ja: "なし", ko: "없음", mt: "None") }
+    var soundPop: String { t("轻弹", en: "Pop", zhHant: "輕彈", ja: "ポップ", ko: "팝", mt: "Pop") }
+    var soundWhoosh: String { t("掠过", en: "Whoosh", zhHant: "掠過", ja: "フーシュ", ko: "휙", mt: "Whoosh") }
+    var soundTick: String { t("滴答", en: "Tick", zhHant: "滴答", ja: "チック", ko: "틱", mt: "Tick") }
+    var soundTock: String { t("嗒声", en: "Tock", zhHant: "嗒聲", ja: "タック", ko: "톡", mt: "Tock") }
+    var soundPing: String { t("提示", en: "Ping", zhHant: "提示", ja: "ピン", ko: "핑", mt: "Ping") }
+    var soundChime: String { t("铃音", en: "Chime", zhHant: "鈴音", ja: "チャイム", ko: "차임", mt: "Chime") }
+    var soundSuccess: String { t("成功", en: "Success", zhHant: "成功", ja: "成功", ko: "성공", mt: "Success") }
+    var soundError: String { t("错误", en: "Error", zhHant: "錯誤", ja: "エラー", ko: "오류", mt: "Error") }
+    var soundPause: String { t("暂停", en: "Pause", zhHant: "暫停", ja: "一時停止", ko: "일시 정지", mt: "Pause") }
+    var soundBell: String { t("铃声", en: "Bell", zhHant: "鈴聲", ja: "ベル", ko: "벨", mt: "Bell") }
+    var soundSwoosh: String { t("划过", en: "Swoosh", zhHant: "劃過", ja: "スウッシュ", ko: "슈웅", mt: "Swoosh") }
+    var eventSessionStart: String { t("会话开始", en: "Session Start", zhHant: "會話開始", ja: "セッション開始", ko: "세션 시작", mt: "Session Start") }
+    var eventSessionEnd: String { t("会话结束", en: "Session End", zhHant: "會話結束", ja: "セッション終了", ko: "세션 종료", mt: "Session End") }
+    var eventToolStart: String { t("工具开始", en: "Tool Start", zhHant: "工具開始", ja: "ツール開始", ko: "도구 시작", mt: "Tool Start") }
+    var eventToolEnd: String { t("工具结束", en: "Tool End", zhHant: "工具結束", ja: "ツール終了", ko: "도구 종료", mt: "Tool End") }
+    var eventPermissionRequest: String { t("权限请求", en: "Permission Request", zhHant: "權限請求", ja: "権限リクエスト", ko: "권한 요청", mt: "Permission Request") }
+    var eventPlanApproval: String { t("计划审批", en: "Plan Approval", zhHant: "計劃審批", ja: "計画承認", ko: "계획 승인", mt: "Plan Approval") }
+    var eventTaskComplete: String { t("任务完成", en: "Task Complete", zhHant: "任務完成", ja: "タスク完了", ko: "작업 완료", mt: "Task Complete") }
+    var eventInterrupt: String { t("中断", en: "Interrupt", zhHant: "中斷", ja: "中断", ko: "중단", mt: "Interrupt") }
+    var eventNotification: String { t("通知", en: "Notification", zhHant: "通知", ja: "通知", ko: "알림", mt: "Notification") }
+    var eventSubagentStart: String { t("子 Agent 开始", en: "Subagent Start", zhHant: "子 Agent 開始", ja: "サブAgent開始", ko: "하위 Agent 시작", mt: "Subagent Start") }
+    var eventSubagentEnd: String { t("子 Agent 结束", en: "Subagent End", zhHant: "子 Agent 結束", ja: "サブAgent終了", ko: "하위 Agent 종료", mt: "Subagent End") }
+    var eventShellExecution: String { t("Shell 执行", en: "Shell Execution", zhHant: "Shell 執行", ja: "Shell実行", ko: "Shell 실행", mt: "Shell Execution") }
+    var eventRateLimit: String { t("频率限制", en: "Rate Limit", zhHant: "頻率限制", ja: "レート制限", ko: "속도 제한", mt: "Rate Limit") }
+    var enableWebhookNotifications: String { t("启用 Webhook 通知", en: "Enable Webhook Notifications", zhHant: "啟用 Webhook 通知", ja: "Webhook通知を有効化", ko: "Webhook 알림 활성화", mt: "Enable Webhook Notifications") }
+    var webhookURL: String { t("Webhook 地址", en: "Webhook URL", zhHant: "Webhook 位址", ja: "Webhook URL", ko: "Webhook URL", mt: "Webhook URL") }
+    var webhookSecretOptional: String { t("密钥（可选）", en: "Secret (optional)", zhHant: "密鑰（可選）", ja: "シークレット（任意）", ko: "시크릿(선택)", mt: "Secret (optional)") }
+    var webhookSecretPlaceholder: String { t("HMAC 密钥", en: "HMAC secret key", zhHant: "HMAC 密鑰", ja: "HMACシークレットキー", ko: "HMAC 시크릿 키", mt: "HMAC secret key") }
+    var webhookRetryCount: String { t("重试次数", en: "Retry Count", zhHant: "重試次數", ja: "再試行回数", ko: "재시도 횟수", mt: "Retry Count") }
+    var webhookTimeoutSeconds: String { t("超时（秒）", en: "Timeout (seconds)", zhHant: "逾時（秒）", ja: "タイムアウト（秒）", ko: "시간 초과(초)", mt: "Timeout (seconds)") }
+    var remoteHosts: String { t("远程主机", en: "Remote Hosts", zhHant: "遠端主機", ja: "リモートホスト", ko: "원격 호스트", mt: "Remote Hosts") }
+    var noRemoteHosts: String { t("暂无远程主机", en: "No remote hosts configured", zhHant: "暫無遠端主機", ja: "リモートホスト未設定", ko: "구성된 원격 호스트 없음", mt: "No remote hosts configured") }
+    var noRemoteHostsHint: String { t("添加 SSH 主机以监控远程 Agent 会话", en: "Add an SSH host to monitor remote agent sessions", zhHant: "新增 SSH 主機以監控遠端 Agent 會話", ja: "SSHホストを追加してリモートAgentセッションを監視", ko: "SSH 호스트를 추가해 원격 Agent 세션을 모니터링하세요", mt: "Add an SSH host to monitor remote agent sessions") }
+    var security: String { t("安全", en: "Security", zhHant: "安全", ja: "セキュリティ", ko: "보안", mt: "Security") }
+    var securityLevel: String { t("安全级别", en: "Security Level", zhHant: "安全級別", ja: "セキュリティレベル", ko: "보안 수준", mt: "Security Level") }
+    var securityPermissive: String { t("宽松", en: "Permissive", zhHant: "寬鬆", ja: "許可優先", ko: "허용 우선", mt: "Permissive") }
+    var securityStandard: String { t("标准", en: "Standard", zhHant: "標準", ja: "標準", ko: "표준", mt: "Standard") }
+    var securityStrict: String { t("严格", en: "Strict", zhHant: "嚴格", ja: "厳格", ko: "엄격", mt: "Strict") }
+    var securityPermissiveDesc: String { t("允许所有远程 Agent 活动，无需验证", en: "All remote agent activity is allowed without verification", zhHant: "允許所有遠端 Agent 活動，無需驗證", ja: "すべてのリモートAgent活動を検証なしで許可します", ko: "모든 원격 Agent 활동을 검증 없이 허용합니다", mt: "All remote agent activity is allowed without verification") }
+    var securityStandardDesc: String { t("允许受信主机和已验证指纹，其它需要审批", en: "Trusted hosts and verified fingerprints are allowed; others require approval", zhHant: "允許受信主機和已驗證指紋，其它需要審批", ja: "信頼済みホストと検証済みフィンガープリントを許可し、その他は承認が必要です", ko: "신뢰된 호스트와 검증된 지문은 허용되고 나머지는 승인이 필요합니다", mt: "Trusted hosts and verified fingerprints are allowed; others require approval") }
+    var securityStrictDesc: String { t("仅允许明确受信且指纹有效的主机", en: "Only explicitly trusted hosts with valid fingerprints are allowed", zhHant: "僅允許明確受信且指紋有效的主機", ja: "明示的に信頼され有効なフィンガープリントを持つホストのみ許可します", ko: "명시적으로 신뢰되고 유효한 지문이 있는 호스트만 허용합니다", mt: "Only explicitly trusted hosts with valid fingerprints are allowed") }
+    var autoConnectKnownHosts: String { t("自动连接已知主机", en: "Auto-connect to known hosts", zhHant: "自動連接已知主機", ja: "既知のホストへ自動接続", ko: "알려진 호스트 자동 연결", mt: "Auto-connect to known hosts") }
+    var online: String { t("在线", en: "Online", zhHant: "在線", ja: "オンライン", ko: "온라인", mt: "Online") }
+    var offline: String { t("离线", en: "Offline", zhHant: "離線", ja: "オフライン", ko: "오프라인", mt: "Offline") }
+    var addRemoteHost: String { t("添加远程主机", en: "Add Remote Host", zhHant: "新增遠端主機", ja: "リモートホストを追加", ko: "원격 호스트 추가", mt: "Add Remote Host") }
+    var hostPlaceholder: String { t("主机（IP 或域名）", en: "Host (IP or hostname)", zhHant: "主機（IP 或網域）", ja: "ホスト（IPまたはホスト名）", ko: "호스트(IP 또는 호스트명)", mt: "Host (IP or hostname)") }
+    var port: String { t("端口", en: "Port", zhHant: "連接埠", ja: "ポート", ko: "포트", mt: "Port") }
+    var username: String { t("用户名", en: "Username", zhHant: "使用者名稱", ja: "ユーザー名", ko: "사용자 이름", mt: "Username") }
+    var nickname: String { t("昵称", en: "Nickname", zhHant: "暱稱", ja: "ニックネーム", ko: "별명", mt: "Nickname") }
     var dndTimeRange: String { t("免打扰时段", en: "DND Period", zhHant: "免打擾時段", ja: "非通知時間帯", ko: "방해 금지 시간대", mt: "DND Period") }
     var addProtectedDir: String { t("添加保护目录", en: "Add Protected Directory", zhHant: "新增保護目錄", ja: "保護ディレクトリを追加", ko: "보호 디렉토리 추가", mt: "Add Protected Directory") }
     var removeDir: String { t("移除", en: "Remove", zhHant: "移除", ja: "削除", ko: "제거", mt: "Remove") }
@@ -889,7 +1039,7 @@ extension Localizer {
     var filterInfo: String { t("信息", en: "Info", zhHant: "資訊", ja: "情報", ko: "정보", mt: "Info") }
     var filterWarning: String { t("警告", en: "Warning", zhHant: "警告", ja: "警告", ko: "경고", mt: "Warning") }
     var filterCritical: String { t("严重", en: "Critical", zhHant: "嚴重", ja: "重大", ko: "심각", mt: "Critical") }
-    var hourlyTrend: String { t("每小时趋势", en: "Hourly Trend", zhHant: "每小時趨勢", ja: "時間別トレンド", ko: "시간별 추이", mt: "Hourly Trend") }
+    var hourlyTrend: String { t("操作趋势", en: "Operation Trend", zhHant: "操作趨勢", ja: "操作トレンド", ko: "작업 추이", mt: "Operation Trend") }
     var rangeAll: String { t("全部", en: "All", zhHant: "全部", ja: "すべて", ko: "전체", mt: "All") }
     var rangeToday: String { t("当日", en: "Today", zhHant: "當日", ja: "今日", ko: "오늘", mt: "Today") }
     var rangeRealtime: String { t("实时", en: "Realtime", zhHant: "即時", ja: "リアルタイム", ko: "실시간", mt: "Realtime") }
@@ -900,8 +1050,8 @@ extension Localizer {
     var executeOps: String { t("执行", en: "Execute", zhHant: "執行", ja: "実行", ko: "실행", mt: "Execute") }
     var operationsUnit: String { t("次操作", en: "ops", zhHant: "次操作", ja: "回操作", ko: "회 작업", mt: "ops") }
     var selectDirectory: String { t("选择目录", en: "Select Directory", zhHant: "選擇目錄", ja: "ディレクトリを選択", ko: "디렉토리 선택", mt: "Select Directory") }
-    var navToolbox: String { t("工具箱", en: "Toolbox", zhHant: "工具箱", ja: "ツールボックス", ko: "도구 상자", mt: "Toolbox") }
-    var subToolbox: String { t("系统清理与应用管理", en: "System Cleanup & App Management", zhHant: "系統清理與應用管理", ja: "システムクリーンアップ＆アプリ管理", ko: "시스템 정리 및 앱 관리", mt: "System Cleanup & App Management") }
+    var navToolbox: String { t("实验室", en: "Lab", zhHant: "實驗室", ja: "ラボ", ko: "실험실", mt: "Lab") }
+    var subToolbox: String { t("实验性质工具，功能可能调整、下线或单独收费", en: "Experimental tools that may change, be removed, or be priced separately", zhHant: "實驗性質工具，功能可能調整、下線或單獨收費", ja: "変更、削除、または個別課金される可能性がある実験的ツール", ko: "변경, 제거 또는 별도 과금될 수 있는 실험적 도구", mt: "Experimental tools that may change, be removed, or be priced separately") }
     var commandRules: String { t("命令规则", en: "Command Rules", zhHant: "命令規則", ja: "コマンドルール", ko: "명령 규칙", mt: "Command Rules") }
     var commandRulesDesc: String { t("命令规则用于监控和管控 AI Agent 执行的命令。黑名单中的命令将被拦截并告警，白名单中的命令允许正常执行，未分类的命令将被记录。", en: "Command rules monitor and control commands executed by AI Agents. Blacklisted commands will be blocked and alerted, whitelisted commands are allowed, and unclassified commands are logged.", zhHant: "命令規則用於監控和管控 AI Agent 執行的命令。黑名單中的命令將被攔截並告警，白名單中的命令允許正常執行，未分類的命令將被記錄。", ja: "コマンドルールは、AI Agentが実行するコマンドを監視・制御します。ブラックリストのコマンドはブロック・警告され、ホワイトリストのコマンドは許可され、未分類のコマンドは記録されます。", ko: "명령 규칙은 AI Agent가 실행하는 명령을 모니터링하고 제어합니다. 블랙리스트 명령은 차단 및 경고되고, 화이트리스트 명령은 허용되며, 미분류 명령은 기록됩니다.", mt: "Command rules monitor and control commands executed by AI Agents. Blacklisted commands will be blocked and alerted, whitelisted commands are allowed, and unclassified commands are logged.") }
     var commandBlacklist: String { t("命令黑名单", en: "Command Blacklist", zhHant: "命令黑名單", ja: "コマンドブラックリスト", ko: "명령 블랙리스트", mt: "Command Blacklist") }

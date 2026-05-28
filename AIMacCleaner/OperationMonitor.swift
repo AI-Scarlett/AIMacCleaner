@@ -182,6 +182,16 @@ class OperationMonitor: ObservableObject {
         if lower.contains("/node_modules/") || lower.hasSuffix("/node_modules") { return true }
         if lower.contains("/.build/") || lower.hasSuffix("/.build") { return true }
         if lower.contains("/deriveddata/") { return true }
+        if lower.contains("/typeshed-fallback/") { return true }
+        if lower.contains("/extensions/") && (
+            lower.contains("/.trae-cn/") ||
+            lower.contains("/.trae/") ||
+            lower.contains("/.cursor/") ||
+            lower.contains("/.vscode/") ||
+            lower.contains("/library/application support/trae") ||
+            lower.contains("/library/application support/cursor") ||
+            lower.contains("/library/application support/code/")
+        ) { return true }
         if lower.hasSuffix(".ds_store") { return true }
         if lower.hasSuffix("-journal") || lower.hasSuffix("-wal") || lower.hasSuffix("-shm") { return true }
 
@@ -431,7 +441,7 @@ class OperationMonitor: ObservableObject {
 
     private var bookmarksPath: String { SandboxPaths.shared.bookmarksPath }
     private let stateLock = NSLock()
-    private let processQueue = DispatchQueue(label: "com.aimacleaner.monitor.process", qos: .userInitiated)
+    private let processQueue = DispatchQueue(label: "com.aimacleaner.monitor.process", qos: .utility)
 
     init() {
         restoreAccessFromBookmarks()
@@ -454,7 +464,7 @@ class OperationMonitor: ObservableObject {
             return
         }
         hasBuiltInitialSnapshot = false
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        DispatchQueue.global(qos: .utility).async { [weak self] in
             self?.buildInitialSnapshot()
         }
         startFSEventStream()
@@ -469,6 +479,7 @@ class OperationMonitor: ObservableObject {
         processPoller?.invalidate()
         processPoller = nil
         isMonitoring = false
+        saveRecords()
     }
 
     // MARK: - Process Info Refresh
@@ -1593,18 +1604,20 @@ class OperationMonitor: ObservableObject {
 
     private var pendingRecords: [OperationRecord] = []
     private var flushWorkItem: DispatchWorkItem?
+    private var saveRecordsWorkItem: DispatchWorkItem?
 
     private func recordFingerprint(_ record: OperationRecord) -> String {
-        let bucket = Int(record.timestamp.timeIntervalSince1970 / 2.0)
-        return [
+        let bucket = Int(record.timestamp.timeIntervalSince1970 / 5.0)
+        var parts = [
             record.agentName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
             record.operationType.rawValue,
             record.targetPath.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-            record.detail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-            record.processName?.lowercased() ?? "",
-            record.toolInfo?.lowercased() ?? "",
             "\(bucket)"
-        ].joined(separator: "|")
+        ]
+        if record.operationType == .execute {
+            parts.append(record.detail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        }
+        return parts.joined(separator: "|")
     }
 
     private func recordsWithinRetention(_ input: [OperationRecord]) -> [OperationRecord] {
@@ -1614,7 +1627,7 @@ class OperationMonitor: ObservableObject {
             .filter { $0.timestamp >= cutoff }
             .sorted { $0.timestamp > $1.timestamp }
             .filter { record in
-                let key = record.id.hasPrefix("agent_session_") ? record.id : recordFingerprint(record)
+                let key = recordFingerprint(record)
                 guard !seen.contains(key) else { return false }
                 seen.insert(key)
                 return true
@@ -1622,9 +1635,7 @@ class OperationMonitor: ObservableObject {
     }
 
     private func rebuildRecordFingerprints() {
-        recordFingerprints = Set(records.map { record in
-            record.id.hasPrefix("agent_session_") ? record.id : recordFingerprint(record)
-        })
+        recordFingerprints = Set(records.map { recordFingerprint($0) })
     }
 
     private func pruneRecordsToRetention() {
@@ -1634,6 +1645,15 @@ class OperationMonitor: ObservableObject {
 
     func addRecord(_ record: OperationRecord) {
         if shouldSkipPath(record.targetPath) || isLowConfidenceFallback(record) {
+            return
+        }
+
+        let agentName = record.agentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if agentName.isEmpty ||
+            agentName == "—" ||
+            agentName == "Unattributed Agent" ||
+            agentName == (localizer?.systemProcess ?? "System Process") ||
+            agentName.localizedCaseInsensitiveContains("system process") {
             return
         }
 
@@ -1647,9 +1667,9 @@ class OperationMonitor: ObservableObject {
             }
         }
 
-        let key = record.id.hasPrefix("agent_session_") ? record.id : recordFingerprint(record)
+        let key = recordFingerprint(record)
         stateLock.lock()
-        if recordFingerprints.contains(key) || pendingRecords.contains(where: { (record.id.hasPrefix("agent_session_") ? $0.id : recordFingerprint($0)) == key }) {
+        if recordFingerprints.contains(key) || pendingRecords.contains(where: { recordFingerprint($0) == key }) {
             stateLock.unlock()
             return
         }
@@ -1674,12 +1694,14 @@ class OperationMonitor: ObservableObject {
         guard !batch.isEmpty else { return }
         records.insert(contentsOf: batch.reversed(), at: 0)
         pruneRecordsToRetention()
-        saveRecords()
+        scheduleRecordsSave()
     }
 
     func clearRecords() {
         flushWorkItem?.cancel()
         flushWorkItem = nil
+        saveRecordsWorkItem?.cancel()
+        saveRecordsWorkItem = nil
         stateLock.lock()
         pendingRecords.removeAll()
         recordFingerprints.removeAll()
@@ -1696,7 +1718,7 @@ class OperationMonitor: ObservableObject {
         }
         var additions: [OperationRecord] = []
         for record in historicalRecords {
-            let key = record.id.hasPrefix("agent_session_") ? record.id : recordFingerprint(record)
+            let key = recordFingerprint(record)
             guard !recordFingerprints.contains(key) else { continue }
             recordFingerprints.insert(key)
             additions.append(record)
@@ -1709,7 +1731,7 @@ class OperationMonitor: ObservableObject {
         records = recordsWithinRetention(records)
         rebuildRecordFingerprints()
         stateLock.unlock()
-        saveRecords()
+        scheduleRecordsSave(delay: 1.0)
     }
 
     private func loadRecords() {
@@ -1724,6 +1746,21 @@ class OperationMonitor: ObservableObject {
     }
 
     func saveRecords() {
+        saveRecordsWorkItem?.cancel()
+        saveRecordsWorkItem = nil
+        writeRecordsToDisk()
+    }
+
+    private func scheduleRecordsSave(delay: TimeInterval = 2.0) {
+        saveRecordsWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.writeRecordsToDisk()
+        }
+        saveRecordsWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    private func writeRecordsToDisk() {
         stateLock.lock()
         let currentRecords = records
         stateLock.unlock()
@@ -1806,6 +1843,8 @@ class OperationMonitor: ObservableObject {
     deinit {
         stopFSEventStream()
         processPoller?.invalidate()
+        saveRecordsWorkItem?.cancel()
+        writeRecordsToDisk()
     }
 
     func requestAccessForStalePaths() {

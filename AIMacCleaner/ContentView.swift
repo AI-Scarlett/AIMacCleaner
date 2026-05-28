@@ -5,14 +5,17 @@ struct ContentView: View {
     @State private var selectedTab: NavItem = .operations
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
+    @EnvironmentObject var islandViewModel: IslandViewModel
     @State private var showSettings = false
     @State private var sidebarCollapsed = false
     @State private var toolboxExpanded = false
     @State private var hoveredItem: NavItem?
+    @State private var islandDockHovered = false
+    @AppStorage("islandFloatingDockCollapsed") private var islandFloatingDockCollapsed = false
     @AppStorage("networkMode") private var networkMode = "internet"
 
     private var isToolboxSubItemSelected: Bool {
-        [.cleaner, .app, .dependency, .other, .migration].contains(selectedTab)
+        [.agentCenter, .cleaner, .app, .dependency, .other, .migration].contains(selectedTab)
     }
 
     enum NavItem: String, CaseIterable {
@@ -28,7 +31,7 @@ struct ContentView: View {
 
         var isSubItem: Bool {
             switch self {
-            case .cleaner, .app, .dependency, .other, .migration: return true
+            case .agentCenter, .cleaner, .app, .dependency, .other, .migration: return true
             default: return false
             }
         }
@@ -39,9 +42,9 @@ struct ContentView: View {
             case .app: "app.badge"
             case .dependency: "cube.box"
             case .other: "terminal"
-            case .operations: "cpu"
-            case .agentGuard: "eye.circle.fill"
-            case .agentCenter: "point.3.connected.trianglepath.dotted"
+            case .operations: "eye.fill"
+            case .agentGuard: "shield.fill"
+            case .agentCenter: "house.fill"
             case .toolbox: "wrench.and.screwdriver.fill"
             case .migration: "arrow.triangle.2.circlepath"
             }
@@ -53,7 +56,7 @@ struct ContentView: View {
             case .app: .cyan
             case .dependency: .orange
             case .other: .gray
-            case .operations: .green
+            case .operations: Theme.Colors.teal
             case .agentGuard: .orange
             case .agentCenter: .teal
             case .toolbox: .blue
@@ -96,7 +99,14 @@ struct ContentView: View {
             Rectangle()
                 .fill(Theme.Colors.separator)
                 .frame(width: 0.5)
-            detailContent
+            ZStack(alignment: .bottomTrailing) {
+                detailContent
+
+                islandFloatingDock
+                    .padding(.bottom, Theme.Spacing.xxl)
+                    .padding(.trailing, Theme.Spacing.xl)
+                    .zIndex(20)
+            }
         }
         .frame(minWidth: 960, minHeight: 640)
         .onAppear { service.refreshDiskInfo() }
@@ -255,7 +265,7 @@ struct ContentView: View {
 
             if toolboxExpanded {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach([NavItem.cleaner, .app, .dependency, .other, .migration], id: \.self) { item in
+                    ForEach([NavItem.agentCenter, .cleaner, .app, .dependency, .other, .migration], id: \.self) { item in
                         Button {
                             selectedTab = item
                         } label: {
@@ -428,6 +438,124 @@ struct ContentView: View {
                 .padding(.horizontal, Theme.Spacing.lg)
                 .padding(.vertical, Theme.Spacing.md)
             }
+        }
+    }
+
+    private var islandFloatingDock: some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            if islandFloatingDockCollapsed {
+                Button {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                        islandFloatingDockCollapsed = false
+                    }
+                } label: {
+                    ZStack(alignment: .topTrailing) {
+                        HStack(spacing: 2) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 9, weight: .bold))
+                            Image(systemName: "capsule.portrait.tophalf.filled")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundStyle(Theme.Colors.purple)
+                        .frame(width: 42, height: 34)
+
+                        if islandViewModel.approvalQueueCount > 0 {
+                            pendingBadge(compact: true)
+                                .offset(x: 5, y: -5)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .help(localizer.islandExpand)
+            } else {
+                Button {
+                    showIslandFromDesktop()
+                } label: {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "capsule.portrait.tophalf.filled")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Theme.Colors.purple)
+                                .frame(width: 28, height: 28)
+                                .background(Theme.Colors.purple.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+                            if islandViewModel.approvalQueueCount > 0 {
+                                pendingBadge(compact: true)
+                                    .offset(x: 3, y: -3)
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(localizer.agentCenterShowIsland)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(islandViewModel.approvalQueueCount > 0 ? Theme.Colors.warning : Theme.Colors.success)
+                                    .frame(width: 5, height: 5)
+                                Text("\(localizer.agentCenterPending) \(islandViewModel.approvalQueueCount)")
+                                    .font(.system(size: 9, weight: .medium))
+                                    .foregroundStyle(islandViewModel.approvalQueueCount > 0 ? Theme.Colors.warning : Theme.Colors.textTertiary)
+                            }
+                        }
+                    }
+                    .padding(.leading, Theme.Spacing.sm)
+                    .padding(.trailing, Theme.Spacing.xs)
+                    .padding(.vertical, Theme.Spacing.xs)
+                }
+                .buttonStyle(.plain)
+                .help(localizer.agentCenterShowIsland)
+
+                Divider()
+                    .frame(height: 24)
+
+                Button {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                        islandFloatingDockCollapsed = true
+                    }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                        .frame(width: 26, height: 30)
+                }
+                .buttonStyle(.plain)
+                .help(localizer.collapseSidebar)
+            }
+        }
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                .stroke(islandViewModel.approvalQueueCount > 0 ? Theme.Colors.warning.opacity(0.38) : Theme.Colors.separator.opacity(0.75), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(islandDockHovered ? 0.16 : 0.08), radius: islandDockHovered ? 18 : 10, y: islandDockHovered ? 8 : 4)
+        .scaleEffect(islandDockHovered ? 1.02 : 1)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.16)) {
+                islandDockHovered = hovering
+            }
+        }
+        .animation(.spring(response: 0.24, dampingFraction: 0.86), value: islandFloatingDockCollapsed)
+        .animation(.spring(response: 0.24, dampingFraction: 0.86), value: islandViewModel.approvalQueueCount)
+    }
+
+    private func pendingBadge(compact: Bool) -> some View {
+        Text(compact && islandViewModel.approvalQueueCount > 9 ? "9+" : "\(islandViewModel.approvalQueueCount)")
+            .font(.system(size: compact ? 7 : 8, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(minWidth: compact ? 13 : 16, minHeight: compact ? 13 : 16)
+            .padding(.horizontal, compact ? 1 : 2)
+            .background(Theme.Colors.warning)
+            .clipShape(Capsule())
+    }
+
+    private func showIslandFromDesktop() {
+        NotificationCenter.default.post(name: .agentCenterShouldInitialize, object: nil)
+        islandViewModel.lastStatusText = localizer.navAgentCenter
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            islandViewModel.show(level: islandViewModel.approvalQueueCount > 0 ? .expanded : .compact)
         }
     }
 
@@ -650,6 +778,26 @@ struct FilterSearchBar: View {
 
 // MARK: - Operation Log Tab
 
+fileprivate enum DisplayTime {
+    static let withSeconds: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+}
+
+fileprivate enum ResultListColumns {
+    static let selection: CGFloat = 16
+    static let state: CGFloat = 14
+    static let name: CGFloat = 160
+    static let source: CGFloat = 60
+    static let project: CGFloat = 90
+    static let risk: CGFloat = 60
+    static let size: CGFloat = 70
+    static let description: CGFloat = 180
+    static let actions: CGFloat = 58
+}
+
 struct OperationLogTab: View {
     @ObservedObject var monitor: OperationMonitor
     @EnvironmentObject var localizer: Localizer
@@ -716,11 +864,35 @@ struct OperationLogTab: View {
                 $0.detail.lowercased().contains(q)
             }
         }
-        return result
+        return deduplicatedRecords(result)
     }
 
     private var displayedRecords: [OperationRecord] {
         Array(filteredRecords.prefix(1000))
+    }
+
+    private func timeWithSeconds(_ date: Date) -> String {
+        DisplayTime.withSeconds.string(from: date)
+    }
+
+    private func deduplicatedRecords(_ records: [OperationRecord]) -> [OperationRecord] {
+        var seen: Set<String> = []
+        return records.filter { record in
+            let bucket = Int(record.timestamp.timeIntervalSince1970 / 5.0)
+            var parts = [
+                record.agentName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                record.operationType.rawValue,
+                record.targetPath.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                "\(bucket)"
+            ]
+            if record.operationType == .execute {
+                parts.append(record.detail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+            }
+            let key = parts.joined(separator: "|")
+            guard !seen.contains(key) else { return false }
+            seen.insert(key)
+            return true
+        }
     }
 
     private var agentActivityProgress: Double {
@@ -746,7 +918,7 @@ struct OperationLogTab: View {
 
     private func isDisplayableAgentRecord(_ record: OperationRecord) -> Bool {
         let name = record.agentName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if name.isEmpty || name == "—" { return false }
+        if name.isEmpty || name == "—" || name == "Unattributed Agent" { return false }
         if name == localizer.systemProcess || name.localizedCaseInsensitiveContains("system process") { return false }
         let nonAgentToolNames: Set<String> = [
             "Node.js", "Python", "npm", "npx", "Yarn", "pnpm", "Cargo", "Rust",
@@ -760,7 +932,7 @@ struct OperationLogTab: View {
     var body: some View {
         VStack(spacing: 0) {
             PageHeader(
-                icon: "cpu",
+                icon: "eye.fill",
                 title: localizer.agentMonitorTitle,
                 subtitle: localizer.agentMonitorSubtitle,
                 color: .green
@@ -873,7 +1045,7 @@ struct OperationLogTab: View {
                             .background {
                                 if viewMode == 0 {
                                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                        .fill(Theme.Gradients.accent)
+                                        .fill(Theme.Colors.teal)
                                         .matchedGeometryEffect(id: "segment", in: segmentNS)
                                 }
                             }
@@ -891,7 +1063,7 @@ struct OperationLogTab: View {
                             .background {
                                 if viewMode == 1 {
                                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                        .fill(Theme.Gradients.accent)
+                                        .fill(Theme.Colors.teal)
                                         .matchedGeometryEffect(id: "segment", in: segmentNS)
                                 }
                             }
@@ -941,7 +1113,9 @@ struct OperationLogTab: View {
         }
         .frame(minWidth: 600, minHeight: 400)
         .onAppear {
-            service.ensureAgentGuardDataPipeline()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                service.ensureAgentGuardDataPipeline()
+            }
             monitor.loadCurated()
             if monitor.autoCurationInterval > 0 { service.startAutoCuration() }
         }
@@ -964,7 +1138,9 @@ struct OperationLogTab: View {
             Spacer()
             Button {
                 monitor.requestAccessForStalePaths()
-                service.importKnownAgentHistory()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    service.importKnownAgentHistory()
+                }
             } label: {
                 Label(localizer.reauthorize, systemImage: "lock.open")
                     .font(Theme.Font.captionMedium)
@@ -1070,15 +1246,16 @@ struct OperationLogTab: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                operationListHeader
                 ScrollView {
                     LazyVStack(spacing: Theme.Spacing.sm) {
                         ForEach(displayedRecords) { record in
                             HStack(spacing: Theme.Spacing.md) {
-                                Text(record.timestamp, style: .time)
+                                Text(timeWithSeconds(record.timestamp))
                                     .font(Theme.Font.caption)
                                     .monospacedDigit()
                                     .foregroundStyle(Theme.Colors.textSecondary)
-                                    .frame(width: 60, alignment: .leading)
+                                    .frame(width: 70, alignment: .leading)
 
                                 HStack(spacing: Theme.Spacing.xs) {
                                     Image(systemName: "cpu")
@@ -1148,13 +1325,12 @@ struct OperationLogTab: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                                if record.fileSize > 0 {
-                                    Text(ByteCountFormatter.string(fromByteCount: record.fileSize, countStyle: .file))
-                                        .font(Theme.Font.caption)
-                                        .monospacedDigit()
-                                        .foregroundStyle(Theme.Colors.textTertiary)
-                                        .frame(width: 60, alignment: .trailing)
-                                }
+                                Text(record.fileSize > 0 ? ByteCountFormatter.string(fromByteCount: record.fileSize, countStyle: .file) : "—")
+                                    .font(Theme.Font.caption)
+                                    .monospacedDigit()
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                                    .frame(width: 60, alignment: .trailing)
+                                    .help(record.fileSize > 0 ? ByteCountFormatter.string(fromByteCount: record.fileSize, countStyle: .file) : "—")
                             }
                             .cardStyle(padding: Theme.Spacing.md, cornerRadius: Theme.Radius.md)
                         }
@@ -1164,6 +1340,26 @@ struct OperationLogTab: View {
             }
         }
         .frame(minHeight: 200)
+    }
+
+    private var operationListHeader: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            Text(localizer.timeCol)
+                .frame(width: 70, alignment: .center)
+            Text(localizer.agentCol)
+                .frame(width: 120, alignment: .center)
+            Text(localizer.opCol)
+                .frame(width: 70, alignment: .center)
+            Text(localizer.pathCol)
+                .frame(maxWidth: .infinity, alignment: .center)
+            Text(localizer.fileSizeCol)
+                .frame(width: 60, alignment: .center)
+        }
+        .font(Theme.Font.captionMedium)
+        .foregroundStyle(Theme.Colors.textTertiary)
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.xs)
+        .background(Theme.Colors.sidebarBg.opacity(0.35))
     }
 
     private var curatedView: some View {
@@ -1180,7 +1376,7 @@ struct OperationLogTab: View {
             } else {
                 Table(monitor.curatedRecords) {
                     TableColumn(localizer.timeCol) { record in
-                        Text(record.timestamp, style: .time)
+                        Text(timeWithSeconds(record.timestamp))
                             .font(.caption).monospacedDigit()
                     }.width(65)
 
@@ -2227,51 +2423,76 @@ struct AddAgentSheetView: View {
                     Spacer()
                 }
             } else {
-                List(selection: Binding(
-                    get: { selectedApp?.id },
-                    set: { id in
-                        if let id = id, let app = (apps + deps + others).first(where: { $0.id == id }) {
-                            selectedApp = app
-                        }
+                VStack(spacing: 0) {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Text(localizer.nameCol)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(localizer.projectCol)
+                            .frame(width: 120, alignment: .leading)
+                        Text(localizer.status)
+                            .frame(width: 80, alignment: .trailing)
                     }
-                )) {
-                    ForEach(filtered) { app in
-                        HStack(spacing: Theme.Spacing.sm) {
-                            if let iconPath = app.iconPath, let img = NSImage(contentsOfFile: iconPath) {
-                                Image(nsImage: img)
-                                    .resizable()
-                                    .frame(width: 20, height: 20)
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                            } else {
-                                Image(systemName: "app.fill")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 20, height: 20)
-                            }
-                            VStack(alignment: .leading, spacing: 1) {
-                                HStack(spacing: 4) {
-                                    Text(app.displayName)
-                                        .font(.body)
-                                        .fontWeight(.medium)
-                                    if existingNames.contains(app.displayName) {
-                                        Text(localizer.alreadyAdded)
-                                            .font(.system(size: 9))
-                                            .foregroundColor(.green)
-                                            .padding(.horizontal, 3)
-                                            .background(Color.green.opacity(0.1))
-                                            .cornerRadius(2)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.vertical, Theme.Spacing.xs)
+                    .background(Theme.Colors.sidebarBg.opacity(0.35))
+
+                    ScrollView {
+                        LazyVStack(spacing: Theme.Spacing.xs) {
+                            ForEach(filtered) { app in
+                                Button {
+                                    selectedApp = app
+                                } label: {
+                                    HStack(spacing: Theme.Spacing.sm) {
+                                        if let iconPath = app.iconPath, let img = NSImage(contentsOfFile: iconPath) {
+                                            Image(nsImage: img)
+                                                .resizable()
+                                                .frame(width: 22, height: 22)
+                                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                        } else {
+                                            Image(systemName: "app.fill")
+                                                .font(.system(size: 12))
+                                                .foregroundColor(.secondary)
+                                                .frame(width: 22, height: 22)
+                                        }
+                                        Text(app.displayName)
+                                            .font(Theme.Font.captionMedium)
+                                            .foregroundStyle(Theme.Colors.textPrimary)
+                                            .lineLimit(1)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        Text(localizer.localizedSubCategory(app.subCategory))
+                                            .font(Theme.Font.caption)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                            .frame(width: 120, alignment: .leading)
+                                        if existingNames.contains(app.displayName) {
+                                            Text(localizer.alreadyAdded)
+                                                .font(.system(size: 9, weight: .medium))
+                                                .foregroundColor(.green)
+                                                .frame(width: 80, alignment: .trailing)
+                                        } else {
+                                            Image(systemName: selectedApp?.id == app.id ? "checkmark.circle.fill" : "circle")
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(selectedApp?.id == app.id ? Theme.Colors.accent : Theme.Colors.textTertiary)
+                                                .frame(width: 80, alignment: .trailing)
+                                        }
                                     }
+                                    .padding(.horizontal, Theme.Spacing.md)
+                                    .padding(.vertical, Theme.Spacing.sm)
+                                    .background(selectedApp?.id == app.id ? Theme.Colors.info.opacity(0.08) : Theme.Colors.cardBg)
+                                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                            .stroke(selectedApp?.id == app.id ? Theme.Colors.info.opacity(0.25) : Color.primary.opacity(0.06), lineWidth: 1)
+                                    )
                                 }
-                                Text(app.subCategory)
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
+                                .buttonStyle(.plain)
                             }
-                            Spacer()
                         }
-                        .tag(app.id)
+                        .padding(Theme.Spacing.sm)
                     }
                 }
-                .listStyle(.inset)
             }
         }
     }
@@ -2307,8 +2528,8 @@ struct AddAgentSheetView: View {
                         }
                         .padding(.horizontal, Theme.Spacing.md)
                         .padding(.vertical, Theme.Spacing.sm)
-                        .background(selectedTab == tab.0 ? Theme.Colors.info.opacity(0.12) : Color.clear)
-                        .foregroundStyle(selectedTab == tab.0 ? Theme.Colors.info : Theme.Colors.textSecondary)
+                        .background(selectedTab == tab.0 ? Theme.Colors.teal.opacity(0.12) : Color.clear)
+                        .foregroundStyle(selectedTab == tab.0 ? Theme.Colors.teal : Theme.Colors.textSecondary)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                     }
                     .buttonStyle(.plain)
@@ -2417,8 +2638,8 @@ struct TargetedOpsTable: View {
     var body: some View {
         Table(filteredOps.prefix(500)) {
             TableColumn(localizer.timeCol) { op in
-                Text(op.timestamp, style: .time).font(.caption2).monospacedDigit()
-            }.width(60)
+                Text(DisplayTime.withSeconds.string(from: op.timestamp)).font(.caption2).monospacedDigit()
+            }.width(70)
             TableColumn(localizer.colProcess) { op in
                 HStack(spacing: 3) {
                     Text(op.processComm).font(.caption).fontWeight(.medium).lineLimit(1)
@@ -2941,6 +3162,32 @@ struct MacCleanerTab: View {
     private var resultList: some View {
         ScrollView {
             LazyVStack(spacing: Theme.Spacing.sm) {
+                HStack(spacing: Theme.Spacing.md) {
+                    Color.clear.frame(width: ResultListColumns.selection)
+                    Color.clear.frame(width: ResultListColumns.state)
+                    Text(localizer.nameCol)
+                        .frame(width: ResultListColumns.name, alignment: .center)
+                    Text(localizer.sourceCol)
+                        .frame(width: ResultListColumns.source, alignment: .center)
+                    Text(localizer.projectCol)
+                        .frame(width: ResultListColumns.project, alignment: .center)
+                    Text(localizer.riskCol)
+                        .frame(width: ResultListColumns.risk, alignment: .center)
+                    Text(localizer.sizeCol)
+                        .frame(width: ResultListColumns.size, alignment: .center)
+                    Text(localizer.descriptionCol)
+                        .frame(width: ResultListColumns.description, alignment: .center)
+                    Spacer()
+                    Text(localizer.actionCol)
+                        .frame(width: ResultListColumns.actions, alignment: .center)
+                }
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.xs)
+                .background(Theme.Colors.sidebarBg.opacity(0.35))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
                 ForEach(filteredItems) { item in
                     HStack(spacing: Theme.Spacing.md) {
                         Toggle("", isOn: Binding(
@@ -2955,50 +3202,62 @@ struct MacCleanerTab: View {
                         ))
                         .toggleStyle(.checkbox)
                         .labelsHidden()
+                        .frame(width: ResultListColumns.selection, alignment: .leading)
 
-                        if item.ignored {
-                            Image(systemName: "eye.slash")
-                                .font(Theme.Font.caption)
-                                .foregroundStyle(Theme.Colors.textTertiary)
+                        Group {
+                            if item.ignored {
+                                Image(systemName: "eye.slash")
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                            } else {
+                                Color.clear
+                            }
                         }
+                        .frame(width: ResultListColumns.state, alignment: .center)
 
                         Text(item.name)
                             .font(Theme.Font.bodyMedium)
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
-                            .frame(width: 160, alignment: .leading)
+                            .truncationMode(.middle)
+                            .frame(width: ResultListColumns.name, alignment: .leading)
+                            .help(item.name)
 
                         PillBadge(
                             text: item.sourceType.localizedLabel(localizer),
                             color: item.sourceType == .ai ? Theme.Colors.purple : Theme.Colors.info,
                             size: .small
                         )
-                        .frame(width: 60, alignment: .center)
+                        .frame(width: ResultListColumns.source, alignment: .center)
 
                         Text(item.app)
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Colors.textSecondary)
                             .lineLimit(1)
-                            .frame(width: 90, alignment: .leading)
+                            .truncationMode(.middle)
+                            .frame(width: ResultListColumns.project, alignment: .leading)
+                            .help(item.app)
 
                         PillBadge(
                             text: item.riskLevel.localizedLabel(localizer),
                             color: riskColor(item.riskLevel),
                             size: .small
                         )
-                        .frame(width: 60, alignment: .center)
+                        .frame(width: ResultListColumns.risk, alignment: .center)
 
                         Text(service.formatSize(item.size))
                             .font(Theme.Font.subheadlineMedium)
                             .monospacedDigit()
                             .foregroundStyle(Theme.Colors.cyan)
-                            .frame(width: 70, alignment: .trailing)
+                            .frame(width: ResultListColumns.size, alignment: .trailing)
 
                         Text(item.reason ?? item.riskDesc)
                             .font(Theme.Font.caption)
                             .foregroundStyle(item.sourceType == .ai ? Theme.Colors.purple : Theme.Colors.warning)
                             .lineLimit(1)
-                            .frame(maxWidth: 180, alignment: .leading)
+                            .truncationMode(.middle)
+                            .frame(width: ResultListColumns.description, alignment: .leading)
+                            .help(item.reason ?? item.riskDesc)
 
                         Spacer()
 
@@ -3023,6 +3282,7 @@ struct MacCleanerTab: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        .frame(width: ResultListColumns.actions, alignment: .trailing)
                     }
                     .padding(.horizontal, Theme.Spacing.lg)
                     .padding(.vertical, Theme.Spacing.md)
@@ -3444,6 +3704,27 @@ struct AppManagerTab: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: Theme.Spacing.sm) {
+                        HStack(spacing: Theme.Spacing.md) {
+                            Color.clear.frame(width: 16)
+                            Text(localizer.nameCol)
+                                .frame(minWidth: 196, maxWidth: 256, alignment: .leading)
+                            Spacer()
+                            Text(localizer.riskCol)
+                                .frame(width: 60, alignment: .center)
+                            Text(localizer.descriptionCol)
+                                .frame(maxWidth: 120, alignment: .leading)
+                            Text(localizer.sizeCol)
+                                .frame(width: 80, alignment: .trailing)
+                            Text(localizer.actionCol)
+                                .frame(width: 156, alignment: .trailing)
+                        }
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                        .padding(.horizontal, Theme.Spacing.lg)
+                        .padding(.vertical, Theme.Spacing.xs)
+                        .background(Theme.Colors.sidebarBg.opacity(0.35))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
                         ForEach(filteredApps) { app in
                             AppRowCard(
                                 app: app,
@@ -3845,7 +4126,7 @@ struct SensorMonitorTab: View {
                         .foregroundColor(.red)
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Color.red.opacity(0.1))
-                        .cornerRadius(6)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     }
                     if monitor.microphoneActive {
                         HStack(spacing: 4) {
@@ -3856,7 +4137,7 @@ struct SensorMonitorTab: View {
                         .foregroundColor(.blue)
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Color.blue.opacity(0.1))
-                        .cornerRadius(6)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     }
 
                     Button {
@@ -3917,15 +4198,15 @@ struct SensorMonitorTab: View {
             } else {
                 Table(filteredEvents) {
                     TableColumn(localizer.timeCol) { event in
-                        Text(event.timestamp, style: .time).font(.caption).monospacedDigit()
-                    }.width(65)
+                        Text(DisplayTime.withSeconds.string(from: event.timestamp)).font(.caption).monospacedDigit()
+                    }.width(70)
 
                     TableColumn(localizer.colType) { event in
                         HStack(spacing: 4) {
                             Image(systemName: event.sensorType.icon)
                                 .font(.caption)
                                 .foregroundColor(event.sensorType.color)
-                            Text(event.sensorType.rawValue)
+                            Text(event.sensorType.localizedLabel(localizer))
                                 .font(.caption2).fontWeight(.medium)
                                 .foregroundColor(event.sensorType.color)
                         }
@@ -3938,11 +4219,11 @@ struct SensorMonitorTab: View {
                         }
                     }.width(min: 120)
 
-                    TableColumn("PID") { event in
+                    TableColumn(localizer.colPID) { event in
                         Text("\(event.pid)").font(.caption2).monospacedDigit().foregroundColor(.secondary)
                     }.width(60)
 
-                    TableColumn("Bundle ID") { event in
+                    TableColumn(localizer.colBundleID) { event in
                         if let bid = event.bundleId {
                             Text(bid).font(.caption2).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
                         } else {
@@ -3971,7 +4252,7 @@ struct SensorFilterChip: View {
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(isActive ? color.opacity(0.15) : Color.clear)
-            .cornerRadius(6)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             .foregroundColor(isActive ? color : .secondary)
         }
         .buttonStyle(.plain)

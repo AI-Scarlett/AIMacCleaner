@@ -46,8 +46,12 @@ struct CursorAdapter: AgentAdapter {
     private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
     func detectInstallation() -> Bool { detectCLI("cursor") || detectApp(named: "Cursor") }
     var hooksInstalled: Bool { checkCursorYolo() }
-    func installHooks(installer: HookInstaller) async throws {}
-    func removeHooks(installer: HookInstaller) async throws {}
+    func installHooks(installer: HookInstaller) async throws {
+        throw AgentError.hookInstallFailed("Cursor desktop does not expose compatible AgentGuard hooks yet. Use Cursor CLI when available.")
+    }
+    func removeHooks(installer: HookInstaller) async throws {
+        throw AgentError.hookUninstallFailed("Cursor desktop has no AgentGuard hook to remove.")
+    }
 
     private func checkCursorYolo() -> Bool {
         let path = userHome.appendingPathComponent("Library/Application Support/Cursor/User/settings.json")

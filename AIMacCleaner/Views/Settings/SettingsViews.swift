@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SoundSettingsView: View {
+    @EnvironmentObject var localizer: Localizer
     let soundEngine: SoundEngine
     @State private var profile: SoundProfile = .default
     @State private var isLoading = true
@@ -23,7 +24,7 @@ struct SoundSettingsView: View {
     private var soundSettingsContent: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Toggle("Enable Sounds", isOn: Binding(
+                Toggle(localizer.enableSounds, isOn: Binding(
                     get: { profile.enabled },
                     set: { profile.enabled = $0; saveProfile() }
                 ))
@@ -34,7 +35,7 @@ struct SoundSettingsView: View {
             }
 
             HStack(spacing: 8) {
-                Text("Volume:")
+                Text(localizer.soundVolume)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
 
@@ -51,7 +52,7 @@ struct SoundSettingsView: View {
             .disabled(!profile.enabled)
 
             HStack {
-                Toggle("Mute during Do Not Disturb", isOn: Binding(
+                Toggle(localizer.muteDuringDND, isOn: Binding(
                     get: { profile.muteWhenDnD },
                     set: { profile.muteWhenDnD = $0; saveProfile() }
                 ))
@@ -64,7 +65,7 @@ struct SoundSettingsView: View {
 
             Divider()
 
-            Text("Event Sounds")
+            Text(localizer.eventSounds)
                 .font(.system(size: 13, weight: .semibold))
 
             VStack(spacing: 4) {
@@ -91,18 +92,18 @@ struct SoundSettingsView: View {
                             get: { profile.eventSounds[key] ?? "none" },
                             set: { profile.eventSounds[key] = $0; saveProfile() }
                         )) {
-                            Text("None").tag("none")
-                            Text("Pop").tag("pop")
-                            Text("Whoosh").tag("whoosh")
-                            Text("Tick").tag("tick")
-                            Text("Tock").tag("tock")
-                            Text("Ping").tag("ping")
-                            Text("Chime").tag("chime")
-                            Text("Success").tag("success")
-                            Text("Error").tag("error")
-                            Text("Pause").tag("pause")
-                            Text("Bell").tag("bell")
-                            Text("Swoosh").tag("swoosh")
+                            Text(soundLabel("none")).tag("none")
+                            Text(soundLabel("pop")).tag("pop")
+                            Text(soundLabel("whoosh")).tag("whoosh")
+                            Text(soundLabel("tick")).tag("tick")
+                            Text(soundLabel("tock")).tag("tock")
+                            Text(soundLabel("ping")).tag("ping")
+                            Text(soundLabel("chime")).tag("chime")
+                            Text(soundLabel("success")).tag("success")
+                            Text(soundLabel("error")).tag("error")
+                            Text(soundLabel("pause")).tag("pause")
+                            Text(soundLabel("bell")).tag("bell")
+                            Text(soundLabel("swoosh")).tag("swoosh")
                         }
                         .pickerStyle(.menu)
                         .frame(width: 100)
@@ -116,22 +117,40 @@ struct SoundSettingsView: View {
 
     private func eventLabel(_ key: String) -> String {
         switch key {
-        case "session_start": return "Session Start"
-        case "session_end": return "Session End"
-        case "tool_start": return "Tool Start"
-        case "tool_end": return "Tool End"
-        case "permission_request": return "Permission Request"
-        case "question": return "Question"
-        case "plan_approval": return "Plan Approval"
-        case "task_complete": return "Task Complete"
-        case "error": return "Error"
-        case "interrupt": return "Interrupt"
-        case "notification": return "Notification"
-        case "subagent_start": return "Subagent Start"
-        case "subagent_end": return "Subagent End"
-        case "shell_execution": return "Shell Execution"
-        case "rate_limit": return "Rate Limit"
+        case "session_start": return localizer.eventSessionStart
+        case "session_end": return localizer.eventSessionEnd
+        case "tool_start": return localizer.eventToolStart
+        case "tool_end": return localizer.eventToolEnd
+        case "permission_request": return localizer.eventPermissionRequest
+        case "question": return localizer.agentCenterQuestion
+        case "plan_approval": return localizer.eventPlanApproval
+        case "task_complete": return localizer.eventTaskComplete
+        case "error": return localizer.soundError
+        case "interrupt": return localizer.eventInterrupt
+        case "notification": return localizer.eventNotification
+        case "subagent_start": return localizer.eventSubagentStart
+        case "subagent_end": return localizer.eventSubagentEnd
+        case "shell_execution": return localizer.eventShellExecution
+        case "rate_limit": return localizer.eventRateLimit
         default: return key.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    private func soundLabel(_ key: String) -> String {
+        switch key {
+        case "none": return localizer.soundNone
+        case "pop": return localizer.soundPop
+        case "whoosh": return localizer.soundWhoosh
+        case "tick": return localizer.soundTick
+        case "tock": return localizer.soundTock
+        case "ping": return localizer.soundPing
+        case "chime": return localizer.soundChime
+        case "success": return localizer.soundSuccess
+        case "error": return localizer.soundError
+        case "pause": return localizer.soundPause
+        case "bell": return localizer.soundBell
+        case "swoosh": return localizer.soundSwoosh
+        default: return key.capitalized
         }
     }
 
@@ -146,6 +165,7 @@ struct SoundSettingsView: View {
 }
 
 struct WebhookSettingsView: View {
+    @EnvironmentObject var localizer: Localizer
     let webhookNotifier: WebhookNotifier
     @State private var config: WebhookConfig = WebhookConfig()
     @State private var isLoading = true
@@ -168,7 +188,7 @@ struct WebhookSettingsView: View {
     private var webhookContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Toggle("Enable Webhook Notifications", isOn: Binding(
+                Toggle(localizer.enableWebhookNotifications, isOn: Binding(
                     get: { config.enabled },
                     set: { config.enabled = $0; saveConfig() }
                 ))
@@ -179,7 +199,7 @@ struct WebhookSettingsView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Webhook URL")
+                Text(localizer.webhookURL)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                 TextField("https://your-server.com/webhook", text: Binding(
@@ -192,10 +212,10 @@ struct WebhookSettingsView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Secret (optional)")
+                Text(localizer.webhookSecretOptional)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
-                SecureField("HMAC secret key", text: Binding(
+                SecureField(localizer.webhookSecretPlaceholder, text: Binding(
                     get: { config.secret ?? "" },
                     set: { config.secret = $0.isEmpty ? nil : $0; saveConfig() }
                 ))
@@ -206,7 +226,7 @@ struct WebhookSettingsView: View {
 
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Retry Count")
+                    Text(localizer.webhookRetryCount)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
                     Stepper("\(config.retryCount)", value: Binding(
@@ -218,7 +238,7 @@ struct WebhookSettingsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Timeout (seconds)")
+                    Text(localizer.webhookTimeoutSeconds)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
                     Stepper(String(format: "%.0f", config.timeoutSeconds), value: Binding(
@@ -243,6 +263,7 @@ struct WebhookSettingsView: View {
 }
 
 struct RemoteSettingsView: View {
+    @EnvironmentObject var localizer: Localizer
     let remoteManager: RemoteManager
     @State private var hosts: [RemoteHost] = []
     @State private var config: RemoteConfig = RemoteConfig()
@@ -271,7 +292,7 @@ struct RemoteSettingsView: View {
     private var remoteContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Remote Hosts")
+                Text(localizer.remoteHosts)
                     .font(.system(size: 14, weight: .semibold))
 
                 Spacer()
@@ -288,10 +309,10 @@ struct RemoteSettingsView: View {
                     Image(systemName: "network.slash")
                         .font(.system(size: 24))
                         .foregroundStyle(.secondary.opacity(0.4))
-                    Text("No remote hosts configured")
+                    Text(localizer.noRemoteHosts)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
-                    Text("Add an SSH host to monitor remote agent sessions")
+                    Text(localizer.noRemoteHostsHint)
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
@@ -310,16 +331,16 @@ struct RemoteSettingsView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Security")
+                Text(localizer.security)
                     .font(.system(size: 13, weight: .semibold))
 
-                Picker("Security Level", selection: Binding(
+                Picker(localizer.securityLevel, selection: Binding(
                     get: { config.securityLevel },
                     set: { config.securityLevel = $0; saveConfig() }
                 )) {
-                    Text("Permissive").tag(RemoteConfig.SecurityLevel.permissive)
-                    Text("Standard").tag(RemoteConfig.SecurityLevel.standard)
-                    Text("Strict").tag(RemoteConfig.SecurityLevel.strict)
+                    Text(localizer.securityPermissive).tag(RemoteConfig.SecurityLevel.permissive)
+                    Text(localizer.securityStandard).tag(RemoteConfig.SecurityLevel.standard)
+                    Text(localizer.securityStrict).tag(RemoteConfig.SecurityLevel.strict)
                 }
                 .pickerStyle(.segmented)
 
@@ -332,7 +353,7 @@ struct RemoteSettingsView: View {
                         get: { config.autoConnectEnabled },
                         set: { config.autoConnectEnabled = $0; saveConfig() }
                     )) {
-                        Text("Auto-connect to known hosts")
+                        Text(localizer.autoConnectKnownHosts)
                             .font(.system(size: 12))
                     }
                     .toggleStyle(.checkbox)
@@ -345,9 +366,9 @@ struct RemoteSettingsView: View {
 
     private var securityLevelDescription: String {
         switch config.securityLevel {
-        case .permissive: return "All remote agent activity is allowed without verification"
-        case .standard: return "Trusted hosts and verified fingerprints are allowed; others require approval"
-        case .strict: return "Only explicitly trusted hosts with valid fingerprints are allowed"
+        case .permissive: return localizer.securityPermissiveDesc
+        case .standard: return localizer.securityStandardDesc
+        case .strict: return localizer.securityStrictDesc
         }
     }
 
@@ -367,7 +388,7 @@ struct RemoteSettingsView: View {
 
             Spacer()
 
-            PillBadge(text: host.isOnline ? "Online" : "Offline", color: host.isOnline ? .green : .secondary)
+            PillBadge(text: host.isOnline ? localizer.online : localizer.offline, color: host.isOnline ? .green : .secondary)
 
             Button(action: { removeHost(host) }) {
                 Image(systemName: "xmark.circle.fill")
@@ -378,31 +399,31 @@ struct RemoteSettingsView: View {
         }
         .padding(8)
         .background(.primary.opacity(0.03))
-        .cornerRadius(6)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
 
     private var addHostForm: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Add Remote Host")
+            Text(localizer.addRemoteHost)
                 .font(.system(size: 12, weight: .semibold))
 
             HStack(spacing: 8) {
-                TextField("Host (IP or hostname)", text: $newHost)
+                TextField(localizer.hostPlaceholder, text: $newHost)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 12))
                     .frame(minWidth: 120)
 
-                TextField("Port", value: $newPort, format: .number)
+                TextField(localizer.port, value: $newPort, format: .number)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 12))
                     .frame(width: 60)
 
-                TextField("Username", text: $newUser)
+                TextField(localizer.username, text: $newUser)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 12))
                     .frame(width: 100)
 
-                TextField("Nickname", text: $newNickname)
+                TextField(localizer.nickname, text: $newNickname)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 12))
                     .frame(width: 100)
@@ -410,16 +431,16 @@ struct RemoteSettingsView: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { showAddHost = false }
+                Button(localizer.agentCancel) { showAddHost = false }
                     .font(.system(size: 11))
-                Button("Add") { confirmAddHost() }
+                Button(localizer.add) { confirmAddHost() }
                     .font(.system(size: 11, weight: .medium))
                     .disabled(newHost.isEmpty || newUser.isEmpty)
             }
         }
         .padding(10)
         .background(.primary.opacity(0.03))
-        .cornerRadius(8)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
     }
 
     private func confirmAddHost() {

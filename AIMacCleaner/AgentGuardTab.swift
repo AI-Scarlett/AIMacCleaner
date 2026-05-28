@@ -33,7 +33,7 @@ struct AgentGuardTab: View {
     var body: some View {
         VStack(spacing: 0) {
             PageHeader(
-                icon: "eye.circle.fill",
+                icon: "shield.fill",
                 title: localizer.navAgentGuard,
                 subtitle: localizer.subAgentGuard,
                 color: Theme.Colors.warning
@@ -79,11 +79,11 @@ struct AgentGuardTab: View {
     private var segmentPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
-                SegmentButton(title: localizer.guardDashboard, icon: "gauge", index: 0, selected: $selectedSegment)
-                SegmentButton(title: localizer.alertCenter, icon: "bell.badge", index: 1, selected: $selectedSegment)
-                SegmentButton(title: localizer.alertRules, icon: "slider.horizontal.3", index: 2, selected: $selectedSegment)
-                SegmentButton(title: localizer.commandRules, icon: "terminal", index: 3, selected: $selectedSegment)
-                SegmentButton(title: localizer.protectedDirs, icon: "folder.badge.eye", index: 4, selected: $selectedSegment)
+                SegmentButton(title: localizer.guardDashboard, icon: "gauge", index: 0, tint: Theme.Colors.warning, selected: $selectedSegment)
+                SegmentButton(title: localizer.alertCenter, icon: "bell.badge", index: 1, tint: Theme.Colors.warning, selected: $selectedSegment)
+                SegmentButton(title: localizer.alertRules, icon: "slider.horizontal.3", index: 2, tint: Theme.Colors.warning, selected: $selectedSegment)
+                SegmentButton(title: localizer.commandRules, icon: "terminal", index: 3, tint: Theme.Colors.warning, selected: $selectedSegment)
+                SegmentButton(title: localizer.protectedDirs, icon: "folder.badge.eye", index: 4, tint: Theme.Colors.warning, selected: $selectedSegment)
             }
         }
         .padding(.horizontal, Theme.Spacing.xl)
@@ -747,9 +747,9 @@ struct AgentGuardTab: View {
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
                 HStack(spacing: 2) {
-                    chartRangeButton(title: localizer.rangeAll, index: 0)
+                    chartRangeButton(title: localizer.rangeRealtime, index: 0)
                     chartRangeButton(title: localizer.rangeToday, index: 1)
-                    chartRangeButton(title: localizer.rangeRealtime, index: 2)
+                    chartRangeButton(title: localizer.rangeAll, index: 2)
                 }
                 Divider().frame(height: 14)
                 HStack(spacing: Theme.Spacing.sm) {
@@ -806,12 +806,12 @@ struct AgentGuardTab: View {
         Button { chartTimeRange = index } label: {
             Text(title)
                 .font(.system(size: 10))
-                .foregroundStyle(chartTimeRange == index ? Theme.Colors.accent : Theme.Colors.textTertiary)
+                .foregroundStyle(chartTimeRange == index ? Theme.Colors.success : Theme.Colors.textTertiary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(chartTimeRange == index ? Theme.Colors.accent.opacity(0.12) : Color.clear)
+                        .fill(chartTimeRange == index ? Theme.Colors.success.opacity(0.14) : Color.clear)
                 )
         }
         .buttonStyle(.plain)
@@ -819,7 +819,7 @@ struct AgentGuardTab: View {
 
     private var filteredStats: [HourlyStats] {
         let now = Date()
-        if chartTimeRange == 2 {
+        if chartTimeRange == 0 {
             return realtimeStats
         }
         let all = service.guardFeature.hourlyStats
@@ -867,7 +867,7 @@ struct AgentGuardTab: View {
         let calendar = Calendar.current
         let now = Date()
         switch chartTimeRange {
-        case 2:
+        case 0:
             let endMinute = calendar.dateInterval(of: .minute, for: now)?.start ?? now
             return endMinute.addingTimeInterval(-3600)...endMinute
         case 1:
@@ -903,98 +903,99 @@ struct AgentGuardTab: View {
 
         let strideCount: Int = {
             switch chartTimeRange {
-            case 0: return stats.count > 48 ? 12 : (stats.count > 24 ? 6 : 3)
+            case 2: return stats.count > 48 ? 12 : (stats.count > 24 ? 6 : 3)
             case 1: return stats.count > 12 ? 3 : 1
-            case 2: return 1
+            case 0: return 1
             default: return 3
             }
         }()
 
-        Chart {
-            ForEach(allPoints) { point in
-                LineMark(
-                    x: .value(localizer.hour, point.hour),
-                    y: .value(localizer.opsCount, point.count)
-                )
-                .foregroundStyle(by: .value("Type", point.type))
-                .interpolationMethod(.linear)
-                .lineStyle(StrokeStyle(lineWidth: 2))
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            chartHoverSummaryBar(points: hoverPoints)
 
-                if hoverPoints.contains(where: { $0.id == point.id }) {
-                    PointMark(
+            Chart {
+                ForEach(allPoints) { point in
+                    LineMark(
                         x: .value(localizer.hour, point.hour),
                         y: .value(localizer.opsCount, point.count)
                     )
                     .foregroundStyle(by: .value("Type", point.type))
-                    .symbolSize(42)
-                }
-            }
+                    .interpolationMethod(.linear)
+                    .lineStyle(StrokeStyle(lineWidth: 2))
 
-            if let firstHoverPoint = hoverPoints.first {
-                RuleMark(x: .value(localizer.hour, firstHoverPoint.hour))
-                    .foregroundStyle(Theme.Colors.textSecondary.opacity(0.45))
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                    .annotation(position: .top, alignment: .leading) {
-                        chartHoverTooltip(points: hoverPoints)
-                    }
-            }
-        }
-        .chartForegroundStyleScale(domain: activeDomain, range: activeRange)
-        .chartXScale(domain: chartXDomain)
-        .chartYScale(domain: 0...yMax)
-        .chartLegend(.hidden)
-        .chartYAxis {
-            AxisMarks(position: .leading) {
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.primary.opacity(0.15))
-                AxisValueLabel().font(.system(size: 9))
-            }
-        }
-        .chartXAxis {
-            if chartTimeRange == 2 {
-                AxisMarks(values: .stride(by: .minute, count: 10)) { value in
-                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.primary.opacity(0.15))
-                    AxisValueLabel(anchor: .top) {
-                        if let date = value.as(Date.self) {
-                            Text(chartAxisTimeLabel(date))
-                                .font(.system(size: 9))
-                        }
+                    if hoverPoints.contains(where: { $0.id == point.id }) {
+                        PointMark(
+                            x: .value(localizer.hour, point.hour),
+                            y: .value(localizer.opsCount, point.count)
+                        )
+                        .foregroundStyle(by: .value("Type", point.type))
+                        .symbolSize(42)
                     }
                 }
-            } else {
-                AxisMarks(values: .stride(by: .hour, count: strideCount)) { value in
-                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.primary.opacity(0.15))
-                    AxisValueLabel(anchor: .top) {
-                        if let date = value.as(Date.self) {
-                            Text(chartAxisTimeLabel(date))
-                                .font(.system(size: chartTimeRange == 0 ? 8 : 9))
-                        }
-                    }
+
+                if let firstHoverPoint = hoverPoints.first {
+                    RuleMark(x: .value(localizer.hour, firstHoverPoint.hour))
+                        .foregroundStyle(Theme.Colors.textSecondary.opacity(0.45))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                 }
             }
-        }
-        .chartOverlay { proxy in
-            GeometryReader { geometry in
-                Rectangle()
-                    .fill(Color.clear)
-                    .contentShape(Rectangle())
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case .active(let location):
-                            let plotFrame = geometry[proxy.plotAreaFrame]
-                            let x = location.x - plotFrame.origin.x
-                            guard x >= 0, x <= plotFrame.width,
-                                  let date: Date = proxy.value(atX: x) else {
-                                chartHoverDate = nil
-                                return
+            .chartForegroundStyleScale(domain: activeDomain, range: activeRange)
+            .chartXScale(domain: chartXDomain)
+            .chartYScale(domain: 0...yMax)
+            .chartLegend(.hidden)
+            .chartYAxis {
+                AxisMarks(position: .leading) {
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.primary.opacity(0.15))
+                    AxisValueLabel().font(.system(size: 9))
+                }
+            }
+            .chartXAxis {
+                if chartTimeRange == 0 {
+                    AxisMarks(values: .stride(by: .minute, count: 10)) { value in
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.primary.opacity(0.15))
+                        AxisValueLabel(anchor: .top) {
+                            if let date = value.as(Date.self) {
+                                Text(chartAxisTimeLabel(date))
+                                    .font(.system(size: 9))
                             }
-                            chartHoverDate = nearestChartDate(in: allPoints, to: date)
-                        case .ended:
-                            chartHoverDate = nil
                         }
                     }
+                } else {
+                    AxisMarks(values: .stride(by: .hour, count: strideCount)) { value in
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.primary.opacity(0.15))
+                        AxisValueLabel(anchor: .top) {
+                            if let date = value.as(Date.self) {
+                                Text(chartAxisTimeLabel(date))
+                                    .font(.system(size: chartTimeRange == 2 ? 8 : 9))
+                            }
+                        }
+                    }
+                }
             }
+            .chartOverlay { proxy in
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(Color.clear)
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let location):
+                                let plotFrame = geometry[proxy.plotAreaFrame]
+                                let x = location.x - plotFrame.origin.x
+                                guard x >= 0, x <= plotFrame.width,
+                                      let date: Date = proxy.value(atX: x) else {
+                                    chartHoverDate = nil
+                                    return
+                                }
+                                chartHoverDate = nearestChartDate(in: allPoints, to: date)
+                            case .ended:
+                                chartHoverDate = nil
+                            }
+                        }
+                }
+            }
+            .frame(minHeight: 190, maxHeight: 240)
         }
-        .frame(minHeight: 200, maxHeight: 260)
         .padding(.bottom, 8)
     }
 
@@ -1007,39 +1008,57 @@ struct AgentGuardTab: View {
     private func nearestChartPoints(in points: [HourlyStatPoint], to date: Date?) -> [HourlyStatPoint] {
         guard let date = date else { return [] }
         let sameTime = points.filter { abs($0.hour.timeIntervalSince(date)) < 0.5 }
-        return sameTime.sorted { $0.type < $1.type }
+        return sameTime.sorted { chartTypeSortIndex($0.type) < chartTypeSortIndex($1.type) }
     }
 
-    private func chartHoverTooltip(points: [HourlyStatPoint]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private func chartHoverSummaryBar(points: [HourlyStatPoint]) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
             if let date = points.first?.hour {
                 Text(chartHoverTimeLabel(date))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.Colors.textPrimary)
+                    .frame(minWidth: 72, alignment: .leading)
+            } else {
+                Text(" ")
+                    .font(.system(size: 10, weight: .semibold))
+                    .frame(minWidth: 72, alignment: .leading)
             }
+
             ForEach(points) { point in
-                HStack(spacing: 5) {
+                HStack(spacing: 4) {
                     Circle()
                         .fill(chartColor(for: point.type))
                         .frame(width: 6, height: 6)
                     Text(chartLabel(for: point.type))
-                        .font(.system(size: 10))
+                        .font(.system(size: 9))
                     Text("\(point.count)")
                         .font(.system(size: 10, weight: .bold))
                         .monospacedDigit()
                 }
                 .foregroundStyle(Theme.Colors.textPrimary)
             }
+
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(Theme.Colors.cardBg.opacity(0.96))
+        .frame(height: 28)
+        .padding(.horizontal, 10)
+        .background(points.isEmpty ? Theme.Colors.cardHover.opacity(0.5) : Theme.Colors.cardHover)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
         )
-        .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
+    }
+
+    private func chartTypeSortIndex(_ type: String) -> Int {
+        switch type {
+        case "Create": return 0
+        case "Modify": return 1
+        case "Delete": return 2
+        case "Read": return 3
+        case "Execute": return 4
+        default: return 99
+        }
     }
 
     private func chartColor(for type: String) -> Color {
@@ -1066,7 +1085,7 @@ struct AgentGuardTab: View {
 
     private func chartHoverTimeLabel(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateStyle = chartTimeRange == 0 ? .short : .none
+        formatter.dateStyle = chartTimeRange == 2 ? .short : .none
         formatter.timeStyle = .short
         return formatter.string(from: date)
     }
@@ -1076,7 +1095,7 @@ struct AgentGuardTab: View {
         formatter.locale = Locale.current
         formatter.calendar = Calendar.current
         formatter.timeZone = .current
-        formatter.dateFormat = chartTimeRange == 0 ? "MM-dd HH:mm" : "HH:mm"
+        formatter.dateFormat = chartTimeRange == 2 ? "MM-dd HH:mm" : "HH:mm"
         return formatter.string(from: date)
     }
 
@@ -1211,12 +1230,12 @@ struct AgentGuardTab: View {
         } label: {
             Text(label)
                 .font(Theme.Font.caption)
-                .foregroundStyle(alertFilter == severity ? .primary : Theme.Colors.textSecondary)
+                .foregroundStyle(alertFilter == severity ? .white : Theme.Colors.textSecondary)
                 .padding(.horizontal, Theme.Spacing.sm)
                 .padding(.vertical, Theme.Spacing.xs)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                        .fill(alertFilter == severity ? (severity == nil ? Theme.Colors.accent : severityColor(severity!)) : Theme.Colors.cardBg)
+                        .fill(alertFilter == severity ? (severity == nil ? Theme.Colors.success : severityColor(severity!)) : Theme.Colors.cardBg)
                 )
         }
         .buttonStyle(.plain)
@@ -1293,7 +1312,7 @@ struct AgentGuardTab: View {
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .fill(Theme.Colors.accent)
+                    .fill(Theme.Colors.success)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
@@ -1347,6 +1366,7 @@ struct SegmentButton: View {
     let title: String
     let icon: String
     let index: Int
+    let tint: Color
     @Binding var selected: Int
 
     var body: some View {
@@ -1366,7 +1386,7 @@ struct SegmentButton: View {
             .padding(.vertical, Theme.Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .fill(selected == index ? Theme.Colors.warning : Color.clear)
+                    .fill(selected == index ? tint : Color.clear)
             )
         }
         .buttonStyle(.plain)

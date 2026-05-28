@@ -10,18 +10,12 @@ struct PlanApprovalSheetView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 8) {
-                Image(systemName: "list.clipboard.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(.cyan)
+            compactHeader
 
-                Text(plan.title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
+            Divider()
 
-                ScrollView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
                     Text(plan.content)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.primary)
@@ -30,33 +24,36 @@ struct PlanApprovalSheetView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(.black.opacity(0.05))
                         .cornerRadius(8)
-                }
-                .frame(maxHeight: 160)
 
-                if !plan.permissions.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(localizer.agentRequestedPermissions + ":")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                        FlowLayout(spacing: 4) {
-                            ForEach(plan.permissions, id: \.self) { perm in
-                                HStack(spacing: 3) {
-                                    Image(systemName: permissionIcon(perm))
-                                        .font(.system(size: 8))
-                                    Text(perm)
-                                        .font(.system(size: 10))
+                    if !plan.permissions.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(localizer.agentRequestedPermissions + ":")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                            FlowLayout(spacing: 4) {
+                                ForEach(plan.permissions, id: \.self) { perm in
+                                    HStack(spacing: 3) {
+                                        Image(systemName: permissionIcon(perm))
+                                            .font(.system(size: 8))
+                                        Text(perm)
+                                            .font(.system(size: 10))
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(.orange.opacity(0.1))
+                                    .cornerRadius(4)
                                 }
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(.orange.opacity(0.1))
-                                .cornerRadius(4)
                             }
                         }
                     }
+
+                    if !plan.attachments.isEmpty {
+                        ApprovalAttachmentStrip(attachments: plan.attachments)
+                    }
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
 
             Divider()
 
@@ -107,6 +104,30 @@ struct PlanApprovalSheetView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
         }
+    }
+
+    private var compactHeader: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "list.clipboard.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.cyan)
+                .frame(width: 24, height: 24)
+                .background(.cyan.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(plan.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(localizer.agentCenterPlan)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
     }
 
     private func permissionIcon(_ perm: String) -> String {

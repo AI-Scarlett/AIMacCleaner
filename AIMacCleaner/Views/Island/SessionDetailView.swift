@@ -1,15 +1,16 @@
 import SwiftUI
 
 struct SessionDetailContentView: View {
+    @EnvironmentObject var localizer: Localizer
     let session: SessionState
 
     @State private var selectedTab: DetailTab = .overview
 
-    enum DetailTab: String, CaseIterable {
-        case overview = "Overview"
-        case tools = "Tools"
-        case subagents = "Subagents"
-        case events = "Events"
+    enum DetailTab: CaseIterable {
+        case overview
+        case tools
+        case subagents
+        case events
 
         var icon: String {
             switch self {
@@ -29,7 +30,7 @@ struct SessionDetailContentView: View {
                         HStack(spacing: 4) {
                             Image(systemName: tab.icon)
                                 .font(.system(size: 10))
-                            Text(tab.rawValue)
+                            Text(tab.title(localizer))
                                 .font(.system(size: 11, weight: .medium))
                         }
                         .foregroundStyle(selectedTab == tab ? .blue : .secondary)
@@ -64,35 +65,35 @@ struct SessionDetailContentView: View {
     private var overviewTab: some View {
         VStack(alignment: .leading, spacing: 12) {
             Group {
-                detailRow(icon: "folder", label: "Project", value: session.project)
-                detailRow(icon: "terminal", label: "Agent", value: session.agentType)
-                detailRow(icon: "clock", label: "Duration", value: durationString)
-                detailRow(icon: "circle.dashed", label: "Phase", value: session.phase.rawValue)
+                detailRow(icon: "folder", label: localizer.agentProject, value: session.project)
+                detailRow(icon: "terminal", label: localizer.agentLabel, value: session.agentType)
+                detailRow(icon: "clock", label: localizer.agentDuration, value: durationString)
+                detailRow(icon: "circle.dashed", label: localizer.agentPhase, value: phaseLabel(session.phase))
 
                 if let desc = session.description {
-                    detailRow(icon: "text.alignleft", label: "Status", value: desc)
+                    detailRow(icon: "text.alignleft", label: localizer.status, value: desc)
                 }
             }
 
             Divider()
                 .padding(.vertical, 4)
 
-            Text("Token Usage")
+            Text(localizer.agentTokenUsage)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.primary)
 
             HStack(spacing: 12) {
-                tokenBadge(label: "Input", value: session.tokens.input, color: .blue)
-                tokenBadge(label: "Output", value: session.tokens.output, color: .green)
-                tokenBadge(label: "Cache Read", value: session.tokens.cacheRead, color: .orange)
-                tokenBadge(label: "Cache Create", value: session.tokens.cacheCreate, color: .purple)
+                tokenBadge(label: localizer.agentTokenInput, value: session.tokens.input, color: .blue)
+                tokenBadge(label: localizer.agentTokenOutput, value: session.tokens.output, color: .green)
+                tokenBadge(label: localizer.agentTokenCacheRead, value: session.tokens.cacheRead, color: .orange)
+                tokenBadge(label: localizer.agentTokenCacheCreate, value: session.tokens.cacheCreate, color: .purple)
             }
 
             if let rateLimits = session.rateLimits {
                 Divider()
                     .padding(.vertical, 4)
 
-                Text("Rate Limits")
+                Text(localizer.agentRateLimits)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
 
@@ -106,18 +107,18 @@ struct SessionDetailContentView: View {
                 Divider()
                     .padding(.vertical, 4)
 
-                Text("Context Window")
+                Text(localizer.agentContextWindow)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
 
                 VStack(spacing: 4) {
-                    detailRow(icon: "doc.text", label: "Total Input", value: ctx.totalInputTokens.formatted())
-                    detailRow(icon: "doc.plaintext", label: "Total Output", value: ctx.totalOutputTokens.formatted())
-                    detailRow(icon: "rectangle.stack", label: "Window Size", value: ctx.contextWindowSize.formatted())
+                    detailRow(icon: "doc.text", label: localizer.agentTotalInput, value: ctx.totalInputTokens.formatted())
+                    detailRow(icon: "doc.plaintext", label: localizer.agentTotalOutput, value: ctx.totalOutputTokens.formatted())
+                    detailRow(icon: "rectangle.stack", label: localizer.agentWindowSize, value: ctx.contextWindowSize.formatted())
                     if let pct = ctx.usedPercentage {
                         ProgressView(value: pct / 100)
                             .tint(pct > 80 ? .red : pct > 60 ? .orange : .green)
-                        Text("\(Int(pct))% used")
+                        Text(localizer.agentContextUsed(Int(pct)))
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                     }
@@ -130,7 +131,7 @@ struct SessionDetailContentView: View {
     private var toolsTab: some View {
         VStack(alignment: .leading, spacing: 8) {
             if session.activeTools.isEmpty {
-                Text("No tool executions recorded")
+                Text(localizer.agentNoToolExecutions)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -178,7 +179,7 @@ struct SessionDetailContentView: View {
     private var subagentsTab: some View {
         VStack(alignment: .leading, spacing: 8) {
             if session.subagents.isEmpty {
-                Text("No subagents spawned")
+                Text(localizer.agentNoSubagents)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -223,7 +224,7 @@ struct SessionDetailContentView: View {
 
     private var eventsTab: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Raw hook event log available in Session Center")
+            Text(localizer.agentRawEventsHint)
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -282,16 +283,41 @@ struct SessionDetailContentView: View {
 
     private var durationString: String {
         let d = session.duration
-        if d < 60 { return "\(Int(d))s" }
-        if d < 3600 { return "\(Int(d / 60))m \(Int(d.truncatingRemainder(dividingBy: 60)))s" }
-        return String(format: "%dh %dm", Int(d / 3600), Int(d.truncatingRemainder(dividingBy: 3600) / 60))
+        if d < 60 { return localizer.agentSeconds(Int(d)) }
+        if d < 3600 { return "\(localizer.agentMinutes(Int(d / 60))) \(localizer.agentSeconds(Int(d.truncatingRemainder(dividingBy: 60))))" }
+        return "\(localizer.agentHours(Int(d / 3600))) \(localizer.agentMinutes(Int(d.truncatingRemainder(dividingBy: 3600) / 60)))"
     }
 
     private func timeAgo(from date: Date) -> String {
         let interval = Date().timeIntervalSince(date)
-        if interval < 60 { return "\(Int(interval))s ago" }
-        if interval < 3600 { return "\(Int(interval / 60))m ago" }
-        if interval < 86400 { return "\(Int(interval / 3600))h ago" }
-        return "\(Int(interval / 86400))d ago"
+        if interval < 60 { return localizer.agentAgo(localizer.agentSeconds(Int(interval))) }
+        if interval < 3600 { return localizer.agentAgo(localizer.agentMinutes(Int(interval / 60))) }
+        if interval < 86400 { return localizer.agentAgo(localizer.agentHours(Int(interval / 3600))) }
+        return localizer.agentAgo(localizer.agentDays(Int(interval / 86400)))
+    }
+
+    private func phaseLabel(_ phase: SessionPhase) -> String {
+        switch phase {
+        case .ready: return localizer.agentPhaseReady
+        case .idle: return localizer.agentPhaseIdle
+        case .processing: return localizer.agentPhaseProcessing
+        case .waitingApproval: return localizer.agentCenterPending
+        case .waitingInput: return localizer.agentCenterQuestion
+        case .compacting: return localizer.agentPhaseCompacting
+        case .done: return localizer.agentPhaseDone
+        case .error: return localizer.agentPhaseError
+        case .interrupted: return localizer.agentPhaseInterrupted
+        }
+    }
+}
+
+private extension SessionDetailContentView.DetailTab {
+    func title(_ localizer: Localizer) -> String {
+        switch self {
+        case .overview: return localizer.agentDetailOverview
+        case .tools: return localizer.agentDetailTools
+        case .subagents: return localizer.agentDetailSubagents
+        case .events: return localizer.agentDetailEvents
+        }
     }
 }

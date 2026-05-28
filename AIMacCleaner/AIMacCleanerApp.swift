@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 @main
 struct AIMacCleanerApp: App {
@@ -30,21 +31,26 @@ struct AIMacCleanerApp: App {
                 .onAppear {
                     appDelegate.service = service
                     service.localizer = localizer
+                    appDelegate.configureAgentCenterContext(
+                        islandViewModel: islandViewModel,
+                        sessionsViewModel: sessionsViewModel,
+                        agentRegistry: agentRegistry,
+                        conversationWatcher: conversationWatcher,
+                        localizer: localizer
+                    )
                     NSApp.setActivationPolicy(.regular)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [service] in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [service] in
                         if monitorEnabled { service.startMonitoring() }
-                        UserDefaults.standard.set(true, forKey: "operationMonitorEnabled")
-                        service.ensureAgentGuardDataPipeline()
                     }
-                    if agentCenterIntegrationEnabled {
-                        appDelegate.initializeAgentCenterServices(
-                            islandViewModel: islandViewModel,
-                            sessionsViewModel: sessionsViewModel,
-                            agentRegistry: agentRegistry,
-                            conversationWatcher: conversationWatcher,
-                            localizer: localizer
-                        )
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        if agentCenterIntegrationEnabled {
+                            appDelegate.initializeAgentCenterServices()
+                        }
                     }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .agentCenterShouldInitialize)) { _ in
+                    guard agentCenterIntegrationEnabled else { return }
+                    appDelegate.initializeAgentCenterServices()
                 }
                 .onDisappear {
                     appDelegate.cleanupAgentCenterServices()
@@ -58,6 +64,7 @@ struct AIMacCleanerApp: App {
             if menuBarMonitorEnabled {
                 MenuBarMonitor(service: service)
                     .environmentObject(localizer)
+                    .environmentObject(islandViewModel)
             } else {
                 Text(localizer.menuBarMonitorClosed)
                     .padding()
@@ -82,72 +89,94 @@ struct AIMacCleanerApp: App {
 }
 
 struct MenuBarShieldEyeIcon: View {
+    var color: Color = .primary
+
     var body: some View {
-        ZStack {
-            MenuBarShieldShape()
-                .stroke(style: StrokeStyle(lineWidth: 1.9, lineCap: .round, lineJoin: .round))
-                .frame(width: 15, height: 16)
-
-            MenuBarEyeShape()
-                .stroke(style: StrokeStyle(lineWidth: 1.45, lineCap: .round, lineJoin: .round))
-                .frame(width: 10.5, height: 6.8)
-                .offset(y: -0.4)
-
-            Circle()
-                .frame(width: 2.3, height: 2.3)
-                .offset(y: -0.4)
-        }
-        .foregroundStyle(.primary.opacity(0.86))
-        .frame(width: 17, height: 17)
-        .accessibilityHidden(true)
+        Image(nsImage: MenuBarShieldEyeTemplateImage.shared)
+            .resizable()
+            .renderingMode(.template)
+            .interpolation(.high)
+            .frame(width: 18, height: 18)
+            .foregroundStyle(color)
+            .accessibilityHidden(true)
     }
 }
 
-struct MenuBarShieldShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let top = CGPoint(x: rect.midX, y: rect.minY + rect.height * 0.08)
-        let rightShoulder = CGPoint(x: rect.maxX - rect.width * 0.12, y: rect.minY + rect.height * 0.27)
-        let rightSide = CGPoint(x: rect.maxX - rect.width * 0.16, y: rect.minY + rect.height * 0.62)
-        let bottom = CGPoint(x: rect.midX, y: rect.maxY - rect.height * 0.06)
-        let leftSide = CGPoint(x: rect.minX + rect.width * 0.16, y: rect.minY + rect.height * 0.62)
-        let leftShoulder = CGPoint(x: rect.minX + rect.width * 0.12, y: rect.minY + rect.height * 0.27)
+enum MenuBarShieldEyeTemplateImage {
+    static let shared: NSImage = {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size)
+        image.lockFocus()
 
-        path.move(to: top)
-        path.addCurve(to: rightShoulder,
-                      control1: CGPoint(x: rect.midX + rect.width * 0.16, y: rect.minY + rect.height * 0.18),
-                      control2: CGPoint(x: rect.maxX - rect.width * 0.25, y: rect.minY + rect.height * 0.26))
-        path.addCurve(to: rightSide,
-                      control1: CGPoint(x: rect.maxX - rect.width * 0.05, y: rect.minY + rect.height * 0.34),
-                      control2: CGPoint(x: rect.maxX - rect.width * 0.06, y: rect.minY + rect.height * 0.53))
-        path.addCurve(to: bottom,
-                      control1: CGPoint(x: rect.maxX - rect.width * 0.22, y: rect.minY + rect.height * 0.77),
-                      control2: CGPoint(x: rect.midX + rect.width * 0.17, y: rect.maxY - rect.height * 0.12))
-        path.addCurve(to: leftSide,
-                      control1: CGPoint(x: rect.midX - rect.width * 0.17, y: rect.maxY - rect.height * 0.12),
-                      control2: CGPoint(x: rect.minX + rect.width * 0.22, y: rect.minY + rect.height * 0.77))
-        path.addCurve(to: leftShoulder,
-                      control1: CGPoint(x: rect.minX + rect.width * 0.06, y: rect.minY + rect.height * 0.53),
-                      control2: CGPoint(x: rect.minX + rect.width * 0.05, y: rect.minY + rect.height * 0.34))
-        path.addCurve(to: top,
-                      control1: CGPoint(x: rect.minX + rect.width * 0.25, y: rect.minY + rect.height * 0.26),
-                      control2: CGPoint(x: rect.midX - rect.width * 0.16, y: rect.minY + rect.height * 0.18))
-        return path
-    }
+        let shield = NSBezierPath()
+        shield.move(to: NSPoint(x: 9, y: 16.2))
+        shield.curve(to: NSPoint(x: 14.6, y: 12.7),
+                     controlPoint1: NSPoint(x: 10.9, y: 14.8),
+                     controlPoint2: NSPoint(x: 12.4, y: 13.5))
+        shield.curve(to: NSPoint(x: 15.0, y: 11.8),
+                     controlPoint1: NSPoint(x: 14.9, y: 12.6),
+                     controlPoint2: NSPoint(x: 15.0, y: 12.3))
+        shield.line(to: NSPoint(x: 15.0, y: 7.2))
+        shield.curve(to: NSPoint(x: 9, y: 1.5),
+                     controlPoint1: NSPoint(x: 15.0, y: 4.5),
+                     controlPoint2: NSPoint(x: 12.9, y: 2.6))
+        shield.curve(to: NSPoint(x: 3.0, y: 7.2),
+                     controlPoint1: NSPoint(x: 5.1, y: 2.6),
+                     controlPoint2: NSPoint(x: 3.0, y: 4.5))
+        shield.line(to: NSPoint(x: 3.0, y: 11.8))
+        shield.curve(to: NSPoint(x: 3.4, y: 12.7),
+                     controlPoint1: NSPoint(x: 3.0, y: 12.3),
+                     controlPoint2: NSPoint(x: 3.1, y: 12.6))
+        shield.curve(to: NSPoint(x: 9, y: 16.2),
+                     controlPoint1: NSPoint(x: 5.6, y: 13.5),
+                     controlPoint2: NSPoint(x: 7.1, y: 14.8))
+        shield.lineWidth = 2.2
+        shield.lineJoinStyle = .round
+        shield.lineCapStyle = .round
+        NSColor.black.setFill()
+        shield.stroke()
+
+        let eye = NSBezierPath()
+        eye.move(to: NSPoint(x: 4.2, y: 9.0))
+        eye.curve(to: NSPoint(x: 13.8, y: 9.0),
+                  controlPoint1: NSPoint(x: 6.3, y: 12.8),
+                  controlPoint2: NSPoint(x: 11.7, y: 12.8))
+        eye.curve(to: NSPoint(x: 4.2, y: 9.0),
+                  controlPoint1: NSPoint(x: 11.7, y: 5.2),
+                  controlPoint2: NSPoint(x: 6.3, y: 5.2))
+        eye.close()
+        NSColor.black.setFill()
+        eye.fill()
+
+        NSGraphicsContext.current?.compositingOperation = .clear
+        NSBezierPath(ovalIn: NSRect(x: 6.4, y: 6.4, width: 5.2, height: 5.2)).fill()
+
+        NSGraphicsContext.current?.compositingOperation = .sourceOver
+        NSColor.black.setStroke()
+        let prompt = NSBezierPath()
+        prompt.move(to: NSPoint(x: 7.7, y: 10.4))
+        prompt.line(to: NSPoint(x: 9.4, y: 9.0))
+        prompt.line(to: NSPoint(x: 7.7, y: 7.6))
+        prompt.lineWidth = 1.15
+        prompt.lineCapStyle = .round
+        prompt.lineJoinStyle = .round
+        prompt.stroke()
+
+        let underscore = NSBezierPath()
+        underscore.move(to: NSPoint(x: 9.9, y: 7.4))
+        underscore.line(to: NSPoint(x: 11.5, y: 7.4))
+        underscore.lineWidth = 1.15
+        underscore.lineCapStyle = .round
+        underscore.stroke()
+
+        image.unlockFocus()
+        image.isTemplate = true
+        return image
+    }()
 }
 
-struct MenuBarEyeShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
-        path.addCurve(to: CGPoint(x: rect.maxX, y: rect.midY),
-                      control1: CGPoint(x: rect.minX + rect.width * 0.26, y: rect.minY),
-                      control2: CGPoint(x: rect.maxX - rect.width * 0.26, y: rect.minY))
-        path.addCurve(to: CGPoint(x: rect.minX, y: rect.midY),
-                      control1: CGPoint(x: rect.maxX - rect.width * 0.26, y: rect.maxY),
-                      control2: CGPoint(x: rect.minX + rect.width * 0.26, y: rect.maxY))
-        return path
-    }
+extension Notification.Name {
+    static let agentCenterShouldInitialize = Notification.Name("agentCenterShouldInitialize")
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -165,6 +194,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var bridgeBinary: BridgeBinary?
     private var islandVM: IslandViewModel?
     private var sessionsVM: SessionsViewModel?
+    private weak var agentRegistryContext: AgentRegistry?
+    private weak var conversationWatcherContext: ConversationWatcher?
+    private weak var localizerContext: Localizer?
+    private var islandCancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         DispatchQueue.main.async { [weak self] in
@@ -217,18 +250,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    @MainActor
-    func initializeAgentCenterServices(
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let quitBehavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
+        if quitBehavior == "quitAppOnly" || quitBehavior == "quitAppKeepMenu" {
+            hideDesktopWindows()
+            return .terminateCancel
+        }
+        return .terminateNow
+    }
+
+    func configureAgentCenterContext(
         islandViewModel: IslandViewModel,
         sessionsViewModel: SessionsViewModel,
         agentRegistry: AgentRegistry,
         conversationWatcher: ConversationWatcher,
         localizer: Localizer
     ) {
-        guard hookServer == nil else { return }
-
         islandVM = islandViewModel
         sessionsVM = sessionsViewModel
+        agentRegistryContext = agentRegistry
+        conversationWatcherContext = conversationWatcher
+        localizerContext = localizer
+    }
+
+    @MainActor
+    func initializeAgentCenterServices() {
+        guard hookServer == nil else { return }
+        guard let islandViewModel = islandVM,
+              let sessionsViewModel = sessionsVM,
+              let agentRegistry = agentRegistryContext,
+              let conversationWatcher = conversationWatcherContext,
+              let localizer = localizerContext else { return }
 
         let server = HookServer()
         let store = SessionStore()
@@ -264,13 +316,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             localizer: localizer
         )
         islandWindowController = windowCtrl
+        display.attachIslandWindow(windowCtrl.createWindow())
 
         islandViewModel.setup(hookServer: server, sessionStore: store)
         sessionsViewModel.setup(sessionStore: store)
+        conversationWatcher.setupExternalApprovalBridge(sessionStore: store)
+        bindIslandDisplay(islandViewModel: islandViewModel, display: display)
 
         agentRegistry.setHookInstaller(HookInstaller())
 
-        Task {
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard self?.hookServer === server else { return }
             agentRegistry.refreshAllStatuses()
         }
 
@@ -279,8 +336,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 try await server.start()
                 islandViewModel.startObserving()
                 sessionsViewModel.startObserving()
-
-                display.showIsland()
 
                 let conversationDirs = ConversationWatcher.buildConversationDirectories(
                     from: AgentIntegrationProfile.allProfiles
@@ -297,6 +352,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupGlobalShortcuts()
         setupNetworkMonitoring()
+    }
+
+    @MainActor
+    private func bindIslandDisplay(islandViewModel: IslandViewModel, display: DisplayController) {
+        islandCancellables.removeAll()
+
+        islandViewModel.$isVisible
+            .removeDuplicates()
+            .sink { [weak display, weak islandViewModel] visible in
+                guard let display = display else { return }
+                if visible {
+                    display.updateIslandFrame(level: islandViewModel?.displayLevel ?? .compact)
+                    display.showIsland()
+                } else {
+                    display.hideIsland()
+                }
+            }
+            .store(in: &islandCancellables)
+
+        islandViewModel.$displayLevel
+            .removeDuplicates()
+            .sink { [weak display, weak islandViewModel] level in
+                guard let display = display else { return }
+                display.updateIslandFrame(level: level)
+                if islandViewModel?.isVisible == true {
+                    display.showIsland()
+                }
+            }
+            .store(in: &islandCancellables)
+    }
+
+    @MainActor
+    func refreshAgentStatusesIfReady() {
+        guard let agentRegistry = agentRegistryContext else { return }
+        agentRegistry.refreshAllStatuses()
     }
 
     private func setupGlobalShortcuts() {
@@ -362,7 +452,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         islandVM?.stopObserving()
         sessionsVM?.stopObserving()
         islandWindowController?.cleanup()
+        islandCancellables.removeAll()
     }
+}
+
+private func hideDesktopWindows() {
+    for window in NSApp.windows where !window.isFloatingPanel && window.level != .floating {
+        window.orderOut(nil)
+    }
+    NSApp.setActivationPolicy(.accessory)
 }
 
 class WindowDelegate: NSObject, NSWindowDelegate {
@@ -370,9 +468,8 @@ class WindowDelegate: NSObject, NSWindowDelegate {
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         let quitBehavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
-        if quitBehavior == "quitAppKeepMenu" {
-            sender.orderOut(nil)
-            NSApp.setActivationPolicy(.accessory)
+        if quitBehavior == "quitAppOnly" || quitBehavior == "quitAppKeepMenu" {
+            hideDesktopWindows()
             return false
         }
         sender.orderOut(nil)

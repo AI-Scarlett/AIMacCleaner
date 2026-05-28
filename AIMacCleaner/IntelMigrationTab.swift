@@ -199,14 +199,14 @@ struct IntelMigrationTab: View {
                 Text(label)
                     .font(Theme.Font.captionMedium)
             }
-            .foregroundStyle(isSelected ? Theme.Colors.accent : Theme.Colors.textSecondary)
+            .foregroundStyle(isSelected ? Theme.Colors.purple : Theme.Colors.textSecondary)
             .padding(.horizontal, Theme.Spacing.sm)
             .padding(.vertical, Theme.Spacing.xs)
-            .background(isSelected ? Theme.Colors.accent.opacity(0.12) : Color.clear)
+            .background(isSelected ? Theme.Colors.purple.opacity(0.12) : Color.clear)
             .clipShape(Capsule())
             .overlay(
                 Capsule()
-                    .stroke(isSelected ? Theme.Colors.accent.opacity(0.3) : Theme.Colors.separator, lineWidth: 1)
+                    .stroke(isSelected ? Theme.Colors.purple.opacity(0.3) : Theme.Colors.separator, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -215,6 +215,25 @@ struct IntelMigrationTab: View {
     private var itemList: some View {
         ScrollView {
             LazyVStack(spacing: Theme.Spacing.sm) {
+                HStack(spacing: Theme.Spacing.md) {
+                    Text(localizer.nameCol)
+                        .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
+                    Text(localizer.archCol)
+                        .frame(width: 82, alignment: .center)
+                    Text(localizer.sizeCol)
+                        .frame(width: 70, alignment: .trailing)
+                    Text(localizer.versionCol)
+                        .frame(width: 50, alignment: .trailing)
+                    Text(localizer.actionCol)
+                        .frame(width: 210, alignment: .trailing)
+                }
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.xs)
+                .background(Theme.Colors.sidebarBg.opacity(0.35))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
                 ForEach(filteredItems) { item in
                     IntelAppRow(item: item, scanner: scanner, onReplace: {
                         pendingReplaceApp = item

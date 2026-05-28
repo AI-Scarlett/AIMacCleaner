@@ -230,9 +230,14 @@ struct PermissionDecision {
 
     static let allow = PermissionDecision(decision: "allow")
     static let deny = PermissionDecision(decision: "deny", reason: "Blocked by AgentGuard")
+    static func deny(reason: String?) -> PermissionDecision {
+        PermissionDecision(decision: "deny", reason: reason?.isEmpty == false ? reason : "Blocked by AgentGuard")
+    }
     static func allowAlways(reason: String?) -> PermissionDecision {
         PermissionDecision(decision: "allow", reason: reason, always: true)
     }
+    static let openExternal = PermissionDecision(decision: "external_open")
+    static let externalHandled = PermissionDecision(decision: "external_handled")
 }
 
 struct PermissionResponse: Codable {

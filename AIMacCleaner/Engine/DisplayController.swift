@@ -32,6 +32,11 @@ class DisplayController: ObservableObject {
         self.localizer = localizer
     }
 
+    func attachIslandWindow(_ window: NSWindow) {
+        islandWindow = window
+        positionWindow(window)
+    }
+
     func createIslandWindow() -> NSWindow {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 48),

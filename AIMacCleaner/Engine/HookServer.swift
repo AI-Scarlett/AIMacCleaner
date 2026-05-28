@@ -198,14 +198,32 @@ actor HookServer {
             pendingPermissions[key] = entries
 
             Task { @MainActor in
+                await self.sessionStore?.seedPendingSession(
+                    sessionId: sessionId,
+                    agentType: raw["agent"] as? String ?? raw["source_label"] as? String ?? "Agent Center",
+                    project: self.projectName(from: raw["cwd"] as? String ?? "", fallback: "Approval Request"),
+                    cwd: raw["cwd"] as? String ?? "",
+                    terminal: raw["tty"] as? String ?? ""
+                )
                 await self.sessionStore?.setPendingPermission(sessionId, PendingPermission(
                     toolName: toolName,
                     toolInput: entry.toolInput,
                     diff: raw["diff"] as? String,
-                    options: raw["options"] as? [String]
+                    options: raw["options"] as? [String],
+                    attachments: self.extractAttachments(from: raw),
+                    source: raw["source"] as? String,
+                    sourceLabel: raw["source_label"] as? String ?? raw["sourceLabel"] as? String,
+                    requiresExternalHandling: raw["requires_external_handling"] as? Bool ?? raw["requiresExternalHandling"] as? Bool ?? false,
+                    externalActionBundleId: raw["external_action_bundle_id"] as? String ?? raw["externalActionBundleId"] as? String,
+                    externalActionHint: raw["external_action_hint"] as? String ?? raw["externalActionHint"] as? String
                 ))
             }
         }
+    }
+
+    private nonisolated func projectName(from cwd: String, fallback: String) -> String {
+        guard !cwd.isEmpty else { return fallback }
+        return URL(fileURLWithPath: cwd).lastPathComponent
     }
 
     private func waitForQuestionResponse(from raw: [String: Any]) async -> QuestionResponse {
@@ -221,7 +239,9 @@ actor HookServer {
                     descriptions: raw["descriptions"] as? [String] ?? [],
                     header: raw["header"] as? String,
                     multiSelect: raw["multi_select"] as? Bool ?? false,
-                    questions: AgentHookEvent.parseQuestions(from: raw)
+                    questions: AgentHookEvent.parseQuestions(from: raw),
+                    responseMode: raw["response_mode"] as? String ?? raw["responseMode"] as? String,
+                    attachments: self.extractAttachments(from: raw)
                 ))
             }
         }
@@ -237,10 +257,66 @@ actor HookServer {
                 await self.sessionStore?.setPendingPlan(sessionId, PendingPlan(
                     title: raw["plan_title"] as? String ?? "Plan",
                     content: raw["plan_content"] as? String ?? "",
-                    permissions: raw["requested_permissions"] as? [String] ?? []
+                    permissions: raw["requested_permissions"] as? [String] ?? [],
+                    attachments: self.extractAttachments(from: raw)
                 ))
             }
         }
+    }
+
+    private nonisolated func extractAttachments(from raw: [String: Any]) -> [ApprovalAttachment] {
+        var attachments: [ApprovalAttachment] = []
+        var seen: Set<String> = []
+
+        func addPath(_ value: String?, title: String? = nil, mimeType: String? = nil) {
+            guard let value else { return }
+            let path = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !path.isEmpty, !seen.contains(path) else { return }
+            let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+            let looksLikeImage = ["png", "jpg", "jpeg", "heic", "webp", "gif", "tiff", "bmp"].contains(ext)
+            let typedAsImage = mimeType?.lowercased().hasPrefix("image/") == true
+            guard looksLikeImage || typedAsImage else { return }
+            seen.insert(path)
+            attachments.append(ApprovalAttachment(path: path, title: title, mimeType: mimeType))
+        }
+
+        func scanObject(_ object: Any, title: String? = nil) {
+            if let text = object as? String {
+                addPath(text, title: title)
+                if let data = text.data(using: .utf8),
+                   let json = try? JSONSerialization.jsonObject(with: data) {
+                    scanObject(json, title: title)
+                }
+                return
+            }
+
+            if let array = object as? [Any] {
+                for item in array { scanObject(item, title: title) }
+                return
+            }
+
+            guard let dict = object as? [String: Any] else { return }
+            let title = (dict["title"] as? String) ?? (dict["name"] as? String) ?? title
+            let mimeType = (dict["mime_type"] as? String) ?? (dict["mimeType"] as? String) ?? (dict["type"] as? String)
+
+            for key in ["path", "file_path", "filePath", "image_path", "imagePath", "url"] {
+                addPath(dict[key] as? String, title: title, mimeType: mimeType)
+            }
+
+            for key in ["image", "images", "attachment", "attachments", "files", "artifacts"] {
+                if let nested = dict[key] {
+                    scanObject(nested, title: title)
+                }
+            }
+        }
+
+        for key in ["image_path", "imagePath", "file_path", "filePath", "path", "images", "attachments", "artifact", "artifacts", "tool_input", "toolInput"] {
+            if let value = raw[key] {
+                scanObject(value)
+            }
+        }
+
+        return attachments
     }
 
     func respondToPermission(sessionId: String, toolName: String, decision: PermissionDecision) {

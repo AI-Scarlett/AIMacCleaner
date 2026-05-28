@@ -78,12 +78,43 @@ struct ContextWindowInfo: Codable, Sendable {
     var usedPercentage: Double?
 }
 
+struct ApprovalAttachment: Codable, Identifiable, Sendable, Hashable {
+    var id: String
+    var path: String
+    var title: String?
+    var mimeType: String?
+
+    init(id: String = UUID().uuidString, path: String, title: String? = nil, mimeType: String? = nil) {
+        self.id = id
+        self.path = path
+        self.title = title
+        self.mimeType = mimeType
+    }
+
+    var displayName: String {
+        if let title, !title.isEmpty { return title }
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
+
+    var isImage: Bool {
+        if let mimeType, mimeType.lowercased().hasPrefix("image/") { return true }
+        let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+        return ["png", "jpg", "jpeg", "heic", "webp", "gif", "tiff", "bmp"].contains(ext)
+    }
+}
+
 struct PendingPermission: Codable, Sendable {
     var toolUseId: String?
     var toolName: String
     var toolInput: String
     var diff: String?
     var options: [String]?
+    var attachments: [ApprovalAttachment] = []
+    var source: String?
+    var sourceLabel: String?
+    var requiresExternalHandling: Bool = false
+    var externalActionBundleId: String?
+    var externalActionHint: String?
 }
 
 struct PendingQuestion: Codable, Sendable {
@@ -96,12 +127,37 @@ struct PendingQuestion: Codable, Sendable {
     var toolUseId: String?
     var source: String?
     var responseMode: String?
+    var attachments: [ApprovalAttachment] = []
+
+    var isTextReply: Bool {
+        if let responseMode {
+            let mode = responseMode.lowercased()
+            if mode.contains("text") || mode.contains("free") || mode.contains("input") {
+                return true
+            }
+        }
+        return options.isEmpty && questions.isEmpty
+    }
 }
 
 struct PendingPlan: Codable, Sendable {
     var title: String
     var content: String
     var permissions: [String]
+    var attachments: [ApprovalAttachment] = []
+}
+
+struct ApprovalHistoryRecord: Codable, Identifiable, Sendable {
+    var id: String = UUID().uuidString
+    var kind: String
+    var title: String
+    var detail: String
+    var requestedAt: Date = Date()
+    var resolvedAt: Date?
+
+    var isPending: Bool {
+        resolvedAt == nil
+    }
 }
 
 struct SubagentInfo: Codable, Identifiable, Sendable {
@@ -157,6 +213,7 @@ struct SessionState: Codable, Identifiable, Sendable {
     var pendingPermission: PendingPermission?
     var pendingQuestion: PendingQuestion?
     var pendingPlan: PendingPlan?
+    var approvalHistory: [ApprovalHistoryRecord] = []
     var lastToolName: String?
     var lastToolTarget: String?
     var lastToolStatus: String?
@@ -212,6 +269,23 @@ enum AgentError: Error {
     case hookInstallFailed(String)
     case hookUninstallFailed(String)
     case settingsCorrupted(String)
+}
+
+extension AgentError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .unknownAgent(let id):
+            return "Unknown agent: \(id)"
+        case .unexpectedAgent(let id):
+            return "Unexpected agent: \(id)"
+        case .unhandledEvent(let event):
+            return "Unhandled event: \(event)"
+        case .hookInstallFailed(let message),
+             .hookUninstallFailed(let message),
+             .settingsCorrupted(let message):
+            return message
+        }
+    }
 }
 
 enum RemoteError: Error {

@@ -49,7 +49,7 @@ struct IslandView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 } else {
-                    Text("AgentGuard Ready")
+                    Text(localizer.agentGuardReady)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
@@ -62,6 +62,21 @@ struct IslandView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.orange)
             }
+
+            Button(action: { viewModel.show(level: .expanded) }) {
+                HStack(spacing: 3) {
+                    Text(localizer.islandExpand)
+                    Image(systemName: "chevron.down")
+                }
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.accentColor.opacity(0.85))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help(localizer.islandExpand)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -108,11 +123,19 @@ struct IslandView: View {
                 }
 
                 Button(action: { viewModel.show(level: .expanded) }) {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 3) {
+                        Text(localizer.islandExpand)
+                        Image(systemName: "chevron.down")
+                    }
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.accentColor.opacity(0.85))
+                    .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .help(localizer.islandExpand)
             }
         }
         .padding(.horizontal, 14)
@@ -131,24 +154,29 @@ struct IslandView: View {
                let session = viewModel.activeApprovalSession {
                 VStack(spacing: 0) {
                     approvalQueueHeader(overlay: overlay)
+                    approvalCompactList
 
-                    switch overlay.kind {
-                    case .permission:
-                        if let perm = session.pendingPermission {
-                            PermissionSheetView(permission: perm, session: session) { decision in
-                                viewModel.respondToPermission(decision)
+                    if viewModel.showsApprovalList {
+                        approvalListView
+                    } else {
+                        switch overlay.kind {
+                        case .permission:
+                            if let perm = session.pendingPermission {
+                                PermissionSheetView(permission: perm, session: session) { decision in
+                                    viewModel.respondToPermission(decision)
+                                }
                             }
-                        }
-                    case .question:
-                        if let question = session.pendingQuestion {
-                            QuestionSheetView(question: question, session: session) { answer in
-                                viewModel.respondToQuestion(answer)
+                        case .question:
+                            if let question = session.pendingQuestion {
+                                QuestionSheetView(question: question, session: session) { answer in
+                                    viewModel.respondToQuestion(answer)
+                                }
                             }
-                        }
-                    case .plan:
-                        if let plan = session.pendingPlan {
-                            PlanApprovalSheetView(plan: plan, session: session) { mode, message in
-                                viewModel.respondToPlan(mode: mode, message: message)
+                        case .plan:
+                            if let plan = session.pendingPlan {
+                                PlanApprovalSheetView(plan: plan, session: session) { mode, message in
+                                    viewModel.respondToPlan(mode: mode, message: message)
+                                }
                             }
                         }
                     }
@@ -174,7 +202,7 @@ struct IslandView: View {
                     Image(systemName: "rectangle.3.group")
                         .font(.system(size: 28))
                         .foregroundStyle(.secondary.opacity(0.5))
-                    Text("No session selected")
+                    Text(localizer.agentNoSessionSelected)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -209,7 +237,7 @@ struct IslandView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .help("Show session detail")
+            .help(localizer.agentSessionDetail)
 
             Button(action: { viewModel.togglePin() }) {
                 Image(systemName: viewModel.isPinned ? "pin.fill" : "pin")
@@ -217,7 +245,7 @@ struct IslandView: View {
                     .foregroundStyle(viewModel.isPinned ? .blue : .secondary)
             }
             .buttonStyle(.plain)
-            .help("Pin island")
+            .help(localizer.agentPinIsland)
 
             Button(action: { viewModel.dismiss() }) {
                 Image(systemName: "xmark")
@@ -256,9 +284,13 @@ struct IslandView: View {
             Spacer()
 
             Button(action: { viewModel.showApprovalSessionList() }) {
-                Image(systemName: "rectangle.3.group")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                Label(localizer.agentApprovalShowSessions, systemImage: viewModel.showsApprovalList ? "doc.text.magnifyingglass" : "rectangle.3.group")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(viewModel.showsApprovalList ? .white : .secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(viewModel.showsApprovalList ? approvalKindColor(overlay.kind).opacity(0.85) : Color.primary.opacity(0.06))
+                    .clipShape(Capsule())
             }
             .buttonStyle(.plain)
             .help(localizer.agentApprovalShowSessions)
@@ -266,6 +298,108 @@ struct IslandView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .background(approvalKindColor(overlay.kind).opacity(0.08))
+    }
+
+    private var approvalCompactList: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(viewModel.visibleApprovalOverlays) { overlay in
+                    Button {
+                        viewModel.selectApprovalOverlay(overlay)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: approvalKindIcon(overlay.kind))
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(overlay.title)
+                                .font(.system(size: 10, weight: .medium))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(viewModel.activeApprovalOverlay?.id == overlay.id ? .white : approvalKindColor(overlay.kind))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background {
+                            Capsule()
+                                .fill(viewModel.activeApprovalOverlay?.id == overlay.id ? approvalKindColor(overlay.kind).opacity(0.9) : approvalKindColor(overlay.kind).opacity(0.1))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .help(overlay.title)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+        }
+        .background(.primary.opacity(0.025))
+    }
+
+    private var approvalListView: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text(localizer.agentCenterApprovals)
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Text("\(viewModel.approvalQueueCount)")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(.primary.opacity(0.06))
+                    .cornerRadius(5)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(viewModel.visibleApprovalOverlays) { overlay in
+                        Button {
+                            viewModel.selectApprovalOverlay(overlay)
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: approvalKindIcon(overlay.kind))
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(approvalKindColor(overlay.kind))
+                                    .frame(width: 28, height: 28)
+                                    .background(approvalKindColor(overlay.kind).opacity(0.12))
+                                    .cornerRadius(6)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(approvalKindTitle(overlay.kind))
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                    Text(overlay.title)
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+
+                                Spacer()
+
+                                if viewModel.activeApprovalOverlay?.id == overlay.id {
+                                    Text(localizer.agentCenterPending)
+                                        .font(.system(size: 9, weight: .medium))
+                                        .foregroundStyle(approvalKindColor(overlay.kind))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(approvalKindColor(overlay.kind).opacity(0.1))
+                                        .cornerRadius(4)
+                                }
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(10)
+                            .background(.primary.opacity(viewModel.activeApprovalOverlay?.id == overlay.id ? 0.07 : 0.035))
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 12)
+            }
+        }
     }
 
     private func approvalKindTitle(_ kind: IslandApprovalKind) -> String {
@@ -305,7 +439,7 @@ struct IslandView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(session.project)
                         .font(.system(size: 12, weight: .semibold))
-                    Text("Session Detail")
+                    Text(localizer.agentSessionDetail)
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }

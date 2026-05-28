@@ -13,7 +13,7 @@ enum IslandDisplayLevel: Int, Comparable {
 
     var islandWidth: CGFloat {
         switch self {
-        case .compact: return 200
+        case .compact: return 240
         case .hover: return 280
         case .expanded: return 520
         case .detail: return 480
@@ -24,7 +24,7 @@ enum IslandDisplayLevel: Int, Comparable {
         switch self {
         case .compact: return 48
         case .hover: return 56
-        case .expanded: return 380
+        case .expanded: return 440
         case .detail: return 420
         }
     }
@@ -87,6 +87,7 @@ class IslandViewModel: ObservableObject {
     @Published var isVisible: Bool = false
     @Published var isPinned: Bool = false
     @Published var currentSession: SessionState?
+    @Published var allSessions: [SessionState] = []
     @Published var activeSessions: [SessionState] = []
     @Published var recentEvents: [AgentHookEvent] = []
     @Published var lastStatusText: String = ""
@@ -98,6 +99,7 @@ class IslandViewModel: ObservableObject {
     @Published var sessionToDetail: SessionState?
     @Published var approvalQueue: [IslandApprovalOverlay] = []
     @Published var activeApprovalOverlay: IslandApprovalOverlay?
+    @Published var showsApprovalList: Bool = false
 
     private let maxRecentEvents = 20
     private let maxApprovalQueue = 50
@@ -105,6 +107,7 @@ class IslandViewModel: ObservableObject {
     private var streamTask: Task<Void, Never>?
     private var autoHideTask: Task<Void, Never>?
     private let autoHideDelay: TimeInterval = 5
+    private var autoPresentedApprovalIds: Set<String> = []
 
     weak var hookServer: HookServer?
     weak var sessionStore: SessionStore?
@@ -127,7 +130,14 @@ class IslandViewModel: ObservableObject {
         Task { [weak self] in
             guard let self = self, let store = self.sessionStore else { return }
             self.observerId = await store.observe { [weak self] sessions in
-                self?.activeSessions = sessions.filter { $0.phase.isActive || $0.phase.needsAttention }
+                self?.allSessions = sessions
+                self?.activeSessions = sessions.filter {
+                    $0.phase.isActive ||
+                    $0.phase.needsAttention ||
+                    $0.pendingPermission != nil ||
+                    $0.pendingQuestion != nil ||
+                    $0.pendingPlan != nil
+                }
                 self?.syncApprovalQueue(from: sessions)
                 if sessions.isEmpty {
                     self?.isVisible = false
@@ -210,10 +220,15 @@ class IslandViewModel: ObservableObject {
     }
 
     func show(level: IslandDisplayLevel) {
+        if level != .expanded {
+            showsApprovalList = false
+        }
         isVisible = true
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
             displayLevel = level
         }
+        DisplayController.shared.updateIslandFrame(level: level)
+        DisplayController.shared.showIsland()
         cancelAutoHide()
     }
 
@@ -243,11 +258,14 @@ class IslandViewModel: ObservableObject {
         showPermissionSheet = false
         showQuestionSheet = false
         showPlanApprovalSheet = false
+        showsApprovalList = false
     }
 
     var activeApprovalSession: SessionState? {
         guard let overlay = activeApprovalOverlay else { return nil }
-        return activeSessions.first { $0.id == overlay.sessionId } ?? currentSession
+        return allSessions.first { $0.id == overlay.sessionId } ??
+            activeSessions.first { $0.id == overlay.sessionId } ??
+            currentSession
     }
 
     var approvalQueueCount: Int {
@@ -256,6 +274,13 @@ class IslandViewModel: ObservableObject {
 
     var nextApprovalTitle: String? {
         approvalQueue.first?.title
+    }
+
+    var visibleApprovalOverlays: [IslandApprovalOverlay] {
+        if let activeApprovalOverlay {
+            return [activeApprovalOverlay] + approvalQueue
+        }
+        return approvalQueue
     }
 
     private func pushApprovalOverlay(sessionId: String, kind: IslandApprovalKind, title: String) {
@@ -300,12 +325,14 @@ class IslandViewModel: ObservableObject {
             }
             return overlays
         }
-
         let pendingIds = Set(pending.map(\.id))
+        let newPending = pending.filter { !autoPresentedApprovalIds.contains($0.id) }
+
         if let active = activeApprovalOverlay, !pendingIds.contains(active.id) {
             activeApprovalOverlay = nil
         }
         approvalQueue.removeAll { !pendingIds.contains($0.id) }
+        autoPresentedApprovalIds.formIntersection(pendingIds)
 
         for overlay in pending where activeApprovalOverlay?.id != overlay.id && !approvalQueue.contains(where: { $0.id == overlay.id }) {
             approvalQueue.append(overlay)
@@ -319,6 +346,11 @@ class IslandViewModel: ObservableObject {
             }
         }
         updateLegacySheetFlags(for: activeApprovalOverlay)
+
+        if !newPending.isEmpty, activeApprovalOverlay != nil {
+            autoPresentedApprovalIds.formUnion(newPending.map(\.id))
+            show(level: .expanded)
+        }
     }
 
     private func sortedApprovalQueue(_ overlays: [IslandApprovalOverlay]) -> [IslandApprovalOverlay] {
@@ -337,6 +369,7 @@ class IslandViewModel: ObservableObject {
     }
 
     private func advanceApprovalQueue() {
+        showsApprovalList = false
         if approvalQueue.isEmpty {
             activeApprovalOverlay = nil
         } else {
@@ -346,12 +379,37 @@ class IslandViewModel: ObservableObject {
     }
 
     func showApprovalSessionList() {
-        show(level: .hover)
+        showsApprovalList.toggle()
+        show(level: .expanded)
+    }
+
+    func selectApprovalOverlay(_ overlay: IslandApprovalOverlay) {
+        guard activeApprovalOverlay?.id != overlay.id else {
+            showsApprovalList = false
+            updateLegacySheetFlags(for: activeApprovalOverlay)
+            return
+        }
+
+        var overlays = visibleApprovalOverlays
+        overlays.removeAll { $0.id == overlay.id }
+        activeApprovalOverlay = overlay
+        approvalQueue = sortedApprovalQueue(overlays)
+        showsApprovalList = false
+        updateLegacySheetFlags(for: activeApprovalOverlay)
+        if let session = allSessions.first(where: { $0.id == overlay.sessionId }) {
+            currentSession = session
+        }
     }
 
     func respondToPermission(_ decision: PermissionDecision) {
         guard let session = activeApprovalSession ?? currentSession,
               let perm = session.pendingPermission else { return }
+
+        if perm.requiresExternalHandling {
+            handleExternalPermissionDecision(decision, session: session, permission: perm)
+            return
+        }
+
         Task { [weak self] in
             await self?.hookServer?.respondToPermission(
                 sessionId: session.id,
@@ -369,6 +427,51 @@ class IslandViewModel: ObservableObject {
                 }
             }
             await self?.sessionStore?.setPendingPermission(session.id, nil)
+        }
+    }
+
+    private func handleExternalPermissionDecision(
+        _ decision: PermissionDecision,
+        session: SessionState,
+        permission: PendingPermission
+    ) {
+        if decision.decision == PermissionDecision.openExternal.decision {
+            openExternalApprovalSource(permission)
+            show(level: .expanded)
+            return
+        }
+
+        guard decision.decision == PermissionDecision.externalHandled.decision else { return }
+
+        Task { [weak self] in
+            await MainActor.run {
+                self?.activeApprovalOverlay = nil
+                self?.showPermissionSheet = false
+                self?.advanceApprovalQueue()
+                if self?.activeApprovalOverlay == nil {
+                    self?.dismiss()
+                } else {
+                    self?.show(level: .expanded)
+                }
+            }
+            await self?.sessionStore?.setPendingPermission(session.id, nil)
+        }
+    }
+
+    private func openExternalApprovalSource(_ permission: PendingPermission) {
+        if let bundleId = permission.externalActionBundleId,
+           NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == bundleId }) {
+            NSWorkspace.shared.runningApplications
+                .first(where: { $0.bundleIdentifier == bundleId })?
+                .activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            return
+        }
+
+        if let bundleId = permission.externalActionBundleId,
+           let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
         }
     }
 
