@@ -30,7 +30,7 @@
 <div class="container">
 
 <h1>Privacy Policy for AgentGuard</h1>
-<p class="subtitle">Last updated: May 22, 2026</p>
+<p class="subtitle">Last updated: May 29, 2026</p>
 
 <p>Thank you for using AgentGuard ("we", "our", or "the App"). We are committed to protecting your privacy. This Privacy Policy explains how AgentGuard handles information when you use our macOS application.</p>
 
@@ -96,7 +96,7 @@
 <ul>
     <li>App Sandbox enabled — the app runs in a restricted environment with minimal system access</li>
     <li>Security-scoped bookmarks used for file monitoring — access limited to user-authorized directories</li>
-    <li>No network server functionality — the app cannot accept incoming connections</li>
+    <li>Local-only Agent Center listener — the app may listen on localhost or a Unix domain socket so AI agent hooks on your Mac can send approval requests to the app; it does not accept internet-facing connections</li>
     <li>Hardened runtime enabled — prevents dynamic code injection</li>
 </ul>
 
@@ -107,10 +107,11 @@
 <table>
 <tr><th>Feature</th><th>Destination</th><th>Data Sent</th></tr>
 <tr><td>AI Analysis (optional)</td><td>Your configured LLM API endpoint</td><td>App/storage analysis text + your API key</td></tr>
+<tr><td>Agent Center hooks (optional)</td><td>Localhost / local Unix socket on your Mac</td><td>AI agent events and approval requests generated locally</td></tr>
 <tr><td>App Store updates</td><td>Apple Mac App Store</td><td>Standard App Store update check</td></tr>
 </table>
 
-<p>No other network connections are made. The app does not include any analytics SDKs, advertising trackers, or third-party data collection services.</p>
+<p>No other network connections are made by AgentGuard. The app does not include any analytics SDKs, advertising trackers, or third-party data collection services.</p>
 
 <h2>5. Third-Party Services</h2>
 
@@ -185,7 +186,7 @@
 
 <div class="footer">
 <p>AgentGuard by AI-Scarlett &copy; 2025. All rights reserved.</p>
-<p>This privacy policy is effective as of May 22, 2026.</p>
+<p>This privacy policy is effective as of May 29, 2026.</p>
 </div>
 
 </div>
