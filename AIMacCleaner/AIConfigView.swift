@@ -73,6 +73,23 @@ struct AIConfigView: View {
                 .padding(12)
                 .background(Color.purple.opacity(0.05))
                 .cornerRadius(8)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(localizer.appReviewDemoMode)
+                        .font(.caption).fontWeight(.semibold)
+                    Text(localizer.appReviewDemoModeDesc)
+                        .font(.caption).foregroundColor(.secondary)
+                    Button(localizer.useAppReviewDemo) {
+                        apiBase = AIConfig.appReviewDemoBase
+                        apiKey = AIConfig.appReviewDemoKey
+                        model = AIConfig.appReviewDemoModel
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                .padding(12)
+                .background(Color.accentColor.opacity(0.06))
+                .cornerRadius(8)
             }
             .padding(20)
 

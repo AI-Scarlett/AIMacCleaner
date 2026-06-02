@@ -7,7 +7,7 @@ struct CodexAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".codex") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("hooks.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("codex") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -25,7 +25,7 @@ struct GeminiAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".gemini") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("gemini") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -43,7 +43,7 @@ struct CursorAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".cursor") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("cursor") || detectApp(named: "Cursor") }
     var hooksInstalled: Bool { checkCursorYolo() }
     func installHooks(installer: HookInstaller) async throws {
@@ -68,7 +68,7 @@ struct CursorCliAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".cursor") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("cursor") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -86,7 +86,7 @@ struct CopilotAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".config/github-copilot") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("hooks.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("code") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {

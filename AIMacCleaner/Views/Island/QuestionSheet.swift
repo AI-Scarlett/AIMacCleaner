@@ -10,6 +10,13 @@ struct QuestionSheetView: View {
     @State private var textAnswer: String = ""
     @FocusState private var isTextAnswerFocused: Bool
 
+    private enum ReplyMode {
+        case option
+        case multiSelect
+        case nestedQuestions
+        case textReply
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             compactHeader
@@ -23,36 +30,29 @@ struct QuestionSheetView: View {
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    if !question.questions.isEmpty {
-                        ForEach(question.questions, id: \.question) { item in
-                            QuestionItemView(
-                                item: item,
-                                selectedOptions: $selectedOptions,
-                                multiSelect: item.multiSelect
-                            )
-                        }
-                    } else if !question.options.isEmpty {
-                        optionList
-                    }
+                    replyControls
 
                     if !question.attachments.isEmpty {
                         ApprovalAttachmentStrip(attachments: question.attachments)
                     }
 
-                    customReplySection
+                    if replyMode == .textReply {
+                        customReplySection
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             }
             .onAppear {
-                if question.isTextReply {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                        isTextAnswerFocused = true
-                    }
-                }
+                resetInput()
+                focusTextReplyIfNeeded()
+            }
+            .onChange(of: questionIdentity) { _ in
+                resetInput()
+                focusTextReplyIfNeeded()
             }
 
-            if question.multiSelect {
+            if showsSubmitFooter {
                 Divider()
 
                 HStack(spacing: 8) {
@@ -70,8 +70,7 @@ struct QuestionSheetView: View {
                     .buttonStyle(.plain)
 
                     Button(action: {
-                        let answer = selectedOptions.sorted().joined(separator: ", ")
-                        onAnswer(answer.isEmpty ? "skip" : answer)
+                        submitSelectedAnswer()
                     }) {
                         Text(localizer.agentSubmit)
                             .font(.system(size: 12, weight: .medium))
@@ -82,11 +81,76 @@ struct QuestionSheetView: View {
                             .cornerRadius(8)
                     }
                     .buttonStyle(.plain)
-                    .disabled(selectedOptions.isEmpty)
+                    .disabled(isSubmitDisabled)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
             }
+        }
+    }
+
+    private var questionIdentity: String {
+        "\(session.id)|\(question.toolUseId ?? "")|\(question.question)|\(question.responseMode ?? "")"
+    }
+
+    private var replyMode: ReplyMode {
+        if question.isTextReply {
+            return .textReply
+        }
+        if !question.questions.isEmpty {
+            return .nestedQuestions
+        }
+        if question.multiSelect {
+            return .multiSelect
+        }
+        return .option
+    }
+
+    private var showsSubmitFooter: Bool {
+        replyMode == .multiSelect || replyMode == .nestedQuestions
+    }
+
+    private var isSubmitDisabled: Bool {
+        selectedOptions.isEmpty
+    }
+
+    @ViewBuilder
+    private var replyControls: some View {
+        switch replyMode {
+        case .textReply:
+            EmptyView()
+        case .nestedQuestions:
+            ForEach(question.questions, id: \.question) { item in
+                QuestionItemView(
+                    item: item,
+                    selectedOptions: $selectedOptions,
+                    multiSelect: item.multiSelect
+                )
+            }
+        case .multiSelect, .option:
+            optionList
+        }
+    }
+
+    private var isMultiSelectMode: Bool {
+        replyMode == .multiSelect
+    }
+
+    private func submitSelectedAnswer() {
+        let answer = selectedOptions.sorted().joined(separator: ", ")
+        onAnswer(answer.isEmpty ? "skip" : answer)
+    }
+
+    private func resetInput() {
+        selectedOptions = []
+        textAnswer = ""
+        isTextAnswerFocused = false
+    }
+
+    private func focusTextReplyIfNeeded() {
+        guard replyMode == .textReply else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            isTextAnswerFocused = true
         }
     }
 
@@ -118,7 +182,7 @@ struct QuestionSheetView: View {
         VStack(spacing: 4) {
             ForEach(Array(question.options.enumerated()), id: \.offset) { idx, option in
                 Button(action: {
-                    if question.multiSelect {
+                    if isMultiSelectMode {
                         if selectedOptions.contains(option) {
                             selectedOptions.remove(option)
                         } else {
@@ -129,7 +193,7 @@ struct QuestionSheetView: View {
                     }
                 }) {
                     HStack {
-                        if question.multiSelect {
+                        if isMultiSelectMode {
                             Image(systemName: selectedOptions.contains(option) ? "checkmark.square.fill" : "square")
                                 .font(.system(size: 12))
                                 .foregroundStyle(selectedOptions.contains(option) ? .blue : .secondary)

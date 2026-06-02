@@ -700,15 +700,19 @@ class ScannerService: ObservableObject {
     }
 
     func saveAIConfig(apiBase: String, apiKey: String, model: String) {
-        if apiKey.isEmpty {
+        let isDemoConfig = apiBase == AIConfig.appReviewDemoBase || model == AIConfig.appReviewDemoModel
+        let keyToStore = isDemoConfig && apiKey.isEmpty ? AIConfig.appReviewDemoKey : apiKey
+
+        if keyToStore.isEmpty {
             KeychainStore.deleteAPIKey()
         } else {
-            KeychainStore.saveAPIKey(apiKey)
+            KeychainStore.saveAPIKey(keyToStore)
         }
 
-        let config = AIConfig(apiBase: apiBase, apiKey: nil, model: model, hasKey: !apiKey.isEmpty)
+        let hasKey = isDemoConfig || !keyToStore.isEmpty
+        let config = AIConfig(apiBase: apiBase, apiKey: nil, model: model, hasKey: hasKey)
         saveAIConfigMetadata(config)
-        aiConfig = AIConfig(apiBase: apiBase, apiKey: apiKey.isEmpty ? nil : apiKey, model: model, hasKey: !apiKey.isEmpty)
+        aiConfig = AIConfig(apiBase: apiBase, apiKey: keyToStore.isEmpty ? nil : keyToStore, model: model, hasKey: hasKey)
     }
 
     private func saveAIConfigMetadata(_ config: AIConfig) {
@@ -719,6 +723,11 @@ class ScannerService: ObservableObject {
     // MARK: - AI Scan
 
     func startAiScan() async {
+        if aiConfig?.isAppReviewDemo == true {
+            await runAppReviewDemoAiScan()
+            return
+        }
+
         guard let config = aiConfig, config.hasKey == true, let apiKey = config.apiKey, !apiKey.isEmpty else {
             errorMessage = localizer?.configureAPIKeyFirst ?? "Please configure LLM API Key first"
             return
@@ -744,6 +753,74 @@ class ScannerService: ObservableObject {
         } else {
             errorMessage = "\(localizer?.aiScanFailed ?? "AI scan failed"): \(result.error ?? (localizer?.unknownError ?? "Unknown error"))\n\(localizer?.suggestLocalScan ?? "Suggest using local scan")"
         }
+    }
+
+    private func runAppReviewDemoAiScan() async {
+        isAiScanning = true
+        errorMessage = nil
+        aiStatusMessage = localizer?.appReviewDemoStatus ?? "Generating App Review demo scan results..."
+        try? await Task.sleep(nanoseconds: 700_000_000)
+
+        let demoItems = makeAppReviewDemoScanItems()
+        let existingIds = Set(scanItems.map(\.id))
+        let newItems = demoItems.filter { !existingIds.contains($0.id) }
+
+        scanItems.append(contentsOf: newItems)
+        scanItems.sort { $0.size > $1.size }
+        isAiScanning = false
+        refreshDiskInfo()
+        aiStatusMessage = "\(localizer?.aiScanComplete ?? "AI scan complete, found") \(newItems.count) \(localizer?.itemsLabel ?? "items")"
+    }
+
+    private func makeAppReviewDemoScanItems() -> [ScanItem] {
+        let home = NSHomeDirectory()
+        return [
+            ScanItem(
+                id: "app-review-demo-download-installers",
+                name: "Demo: Downloaded installer archives",
+                category: "Downloads",
+                app: "AgentGuard Demo",
+                risk: "safe",
+                riskDesc: "Sample AI result for App Review. These downloaded installer archives can usually be removed after installation.",
+                path: "~/Downloads",
+                realPath: "\(home)/Downloads",
+                size: 1_280_000_000,
+                fileCount: 12,
+                ignored: false,
+                reason: "AI demo result: old disk images and installer archives in Downloads are no longer needed after apps are installed.",
+                source: "ai"
+            ),
+            ScanItem(
+                id: "app-review-demo-agent-cache",
+                name: "Demo: AI agent cache",
+                category: "AI Agent",
+                app: "AgentGuard Demo",
+                risk: "caution",
+                riskDesc: "Sample AI result for App Review. Cache files are generally safe to review, but active sessions may need to regenerate data.",
+                path: "~/Library/Caches/AgentGuardDemo",
+                realPath: "\(home)/Library/Caches/AgentGuardDemo",
+                size: 640_000_000,
+                fileCount: 84,
+                ignored: false,
+                reason: "AI demo result: repeated cache files from agent sessions can be reviewed before cleanup.",
+                source: "ai"
+            ),
+            ScanItem(
+                id: "app-review-demo-agent-logs",
+                name: "Demo: AI agent diagnostic logs",
+                category: "AI Agent",
+                app: "AgentGuard Demo",
+                risk: "safe",
+                riskDesc: "Sample AI result for App Review. Rotated diagnostic logs can be removed when they are no longer needed for debugging.",
+                path: "~/Library/Logs/AgentGuardDemo",
+                realPath: "\(home)/Library/Logs/AgentGuardDemo",
+                size: 210_000_000,
+                fileCount: 37,
+                ignored: false,
+                reason: "AI demo result: rotated log files are useful for review but not required for normal app operation.",
+                source: "ai"
+            )
+        ]
     }
 
     // MARK: - Enhanced Scan
@@ -1481,6 +1558,18 @@ class ScannerService: ObservableObject {
             .compactMap { convertAgentSessionRecord($0) }
         guard !converted.isEmpty else { return }
         operationMonitor.mergeHistoricalRecords(converted)
+        operationRecords = operationMonitor.records
+        processedOperationRecordIDs = Set(operationRecords.map(\.id))
+        guardFeature.rebuildAnalytics(from: operationRecords)
+    }
+
+    func ingestHookAuditRecord(_ record: OperationRecord) {
+        guard record.timestamp >= recordsClearCutoff else { return }
+        operationMonitor.mergeHistoricalRecords([record])
+        refreshOperationRecordsSnapshot()
+    }
+
+    func refreshOperationRecordsSnapshot() {
         operationRecords = operationMonitor.records
         processedOperationRecordIDs = Set(operationRecords.map(\.id))
         guardFeature.rebuildAnalytics(from: operationRecords)

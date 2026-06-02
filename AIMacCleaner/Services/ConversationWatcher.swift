@@ -33,6 +33,10 @@ class ConversationWatcher: ObservableObject {
     private var processedExternalApprovalIds: Set<String> = []
     private var pendingExternalApprovalIds: [String: String] = [:]
     private weak var sessionStore: SessionStore?
+    nonisolated private static let sessionIdRegexes: [NSRegularExpression] = [
+        try! NSRegularExpression(pattern: "session[-_]([a-f0-9-]{20,})", options: []),
+        try! NSRegularExpression(pattern: "([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})", options: [])
+    ]
 
     func setupExternalApprovalBridge(sessionStore: SessionStore) {
         self.sessionStore = sessionStore
@@ -44,13 +48,26 @@ class ConversationWatcher: ObservableObject {
         watchedPaths = Set(directories.map { $0.path })
         isWatching = true
 
-        monitorTask = Task { [weak self] in
-            while !Task.isCancelled, self?.isWatching == true {
-                self?.scanDirectories()
-                self?.scanExternalApprovals()
+        monitorTask = Task.detached(priority: .utility) { [weak self] in
+            while !Task.isCancelled {
+                guard let watcher = self,
+                      let directories = await watcher.activeWatchedDirectories() else {
+                    break
+                }
+                let found = Self.scanDirectoriesSnapshot(directories)
+                await watcher.applyScanResult(found)
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
             }
         }
+    }
+
+    private func activeWatchedDirectories() -> [ConversationDirectory]? {
+        isWatching ? watchedDirectories : nil
+    }
+
+    private func applyScanResult(_ found: [ConversationFile]) {
+        mergeDiscoveredConversations(found)
+        scanExternalApprovals()
     }
 
     func stopWatching() {
@@ -61,9 +78,7 @@ class ConversationWatcher: ObservableObject {
     }
 
     func scanDirectories() {
-        for dir in watchedDirectories {
-            scanDirectory(dir)
-        }
+        mergeDiscoveredConversations(Self.scanDirectoriesSnapshot(watchedDirectories))
     }
 
     func scanExternalApprovals() {
@@ -188,17 +203,21 @@ class ConversationWatcher: ObservableObject {
         return URL(fileURLWithPath: cwd).lastPathComponent
     }
 
-    private func scanDirectory(_ dir: ConversationDirectory) {
+    nonisolated private static func scanDirectoriesSnapshot(_ directories: [ConversationDirectory]) -> [ConversationFile] {
+        directories.flatMap { scanDirectory($0) }
+    }
+
+    nonisolated private static func scanDirectory(_ dir: ConversationDirectory) -> [ConversationFile] {
         let fm = FileManager.default
         let dirPath = NSString(string: dir.path).expandingTildeInPath
 
-        guard fm.fileExists(atPath: dirPath) else { return }
+        guard fm.fileExists(atPath: dirPath) else { return [] }
 
         guard let enumerator = fm.enumerator(
             at: URL(fileURLWithPath: dirPath),
             includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles]
-        ) else { return }
+        ) else { return [] }
 
         var found: [ConversationFile] = []
 
@@ -228,6 +247,10 @@ class ConversationWatcher: ObservableObject {
             found.append(conv)
         }
 
+        return found
+    }
+
+    private func mergeDiscoveredConversations(_ found: [ConversationFile]) {
         let existingIds = Set(discoveredConversations.map { $0.id })
         for conv in found {
             if !existingIds.contains(conv.id) {
@@ -254,24 +277,29 @@ class ConversationWatcher: ObservableObject {
         discoveredConversations.filter { $0.sessionId == sessionId }
     }
 
-    private func extractSessionId(from fileName: String, path: String) -> String? {
-        let patterns: [Regex<(Substring, Substring)>] = [
-            try! Regex("session[-_]([a-f0-9-]{20,})"),
-            try! Regex("([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"),
-        ]
-
-        for pattern in patterns {
-            if let match = fileName.firstMatch(of: pattern) {
-                return String(match.1)
+    nonisolated private static func extractSessionId(from fileName: String, path: String) -> String? {
+        for regex in sessionIdRegexes {
+            if let match = firstCapture(in: fileName, regex: regex) {
+                return match
             }
-            if let match = path.firstMatch(of: pattern) {
-                return String(match.1)
+            if let match = firstCapture(in: path, regex: regex) {
+                return match
             }
         }
         return nil
     }
 
-    private func extractProjectName(from path: String) -> String? {
+    nonisolated private static func firstCapture(in text: String, regex: NSRegularExpression) -> String? {
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              match.numberOfRanges > 1,
+              let captureRange = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return String(text[captureRange])
+    }
+
+    nonisolated private static func extractProjectName(from path: String) -> String? {
         let components = (path as NSString).pathComponents
         for (i, comp) in components.enumerated() {
             if comp == "projects" || comp == "sessions", i + 1 < components.count {
@@ -283,10 +311,18 @@ class ConversationWatcher: ObservableObject {
 
     static func buildConversationDirectories(from profiles: [AgentIntegrationProfile]) -> [ConversationDirectory] {
         profiles.compactMap { profile in
-            let expanded = profile.fullConfigPath.path
+            let configPath = profile.fullConfigPath
+            let expanded = configPath.path
             var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir) else { return nil }
-            let root = isDir.boolValue ? expanded : URL(fileURLWithPath: expanded).deletingLastPathComponent().path
+            let root: String
+            if FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir) {
+                root = isDir.boolValue ? expanded : configPath.deletingLastPathComponent().path
+            } else {
+                let parent = configPath.deletingLastPathComponent().path
+                guard FileManager.default.fileExists(atPath: parent, isDirectory: &isDir),
+                      isDir.boolValue else { return nil }
+                root = parent
+            }
 
             let conversationDirs = findConversationDirs(in: root, profile: profile)
             return conversationDirs.first

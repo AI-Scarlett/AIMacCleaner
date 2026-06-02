@@ -259,6 +259,7 @@ class IslandViewModel: ObservableObject {
         showQuestionSheet = false
         showPlanApprovalSheet = false
         showsApprovalList = false
+        dismiss()
     }
 
     var activeApprovalSession: SessionState? {

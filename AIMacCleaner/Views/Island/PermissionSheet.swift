@@ -142,6 +142,19 @@ struct PermissionSheetView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
+        .onAppear(perform: resetInput)
+        .onChange(of: permissionIdentity) { _ in
+            resetInput()
+        }
+    }
+
+    private var permissionIdentity: String {
+        "\(session.id)|\(permission.toolUseId ?? "")|\(permission.toolName)"
+    }
+
+    private func resetInput() {
+        reason = ""
+        isDenyInputVisible = false
     }
 
     private var externalHandlingHint: some View {

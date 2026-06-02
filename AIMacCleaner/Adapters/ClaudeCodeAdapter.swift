@@ -7,7 +7,7 @@ struct ClaudeCodeAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".claude") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
 
     func detectInstallation() -> Bool { detectCLI("claude") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
@@ -24,6 +24,29 @@ struct ClaudeCodeAdapter: AgentAdapter {
 }
 
 func detectCLI(_ binary: String) -> Bool {
+    let fm = FileManager.default
+    let pathEntries = (ProcessInfo.processInfo.environment["PATH"] ?? "")
+        .split(separator: ":")
+        .map(String.init)
+    let home = SandboxPaths.realHomeDirectory
+    let commonDirs = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "\(home)/.local/bin",
+        "\(home)/bin",
+        "\(home)/.npm-global/bin",
+        "\(home)/.bun/bin",
+        "\(home)/.cargo/bin"
+    ]
+    for dir in Array(Set(pathEntries + commonDirs)) {
+        let candidate = URL(fileURLWithPath: dir).appendingPathComponent(binary).path
+        if fm.isExecutableFile(atPath: candidate) {
+            return true
+        }
+    }
+
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
     process.arguments = [binary]
@@ -38,7 +61,7 @@ func detectAnyCLI(_ binaries: [String]) -> Bool {
 
 func detectApp(named appName: String) -> Bool {
     let fm = FileManager.default
-    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    let home = SandboxPaths.realHomeDirectory
     return [
         "/Applications/\(appName).app",
         "\(home)/Applications/\(appName).app",
@@ -47,4 +70,8 @@ func detectApp(named appName: String) -> Bool {
 
 func detectAnyApp(_ appNames: [String]) -> Bool {
     appNames.contains { detectApp(named: $0) }
+}
+
+func agentRealHomeURL() -> URL {
+    URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true)
 }

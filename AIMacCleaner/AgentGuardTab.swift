@@ -29,6 +29,7 @@ struct AgentGuardTab: View {
     @State private var chartHoverDate: Date?
     @State private var toastMessage: String = ""
     @State private var showToast = false
+    @State private var toastTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -277,7 +278,7 @@ struct AgentGuardTab: View {
                 HStack {
                     Slider(value: Binding(
                         get: { Double(service.guardFeature.alertRule.batchDeleteThreshold) },
-                        set: { service.guardFeature.alertRule.batchDeleteThreshold = Int($0); service.guardFeature.saveAlertRule() }
+                        set: { service.guardFeature.alertRule.batchDeleteThreshold = Int($0); service.guardFeature.scheduleSaveAlertRule() }
                     ), in: 2...50, step: 1)
                     Text("\(service.guardFeature.alertRule.batchDeleteThreshold)")
                         .font(Theme.Font.caption)
@@ -290,7 +291,7 @@ struct AgentGuardTab: View {
                 HStack {
                     Slider(value: Binding(
                         get: { Double(service.guardFeature.alertRule.batchModifyThreshold) },
-                        set: { service.guardFeature.alertRule.batchModifyThreshold = Int($0); service.guardFeature.saveAlertRule() }
+                        set: { service.guardFeature.alertRule.batchModifyThreshold = Int($0); service.guardFeature.scheduleSaveAlertRule() }
                     ), in: 2...100, step: 1)
                     Text("\(service.guardFeature.alertRule.batchModifyThreshold)")
                         .font(Theme.Font.caption)
@@ -303,7 +304,7 @@ struct AgentGuardTab: View {
                 HStack {
                     Slider(value: Binding(
                         get: { service.guardFeature.alertRule.batchTimeWindowSeconds },
-                        set: { service.guardFeature.alertRule.batchTimeWindowSeconds = $0; service.guardFeature.saveAlertRule() }
+                        set: { service.guardFeature.alertRule.batchTimeWindowSeconds = $0; service.guardFeature.scheduleSaveAlertRule() }
                     ), in: 5...300, step: 5)
                     Text("\(Int(service.guardFeature.alertRule.batchTimeWindowSeconds))s")
                         .font(Theme.Font.caption)
@@ -316,7 +317,7 @@ struct AgentGuardTab: View {
                 HStack {
                     Slider(value: Binding(
                         get: { service.guardFeature.alertRule.alertCooldownSeconds },
-                        set: { service.guardFeature.alertRule.alertCooldownSeconds = $0; service.guardFeature.saveAlertRule() }
+                        set: { service.guardFeature.alertRule.alertCooldownSeconds = $0; service.guardFeature.scheduleSaveAlertRule() }
                     ), in: 10...600, step: 10)
                     Text("\(Int(service.guardFeature.alertRule.alertCooldownSeconds))s")
                         .font(Theme.Font.caption)
@@ -329,34 +330,34 @@ struct AgentGuardTab: View {
 
             toggleRule(title: localizer.enableSensitiveFile, description: localizer.sensitiveFileDesc, isOn: Binding(
                 get: { service.guardFeature.alertRule.sensitiveFileDetectionEnabled },
-                set: { service.guardFeature.alertRule.sensitiveFileDetectionEnabled = $0; service.guardFeature.saveAlertRule() }
+                set: { service.guardFeature.alertRule.sensitiveFileDetectionEnabled = $0; service.guardFeature.scheduleSaveAlertRule() }
             ))
 
             toggleRule(title: localizer.enableSensitiveContent, description: localizer.sensitiveContentDesc, isOn: Binding(
                 get: { service.guardFeature.alertRule.sensitiveContentDetectionEnabled },
-                set: { service.guardFeature.alertRule.sensitiveContentDetectionEnabled = $0; service.guardFeature.saveAlertRule() }
+                set: { service.guardFeature.alertRule.sensitiveContentDetectionEnabled = $0; service.guardFeature.scheduleSaveAlertRule() }
             ))
 
             toggleRule(title: localizer.enableProcessAlert, description: localizer.processAlertDesc, isOn: Binding(
                 get: { service.guardFeature.alertRule.processLaunchAlertEnabled },
-                set: { service.guardFeature.alertRule.processLaunchAlertEnabled = $0; service.guardFeature.saveAlertRule() }
+                set: { service.guardFeature.alertRule.processLaunchAlertEnabled = $0; service.guardFeature.scheduleSaveAlertRule() }
             ))
 
             toggleRule(title: localizer.enableProtectedDir, description: localizer.protectedDirDesc, isOn: Binding(
                 get: { service.guardFeature.alertRule.protectedDirAlertEnabled },
-                set: { service.guardFeature.alertRule.protectedDirAlertEnabled = $0; service.guardFeature.saveAlertRule() }
+                set: { service.guardFeature.alertRule.protectedDirAlertEnabled = $0; service.guardFeature.scheduleSaveAlertRule() }
             ))
 
             toggleRule(title: localizer.enableNotification, description: localizer.notificationDesc, isOn: Binding(
                 get: { service.guardFeature.alertRule.notificationEnabled },
-                set: { service.guardFeature.alertRule.notificationEnabled = $0; service.guardFeature.saveAlertRule() }
+                set: { service.guardFeature.alertRule.notificationEnabled = $0; service.guardFeature.scheduleSaveAlertRule() }
             ))
 
             Divider()
 
             toggleRule(title: localizer.doNotDisturb, description: localizer.doNotDisturbDesc, isOn: Binding(
                 get: { service.guardFeature.alertRule.doNotDisturbEnabled },
-                set: { service.guardFeature.alertRule.doNotDisturbEnabled = $0; service.guardFeature.saveAlertRule() }
+                set: { service.guardFeature.alertRule.doNotDisturbEnabled = $0; service.guardFeature.scheduleSaveAlertRule() }
             ))
 
             if service.guardFeature.alertRule.doNotDisturbEnabled {
@@ -367,7 +368,7 @@ struct AgentGuardTab: View {
                     Spacer()
                     Picker("", selection: Binding(
                         get: { service.guardFeature.alertRule.doNotDisturbStartHour },
-                        set: { service.guardFeature.alertRule.doNotDisturbStartHour = $0; service.guardFeature.saveAlertRule() }
+                        set: { service.guardFeature.alertRule.doNotDisturbStartHour = $0; service.guardFeature.scheduleSaveAlertRule() }
                     )) {
                         ForEach(0..<24, id: \.self) { (h: Int) in
                             Text(String(format: "%02d:00", h)).tag(h)
@@ -377,7 +378,7 @@ struct AgentGuardTab: View {
                     Text("—")
                     Picker("", selection: Binding(
                         get: { service.guardFeature.alertRule.doNotDisturbEndHour },
-                        set: { service.guardFeature.alertRule.doNotDisturbEndHour = $0; service.guardFeature.saveAlertRule() }
+                        set: { service.guardFeature.alertRule.doNotDisturbEndHour = $0; service.guardFeature.scheduleSaveAlertRule() }
                     )) {
                         ForEach(0..<24, id: \.self) { (h: Int) in
                             Text(String(format: "%02d:00", h)).tag(h)
@@ -398,7 +399,7 @@ struct AgentGuardTab: View {
         VStack(spacing: Theme.Spacing.lg) {
             toggleRule(title: localizer.enableCommandGuard, isOn: Binding(
                 get: { service.guardFeature.alertRule.commandGuardEnabled },
-                set: { service.guardFeature.alertRule.commandGuardEnabled = $0; service.guardFeature.saveAlertRule() }
+                set: { service.guardFeature.alertRule.commandGuardEnabled = $0; service.guardFeature.scheduleSaveAlertRule() }
             ))
 
             HStack(spacing: Theme.Spacing.sm) {
@@ -727,7 +728,7 @@ struct AgentGuardTab: View {
                 emptyStateView(icon: "folder.badge.eye", message: localizer.noProtectedDirs, hint: localizer.noProtectedDirsHint, color: Theme.Colors.info)
             } else {
                 VStack(spacing: Theme.Spacing.sm) {
-                    ForEach(Array(service.guardFeature.protectedDirs.enumerated()), id: \.offset) { index, dir in
+                    ForEach(service.guardFeature.protectedDirs, id: \.self) { dir in
                         protectedDirRow(dir)
                     }
                 }
@@ -1102,9 +1103,12 @@ struct AgentGuardTab: View {
     // MARK: - Audit Report Sheet
 
     private func showCommandToast(_ action: String) {
+        toastTask?.cancel()
         toastMessage = "\(action) ✓"
         withAnimation { showToast = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        toastTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
             withAnimation { showToast = false }
         }
     }

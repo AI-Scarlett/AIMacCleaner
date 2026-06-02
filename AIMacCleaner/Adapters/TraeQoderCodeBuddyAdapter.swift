@@ -7,7 +7,7 @@ struct TraeAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".trae") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("config.yaml")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("trae") || detectApp(named: "Trae") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -25,7 +25,7 @@ struct TraeCliAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".trae") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("traecli.yaml")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectAnyCLI(["trae", "trae-cli", "traecli"]) || detectApp(named: "Trae") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -43,7 +43,7 @@ struct TraeCNAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".trae-cn") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("config.yaml")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("trae-cn") || detectApp(named: "Trae CN") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -61,7 +61,7 @@ struct QoderAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".qoder") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("qoder") || detectApp(named: "Qoder") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -79,7 +79,7 @@ struct QoderCliAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".qoder") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("qoder") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -97,7 +97,7 @@ struct CodeBuddyAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".codebuddy") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("codebuddy") || detectApp(named: "CodeBuddy") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -115,7 +115,7 @@ struct CodeBuddyCNAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".codybuddycn") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectAnyCLI(["codybuddycn", "codebuddy-cn"]) || detectAnyApp(["CodeBuddy CN", "CodyBuddyCN"]) }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {

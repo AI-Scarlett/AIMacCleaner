@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import Darwin
 
 @main
 struct AIMacCleanerApp: App {
@@ -51,9 +52,6 @@ struct AIMacCleanerApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: .agentCenterShouldInitialize)) { _ in
                     guard agentCenterIntegrationEnabled else { return }
                     appDelegate.initializeAgentCenterServices()
-                }
-                .onDisappear {
-                    appDelegate.cleanupAgentCenterServices()
                 }
         }
         .windowStyle(.titleBar)
@@ -181,6 +179,7 @@ extension Notification.Name {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindow: NSWindow?
+    private var forceTerminateOnce = false
     var service: ScannerService?
     var hookServer: HookServer?
     var sessionStore: SessionStore?
@@ -200,12 +199,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var islandCancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        terminateDuplicateAgentGuardInstances()
         DispatchQueue.main.async { [weak self] in
             self?.setupWindowDelegate()
         }
     }
 
+    private func terminateDuplicateAgentGuardInstances() {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        for app in NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier) where app.processIdentifier != currentPID {
+            print("[AgentGuard] Terminating duplicate AgentGuard instance pid=\(app.processIdentifier)")
+            app.terminate()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                if !app.isTerminated {
+                    print("[AgentGuard] Force terminating duplicate AgentGuard instance pid=\(app.processIdentifier)")
+                    app.forceTerminate()
+                }
+            }
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        Task { @MainActor in
+            cleanupAgentCenterServices()
+        }
         service?.operationMonitor.saveRecords()
         service?.guardFeature.saveHourlyStats()
         service?.guardFeature.saveAlerts()
@@ -251,12 +269,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if forceTerminateOnce {
+            forceTerminateOnce = false
+            return .terminateNow
+        }
         let quitBehavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
         if quitBehavior == "quitAppOnly" || quitBehavior == "quitAppKeepMenu" {
             hideDesktopWindows()
             return .terminateCancel
         }
         return .terminateNow
+    }
+
+    @MainActor
+    func requestFullQuit() {
+        forceTerminateOnce = true
+        service?.operationMonitor.saveRecords()
+        service?.guardFeature.saveHourlyStats()
+        service?.guardFeature.saveAlerts()
+        cleanupAgentCenterServices()
+        NSApp.terminate(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            Darwin.exit(0)
+        }
+    }
+
+    @MainActor
+    func requestMenuBarQuit() {
+        requestFullQuit()
     }
 
     func configureAgentCenterContext(
@@ -302,12 +342,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             await remote.setup(hookServer: server)
         }
 
-        Task {
-            if let guardFeature = service?.guardFeature {
-                await server.setup(sessionStore: store, soundEngine: sound, guardFeature: guardFeature)
-            }
-        }
-
         display.setup(islandViewModel: islandViewModel, localizer: localizer)
 
         let windowCtrl = IslandWindowController(
@@ -333,6 +367,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task {
             do {
+                await server.setup(
+                    sessionStore: store,
+                    soundEngine: sound,
+                    guardFeature: service?.guardFeature,
+                    scannerService: service
+                )
                 try await server.start()
                 islandViewModel.startObserving()
                 sessionsViewModel.startObserving()

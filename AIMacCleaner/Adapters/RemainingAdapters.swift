@@ -7,7 +7,7 @@ struct QwenAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".qwen") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("qwen") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -25,7 +25,7 @@ struct KimiAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".kimi") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("kimi") || detectApp(named: "Kimi") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -43,7 +43,7 @@ struct DeepSeekAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".deepseek") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("deepseek") || detectApp(named: "DeepSeek") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -61,7 +61,7 @@ struct OpenCodeAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".opencode") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("opencode") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -79,7 +79,7 @@ struct DroidAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".factory") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("droid") || detectApp(named: "Factory") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -97,7 +97,7 @@ struct StepFunAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".stepfun") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("stepfun") || detectApp(named: "StepFun") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -115,7 +115,7 @@ struct AntiGravityAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".antigravity") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("antigravity") || detectApp(named: "Antigravity") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -133,7 +133,7 @@ struct WorkBuddyAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".workbuddy") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("hooks.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("workbuddy") || detectApp(named: "WorkBuddy") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -151,7 +151,7 @@ struct HermesAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".hermes") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("plugins/agentguard")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("hermes") || detectApp(named: "Hermes") }
     var hooksInstalled: Bool {
         let dir = configRoot.appendingPathComponent("plugins/agentguard")
@@ -187,7 +187,7 @@ struct PiAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".pi") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("hooks.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("pi") || detectApp(named: "Pi") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -205,7 +205,7 @@ struct KiroAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".kiro") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("agents/agentguard.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectAnyCLI(["kiro-cli", "kiro"]) || detectApp(named: "Kiro") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -231,7 +231,7 @@ struct OpenClawAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".openclaw") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("openclaw") || detectApp(named: "OpenClaw") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -249,7 +249,7 @@ struct QClawAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".qclaw") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("qclaw") || detectApp(named: "QClaw") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -267,7 +267,7 @@ struct EasyClawAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".easyclaw") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("easyclaw") || detectApp(named: "EasyClaw") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
@@ -285,7 +285,7 @@ struct AutoClawAdapter: AgentAdapter {
     var configRoot: URL { userHome.appendingPathComponent(".openclaw-autoclaw") }
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
-    private var userHome: URL { FileManager.default.homeDirectoryForCurrentUser }
+    private var userHome: URL { agentRealHomeURL() }
     func detectInstallation() -> Bool { detectCLI("autoclaw") || detectApp(named: "AutoClaw") }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {

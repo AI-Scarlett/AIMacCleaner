@@ -70,16 +70,23 @@ enum AppLanguage: String, CaseIterable {
 }
 
 class Localizer: ObservableObject {
+    private var didFinishInit = false
+
     @Published var language: AppLanguage {
         didSet {
             UserDefaults.standard.set(language.rawValue, forKey: "appLanguage")
+            if didFinishInit {
+                UserDefaults.standard.set(true, forKey: "appLanguageUserSelected")
+            }
             objectWillChange.send()
         }
     }
 
     init() {
-        let saved = UserDefaults.standard.string(forKey: "appLanguage") ?? "en"
+        let hasUserSelection = UserDefaults.standard.bool(forKey: "appLanguageUserSelected")
+        let saved = hasUserSelection ? (UserDefaults.standard.string(forKey: "appLanguage") ?? "en") : "en"
         language = AppLanguage(rawValue: saved) ?? .english
+        didFinishInit = true
     }
 
     func t(_ zh: String, en: String, zhHant: String? = nil, ja: String? = nil, ko: String? = nil, mt: String? = nil) -> String {
@@ -237,6 +244,9 @@ extension Localizer {
     var apiKey: String { t("API Key", en: "API Key", zhHant: "API Key", ja: "API Key", ko: "API Key", mt: "API Key") }
     var modelName: String { t("模型名称", en: "Model Name", zhHant: "模型名稱", ja: "モデル名", ko: "모델 이름", mt: "Model Name") }
     var recommendedConfig: String { t("推荐配置（点击自动填入）", en: "Recommended presets (click to auto-fill)", zhHant: "推薦配置（點選自動填入）", ja: "推奨設定（クリックで自動入力）", ko: "추천 설정 (클릭 시 자동 입력)", mt: "Recommended presets (click to auto-fill)") }
+    var appReviewDemoMode: String { t("App Review 演示模式", en: "App Review Demo Mode", zhHant: "App Review 演示模式", ja: "App Review デモモード", ko: "App Review 데모 모드", mt: "App Review Demo Mode") }
+    var appReviewDemoModeDesc: String { t("无需外部 API Key，使用本地样例数据展示 AI 扫描流程。", en: "Uses local sample data to demonstrate AI scanning without an external API key.", zhHant: "無需外部 API Key，使用本地樣例資料展示 AI 掃描流程。", ja: "外部 API Key なしでローカルサンプルデータを使って AI スキャンを実演します。", ko: "외부 API Key 없이 로컬 샘플 데이터로 AI 스캔 흐름을 보여줍니다.", mt: "Uses local sample data to demonstrate AI scanning without an external API key.") }
+    var useAppReviewDemo: String { t("使用演示模式", en: "Use Demo Mode", zhHant: "使用演示模式", ja: "デモモードを使用", ko: "데모 모드 사용", mt: "Use Demo Mode") }
 
     var featureToggles: String { t("功能开关", en: "Feature Toggles", zhHant: "功能開關", ja: "機能切替", ko: "기능 토글", mt: "Feature Toggles") }
     var labSettingsTitle: String { t("实验室说明", en: "Lab Overview", zhHant: "實驗室說明", ja: "ラボ概要", ko: "실험실 안내", mt: "Lab Overview") }
@@ -727,6 +737,7 @@ extension Localizer {
     var updateCheckingDesc: String { t("互联网模式下，可以检查已安装应用、AI Agent、CLI 工具和依赖的更新", en: "In internet mode, the app can check for updates of installed apps, AI agents, CLI tools, and dependencies.", zhHant: "網際網路模式下，可以檢查已安裝應用、AI Agent、CLI 工具和依賴的更新", ja: "インターネットモードでは、インストール済みアプリ・AI Agent・CLIツール・依存のアップデートを確認できます", ko: "인터넷 모드에서 설치된 앱, AI Agent, CLI 도구, 의존성의 업데이트를 확인할 수 있습니다", mt: "In internet mode, the app can check for updates of installed apps, AI agents, CLI tools, and dependencies.") }
     var movedToTrash: String { t("已移入回收站", en: "Moved to Trash", zhHant: "已移入回收站", ja: "ゴミ箱に移動しました", ko: "휴지통으로 이동됨", mt: "Moved to Trash") }
     var configureAPIKeyFirst: String { t("请先配置大模型 API Key", en: "Please configure LLM API Key first", zhHant: "請先配置大模型 API Key", ja: "大規模モデルAPI Keyを先に設定してください", ko: "대규모 모델 API Key를 먼저 설정하세요", mt: "Please configure LLM API Key first") }
+    var appReviewDemoStatus: String { t("正在生成 App Review 演示扫描结果...", en: "Generating App Review demo scan results...", zhHant: "正在生成 App Review 演示掃描結果...", ja: "App Review デモスキャン結果を生成中...", ko: "App Review 데모 스캔 결과 생성 중...", mt: "Generating App Review demo scan results...") }
     var collectingDirInfo: String { t("正在收集目录信息...", en: "Collecting directory info...", zhHant: "正在收集目錄資訊...", ja: "ディレクトリ情報を収集中...", ko: "디렉토리 정보 수집 중...", mt: "Collecting directory info...") }
     var callingAIAnalysis: String { t("正在调用大模型分析...", en: "Calling AI for analysis...", zhHant: "正在呼叫大模型分析...", ja: "AI分析を呼び出し中...", ko: "AI 분석 호출 중...", mt: "Calling AI for analysis...") }
     var aiScanComplete: String { t("AI 扫描完成，发现", en: "AI scan complete, found", zhHant: "AI 掃描完成，發現", ja: "AIスキャン完了、発見", ko: "AI 스캔 완료, 발견", mt: "AI scan complete, found") }
@@ -915,6 +926,7 @@ extension Localizer {
     var agentReject: String { t("拒绝", en: "Reject", zhHant: "拒絕", ja: "却下", ko: "거부", mt: "Reject") }
     var agentApprove: String { t("批准", en: "Approve", zhHant: "批准", ja: "承認", ko: "승인", mt: "Approve") }
     var agentModifyApprove: String { t("修改并批准", en: "Modify & Approve", zhHant: "修改並批准", ja: "修正して承認", ko: "수정 후 승인", mt: "Modify & Approve") }
+    var agentDecideLater: String { t("稍后处理", en: "Decide Later", zhHant: "稍後處理", ja: "後で判断", ko: "나중에 결정", mt: "Decide Later") }
     var agentFeedbackPlaceholder: String { t("反馈信息（可选）", en: "Feedback message (optional)", zhHant: "回饋資訊（可選）", ja: "フィードバック（任意）", ko: "피드백 메시지(선택)", mt: "Feedback message (optional)") }
     var agentRequestedPermissions: String { t("请求的权限", en: "Requested Permissions", zhHant: "請求的權限", ja: "要求された権限", ko: "요청된 권한", mt: "Requested Permissions") }
     var agentCancel: String { t("取消", en: "Cancel", zhHant: "取消", ja: "キャンセル", ko: "취소", mt: "Cancel") }
@@ -1052,6 +1064,68 @@ extension Localizer {
     var selectDirectory: String { t("选择目录", en: "Select Directory", zhHant: "選擇目錄", ja: "ディレクトリを選択", ko: "디렉토리 선택", mt: "Select Directory") }
     var navToolbox: String { t("实验室", en: "Lab", zhHant: "實驗室", ja: "ラボ", ko: "실험실", mt: "Lab") }
     var subToolbox: String { t("实验性质工具，功能可能调整、下线或单独收费", en: "Experimental tools that may change, be removed, or be priced separately", zhHant: "實驗性質工具，功能可能調整、下線或單獨收費", ja: "変更、削除、または個別課金される可能性がある実験的ツール", ko: "변경, 제거 또는 별도 과금될 수 있는 실험적 도구", mt: "Experimental tools that may change, be removed, or be priced separately") }
+    var tokenScopeTitle: String { t("Token 统计", en: "Token 统计", zhHant: "Token 統計", ja: "Token 統計", ko: "Token 통계", mt: "Token 统计") }
+    var tokenScopeSubtitle: String { t("Token、成本、配额与项目归因分析", en: "Token, cost, quota, and project attribution analytics", zhHant: "Token、成本、配額與專案歸因分析", ja: "トークン、コスト、クォータ、プロジェクト帰属分析", ko: "토큰, 비용, 할당량, 프로젝트 귀속 분석", mt: "Token, cost, quota, and project attribution analytics") }
+    var tokenScopeSyncNow: String { t("立即同步", en: "Sync Now", zhHant: "立即同步", ja: "今すぐ同期", ko: "지금 동기화", mt: "Sync Now") }
+    var tokenScopeSelectDataFolder: String { t("授权数据目录", en: "Authorize Data Folder", zhHant: "授權資料目錄", ja: "データフォルダを許可", ko: "데이터 폴더 승인", mt: "Authorize Data Folder") }
+    var tokenScopeProviderAuth: String { t("Provider 授权", en: "Provider Authorization", zhHant: "Provider 授權", ja: "Provider 認可", ko: "Provider 승인", mt: "Provider Authorization") }
+    var tokenScopeProviderAuthDesc: String { t("显式连接官方 Provider 凭据，或授权本机数据目录。凭据只保存在本机 Keychain。", en: "Explicitly connect official provider credentials or authorize local data folders. Credentials are stored only in the local Keychain.", zhHant: "明確連接官方 Provider 憑據，或授權本機資料目錄。憑據只保存在本機 Keychain。", ja: "公式 Provider 認証情報を明示的に接続するか、ローカルデータフォルダを許可します。認証情報はローカル Keychain のみに保存されます。", ko: "공식 Provider 자격 증명을 명시적으로 연결하거나 로컬 데이터 폴더를 승인합니다. 자격 증명은 로컬 Keychain에만 저장됩니다.", mt: "Explicitly connect official provider credentials or authorize local data folders. Credentials are stored only in the local Keychain.") }
+    var tokenScopeAPIKey: String { t("API Key / Access Token", en: "API Key / Access Token", zhHant: "API Key / Access Token", ja: "API Key / Access Token", ko: "API Key / Access Token", mt: "API Key / Access Token") }
+    var tokenScopeCredentialSaved: String { t("API Key 已保存到 Keychain", en: "API Key saved in Keychain", zhHant: "API Key 已保存到 Keychain", ja: "API Key は Keychain に保存済み", ko: "API Key가 Keychain에 저장됨", mt: "API Key saved in Keychain") }
+    var tokenScopeNotAuthorized: String { t("未授权", en: "Not Authorized", zhHant: "未授權", ja: "未認可", ko: "승인되지 않음", mt: "Not Authorized") }
+    var tokenScopeAPIKeyPrivacy: String { t("不会读取浏览器 Cookie，不抓取网页控制台；仅在你点击保存后写入 Keychain。", en: "AgentGuard does not read browser cookies or scrape web dashboards; it writes this value to Keychain only after you save it.", zhHant: "不會讀取瀏覽器 Cookie，不抓取網頁控制台；僅在你點擊儲存後寫入 Keychain。", ja: "ブラウザ Cookie や Web ダッシュボードは読み取りません。保存時のみ Keychain に書き込みます。", ko: "브라우저 Cookie나 웹 대시보드를 읽지 않으며 저장을 누른 뒤에만 Keychain에 기록합니다.", mt: "AgentGuard does not read browser cookies or scrape web dashboards; it writes this value to Keychain only after you save it.") }
+    var tokenScopeOAuthPolicyNote: String { t("OAuth 可以接入，但必须使用 Provider 官方授权页与明确 scope；当前先支持用户主动粘贴 API Key。后续 Provider 提供稳定 usage API 时，可在这里启用官方 OAuth。", en: "OAuth can be supported when it uses the provider's official authorization page and explicit scopes. This version supports user-supplied API keys first; official OAuth can be enabled here when a provider exposes a stable usage API.", zhHant: "OAuth 可以接入，但必須使用 Provider 官方授權頁與明確 scope；目前先支援使用者主動貼上 API Key。後續 Provider 提供穩定 usage API 時，可在這裡啟用官方 OAuth。", ja: "OAuth は Provider の公式認可ページと明確な scope を使う場合に対応できます。現版ではまずユーザー入力の API Key をサポートし、Provider が安定した usage API を提供したら公式 OAuth を有効化できます。", ko: "OAuth는 Provider의 공식 승인 페이지와 명확한 scope를 사용할 때 지원할 수 있습니다. 현재 버전은 사용자가 직접 입력한 API Key를 먼저 지원하며, Provider가 안정적인 usage API를 제공하면 여기에서 공식 OAuth를 활성화할 수 있습니다.", mt: "OAuth can be supported when it uses the provider's official authorization page and explicit scopes. This version supports user-supplied API keys first; official OAuth can be enabled here when a provider exposes a stable usage API.") }
+    var tokenScopeOpenAIAuthDesc: String { t("用于读取你授权账户的官方用量数据，或结合本机日志做成本估算。", en: "Used to read official usage data for the account you authorize, or to enrich local log-based cost estimates.", zhHant: "用於讀取你授權帳戶的官方用量資料，或結合本機日誌做成本估算。", ja: "認可したアカウントの公式 usage データ取得、またはローカルログのコスト推定補強に使用します。", ko: "승인한 계정의 공식 usage 데이터를 읽거나 로컬 로그 기반 비용 추정을 보강하는 데 사용합니다.", mt: "Used to read official usage data for the account you authorize, or to enrich local log-based cost estimates.") }
+    var tokenScopeAnthropicAuthDesc: String { t("用于 Claude/Anthropic 用量归因；不会读取 Claude 网页 Cookie。", en: "Used for Claude/Anthropic usage attribution; AgentGuard does not read Claude web cookies.", zhHant: "用於 Claude/Anthropic 用量歸因；不會讀取 Claude 網頁 Cookie。", ja: "Claude/Anthropic の usage 帰属に使用します。Claude Web Cookie は読み取りません。", ko: "Claude/Anthropic usage 귀속에 사용하며 Claude 웹 Cookie는 읽지 않습니다.", mt: "Used for Claude/Anthropic usage attribution; AgentGuard does not read Claude web cookies.") }
+    var tokenScopeGoogleAuthDesc: String { t("用于 Gemini API 用量归因；仅使用你主动提供的凭据。", en: "Used for Gemini API usage attribution; only the credential you provide is used.", zhHant: "用於 Gemini API 用量歸因；僅使用你主動提供的憑據。", ja: "Gemini API usage 帰属に使用します。ユーザーが提供した認証情報のみを使用します。", ko: "Gemini API usage 귀속에 사용하며 사용자가 제공한 자격 증명만 사용합니다.", mt: "Used for Gemini API usage attribution; only the credential you provide is used.") }
+    var tokenScopeDeepSeekAuthDesc: String { t("用于 DeepSeek API 用量与成本估算。", en: "Used for DeepSeek API usage and cost attribution.", zhHant: "用於 DeepSeek API 用量與成本估算。", ja: "DeepSeek API の usage とコスト帰属に使用します。", ko: "DeepSeek API usage 및 비용 귀속에 사용합니다.", mt: "Used for DeepSeek API usage and cost attribution.") }
+    var tokenScopeQwenAuthDesc: String { t("用于 Qwen/DashScope 用量归因。", en: "Used for Qwen/DashScope usage attribution.", zhHant: "用於 Qwen/DashScope 用量歸因。", ja: "Qwen/DashScope usage 帰属に使用します。", ko: "Qwen/DashScope usage 귀속에 사용합니다.", mt: "Used for Qwen/DashScope usage attribution.") }
+    var tokenScopeOpenRouterAuthDesc: String { t("用于 OpenRouter 汇总用量与模型成本归因。", en: "Used for OpenRouter aggregated usage and model cost attribution.", zhHant: "用於 OpenRouter 彙總用量與模型成本歸因。", ja: "OpenRouter の集約 usage とモデルコスト帰属に使用します。", ko: "OpenRouter 집계 usage 및 모델 비용 귀속에 사용합니다.", mt: "Used for OpenRouter aggregated usage and model cost attribution.") }
+    var tokenScopeLocalData: String { t("本机真实数据", en: "Local Real Data", zhHant: "本機真實資料", ja: "ローカル実データ", ko: "로컬 실제 데이터", mt: "Local Real Data") }
+    var tokenScopeSampleData: String { t("实验室示例数据", en: "Lab Sample Data", zhHant: "實驗室範例資料", ja: "ラボサンプルデータ", ko: "실험실 샘플 데이터", mt: "Lab Sample Data") }
+    var tokenScopeScanning: String { t("扫描中", en: "Scanning", zhHant: "掃描中", ja: "スキャン中", ko: "스캔 중", mt: "Scanning") }
+    var tokenScopeHeroTitle: String { t("AI Coding 成本控制台", en: "AI Coding Cost Console", zhHant: "AI Coding 成本控制台", ja: "AI Coding コストコンソール", ko: "AI Coding 비용 콘솔", mt: "AI Coding Cost Console") }
+    var tokenScopeIntro: String { t("把 Claude、Codex、Pi Agent、Trae、CodeBuddy、Gemini 等工具的 token、模型、项目和会话归因放在同一个原生视图里。通过“授权数据目录”读取用户明确授权的本机日志，不读取浏览器 Cookie，也不抓取网页。", en: "Review tokens, models, projects, and sessions from Claude, Codex, Pi Agent, Trae, CodeBuddy, Gemini, and other tools in one native view. Use Authorize Data Folder to read local logs you explicitly allow; AgentGuard does not read browser cookies or scrape web dashboards.", zhHant: "把 Claude、Codex、Pi Agent、Trae、CodeBuddy、Gemini 等工具的 token、模型、專案與會話歸因放在同一個原生視圖裡。透過「授權資料目錄」讀取使用者明確授權的本機日誌，不讀取瀏覽器 Cookie，也不抓取網頁。", ja: "Claude、Codex、Pi Agent、Trae、CodeBuddy、Gemini などのトークン、モデル、プロジェクト、セッション帰属をひとつのネイティブ画面で確認できます。「データフォルダを許可」で明示的に許可されたローカルログのみを読み取り、ブラウザ Cookie や Web ダッシュボードは読み取りません。", ko: "Claude, Codex, Pi Agent, Trae, CodeBuddy, Gemini 등의 토큰, 모델, 프로젝트, 세션 귀속을 하나의 네이티브 화면에서 확인합니다. 데이터 폴더 승인을 통해 명시적으로 허용한 로컬 로그만 읽으며 브라우저 쿠키나 웹 대시보드는 수집하지 않습니다.", mt: "Review tokens, models, projects, and sessions from Claude, Codex, Pi Agent, Trae, CodeBuddy, Gemini, and other tools in one native view. Use Authorize Data Folder to read local logs you explicitly allow; AgentGuard does not read browser cookies or scrape web dashboards.") }
+    var tokenScopeNoData: String { t("未读取到可用的本机 AI usage 记录。请点击授权数据目录，选择 ~/.codex、$CODEX_HOME、~/.pi/agent、~/.claude/projects 或 Trae/CodeBuddy 数据目录后重新验证。", en: "No usable local AI usage records were found. Click Authorize Data Folder, then select ~/.codex, $CODEX_HOME, ~/.pi/agent, ~/.claude/projects, or a Trae/CodeBuddy data folder to verify with local files.", zhHant: "未讀取到可用的本機 AI usage 記錄。請點擊授權資料目錄，選擇 ~/.codex、$CODEX_HOME、~/.pi/agent、~/.claude/projects 或 Trae/CodeBuddy 資料目錄後重新驗證。", ja: "利用できるローカル AI usage レコードが見つかりません。「データフォルダを許可」をクリックし、~/.codex、$CODEX_HOME、~/.pi/agent、~/.claude/projects、または Trae/CodeBuddy のデータフォルダを選択して再確認してください。", ko: "사용 가능한 로컬 AI usage 기록을 찾지 못했습니다. 데이터 폴더 승인을 누른 뒤 ~/.codex, $CODEX_HOME, ~/.pi/agent, ~/.claude/projects 또는 Trae/CodeBuddy 데이터 폴더를 선택해 다시 확인하세요.", mt: "No usable local AI usage records were found. Click Authorize Data Folder, then select ~/.codex, $CODEX_HOME, ~/.pi/agent, ~/.claude/projects, or a Trae/CodeBuddy data folder to verify with local files.") }
+    func tokenScopeLoadedSummary(recordCount: Int, sourceCount: Int, tokenText: String) -> String { t("已读取本机 \(recordCount) 条授权日志记录，来自 \(sourceCount) 个数据源。Token 合计 \(tokenText)，成本为本地估算值；数据不会上传。", en: "Loaded \(recordCount) authorized local log records from \(sourceCount) sources. Total tokens: \(tokenText). Cost is a local estimate; this data is not uploaded.", zhHant: "已讀取本機 \(recordCount) 條授權日誌記錄，來自 \(sourceCount) 個資料源。Token 合計 \(tokenText)，成本為本地估算值；資料不會上傳。", ja: "\(sourceCount) 個のソースから \(recordCount) 件の許可済みローカルログを読み込みました。合計トークン: \(tokenText)。コストはローカル推定で、このデータはアップロードされません。", ko: "\(sourceCount)개 소스에서 승인된 로컬 로그 \(recordCount)개를 읽었습니다. 총 토큰: \(tokenText). 비용은 로컬 추정값이며 이 데이터는 업로드되지 않습니다.", mt: "Loaded \(recordCount) authorized local log records from \(sourceCount) sources. Total tokens: \(tokenText). Cost is a local estimate; this data is not uploaded.") }
+    var tokenScopeProjects: String { t("项目", en: "Projects", zhHant: "專案", ja: "プロジェクト", ko: "프로젝트", mt: "Projects") }
+    var tokenScopeModels: String { t("模型", en: "Models", zhHant: "模型", ja: "モデル", ko: "모델", mt: "Models") }
+    var tokenScopeTools: String { t("工具", en: "Tools", zhHant: "工具", ja: "ツール", ko: "도구", mt: "Tools") }
+    var tokenScopeSessions: String { t("会话", en: "Sessions", zhHant: "會話", ja: "セッション", ko: "세션", mt: "Sessions") }
+    var tokenScopeBudget: String { t("预算", en: "Budget", zhHant: "預算", ja: "予算", ko: "예산", mt: "Budget") }
+    var tokenScopeOverview: String { t("概览", en: "Overview", zhHant: "概覽", ja: "概要", ko: "개요", mt: "Overview") }
+    var tokenScopeUsageTrend: String { t("使用趋势", en: "Usage Trend", zhHant: "使用趨勢", ja: "使用傾向", ko: "사용 추이", mt: "Usage Trend") }
+    var tokenScopeTokenBreakdown: String { t("Input、Output、Cache token 按日拆分", en: "Daily input, output, and cache token split", zhHant: "Input、Output、Cache token 按日拆分", ja: "日別の input、output、cache token 内訳", ko: "일별 input, output, cache token 분해", mt: "Daily input, output, and cache token split") }
+    var tokenScopeTrendByToken: String { t("Token 构成", en: "Token Mix", zhHant: "Token 構成", ja: "トークン構成", ko: "토큰 구성", mt: "Token Mix") }
+    var tokenScopeTrendByAgent: String { t("按 Agent", en: "By Agent", zhHant: "按 Agent", ja: "Agent 別", ko: "Agent별", mt: "By Agent") }
+    var tokenScopeAgentTokenTrend: String { t("每个 Agent 一条 token 趋势线", en: "One token trend line per agent", zhHant: "每個 Agent 一條 token 趨勢線", ja: "Agent ごとの token 推移線", ko: "Agent별 token 추이선", mt: "One token trend line per agent") }
+    var tokenScopeTopModels: String { t("Top 模型", en: "Top Models", zhHant: "Top 模型", ja: "上位モデル", ko: "상위 모델", mt: "Top Models") }
+    var tokenScopeByCost: String { t("按成本排序", en: "Sorted by cost", zhHant: "按成本排序", ja: "コスト順", ko: "비용순", mt: "Sorted by cost") }
+    var tokenScopeProjectBurn: String { t("项目消耗", en: "Project Burn", zhHant: "專案消耗", ja: "プロジェクト消費", ko: "프로젝트 소모", mt: "Project Burn") }
+    var tokenScopeProjectAttribution: String { t("项目成本归因", en: "Project cost attribution", zhHant: "專案成本歸因", ja: "プロジェクトコスト帰属", ko: "프로젝트 비용 귀속", mt: "Project cost attribution") }
+    var tokenScopeBudgetSignals: String { t("预算信号", en: "Budget Signals", zhHant: "預算訊號", ja: "予算シグナル", ko: "예산 신호", mt: "Budget Signals") }
+    var tokenScopeBudgetSignalDesc: String { t("预算与异常波动", en: "Budget and spike signals", zhHant: "預算與異常波動", ja: "予算と急増シグナル", ko: "예산 및 급증 신호", mt: "Budget and spike signals") }
+    var tokenScopeRecords: String { t("记录", en: "Records", zhHant: "記錄", ja: "記録", ko: "기록", mt: "Records") }
+    var tokenScopeActiveRepos: String { t("活跃仓库", en: "active repos", zhHant: "活躍 repo", ja: "アクティブリポジトリ", ko: "활성 저장소", mt: "active repos") }
+    var tokenScopeEstimatedSpend: String { t("估算花费", en: "estimated spend", zhHant: "估算花費", ja: "推定コスト", ko: "추정 비용", mt: "estimated spend") }
+    var tokenScopeTotalTokens: String { t("总 Token", en: "Total Tokens", zhHant: "總 Token", ja: "合計トークン", ko: "총 토큰", mt: "Total Tokens") }
+    var tokenScopeInputTokens: String { t("输入 Token", en: "Input Tokens", zhHant: "輸入 Token", ja: "入力トークン", ko: "입력 토큰", mt: "Input Tokens") }
+    var tokenScopeOutputTokens: String { t("输出 Token", en: "Output Tokens", zhHant: "輸出 Token", ja: "出力トークン", ko: "출력 토큰", mt: "Output Tokens") }
+    var tokenScopeCacheTokens: String { t("缓存 Token", en: "Cache Tokens", zhHant: "快取 Token", ja: "キャッシュトークン", ko: "캐시 토큰", mt: "Cache Tokens") }
+    var tokenScopeTokenMix: String { t("Token 构成", en: "Token Mix", zhHant: "Token 構成", ja: "トークン構成", ko: "토큰 구성", mt: "Token Mix") }
+    var tokenScopeSources: String { t("数据源", en: "Sources", zhHant: "資料源", ja: "データソース", ko: "데이터 소스", mt: "Sources") }
+    var tokenScopeRealDataSources: String { t("本机日志与状态库读取状态", en: "Local log and state database read status", zhHant: "本機日誌與狀態庫讀取狀態", ja: "ローカルログと状態データベースの読み取り状態", ko: "로컬 로그 및 상태 DB 읽기 상태", mt: "Local log and state database read status") }
+    var tokenScopeSessionDetail: String { t("按会话聚合的真实用量", en: "Real usage grouped by session", zhHant: "按會話彙總的真實用量", ja: "セッション別に集計した実使用量", ko: "세션별 실제 사용량 집계", mt: "Real usage grouped by session") }
+    var tokenScopeNoRealData: String { t("尚未加载真实数据", en: "No Real Data Loaded", zhHant: "尚未載入真實資料", ja: "実データ未読み込み", ko: "실제 데이터가 아직 로드되지 않음", mt: "No Real Data Loaded") }
+    var tokenScopeScanningDetail: String { t("正在后台读取本机日志，不会阻塞主界面。", en: "Reading local logs in the background without blocking the UI.", zhHant: "正在背景讀取本機日誌，不會阻塞主介面。", ja: "UI をブロックせずバックグラウンドでローカルログを読み取っています。", ko: "UI를 막지 않고 백그라운드에서 로컬 로그를 읽고 있습니다.", mt: "Reading local logs in the background without blocking the UI.") }
+    var tokenScopeEmptyRecords: String { t("暂无可展示记录。请点击立即同步，或选择 Claude/Codex/Trae/CodeBuddy 的数据目录授权读取。", en: "No records to show. Click Sync Now or select a Claude, Codex, Trae, or CodeBuddy data folder.", zhHant: "暫無可展示記錄。請點擊立即同步，或選擇 Claude/Codex/Trae/CodeBuddy 的資料目錄授權讀取。", ja: "表示できる記録がありません。今すぐ同期するか、Claude/Codex/Trae/CodeBuddy のデータフォルダを選択してください。", ko: "표시할 기록이 없습니다. 지금 동기화를 누르거나 Claude/Codex/Trae/CodeBuddy 데이터 폴더를 선택하세요.", mt: "No records to show. Click Sync Now or select a Claude, Codex, Trae, or CodeBuddy data folder.") }
+    var tokenScopeNeedsPermission: String { t("需要授权", en: "Needs Permission", zhHant: "需要授權", ja: "権限が必要", ko: "권한 필요", mt: "Needs Permission") }
+    var tokenScopeNoRecords: String { t("无记录", en: "No Records", zhHant: "無記錄", ja: "記録なし", ko: "기록 없음", mt: "No Records") }
+    var tokenScopeActive: String { t("活跃", en: "Active", zhHant: "活躍", ja: "アクティブ", ko: "활성", mt: "Active") }
+    var tokenScopeFiles: String { t("文件", en: "Files", zhHant: "檔案", ja: "ファイル", ko: "파일", mt: "Files") }
+    var tokenScopeDate: String { t("日期", en: "Date", zhHant: "日期", ja: "日付", ko: "날짜", mt: "Date") }
+    var tokenScopeSevenDays: String { t("7 天", en: "7 Days", zhHant: "7 天", ja: "7日", ko: "7일", mt: "7 Days") }
+    var tokenScopeThirtyDays: String { t("30 天", en: "30 Days", zhHant: "30 天", ja: "30日", ko: "30일", mt: "30 Days") }
     var commandRules: String { t("命令规则", en: "Command Rules", zhHant: "命令規則", ja: "コマンドルール", ko: "명령 규칙", mt: "Command Rules") }
     var commandRulesDesc: String { t("命令规则用于监控和管控 AI Agent 执行的命令。黑名单中的命令将被拦截并告警，白名单中的命令允许正常执行，未分类的命令将被记录。", en: "Command rules monitor and control commands executed by AI Agents. Blacklisted commands will be blocked and alerted, whitelisted commands are allowed, and unclassified commands are logged.", zhHant: "命令規則用於監控和管控 AI Agent 執行的命令。黑名單中的命令將被攔截並告警，白名單中的命令允許正常執行，未分類的命令將被記錄。", ja: "コマンドルールは、AI Agentが実行するコマンドを監視・制御します。ブラックリストのコマンドはブロック・警告され、ホワイトリストのコマンドは許可され、未分類のコマンドは記録されます。", ko: "명령 규칙은 AI Agent가 실행하는 명령을 모니터링하고 제어합니다. 블랙리스트 명령은 차단 및 경고되고, 화이트리스트 명령은 허용되며, 미분류 명령은 기록됩니다.", mt: "Command rules monitor and control commands executed by AI Agents. Blacklisted commands will be blocked and alerted, whitelisted commands are allowed, and unclassified commands are logged.") }
     var commandBlacklist: String { t("命令黑名单", en: "Command Blacklist", zhHant: "命令黑名單", ja: "コマンドブラックリスト", ko: "명령 블랙리스트", mt: "Command Blacklist") }

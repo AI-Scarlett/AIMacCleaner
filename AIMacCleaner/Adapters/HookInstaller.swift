@@ -12,17 +12,21 @@ actor HookInstaller {
     private let blockStart = "# [AGENTGUARD-START]"
     private let blockEnd = "# [AGENTGUARD-END]"
     private let marker = "agentguard-bridge"
+    private let fallbackBridgeMarker = "# AgentGuard fallback bridge v2"
 
     func ensureBridgeBinary() throws -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let home = agentRealHomeURL()
         let destDir = home.appendingPathComponent(".agentguard/bin")
         let destPath = destDir.appendingPathComponent("agentguard-bridge")
 
-        if FileManager.default.fileExists(atPath: destPath.path) {
+        if isCurrentBridge(at: destPath) {
             return destPath.path
         }
 
         try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: destPath.path) {
+            try FileManager.default.removeItem(at: destPath)
+        }
 
         let resourceURL: URL? = Bundle.main.url(forResource: "agentguard-bridge", withExtension: nil)
                 ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/agentguard-bridge")
@@ -46,19 +50,39 @@ actor HookInstaller {
     private func writeFallbackBridge(to destPath: URL) throws {
         let script = """
         #!/bin/sh
+        \(fallbackBridgeMarker)
+        log_dir="${HOME}/.agentguard"
+        log_file="${log_dir}/bridge.log"
         port="${AGENTGUARD_PORT:-17893}"
+        socket="${AGENTGUARD_SOCKET:-/tmp/agentguard.sock}"
         payload="$(cat)"
         if [ -z "$payload" ]; then
           exit 0
         fi
-        if command -v nc >/dev/null 2>&1; then
-          printf '%s\\n' "$payload" | nc 127.0.0.1 "$port"
-        else
-          exit 1
+
+        mkdir -p "$log_dir" 2>/dev/null || true
+
+        if command -v nc >/dev/null 2>&1 && printf '%s\\n' "$payload" | nc -w 2 127.0.0.1 "$port" >/dev/null 2>&1; then
+          exit 0
         fi
+
+        if command -v nc >/dev/null 2>&1 && printf '%s\\n' "$payload" | nc -U -w 2 "$socket" >/dev/null 2>&1; then
+          exit 0
+        fi
+
+        printf '%s AgentGuard bridge failed to deliver event to 127.0.0.1:%s or %s\\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$port" "$socket" >> "$log_file" 2>/dev/null || true
+        exit 1
         """
         try script.write(to: destPath, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destPath.path)
+    }
+
+    private func isCurrentBridge(at path: URL) -> Bool {
+        guard FileManager.default.isExecutableFile(atPath: path.path) else { return false }
+        guard let content = try? String(contentsOf: path, encoding: .utf8) else {
+            return true
+        }
+        return !content.hasPrefix("#!/bin/sh") || content.contains(fallbackBridgeMarker)
     }
 
     func shellQuote(_ value: String) -> String {
@@ -71,11 +95,11 @@ actor HookInstaller {
 
     func hookCommand(bridgePath: String, label: String, agentId: String) -> String {
         let env = "/usr/bin/env"
-        let socket = "AGENTGUARD_SOCKET=/tmp/agentguard.sock"
+        let socket = "AGENTGUARD_SOCKET=\(shellQuote("/tmp/agentguard.sock"))"
         let port = "AGENTGUARD_PORT=17893"
-        let agLabel = "AGENTGUARD_AGENT=\(label)"
-        let agId = "AGENTGUARD_ENGINE_ID=\(agentId)"
-        let bridge = bridgePath
+        let agLabel = "AGENTGUARD_AGENT=\(shellQuote(label))"
+        let agId = "AGENTGUARD_ENGINE_ID=\(shellQuote(agentId))"
+        let bridge = shellQuote(bridgePath)
         return "\(env) \(socket) \(port) \(agLabel) \(agId) \(bridge)"
     }
 
@@ -86,10 +110,9 @@ actor HookInstaller {
         for event in events {
             var entries = hooks[event.name] ?? []
             entries.removeAll { entry in
-                guard let cmd = entry["command"] as? String else { return false }
-                return cmd.contains(marker)
+                entryContainsAgentGuardCommand(entry)
             }
-            entries.append(["command": hookCommand])
+            entries.append(jsonHookEntry(for: event, hookCommand: hookCommand))
             hooks[event.name] = entries
         }
 
@@ -103,8 +126,7 @@ actor HookInstaller {
 
         for (eventName, var entries) in hooks {
             entries.removeAll { entry in
-                guard let cmd = entry["command"] as? String else { return false }
-                return cmd.contains(marker)
+                entryContainsAgentGuardCommand(entry)
             }
             if entries.isEmpty {
                 hooks.removeValue(forKey: eventName)
@@ -143,8 +165,31 @@ actor HookInstaller {
     func checkHealth(at configPath: URL) -> HookInstallHealth {
         guard FileManager.default.fileExists(atPath: configPath.path) else { return .notInstalled }
         guard let content = try? String(contentsOf: configPath, encoding: .utf8) else { return .settingsCorrupted }
-        if content.contains(marker) { return .healthy }
+        if content.contains(marker) {
+            guard bridgeExecutableExists(in: content) else { return .installed }
+            if requiresNestedCommandHooks(configPath), hasLegacyFlatAgentGuardHooks(content) {
+                return .installed
+            }
+            return .healthy
+        }
         return .notInstalled
+    }
+
+    private func bridgeExecutableExists(in content: String) -> Bool {
+        let pattern = #"(/[^\s"']*agentguard-bridge)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return isCurrentBridge(at: agentRealHomeURL().appendingPathComponent(".agentguard/bin/agentguard-bridge"))
+        }
+        let range = NSRange(content.startIndex..<content.endIndex, in: content)
+        let matches = regex.matches(in: content, range: range)
+        if matches.isEmpty {
+            return isCurrentBridge(at: agentRealHomeURL().appendingPathComponent(".agentguard/bin/agentguard-bridge"))
+        }
+        return matches.contains { match in
+            guard let pathRange = Range(match.range(at: 1), in: content) else { return false }
+            let path = String(content[pathRange]).replacingOccurrences(of: "\\/", with: "/")
+            return isCurrentBridge(at: URL(fileURLWithPath: path))
+        }
     }
 
     private func readJSON(at path: URL) -> [String: Any] {
@@ -153,6 +198,58 @@ actor HookInstaller {
             return [:]
         }
         return json
+    }
+
+    private func jsonHookEntry(for event: HookEventDescriptor, hookCommand: String) -> [String: Any] {
+        guard let matcher = event.matcher else {
+            return ["command": hookCommand]
+        }
+
+        var commandHook: [String: Any] = [
+            "type": "command",
+            "command": hookCommand,
+        ]
+        if let timeout = event.timeout {
+            commandHook["timeout"] = Int(timeout)
+        }
+        return [
+            "matcher": matcher,
+            "hooks": [commandHook],
+        ]
+    }
+
+    private func entryContainsAgentGuardCommand(_ entry: [String: Any]) -> Bool {
+        if let cmd = entry["command"] as? String, cmd.contains(marker) {
+            return true
+        }
+        if let nestedHooks = entry["hooks"] as? [[String: Any]] {
+            return nestedHooks.contains { hook in
+                (hook["command"] as? String)?.contains(marker) == true
+            }
+        }
+        return false
+    }
+
+    private func requiresNestedCommandHooks(_ configPath: URL) -> Bool {
+        let path = configPath.path
+        return path.contains("/.claude/") || path.contains("/.qoder/") || path.contains("/.kimi/")
+    }
+
+    private func hasLegacyFlatAgentGuardHooks(_ content: String) -> Bool {
+        guard let data = content.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let hooks = json["hooks"] as? [String: [[String: Any]]] else {
+            return false
+        }
+
+        for entries in hooks.values {
+            for entry in entries {
+                if let command = entry["command"] as? String, command.contains(marker) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     private func writeJSON(_ json: [String: Any], at path: URL) throws {

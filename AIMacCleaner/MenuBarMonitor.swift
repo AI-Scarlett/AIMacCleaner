@@ -1,4 +1,5 @@
 import SwiftUI
+import Darwin
 
 struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
@@ -170,19 +171,10 @@ struct MenuBarMonitor: View {
                 .frame(width: 72)
 
                 Button {
-                    let behavior = UserDefaults.standard.string(forKey: "quitBehavior") ?? "quitAll"
-                    if behavior == "quitAppOnly" || behavior == "quitAppKeepMenu" {
-                        for window in NSApp.windows where !window.isFloatingPanel && window.level != .floating {
-                            window.orderOut(nil)
-                        }
-                        NSApp.setActivationPolicy(.accessory)
+                    if let appDelegate = NSApp.delegate as? AppDelegate {
+                        appDelegate.requestMenuBarQuit()
                     } else {
-                        for window in NSApp.windows {
-                            window.orderOut(nil)
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                            NSApp.terminate(nil)
-                        }
+                        Darwin.exit(0)
                     }
                 } label: {
                     HStack(spacing: Theme.Spacing.xs) {

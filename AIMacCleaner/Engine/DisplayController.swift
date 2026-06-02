@@ -176,7 +176,7 @@ class DisplayController: ObservableObject {
 
     func handleEscape() {
         guard let vm = islandViewModel else { return }
-        if vm.showPermissionSheet || vm.showQuestionSheet || vm.showPlanApprovalSheet {
+        if vm.activeApprovalOverlay != nil, vm.displayLevel == .expanded {
             vm.dismissSheets()
         } else if vm.displayLevel > .hover {
             vm.dismiss()

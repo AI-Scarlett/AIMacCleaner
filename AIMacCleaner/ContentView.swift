@@ -15,7 +15,7 @@ struct ContentView: View {
     @AppStorage("networkMode") private var networkMode = "internet"
 
     private var isToolboxSubItemSelected: Bool {
-        [.agentCenter, .cleaner, .app, .dependency, .other, .migration].contains(selectedTab)
+        [.tokenScope, .agentCenter, .cleaner, .app, .dependency, .other, .migration].contains(selectedTab)
     }
 
     enum NavItem: String, CaseIterable {
@@ -23,6 +23,7 @@ struct ContentView: View {
         case agentCenter = "agentCenter"
         case operations = "operations"
         case toolbox = "toolbox"
+        case tokenScope = "tokenScope"
         case cleaner = "cleaner"
         case app = "app"
         case dependency = "dependency"
@@ -31,7 +32,7 @@ struct ContentView: View {
 
         var isSubItem: Bool {
             switch self {
-            case .agentCenter, .cleaner, .app, .dependency, .other, .migration: return true
+            case .tokenScope, .agentCenter, .cleaner, .app, .dependency, .other, .migration: return true
             default: return false
             }
         }
@@ -46,6 +47,7 @@ struct ContentView: View {
             case .agentGuard: "shield.fill"
             case .agentCenter: "house.fill"
             case .toolbox: "wrench.and.screwdriver.fill"
+            case .tokenScope: "chart.xyaxis.line"
             case .migration: "arrow.triangle.2.circlepath"
             }
         }
@@ -60,6 +62,7 @@ struct ContentView: View {
             case .agentGuard: .orange
             case .agentCenter: .teal
             case .toolbox: .blue
+            case .tokenScope: Theme.Colors.teal
             case .migration: .purple
             }
         }
@@ -74,6 +77,7 @@ struct ContentView: View {
             case .agentGuard: localizer.navAgentGuard
             case .agentCenter: localizer.navAgentCenter
             case .toolbox: localizer.navToolbox
+            case .tokenScope: localizer.tokenScopeTitle
             case .migration: localizer.navMigration
             }
         }
@@ -88,6 +92,7 @@ struct ContentView: View {
             case .agentGuard: localizer.subAgentGuard
             case .agentCenter: localizer.subAgentCenter
             case .toolbox: localizer.subToolbox
+            case .tokenScope: localizer.tokenScopeSubtitle
             case .migration: localizer.subMigration
             }
         }
@@ -199,7 +204,7 @@ struct ContentView: View {
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                                 toolboxExpanded.toggle()
                             }
-                            selectedTab = .cleaner
+                            selectedTab = .tokenScope
                         } else {
                             selectedTab = item
                         }
@@ -265,7 +270,7 @@ struct ContentView: View {
 
             if toolboxExpanded {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach([NavItem.agentCenter, .cleaner, .app, .dependency, .other, .migration], id: \.self) { item in
+                    ForEach([NavItem.tokenScope, .agentCenter, .cleaner, .app, .dependency, .other, .migration], id: \.self) { item in
                         Button {
                             selectedTab = item
                         } label: {
@@ -617,6 +622,9 @@ struct ContentView: View {
         case .toolbox:
             ToolboxTab()
                 .environmentObject(localizer)
+        case .tokenScope:
+            TokenScopeLabView()
+                .environmentObject(localizer)
         case .migration:
             IntelMigrationTab()
                 .environmentObject(localizer)
@@ -677,6 +685,7 @@ struct ToolboxTab: View {
     @State private var selectedTool = 0
 
     private let tools: [(icon: String, title: (Localizer) -> String, subtitle: (Localizer) -> String, color: Color)] = [
+        ("chart.xyaxis.line", { $0.tokenScopeTitle }, { $0.tokenScopeSubtitle }, Theme.Colors.teal),
         ("arrow.down.doc.fill", { $0.navCleaner }, { $0.subCleaner }, .blue),
         ("app.badge", { $0.navApp }, { $0.subApp }, .cyan),
         ("cube.box", { $0.navDependency }, { $0.subDependency }, .orange),
@@ -2146,6 +2155,14 @@ struct OperationLogTab: View {
         guard let config = service.aiConfig, config.hasKey == true else { return }
         let records = auditFilteredRecords
         guard !records.isEmpty else { return }
+
+        if config.isAppReviewDemo {
+            aiSummary = localizer.language == .english
+                ? "Demo analysis: this agent mostly reads and updates project files, with no high-risk delete operation in the selected records. Review file changes before approving broad write access."
+                : "演示分析：该 Agent 主要读取并更新项目文件，当前选中记录中未发现高风险删除操作。建议在批准大范围写入权限前先检查文件变更。"
+            return
+        }
+
         isGeneratingSummary = true
         aiSummary = ""
 

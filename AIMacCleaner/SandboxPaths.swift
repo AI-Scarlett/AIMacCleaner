@@ -50,6 +50,7 @@ class SandboxPaths {
     var monitorPath: String { dataDirectory + "/monitor.json" }
     var bookmarksPath: String { dataDirectory + "/bookmarks.json" }
     var scanBookmarksPath: String { dataDirectory + "/scan_bookmarks.json" }
+    var tokenScopeBookmarksPath: String { dataDirectory + "/tokenscope_bookmarks.json" }
     var lastResponsePath: String { dataDirectory + "/last_response.txt" }
     var alertsPath: String { dataDirectory + "/alerts.json" }
     var alertRulePath: String { dataDirectory + "/alert_rule.json" }
@@ -72,6 +73,7 @@ class SandboxPaths {
             (home + "/.aimaccleaner_monitor.json", shared.monitorPath),
             (home + "/.aimaccleaner_bookmarks.json", shared.bookmarksPath),
             (home + "/.aimaccleaner_scan_bookmarks.json", shared.scanBookmarksPath),
+            (home + "/.aimaccleaner_tokenscope_bookmarks.json", shared.tokenScopeBookmarksPath),
             (home + "/.aimaccleaner_last_response.txt", shared.lastResponsePath),
             (home + "/.aimaccleaner_alerts.json", shared.alertsPath),
             (home + "/.aimaccleaner_alert_rule.json", shared.alertRulePath),

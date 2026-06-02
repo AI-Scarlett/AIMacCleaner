@@ -26,14 +26,14 @@ enum AgentHookEvent {
 
     static func parse(from raw: [String: Any]) -> AgentHookEvent? {
         guard let eventName = raw["event"] as? String else { return nil }
-        let sessionId = raw["session_id"] as? String ?? ""
-        let cwd = raw["cwd"] as? String ?? ""
+        let sessionId = stringValue(raw, keys: ["session_id", "sessionId", "conversation_id", "conversationId", "id"])
+        let cwd = stringValue(raw, keys: ["cwd", "working_directory", "workingDirectory", "project_path", "projectPath"])
         let project = cwd.split(separator: "/").last.map(String.init) ?? cwd
-        let tty = raw["tty"] as? String ?? ""
-        let agent = raw["agent"] as? String ?? "unknown"
-        let toolName = raw["tool"] as? String ?? raw["tool_name"] as? String ?? ""
-        let toolInput = (raw["tool_input"] as? String) ?? (raw["toolInput"] as? String) ?? ""
-        let status = raw["status"] as? String ?? ""
+        let tty = stringValue(raw, keys: ["tty", "terminal"])
+        let agent = stringValue(raw, keys: ["agent", "source_label", "sourceLabel", "provider"], fallback: "unknown")
+        let toolName = stringValue(raw, keys: ["tool", "tool_name", "toolName", "name"])
+        let toolInput = stringValue(raw, keys: ["tool_input", "toolInput", "input", "arguments", "args"])
+        let status = stringValue(raw, keys: ["status"])
 
         switch eventName {
         case "SessionStart", "session_start":
@@ -153,6 +153,20 @@ enum AgentHookEvent {
         }
     }
 
+    private static func stringValue(_ raw: [String: Any], keys: [String], fallback: String = "") -> String {
+        for key in keys {
+            if let value = raw[key] as? String, !value.isEmpty { return value }
+            if let value = raw[key],
+               JSONSerialization.isValidJSONObject(value),
+               let data = try? JSONSerialization.data(withJSONObject: value),
+               let string = String(data: data, encoding: .utf8),
+               !string.isEmpty {
+                return string
+            }
+        }
+        return fallback
+    }
+
     private static func extractToolTarget(toolName: String, toolInput: String) -> String? {
         guard let data = toolInput.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -227,6 +241,7 @@ struct PermissionDecision {
     var decision: String
     var reason: String?
     var always: Bool?
+    var updatedPermissions: [[String: AnyCodable]]? = nil
 
     static let allow = PermissionDecision(decision: "allow")
     static let deny = PermissionDecision(decision: "deny", reason: "Blocked by AgentGuard")
@@ -244,6 +259,9 @@ struct PermissionResponse: Codable {
     var decision: String
     var reason: String?
     var always: Bool?
+    var hookSpecificOutput: HookSpecificPermissionOutput?
+    var permissionDecision: String?
+    var permissionDecisionReason: String?
 }
 
 struct QuestionResponse: Codable {
@@ -253,4 +271,68 @@ struct QuestionResponse: Codable {
 struct PlanResponse: Codable {
     var mode: String
     var message: String?
+}
+
+struct HookSpecificPermissionOutput: Codable {
+    var hookEventName: String
+    var decision: HookPermissionDecision
+}
+
+struct HookPermissionDecision: Codable {
+    var behavior: String
+    var message: String?
+    var updatedPermissions: [[String: AnyCodable]]?
+}
+
+struct AnyCodable: Codable {
+    var value: Any
+
+    init(_ value: Any) {
+        self.value = value
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            value = NSNull()
+        } else if let bool = try? container.decode(Bool.self) {
+            value = bool
+        } else if let int = try? container.decode(Int.self) {
+            value = int
+        } else if let double = try? container.decode(Double.self) {
+            value = double
+        } else if let string = try? container.decode(String.self) {
+            value = string
+        } else if let array = try? container.decode([AnyCodable].self) {
+            value = array.map(\.value)
+        } else if let dictionary = try? container.decode([String: AnyCodable].self) {
+            value = dictionary.mapValues(\.value)
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported JSON value")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch value {
+        case is NSNull:
+            try container.encodeNil()
+        case let bool as Bool:
+            try container.encode(bool)
+        case let int as Int:
+            try container.encode(int)
+        case let double as Double:
+            try container.encode(double)
+        case let string as String:
+            try container.encode(string)
+        case let array as [Any]:
+            try container.encode(array.map { AnyCodable($0) })
+        case let dictionary as [String: Any]:
+            try container.encode(dictionary.mapValues { AnyCodable($0) })
+        case let codable as AnyCodable:
+            try codable.encode(to: encoder)
+        default:
+            try container.encode(String(describing: value))
+        }
+    }
 }

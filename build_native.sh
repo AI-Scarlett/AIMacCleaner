@@ -4,7 +4,7 @@ set -e
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="AgentGuard"
 VERSION="2.0.0"
-BUILD_NUMBER="4"
+BUILD_NUMBER="11"
 BUILD_DIR="/tmp/AgentGuard_build"
 DMG_NAME="AgentGuard-v${VERSION}-arm64"
 STAGING_DIR="/tmp/AgentGuard_dmg_staging"
@@ -73,6 +73,7 @@ SWIFT_FILES=(
     "Services/GlobalShortcutService.swift"
     "Services/NetworkMonitor.swift"
     "Services/ConversationWatcher.swift"
+    "TokenScopeLabView.swift"
 )
 
 cd "$PROJECT_DIR/AIMacCleaner"
@@ -94,6 +95,7 @@ swiftc -O \
     -framework CoreVideo \
     -framework UserNotifications \
     -framework UniformTypeIdentifiers \
+    -framework Charts \
     -o "$BUILD_DIR/$APP_NAME" \
     "${SWIFT_FILES[@]}" \
     2>&1 | grep -E "error:" || true

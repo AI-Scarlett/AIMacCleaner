@@ -19,6 +19,7 @@ struct AgentCenterView: View {
     @EnvironmentObject var agentRegistry: AgentRegistry
     @EnvironmentObject var sessionsViewModel: SessionsViewModel
     @EnvironmentObject var islandViewModel: IslandViewModel
+    @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
     @State private var selectedAgentId: String?
     @State private var searchText: String = ""
@@ -28,6 +29,7 @@ struct AgentCenterView: View {
 
     enum AgentCenterSection: String, CaseIterable {
         case approvals
+        case audit
         case integrations
     }
 
@@ -37,6 +39,8 @@ struct AgentCenterView: View {
             Divider().opacity(0.6)
             if selectedSection == .approvals {
                 approvalsContent
+            } else if selectedSection == .audit {
+                auditContent
             } else {
                 agentListContent
             }
@@ -44,6 +48,9 @@ struct AgentCenterView: View {
         .background(Theme.Colors.background)
         .onAppear {
             NotificationCenter.default.post(name: .agentCenterShouldInitialize, object: nil)
+            agentRegistry.refreshAllStatuses()
+            service.ensureAgentGuardDataPipeline()
+            service.refreshOperationRecordsSnapshot()
         }
     }
 
@@ -114,6 +121,13 @@ struct AgentCenterView: View {
                     value: "\(agentRegistry.allAdapters.count)",
                     subtitle: localizer.agentCenterAvailableSummary
                 )
+                StatCardView(
+                    icon: "doc.text.magnifyingglass",
+                    iconColor: Theme.Colors.purple,
+                    title: localizer.audit,
+                    value: "\(auditRecords.count)",
+                    subtitle: localizer.agentOpAudit
+                )
             }
             .padding(.horizontal, Theme.Spacing.xl)
 
@@ -125,6 +139,12 @@ struct AgentCenterView: View {
                         title: localizer.agentCenterApprovals,
                         icon: "hand.raised.fill",
                         section: .approvals,
+                        selectedSection: $selectedSection
+                    )
+                    AgentCenterSegmentButton(
+                        title: localizer.audit,
+                        icon: "doc.text.magnifyingglass",
+                        section: .audit,
                         selectedSection: $selectedSection
                     )
                     AgentCenterSegmentButton(
@@ -297,6 +317,12 @@ struct AgentCenterView: View {
         }
     }
 
+    private var auditRecords: [OperationRecord] {
+        service.operationRecords
+            .filter { !$0.agentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .sorted { $0.timestamp > $1.timestamp }
+    }
+
     private var historyApprovalSessions: [SessionState] {
         sessionsViewModel.sessions
             .filter { session in
@@ -412,6 +438,83 @@ struct AgentCenterView: View {
             }
         }
     }
+
+    private var auditContent: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Text(localizer.agentOpAudit)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .lineLimit(1)
+                Spacer()
+                Text("\(auditRecords.count) \(localizer.recordsCount)")
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.purple)
+                Button {
+                    service.importKnownAgentHistory()
+                    service.refreshOperationRecordsSnapshot()
+                } label: {
+                    Label(localizer.agentCenterRefresh, systemImage: "arrow.triangle.2.circlepath")
+                        .font(Theme.Font.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(Theme.Colors.purple)
+            }
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.xs)
+            .background(Theme.Colors.sidebarBg.opacity(0.3))
+
+            if auditRecords.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 34))
+                        .foregroundStyle(Theme.Colors.purple.opacity(0.75))
+                    Text(localizer.noOpRecordsLabel)
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(localizer.agentCenterPendingApprovalsHint)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 520)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 0) {
+                    auditListHeader
+                    ScrollView {
+                        LazyVStack(spacing: 8) {
+                            ForEach(Array(auditRecords.prefix(500))) { record in
+                                AgentCenterAuditRow(record: record, localizer: localizer)
+                            }
+                        }
+                        .padding(14)
+                    }
+                }
+            }
+        }
+    }
+
+    private var auditListHeader: some View {
+        HStack(spacing: 12) {
+            Text(localizer.timeCol)
+                .frame(width: 90, alignment: .center)
+            Text(localizer.agentCol)
+                .frame(width: 120, alignment: .center)
+            Text(localizer.opTypeLabel)
+                .frame(width: 90, alignment: .center)
+            Text(localizer.targetPathCol)
+                .frame(maxWidth: .infinity, alignment: .center)
+            Text(localizer.detailCol)
+                .frame(width: 180, alignment: .center)
+        }
+        .font(Theme.Font.captionMedium)
+        .foregroundStyle(Theme.Colors.textTertiary)
+        .padding(.horizontal, 16)
+        .padding(.vertical, Theme.Spacing.xs)
+        .background(Theme.Colors.sidebarBg.opacity(0.35))
+    }
+
     private var approvalListHeader: some View {
         HStack(spacing: 12) {
             Text(localizer.opTypeLabel)
@@ -514,6 +617,86 @@ private struct AgentCenterStatusFilterButton: View {
         }
         .buttonStyle(.plain)
         .help(title)
+    }
+}
+
+private struct AgentCenterAuditRow: View {
+    let record: OperationRecord
+    let localizer: Localizer
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(timeText)
+                .font(.system(size: 10, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 90, alignment: .leading)
+
+            Text(record.agentName)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(record.agentName)
+                .frame(width: 120, alignment: .leading)
+
+            Label(record.operationType.localizedLabel(localizer), systemImage: record.operationType.icon)
+                .font(.system(size: 10, weight: .semibold))
+                .labelStyle(.titleAndIcon)
+                .foregroundStyle(operationColor)
+                .lineLimit(1)
+                .frame(width: 90, alignment: .leading)
+
+            HStack(spacing: Theme.Spacing.xs) {
+                Text(record.targetPath)
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(record.targetPath)
+                if !record.targetPath.isEmpty {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(record.targetPath, forType: .string)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 9))
+                            .foregroundColor(Theme.Colors.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .help(localizer.copyPath)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(record.detail)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help(record.detail)
+                .frame(width: 180, alignment: .leading)
+        }
+        .padding(12)
+        .background(.primary.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+    }
+
+    private var timeText: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: record.timestamp)
+    }
+
+    private var operationColor: Color {
+        switch record.operationType {
+        case .create: return .green
+        case .modify: return .blue
+        case .delete: return .red
+        case .move: return .orange
+        case .rename: return .purple
+        case .read: return .teal
+        case .execute: return .purple
+        }
     }
 }
 

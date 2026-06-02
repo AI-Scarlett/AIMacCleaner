@@ -165,18 +165,23 @@ struct IslandView: View {
                                 PermissionSheetView(permission: perm, session: session) { decision in
                                     viewModel.respondToPermission(decision)
                                 }
+                                .id(perm.toolUseId ?? "\(session.id)-\(perm.toolName)")
                             }
                         case .question:
                             if let question = session.pendingQuestion {
                                 QuestionSheetView(question: question, session: session) { answer in
                                     viewModel.respondToQuestion(answer)
                                 }
+                                .id(question.toolUseId ?? "\(session.id)-\(question.question)")
                             }
                         case .plan:
                             if let plan = session.pendingPlan {
                                 PlanApprovalSheetView(plan: plan, session: session) { mode, message in
                                     viewModel.respondToPlan(mode: mode, message: message)
+                                } onDefer: {
+                                    viewModel.dismissSheets()
                                 }
+                                .id("\(session.id)-\(plan.title)-\(plan.content)")
                             }
                         }
                     }

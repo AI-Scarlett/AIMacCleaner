@@ -260,6 +260,38 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            HStack(spacing: Theme.Spacing.md) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(Theme.Font.headline)
+                    .foregroundStyle(Theme.Colors.accent)
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(localizer.appReviewDemoMode)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(localizer.appReviewDemoModeDesc)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+
+                Spacer()
+
+                Button(localizer.useAppReviewDemo) {
+                    apiBase = AIConfig.appReviewDemoBase
+                    apiKey = AIConfig.appReviewDemoKey
+                    model = AIConfig.appReviewDemoModel
+                }
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(.white)
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.xs + 2)
+                .background(Theme.Colors.accent)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                .buttonStyle(.plain)
+            }
+            .cardStyle()
         }
     }
 

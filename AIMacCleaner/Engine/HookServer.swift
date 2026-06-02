@@ -20,20 +20,35 @@ actor HookServer {
     weak var sessionStore: SessionStore?
     weak var soundEngine: SoundEngine?
     weak var guardFeature: AgentGuardFeature?
+    weak var scannerService: ScannerService?
 
     private var eventObservers: [(UUID, AsyncStream<AgentHookEvent>.Continuation)] = []
 
-    func setup(sessionStore: SessionStore, soundEngine: SoundEngine, guardFeature: AgentGuardFeature) {
+    func setup(
+        sessionStore: SessionStore,
+        soundEngine: SoundEngine,
+        guardFeature: AgentGuardFeature?,
+        scannerService: ScannerService?
+    ) {
         self.sessionStore = sessionStore
         self.soundEngine = soundEngine
         self.guardFeature = guardFeature
+        self.scannerService = scannerService
     }
 
     func start() throws {
         unlink(socketPath)
 
         let tcpParams = NWParameters.tcp
-        tcpListener = try NWListener(using: tcpParams, on: tcpPort)
+        if let localhost = IPv4Address("127.0.0.1") {
+            tcpParams.requiredLocalEndpoint = .hostPort(host: .ipv4(localhost), port: tcpPort)
+        }
+        tcpListener = try NWListener(using: tcpParams)
+        tcpListener?.stateUpdateHandler = { state in
+            if case .failed(let error) = state {
+                print("[AgentGuard] TCP listener failed on 127.0.0.1:17893: \(error)")
+            }
+        }
         tcpListener?.newConnectionHandler = { [weak self] connection in
             Task { await self?.handleConnection(connection, label: "tcp") }
         }
@@ -42,6 +57,11 @@ actor HookServer {
         let unixParams = NWParameters.tcp
         unixParams.requiredLocalEndpoint = NWEndpoint.unix(path: socketPath)
         unixListener = try NWListener(using: unixParams)
+        unixListener?.stateUpdateHandler = { [socketPath] state in
+            if case .failed(let error) = state {
+                print("[AgentGuard] Unix listener failed on \(socketPath): \(error)")
+            }
+        }
         unixListener?.newConnectionHandler = { [weak self] connection in
             Task { await self?.handleConnection(connection, label: "unix") }
         }
@@ -86,11 +106,6 @@ actor HookServer {
                     return
                 }
 
-                if isComplete {
-                    connection.cancel()
-                    return
-                }
-
                 if let data = data, let chunk = String(data: data, encoding: .utf8) {
                     buffer += chunk
                     let lines = buffer.components(separatedBy: "\n")
@@ -101,6 +116,15 @@ actor HookServer {
                         guard !line.isEmpty else { continue }
                         Task { await self.processLine(line, connection: connection) }
                     }
+                }
+
+                if isComplete {
+                    let line = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !line.isEmpty {
+                        Task { await self.processLine(line, connection: connection) }
+                    }
+                    connection.cancel()
+                    return
                 }
 
                 receiveNext()
@@ -120,38 +144,77 @@ actor HookServer {
             raw = merged
         }
 
+        if raw["event"] == nil, let hookEventName = raw["hook_event_name"] as? String ?? raw["hookEventName"] as? String {
+            raw["event"] = hookEventName
+        }
+
         let eventName = raw["event"] as? String ?? ""
-        let sessionId = raw["session_id"] as? String ?? ""
+        let sessionId = rawString(raw, keys: ["session_id", "sessionId", "conversation_id", "conversationId", "id"])
 
         storeRawEvent(sessionId: sessionId, eventName: eventName, raw: line)
 
         if eventName == "PermissionRequest" || eventName == "permission_request" {
+            await seedPendingSession(from: raw, fallbackProject: "Approval Request")
+            await publishRealtimeEvent(from: raw, updateSessionStore: true)
             let response = await waitForPermissionResponse(from: raw)
             await sendJSON(response, to: connection)
             return
         }
 
         if eventName == "AskQuestion" || eventName == "ask_question" {
+            await seedPendingSession(from: raw, fallbackProject: "Question Request")
+            await publishRealtimeEvent(from: raw, updateSessionStore: true)
             let response = await waitForQuestionResponse(from: raw)
             await sendJSON(response, to: connection)
             return
         }
 
         if eventName == "PlanApproval" || eventName == "plan_approval" {
+            await seedPendingSession(from: raw, fallbackProject: "Plan Approval")
+            await publishRealtimeEvent(from: raw, updateSessionStore: true)
             let response = await waitForPlanResponse(from: raw)
             await sendJSON(response, to: connection)
             return
         }
 
-        guard let event = AgentHookEvent.parse(from: raw) else { return }
+        await publishRealtimeEvent(from: raw, updateSessionStore: true)
+    }
 
-        await sessionStore?.handleEvent(event)
+    private func publishRealtimeEvent(from raw: [String: Any], updateSessionStore: Bool) async {
+        var normalized = raw
+        if normalized["event"] == nil, let hookEventName = normalized["hook_event_name"] as? String ?? normalized["hookEventName"] as? String {
+            normalized["event"] = hookEventName
+        }
+
+        guard let event = AgentHookEvent.parse(from: normalized) else { return }
+
+        if updateSessionStore {
+            await sessionStore?.handleEvent(event)
+        }
+        if let record = auditRecord(from: normalized, event: event) {
+            await MainActor.run { [weak scannerService] in
+                scannerService?.ingestHookAuditRecord(record)
+            }
+        }
         await guardFeature?.checkAgentEvent(event)
         await soundEngine?.play(for: event)
 
         for (_, continuation) in eventObservers {
             continuation.yield(event)
         }
+    }
+
+    private func seedPendingSession(from raw: [String: Any], fallbackProject: String) async {
+        let sessionId = rawString(raw, keys: ["session_id", "sessionId", "conversation_id", "conversationId", "id"])
+        guard !sessionId.isEmpty else { return }
+        let cwd = rawString(raw, keys: ["cwd", "working_directory", "workingDirectory", "project_path", "projectPath"])
+        await sessionStore?.seedPendingSession(
+            sessionId: sessionId,
+            agentType: rawString(raw, keys: ["agent", "source_label", "sourceLabel", "provider"], fallback: "Agent Center"),
+            project: projectName(from: cwd, fallback: fallbackProject),
+            cwd: cwd,
+            terminal: rawString(raw, keys: ["tty", "terminal"])
+        )
     }
 
     private func sendJSON<T: Encodable>(_ value: T, to connection: NWConnection) async {
@@ -165,7 +228,7 @@ actor HookServer {
     private func resumePendingRequestsForShutdown() {
         for entries in pendingPermissions.values {
             for entry in entries {
-                entry.continuation.resume(returning: PermissionResponse(decision: "deny", reason: "AgentGuard stopped"))
+                entry.continuation.resume(returning: permissionResponse(decision: .deny(reason: "AgentGuard stopped"), raw: [:]))
             }
         }
         pendingPermissions.removeAll()
@@ -182,15 +245,16 @@ actor HookServer {
     }
 
     private func waitForPermissionResponse(from raw: [String: Any]) async -> PermissionResponse {
-        let sessionId = raw["session_id"] as? String ?? ""
-        let toolName = raw["tool"] as? String ?? raw["tool_name"] as? String ?? ""
+        let sessionId = rawString(raw, keys: ["session_id", "sessionId", "conversation_id", "conversationId", "id"])
+        let toolName = rawString(raw, keys: ["tool", "tool_name", "toolName", "name"])
         let key = "\(sessionId):\(toolName)"
 
         return await withCheckedContinuation { continuation in
             let entry = PendingPermissionEntry(
                 sessionId: sessionId,
                 toolName: toolName,
-                toolInput: (raw["tool_input"] as? String) ?? "",
+                toolInput: rawString(raw, keys: ["tool_input", "toolInput", "input", "arguments", "args"]),
+                raw: raw,
                 continuation: continuation
             )
             var entries = pendingPermissions[key] ?? []
@@ -198,13 +262,7 @@ actor HookServer {
             pendingPermissions[key] = entries
 
             Task { @MainActor in
-                await self.sessionStore?.seedPendingSession(
-                    sessionId: sessionId,
-                    agentType: raw["agent"] as? String ?? raw["source_label"] as? String ?? "Agent Center",
-                    project: self.projectName(from: raw["cwd"] as? String ?? "", fallback: "Approval Request"),
-                    cwd: raw["cwd"] as? String ?? "",
-                    terminal: raw["tty"] as? String ?? ""
-                )
+                await self.seedPendingSession(from: raw, fallbackProject: "Approval Request")
                 await self.sessionStore?.setPendingPermission(sessionId, PendingPermission(
                     toolName: toolName,
                     toolInput: entry.toolInput,
@@ -226,13 +284,28 @@ actor HookServer {
         return URL(fileURLWithPath: cwd).lastPathComponent
     }
 
+    private nonisolated func rawString(_ raw: [String: Any], keys: [String], fallback: String = "") -> String {
+        for key in keys {
+            if let value = raw[key] as? String, !value.isEmpty { return value }
+            if let value = raw[key],
+               JSONSerialization.isValidJSONObject(value),
+               let data = try? JSONSerialization.data(withJSONObject: value),
+               let string = String(data: data, encoding: .utf8),
+               !string.isEmpty {
+                return string
+            }
+        }
+        return fallback
+    }
+
     private func waitForQuestionResponse(from raw: [String: Any]) async -> QuestionResponse {
-        let sessionId = raw["session_id"] as? String ?? ""
+        let sessionId = rawString(raw, keys: ["session_id", "sessionId", "conversation_id", "conversationId", "id"])
 
         return await withCheckedContinuation { continuation in
             pendingQuestions[sessionId] = PendingQuestionEntry(continuation: continuation)
 
             Task { @MainActor in
+                await self.seedPendingSession(from: raw, fallbackProject: "Question Request")
                 await self.sessionStore?.setPendingQuestion(sessionId, PendingQuestion(
                     question: raw["question"] as? String ?? "",
                     options: raw["options"] as? [String] ?? [],
@@ -248,12 +321,13 @@ actor HookServer {
     }
 
     private func waitForPlanResponse(from raw: [String: Any]) async -> PlanResponse {
-        let sessionId = raw["session_id"] as? String ?? ""
+        let sessionId = rawString(raw, keys: ["session_id", "sessionId", "conversation_id", "conversationId", "id"])
 
         return await withCheckedContinuation { continuation in
             pendingPlans[sessionId] = PendingPlanEntry(continuation: continuation)
 
             Task { @MainActor in
+                await self.seedPendingSession(from: raw, fallbackProject: "Plan Approval")
                 await self.sessionStore?.setPendingPlan(sessionId, PendingPlan(
                     title: raw["plan_title"] as? String ?? "Plan",
                     content: raw["plan_content"] as? String ?? "",
@@ -323,11 +397,7 @@ actor HookServer {
         let key = "\(sessionId):\(toolName)"
         if let entries = pendingPermissions.removeValue(forKey: key) {
             for entry in entries {
-                entry.continuation.resume(returning: PermissionResponse(
-                    decision: decision.decision,
-                    reason: decision.reason,
-                    always: decision.always
-                ))
+                entry.continuation.resume(returning: permissionResponse(decision: decision, raw: entry.raw))
             }
         }
     }
@@ -377,12 +447,147 @@ actor HookServer {
         guard let data = line.data(using: .utf8) else { return nil }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
+
+    private func auditRecord(from raw: [String: Any], event: AgentHookEvent) -> OperationRecord? {
+        let eventName = rawString(raw, keys: ["event", "hook_event_name", "hookEventName"])
+        guard shouldRecordAuditEvent(eventName: eventName) else { return nil }
+
+        let sessionId = rawString(raw, keys: ["session_id", "sessionId", "conversation_id", "conversationId", "id"])
+        let agent = rawString(raw, keys: ["agent", "source_label", "sourceLabel", "provider"], fallback: "Agent Center")
+        let toolName = rawString(raw, keys: ["tool", "tool_name", "toolName", "name"], fallback: eventName)
+        let toolInput = rawString(raw, keys: ["tool_input", "toolInput", "input", "arguments", "args"])
+        let cwd = rawString(raw, keys: ["cwd", "working_directory", "workingDirectory", "project_path", "projectPath"])
+        let status = rawString(raw, keys: ["status"])
+        let target = auditTarget(raw: raw, toolInput: toolInput, cwd: cwd, toolName: toolName)
+        let detail = auditDetail(eventName: eventName, toolName: toolName, toolInput: toolInput, target: target, status: status)
+
+        guard !target.isEmpty || !detail.isEmpty else { return nil }
+
+        return OperationRecord(
+            id: "hook_\(sessionId)_\(eventName)_\(toolName)_\(nextSeq)_\(UUID().uuidString)",
+            timestamp: Date(),
+            agentName: agent.isEmpty ? "Agent Center" : agent,
+            operationType: auditOperationType(eventName: eventName, toolName: toolName, target: target, detail: detail),
+            targetPath: target.isEmpty ? detail : target,
+            detail: detail.isEmpty ? target : detail,
+            fileSize: 0,
+            processName: toolName,
+            toolInfo: sessionId.isEmpty ? event.sessionId : sessionId
+        )
+    }
+
+    private func shouldRecordAuditEvent(eventName: String) -> Bool {
+        switch eventName {
+        case "PreToolUse", "pre_tool_use",
+             "PostToolUse", "post_tool_use",
+             "PostToolUseFailure", "post_tool_use_failure",
+             "PermissionDenied", "permission_denied",
+             "PermissionRequest", "permission_request",
+             "ShellExecutionStart", "shell_execution_start",
+             "ShellExecutionEnd", "shell_execution_end",
+             "MCPExecutionStart", "mcp_execution_start",
+             "MCPExecutionEnd", "mcp_execution_end":
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func auditTarget(raw: [String: Any], toolInput: String, cwd: String, toolName: String) -> String {
+        for key in ["target_path", "targetPath", "file_path", "filePath", "path", "command"] {
+            let value = rawString(raw, keys: [key])
+            if !value.isEmpty { return value }
+        }
+
+        if let parsed = parseJSONString(toolInput) {
+            for key in ["file_path", "filePath", "path", "target_path", "targetPath", "command"] {
+                let value = rawString(parsed, keys: [key])
+                if !value.isEmpty { return value }
+            }
+        }
+
+        let lowerTool = toolName.lowercased()
+        if lowerTool.contains("shell") || lowerTool.contains("bash") || lowerTool.contains("exec") || lowerTool.contains("command") {
+            return toolInput
+        }
+        return cwd
+    }
+
+    private func auditDetail(eventName: String, toolName: String, toolInput: String, target: String, status: String) -> String {
+        var parts = [eventName, toolName].filter { !$0.isEmpty }
+        if !status.isEmpty { parts.append(status) }
+        if !toolInput.isEmpty && toolInput != target {
+            parts.append(String(toolInput.prefix(240)))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func auditOperationType(eventName: String, toolName: String, target: String, detail: String) -> OperationRecord.OperationType {
+        let combined = "\(eventName) \(toolName) \(target) \(detail)".lowercased()
+        if combined.contains("delete") || combined.contains("remove") || combined.contains("trash") || combined.contains(" rm ") {
+            return .delete
+        }
+        if combined.contains("read") || combined.contains("view") || combined.contains("open") || combined.contains("grep") || combined.contains("rg ") || combined.contains("cat ") || combined.contains("ls ") {
+            return .read
+        }
+        if combined.contains("shell") || combined.contains("bash") || combined.contains("exec") || combined.contains("command") || combined.contains("mcp") {
+            return .execute
+        }
+        if combined.contains("write") || combined.contains("create") || combined.contains("new file") {
+            return .create
+        }
+        if combined.contains("move") {
+            return .move
+        }
+        if combined.contains("rename") {
+            return .rename
+        }
+        return .modify
+    }
+
+    private func parseJSONString(_ value: String) -> [String: Any]? {
+        guard let data = value.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    private func permissionResponse(decision: PermissionDecision, raw: [String: Any]) -> PermissionResponse {
+        let behavior = decision.decision == "deny" ? "deny" : "allow"
+        let updatedPermissions = decision.always == true
+            ? codablePermissionSuggestions(from: raw)
+            : decision.updatedPermissions
+        let hookDecision = HookPermissionDecision(
+            behavior: behavior,
+            message: behavior == "deny" ? decision.reason : nil,
+            updatedPermissions: updatedPermissions
+        )
+        let hookOutput = HookSpecificPermissionOutput(
+            hookEventName: "PermissionRequest",
+            decision: hookDecision
+        )
+        return PermissionResponse(
+            decision: decision.decision,
+            reason: decision.reason,
+            always: decision.always,
+            hookSpecificOutput: hookOutput,
+            permissionDecision: behavior,
+            permissionDecisionReason: decision.reason
+        )
+    }
+
+    private func codablePermissionSuggestions(from raw: [String: Any]) -> [[String: AnyCodable]]? {
+        guard let suggestions = raw["permission_suggestions"] as? [[String: Any]],
+              !suggestions.isEmpty else { return nil }
+        return suggestions.map { suggestion in
+            suggestion.mapValues { AnyCodable($0) }
+        }
+    }
 }
 
 struct PendingPermissionEntry {
     let sessionId: String
     let toolName: String
     let toolInput: String
+    let raw: [String: Any]
     let continuation: CheckedContinuation<PermissionResponse, Never>
 }
 

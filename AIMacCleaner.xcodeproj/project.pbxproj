@@ -59,6 +59,7 @@
 		B114AC07FB1218B1D5F4C9AC /* GlobalShortcutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F114AC07FB1218B1D5F4C9AC /* GlobalShortcutService.swift */; };
 		B1DE3880A0446E246F14E423 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1DE3880A0446E246F14E423 /* NetworkMonitor.swift */; };
 		B116459B8B7913107AAE0C86 /* ConversationWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */; };
+		CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -117,6 +118,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		F114AC07FB1218B1D5F4C9AC /* GlobalShortcutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/GlobalShortcutService.swift; sourceTree = "<group>"; };
 		F1DE3880A0446E246F14E423 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/NetworkMonitor.swift; sourceTree = "<group>"; };
 		F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ConversationWatcher.swift; sourceTree = "<group>"; };
+		CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenScopeLabView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -153,6 +155,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				B2C3D4E5F6A7B8C9D0E1F2A3 /* SensorMonitor.swift */,
 				D4E5F6A7B8C9D0E1F2A3B4C5 /* StorageAnalyzer.swift */,
 				F6A7B8C9D0E1F2A3B4C5D6E7 /* SettingsView.swift */,
+				CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */,
 			1A2B3C4D5E6F7A8B9C0D1E2F /* Theme.swift */,
 			F7A8B9C0D1E2F3A4B5C6D7E8 /* Localizer.swift */,
 			C3109E2D93F7928BE4CFFF2F /* Models.swift */,
@@ -317,6 +320,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				B114AC07FB1218B1D5F4C9AC /* GlobalShortcutService.swift in Sources */,
 				B1DE3880A0446E246F14E423 /* NetworkMonitor.swift in Sources */,
 				B116459B8B7913107AAE0C86 /* ConversationWatcher.swift in Sources */,
+				CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */,
 			2A3B4C5D6E7F8A9B0C1D2E3F /* Theme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -331,7 +335,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-					CURRENT_PROJECT_VERSION = 4;
+					CURRENT_PROJECT_VERSION = 13;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
@@ -477,7 +481,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-					CURRENT_PROJECT_VERSION = 4;
+					CURRENT_PROJECT_VERSION = 13;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;

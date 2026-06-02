@@ -5,6 +5,7 @@ struct PlanApprovalSheetView: View {
     let plan: PendingPlan
     let session: SessionState
     let onResponse: (String, String?) -> Void
+    let onDefer: () -> Void
 
     @State private var customMessage: String = ""
 
@@ -93,6 +94,17 @@ struct PlanApprovalSheetView: View {
                 }
                 .buttonStyle(.plain)
 
+                Button(action: onDefer) {
+                    Text(localizer.agentDecideLater)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(.secondary.opacity(0.1))
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+
                 TextField(localizer.agentFeedbackPlaceholder, text: $customMessage)
                     .textFieldStyle(.plain)
                     .font(.system(size: 11))
@@ -104,6 +116,18 @@ struct PlanApprovalSheetView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
         }
+        .onAppear(perform: resetInput)
+        .onChange(of: planIdentity) { _ in
+            resetInput()
+        }
+    }
+
+    private var planIdentity: String {
+        "\(session.id)|\(plan.title)|\(plan.content)"
+    }
+
+    private func resetInput() {
+        customMessage = ""
     }
 
     private var compactHeader: some View {

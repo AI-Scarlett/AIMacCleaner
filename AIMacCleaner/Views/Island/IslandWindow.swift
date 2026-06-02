@@ -43,22 +43,10 @@ class IslandWindowController {
 
         panel.contentView = hostingView
 
-        setupMouseTracking(for: hostingView)
         setupKeyboardMonitor()
 
         window = panel
         return panel
-    }
-
-    private func setupMouseTracking(for view: NSView) {
-        let options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways, .inVisibleRect]
-        let trackingArea = NSTrackingArea(
-            rect: view.bounds,
-            options: options,
-            owner: view,
-            userInfo: nil
-        )
-        view.addTrackingArea(trackingArea)
     }
 
     private func setupKeyboardMonitor() {

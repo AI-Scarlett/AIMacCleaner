@@ -105,7 +105,7 @@ struct AgentIntegrationProfile: Sendable {
     }
 
     var userHome: URL {
-        FileManager.default.homeDirectoryForCurrentUser
+        agentRealHomeURL()
     }
 
     var fullConfigPath: URL {

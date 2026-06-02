@@ -74,7 +74,7 @@ final class AgentRegistry: ObservableObject {
         if adapter.hooksInstalled {
             return .active
         }
-        return adapter.detectInstallation() ? .installed : .unavailable
+        return isLocallyInstalled(adapter) ? .installed : .unavailable
     }
 
     func status(for agentId: String) -> AdapterStatus {
@@ -88,7 +88,7 @@ final class AgentRegistry: ObservableObject {
     func refreshAllStatuses() {
         Task {
             for adapter in adapters {
-                let installed = adapter.detectInstallation()
+                let installed = isLocallyInstalled(adapter)
                 if installed {
                     var hooksOk = true
                     for path in adapter.hookConfigPaths {
@@ -161,7 +161,7 @@ final class AgentRegistry: ObservableObject {
     }
 
     func installAllAvailableHooks() {
-        let candidates = adapters.filter { canInstallHooks(for: $0.name) && $0.detectInstallation() && adapterStatuses[$0.name] != .active }
+        let candidates = adapters.filter { canInstallHooks(for: $0.name) && isLocallyInstalled($0) && adapterStatuses[$0.name] != .active }
         guard !candidates.isEmpty else { return }
         installingAgentIds.formUnion(candidates.map(\.name))
         lastActionMessage = nil
@@ -182,38 +182,83 @@ final class AgentRegistry: ObservableObject {
     func detectInstalledTools() async {
         var detected: [DetectedTool] = []
 
-        await withTaskGroup(of: DetectedTool?.self) { group in
-            for adapter in adapters {
-                group.addTask {
-                    let process = Process()
-                    process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-                    process.arguments = [adapter.name]
-                    let pipe = Pipe()
-                    process.standardOutput = pipe
-                    process.standardError = FileHandle.nullDevice
-
-                    do {
-                        try process.run()
-                        process.waitUntilExit()
-                        if process.terminationStatus == 0,
-                           let path = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                           !path.isEmpty {
-                            return DetectedTool(agentId: adapter.name, binary: adapter.name, path: path, displayName: adapter.displayName)
-                        }
-                    } catch {}
-
-                    return nil
-                }
-            }
-
-            for await result in group {
-                if let tool = result {
-                    detected.append(tool)
-                }
+        for adapter in adapters {
+            let binary = profile(for: adapter.name)?.executable ?? adapter.name
+            if let path = cliPath(for: binary) {
+                detected.append(DetectedTool(agentId: adapter.name, binary: binary, path: path, displayName: adapter.displayName))
+            } else if isLocallyInstalled(adapter) {
+                detected.append(DetectedTool(agentId: adapter.name, binary: binary, path: displayPath(adapter.configRoot.path), displayName: adapter.displayName))
             }
         }
 
         self.detectedTools = detected.sorted { $0.displayName < $1.displayName }
+    }
+
+    private func profile(for agentId: String) -> AgentIntegrationProfile? {
+        AgentIntegrationProfile.allProfiles.first { $0.agentId == agentId }
+    }
+
+    private func cliPath(for binary: String) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        process.arguments = [binary]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            if process.terminationStatus == 0,
+               let path = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !path.isEmpty {
+                return path
+            }
+        } catch {}
+
+        let home = SandboxPaths.realHomeDirectory
+        let pathEntries = (ProcessInfo.processInfo.environment["PATH"] ?? "")
+            .split(separator: ":")
+            .map(String.init)
+        let commonDirs = [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "\(home)/.local/bin",
+            "\(home)/bin",
+            "\(home)/.npm-global/bin",
+            "\(home)/.bun/bin",
+            "\(home)/.cargo/bin"
+        ]
+        for dir in Array(Set(pathEntries + commonDirs)) {
+            let candidate = URL(fileURLWithPath: dir).appendingPathComponent(binary).path
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+
+        return nil
+    }
+
+    private func displayPath(_ path: String) -> String {
+        let home = SandboxPaths.realHomeDirectory
+        if path == home { return "~" }
+        if path.hasPrefix(home + "/") {
+            return "~" + String(path.dropFirst(home.count))
+        }
+        return path
+    }
+
+    private func isLocallyInstalled(_ adapter: any AgentAdapter) -> Bool {
+        if adapter.detectInstallation() {
+            return true
+        }
+        let configPath = adapter.configRoot.path
+        if FileManager.default.fileExists(atPath: configPath) {
+            return true
+        }
+        return adapter.hookConfigPaths.contains { FileManager.default.fileExists(atPath: $0.deletingLastPathComponent().path) }
     }
 
     func installHook(for agentId: String) async throws {

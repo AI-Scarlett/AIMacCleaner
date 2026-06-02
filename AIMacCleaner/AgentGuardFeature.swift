@@ -234,6 +234,18 @@ class AgentGuardFeature: ObservableObject {
     private var knownPids: Set<pid_t> = []
     private var knownAgentPids: [pid_t: String] = [:]
     private var lastStatsSaveTime: Date = .distantPast
+    private var alertRuleSaveTask: Task<Void, Never>?
+    private var commandRegexCache: [String: Regex<AnyRegexOutput>] = [:]
+    private var failedRegexRuleIds: Set<String> = []
+
+    private static let commandRuleDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
 
     weak var localizer: Localizer?
 
@@ -1023,42 +1035,56 @@ class AgentGuardFeature: ObservableObject {
     }
 
     private func operationTypeForHookTool(toolName: String, target: String, input: String) -> OperationRecord.OperationType {
+        let tool = toolName.lowercased()
         let combined = "\(toolName) \(target) \(input)".lowercased()
-        if combined.contains("delete") || combined.contains("remove") || combined.contains("trash") || combined.contains("rm ") {
+        let terms = commandTerms(in: combined)
+
+        if tool.contains("delete") || tool.contains("remove") || tool.contains("trash") || tool == "rm" ||
+            terms.contains("delete") || terms.contains("remove") || terms.contains("trash") || terms.contains("rm") || terms.contains("unlink") {
             return .delete
         }
-        if combined.contains("read") || combined.contains("grep") || combined.contains("search") || combined.contains("glob") {
+        if tool.contains("read") || tool.contains("grep") || tool.contains("search") || tool.contains("glob") ||
+            terms.contains("read") || terms.contains("grep") || terms.contains("rg") || terms.contains("search") || terms.contains("glob") || terms.contains("cat") || terms.contains("ls") || terms.contains("view") {
             return .read
         }
-        if combined.contains("write") || combined.contains("create") || combined.contains("touch ") || combined.contains("mkdir ") {
+        if tool.contains("write") || tool.contains("create") || tool == "touch" || tool == "mkdir" ||
+            terms.contains("write") || terms.contains("create") || terms.contains("touch") || terms.contains("mkdir") || terms.contains("new") {
             return .create
         }
-        if combined.contains("rename") {
+        if tool.contains("rename") || terms.contains("rename") {
             return .rename
         }
-        if combined.contains("move") || combined.contains(" mv ") {
+        if tool.contains("move") || tool == "mv" || terms.contains("move") || terms.contains("mv") {
             return .move
         }
-        if combined.contains("bash") || combined.contains("shell") || combined.contains("command") || combined.contains("execute") {
+        if terms.contains("chmod") || terms.contains("chown") || terms.contains("edit") || terms.contains("patch") {
+            return .modify
+        }
+        if tool.contains("bash") || tool.contains("shell") || tool.contains("command") || tool.contains("execute") ||
+            terms.contains("bash") || terms.contains("shell") || terms.contains("command") || terms.contains("execute") || terms.contains("exec") {
             return .execute
         }
         return .modify
     }
 
+    private func commandTerms(in text: String) -> Set<String> {
+        Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init))
+    }
+
     private func incrementRuleCount(at index: Int, agentName: String, timestamp: Date = Date(), shouldSave: Bool = true) {
         commandRules[index].totalCallCount += 1
         let isToday = Calendar.current.isDateInToday(timestamp)
-        let todayStr = DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .none)
+        let callDateStr = Self.commandRuleDayFormatter.string(from: timestamp)
         let lastDateStr = commandRules[index].lastCalledBy.isEmpty ? "" : String(commandRules[index].lastCalledBy.split(separator: "|").first ?? "")
         if isToday {
-            if todayStr == lastDateStr {
+            if callDateStr == lastDateStr {
                 commandRules[index].todayCallCount += 1
             } else {
                 commandRules[index].todayCallCount = 1
             }
         }
-        let callDateStr = DateFormatter.localizedString(from: timestamp, dateStyle: .short, timeStyle: .none)
-        commandRules[index].lastCalledBy = callDateStr + "|" + agentName
+        let safeAgentName = agentName.replacingOccurrences(of: "|", with: "/")
+        commandRules[index].lastCalledBy = callDateStr + "|" + safeAgentName
         if shouldSave {
             saveCommandRules()
         }
@@ -1066,10 +1092,24 @@ class AgentGuardFeature: ObservableObject {
 
     private func matchCommand(_ cmdLower: String, rule: CommandRule) -> Bool {
         if rule.isRegex {
-            return (try? Regex(rule.pattern).firstMatch(in: cmdLower)) != nil
+            guard let regex = cachedRegex(for: rule) else { return false }
+            return (try? regex.firstMatch(in: cmdLower)) != nil
         } else {
             return cmdLower.contains(rule.pattern.lowercased())
         }
+    }
+
+    private func cachedRegex(for rule: CommandRule) -> Regex<AnyRegexOutput>? {
+        if let regex = commandRegexCache[rule.id] {
+            return regex
+        }
+        guard !failedRegexRuleIds.contains(rule.id),
+              let regex = try? Regex(rule.pattern) else {
+            failedRegexRuleIds.insert(rule.id)
+            return nil
+        }
+        commandRegexCache[rule.id] = regex
+        return regex
     }
 
     func discoverCommand(pattern: String, agentName: String, shouldSave: Bool = true) {
@@ -1285,6 +1325,8 @@ class AgentGuardFeature: ObservableObject {
 
     func removeCommandRule(id: String) {
         commandRules.removeAll { $0.id == id }
+        commandRegexCache.removeValue(forKey: id)
+        failedRegexRuleIds.remove(id)
         saveCommandRules()
     }
 
@@ -1298,7 +1340,7 @@ class AgentGuardFeature: ObservableObject {
 
     func saveAlerts() {
         guard let data = try? JSONEncoder().encode(alerts) else { return }
-        try? data.write(to: URL(fileURLWithPath: alertsPath))
+        writeAtomically(data, to: alertsPath)
     }
 
     private func loadAlertRule() {
@@ -1308,8 +1350,25 @@ class AgentGuardFeature: ObservableObject {
     }
 
     func saveAlertRule() {
+        alertRuleSaveTask?.cancel()
+        alertRuleSaveTask = nil
+        persistAlertRule()
+    }
+
+    func scheduleSaveAlertRule(after delay: TimeInterval = 0.3) {
+        alertRuleSaveTask?.cancel()
+        let nanoseconds = UInt64(delay * 1_000_000_000)
+        alertRuleSaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard !Task.isCancelled else { return }
+            self?.alertRuleSaveTask = nil
+            self?.persistAlertRule()
+        }
+    }
+
+    private func persistAlertRule() {
         guard let data = try? JSONEncoder().encode(alertRule) else { return }
-        try? data.write(to: URL(fileURLWithPath: alertRulePath))
+        writeAtomically(data, to: alertRulePath)
     }
 
     private func loadProtectedDirs() {
@@ -1320,7 +1379,7 @@ class AgentGuardFeature: ObservableObject {
 
     private func saveProtectedDirs() {
         guard let data = try? JSONEncoder().encode(protectedDirs) else { return }
-        try? data.write(to: URL(fileURLWithPath: protectedDirsPath))
+        writeAtomically(data, to: protectedDirsPath)
     }
 
     private func loadLifecycleEvents() {
@@ -1335,7 +1394,7 @@ class AgentGuardFeature: ObservableObject {
 
     func saveLifecycleEvents() {
         guard let data = try? JSONEncoder().encode(processLifecycleEvents) else { return }
-        try? data.write(to: URL(fileURLWithPath: lifecyclePath))
+        writeAtomically(data, to: lifecyclePath)
     }
 
     private func loadHourlyStats() {
@@ -1346,7 +1405,7 @@ class AgentGuardFeature: ObservableObject {
 
     func saveHourlyStats() {
         guard let data = try? JSONEncoder().encode(hourlyStats) else { return }
-        try? data.write(to: URL(fileURLWithPath: hourlyStatsPath))
+        writeAtomically(data, to: hourlyStatsPath)
     }
 
     private func loadCommandRules() {
@@ -1357,7 +1416,13 @@ class AgentGuardFeature: ObservableObject {
 
     func saveCommandRules() {
         guard let data = try? JSONEncoder().encode(commandRules) else { return }
-        try? data.write(to: URL(fileURLWithPath: commandRulesPath))
+        writeAtomically(data, to: commandRulesPath)
+    }
+
+    private func writeAtomically(_ data: Data, to path: String) {
+        let url = URL(fileURLWithPath: path)
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: url, options: .atomic)
     }
 }
 
