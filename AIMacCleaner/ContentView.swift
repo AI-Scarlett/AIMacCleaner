@@ -814,8 +814,10 @@ final class AgentMonitorOverviewStore: ObservableObject {
             await MainActor.run {
                 if !result.sessions.isEmpty {
                     let activeKeys = Set(result.sessions.map { "\($0.agentName)|\($0.sessionId)|\($0.sourcePath)" })
+                    let refreshedPriorityAgents = Self.refreshedPriorityAgents(from: result.scannedRoots)
                     let retentionCutoff = Date().addingTimeInterval(-self.activeRetentionWindow)
                     let retained = self.sessions.filter {
+                        if refreshedPriorityAgents.contains($0.agentName) { return false }
                         let key = "\($0.agentName)|\($0.sessionId)|\($0.sourcePath)"
                         guard !activeKeys.contains(key) else { return false }
                         if Self.isActiveSession($0) {
@@ -833,7 +835,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
                         }
                     let realtimeSnapshots = Self.usageSnapshots(from: self.sessions)
                     if !realtimeSnapshots.isEmpty {
-                        self.snapshots = Self.mergedSnapshots(primary: realtimeSnapshots, fallback: self.snapshots)
+                        self.snapshots = Self.mergedSnapshots(primary: realtimeSnapshots, fallback: Self.sanitizedSnapshots(self.snapshots))
                     }
                 }
                 if !result.authorizedRoots.isEmpty {
@@ -844,7 +846,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
                 }
                 let cachedSessionSnapshots = Self.usageSnapshots(from: self.sessions)
                 if !cachedSessionSnapshots.isEmpty {
-                    self.snapshots = Self.mergedSnapshots(primary: cachedSessionSnapshots, fallback: self.snapshots)
+                    self.snapshots = Self.mergedSnapshots(primary: cachedSessionSnapshots, fallback: Self.sanitizedSnapshots(self.snapshots))
                 }
                 self.saveCache()
                 self.lastRealtimeRefreshDate = Date()
@@ -896,6 +898,36 @@ final class AgentMonitorOverviewStore: ObservableObject {
             if left == right { return $0.agentName < $1.agentName }
             return left > right
         }
+    }
+
+    private static func sanitizedSnapshots(_ snapshots: [AgentMonitorUsageSnapshot]) -> [AgentMonitorUsageSnapshot] {
+        snapshots.filter { snapshot in
+            let lower = snapshot.sourcePath.lowercased()
+            switch snapshot.agentName {
+            case "Claude Code":
+                return lower.contains("/.claude/") || lower.contains("/.config/claude/")
+            case "Cursor":
+                return lower.hasSuffix(".vscdb") && lower.contains("cursor")
+            case "OpenClaw":
+                return lower.contains("/.openclaw/agents/") || lower.contains("/.qclaw/agents/")
+            case "Hermes":
+                return lower.contains("/.hermes/sessions/") || lower.hasSuffix("/.hermes/gateway_state.json") || lower.contains("hermes-sandbox") || lower.contains("hermes_sandbox")
+            default:
+                return true
+            }
+        }
+    }
+
+    private static func refreshedPriorityAgents(from roots: [String]) -> Set<String> {
+        var agents = Set<String>()
+        for root in roots {
+            let lower = root.lowercased()
+            if lower.contains("/.claude/projects") || lower.contains("/.config/claude/projects") { agents.insert("Claude Code") }
+            if lower.hasSuffix(".vscdb") && lower.contains("cursor") { agents.insert("Cursor") }
+            if lower.hasSuffix("/sessions.json") && (lower.contains("/.openclaw/") || lower.contains("/.qclaw/")) { agents.insert("OpenClaw") }
+            if lower.contains("/.hermes/sessions") || lower.hasSuffix("/.hermes/gateway_state.json") { agents.insert("Hermes") }
+        }
+        return agents
     }
 
     private func loadCache() {
@@ -968,11 +1000,17 @@ private final class AgentMonitorOverviewScanner {
 
     private var specs: [AgentSpec] {
         var base = [
-            AgentSpec(name: "Claude Code", roots: ["~/.claude", "~/.claude/projects", "~/.claude/sessions"], processKeywords: ["claude", "claude-code", "anthropic"], contextWindow: 200_000),
+            AgentSpec(name: "Claude Code", roots: ["~/.claude", "~/.claude/projects", "~/.claude/sessions", "~/.config/claude/projects"], processKeywords: ["claude", "claude-code", "anthropic"], contextWindow: 200_000),
             AgentSpec(name: "Codex", roots: ["~/.codex/sessions", "~/.codex/archived_sessions"], processKeywords: ["codex"], contextWindow: 200_000),
             AgentSpec(name: "OpenCode", roots: ["~/.opencode", "~/.local/share/opencode", "~/.local/share/opencode/opencode.db"], processKeywords: ["opencode"], contextWindow: 200_000),
             AgentSpec(name: "Gemini CLI", roots: ["~/.gemini"], processKeywords: ["gemini"], contextWindow: 1_000_000),
-            AgentSpec(name: "Cursor", roots: ["~/Library/Application Support/Cursor/User/workspaceStorage"], processKeywords: ["cursor"], contextWindow: 200_000),
+            AgentSpec(name: "Cursor", roots: cursorStateDBPaths(), processKeywords: ["/cursor.app/", "cursor-agent", "cursor agent"], contextWindow: 200_000),
+            AgentSpec(name: "OpenClaw", roots: [
+                "~/.openclaw/agents/main/sessions/sessions.json",
+                "~/.qclaw/agents/main/sessions/sessions.json",
+                "~/Library/Application Support/QClaw/openclaw/config/agents/main/sessions/sessions.json"
+            ] + openClawSessionStorePaths(), processKeywords: ["openclaw", "open-claw", "qclaw"], contextWindow: 200_000),
+            AgentSpec(name: "Hermes", roots: ["~/.hermes", "~/.hermes/sessions", "~/.hermes/gateway_state.json"], processKeywords: ["hermes", "hermes-agent", "hermes_cli"], contextWindow: 200_000),
             AgentSpec(name: "Trae", roots: ["~/.trae", "~/.trae-cn", "~/Library/Application Support/Trae", "~/Library/Application Support/Trae CN"], processKeywords: ["trae", "trae-cn"], contextWindow: 200_000),
             AgentSpec(name: "CodeBuddy", roots: ["~/.codebuddy/projects", "~/Library/Application Support/CodeBuddy", "~/Library/Application Support/CodeBuddy CN"], processKeywords: ["codebuddy", "codebuddy-cn"], contextWindow: 200_000),
             AgentSpec(name: "MiniMax Agent", roots: ["~/.minimax", "~/.minimax/sqlite.db", "~/.minimax/nexus/nexus.db", "~/.minimax-agent", "~/.minimax-agent-cn", "~/Library/Application Support/MiniMax", "~/Library/Application Support/MiniMax Agent"], processKeywords: ["minimax", "mavis"], contextWindow: 512_000)
@@ -1071,6 +1109,32 @@ private final class AgentMonitorOverviewScanner {
                     }
                     continue
                 }
+                if root.hasSuffix(".vscdb"), spec.name == "Cursor" {
+                    let summary = summarizeDatabaseSessions(parseCursorDBSessions(path: root, processInfo: [:]))
+                    sessionIDs.formUnion(summary.sessionIds)
+                    totalTokens += summary.tokens.total
+                    lastContextTokens = max(lastContextTokens, summary.lastContextTokens)
+                    if let latest = summary.latestActivity, latestActivity == nil || latest > latestActivity! {
+                        latestActivity = latest
+                    }
+                    if projectPath.isEmpty, let project = summary.project {
+                        projectPath = project
+                    }
+                    continue
+                }
+                if root.hasSuffix("/sessions.json"), spec.name == "OpenClaw" {
+                    let summary = summarizeDatabaseSessions(parseOpenClawSessionStore(path: root, processInfo: [:]))
+                    sessionIDs.formUnion(summary.sessionIds)
+                    totalTokens += summary.tokens.total
+                    lastContextTokens = max(lastContextTokens, summary.lastContextTokens)
+                    if let latest = summary.latestActivity, latestActivity == nil || latest > latestActivity! {
+                        latestActivity = latest
+                    }
+                    if projectPath.isEmpty, let project = summary.project {
+                        projectPath = project
+                    }
+                    continue
+                }
                 guard shouldEnumerateUsageFiles(root: root, spec: spec) else { continue }
                 let files = usageFiles(under: root)
                 for file in files {
@@ -1148,6 +1212,11 @@ private final class AgentMonitorOverviewScanner {
             children: children
         )
         liveSessions.append(contentsOf: recentSessions)
+        liveSessions.append(contentsOf: scanPriorityHistorySessions(
+            roots: fixedRoots,
+            processInfo: processInfo,
+            children: children
+        ))
         for root in fixedRoots {
             if root.hasSuffix("/opencode.db") {
                 liveSessions.append(contentsOf: parseOpenCodeDBSessions(path: root, processInfo: processInfo))
@@ -1155,9 +1224,21 @@ private final class AgentMonitorOverviewScanner {
                 liveSessions.append(contentsOf: parseMiniMaxDBSessions(path: root, processInfo: processInfo))
             } else if root.hasSuffix("/nexus.db"), root.lowercased().contains("minimax") {
                 liveSessions.append(contentsOf: parseMiniMaxNexusDBSessions(path: root, processInfo: processInfo))
+            } else if root.hasSuffix(".vscdb"), root.lowercased().contains("cursor") {
+                liveSessions.append(contentsOf: parseCursorDBSessions(path: root, processInfo: processInfo))
+            } else if root.hasSuffix("/sessions.json"), root.lowercased().contains("openclaw") || root.lowercased().contains("qclaw") {
+                liveSessions.append(contentsOf: parseOpenClawSessionStore(path: root, processInfo: processInfo))
             }
         }
-        let activeSessions = uniqueSessions(liveSessions.filter { isRealtimeActiveSession($0) })
+        let uniqueRows = uniqueSessions(liveSessions)
+        let activeSessions = uniqueRows.filter { isRealtimeActiveSession($0) }
+        let priorityAgents: Set<String> = ["Claude Code", "Cursor", "OpenClaw", "Hermes"]
+        let priorityHistory = Dictionary(grouping: uniqueRows.filter {
+            priorityAgents.contains($0.agentName) && !isRealtimeActiveSession($0)
+        }, by: \.agentName).values.flatMap { rows in
+            rows.sorted { ($0.latestActivity ?? .distantPast) > ($1.latestActivity ?? .distantPast) }.prefix(20)
+        }
+        let selectedSessions = uniqueSessions(activeSessions + priorityHistory)
             .sorted {
                 let left = $0.latestActivity ?? .distantPast
                 let right = $1.latestActivity ?? .distantPast
@@ -1166,7 +1247,7 @@ private final class AgentMonitorOverviewScanner {
             }
         return ScanResult(
             snapshots: [],
-            sessions: Array(activeSessions.prefix(80)),
+            sessions: Array(selectedSessions.prefix(120)),
             authorizedRoots: authorizedRoots,
             scannedRoots: fixedRoots.sorted { $0.count < $1.count }
         )
@@ -1206,6 +1287,14 @@ private final class AgentMonitorOverviewScanner {
                     databaseRows.append(contentsOf: parseMiniMaxNexusDBSessions(path: root, processInfo: processInfo))
                     continue
                 }
+                if root.hasSuffix(".vscdb"), spec.name == "Cursor" {
+                    databaseRows.append(contentsOf: parseCursorDBSessions(path: root, processInfo: processInfo))
+                    continue
+                }
+                if root.hasSuffix("/sessions.json"), spec.name == "OpenClaw" {
+                    databaseRows.append(contentsOf: parseOpenClawSessionStore(path: root, processInfo: processInfo))
+                    continue
+                }
                 guard shouldEnumerateUsageFiles(root: root, spec: spec) else { continue }
                 for file in usageFiles(under: root).filter({ !liveSources.contains($0.path) }) {
                     guard let parsed = parseSessionFile(file) else { continue }
@@ -1229,13 +1318,14 @@ private final class AgentMonitorOverviewScanner {
         let fileRows = prioritizedRows
             .prefix(120)
             .map { item in
-                let process = liveProcessByAgent[item.spec.name]?.first
+                let agentName = resolvedAgentName(specName: item.spec.name, parsed: item.parsed)
+                let process = liveProcessByAgent[agentName]?.first
                 let pid = process?.pid
                 let contextPercent = item.parsed.contextWindow > 0 ? min(Double(item.parsed.lastContextTokens) / Double(item.parsed.contextWindow), 1) : 0
-                let projectName = lastPathSegment(item.parsed.cwd).isEmpty ? item.spec.name : lastPathSegment(item.parsed.cwd)
+                let projectName = lastPathSegment(item.parsed.cwd).isEmpty ? agentName : lastPathSegment(item.parsed.cwd)
                 return AgentMonitorSessionSnapshot(
-                    id: "\(item.spec.name)-\(item.parsed.sessionId)-history-\(item.parsed.sourcePath)",
-                    agentName: item.spec.name,
+                    id: "\(agentName)-\(item.parsed.sessionId)-history-\(item.parsed.sourcePath)",
+                    agentName: agentName,
                     pid: pid,
                     sessionId: item.parsed.sessionId,
                     status: item.parsed.status,
@@ -1283,6 +1373,14 @@ private final class AgentMonitorOverviewScanner {
         if spec.name == "OpenCode" {
             roots.insert(home + "/.local/share/opencode/opencode.db")
         }
+        if spec.name == "Cursor" {
+            roots.formUnion(cursorStateDBPaths())
+        }
+        if spec.name == "OpenClaw" {
+            roots.insert(home + "/.openclaw/agents/main/sessions/sessions.json")
+            roots.insert(home + "/.qclaw/agents/main/sessions/sessions.json")
+            roots.formUnion(openClawSessionStorePaths())
+        }
         if spec.name == "MiniMax Agent" {
             roots.insert(home + "/.minimax/sqlite.db")
             roots.insert(home + "/.minimax/nexus/nexus.db")
@@ -1301,6 +1399,15 @@ private final class AgentMonitorOverviewScanner {
             return [home + "/.codex/sessions", home + "/.codex/archived_sessions"]
         case "OpenCode":
             return [home + "/.opencode", home + "/.local/share/opencode", home + "/.local/share/opencode/opencode.db"]
+        case "Cursor":
+            return cursorStateDBPaths()
+        case "OpenClaw":
+            return [
+                home + "/.openclaw/agents/main/sessions/sessions.json",
+                home + "/.qclaw/agents/main/sessions/sessions.json"
+            ] + openClawSessionStorePaths()
+        case "Hermes":
+            return [home + "/.hermes", home + "/.hermes/sessions", home + "/.hermes/gateway_state.json"]
         case "MiniMax Agent":
             return [home + "/.minimax", home + "/.minimax/sqlite.db", home + "/.minimax/nexus/nexus.db", home + "/.minimax/sessions", home + "/.minimax/logs", home + "/.minimax-agent", home + "/.minimax-agent-cn"]
         default:
@@ -1320,6 +1427,15 @@ private final class AgentMonitorOverviewScanner {
         case "OpenCode":
             if lower.hasSuffix("/opencode.db") { return [root] }
             if lower.hasSuffix("/opencode") || lower.hasSuffix("/.opencode") { return [root, root + "/opencode.db"] }
+        case "Cursor":
+            if lower.hasSuffix(".vscdb") { return [root] }
+            if lower.contains("cursor") { return cursorStateDBPaths().filter { $0.hasPrefix(root) } }
+        case "OpenClaw":
+            if lower.hasSuffix("/sessions.json") { return [root] }
+            if lower.contains("openclaw") || lower.contains("qclaw") { return openClawSessionStorePaths().filter { $0.hasPrefix(root) } }
+        case "Hermes":
+            if lower.hasSuffix("/gateway_state.json") { return [root] }
+            if lower.contains("/.hermes") || lower.contains("hermes") { return [root, root + "/sessions", root + "/gateway_state.json"] }
         case "MiniMax Agent":
             if lower.hasSuffix("/sqlite.db") || lower.hasSuffix("/nexus.db") { return [root] }
             if lower.hasSuffix("/.minimax") || lower.contains("minimax") || lower.contains("mavis") {
@@ -1366,6 +1482,43 @@ private final class AgentMonitorOverviewScanner {
             .map { home + "/" + $0 }
             .filter(isClaudeProfileRoot)
         return roots.isEmpty ? [home + "/.claude"] : roots
+    }
+
+    private func cursorStateDBPaths() -> [String] {
+        let bases = [
+            home + "/Library/Application Support/Cursor/User",
+            home + "/.cursor"
+        ]
+        var paths = Set<String>()
+        for base in bases {
+            let globalDB = base + "/globalStorage/state.vscdb"
+            if fileManager.fileExists(atPath: globalDB) { paths.insert(globalDB) }
+            let workspaceStorage = base + "/workspaceStorage"
+            guard let workspaces = try? fileManager.contentsOfDirectory(atPath: workspaceStorage) else { continue }
+            for workspace in workspaces.prefix(300) {
+                let db = workspaceStorage + "/" + workspace + "/state.vscdb"
+                if fileManager.fileExists(atPath: db) { paths.insert(db) }
+            }
+        }
+        return paths.sorted()
+    }
+
+    private func openClawSessionStorePaths() -> [String] {
+        let agentRoots = [
+            home + "/.openclaw/agents",
+            home + "/.qclaw/agents",
+            home + "/Library/Application Support/OpenClaw/agents",
+            home + "/Library/Application Support/QClaw/openclaw/config/agents"
+        ]
+        var paths = Set<String>()
+        for root in agentRoots {
+            guard let agents = try? fileManager.contentsOfDirectory(atPath: root) else { continue }
+            for agent in agents.prefix(100) {
+                let store = root + "/" + agent + "/sessions/sessions.json"
+                if fileManager.fileExists(atPath: store) { paths.insert(store) }
+            }
+        }
+        return paths.sorted()
     }
 
     private func isClaudeProfileRoot(_ path: String) -> Bool {
@@ -1441,6 +1594,9 @@ private final class AgentMonitorOverviewScanner {
             return false
         }
         if spec.name == "MiniMax Agent" {
+            return false
+        }
+        if ["OpenClaw", "QClaw", "EasyClaw", "AutoClaw"].contains(spec.name) {
             return false
         }
         if lower.contains("/logs") || lower.hasSuffix("/log") || lower.contains("/telemetry") {
@@ -1786,6 +1942,143 @@ private final class AgentMonitorOverviewScanner {
         return rows
     }
 
+    private func parseOpenClawSessionStore(path: String, processInfo: [Int: ProcessInfo]) -> [AgentMonitorSessionSnapshot] {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let store = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+        let liveProcess = processInfo.values.first { matchingSpecName($0.command) == "OpenClaw" }
+        let children = childrenMap(processInfo)
+        return store.compactMap { sessionKey, value in
+            guard let row = value as? [String: Any] else { return nil }
+            let sessionId = stringValue(row, keys: ["sessionId", "session_id", "id"]) ?? sessionKey
+            let rawStatus = (stringValue(row, keys: ["status", "state"]) ?? "").lowercased()
+            let updated = dateFromAny(row["updatedAt"] ?? row["updated_at"])
+                ?? dateFromAny(row["endedAt"] ?? row["ended_at"])
+                ?? dateFromAny(row["startedAt"] ?? row["started_at"])
+            let ended = row["endedAt"] != nil || row["ended_at"] != nil
+            let isRunning = ["running", "active", "working", "processing", "queued", "pending", "tooluse", "tool_use"]
+                .contains { rawStatus.contains($0) }
+            let isRecentlyLive = liveProcess != nil && !ended && updated.map { abs(Date().timeIntervalSince($0)) < 180 } == true
+            let status = isRunning ? "Executing" : (rawStatus.contains("done") || rawStatus.contains("complete") || ended ? "Done" : (isRecentlyLive ? "Waiting" : "History"))
+            let workspace = (nestedValue(row, path: ["systemPromptReport", "workspaceDir"]) as? String)
+                ?? stringValue(row, keys: ["workspaceDir", "workspace", "cwd"]) ?? ""
+            let model = stringValue(row, keys: ["model", "modelId", "model_id"]) ?? "—"
+            let input = intKeys(row, ["inputTokens", "input_tokens"])
+            let output = intKeys(row, ["outputTokens", "output_tokens"])
+            let cache = intKeys(row, ["cacheRead", "cache_read", "cacheReadTokens"])
+            let contextWindow = intValue(row["contextTokens"] ?? row["contextWindow"]) ?? 200_000
+            let title = stringValue(row, keys: ["label", "title", "name", "lastMessage", "last_message"]) ?? sessionKey
+            let source = stringValue(row, keys: ["sessionFile", "session_file"]) ?? path
+            let pid = ["Executing", "Thinking", "Waiting"].contains(status) ? liveProcess?.pid : nil
+            return AgentMonitorSessionSnapshot(
+                id: "OpenClaw-\(sessionId)-store",
+                agentName: "OpenClaw",
+                pid: pid,
+                sessionId: sessionId,
+                status: status,
+                projectName: lastPathSegment(workspace).isEmpty ? "OpenClaw" : lastPathSegment(workspace),
+                projectPath: workspace,
+                model: model,
+                tokens: AgentMonitorTokenBreakdown(input: input, output: output, cacheRead: cache),
+                contextPercent: contextWindow > 0 ? min(Double(input + cache) / Double(contextWindow), 1) : 0,
+                contextWindow: contextWindow,
+                turnCount: intValue(row["turnCount"] ?? row["messageCount"]) ?? 0,
+                currentTask: title,
+                toolCount: intValue(row["toolCount"]) ?? 0,
+                runningToolCount: status == "Executing" ? 1 : 0,
+                childCount: pid.map { descendants(of: $0, children: children).count } ?? 0,
+                ports: [],
+                memoryMB: liveProcess.map { max($0.rssKB / 1024, 1) },
+                latestActivity: updated,
+                sourcePath: source
+            )
+        }
+    }
+
+    private func parseCursorDBSessions(path: String, processInfo: [Int: ProcessInfo]) -> [AgentMonitorSessionSnapshot] {
+        guard fileManager.fileExists(atPath: path), fileManager.isReadableFile(atPath: path) else { return [] }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_close(db) }
+
+        let workspaceJSON = URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent("workspace.json")
+        var workspace = ""
+        if let data = try? Data(contentsOf: workspaceJSON),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            workspace = (stringValue(object, keys: ["folder", "workspace"]) ?? "")
+                .replacingOccurrences(of: "file://", with: "")
+                .removingPercentEncoding ?? ""
+        }
+        let dbModified = (try? URL(fileURLWithPath: path).resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        let liveProcess = processInfo.values.first { matchingSpecName($0.command) == "Cursor" }
+        let sql = """
+        SELECT key, value FROM ItemTable
+        WHERE lower(key) LIKE '%composer%' OR lower(key) LIKE '%chat%' OR lower(key) LIKE '%agent%'
+        LIMIT 5000;
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        var candidates: [[String: Any]] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let value = sqliteText(stmt, 1)
+            guard let data = value.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) else { continue }
+            collectCursorSessionObjects(object, into: &candidates, depth: 0)
+        }
+
+        var seen = Set<String>()
+        return candidates.compactMap { row in
+            let sessionId = stringValue(row, keys: ["composerId", "sessionId", "session_id", "id", "uuid"]) ?? ""
+            guard !sessionId.isEmpty, seen.insert(sessionId).inserted else { return nil }
+            let updated = dateFromAny(row["lastUpdatedAt"] ?? row["updatedAt"] ?? row["createdAt"]) ?? dbModified
+            let isRecent = updated.map { abs(Date().timeIntervalSince($0)) < 10 * 60 } == true
+            let status = liveProcess != nil && isRecent ? "Waiting" : "History"
+            let title = stringValue(row, keys: ["name", "title", "lastMessage", "subtitle"]) ?? "Cursor Agent session"
+            let model = stringValue(row, keys: ["model", "modelId", "modelName"]) ?? "—"
+            return AgentMonitorSessionSnapshot(
+                id: "Cursor-\(sessionId)-db",
+                agentName: "Cursor",
+                pid: liveProcess?.pid,
+                sessionId: sessionId,
+                status: status,
+                projectName: lastPathSegment(workspace).isEmpty ? "Cursor" : lastPathSegment(workspace),
+                projectPath: workspace,
+                model: model,
+                tokens: AgentMonitorTokenBreakdown(input: 0, output: 0, cacheRead: 0),
+                contextPercent: 0,
+                contextWindow: 200_000,
+                turnCount: intValue(row["turnCount"] ?? row["messageCount"]) ?? 0,
+                currentTask: title,
+                toolCount: intValue(row["toolCount"]) ?? 0,
+                runningToolCount: 0,
+                childCount: liveProcess.map { descendants(of: $0.pid, children: childrenMap(processInfo)).count } ?? 0,
+                ports: [],
+                memoryMB: liveProcess.map { max($0.rssKB / 1024, 1) },
+                latestActivity: updated,
+                sourcePath: path
+            )
+        }
+    }
+
+    private func collectCursorSessionObjects(_ value: Any, into results: inout [[String: Any]], depth: Int) {
+        guard depth < 8 else { return }
+        if let dict = value as? [String: Any] {
+            let id = stringValue(dict, keys: ["composerId", "sessionId", "session_id", "id", "uuid"]) ?? ""
+            let title = stringValue(dict, keys: ["name", "title", "lastMessage", "subtitle"]) ?? ""
+            if !id.isEmpty, !title.isEmpty || dict["messages"] != nil || dict["conversation"] != nil {
+                results.append(dict)
+            }
+            for child in dict.values {
+                collectCursorSessionObjects(child, into: &results, depth: depth + 1)
+            }
+        } else if let array = value as? [Any] {
+            for child in array {
+                collectCursorSessionObjects(child, into: &results, depth: depth + 1)
+            }
+        }
+    }
+
     private func scanLiveSessions(
         processInfo: [Int: ProcessInfo],
         children: [Int: [Int]],
@@ -1797,7 +2090,8 @@ private final class AgentMonitorOverviewScanner {
             let url = URL(fileURLWithPath: path)
             guard let parsed = parseSessionFile(url) else { return nil }
             let proc = processInfo[pid]
-            let agentName = agentName(for: proc?.command ?? "codex", fallback: "Codex")
+            let processAgentName = agentName(for: proc?.command ?? "codex", fallback: "Codex")
+            let agentName = resolvedAgentName(specName: processAgentName, parsed: parsed)
             let childPids = descendants(of: pid, children: children)
             let ports = ([pid] + childPids).flatMap { portsByPid[$0] ?? [] }.sorted()
             let isAlive = proc != nil
@@ -1858,6 +2152,16 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func parseSessionFile(_ url: URL) -> ParsedSession? {
+        let lowerPath = url.path.lowercased()
+        if lowerPath.contains("/.claude/") || lowerPath.contains("/.config/claude/") {
+            return parseClaudeSessionFile(url)
+        }
+        if lowerPath.contains("/.openclaw/") || lowerPath.contains("/.qclaw/") {
+            return parseOpenClawTranscript(url)
+        }
+        if lowerPath.contains("/.hermes/") {
+            return parseHermesSessionFile(url)
+        }
         guard let text = sessionText(from: url) else { return nil }
         var sessionId = url.deletingPathExtension().lastPathComponent
         var cwd = ""
@@ -2024,6 +2328,195 @@ private final class AgentMonitorOverviewScanner {
         )
     }
 
+    private func parseClaudeSessionFile(_ url: URL) -> ParsedSession? {
+        guard url.pathExtension.lowercased() == "jsonl", let text = sessionText(from: url) else { return nil }
+        var sessionId = url.deletingPathExtension().lastPathComponent
+        var cwd = ""
+        var model = ""
+        var input = 0
+        var output = 0
+        var cache = 0
+        var lastContextTokens = 0
+        var turnCount = 0
+        var currentTask = ""
+        var toolCount = 0
+        var pendingTools = Set<String>()
+        var latestActivity: Date?
+
+        for line in text.split(whereSeparator: \.isNewline) {
+            guard let data = String(line).data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+            if let timestamp = date(from: object) { latestActivity = maxDate(latestActivity, timestamp) }
+            if let value = stringValue(object, keys: ["sessionId", "session_id"]), !value.isEmpty { sessionId = value }
+            if let value = stringValue(object, keys: ["cwd", "projectPath"]), !value.isEmpty { cwd = value }
+            let type = stringValue(object, keys: ["type"]) ?? ""
+            guard let message = object["message"] as? [String: Any] else { continue }
+            if let value = stringValue(message, keys: ["model"]), !value.isEmpty { model = value }
+            let role = stringValue(message, keys: ["role"]) ?? type
+            if role == "user" {
+                if let task = normalizedInstruction(textContent(message["content"])), !task.isEmpty {
+                    currentTask = task
+                }
+                for block in message["content"] as? [[String: Any]] ?? [] where stringValue(block, keys: ["type"]) == "tool_result" {
+                    if let id = stringValue(block, keys: ["tool_use_id", "toolUseId"]) { pendingTools.remove(id) }
+                }
+            } else if role == "assistant" {
+                turnCount += 1
+                if let usage = message["usage"] as? [String: Any] {
+                    let cached = intKeys(usage, ["cache_read_input_tokens", "cached_input_tokens"])
+                    input += max(0, intKeys(usage, ["input_tokens", "prompt_tokens"]) - cached)
+                    output += intKeys(usage, ["output_tokens", "completion_tokens"])
+                    cache += cached + intKeys(usage, ["cache_creation_input_tokens"])
+                    lastContextTokens = max(lastContextTokens, intKeys(usage, ["input_tokens", "prompt_tokens", "cache_read_input_tokens"]))
+                }
+                for block in message["content"] as? [[String: Any]] ?? [] where stringValue(block, keys: ["type"]) == "tool_use" {
+                    toolCount += 1
+                    if let id = stringValue(block, keys: ["id", "tool_use_id"]) { pendingTools.insert(id) }
+                }
+            }
+        }
+        let isSyntheticTitleSession = model == "<synthetic>" &&
+            currentTask.localizedCaseInsensitiveContains("conversation title generator")
+        guard !isSyntheticTitleSession,
+              !cwd.isEmpty || input + output + cache > 0 || toolCount > 0 || !currentTask.isEmpty else { return nil }
+        return ParsedSession(
+            sessionId: sessionId,
+            cwd: cwd,
+            model: model,
+            tokens: AgentMonitorTokenBreakdown(input: input, output: output, cacheRead: cache),
+            lastContextTokens: lastContextTokens,
+            contextWindow: 200_000,
+            turnCount: turnCount,
+            currentTask: currentTask,
+            status: "History",
+            toolCount: toolCount,
+            runningToolCount: pendingTools.count,
+            latestActivity: latestActivity ?? ((try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate),
+            sourcePath: url.path
+        )
+    }
+
+    private func parseOpenClawTranscript(_ url: URL) -> ParsedSession? {
+        guard url.pathExtension.lowercased() == "jsonl", let text = sessionText(from: url) else { return nil }
+        var model = ""
+        var input = 0
+        var output = 0
+        var cache = 0
+        var turnCount = 0
+        var toolCount = 0
+        var currentTask = ""
+        var latestActivity: Date?
+        var lastContextTokens = 0
+        var pendingTools = Set<String>()
+        for line in text.split(whereSeparator: \.isNewline) {
+            guard let data = String(line).data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+            if let timestamp = date(from: object) { latestActivity = maxDate(latestActivity, timestamp) }
+            guard let message = object["message"] as? [String: Any] else { continue }
+            let role = stringValue(message, keys: ["role"]) ?? ""
+            if role == "user", let task = normalizedInstruction(textContent(message["content"])), !task.isEmpty {
+                currentTask = task
+            }
+            if role == "assistant" {
+                turnCount += 1
+                if let value = stringValue(message, keys: ["model"]), !value.isEmpty { model = value }
+                if let usage = message["usage"] as? [String: Any] {
+                    input += intKeys(usage, ["input", "inputTokens", "input_tokens"])
+                    output += intKeys(usage, ["output", "outputTokens", "output_tokens"])
+                    cache += intKeys(usage, ["cacheRead", "cache_read", "cacheWrite", "cache_write"])
+                    lastContextTokens = max(lastContextTokens, intKeys(usage, ["input", "inputTokens", "input_tokens", "cacheRead", "cache_read"]))
+                }
+                for block in message["content"] as? [[String: Any]] ?? [] where ["toolCall", "tool_use", "tool_call"].contains(stringValue(block, keys: ["type"]) ?? "") {
+                    toolCount += 1
+                    if let id = stringValue(block, keys: ["id", "toolCallId"]) { pendingTools.insert(id) }
+                }
+            } else if role == "toolResult", let id = stringValue(message, keys: ["toolCallId", "tool_use_id"]) {
+                pendingTools.remove(id)
+            }
+        }
+        guard !currentTask.isEmpty || input + output + cache > 0 || toolCount > 0 else { return nil }
+        let workspace = url.path.contains("/.qclaw/") ? home + "/.qclaw/workspace" : home + "/.openclaw/workspace"
+        return ParsedSession(
+            sessionId: url.deletingPathExtension().lastPathComponent,
+            cwd: workspace,
+            model: model,
+            tokens: AgentMonitorTokenBreakdown(input: input, output: output, cacheRead: cache),
+            lastContextTokens: lastContextTokens,
+            contextWindow: 200_000,
+            turnCount: turnCount,
+            currentTask: currentTask,
+            status: pendingTools.isEmpty ? "History" : "Executing",
+            toolCount: toolCount,
+            runningToolCount: pendingTools.count,
+            latestActivity: latestActivity ?? ((try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate),
+            sourcePath: url.path
+        )
+    }
+
+    private func parseHermesSessionFile(_ url: URL) -> ParsedSession? {
+        guard let data = try? Data(contentsOf: url), data.count <= 20_000_000,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if url.lastPathComponent == "gateway_state.json" {
+            let state = stringValue(object, keys: ["gateway_state", "state"]) ?? "unknown"
+            let activeAgents = intValue(object["active_agents"]) ?? 0
+            let pid = intValue(object["pid"]) ?? 0
+            return ParsedSession(
+                sessionId: "gateway-\(pid)",
+                cwd: home + "/.hermes",
+                model: "Hermes Gateway",
+                tokens: AgentMonitorTokenBreakdown(input: 0, output: 0, cacheRead: 0),
+                lastContextTokens: 0,
+                contextWindow: 200_000,
+                turnCount: 0,
+                currentTask: activeAgents > 0 ? "\(activeAgents) active Hermes agents" : "Hermes gateway \(state)",
+                status: activeAgents > 0 ? "Executing" : (state.lowercased().contains("running") ? "Waiting" : "History"),
+                toolCount: 0,
+                runningToolCount: activeAgents,
+                latestActivity: dateFromISO(stringValue(object, keys: ["updated_at", "updatedAt"]) ?? ""),
+                sourcePath: url.path
+            )
+        }
+        let sessionId = stringValue(object, keys: ["session_id", "sessionId", "id"]) ?? url.deletingPathExtension().lastPathComponent
+        let model = stringValue(object, keys: ["model", "model_id"]) ?? ""
+        let workspace = stringValue(object, keys: ["cwd", "workspace", "project_dir"]) ?? home + "/.hermes"
+        var currentTask = stringValue(object, keys: ["title", "name"]) ?? ""
+        var input = 0
+        var output = 0
+        var cache = 0
+        var turns = 0
+        var tools = 0
+        for message in object["messages"] as? [[String: Any]] ?? [] {
+            let role = stringValue(message, keys: ["role"]) ?? ""
+            if role == "user", let task = normalizedInstruction(textContent(message["content"])), !task.isEmpty { currentTask = task }
+            if role == "assistant" {
+                turns += 1
+                tools += (message["tool_calls"] as? [Any])?.count ?? 0
+                if let usage = message["usage"] as? [String: Any] {
+                    input += intKeys(usage, ["input_tokens", "prompt_tokens"])
+                    output += intKeys(usage, ["output_tokens", "completion_tokens"])
+                    cache += intKeys(usage, ["cache_read_tokens", "cached_tokens"])
+                }
+            }
+        }
+        guard !currentTask.isEmpty || turns > 0 || tools > 0 else { return nil }
+        return ParsedSession(
+            sessionId: sessionId,
+            cwd: workspace,
+            model: model,
+            tokens: AgentMonitorTokenBreakdown(input: input, output: output, cacheRead: cache),
+            lastContextTokens: input + cache,
+            contextWindow: 200_000,
+            turnCount: turns,
+            currentTask: currentTask,
+            status: "History",
+            toolCount: tools,
+            runningToolCount: 0,
+            latestActivity: dateFromISO(stringValue(object, keys: ["updated_at", "session_start", "created_at"]) ?? "")
+                ?? ((try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate),
+            sourcePath: url.path
+        )
+    }
+
     private func sessionText(from url: URL) -> String? {
         let fullReadLimit = 120_000_000
         let headLimit = 1_000_000
@@ -2098,9 +2591,10 @@ private final class AgentMonitorOverviewScanner {
         for file in recentSessionFiles(roots: roots, cutoff: cutoff) {
             guard let parsed = parseSessionFile(file),
                   let spec = specForSessionPath(file.path) else { continue }
-            let key = "\(spec.name)|\(parsed.sessionId)|\(parsed.sourcePath)"
+            let agentName = resolvedAgentName(specName: spec.name, parsed: parsed)
+            let key = "\(agentName)|\(parsed.sessionId)|\(parsed.sourcePath)"
             guard !seen.contains(key) else { continue }
-            let proc = processInfo.values.first { matchingSpecName($0.command) == spec.name }
+            let proc = processInfo.values.first { matchingSpecName($0.command) == agentName }
             let childPids = proc.map { descendants(of: $0.pid, children: children) } ?? []
             let status = liveStatus(
                 isAlive: proc != nil,
@@ -2112,10 +2606,10 @@ private final class AgentMonitorOverviewScanner {
             )
             guard ["Thinking", "Executing", "Waiting", "Paused"].contains(status) else { continue }
             let contextPercent = parsed.contextWindow > 0 ? min(Double(parsed.lastContextTokens) / Double(parsed.contextWindow), 1) : 0
-            let projectName = lastPathSegment(parsed.cwd).isEmpty ? spec.name : lastPathSegment(parsed.cwd)
+            let projectName = lastPathSegment(parsed.cwd).isEmpty ? agentName : lastPathSegment(parsed.cwd)
             rows.append(AgentMonitorSessionSnapshot(
-                id: "\(spec.name)-\(parsed.sessionId)-recent-\(file.path)",
-                agentName: spec.name,
+                id: "\(agentName)-\(parsed.sessionId)-recent-\(file.path)",
+                agentName: agentName,
                 pid: proc?.pid,
                 sessionId: parsed.sessionId,
                 status: status,
@@ -2135,6 +2629,69 @@ private final class AgentMonitorOverviewScanner {
                 latestActivity: parsed.latestActivity,
                 sourcePath: parsed.sourcePath
             ))
+        }
+        return rows
+    }
+
+    private func scanPriorityHistorySessions(
+        roots: [String],
+        processInfo: [Int: ProcessInfo],
+        children: [Int: [Int]]
+    ) -> [AgentMonitorSessionSnapshot] {
+        let eligibleRoots = Set(roots.filter {
+            let lower = $0.lowercased()
+            return lower.contains("/.claude/projects") || lower.contains("/.config/claude/projects") || lower.contains("/.hermes/sessions")
+        })
+        var files: [URL] = []
+        for root in eligibleRoots where fileManager.fileExists(atPath: root) {
+            files.append(contentsOf: usageFiles(under: root))
+        }
+        let latestFiles = files.sorted {
+            let left = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let right = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return left > right
+        }.prefix(60)
+        var seen = Set<String>()
+        let rows: [AgentMonitorSessionSnapshot] = latestFiles.compactMap { file -> AgentMonitorSessionSnapshot? in
+            guard let parsed = parseSessionFile(file),
+                  let spec = specForSessionPath(file.path),
+                  ["Claude Code", "Hermes"].contains(spec.name) else { return nil }
+            let agentName = resolvedAgentName(specName: spec.name, parsed: parsed)
+            guard seen.insert("\(agentName)|\(parsed.sessionId)").inserted else { return nil }
+            let process = processInfo.values.first { matchingSpecName($0.command) == agentName }
+            let childPids = process.map { descendants(of: $0.pid, children: children) } ?? []
+            let isRecent = parsed.latestActivity.map { abs(Date().timeIntervalSince($0)) < 180 } == true
+            let status = isRecent ? liveStatus(
+                isAlive: process != nil,
+                process: process,
+                childPids: childPids,
+                processInfo: processInfo,
+                currentTask: parsed.currentTask,
+                parsedStatus: parsed.status
+            ) : parsed.status
+            let contextPercent = parsed.contextWindow > 0 ? min(Double(parsed.lastContextTokens) / Double(parsed.contextWindow), 1) : 0
+            return AgentMonitorSessionSnapshot(
+                id: "\(agentName)-\(parsed.sessionId)-priority",
+                agentName: agentName,
+                pid: isRecent ? process?.pid : nil,
+                sessionId: parsed.sessionId,
+                status: status,
+                projectName: lastPathSegment(parsed.cwd).isEmpty ? agentName : lastPathSegment(parsed.cwd),
+                projectPath: parsed.cwd,
+                model: parsed.model.isEmpty ? "—" : parsed.model,
+                tokens: parsed.tokens,
+                contextPercent: contextPercent,
+                contextWindow: parsed.contextWindow,
+                turnCount: parsed.turnCount,
+                currentTask: parsed.currentTask.isEmpty ? "\(agentName) session" : parsed.currentTask,
+                toolCount: parsed.toolCount,
+                runningToolCount: status == "Executing" ? parsed.runningToolCount : 0,
+                childCount: isRecent ? childPids.count : 0,
+                ports: [],
+                memoryMB: isRecent ? process.map { max($0.rssKB / 1024, 1) } : nil,
+                latestActivity: parsed.latestActivity,
+                sourcePath: parsed.sourcePath
+            )
         }
         return rows
     }
@@ -2325,6 +2882,9 @@ private final class AgentMonitorOverviewScanner {
         if lower.contains("/.codex/") { return specs.first { $0.name == "Codex" } }
         if lower.contains("/.claude") || lower.contains("claude") { return specs.first { $0.name == "Claude Code" } }
         if lower.contains("opencode") { return specs.first { $0.name == "OpenCode" } }
+        if lower.contains("openclaw") || lower.contains("qclaw") { return specs.first { $0.name == "OpenClaw" } }
+        if lower.contains("/.hermes") || lower.contains("hermes") { return specs.first { $0.name == "Hermes" } }
+        if lower.contains("cursor") { return specs.first { $0.name == "Cursor" } }
         if lower.contains("minimax") || lower.contains("mavis") { return specs.first { $0.name == "MiniMax Agent" } }
         return specs.first { spec in
             spec.roots.map(expand).contains { lower.contains($0.lowercased()) }
@@ -2333,6 +2893,14 @@ private final class AgentMonitorOverviewScanner {
 
     private func agentName(for command: String, fallback: String) -> String {
         matchingSpecName(command) ?? fallback
+    }
+
+    private func resolvedAgentName(specName: String, parsed: ParsedSession) -> String {
+        let lower = (parsed.cwd + " " + parsed.sourcePath).lowercased()
+        if lower.contains("hermes-sandbox") || lower.contains("hermes_sandbox") {
+            return "Hermes"
+        }
+        return specName
     }
 
     private func processCwd(pid: Int) -> String? {
@@ -2440,6 +3008,25 @@ private final class AgentMonitorOverviewScanner {
         for key in keys {
             if let value = object[key] as? String, !value.isEmpty { return value }
         }
+        return nil
+    }
+
+    private func textContent(_ value: Any?) -> String? {
+        if let value = value as? String { return value }
+        if let blocks = value as? [[String: Any]] {
+            let text = blocks.compactMap { block in
+                stringValue(block, keys: ["text", "content"])
+            }.joined(separator: "\n")
+            return text.isEmpty ? nil : text
+        }
+        return nil
+    }
+
+    private func dateFromAny(_ value: Any?) -> Date? {
+        if let value = value as? String { return dateFromISO(value) }
+        if let value = value as? Int { return dateFromMilliseconds(Int64(value)) }
+        if let value = value as? Int64 { return dateFromMilliseconds(value) }
+        if let value = value as? Double { return dateFromMilliseconds(Int64(value)) }
         return nil
     }
 
