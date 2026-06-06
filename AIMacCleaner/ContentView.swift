@@ -3348,6 +3348,7 @@ private struct AgentCommandDashboardView: View {
     @ObservedObject var monitor: OperationMonitor
     @EnvironmentObject var localizer: Localizer
     @EnvironmentObject var service: ScannerService
+    @EnvironmentObject var islandViewModel: IslandViewModel
     let onRefresh: () -> Void
 
     @State private var selectedSessionID: String?
@@ -3355,11 +3356,6 @@ private struct AgentCommandDashboardView: View {
     @State private var authorizationStatus = ""
     @State private var visibleSessionCount = 24
     @State private var showingSessionDetail = false
-    @State private var showingActiveIsland = false
-    @State private var activeIslandExpanded = false
-    @State private var activeIslandPinned = false
-    @State private var activeIslandOffset: CGSize = .zero
-    @GestureState private var activeIslandDragTranslation: CGSize = .zero
 
     private var allSessions: [AgentMonitorSessionSnapshot] {
         let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -3497,41 +3493,26 @@ private struct AgentCommandDashboardView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            VStack(spacing: 0) {
-                if monitor.needsReauthorization { authorizationBanner }
+        VStack(spacing: 0) {
+            if monitor.needsReauthorization { authorizationBanner }
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                        dataStatusCard
-                        metricStrip
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                    dataStatusCard
+                    metricStrip
 
-                        currentSessionUsageCard
-                        sessionListCard
+                    currentSessionUsageCard
+                    sessionListCard
 
-                        VStack(spacing: Theme.Spacing.md) {
-                            projectCard
-                        }
-                        .frame(maxWidth: .infinity, alignment: .top)
+                    VStack(spacing: Theme.Spacing.md) {
+                        projectCard
                     }
-                    .padding(Theme.Spacing.xl)
+                    .frame(maxWidth: .infinity, alignment: .top)
                 }
-                .background(Theme.Colors.sidebarBg.opacity(0.24))
+                .padding(Theme.Spacing.xl)
             }
-
-            if showingActiveIsland {
-                activeSessionIslandOverlay
-                    .padding(.top, Theme.Spacing.lg)
-                    .offset(
-                        x: activeIslandOffset.width + activeIslandDragTranslation.width,
-                        y: activeIslandOffset.height + activeIslandDragTranslation.height
-                    )
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(20)
-            }
+            .background(Theme.Colors.sidebarBg.opacity(0.24))
         }
-        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: showingActiveIsland)
-        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: activeIslandExpanded)
         .onAppear {
             onRefresh()
             normalizeSelection()
@@ -3873,194 +3854,6 @@ private struct AgentCommandDashboardView: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 220, alignment: .top)
-    }
-
-    private var activeSessionIslandOverlay: some View {
-        Group {
-            if activeIslandExpanded {
-                expandedActiveSessionIsland
-            } else {
-                compactActiveSessionIsland
-            }
-        }
-        .gesture(activeIslandDragGesture)
-        .shadow(color: .black.opacity(0.32), radius: 22, y: 10)
-    }
-
-    private var compactActiveSessionIsland: some View {
-        let session = selectedActiveSession ?? activeSessions.first ?? selectedSession
-        return HStack(spacing: Theme.Spacing.sm) {
-            Circle()
-                .fill(session.map { statusColor($0.status) } ?? Theme.Colors.textTertiary)
-                .frame(width: 9, height: 9)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(session?.projectName ?? localizer.overviewWaitingAgentSession)
-                    .font(Theme.Font.captionMedium)
-                    .foregroundStyle(Color.white)
-                    .lineLimit(1)
-                Text(session?.currentTask ?? localizer.overviewNoActiveSessionHint)
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Color.white.opacity(0.68))
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: Theme.Spacing.sm)
-
-            Text(activeIslandSessionPosition)
-                .font(Theme.Font.captionMedium)
-                .foregroundStyle(Color.white.opacity(0.7))
-
-            Image(systemName: "chevron.down")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Color.white.opacity(0.76))
-        }
-        .padding(.horizontal, 20)
-        .frame(width: 420, height: 60)
-        .background(Color.black.opacity(0.94))
-        .clipShape(Capsule())
-        .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
-        .contentShape(Capsule())
-        .onTapGesture {
-            activeIslandExpanded = true
-        }
-        .help(localizer.agentCenterShowIsland)
-    }
-
-    private var expandedActiveSessionIsland: some View {
-        let session = selectedActiveSession ?? activeSessions.first ?? selectedSession
-        return VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            HStack(spacing: Theme.Spacing.sm) {
-                Image(systemName: activeIslandPinned ? "pin.fill" : "circle.grid.cross")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(activeIslandPinned ? Theme.Colors.warning : Color.white.opacity(0.7))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(session?.projectName ?? localizer.overviewWaitingAgentSession)
-                        .font(Theme.Font.body)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(Color.white)
-                        .lineLimit(1)
-                    Text(session.map { "\(statusText($0.status)) · \($0.agentName) · \(activeIslandSessionPosition)" } ?? localizer.overviewNoActiveSession)
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(session.map { statusColor($0.status) } ?? Color.white.opacity(0.6))
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                islandControlButton("chevron.left", help: localizer.overviewPreviousSession, disabled: activeSessions.count < 2) {
-                    moveSelection(-1)
-                }
-                islandControlButton("chevron.right", help: localizer.overviewNextSession, disabled: activeSessions.count < 2) {
-                    moveSelection(1)
-                }
-                islandControlButton(activeIslandPinned ? "pin.slash.fill" : "pin.fill", help: activeIslandPinned ? "取消固定" : "固定灵动岛") {
-                    activeIslandPinned.toggle()
-                }
-                islandControlButton("sidebar.right", help: localizer.agentSessionDetail, disabled: session == nil) {
-                    showingSessionDetail = true
-                }
-                islandControlButton("chevron.up", help: "收起灵动岛") {
-                    activeIslandExpanded = false
-                }
-                islandControlButton("xmark", help: "关闭灵动岛") {
-                    closeActiveSessionIsland()
-                }
-            }
-
-            Divider()
-                .overlay(Color.white.opacity(0.16))
-
-            if let session {
-                Text(session.currentTask.isEmpty ? localizer.overviewWaitingAgentSession : session.currentTask)
-                    .font(Theme.Font.body)
-                    .foregroundStyle(Color.white.opacity(0.9))
-                    .lineLimit(4)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack(spacing: Theme.Spacing.sm) {
-                    islandMetric("token", compactCount(session.tokens.total), Theme.Colors.teal)
-                    islandMetric(localizer.contextWindow, "\(Int(session.contextPercent * 100))%", contextColor(session.contextPercent))
-                    islandMetric(localizer.overviewModel, session.model, Color.white)
-                    islandMetric("pid", session.pid.map(String.init) ?? "-", Color.white)
-                    islandMetric("tool", "\(session.toolCount)", Color.white)
-                }
-
-                contextProgress(session.contextPercent, window: session.contextWindow)
-            } else {
-                Text(localizer.overviewNoActiveSessionHint)
-                    .font(Theme.Font.body)
-                    .foregroundStyle(Color.white.opacity(0.72))
-                    .lineLimit(3)
-            }
-        }
-        .padding(Theme.Spacing.lg)
-        .frame(width: 680, alignment: .topLeading)
-        .frame(minHeight: 220, alignment: .topLeading)
-        .background(Color.black.opacity(0.94))
-        .clipShape(RoundedRectangle(cornerRadius: 26))
-        .overlay(
-            RoundedRectangle(cornerRadius: 26)
-                .stroke(activeIslandPinned ? Theme.Colors.warning.opacity(0.65) : Color.white.opacity(0.14), lineWidth: 1)
-        )
-    }
-
-    private var activeIslandSessionPosition: String {
-        guard !activeSessions.isEmpty else { return "0/0" }
-        let index = selectedActiveSession.flatMap { selected in
-            activeSessions.firstIndex(where: { $0.id == selected.id })
-        } ?? 0
-        return "\(index + 1)/\(activeSessions.count)"
-    }
-
-    private var activeIslandDragGesture: some Gesture {
-        DragGesture(minimumDistance: 4)
-            .updating($activeIslandDragTranslation) { value, state, _ in
-                guard activeIslandExpanded, !activeIslandPinned else { return }
-                state = value.translation
-            }
-            .onEnded { value in
-                guard activeIslandExpanded, !activeIslandPinned else { return }
-                activeIslandOffset.width += value.translation.width
-                activeIslandOffset.height += value.translation.height
-            }
-    }
-
-    private func islandControlButton(
-        _ icon: String,
-        help: String,
-        disabled: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(disabled ? Color.white.opacity(0.25) : Color.white.opacity(0.84))
-                .frame(width: 26, height: 26)
-                .background(Color.white.opacity(disabled ? 0.04 : 0.1))
-                .clipShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .disabled(disabled)
-        .help(help)
-    }
-
-    private func islandMetric(_ title: String, _ value: String, _ color: Color) -> some View {
-        HStack(spacing: 4) {
-            Text(title)
-                .font(Theme.Font.caption)
-                .foregroundStyle(Theme.Colors.textTertiary)
-            Text(value)
-                .font(Theme.Font.captionMedium)
-                .foregroundStyle(color)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color.white.opacity(0.1))
-        .clipShape(Capsule())
     }
 
     private var activeSessionEmptyState: some View {
@@ -4476,15 +4269,53 @@ private struct AgentCommandDashboardView: View {
         if selectedActiveSession == nil, let firstActive = activeSessions.first {
             selectedSessionID = firstActive.id
         }
-        activeIslandExpanded = false
-        showingActiveIsland = true
+        (NSApp.delegate as? AppDelegate)?.initializeAgentCenterServices()
+        let islandSessions = activeSessions.map(overviewIslandSession)
+        islandViewModel.syncOverviewSessions(islandSessions, selectedID: selectedActiveSession?.sessionId)
+        islandViewModel.show(level: .compact)
     }
 
-    private func closeActiveSessionIsland() {
-        showingActiveIsland = false
-        activeIslandExpanded = false
-        activeIslandPinned = false
-        activeIslandOffset = .zero
+    private func overviewIslandSession(_ session: AgentMonitorSessionSnapshot) -> SessionState {
+        var state = SessionState(
+            id: session.sessionId,
+            agentType: session.agentName,
+            engineLabel: session.model,
+            engineConfigRoot: configRoot(for: session),
+            project: session.projectName,
+            cwd: session.projectPath.isEmpty ? session.sourcePath : session.projectPath,
+            terminal: "",
+            phase: islandPhase(for: session.status),
+            startedAt: session.latestActivity ?? Date()
+        )
+        state.tokens = TokenUsage(
+            input: UInt64(max(session.tokens.input, 0)),
+            output: UInt64(max(session.tokens.output, 0)),
+            cacheRead: UInt64(max(session.tokens.cacheRead, 0)),
+            cacheCreate: 0
+        )
+        state.contextWindow = ContextWindowInfo(
+            totalInputTokens: UInt64(max(session.tokens.input + session.tokens.cacheRead, 0)),
+            totalOutputTokens: UInt64(max(session.tokens.output, 0)),
+            contextWindowSize: UInt64(max(session.contextWindow, 0)),
+            usedPercentage: session.contextPercent
+        )
+        state.description = session.currentTask
+        state.sessionTitle = session.currentTask
+        state.lastToolName = session.toolCount > 0 ? "\(session.toolCount) tools" : nil
+        state.lastToolTarget = displayLocation(for: session)
+        if let pid = session.pid {
+            state.pid = UInt32(max(pid, 0))
+        }
+        return state
+    }
+
+    private func islandPhase(for status: String) -> SessionPhase {
+        switch status {
+        case "Waiting": return .waitingInput
+        case "Thinking", "Executing": return .processing
+        case "Done": return .done
+        default: return .idle
+        }
     }
 
     private func moveSelection(_ offset: Int) {

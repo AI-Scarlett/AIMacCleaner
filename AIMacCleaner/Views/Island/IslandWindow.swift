@@ -137,6 +137,11 @@ class IslandHostingView: NSHostingView<AnyView> {
             return
         }
 
+        guard islandViewModel?.isPinned != true else {
+            lastDragLocation = nil
+            return
+        }
+
         guard let window = window else {
             super.mouseDragged(with: event)
             return

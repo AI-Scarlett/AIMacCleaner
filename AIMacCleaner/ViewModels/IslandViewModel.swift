@@ -13,26 +13,26 @@ enum IslandDisplayLevel: Int, Comparable {
 
     var islandWidth: CGFloat {
         switch self {
-        case .compact: return 240
-        case .hover: return 280
-        case .expanded: return 520
-        case .detail: return 480
+        case .compact: return 380
+        case .hover: return 420
+        case .expanded: return 620
+        case .detail: return 620
         }
     }
 
     var islandHeight: CGFloat {
         switch self {
-        case .compact: return 48
-        case .hover: return 56
+        case .compact: return 56
+        case .hover: return 64
         case .expanded: return 440
-        case .detail: return 420
+        case .detail: return 440
         }
     }
 
     var cornerRadius: CGFloat {
         switch self {
-        case .compact: return 24
-        case .hover: return 28
+        case .compact: return 28
+        case .hover: return 32
         case .expanded: return 20
         case .detail: return 16
         }
@@ -108,6 +108,9 @@ class IslandViewModel: ObservableObject {
     private var autoHideTask: Task<Void, Never>?
     private let autoHideDelay: TimeInterval = 5
     private var autoPresentedApprovalIds: Set<String> = []
+    private var overviewSessions: [SessionState] = []
+    private var observedSessions: [SessionState] = []
+    private var staysVisibleUntilClosed = false
 
     weak var hookServer: HookServer?
     weak var sessionStore: SessionStore?
@@ -130,16 +133,10 @@ class IslandViewModel: ObservableObject {
         Task { [weak self] in
             guard let self = self, let store = self.sessionStore else { return }
             self.observerId = await store.observe { [weak self] sessions in
-                self?.allSessions = sessions
-                self?.activeSessions = sessions.filter {
-                    $0.phase.isActive ||
-                    $0.phase.needsAttention ||
-                    $0.pendingPermission != nil ||
-                    $0.pendingQuestion != nil ||
-                    $0.pendingPlan != nil
-                }
+                self?.observedSessions = sessions
+                self?.refreshCombinedSessions()
                 self?.syncApprovalQueue(from: sessions)
-                if sessions.isEmpty {
+                if self?.allSessions.isEmpty == true {
                     self?.isVisible = false
                 }
             }
@@ -237,7 +234,9 @@ class IslandViewModel: ObservableObject {
         withAnimation(.easeOut(duration: 0.25)) {
             displayLevel = .compact
         }
-        scheduleAutoHide()
+        if !staysVisibleUntilClosed {
+            scheduleAutoHide()
+        }
     }
 
     func togglePin() {
@@ -247,6 +246,58 @@ class IslandViewModel: ObservableObject {
         } else {
             scheduleAutoHide()
         }
+    }
+
+    func syncOverviewSessions(_ sessions: [SessionState], selectedID: String?) {
+        overviewSessions = sessions
+        staysVisibleUntilClosed = true
+        refreshCombinedSessions(selectedID: selectedID)
+    }
+
+    private func refreshCombinedSessions(selectedID: String? = nil) {
+        var seen = Set<String>()
+        allSessions = (overviewSessions + observedSessions).filter { seen.insert($0.id).inserted }
+        activeSessions = allSessions.filter {
+            $0.phase.isActive ||
+            $0.phase.needsAttention ||
+            $0.pendingPermission != nil ||
+            $0.pendingQuestion != nil ||
+            $0.pendingPlan != nil
+        }
+        if let selectedID, let selected = allSessions.first(where: { $0.id == selectedID }) {
+            currentSession = selected
+        } else if !allSessions.contains(where: { $0.id == currentSession?.id }) {
+            currentSession = activeSessions.first ?? allSessions.first
+        }
+        sessionToDetail = currentSession
+        if let currentSession {
+            lastStatusText = currentSession.description ?? currentSession.sessionTitle ?? currentSession.project
+            lastAgentIcon = agentIcon(for: currentSession.agentType)
+            blinking = currentSession.phase == .processing
+        }
+    }
+
+    func selectAdjacentSession(_ offset: Int) {
+        guard !activeSessions.isEmpty else { return }
+        let currentIndex = currentSession.flatMap { current in
+            activeSessions.firstIndex(where: { $0.id == current.id })
+        } ?? 0
+        let nextIndex = (currentIndex + offset + activeSessions.count) % activeSessions.count
+        currentSession = activeSessions[nextIndex]
+        sessionToDetail = currentSession
+        if let currentSession {
+            lastStatusText = currentSession.description ?? currentSession.sessionTitle ?? currentSession.project
+            lastAgentIcon = agentIcon(for: currentSession.agentType)
+            blinking = currentSession.phase == .processing
+        }
+    }
+
+    func closeIsland() {
+        isPinned = false
+        staysVisibleUntilClosed = false
+        displayLevel = .compact
+        isVisible = false
+        cancelAutoHide()
     }
 
     func showDetail(for session: SessionState) {

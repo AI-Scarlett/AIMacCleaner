@@ -236,6 +236,30 @@ struct IslandView: View {
 
             Spacer()
 
+            Button(action: { viewModel.selectAdjacentSession(-1) }) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.activeSessions.count < 2)
+            .help(localizer.overviewPreviousSession)
+
+            if !viewModel.activeSessions.isEmpty {
+                Text(activeSessionPosition)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+
+            Button(action: { viewModel.selectAdjacentSession(1) }) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.activeSessions.count < 2)
+            .help(localizer.overviewNextSession)
+
             Button(action: { viewModel.show(level: .detail) }) {
                 Image(systemName: "rectangle.expand.vertical")
                     .font(.system(size: 11))
@@ -252,7 +276,15 @@ struct IslandView: View {
             .buttonStyle(.plain)
             .help(localizer.agentPinIsland)
 
-            Button(action: { viewModel.dismiss() }) {
+            Button(action: { viewModel.show(level: .compact) }) {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("收起灵动岛")
+
+            Button(action: { viewModel.closeIsland() }) {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -261,6 +293,14 @@ struct IslandView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+
+    private var activeSessionPosition: String {
+        guard !viewModel.activeSessions.isEmpty else { return "0/0" }
+        let index = viewModel.currentSession.flatMap { current in
+            viewModel.activeSessions.firstIndex(where: { $0.id == current.id })
+        } ?? 0
+        return "\(index + 1)/\(viewModel.activeSessions.count)"
     }
 
     private func approvalQueueHeader(overlay: IslandApprovalOverlay) -> some View {
@@ -459,7 +499,7 @@ struct IslandView: View {
             }
             .buttonStyle(.plain)
 
-            Button(action: { viewModel.dismiss() }) {
+            Button(action: { viewModel.closeIsland() }) {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
