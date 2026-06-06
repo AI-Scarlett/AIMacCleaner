@@ -110,8 +110,11 @@ struct ContentView: View {
             service.refreshDiskInfo()
             service.refreshHardwareInfo()
             service.refreshCachedSurfacesInBackground(minInterval: 30)
-            overviewStore.refresh(force: true)
+            overviewStore.refresh()
             service.importKnownAgentHistory()
+        }
+        .onReceive(Timer.publish(every: 10, on: .main, in: .common).autoconnect()) { _ in
+            overviewStore.refresh()
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -757,7 +760,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
     private let cachedRootsKey = "agentMonitorOverview.scannedRoots"
     private var isRefreshingRealtime = false
     private var lastRealtimeRefreshDate: Date?
-    private let activeRetentionWindow: TimeInterval = 10 * 60
+    private let activeRetentionWindow: TimeInterval = 30 * 60
 
     private struct Cache: Codable {
         var version: Int = 1
@@ -775,21 +778,30 @@ final class AgentMonitorOverviewStore: ObservableObject {
     }
 
     func refresh(force: Bool = false) {
-        refreshRealtime()
-        if !force,
-           let lastScanDate,
-           !snapshots.isEmpty,
-           Date().timeIntervalSince(lastScanDate) < 45 {
+        let needsFullScan = force ||
+            snapshots.isEmpty ||
+            (lastScanDate.map { Date().timeIntervalSince($0) >= 6 * 60 * 60 } ?? false)
+        if !needsFullScan {
+            refreshRealtime()
             return
         }
-        guard !isScanning else { return }
+        guard !isScanning, !isRefreshingRealtime else { return }
         isScanning = true
         Task.detached(priority: .utility) { [scanner] in
             let result = scanner.scan()
             await MainActor.run {
-                self.snapshots = result.snapshots
-                if !result.sessions.isEmpty || self.sessions.isEmpty {
-                    self.sessions = result.sessions
+                if !result.snapshots.isEmpty {
+                    self.snapshots = Self.mergedSnapshots(
+                        primary: result.snapshots,
+                        fallback: Self.sanitizedSnapshots(self.snapshots)
+                    )
+                }
+                if !result.sessions.isEmpty {
+                    self.sessions = Self.mergedSessions(
+                        primary: result.sessions,
+                        fallback: self.sessions,
+                        activeRetentionWindow: self.activeRetentionWindow
+                    )
                 }
                 self.authorizedRoots = result.authorizedRoots
                 self.scannedRoots = result.scannedRoots
@@ -802,37 +814,28 @@ final class AgentMonitorOverviewStore: ObservableObject {
     }
 
     func refreshRealtime() {
-        guard !isRefreshingRealtime else { return }
+        guard !isScanning, !isRefreshingRealtime else { return }
         if let lastRealtimeRefreshDate,
-           Date().timeIntervalSince(lastRealtimeRefreshDate) < 3 {
+           Date().timeIntervalSince(lastRealtimeRefreshDate) < 5 {
             return
         }
         isRefreshingRealtime = true
         let cachedRoots = scannedRoots
+        let retainedActiveSources = sessions
+            .filter(Self.isActiveSession)
+            .map(\.sourcePath)
         Task.detached(priority: .utility) { [scanner] in
-            let result = scanner.realtimeScan(cachedRoots: cachedRoots)
+            let result = scanner.realtimeScan(
+                cachedRoots: cachedRoots,
+                retainedActiveSources: retainedActiveSources
+            )
             await MainActor.run {
                 if !result.sessions.isEmpty {
-                    let activeKeys = Set(result.sessions.map { "\($0.agentName)|\($0.sessionId)|\($0.sourcePath)" })
-                    let refreshedPriorityAgents = Self.refreshedPriorityAgents(from: result.scannedRoots)
-                    let retentionCutoff = Date().addingTimeInterval(-self.activeRetentionWindow)
-                    let retained = self.sessions.filter {
-                        if refreshedPriorityAgents.contains($0.agentName) { return false }
-                        let key = "\($0.agentName)|\($0.sessionId)|\($0.sourcePath)"
-                        guard !activeKeys.contains(key) else { return false }
-                        if Self.isActiveSession($0) {
-                            if $0.status == "Paused" { return true }
-                            return ($0.latestActivity ?? .distantPast) >= retentionCutoff
-                        }
-                        return true
-                    }
-                    self.sessions = (result.sessions + retained)
-                        .sorted {
-                            let left = $0.latestActivity ?? .distantPast
-                            let right = $1.latestActivity ?? .distantPast
-                            if left == right { return $0.agentName < $1.agentName }
-                            return left > right
-                        }
+                    self.sessions = Self.mergedSessions(
+                        primary: result.sessions,
+                        fallback: self.sessions,
+                        activeRetentionWindow: self.activeRetentionWindow
+                    )
                     let realtimeSnapshots = Self.usageSnapshots(from: self.sessions)
                     if !realtimeSnapshots.isEmpty {
                         self.snapshots = Self.mergedSnapshots(primary: realtimeSnapshots, fallback: Self.sanitizedSnapshots(self.snapshots))
@@ -890,13 +893,119 @@ final class AgentMonitorOverviewStore: ObservableObject {
     private static func mergedSnapshots(primary: [AgentMonitorUsageSnapshot], fallback: [AgentMonitorUsageSnapshot]) -> [AgentMonitorUsageSnapshot] {
         var byName = Dictionary(uniqueKeysWithValues: fallback.map { ($0.agentName, $0) })
         for snapshot in primary {
-            byName[snapshot.agentName] = snapshot
+            guard let cached = byName[snapshot.agentName] else {
+                byName[snapshot.agentName] = snapshot
+                continue
+            }
+            let latest = maxDate(cached.latestActivity, snapshot.latestActivity)
+            let newest = (snapshot.latestActivity ?? .distantPast) >= (cached.latestActivity ?? .distantPast) ? snapshot : cached
+            byName[snapshot.agentName] = AgentMonitorUsageSnapshot(
+                id: snapshot.id,
+                agentName: snapshot.agentName,
+                sessionCount: max(snapshot.sessionCount, cached.sessionCount),
+                totalTokens: max(snapshot.totalTokens, cached.totalTokens),
+                contextPercent: newest.contextPercent,
+                processCount: newest.processCount,
+                portCount: newest.portCount,
+                latestActivity: latest,
+                projectPath: newest.projectPath,
+                sourcePath: newest.sourcePath
+            )
         }
         return Array(byName.values).sorted {
             let left = $0.latestActivity ?? .distantPast
             let right = $1.latestActivity ?? .distantPast
             if left == right { return $0.agentName < $1.agentName }
             return left > right
+        }
+    }
+
+    private static func mergedSessions(
+        primary: [AgentMonitorSessionSnapshot],
+        fallback: [AgentMonitorSessionSnapshot],
+        activeRetentionWindow: TimeInterval
+    ) -> [AgentMonitorSessionSnapshot] {
+        var byKey = Dictionary(uniqueKeysWithValues: fallback.map { (sessionKey($0), $0) })
+        for session in primary {
+            let key = sessionKey(session)
+            if let cached = byKey[key] {
+                byKey[key] = mergedSession(primary: session, fallback: cached)
+            } else {
+                byKey[key] = session
+            }
+        }
+
+        let activeCutoff = Date().addingTimeInterval(-activeRetentionWindow)
+        let rows = byKey.values.filter { session in
+            if session.status == "Paused" || session.status == "Waiting" { return true }
+            if isActiveSession(session) {
+                return (session.latestActivity ?? .distantPast) >= activeCutoff
+            }
+            return true
+        }
+        .sorted {
+            let leftActive = isActiveSession($0)
+            let rightActive = isActiveSession($1)
+            if leftActive != rightActive { return leftActive }
+            let left = $0.latestActivity ?? .distantPast
+            let right = $1.latestActivity ?? .distantPast
+            if left == right { return $0.agentName < $1.agentName }
+            return left > right
+        }
+        return Array(rows.prefix(400))
+    }
+
+    private static func mergedSession(
+        primary: AgentMonitorSessionSnapshot,
+        fallback: AgentMonitorSessionSnapshot
+    ) -> AgentMonitorSessionSnapshot {
+        let primaryIsNewer = (primary.latestActivity ?? .distantPast) >= (fallback.latestActivity ?? .distantPast)
+        let newest = primaryIsNewer ? primary : fallback
+        let status: String
+        if ["Paused", "Waiting"].contains(fallback.status),
+           ["Done", "History"].contains(primary.status) {
+            status = fallback.status
+        } else {
+            status = newest.status
+        }
+        return AgentMonitorSessionSnapshot(
+            id: primary.id,
+            agentName: primary.agentName,
+            pid: primary.pid ?? fallback.pid,
+            sessionId: primary.sessionId,
+            status: status,
+            projectName: newest.projectName.isEmpty ? fallback.projectName : newest.projectName,
+            projectPath: newest.projectPath.isEmpty ? fallback.projectPath : newest.projectPath,
+            model: newest.model == "—" ? fallback.model : newest.model,
+            tokens: AgentMonitorTokenBreakdown(
+                input: max(primary.tokens.input, fallback.tokens.input),
+                output: max(primary.tokens.output, fallback.tokens.output),
+                cacheRead: max(primary.tokens.cacheRead, fallback.tokens.cacheRead)
+            ),
+            contextPercent: newest.contextPercent,
+            contextWindow: max(primary.contextWindow, fallback.contextWindow),
+            turnCount: max(primary.turnCount, fallback.turnCount),
+            currentTask: newest.currentTask.isEmpty ? fallback.currentTask : newest.currentTask,
+            toolCount: max(primary.toolCount, fallback.toolCount),
+            runningToolCount: status == "Executing" ? max(primary.runningToolCount, fallback.runningToolCount) : primary.runningToolCount,
+            childCount: primary.childCount,
+            ports: primary.ports,
+            memoryMB: primary.memoryMB ?? fallback.memoryMB,
+            latestActivity: maxDate(primary.latestActivity, fallback.latestActivity),
+            sourcePath: primary.sourcePath
+        )
+    }
+
+    private static func sessionKey(_ session: AgentMonitorSessionSnapshot) -> String {
+        "\(session.agentName)|\(session.sessionId)|\(session.sourcePath)"
+    }
+
+    private static func maxDate(_ lhs: Date?, _ rhs: Date?) -> Date? {
+        switch (lhs, rhs) {
+        case let (left?, right?): return max(left, right)
+        case let (left?, nil): return left
+        case let (nil, right?): return right
+        default: return nil
         }
     }
 
@@ -918,21 +1027,6 @@ final class AgentMonitorOverviewStore: ObservableObject {
         }
     }
 
-    private static func refreshedPriorityAgents(from roots: [String]) -> Set<String> {
-        var agents = Set<String>()
-        for root in roots {
-            let lower = root.lowercased()
-            if lower.contains("/.claude/projects") || lower.contains("/.config/claude/projects") { agents.insert("Claude Code") }
-            if lower.hasSuffix("/opencode.db") { agents.insert("OpenCode") }
-            if lower.hasSuffix("/sqlite.db") && lower.contains("minimax") { agents.insert("MiniMax Agent") }
-            if lower.hasSuffix("/nexus.db") && lower.contains("minimax") { agents.insert("MiniMax Agent") }
-            if lower.hasSuffix(".vscdb") && lower.contains("cursor") { agents.insert("Cursor") }
-            if lower.hasSuffix("/sessions.json") && (lower.contains("/.openclaw/") || lower.contains("/.qclaw/")) { agents.insert("OpenClaw") }
-            if lower.contains("/.hermes/sessions") || lower.hasSuffix("/.hermes/gateway_state.json") { agents.insert("Hermes") }
-        }
-        return agents
-    }
-
     private func loadCache() {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: SandboxPaths.shared.agentMonitorCachePath)),
               let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
@@ -942,7 +1036,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
         if !cache.scannedRoots.isEmpty {
             scannedRoots = cache.scannedRoots
         }
-        lastScanDate = cache.lastScanDate
+        lastScanDate = cache.lastScanDate ?? (cache.snapshots.isEmpty ? nil : cache.updatedAt)
     }
 
     private func saveCache() {
@@ -998,13 +1092,32 @@ private final class AgentMonitorOverviewScanner {
         let sourcePath: String
     }
 
+    private struct CodexGoalState {
+        let threadId: String
+        let objective: String
+        let status: String
+        let updatedAt: Date?
+        let rolloutPath: String
+        let cwd: String
+        let title: String
+        let model: String
+    }
+
+    private struct ParsedSessionCacheEntry {
+        let fileSize: Int
+        let modifiedAt: Date?
+        let session: ParsedSession
+    }
+
     private let fileManager = FileManager.default
+    private let parsedSessionCacheLock = NSLock()
+    private var parsedSessionCache: [String: ParsedSessionCacheEntry] = [:]
     private var home: String { SandboxPaths.realHomeDirectory }
 
     private var specs: [AgentSpec] {
         var base = [
             AgentSpec(name: "Claude Code", roots: ["~/.claude", "~/.claude/projects", "~/.claude/sessions", "~/.config/claude/projects"], processKeywords: ["claude", "claude-code", "anthropic"], contextWindow: 200_000),
-            AgentSpec(name: "Codex", roots: ["~/.codex/sessions", "~/.codex/archived_sessions"], processKeywords: ["codex"], contextWindow: 200_000),
+            AgentSpec(name: "Codex", roots: ["~/.codex/sessions", "~/.codex/archived_sessions", "~/.codex/goals_1.sqlite", "~/.codex/state_5.sqlite"], processKeywords: ["codex"], contextWindow: 200_000),
             AgentSpec(name: "OpenCode", roots: ["~/.opencode", "~/.local/share/opencode", "~/.local/share/opencode/opencode.db"], processKeywords: ["opencode"], contextWindow: 200_000),
             AgentSpec(name: "Gemini CLI", roots: ["~/.gemini"], processKeywords: ["gemini"], contextWindow: 1_000_000),
             AgentSpec(name: "Cursor", roots: cursorStateDBPaths(), processKeywords: ["/cursor.app/", "cursor-agent", "cursor agent"], contextWindow: 200_000),
@@ -1057,6 +1170,7 @@ private final class AgentMonitorOverviewScanner {
             processInfo: processInfo,
             authorizedRoots: authorizedRoots
         )
+        let goalSessions = scanCodexGoalSessions(processInfo: processInfo, children: children)
 
         let snapshots: [AgentMonitorUsageSnapshot] = specs.compactMap { spec in
             let roots = effectiveRoots(for: spec, authorizedRoots: authorizedRoots)
@@ -1178,7 +1292,7 @@ private final class AgentMonitorOverviewScanner {
             )
         }
 
-        let activeLiveSessions = uniqueSessions(liveSessions + historySessions)
+        let activeLiveSessions = uniqueSessions(goalSessions + liveSessions + historySessions)
             .sorted { lhs, rhs in
                 let left = lhs.latestActivity ?? .distantPast
                 let right = rhs.latestActivity ?? .distantPast
@@ -1193,7 +1307,7 @@ private final class AgentMonitorOverviewScanner {
         )
     }
 
-    fileprivate func realtimeScan(cachedRoots: [String]) -> ScanResult {
+    fileprivate func realtimeScan(cachedRoots: [String], retainedActiveSources: [String]) -> ScanResult {
         let processInfo = scanProcessInfo()
         let children = childrenMap(processInfo)
         let pidToSessionFiles = scanOpenSessionFiles()
@@ -1201,15 +1315,24 @@ private final class AgentMonitorOverviewScanner {
         let fixedRoots = Array(Set(cachedRoots + authorizedRoots + specs.flatMap { spec in
             effectiveRoots(for: spec, authorizedRoots: authorizedRoots)
         })).filter { fileManager.fileExists(atPath: $0) }
-        var liveSessions = scanLiveSessions(
+        let foregroundRoots = fixedRoots.filter(isForegroundSessionRoot)
+        var liveSessions = scanCodexGoalSessions(processInfo: processInfo, children: children)
+        let handledSources = Set(liveSessions.map(\.sourcePath))
+            .union(pidToSessionFiles.values.flatMap { $0 })
+        liveSessions.append(contentsOf: scanRetainedActiveSessionFiles(
+            paths: retainedActiveSources.filter { !handledSources.contains($0) },
+            processInfo: processInfo,
+            children: children
+        ))
+        liveSessions.append(contentsOf: scanLiveSessions(
             processInfo: processInfo,
             children: children,
             pidToSessionFiles: pidToSessionFiles,
             portsByPid: [:]
-        )
+        ))
         let seen = Set(liveSessions.map { "\($0.agentName)|\($0.sessionId)|\($0.sourcePath)" })
         let recentSessions = scanForegroundSessionFiles(
-            roots: fixedRoots,
+            roots: foregroundRoots,
             excluding: seen,
             processInfo: processInfo,
             children: children
@@ -1299,7 +1422,15 @@ private final class AgentMonitorOverviewScanner {
                     continue
                 }
                 guard shouldEnumerateUsageFiles(root: root, spec: spec) else { continue }
-                for file in usageFiles(under: root).filter({ !liveSources.contains($0.path) }) {
+                let candidates = usageFiles(under: root)
+                    .filter { !liveSources.contains($0.path) }
+                    .sorted {
+                        let left = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                        let right = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                        return left > right
+                    }
+                    .prefix(160)
+                for file in candidates {
                     guard let parsed = parseSessionFile(file) else { continue }
                     parsedRows.append((spec, parsed))
                 }
@@ -1389,6 +1520,10 @@ private final class AgentMonitorOverviewScanner {
             roots.insert(home + "/.minimax/nexus/nexus.db")
             roots.insert(home + "/.minimax-agent-cn")
         }
+        if spec.name == "Codex" {
+            roots.insert(home + "/.codex/goals_1.sqlite")
+            roots.insert(home + "/.codex/state_5.sqlite")
+        }
         return roots
             .filter { !$0.isEmpty }
             .sorted { $0.count < $1.count }
@@ -1399,7 +1534,7 @@ private final class AgentMonitorOverviewScanner {
         case "Claude Code":
             return discoverClaudeProfileRoots().flatMap { [$0, $0 + "/sessions", $0 + "/projects"] }
         case "Codex":
-            return [home + "/.codex/sessions", home + "/.codex/archived_sessions"]
+            return [home + "/.codex/sessions", home + "/.codex/archived_sessions", home + "/.codex/goals_1.sqlite", home + "/.codex/state_5.sqlite"]
         case "OpenCode":
             return [home + "/.opencode", home + "/.local/share/opencode", home + "/.local/share/opencode/opencode.db"]
         case "Cursor":
@@ -1569,14 +1704,18 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func usageFiles(under root: String) -> [URL] {
-        guard let enumerator = fileManager.enumerator(at: URL(fileURLWithPath: root), includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsPackageDescendants]) else {
+        guard let enumerator = fileManager.enumerator(
+            at: URL(fileURLWithPath: root),
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsPackageDescendants, .skipsHiddenFiles]
+        ) else {
             return []
         }
         var files: [URL] = []
         var visited = 0
         for case let url as URL in enumerator {
             visited += 1
-            if visited > 8000 { break }
+            if visited > 2500 { break }
             let name = url.lastPathComponent.lowercased()
             if ["node_modules", ".git", "cache", "caches", "deriveddata", "tmp", "logs", "log", "telemetry", "plugins", ".builtin-skills"].contains(name) {
                 enumerator.skipDescendants()
@@ -1585,7 +1724,7 @@ private final class AgentMonitorOverviewScanner {
             let ext = url.pathExtension.lowercased()
             if ext == "jsonl" || ext == "json" || ext == "log" {
                 files.append(url)
-                if files.count >= 500 { break }
+                if files.count >= 160 { break }
             }
         }
         return files
@@ -1679,6 +1818,127 @@ private final class AgentMonitorOverviewScanner {
             }
         }
         return nil
+    }
+
+    private func scanCodexGoalSessions(
+        processInfo: [Int: ProcessInfo],
+        children: [Int: [Int]]
+    ) -> [AgentMonitorSessionSnapshot] {
+        let goalsPath = home + "/.codex/goals_1.sqlite"
+        let statePath = home + "/.codex/state_5.sqlite"
+        guard fileManager.isReadableFile(atPath: goalsPath) else { return [] }
+
+        var goalsDB: OpaquePointer?
+        guard sqlite3_open_v2(goalsPath, &goalsDB, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_close(goalsDB) }
+
+        var stateDB: OpaquePointer?
+        if sqlite3_open_v2(statePath, &stateDB, SQLITE_OPEN_READONLY, nil) != SQLITE_OK {
+            sqlite3_close(stateDB)
+            stateDB = nil
+        }
+        defer {
+            if stateDB != nil { sqlite3_close(stateDB) }
+        }
+
+        let goalSQL = """
+        SELECT thread_id, objective, status, updated_at_ms
+        FROM thread_goals
+        WHERE lower(status) != 'complete'
+        ORDER BY updated_at_ms DESC;
+        """
+        var goalStmt: OpaquePointer?
+        guard sqlite3_prepare_v2(goalsDB, goalSQL, -1, &goalStmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(goalStmt) }
+
+        var threadStmt: OpaquePointer?
+        if let stateDB {
+            sqlite3_prepare_v2(
+                stateDB,
+                "SELECT rollout_path, cwd, title, COALESCE(model, '') FROM threads WHERE id = ? LIMIT 1;",
+                -1,
+                &threadStmt,
+                nil
+            )
+        }
+        defer {
+            if threadStmt != nil { sqlite3_finalize(threadStmt) }
+        }
+
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        var goals: [CodexGoalState] = []
+        while sqlite3_step(goalStmt) == SQLITE_ROW {
+            let threadId = sqliteText(goalStmt, 0)
+            guard !threadId.isEmpty else { continue }
+            var rolloutPath = ""
+            var cwd = ""
+            var title = ""
+            var model = ""
+            if let threadStmt {
+                sqlite3_reset(threadStmt)
+                sqlite3_clear_bindings(threadStmt)
+                sqlite3_bind_text(threadStmt, 1, threadId, -1, transient)
+                if sqlite3_step(threadStmt) == SQLITE_ROW {
+                    rolloutPath = sqliteText(threadStmt, 0)
+                    cwd = sqliteText(threadStmt, 1)
+                    title = sqliteText(threadStmt, 2)
+                    model = sqliteText(threadStmt, 3)
+                }
+            }
+            goals.append(CodexGoalState(
+                threadId: threadId,
+                objective: sqliteText(goalStmt, 1),
+                status: sqliteText(goalStmt, 2),
+                updatedAt: dateFromMilliseconds(sqlite3_column_int64(goalStmt, 3)),
+                rolloutPath: rolloutPath,
+                cwd: cwd,
+                title: title,
+                model: model
+            ))
+        }
+
+        let codexProcesses = processInfo.values.filter { matchingSpecName($0.command) == "Codex" }
+        let preferredProcess = codexProcesses.first {
+            $0.command.localizedCaseInsensitiveContains("codex app-server")
+        } ?? codexProcesses.first
+        return goals.map { goal in
+            let parsed = goal.rolloutPath.isEmpty ? nil : parseSessionFile(URL(fileURLWithPath: goal.rolloutPath))
+            let isActive = goal.status.lowercased() == "active"
+            let status = isActive ? "Executing" : "Paused"
+            let process = isActive ? preferredProcess : nil
+            let childPids = process.map { descendants(of: $0.pid, children: children) } ?? []
+            let contextWindow = parsed?.contextWindow ?? 200_000
+            let contextPercent = contextWindow > 0
+                ? min(Double(parsed?.lastContextTokens ?? 0) / Double(contextWindow), 1)
+                : 0
+            let latest = [parsed?.latestActivity, goal.updatedAt].compactMap { $0 }.max()
+            let currentTask = normalizedInstruction(goal.objective)
+                ?? (parsed?.currentTask.isEmpty == false ? parsed!.currentTask : nil)
+                ?? normalizedInstruction(goal.title)
+                ?? "Codex goal"
+            return AgentMonitorSessionSnapshot(
+                id: "Codex-\(goal.threadId)-goal",
+                agentName: "Codex",
+                pid: process?.pid,
+                sessionId: goal.threadId,
+                status: status,
+                projectName: lastPathSegment(parsed?.cwd ?? goal.cwd).isEmpty ? "Codex" : lastPathSegment(parsed?.cwd ?? goal.cwd),
+                projectPath: parsed?.cwd.isEmpty == false ? parsed!.cwd : goal.cwd,
+                model: parsed?.model.isEmpty == false ? parsed!.model : (goal.model.isEmpty ? "—" : goal.model),
+                tokens: parsed?.tokens ?? AgentMonitorTokenBreakdown(input: 0, output: 0, cacheRead: 0),
+                contextPercent: contextPercent,
+                contextWindow: contextWindow,
+                turnCount: parsed?.turnCount ?? 0,
+                currentTask: currentTask,
+                toolCount: parsed?.toolCount ?? 0,
+                runningToolCount: isActive ? max(parsed?.runningToolCount ?? 0, 1) : 0,
+                childCount: childPids.count,
+                ports: [],
+                memoryMB: process.map { max($0.rssKB / 1024, 1) },
+                latestActivity: latest,
+                sourcePath: goal.rolloutPath.isEmpty ? goalsPath : goal.rolloutPath
+            )
+        }
     }
 
     private func parseOpenCodeDBSessions(path: String, processInfo: [Int: ProcessInfo]) -> [AgentMonitorSessionSnapshot] {
@@ -1807,6 +2067,7 @@ private final class AgentMonitorOverviewScanner {
         } ?? liveMiniMaxProcesses.first {
             $0.command.localizedCaseInsensitiveContains("daemon.js")
         } ?? liveMiniMaxProcesses.first
+        let pendingSessionIDs = pendingMiniMaxSessionIDs(db: db)
         var claimedFallbackProcess = false
         var rows: [AgentMonitorSessionSnapshot] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
@@ -1836,8 +2097,11 @@ private final class AgentMonitorOverviewScanner {
             }
             let resolvedPID = pid ?? proc?.pid
             let isLive = processAlive || proc != nil
+            let isWaitingForInput = pendingSessionIDs.contains(sessionId)
             let status: String
-            if rawStatus.contains("finish") || rawStatus.contains("done") || rawStatus.contains("complete") {
+            if isWaitingForInput {
+                status = "Waiting"
+            } else if rawStatus.contains("finish") || rawStatus.contains("done") || rawStatus.contains("complete") {
                 status = isLive ? "Waiting" : "Done"
             } else if hasActiveStatus || isLive {
                 status = "Executing"
@@ -1875,6 +2139,27 @@ private final class AgentMonitorOverviewScanner {
             ))
         }
         return rows
+    }
+
+    private func pendingMiniMaxSessionIDs(db: OpaquePointer?) -> Set<String> {
+        let sql = """
+        SELECT session_id
+        FROM permission_requests
+        WHERE lower(COALESCE(status, 'pending')) IN ('pending', 'waiting', 'open', 'requested')
+        UNION
+        SELECT session_id
+        FROM questionnaire_requests
+        WHERE lower(COALESCE(status, 'pending')) IN ('pending', 'waiting', 'open', 'requested');
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        var ids = Set<String>()
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let id = sqliteText(stmt, 0)
+            if !id.isEmpty { ids.insert(id) }
+        }
+        return ids
     }
 
     private func parseMiniMaxNexusDBSessions(path: String, processInfo: [Int: ProcessInfo]) -> [AgentMonitorSessionSnapshot] {
@@ -2241,6 +2526,33 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func parseSessionFile(_ url: URL) -> ParsedSession? {
+        let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let fileSize = values?.fileSize ?? -1
+        let modifiedAt = values?.contentModificationDate
+        parsedSessionCacheLock.lock()
+        let cached = parsedSessionCache[url.path]
+        parsedSessionCacheLock.unlock()
+        if let cached,
+           cached.fileSize == fileSize,
+           cached.modifiedAt == modifiedAt {
+            return cached.session
+        }
+
+        guard let parsed = parseSessionFileUncached(url) else { return nil }
+        parsedSessionCacheLock.lock()
+        if parsedSessionCache.count >= 600 {
+            parsedSessionCache.removeAll(keepingCapacity: true)
+        }
+        parsedSessionCache[url.path] = ParsedSessionCacheEntry(
+            fileSize: fileSize,
+            modifiedAt: modifiedAt,
+            session: parsed
+        )
+        parsedSessionCacheLock.unlock()
+        return parsed
+    }
+
+    private func parseSessionFileUncached(_ url: URL) -> ParsedSession? {
         let lowerPath = url.path.lowercased()
         if lowerPath.contains("/.claude/") || lowerPath.contains("/.config/claude/") {
             return parseClaudeSessionFile(url)
@@ -2336,18 +2648,22 @@ private final class AgentMonitorOverviewScanner {
                             latestUserInstruction = normalizedInstruction(objective) ?? ""
                         }
                         if isUnfinishedGoalStatus(goalStatus) {
-                            currentTask = latestUserInstruction.isEmpty ? objective : latestUserInstruction
+                            currentTask = objective
                             status = goalStatus == "active" ? "Executing" : "Paused"
                         } else {
                             status = "Done"
                         }
                     }
                 } else if eventType == "task_complete" {
-                    currentTask = latestUserInstruction.isEmpty ? activeGoalObjective : latestUserInstruction
+                    currentTask = isUnfinishedGoalStatus(activeGoalStatus)
+                        ? activeGoalObjective
+                        : latestUserInstruction
                     pendingCalls.removeAll()
                     status = statusForGoal(activeGoalStatus)
                 } else if eventType == "turn_aborted" {
-                    currentTask = latestUserInstruction.isEmpty ? activeGoalObjective : latestUserInstruction
+                    currentTask = isUnfinishedGoalStatus(activeGoalStatus)
+                        ? activeGoalObjective
+                        : latestUserInstruction
                     pendingCalls.removeAll()
                     status = statusForGoal(activeGoalStatus)
                 }
@@ -2388,7 +2704,7 @@ private final class AgentMonitorOverviewScanner {
                 currentTask = activeGoalObjective
             }
         } else if isUnfinishedGoalStatus(activeGoalStatus), !activeGoalObjective.isEmpty {
-            currentTask = latestUserInstruction.isEmpty ? activeGoalObjective : latestUserInstruction
+            currentTask = activeGoalObjective
             if activeGoalStatus != "active" {
                 status = "Paused"
             } else {
@@ -2607,9 +2923,9 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func sessionText(from url: URL) -> String? {
-        let fullReadLimit = 120_000_000
-        let headLimit = 1_000_000
-        let tailLimit = 80_000_000
+        let fullReadLimit = 4_000_000
+        let headLimit = 512_000
+        let tailLimit = 8_000_000
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let size = try? handle.seekToEnd() else { return nil }
@@ -2620,7 +2936,8 @@ private final class AgentMonitorOverviewScanner {
         }
         try? handle.seek(toOffset: 0)
         let head = (try? handle.read(upToCount: headLimit)) ?? Data()
-        try? handle.seek(toOffset: size - UInt64(tailLimit))
+        let tailOffset = size > UInt64(tailLimit) ? size - UInt64(tailLimit) : 0
+        try? handle.seek(toOffset: tailOffset)
         let tail = (try? handle.readToEnd()) ?? Data()
         return String(decoding: head, as: UTF8.self) + "\n" + String(decoding: tail, as: UTF8.self)
     }
@@ -2722,6 +3039,59 @@ private final class AgentMonitorOverviewScanner {
         return rows
     }
 
+    private func scanRetainedActiveSessionFiles(
+        paths: [String],
+        processInfo: [Int: ProcessInfo],
+        children: [Int: [Int]]
+    ) -> [AgentMonitorSessionSnapshot] {
+        var seen = Set<String>()
+        return paths.compactMap { path in
+            guard seen.insert(path).inserted,
+                  ["json", "jsonl", "log"].contains(URL(fileURLWithPath: path).pathExtension.lowercased()),
+                  let parsed = parseSessionFile(URL(fileURLWithPath: path)),
+                  isParsedSessionActive(parsed),
+                  let spec = specForSessionPath(path) else {
+                return nil
+            }
+            let agentName = resolvedAgentName(specName: spec.name, parsed: parsed)
+            let process = processInfo.values.first { matchingSpecName($0.command) == agentName }
+            let childPids = process.map { descendants(of: $0.pid, children: children) } ?? []
+            let status = liveStatus(
+                isAlive: process != nil,
+                process: process,
+                childPids: childPids,
+                processInfo: processInfo,
+                currentTask: parsed.currentTask,
+                parsedStatus: parsed.status
+            )
+            let contextPercent = parsed.contextWindow > 0
+                ? min(Double(parsed.lastContextTokens) / Double(parsed.contextWindow), 1)
+                : 0
+            return AgentMonitorSessionSnapshot(
+                id: "\(agentName)-\(parsed.sessionId)-retained",
+                agentName: agentName,
+                pid: process?.pid,
+                sessionId: parsed.sessionId,
+                status: status,
+                projectName: lastPathSegment(parsed.cwd).isEmpty ? agentName : lastPathSegment(parsed.cwd),
+                projectPath: parsed.cwd,
+                model: parsed.model.isEmpty ? "—" : parsed.model,
+                tokens: parsed.tokens,
+                contextPercent: contextPercent,
+                contextWindow: parsed.contextWindow,
+                turnCount: parsed.turnCount,
+                currentTask: parsed.currentTask,
+                toolCount: parsed.toolCount,
+                runningToolCount: parsed.runningToolCount,
+                childCount: childPids.count,
+                ports: [],
+                memoryMB: process.map { max($0.rssKB / 1024, 1) },
+                latestActivity: parsed.latestActivity,
+                sourcePath: parsed.sourcePath
+            )
+        }
+    }
+
     private func scanPriorityHistorySessions(
         roots: [String],
         processInfo: [Int: ProcessInfo],
@@ -2818,13 +3188,36 @@ private final class AgentMonitorOverviewScanner {
         }
     }
 
+    private func isForegroundSessionRoot(_ root: String) -> Bool {
+        let lower = root.lowercased()
+        if lower.hasSuffix(".sqlite") || lower.hasSuffix(".db") || lower.hasSuffix(".vscdb") {
+            return false
+        }
+        if lower.contains("/.codex/sessions") ||
+            lower.contains("/.codex/archived_sessions") ||
+            lower.contains("/.claude/projects") ||
+            lower.contains("/.claude/sessions") ||
+            lower.contains("/.hermes/sessions") {
+            return true
+        }
+        let component = URL(fileURLWithPath: lower).lastPathComponent
+        return ["sessions", "projects", "conversations", "transcripts", "history", "chat_history", ".sessions"].contains(component)
+    }
+
     private func sessionFiles(in root: String, cutoff: Date, maxFiles: Int) -> [URL] {
         guard fileManager.fileExists(atPath: root),
-              let enumerator = fileManager.enumerator(at: URL(fileURLWithPath: root), includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsPackageDescendants]) else {
+              let enumerator = fileManager.enumerator(
+                at: URL(fileURLWithPath: root),
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsPackageDescendants, .skipsHiddenFiles]
+              ) else {
             return []
         }
         var files: [URL] = []
+        var visited = 0
         for case let url as URL in enumerator {
+            visited += 1
+            if visited > 1500 { break }
             let name = url.lastPathComponent.lowercased()
             if ["node_modules", ".git", "cache", "caches", "tmp", "logs"].contains(name) {
                 enumerator.skipDescendants()
@@ -3030,6 +3423,7 @@ private final class AgentMonitorOverviewScanner {
         let lower = collapsed.lowercased()
         let noisyFragments = [
             "conversation title generator",
+            "<skill>",
             "<permission-response",
             "<system-reminder",
             "<agent-context",
@@ -3047,6 +3441,7 @@ private final class AgentMonitorOverviewScanner {
     private func removingAgentMetadataBlocks(from text: String) -> String {
         var result = text
         let tags = [
+            "skill",
             "permission-response",
             "system-reminder",
             "agent-context",
@@ -3092,6 +3487,9 @@ private final class AgentMonitorOverviewScanner {
 
     private func matchingSpecName(_ command: String) -> String? {
         let lower = command.lowercased()
+        if lower.contains("minimax") || lower.contains("mavis") {
+            return specs.first { $0.name == "MiniMax Agent" }?.name
+        }
         return specs.first { spec in
             spec.processKeywords.contains { lower.contains($0) }
         }?.name
@@ -3532,9 +3930,6 @@ struct AppOverviewTab: View {
                 refresh()
             }
         }
-        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
-            overviewStore.refresh()
-        }
     }
 
     private var summaryCards: some View {
@@ -3825,7 +4220,10 @@ private struct AgentCommandCenterView: View {
     }
 
     private var totalTokens: Int {
-        sessions.reduce(0) { $0 + $1.tokens.total }
+        max(
+            sessions.reduce(0) { $0 + $1.tokens.total },
+            store.snapshots.reduce(0) { $0 + $1.totalTokens }
+        )
     }
 
     private var projectRows: [(name: String, context: Double, tokens: Int, count: Int)] {
@@ -4472,7 +4870,12 @@ private struct AgentCommandDashboardView: View {
         Array(sessions.prefix(visibleSessionCount))
     }
 
-    private var totalTokens: Int { allSessions.reduce(0) { $0 + $1.tokens.total } }
+    private var totalTokens: Int {
+        max(
+            allSessions.reduce(0) { $0 + $1.tokens.total },
+            store.snapshots.reduce(0) { $0 + $1.totalTokens }
+        )
+    }
     private var realtimeConversationCount: Int { activeSessions.count }
     private var realtimeToolCallCount: Int {
         activeSessions.reduce(0) { total, session in
