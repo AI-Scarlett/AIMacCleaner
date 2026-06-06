@@ -923,6 +923,9 @@ final class AgentMonitorOverviewStore: ObservableObject {
         for root in roots {
             let lower = root.lowercased()
             if lower.contains("/.claude/projects") || lower.contains("/.config/claude/projects") { agents.insert("Claude Code") }
+            if lower.hasSuffix("/opencode.db") { agents.insert("OpenCode") }
+            if lower.hasSuffix("/sqlite.db") && lower.contains("minimax") { agents.insert("MiniMax Agent") }
+            if lower.hasSuffix("/nexus.db") && lower.contains("minimax") { agents.insert("MiniMax Agent") }
             if lower.hasSuffix(".vscdb") && lower.contains("cursor") { agents.insert("Cursor") }
             if lower.hasSuffix("/sessions.json") && (lower.contains("/.openclaw/") || lower.contains("/.qclaw/")) { agents.insert("OpenClaw") }
             if lower.contains("/.hermes/sessions") || lower.hasSuffix("/.hermes/gateway_state.json") { agents.insert("Hermes") }
@@ -1232,7 +1235,7 @@ private final class AgentMonitorOverviewScanner {
         }
         let uniqueRows = uniqueSessions(liveSessions)
         let activeSessions = uniqueRows.filter { isRealtimeActiveSession($0) }
-        let priorityAgents: Set<String> = ["Claude Code", "Cursor", "OpenClaw", "Hermes"]
+        let priorityAgents: Set<String> = ["Claude Code", "Cursor", "OpenClaw", "Hermes", "OpenCode", "MiniMax Agent"]
         let priorityHistory = Dictionary(grouping: uniqueRows.filter {
             priorityAgents.contains($0.agentName) && !isRealtimeActiveSession($0)
         }, by: \.agentName).values.flatMap { rows in
@@ -1729,6 +1732,9 @@ private final class AgentMonitorOverviewScanner {
             let output = Int(sqlite3_column_int64(stmt, 9))
             let cache = Int(sqlite3_column_int64(stmt, 10))
             let model = sqliteText(stmt, 11)
+            let currentTask = latestOpenCodeUserInstruction(db: db, sessionId: sessionId)
+                ?? normalizedInstruction(title)
+                ?? "OpenCode session"
             let latest = dateFromMilliseconds(updatedMs)
             let proc = liveByCwd[directory]?.first
             let isLive = proc != nil
@@ -1749,7 +1755,7 @@ private final class AgentMonitorOverviewScanner {
                 contextPercent: contextPercent,
                 contextWindow: contextWindow,
                 turnCount: turns,
-                currentTask: title.isEmpty ? "OpenCode session" : title,
+                currentTask: currentTask,
                 toolCount: 0,
                 runningToolCount: 0,
                 childCount: proc.map { descendants(of: $0.pid, children: childrenMap(processInfo)).count } ?? 0,
@@ -1841,6 +1847,9 @@ private final class AgentMonitorOverviewScanner {
             let contextWindow = 512_000
             let contextPercent = min(Double(input + cache) / Double(contextWindow), 1)
             let label = agent.isEmpty ? "MiniMax" : "MiniMax \(agent)"
+            let currentTask = latestMiniMaxUserInstruction(db: db, sessionId: sessionId)
+                ?? normalizedInstruction(title)
+                ?? label
 
             rows.append(AgentMonitorSessionSnapshot(
                 id: "MiniMax-\(sessionId)-db",
@@ -1855,7 +1864,7 @@ private final class AgentMonitorOverviewScanner {
                 contextPercent: contextPercent,
                 contextWindow: contextWindow,
                 turnCount: turns,
-                currentTask: title.isEmpty ? label : title,
+                currentTask: currentTask,
                 toolCount: 0,
                 runningToolCount: status == "Executing" ? 1 : 0,
                 childCount: resolvedPID.map { descendants(of: $0, children: childrenMap(processInfo)).count } ?? 0,
@@ -1881,6 +1890,7 @@ private final class AgentMonitorOverviewScanner {
           COALESCE(c.local_context_dir, ''),
           COALESCE(c.default_model_id, ''),
           COALESCE(c.updated_at, ''),
+          COALESCE(c.last_message_preview, ''),
           COUNT(m.id),
           COALESCE((SELECT r.status FROM runs r WHERE r.conversation_id = c.id ORDER BY r.updated_at DESC LIMIT 1), ''),
           COALESCE((SELECT r.model_id FROM runs r WHERE r.conversation_id = c.id ORDER BY r.updated_at DESC LIMIT 1), c.default_model_id, ''),
@@ -1904,10 +1914,15 @@ private final class AgentMonitorOverviewScanner {
             let title = sqliteText(stmt, 1)
             let workspace = sqliteText(stmt, 2)
             let fallbackModel = sqliteText(stmt, 3)
-            let messageCount = Int(sqlite3_column_int64(stmt, 5))
-            let rawStatus = sqliteText(stmt, 6).lowercased()
-            let model = sqliteText(stmt, 7)
-            let latest = dateFromISO(sqliteText(stmt, 8)) ?? dateFromISO(sqliteText(stmt, 4))
+            let lastPreview = sqliteText(stmt, 5)
+            let messageCount = Int(sqlite3_column_int64(stmt, 6))
+            let rawStatus = sqliteText(stmt, 7).lowercased()
+            let model = sqliteText(stmt, 8)
+            let latest = dateFromISO(sqliteText(stmt, 9)) ?? dateFromISO(sqliteText(stmt, 4))
+            let currentTask = latestMiniMaxNexusUserInstruction(db: db, conversationId: sessionId)
+                ?? normalizedInstruction(lastPreview)
+                ?? normalizedInstruction(title)
+                ?? "MiniMax conversation"
             let status: String
             if rawStatus.contains("running") || rawStatus.contains("progress") || rawStatus.contains("queued") || rawStatus.contains("pending") {
                 status = "Thinking"
@@ -1929,7 +1944,7 @@ private final class AgentMonitorOverviewScanner {
                 contextPercent: 0,
                 contextWindow: 512_000,
                 turnCount: messageCount,
-                currentTask: title.isEmpty ? "MiniMax conversation" : title,
+                currentTask: currentTask,
                 toolCount: 0,
                 runningToolCount: status == "Thinking" ? 1 : 0,
                 childCount: liveProcess.map { descendants(of: $0.pid, children: childrenMap(processInfo)).count } ?? 0,
@@ -1968,6 +1983,10 @@ private final class AgentMonitorOverviewScanner {
             let contextWindow = intValue(row["contextTokens"] ?? row["contextWindow"]) ?? 200_000
             let title = stringValue(row, keys: ["label", "title", "name", "lastMessage", "last_message"]) ?? sessionKey
             let source = stringValue(row, keys: ["sessionFile", "session_file"]) ?? path
+            let currentTask = latestUserInstructionInJSONLines(path: source)
+                ?? latestUserInstruction(in: row)
+                ?? normalizedInstruction(title)
+                ?? sessionKey
             let pid = ["Executing", "Thinking", "Waiting"].contains(status) ? liveProcess?.pid : nil
             return AgentMonitorSessionSnapshot(
                 id: "OpenClaw-\(sessionId)-store",
@@ -1982,7 +2001,7 @@ private final class AgentMonitorOverviewScanner {
                 contextPercent: contextWindow > 0 ? min(Double(input + cache) / Double(contextWindow), 1) : 0,
                 contextWindow: contextWindow,
                 turnCount: intValue(row["turnCount"] ?? row["messageCount"]) ?? 0,
-                currentTask: title,
+                currentTask: currentTask,
                 toolCount: intValue(row["toolCount"]) ?? 0,
                 runningToolCount: status == "Executing" ? 1 : 0,
                 childCount: pid.map { descendants(of: $0, children: children).count } ?? 0,
@@ -2035,6 +2054,9 @@ private final class AgentMonitorOverviewScanner {
             let isRecent = updated.map { abs(Date().timeIntervalSince($0)) < 10 * 60 } == true
             let status = liveProcess != nil && isRecent ? "Waiting" : "History"
             let title = stringValue(row, keys: ["name", "title", "lastMessage", "subtitle"]) ?? "Cursor Agent session"
+            let currentTask = latestUserInstruction(in: row)
+                ?? normalizedInstruction(title)
+                ?? "Cursor Agent session"
             let model = stringValue(row, keys: ["model", "modelId", "modelName"]) ?? "—"
             return AgentMonitorSessionSnapshot(
                 id: "Cursor-\(sessionId)-db",
@@ -2049,7 +2071,7 @@ private final class AgentMonitorOverviewScanner {
                 contextPercent: 0,
                 contextWindow: 200_000,
                 turnCount: intValue(row["turnCount"] ?? row["messageCount"]) ?? 0,
-                currentTask: title,
+                currentTask: currentTask,
                 toolCount: intValue(row["toolCount"]) ?? 0,
                 runningToolCount: 0,
                 childCount: liveProcess.map { descendants(of: $0.pid, children: childrenMap(processInfo)).count } ?? 0,
@@ -2077,6 +2099,73 @@ private final class AgentMonitorOverviewScanner {
                 collectCursorSessionObjects(child, into: &results, depth: depth + 1)
             }
         }
+    }
+
+    private func latestOpenCodeUserInstruction(db: OpaquePointer?, sessionId: String) -> String? {
+        latestInstructionFromSQLite(db: db, binding: sessionId, sql: """
+        SELECT json_extract(p.data, '$.text')
+        FROM message m
+        JOIN part p ON p.message_id = m.id
+        WHERE m.session_id = ?
+          AND lower(COALESCE(json_extract(m.data, '$.role'), '')) = 'user'
+          AND lower(COALESCE(json_extract(p.data, '$.type'), '')) IN ('text', 'input_text')
+        ORDER BY COALESCE(p.time_created, m.time_created) DESC, p.id DESC
+        LIMIT 60;
+        """)
+    }
+
+    private func latestMiniMaxUserInstruction(db: OpaquePointer?, sessionId: String) -> String? {
+        latestInstructionFromSQLite(db: db, binding: sessionId, sql: """
+        SELECT data
+        FROM session_messages
+        WHERE session_id = ?
+          AND (
+            lower(COALESCE(role, '')) = 'user'
+            OR lower(COALESCE(json_extract(data, '$.role'), '')) = 'user'
+            OR COALESCE(json_extract(data, '$.msg_type'), 0) = 1
+          )
+        ORDER BY timestamp DESC, id DESC
+        LIMIT 80;
+        """)
+    }
+
+    private func latestMiniMaxNexusUserInstruction(db: OpaquePointer?, conversationId: String) -> String? {
+        latestInstructionFromSQLite(db: db, binding: conversationId, sql: """
+        SELECT content
+        FROM messages
+        WHERE conversation_id = ?
+          AND lower(COALESCE(role, '')) = 'user'
+        ORDER BY seq_id DESC
+        LIMIT 80;
+        """)
+    }
+
+    private func latestInstructionFromSQLite(db: OpaquePointer?, binding: String, sql: String) -> String? {
+        guard let db else { return nil }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(stmt, 1, binding, -1, transient)
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let raw = sqliteText(stmt, 0)
+            if let instruction = instructionFromStoredText(raw) {
+                return instruction
+            }
+        }
+        return nil
+    }
+
+    private func latestUserInstructionInJSONLines(path: String) -> String? {
+        guard fileManager.fileExists(atPath: path),
+              let text = sessionText(from: URL(fileURLWithPath: path)) else { return nil }
+        for line in text.split(whereSeparator: \.isNewline).reversed() {
+            guard let object = jsonObject(from: String(line)) else { continue }
+            if let instruction = latestUserInstruction(in: object) {
+                return instruction
+            }
+        }
+        return nil
     }
 
     private func scanLiveSessions(
@@ -2651,6 +2740,7 @@ private final class AgentMonitorOverviewScanner {
             let right = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
             return left > right
         }.prefix(60)
+        let liveProcessByAgent = Dictionary(grouping: processInfo.values, by: { matchingSpecName($0.command) ?? "" })
         var seen = Set<String>()
         let rows: [AgentMonitorSessionSnapshot] = latestFiles.compactMap { file -> AgentMonitorSessionSnapshot? in
             guard let parsed = parseSessionFile(file),
@@ -2658,7 +2748,7 @@ private final class AgentMonitorOverviewScanner {
                   ["Claude Code", "Hermes"].contains(spec.name) else { return nil }
             let agentName = resolvedAgentName(specName: spec.name, parsed: parsed)
             guard seen.insert("\(agentName)|\(parsed.sessionId)").inserted else { return nil }
-            let process = processInfo.values.first { matchingSpecName($0.command) == agentName }
+            let process = liveProcessByAgent[agentName]?.first
             let childPids = process.map { descendants(of: $0.pid, children: children) } ?? []
             let isRecent = parsed.latestActivity.map { abs(Date().timeIntervalSince($0)) < 180 } == true
             let status = isRecent ? liveStatus(
@@ -2850,9 +2940,86 @@ private final class AgentMonitorOverviewScanner {
         return joined.isEmpty ? nil : joined
     }
 
+    private func instructionFromStoredText(_ value: String) -> String? {
+        if let object = jsonObject(from: value) {
+            return latestUserInstruction(in: object)
+        }
+        return normalizedInstruction(value)
+    }
+
+    private func latestUserInstruction(in value: Any?, depth: Int = 0) -> String? {
+        guard depth < 10, let value else { return nil }
+        if let dict = value as? [String: Any] {
+            if isUserMessage(dict),
+               let instruction = instructionText(fromUserMessage: dict) {
+                return instruction
+            }
+            if let raw = dict["data"] as? String,
+               let object = jsonObject(from: raw),
+               let instruction = latestUserInstruction(in: object, depth: depth + 1) {
+                return instruction
+            }
+            let preferredKeys = [
+                "messages", "conversation", "history", "turns", "items", "entries",
+                "records", "children", "parts", "message", "payload", "data"
+            ]
+            for key in preferredKeys {
+                if let instruction = latestUserInstruction(in: dict[key], depth: depth + 1) {
+                    return instruction
+                }
+            }
+            for child in Array(dict.values).reversed() {
+                if let instruction = latestUserInstruction(in: child, depth: depth + 1) {
+                    return instruction
+                }
+            }
+        } else if let array = value as? [Any] {
+            for item in array.reversed() {
+                if let instruction = latestUserInstruction(in: item, depth: depth + 1) {
+                    return instruction
+                }
+            }
+        } else if let string = value as? String,
+                  let object = jsonObject(from: string) {
+            return latestUserInstruction(in: object, depth: depth + 1)
+        }
+        return nil
+    }
+
+    private func isUserMessage(_ dict: [String: Any]) -> Bool {
+        let role = (stringValue(dict, keys: ["role", "sender", "author", "speaker"]) ?? "").lowercased()
+        if ["user", "human"].contains(role) { return true }
+        let type = (stringValue(dict, keys: ["type", "eventType"]) ?? "").lowercased()
+        return ["user", "user_message", "human_message"].contains(type)
+    }
+
+    private func instructionText(fromUserMessage dict: [String: Any]) -> String? {
+        let candidates: [Any?] = [
+            dict["msg_content"],
+            dict["content"],
+            dict["text"],
+            dict["message"],
+            dict["prompt"],
+            dict["input"]
+        ]
+        for candidate in candidates {
+            if let text = textContent(candidate),
+               let instruction = normalizedInstruction(text) {
+                return instruction
+            }
+            if let raw = candidate as? String,
+               let object = jsonObject(from: raw),
+               let instruction = latestUserInstruction(in: object) {
+                return instruction
+            }
+        }
+        return nil
+    }
+
     private func normalizedInstruction(_ value: String?) -> String? {
         guard let value else { return nil }
-        let collapsed = value
+        let visibleText = removingAgentMetadataBlocks(from: value)
+        let collapsed = visibleText
             .replacingOccurrences(of: "\r\n", with: "\n")
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -2860,7 +3027,60 @@ private final class AgentMonitorOverviewScanner {
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !collapsed.isEmpty else { return nil }
+        let lower = collapsed.lowercased()
+        let noisyFragments = [
+            "conversation title generator",
+            "<permission-response",
+            "<system-reminder",
+            "<agent-context",
+            "<task-completion-reminder",
+            "<turn_aborted",
+            "<codex_internal_context",
+            "an async command you ran earlier has completed.",
+            "sender (untrusted metadata):"
+        ]
+        guard !noisyFragments.contains(where: { lower.contains($0) }) else { return nil }
+        guard collapsed != "{}" && collapsed != "[]" && lower != "null" else { return nil }
         return String(collapsed.prefix(500))
+    }
+
+    private func removingAgentMetadataBlocks(from text: String) -> String {
+        var result = text
+        let tags = [
+            "permission-response",
+            "system-reminder",
+            "agent-context",
+            "task-completion-reminder",
+            "turn_aborted",
+            "codex_internal_context",
+            "user_profile_missing",
+            "environment_context",
+            "developer_context"
+        ]
+        for tag in tags {
+            result = removingTaggedBlocks(named: tag, from: result)
+        }
+        return result
+    }
+
+    private func removingTaggedBlocks(named tag: String, from text: String) -> String {
+        var result = text
+        let opening = "<\(tag)"
+        let closing = "</\(tag)>"
+        while let start = result.range(of: opening, options: [.caseInsensitive]) {
+            if let end = result.range(of: closing, options: [.caseInsensitive], range: start.upperBound..<result.endIndex) {
+                result.removeSubrange(start.lowerBound..<end.upperBound)
+            } else {
+                result.removeSubrange(start.lowerBound..<result.endIndex)
+            }
+        }
+        return result
+    }
+
+    private func jsonObject(from text: String) -> Any? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("{") || trimmed.hasPrefix("[") else { return nil }
+        return try? JSONSerialization.jsonObject(with: Data(trimmed.utf8))
     }
 
     private func parsePort(from line: String) -> Int? {
@@ -3013,10 +3233,27 @@ private final class AgentMonitorOverviewScanner {
 
     private func textContent(_ value: Any?) -> String? {
         if let value = value as? String { return value }
+        if let dict = value as? [String: Any] {
+            if let direct = stringValue(dict, keys: ["text", "content", "message", "msg_content", "input", "prompt"]) {
+                return direct
+            }
+            for key in ["parts", "blocks", "children"] {
+                if let text = textContent(dict[key]) { return text }
+            }
+            return nil
+        }
         if let blocks = value as? [[String: Any]] {
             let text = blocks.compactMap { block in
-                stringValue(block, keys: ["text", "content"])
+                let type = (stringValue(block, keys: ["type"]) ?? "").lowercased()
+                let ignoredTypes = ["tool_result", "toolresult", "tool_use", "tool", "image", "reasoning", "thinking"]
+                if ignoredTypes.contains(type) { return nil }
+                if !type.isEmpty, !["text", "input_text", "inputtext", "message", "user"].contains(type) { return nil }
+                return stringValue(block, keys: ["text", "content"])
             }.joined(separator: "\n")
+            return text.isEmpty ? nil : text
+        }
+        if let array = value as? [Any] {
+            let text = array.compactMap { textContent($0) }.joined(separator: "\n")
             return text.isEmpty ? nil : text
         }
         return nil
