@@ -78,11 +78,13 @@ class DisplayController: ObservableObject {
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 window.animator().alphaValue = 1
             }
+        } else {
+            window.orderFrontRegardless()
         }
 
         isVisible = true
 
-        if mode == .detail {
+        if mode == .expanded || mode == .detail {
             window.makeKey()
         }
     }

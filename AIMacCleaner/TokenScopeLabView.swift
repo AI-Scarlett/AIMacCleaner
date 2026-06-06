@@ -2,14 +2,12 @@ import SwiftUI
 import Charts
 import Foundation
 import AppKit
-import Security
 
 struct TokenScopeLabView: View {
     @EnvironmentObject private var localizer: Localizer
     @StateObject private var store = TokenScopeStore()
     @State private var selectedRange: TokenScopeRange = .week
     @State private var selectedTab: TokenScopeTab = .overview
-    @State private var showingProviderAuth = false
 
     private var summary: TokenScopeSummary {
         store.summary(for: selectedRange)
@@ -36,12 +34,6 @@ struct TokenScopeLabView: View {
                     .buttonStyle(.bordered)
                     .disabled(store.isScanning)
 
-                    Button {
-                        showingProviderAuth = true
-                    } label: {
-                        Label(localizer.tokenScopeProviderAuth, systemImage: "key.horizontal.fill")
-                    }
-                    .buttonStyle(.bordered)
                 }
             }
 
@@ -81,11 +73,6 @@ struct TokenScopeLabView: View {
         }
         .onDisappear {
             store.stopAutoRefresh()
-        }
-        .sheet(isPresented: $showingProviderAuth) {
-            TokenScopeProviderAuthView(store: store, localizer: localizer) {
-                selectFolder()
-            }
         }
     }
 
@@ -592,143 +579,6 @@ private struct TokenScopeSourcesPanel: View {
     }
 }
 
-private struct TokenScopeProviderAuthView: View {
-    @ObservedObject var store: TokenScopeStore
-    let localizer: Localizer
-    let authorizeFolder: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var selectedProvider: TokenScopeProvider = .openAI
-    @State private var credential = ""
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: Theme.Spacing.md) {
-                Image(systemName: "key.horizontal.fill")
-                    .foregroundStyle(Theme.Colors.teal)
-                    .frame(width: 36, height: 36)
-                    .background(Theme.Colors.teal.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(localizer.tokenScopeProviderAuth)
-                        .font(Theme.Font.headline)
-                        .foregroundStyle(Theme.Colors.textPrimary)
-                    Text(localizer.tokenScopeProviderAuthDesc)
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                }
-
-                Spacer()
-
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.Colors.textSecondary)
-            }
-            .padding(Theme.Spacing.lg)
-
-            Divider()
-
-            HStack(alignment: .top, spacing: Theme.Spacing.lg) {
-                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                    ForEach(TokenScopeProvider.allCases, id: \.self) { provider in
-                        Button {
-                            selectedProvider = provider
-                            credential = ""
-                        } label: {
-                            HStack(spacing: Theme.Spacing.sm) {
-                                Image(systemName: provider.icon)
-                                    .frame(width: 24)
-                                    .foregroundStyle(provider.color)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(provider.displayName)
-                                        .font(Theme.Font.captionMedium)
-                                        .foregroundStyle(Theme.Colors.textPrimary)
-                                    Text(store.providerCredentialStatus(provider, localizer: localizer))
-                                        .font(Theme.Font.caption)
-                                        .foregroundStyle(store.hasProviderCredential(provider) ? Theme.Colors.success : Theme.Colors.textSecondary)
-                                }
-                                Spacer()
-                                if selectedProvider == provider {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(Theme.Colors.teal)
-                                }
-                            }
-                            .padding(Theme.Spacing.sm)
-                            .background(selectedProvider == provider ? Theme.Colors.teal.opacity(0.08) : Theme.Colors.sidebarBg)
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .frame(width: 220)
-
-                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                    TokenScopeSectionTitle(
-                        icon: selectedProvider.icon,
-                        title: selectedProvider.displayName,
-                        subtitle: selectedProvider.authDescription(localizer)
-                    )
-
-                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                        Text(localizer.tokenScopeAPIKey)
-                            .font(Theme.Font.captionMedium)
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                        SecureField(selectedProvider.placeholder, text: $credential)
-                            .textFieldStyle(.roundedBorder)
-                        Text(localizer.tokenScopeAPIKeyPrivacy)
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                    }
-
-                    HStack(spacing: Theme.Spacing.sm) {
-                        Button {
-                            store.saveProviderCredential(credential, for: selectedProvider)
-                            credential = ""
-                        } label: {
-                            Label(localizer.save, systemImage: "key.fill")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(credential.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                        Button {
-                            store.deleteProviderCredential(for: selectedProvider)
-                            credential = ""
-                        } label: {
-                            Label(localizer.deleteOps, systemImage: "trash")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(!store.hasProviderCredential(selectedProvider))
-
-                        Spacer()
-
-                        Button {
-                            authorizeFolder()
-                        } label: {
-                            Label(localizer.tokenScopeSelectDataFolder, systemImage: "folder.badge.gearshape")
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    Divider()
-
-                    Label(localizer.tokenScopeOAuthPolicyNote, systemImage: "safari.fill")
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Spacer()
-                }
-            }
-            .padding(Theme.Spacing.lg)
-        }
-        .frame(width: 720, height: 520)
-    }
-}
-
 // MARK: - Components
 
 private struct TokenScopeMetricTile: View {
@@ -1032,7 +882,6 @@ private final class TokenScopeStore: ObservableObject {
     @Published private(set) var sources: [TokenScopeSourceStatus]
     @Published private(set) var isScanning = false
     @Published private(set) var scanCompleted = false
-    @Published private(set) var authorizedProviders: Set<TokenScopeProvider> = []
 
     private let scanner = TokenScopeScanner()
     private let bookmarkStore = TokenScopeBookmarkStore()
@@ -1043,7 +892,6 @@ private final class TokenScopeStore: ObservableObject {
 
     init() {
         sources = scanner.defaultSourceStatuses()
-        authorizedProviders = TokenScopeProviderCredentialStore.authorizedProviders()
     }
 
     var hasRealData: Bool { !records.isEmpty }
@@ -1060,7 +908,7 @@ private final class TokenScopeStore: ObservableObject {
 
     func startAutoRefresh() {
         guard autoRefreshTimer == nil else { return }
-        scan(roots: scanRoots(), showProgress: false)
+        scan(roots: scanRoots(), showProgress: true)
         autoRefreshTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.scan(roots: self.scanRoots(), showProgress: false)
@@ -1077,31 +925,13 @@ private final class TokenScopeStore: ObservableObject {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
+        panel.showsHiddenFiles = true
+        panel.directoryURL = URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true)
         panel.message = localizer.tokenScopeSelectDataFolder
         panel.prompt = localizer.tokenScopeSelectDataFolder
         guard panel.runModal() == .OK else { return }
         bookmarkStore.save(panel.urls)
         scan(roots: scanRoots(), showProgress: true)
-    }
-
-    func hasProviderCredential(_ provider: TokenScopeProvider) -> Bool {
-        authorizedProviders.contains(provider)
-    }
-
-    func providerCredentialStatus(_ provider: TokenScopeProvider, localizer: Localizer) -> String {
-        hasProviderCredential(provider) ? localizer.tokenScopeCredentialSaved : localizer.tokenScopeNotAuthorized
-    }
-
-    func saveProviderCredential(_ credential: String, for provider: TokenScopeProvider) {
-        let trimmed = credential.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        TokenScopeProviderCredentialStore.save(trimmed, for: provider)
-        authorizedProviders = TokenScopeProviderCredentialStore.authorizedProviders()
-    }
-
-    func deleteProviderCredential(for provider: TokenScopeProvider) {
-        TokenScopeProviderCredentialStore.delete(provider)
-        authorizedProviders = TokenScopeProviderCredentialStore.authorizedProviders()
     }
 
     private func scanRoots() -> [URL] {
@@ -1295,127 +1125,6 @@ private enum TokenScopeSource: String, CaseIterable {
         case .deepSeek: ["~/.deepseek"]
         case .openCode: ["~/.opencode"]
         }
-    }
-}
-
-private enum TokenScopeProvider: String, CaseIterable {
-    case openAI
-    case anthropic
-    case google
-    case deepSeek
-    case qwen
-    case openRouter
-
-    var displayName: String {
-        switch self {
-        case .openAI: "OpenAI"
-        case .anthropic: "Anthropic"
-        case .google: "Google Gemini"
-        case .deepSeek: "DeepSeek"
-        case .qwen: "Qwen"
-        case .openRouter: "OpenRouter"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .openAI: "sparkles"
-        case .anthropic: "a.circle.fill"
-        case .google: "g.circle.fill"
-        case .deepSeek: "waveform.path.ecg"
-        case .qwen: "q.circle.fill"
-        case .openRouter: "point.3.connected.trianglepath.dotted"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .openAI: Theme.Colors.teal
-        case .anthropic: Theme.Colors.warning
-        case .google: Theme.Colors.info
-        case .deepSeek: Theme.Colors.success
-        case .qwen: Theme.Colors.purple
-        case .openRouter: Theme.Colors.textSecondary
-        }
-    }
-
-    var placeholder: String {
-        switch self {
-        case .openAI: "sk-..."
-        case .anthropic: "sk-ant-..."
-        case .google: "AIza..."
-        case .deepSeek: "sk-..."
-        case .qwen: "sk-..."
-        case .openRouter: "sk-or-..."
-        }
-    }
-
-    func authDescription(_ localizer: Localizer) -> String {
-        switch self {
-        case .openAI:
-            return localizer.tokenScopeOpenAIAuthDesc
-        case .anthropic:
-            return localizer.tokenScopeAnthropicAuthDesc
-        case .google:
-            return localizer.tokenScopeGoogleAuthDesc
-        case .deepSeek:
-            return localizer.tokenScopeDeepSeekAuthDesc
-        case .qwen:
-            return localizer.tokenScopeQwenAuthDesc
-        case .openRouter:
-            return localizer.tokenScopeOpenRouterAuthDesc
-        }
-    }
-}
-
-private enum TokenScopeProviderCredentialStore {
-    private static let service = "com.aimaccleaner.app.tokenscope.provider"
-
-    static func hasCredential(for provider: TokenScopeProvider) -> Bool {
-        load(provider) != nil
-    }
-
-    static func authorizedProviders() -> Set<TokenScopeProvider> {
-        Set(TokenScopeProvider.allCases.filter(hasCredential))
-    }
-
-    static func save(_ credential: String, for provider: TokenScopeProvider) {
-        let data = Data(credential.utf8)
-        var query = baseQuery(provider)
-        let attributes: [String: Any] = [kSecValueData as String: data]
-        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if status == errSecItemNotFound {
-            query[kSecValueData as String] = data
-            query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            SecItemAdd(query as CFDictionary, nil)
-        }
-    }
-
-    static func load(_ provider: TokenScopeProvider) -> String? {
-        var query = baseQuery(provider)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data,
-              let value = String(data: data, encoding: .utf8),
-              !value.isEmpty else {
-            return nil
-        }
-        return value
-    }
-
-    static func delete(_ provider: TokenScopeProvider) {
-        SecItemDelete(baseQuery(provider) as CFDictionary)
-    }
-
-    private static func baseQuery(_ provider: TokenScopeProvider) -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: provider.rawValue
-        ]
     }
 }
 
@@ -1871,9 +1580,9 @@ private struct TokenScopeFileCacheEntry {
 
 private final class TokenScopeScanner {
     private let fileManager = FileManager.default
-    private let maxFilesPerSource = 80
-    private let maxVisitedItemsPerSource = 1200
-    private let maxDirectoryDepth = 10
+    private let maxFilesPerSource = 250
+    private let maxVisitedItemsPerSource = 10000
+    private let maxDirectoryDepth = 12
     private let maxBytesPerFile = 4 * 1024 * 1024
     private let maxCodexBytesPerFile = 256 * 1024 * 1024
     private let fileCacheLock = NSLock()
@@ -2048,7 +1757,7 @@ private final class TokenScopeScanner {
 
     private func shouldSkip(_ url: URL) -> Bool {
         let name = url.lastPathComponent.lowercased()
-        if ["cache", "caches", "cacheddata", "cached_data", "node_modules", ".git", "deriveddata", "vendor", "plugins", "skills", "tmp", "config", "backups", "backup", "identity", "extensions", "workspace", ".auto-memory", "browser"].contains(name) {
+        if ["cache", "caches", "cacheddata", "cached_data", "node_modules", ".git", "deriveddata", "vendor", "plugins", "skills", "tmp", "config", "backups", "backup", "identity", "extensions", "workspace", ".auto-memory", "browser", "memories"].contains(name) {
             return true
         }
         return ["package.json", "package-lock.json", "tsconfig.json", "settings.json", "channel-defaults.json", "device.json", "device-auth.json"].contains(name)

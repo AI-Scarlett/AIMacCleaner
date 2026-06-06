@@ -72,21 +72,13 @@ struct DiskInfo: Codable {
 }
 
 struct AIConfig: Codable {
-    let apiBase: String?
-    let apiKey: String?
     let model: String?
     let hasKey: Bool?
 
-    static let appReviewDemoBase = "agentguard-demo://app-review"
-    static let appReviewDemoKey = "AGENTGUARD_APP_REVIEW_DEMO"
     static let appReviewDemoModel = "app-review-demo"
 
-    var isAppReviewDemo: Bool {
-        apiBase == Self.appReviewDemoBase || apiKey == Self.appReviewDemoKey || model == Self.appReviewDemoModel
-    }
-
     enum CodingKeys: String, CodingKey {
-        case apiBase = "api_base", apiKey = "api_key", model, hasKey = "has_key"
+        case model, hasKey = "has_key"
     }
 }
 

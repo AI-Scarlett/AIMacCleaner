@@ -3,11 +3,9 @@ import Network
 
 actor HookServer {
     private let socketPath = "/tmp/agentguard.sock"
-    private let tcpPort: NWEndpoint.Port = 17893
     private let maxRawEventsPerSession = 200
     private let maxRawEventSessions = 200
 
-    private var tcpListener: NWListener?
     private var unixListener: NWListener?
 
     private var pendingPermissions: [String: [PendingPermissionEntry]] = [:]
@@ -39,21 +37,6 @@ actor HookServer {
     func start() throws {
         unlink(socketPath)
 
-        let tcpParams = NWParameters.tcp
-        if let localhost = IPv4Address("127.0.0.1") {
-            tcpParams.requiredLocalEndpoint = .hostPort(host: .ipv4(localhost), port: tcpPort)
-        }
-        tcpListener = try NWListener(using: tcpParams)
-        tcpListener?.stateUpdateHandler = { state in
-            if case .failed(let error) = state {
-                print("[AgentGuard] TCP listener failed on 127.0.0.1:17893: \(error)")
-            }
-        }
-        tcpListener?.newConnectionHandler = { [weak self] connection in
-            Task { await self?.handleConnection(connection, label: "tcp") }
-        }
-        tcpListener?.start(queue: .global())
-
         let unixParams = NWParameters.tcp
         unixParams.requiredLocalEndpoint = NWEndpoint.unix(path: socketPath)
         unixListener = try NWListener(using: unixParams)
@@ -67,11 +50,10 @@ actor HookServer {
         }
         unixListener?.start(queue: .global())
 
-        print("[AgentGuard] HookServer started on \(socketPath) and port \(tcpPort)")
+        print("[AgentGuard] HookServer started on \(socketPath)")
     }
 
     func stop() {
-        tcpListener?.cancel()
         unixListener?.cancel()
         resumePendingRequestsForShutdown()
         eventObservers.removeAll()

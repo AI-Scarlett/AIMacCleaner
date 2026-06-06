@@ -5,10 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject var localizer: Localizer
     @Environment(\.dismiss) var dismiss
 
-    @State private var apiBase = ""
-    @State private var apiKey = ""
-    @State private var model = ""
-    @State private var selectedTab: SettingsTab = .ai
+    @State private var selectedTab: SettingsTab = .features
 
     @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
     @AppStorage("sensorMonitorEnabled") private var sensorMonitorEnabled = false
@@ -24,6 +21,10 @@ struct SettingsView: View {
         case network = "Network"
         case language = "Language"
         case version = "Version"
+
+        static var visibleTabs: [SettingsTab] {
+            allCases.filter { $0 != .ai }
+        }
 
         var icon: String {
             switch self {
@@ -62,13 +63,6 @@ struct SettingsView: View {
         }
     }
 
-    let presets: [(name: String, base: String, model: String)] = [
-        ("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
-        ("OpenAI", "https://api.openai.com", "gpt-4o-mini"),
-        ("Zhipu GLM", "https://open.bigmodel.cn/api/paas", "glm-4-flash"),
-        ("Qwen (Tongyi)", "https://dashscope.aliyuncs.com/compatible-mode", "qwen-turbo"),
-    ]
-
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -90,7 +84,7 @@ struct SettingsView: View {
 
             HStack(spacing: 0) {
                 VStack(spacing: Theme.Spacing.xs) {
-                    ForEach(SettingsTab.allCases, id: \.self) { tab in
+                    ForEach(SettingsTab.visibleTabs, id: \.self) { tab in
                         Button {
                             selectedTab = tab
                         } label: {
@@ -171,7 +165,6 @@ struct SettingsView: View {
             .padding(Theme.Spacing.lg)
         }
         .frame(width: 680, height: 520)
-        .onAppear { loadConfig() }
     }
 
     private var aiSection: some View {
@@ -180,86 +173,6 @@ struct SettingsView: View {
             Text(localizer.aiSettingsDesc)
                 .font(Theme.Font.caption)
                 .foregroundStyle(Theme.Colors.textSecondary)
-
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                    Text(localizer.apiBase)
-                        .font(Theme.Font.captionMedium)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                    TextField("https://api.openai.com", text: $apiBase)
-                        .textFieldStyle(.plain)
-                        .font(Theme.Font.body)
-                        .padding(Theme.Spacing.sm)
-                        .background(Theme.Colors.cardBg)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
-                        )
-                }
-
-                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                    Text(localizer.apiKey)
-                        .font(Theme.Font.captionMedium)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                    SecureField("sk-...", text: $apiKey)
-                        .textFieldStyle(.plain)
-                        .font(Theme.Font.body)
-                        .padding(Theme.Spacing.sm)
-                        .background(Theme.Colors.cardBg)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
-                        )
-                }
-
-                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                    Text(localizer.modelName)
-                        .font(Theme.Font.captionMedium)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                    TextField("gpt-4o-mini", text: $model)
-                        .textFieldStyle(.plain)
-                        .font(Theme.Font.body)
-                        .padding(Theme.Spacing.sm)
-                        .background(Theme.Colors.cardBg)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
-                        )
-                }
-            }
-            .cardStyle()
-
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                Text(localizer.recommendedConfig)
-                    .font(Theme.Font.captionMedium)
-                    .foregroundStyle(Theme.Colors.purple)
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Theme.Spacing.sm) {
-                    ForEach(presets, id: \.name) { preset in
-                        Button {
-                            apiBase = preset.base
-                            model = preset.model
-                        } label: {
-                            HStack {
-                                Text(preset.name)
-                                    .font(Theme.Font.caption)
-                                    .foregroundStyle(Theme.Colors.textPrimary)
-                                Spacer()
-                                Text(preset.model)
-                                    .font(Theme.Font.caption)
-                                    .foregroundStyle(Theme.Colors.textTertiary)
-                            }
-                            .padding(.horizontal, Theme.Spacing.sm)
-                            .padding(.vertical, Theme.Spacing.xs + 1)
-                            .background(Theme.Colors.purple.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
 
             HStack(spacing: Theme.Spacing.md) {
                 Image(systemName: "checkmark.seal.fill")
@@ -277,19 +190,6 @@ struct SettingsView: View {
                 }
 
                 Spacer()
-
-                Button(localizer.useAppReviewDemo) {
-                    apiBase = AIConfig.appReviewDemoBase
-                    apiKey = AIConfig.appReviewDemoKey
-                    model = AIConfig.appReviewDemoModel
-                }
-                .font(Theme.Font.captionMedium)
-                .foregroundStyle(.white)
-                .padding(.horizontal, Theme.Spacing.md)
-                .padding(.vertical, Theme.Spacing.xs + 2)
-                .background(Theme.Colors.accent)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                .buttonStyle(.plain)
             }
             .cardStyle()
         }
@@ -319,21 +219,6 @@ struct SettingsView: View {
                     isOn: $operationMonitorEnabled
                 )
 
-                ToggleSetting(
-                    icon: "brain.head.profile",
-                    title: localizer.aiSelfLearning,
-                    desc: localizer.aiSelfLearningDesc,
-                    isOn: Binding(
-                        get: { service.operationMonitor.aiSelfLearningEnabled },
-                        set: { newValue in
-                            if newValue {
-                                service.startAISelfLearning()
-                            } else {
-                                service.stopAISelfLearning()
-                            }
-                        }
-                    )
-                )
             }
             .cardStyle()
 
@@ -453,12 +338,6 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.Colors.textSecondary)
 
                 VStack(spacing: Theme.Spacing.sm) {
-                    LabFeatureRow(
-                        icon: "house.fill",
-                        color: .teal,
-                        title: localizer.navAgentCenter,
-                        desc: localizer.labFeatureAgentCenterDesc
-                    )
                     LabFeatureRow(
                         icon: "arrow.down.doc.fill",
                         color: .blue,
@@ -667,16 +546,8 @@ struct SettingsView: View {
         return URL(string: "macappstore://apps.apple.com/app/id\(appStoreID)")
     }
 
-    private func loadConfig() {
-        if let config = service.aiConfig {
-            apiBase = config.apiBase ?? "https://api.openai.com"
-            apiKey = config.apiKey ?? ""
-            model = config.model ?? "gpt-4o-mini"
-        }
-    }
-
     private func saveSettings() {
-        service.saveAIConfig(apiBase: apiBase, apiKey: apiKey, model: model)
+        service.saveLocalAIConfig()
         if operationMonitorEnabled {
             service.startOperationMonitor()
         } else {

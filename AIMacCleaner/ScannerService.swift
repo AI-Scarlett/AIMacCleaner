@@ -4,52 +4,6 @@ import Combine
 import AppKit
 import IOKit
 import IOKit.ps
-import Security
-
-private enum KeychainStore {
-    private static let service = "com.aimaccleaner.app.ai"
-    private static let account = "default-api-key"
-
-    static func loadAPIKey() -> String? {
-        var query = baseQuery()
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data,
-              let key = String(data: data, encoding: .utf8),
-              !key.isEmpty else {
-            return nil
-        }
-        return key
-    }
-
-    static func saveAPIKey(_ key: String) {
-        let data = Data(key.utf8)
-        var query = baseQuery()
-        let attributes: [String: Any] = [kSecValueData as String: data]
-
-        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if status == errSecItemNotFound {
-            query[kSecValueData as String] = data
-            query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            SecItemAdd(query as CFDictionary, nil)
-        }
-    }
-
-    static func deleteAPIKey() {
-        SecItemDelete(baseQuery() as CFDictionary)
-    }
-
-    private static func baseQuery() -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-    }
-}
 
 @MainActor
 class ScannerService: ObservableObject {
@@ -597,7 +551,7 @@ class ScannerService: ObservableObject {
 
     // MARK: - Delete
 
-    func deleteItems(ids: [String], permanent: Bool = false) async -> DeleteResult {
+    func deleteItems(ids: [String]) async -> DeleteResult {
         var deleteResults: [DeleteItemResult] = []
         var successCount = 0
         var failCount = 0
@@ -618,13 +572,9 @@ class ScannerService: ObservableObject {
             for expanded in pathsToDelete {
                 do {
                     if FileManager.default.fileExists(atPath: expanded) {
-                        if permanent {
-                            try FileManager.default.removeItem(atPath: expanded)
-                        } else {
-                            try moveToTrash(atPath: expanded)
-                        }
+                        try moveToTrash(atPath: expanded)
                         successCount += 1
-                        deleteResults.append(DeleteItemResult(id: item.id, path: expanded, success: true, message: permanent ? (localizer?.deleted ?? "Deleted") : (localizer?.movedToTrash ?? "Moved to Trash")))
+                        deleteResults.append(DeleteItemResult(id: item.id, path: expanded, success: true, message: localizer?.movedToTrash ?? "Moved to Trash"))
                     }
                 } catch {
                     failCount += 1
@@ -677,42 +627,22 @@ class ScannerService: ObservableObject {
     // MARK: - AI Config
 
     func loadAIConfigFromDisk() {
-        let storedKey = KeychainStore.loadAPIKey()
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: aiConfigFilePath)),
-              var config = try? JSONDecoder().decode(AIConfig.self, from: data) else {
-            aiConfig = AIConfig(apiBase: "https://api.openai.com", apiKey: storedKey, model: "gpt-4o-mini", hasKey: storedKey?.isEmpty == false)
-            return
-        }
-
-        if let legacyKey = config.apiKey, !legacyKey.isEmpty {
-            KeychainStore.saveAPIKey(legacyKey)
-            config = AIConfig(apiBase: config.apiBase, apiKey: nil, model: config.model, hasKey: true)
-            saveAIConfigMetadata(config)
-        }
-
-        let apiKey = KeychainStore.loadAPIKey()
-        aiConfig = AIConfig(
-            apiBase: config.apiBase ?? "https://api.openai.com",
-            apiKey: apiKey,
-            model: config.model ?? "gpt-4o-mini",
-            hasKey: apiKey?.isEmpty == false
-        )
+        let config = localAIConfig()
+        saveAIConfigMetadata(config)
+        aiConfig = config
     }
 
-    func saveAIConfig(apiBase: String, apiKey: String, model: String) {
-        let isDemoConfig = apiBase == AIConfig.appReviewDemoBase || model == AIConfig.appReviewDemoModel
-        let keyToStore = isDemoConfig && apiKey.isEmpty ? AIConfig.appReviewDemoKey : apiKey
-
-        if keyToStore.isEmpty {
-            KeychainStore.deleteAPIKey()
-        } else {
-            KeychainStore.saveAPIKey(keyToStore)
-        }
-
-        let hasKey = isDemoConfig || !keyToStore.isEmpty
-        let config = AIConfig(apiBase: apiBase, apiKey: nil, model: model, hasKey: hasKey)
+    func saveLocalAIConfig() {
+        let config = localAIConfig()
         saveAIConfigMetadata(config)
-        aiConfig = AIConfig(apiBase: apiBase, apiKey: keyToStore.isEmpty ? nil : keyToStore, model: model, hasKey: hasKey)
+        aiConfig = config
+    }
+
+    private func localAIConfig() -> AIConfig {
+        AIConfig(
+            model: AIConfig.appReviewDemoModel,
+            hasKey: true
+        )
     }
 
     private func saveAIConfigMetadata(_ config: AIConfig) {
@@ -723,36 +653,7 @@ class ScannerService: ObservableObject {
     // MARK: - AI Scan
 
     func startAiScan() async {
-        if aiConfig?.isAppReviewDemo == true {
-            await runAppReviewDemoAiScan()
-            return
-        }
-
-        guard let config = aiConfig, config.hasKey == true, let apiKey = config.apiKey, !apiKey.isEmpty else {
-            errorMessage = localizer?.configureAPIKeyFirst ?? "Please configure LLM API Key first"
-            return
-        }
-
-        isAiScanning = true
-        aiStatusMessage = localizer?.collectingDirInfo ?? "Collecting directory info..."
-
-        let dirInfo = collectDirInfo()
-        aiStatusMessage = localizer?.callingAIAnalysis ?? "Calling AI for analysis..."
-
-        let result = await callLLM(config: config, dirInfo: dirInfo)
-
-        isAiScanning = false
-        refreshDiskInfo()
-
-        if result.success, let items = result.items {
-            let localIds = Set(scanItems.map(\.id))
-            let newItems = items.filter { !localIds.contains($0.id) }
-            scanItems.append(contentsOf: newItems)
-            scanItems.sort { $0.size > $1.size }
-            aiStatusMessage = "\(localizer?.aiScanComplete ?? "AI scan complete, found") \(newItems.count) \(localizer?.itemsLabel ?? "items")"
-        } else {
-            errorMessage = "\(localizer?.aiScanFailed ?? "AI scan failed"): \(result.error ?? (localizer?.unknownError ?? "Unknown error"))\n\(localizer?.suggestLocalScan ?? "Suggest using local scan")"
-        }
+        await runAppReviewDemoAiScan()
     }
 
     private func runAppReviewDemoAiScan() async {
@@ -828,9 +729,7 @@ class ScannerService: ObservableObject {
     func startEnhancedScan() async {
         isEnhancedScanning = true
         await scanLocal()
-        if aiConfig?.hasKey == true, let apiKey = aiConfig?.apiKey, !apiKey.isEmpty {
-            await startAiScan()
-        }
+        await startAiScan()
         isEnhancedScanning = false
         refreshDiskInfo()
     }
@@ -1685,14 +1584,10 @@ class ScannerService: ObservableObject {
     private var aiLearningTimer: Timer?
 
     func startAISelfLearning() {
-        operationMonitor.aiSelfLearningEnabled = true
+        operationMonitor.aiSelfLearningEnabled = false
         aiLearningTimer?.invalidate()
-        aiLearningTimer = Timer.scheduledTimer(withTimeInterval: 120.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                await self?.analyzeUnknownAgentsWithAI()
-            }
-        }
-        aiLearningTimer?.fire()
+        aiLearningTimer = nil
+        operationMonitor.curationMessage = "Local analysis mode does not use external AI services."
     }
 
     func stopAISelfLearning() {
@@ -1702,79 +1597,7 @@ class ScannerService: ObservableObject {
     }
 
     func analyzeUnknownAgentsWithAI() async {
-        guard let config = aiConfig, config.hasKey == true else { return }
-        let samples = operationMonitor.getUnknownAgentSamples()
-        guard !samples.isEmpty else { return }
-
-        var pathSummary = ""
-        for sample in samples.prefix(5) {
-            pathSummary += "进程: \(sample.comm) (\(sample.pid))\n"
-            pathSummary += "参数: \(sample.args.prefix(80))\n"
-            pathSummary += "文件: \(sample.paths.prefix(5).joined(separator: ", "))\n\n"
-        }
-
-        let prompt = """
-        你是一个Agent进程分析器。以下是未知进程及其打开的文件路径。请判断：
-        1. 这个进程是否是一个自己的内部目录（而非修改用户文件）？
-        2. 如果它是不同于已有的agent，请给出它的显示名称和关键字
-
-        已知agent: Trae, Cursor, CodeBuddy, Claude, Windsurf, Copilot, Cline, Gemini, ChatGPT, DeepSeek, Kimi, Doubao, Hermes, Codex, Augment, CodeArts
-
-        未知进程：
-        \(pathSummary)
-
-        请以JSON返回，格式：{"recognized":[],"new_agents":[{"name":"显示名","keywords":["kw1","kw2"],"dirs":["/path/to/dir"]}],"noise_dirs":["/path/to/skip"]}
-        只返回JSON，不要其他内容。
-        """
-
-        guard let apiKey = config.apiKey, !apiKey.isEmpty, let apiBase = config.apiBase?.hasSuffix("/v1") == true ? config.apiBase : (config.apiBase ?? "") + "/v1" else { return }
-        let requestBody: [String: Any] = [
-            "model": config.model ?? "gpt-4o-mini",
-            "messages": [["role": "user", "content": prompt]],
-            "temperature": 0.3, "max_tokens": 1000
-        ]
-        guard let bodyData = try? JSONSerialization.data(withJSONObject: requestBody) else { return }
-        guard let url = URL(string: "\(apiBase)/chat/completions") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = bodyData
-        request.timeoutInterval = 30
-
-        do {
-            let (data, resp) = try await URLSession.shared.data(for: request)
-            guard let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 200,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = json["choices"] as? [[String: Any]],
-                  let msg = choices.first?["message"] as? [String: Any],
-                  let content = msg["content"] as? String else { return }
-
-            let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let start = trimmed.firstIndex(of: "{"),
-                  let end = trimmed.lastIndex(of: "}") else { return }
-            let jsonStr = String(trimmed[start...end])
-            guard let jsonData = jsonStr.data(using: .utf8),
-                  let result = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else { return }
-
-            if let noiseDirs = result["noise_dirs"] as? [String] {
-                for dir in noiseDirs {
-                    operationMonitor.addDiscoveredAgentDir(dir)
-                }
-            }
-            if let newAgents = result["new_agents"] as? [[String: Any]] {
-                for agent in newAgents {
-                    if let name = agent["name"] as? String,
-                       let keywords = agent["keywords"] as? [String],
-                       let dirs = agent["dirs"] as? [String] {
-                        operationMonitor.learnAgentKeyword(displayName: name, keywords: keywords, dirs: dirs)
-                    }
-                }
-            }
-            print("[AIMacCleaner] AI self-learning: \(result)")
-        } catch {
-            print("[AIMacCleaner] AI self-learning failed: \(error)")
-        }
+        operationMonitor.discoverAgentSelfDirs()
     }
 
     private var curationTimer: Timer?
@@ -1796,177 +1619,13 @@ class ScannerService: ObservableObject {
 
     func curateWithAI() async {
         operationMonitor.curationMessage = ""
-
-        guard let config = aiConfig, config.hasKey == true else {
-            operationMonitor.curationMessage = localizer?.configureAIModel ?? "Please configure AI model (Settings → AI Settings)"
-            return
-        }
-
         operationMonitor.isCurating = true
-        operationMonitor.curationMessage = localizer?.collectingRawData ?? "Collecting raw data..."
         operationMonitor.discoverAgentSelfDirs()
-
-        let (events, snapshots) = operationMonitor.getRawDataForCuration()
-        print("[AIMacCleaner] curateWithAI: got \(events.count) events, \(snapshots.count) snapshots")
-
-        guard events.count >= 3 else {
-            operationMonitor.isCurating = false
-            operationMonitor.curationMessage = events.isEmpty
-                ? (localizer?.noMonitorData ?? "No monitoring data, please enable Agent monitoring and wait for file operations")
-                : "\(localizer?.insufficientDataPrefix ?? "Insufficient data (only") \(events.count) \(localizer?.continueMonitorRetry ?? "records), continue monitoring and retry")"
-            return
-        }
-
-        operationMonitor.curationMessage = localizer?.callingAIAnalysis ?? "Calling AI for analysis..."
-
-        let recentSnaps = snapshots.filter { s in
-            if let first = events.first?.timestamp, let last = events.last?.timestamp {
-                let range = first.timeIntervalSince1970 ... last.timeIntervalSince1970 + 60
-                return range.contains(s.timestamp.timeIntervalSince1970)
-            }
-            return false
-        }
-
-        let selfDirs = operationMonitor.agentSelfDirs
-        let knownAgentParentDirs = Set(selfDirs.map { ($0 as NSString).deletingLastPathComponent }).union(selfDirs)
-
-        var eventSummary = ""
-        var externalCount = 0
-        for e in events {
-            let path = e.targetPath
-            if path.contains("/.git/") || path.hasSuffix("/.git") || path.hasSuffix(".DS_Store") { continue }
-            if path.contains("/node_modules/") || path.contains("/.vite/") || path.contains("/.turbo/") { continue }
-            if path.contains("/Library/Caches/") || path.contains("/Library/Containers/") || path.contains("/tmp/") { continue }
-            if path.contains("/dist/") || path.contains("/build/") || path.contains("/.next/") { continue }
-            if knownAgentParentDirs.contains(where: { path.hasPrefix($0) }) { continue }
-            externalCount += 1
-            eventSummary += "\(formattedTime(e.timestamp)) | \(e.operationType.rawValue) | \(path)\n"
-        }
-        let lines = eventSummary.components(separatedBy: "\n").filter { !$0.isEmpty }
-        eventSummary = lines.suffix(60).joined(separator: "\n")
-
-        if eventSummary.isEmpty {
-            operationMonitor.isCurating = false
-            operationMonitor.curationMessage = "\(localizer?.curationComplete ?? "Curation complete: ")\(events.count) \(localizer?.allInternalOps ?? "events are all within the agent's own project directory, no external file operations")"
-            return
-        }
-
-        var procSummary = ""
-        let systemComms: Set<String> = ["kernel_task", "launchd", "WindowServer", "Dock", "Finder", "SystemUIServer",
-            "cfprefsd", "distnoted", "logd", "syslogd", "securityd", "trustd", "sysmond", "mds", "mdworker",
-            "corespeechd", "coreaudiod", "WiFi", "bluetoothd", "airportd", "iconservicesagent", "coreduetd",
-            "locationd", "timed", "chronod", "powerd", "configd", "diskarbitrationd", "fseventsd", "sandboxd"]
-        let nonSystemProcs = recentSnaps.filter { snap in
-            let c = snap.comm.lowercased()
-            if systemComms.contains(snap.comm) { return false }
-            if c.hasPrefix("com.apple.") || c.hasPrefix("com.apple") { return false }
-            return true
-        }
-        print("[AIMacCleaner] curateWithAI: \(recentSnaps.count) recent snaps, \(nonSystemProcs.count) non-system")
-        if nonSystemProcs.isEmpty {
-            procSummary = "（\(localizer?.noProcessSnapshot ?? "No process snapshots—ensure Agent monitoring is enabled, or re-enable and wait 30 seconds")）"
-        } else {
-            let grouped = Dictionary(grouping: nonSystemProcs.prefix(200), by: { $0.comm })
-            for (comm, procs) in grouped.sorted(by: { $0.1.count > $1.1.count }) {
-                let pids = Set(procs.map { String($0.pid) }).sorted().joined(separator: ",")
-                let ppids = Set(procs.filter { $0.ppid != 0 }.map { String($0.ppid) }).sorted().joined(separator: ",")
-                let ppidStr = ppids.isEmpty ? "" : " PPIDs[\(ppids)]"
-                procSummary += "\(comm)(x\(procs.count)) PIDs[\(pids)]\(ppidStr)\n"
-            }
-        }
-
-        let prompt = """
-            你是文件操作归因分析器。判断每个文件事件是哪个 Agent 进程操作的。
-
-            【关键】只能用进程PID/PPID数据判断！禁止用目录名猜测（例如文件在 codebuddy 文件夹 ≠ CodeBuddy 的操作）！
-
-            进程快照:
-            \(procSummary)
-
-            文件操作事件（仅外部文件，共\(externalCount)条，取最近60条）:
-            \(eventSummary)
-
-            进程归因方法：找到每个文件对应的进程PID，查看该进程的comm和PPID链，确定属于哪个Agent。
-            例：node(PID=1240, PPID=1234) → trae-cn(PID=1234) → 归因Trae
-
-            返回JSON数组。每条格式：
-            {"path":"/完整路径","op":"修改|创建|删除","agent":"Agent名","confidence":0.8,"evidence":"PID xxxx 进程 xxx 操作"}
-            只返回JSON数组。
-            """
-
-        guard let apiKey = config.apiKey, !apiKey.isEmpty,
-              let apiBase = config.apiBase else {
-            operationMonitor.isCurating = false
-            operationMonitor.curationMessage = localizer?.aiConfigIncomplete ?? "AI configuration incomplete"
-            return
-        }
-        let base = apiBase.hasSuffix("/v1") ? apiBase : apiBase + "/v1"
-        let requestBody: [String: Any] = [
-            "model": config.model ?? "gpt-4o-mini",
-            "messages": [["role": "user", "content": prompt]],
-            "temperature": 0.1, "max_tokens": 4000
-        ]
-        guard let bodyData = try? JSONSerialization.data(withJSONObject: requestBody),
-              let url = URL(string: "\(base)/chat/completions") else {
-            operationMonitor.isCurating = false
-            operationMonitor.curationMessage = localizer?.requestBuildFailed ?? "Request build failed"
-            return
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = bodyData
-        request.timeoutInterval = 60
-
-        do {
-            let (data, resp) = try await URLSession.shared.data(for: request)
-            guard let httpResp = resp as? HTTPURLResponse else {
-                operationMonitor.isCurating = false
-                operationMonitor.curationMessage = localizer?.networkError ?? "Network error"
-                return
-            }
-            guard httpResp.statusCode == 200 else {
-                operationMonitor.isCurating = false
-                let body = String(data: data, encoding: .utf8) ?? ""
-                print("[AIMacCleaner] API error \(httpResp.statusCode): \(body.prefix(200))")
-                operationMonitor.curationMessage = "\(localizer?.apiError ?? "API error") (\(httpResp.statusCode))"
-                return
-            }
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = json["choices"] as? [[String: Any]],
-                  let msg = choices.first?["message"] as? [String: Any],
-                  let content = msg["content"] as? String else {
-                operationMonitor.isCurating = false
-                operationMonitor.curationMessage = localizer?.aiResponseFormatError ?? "AI response format error"
-                return
-            }
-
-            let raw = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            operationMonitor.curationRawResponse = raw
-            print("[AIMacCleaner] AI raw response (\(raw.count) chars)")
-
-            let curated = parseCurationResponse(raw: raw, events: events)
-            if curated == nil {
-                operationMonitor.isCurating = false
-                return
-            }
-
-            if curated!.isEmpty {
-                operationMonitor.isCurating = false
-                operationMonitor.curationMessage = "\(localizer?.curationComplete ?? "Curation complete: ")\(localizer?.allSystemOps ?? "All are internal system operations, no external file changes detected")"
-                operationMonitor.saveCuratedRecords([])
-            } else {
-                operationMonitor.saveCuratedRecords(curated!)
-                operationMonitor.curationMessage = "\(localizer?.curationComplete ?? "Curation complete: ")\(localizer?.identifiedAgentOps ?? "Identified") \(curated!.count) \(localizer?.agentOpsRecords ?? "Agent operations")"
-                operationMonitor.curationRawResponse = ""
-                print("[AIMacCleaner] Curation done: \(curated!.count) records from \(events.count) events")
-            }
-        } catch {
-            operationMonitor.isCurating = false
-            operationMonitor.curationMessage = "\(localizer?.networkRequestFailed ?? "Network request failed"): \(error.localizedDescription)"
-            print("[AIMacCleaner] Curation failed: \(error)")
-        }
+        let (events, _) = operationMonitor.getRawDataForCuration()
+        operationMonitor.isCurating = false
+        operationMonitor.curationMessage = events.isEmpty
+            ? (localizer?.noMonitorData ?? "No monitoring data, please enable Agent monitoring and wait for file operations")
+            : "\(localizer?.curationComplete ?? "Curation complete: ")Local monitor reviewed \(events.count) records without external AI services."
     }
 
     private func parseCurationResponse(raw: String, events: [OperationRecord]) -> [CuratedRecord]? {
@@ -2139,138 +1798,36 @@ class ScannerService: ObservableObject {
     }()
 
     func analyzeImpactWithAI(apps: [AppInfo]) async {
-        guard let config = aiConfig, config.hasKey == true, let apiKey = config.apiKey, !apiKey.isEmpty else {
-            for app in apps { aiAnalysisMap[app.id] = localizer?.pleaseConfigureAPIKey ?? "⚠️ Please configure LLM API Key first" }
-            return
-        }
-
         isAnalyzingImpact = true
         for app in apps { aiAnalysisMap[app.id] = localizer?.analyzingDots ?? "🔄 Analyzing..." }
-
-        let itemsDesc = apps.map { app in
-            """
-            - Name: \(app.displayName)
-              Type: \(app.appType.localizedLabel(localizer ?? Localizer())) / \(localizer?.localizedSubCategory(app.subCategory) ?? app.subCategory)
-              Size: \(formatSize(app.totalSize))
-              Path: \(app.appPath)
-              Risk: \(app.risk) - \(app.riskDesc)
-            """
-        }.joined(separator: "\n")
-
-        let prompt = """
-        You are a macOS system management expert. The user wants to delete/clean the following items. Please analyze the impact of deleting each item.
-
-        For each item, provide a one-sentence description (no more than 30 words) of the main impact after deletion.
-
-        Please strictly return the result in the following JSON format, without any other text:
-        [
-          {
-            "name": "item name",
-            "impact": "one-sentence impact description"
-          }
-        ]
-        Only return the JSON array, do not include markdown code block markers.
-        The items to analyze:
-        \(itemsDesc)
-        """
-
-        let apiBase = (config.apiBase ?? "https://api.openai.com").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: "\(apiBase)/v1/chat/completions") else {
-            for app in apps { aiAnalysisMap[app.id] = localizer?.invalidAPIUrl ?? "❌ Invalid API URL" }
-            isAnalyzingImpact = false
-            return
-        }
-
-        let body: [String: Any] = [
-            "model": config.model ?? "gpt-4o-mini",
-            "messages": [
-                ["role": "user", "content": prompt]
-            ],
-            "temperature": 0.3,
-            "max_tokens": 4096,
-        ]
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 120
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                for app in apps { aiAnalysisMap[app.id] = localizer?.invalidHttpResponse ?? "❌ Invalid HTTP response" }
-                isAnalyzingImpact = false
-                return
-            }
-
-            if http.statusCode != 200 {
-                for app in apps { aiAnalysisMap[app.id] = "❌ \(localizer?.apiError ?? "API error") (\(http.statusCode))" }
-                isAnalyzingImpact = false
-                return
-            }
-
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = json["choices"] as? [[String: Any]],
-                  let message = choices.first?["message"] as? [String: Any] else {
-                for app in apps { aiAnalysisMap[app.id] = localizer?.aiModelFormatError ?? "❌ AI model response format error" }
-                isAnalyzingImpact = false
-                return
-            }
-
-            var content = message["content"] as? String ?? ""
-            if content.isEmpty {
-                content = message["reasoning_content"] as? String ?? ""
-            }
-
-            if content.hasPrefix("```") {
-                if let start = content.range(of: "["), let end = content.range(of: "]", options: .backwards) {
-                    content = String(content[start.lowerBound...end.upperBound])
-                }
-            }
-
-            if let jsonData = content.data(using: .utf8),
-               let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: String]] {
-                for item in items {
-                    let name = item["name"] ?? ""
-                    let impact = item["impact"] ?? ""
-                    for app in apps {
-                        if app.displayName == name || name.contains(app.displayName) || app.displayName.contains(name) {
-                            aiAnalysisMap[app.id] = "🤖 \(impact)"
-                        }
-                    }
-                }
-                for app in apps {
-                    if aiAnalysisMap[app.id]?.hasPrefix("🤖") != true {
-                        aiAnalysisMap[app.id] = localizer?.analysisComplete ?? "🤖 Analysis complete (see original description)"
-                    }
-                }
-            } else {
-                let lines = content.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-                for (i, app) in apps.enumerated() {
-                    if i < lines.count {
-                        aiAnalysisMap[app.id] = "🤖 \(lines[i].trimmingCharacters(in: .whitespacesAndNewlines))"
-                    }
-                }
-            }
-        } catch {
-            for app in apps { aiAnalysisMap[app.id] = "❌ 网络错误" }
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        for app in apps {
+            aiAnalysisMap[app.id] = localImpactSummary(for: app)
         }
 
         isAnalyzingImpact = false
     }
 
+    private func localImpactSummary(for app: AppInfo) -> String {
+        let risk = (ScanItem.RiskLevel(rawValue: app.risk) ?? .caution).localizedLabel(localizer ?? Localizer()).lowercased()
+        if app.appType == .app {
+            return "Local: \(app.displayName) is an installed app. AgentGuard shows inventory and cache context only; uninstall actions are disabled in this App Store build. Risk: \(risk)."
+        }
+        if app.appType == .dependency {
+            return "Local: \(app.displayName) may be required by projects. Review its path and keep it unless you are sure no project depends on it. Risk: \(risk)."
+        }
+        if app.risk == "safe" {
+            return "Local: \(app.displayName) appears to be cache or temporary data. Move items to Trash only after reviewing the listed paths."
+        }
+        return "Local: Review \(app.displayName) carefully before cleanup. AgentGuard avoids irreversible actions and keeps cleanup recoverable through Trash."
+    }
+
     private func moveToTrash(atPath path: String) throws {
         let fm = FileManager.default
         guard fm.fileExists(atPath: path) else { return }
-        if trashInsteadOfDelete {
-            let url = URL(fileURLWithPath: path)
-            var resultURL: NSURL?
-            try fm.trashItem(at: url, resultingItemURL: &resultURL)
-        } else {
-            try fm.removeItem(atPath: path)
-        }
+        let url = URL(fileURLWithPath: path)
+        var resultURL: NSURL?
+        try fm.trashItem(at: url, resultingItemURL: &resultURL)
     }
 
     func emptyTrashIfAllowed() {
@@ -2402,39 +1959,18 @@ class ScannerService: ObservableObject {
     }
 
     func basicUninstall(app: AppInfo) async -> Bool {
-        do {
-            let paths = managedPaths(for: app, action: .basicUninstall)
-            guard !paths.isEmpty else { return false }
-            for path in paths { try moveToTrash(atPath: path) }
-            return true
-        } catch {
-            errorMessage = "\(localizer?.uninstallFailed ?? "Uninstall failed"): \(error.localizedDescription)"
-            return false
-        }
+        errorMessage = "App uninstall actions are disabled in the Mac App Store build."
+        return false
     }
 
     func fullUninstall(app: AppInfo) async -> Bool {
-        do {
-            let paths = managedPaths(for: app, action: .fullUninstall)
-            guard !paths.isEmpty else { return false }
-            for path in paths { try moveToTrash(atPath: path) }
-            return true
-        } catch {
-            errorMessage = "\(localizer?.uninstallFailed ?? "Uninstall failed"): \(error.localizedDescription)"
-            return false
-        }
+        errorMessage = "Full uninstall actions are disabled in the Mac App Store build."
+        return false
     }
 
     func resetApp(app: AppInfo) async -> Bool {
-        do {
-            let paths = managedPaths(for: app, action: .reset)
-            guard !paths.isEmpty else { return false }
-            for path in paths { try moveToTrash(atPath: path) }
-            return true
-        } catch {
-            errorMessage = "\(localizer?.resetAction ?? "Reset failed"): \(error.localizedDescription)"
-            return false
-        }
+        errorMessage = "App reset actions are disabled in the Mac App Store build."
+        return false
     }
 
     private func collectDirInfo() -> String {
@@ -2487,153 +2023,8 @@ class ScannerService: ObservableObject {
     }
 
     private func callLLM(config: AIConfig, dirInfo: String) async -> (success: Bool, items: [ScanItem]?, error: String?) {
-        let apiBase = (config.apiBase ?? "https://api.openai.com").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let urlString = "\(apiBase)/v1/chat/completions"
-
-        guard let url = URL(string: urlString) else {
-            return (success: false, items: nil, error: localizer?.invalidAPIUrl ?? "❌ Invalid API URL")
-        }
-
-        let systemPrompt = """
-        你是一个 macOS 存储空间清理专家。根据用户提供的目录列表和大小信息，分析哪些目录可以安全清理。
-
-        请严格按照以下 JSON 格式返回结果，不要包含任何其他文字：
-        [
-          {
-            "name": "清理项名称",
-            "category": "分类（浏览器/办公/AI Agent/开发/系统/社交/其他）",
-            "app": "所属应用",
-            "risk": "safe 或 caution 或 dangerous",
-            "risk_desc": "删除后的风险和后果说明",
-            "path": "目录路径（用 ~ 表示用户目录）",
-            "reason": "为什么可以清理"
-          }
-        ]
-
-        风险等级：safe=纯缓存可安全删除; caution=删除后可能需重新登录/配置; dangerous=可能丢失数据。
-        只返回确定可以清理的项目，按大小从大到小排序。
-        只返回JSON数组，不要包含markdown代码块标记。
-        """
-
-        let body: [String: Any] = [
-            "model": config.model ?? "gpt-4o-mini",
-            "messages": [
-                ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": "以下是我的 Mac 目录结构和大小说明，请分析哪些可以清理：\n\(dirInfo)"],
-            ],
-            "temperature": 0.1,
-            "max_tokens": 16384,
-        ]
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(config.apiKey ?? "")", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 120
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-
-            guard let http = response as? HTTPURLResponse else {
-                return (success: false, items: nil, error: localizer?.invalidHttpResponse ?? "❌ Invalid HTTP response")
-            }
-
-            if http.statusCode != 200 {
-                if let body = String(data: data, encoding: .utf8) {
-                    return (success: false, items: nil, error: "HTTP \(http.statusCode): \(body.prefix(200))")
-                }
-                return (success: false, items: nil, error: "HTTP \(http.statusCode)")
-            }
-
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = json["choices"] as? [[String: Any]],
-                  let message = choices.first?["message"] as? [String: Any] else {
-                return (success: false, items: nil, error: localizer?.aiModelFormatError ?? "❌ AI model response format error")
-            }
-
-            var content = message["content"] as? String ?? ""
-            let reasoningContent = message["reasoning_content"] as? String ?? ""
-
-            if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                if !reasoningContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    let retryBody: [String: Any] = [
-                        "model": config.model ?? "gpt-4o-mini",
-                        "messages": [
-                            ["role": "system", "content": systemPrompt],
-                            ["role": "user", "content": "以下是我的 Mac 目录结构和大小说明，请分析哪些可以清理：\n\(dirInfo)"],
-                            ["role": "assistant", "content": reasoningContent],
-                            ["role": "user", "content": "请根据以上分析，直接输出JSON数组结果，不要包含任何其他文字。"]
-                        ],
-                        "temperature": 0.1,
-                        "max_tokens": 8192
-                    ]
-
-                    var retryRequest = URLRequest(url: url)
-                    retryRequest.httpMethod = "POST"
-                    retryRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    retryRequest.setValue("Bearer \(config.apiKey ?? "")", forHTTPHeaderField: "Authorization")
-                    retryRequest.timeoutInterval = 120
-                    retryRequest.httpBody = try? JSONSerialization.data(withJSONObject: retryBody)
-
-                    do {
-                        let (retryData, retryResponse) = try await URLSession.shared.data(for: retryRequest)
-                        if let retryHttp = retryResponse as? HTTPURLResponse, retryHttp.statusCode == 200,
-                           let retryJson = try? JSONSerialization.jsonObject(with: retryData) as? [String: Any],
-                           let retryChoices = retryJson["choices"] as? [[String: Any]],
-                           let retryMessage = retryChoices.first?["message"] as? [String: Any] {
-                            let retryContent = retryMessage["content"] as? String ?? ""
-                            if !retryContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                content = retryContent
-                            }
-                        }
-                    } catch {}
-                }
-
-                if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    return (success: false, items: nil, error: "大模型返回内容为空，推理模型思考过程消耗了所有token。请在AI设置中将模型改为 deepseek-chat 后重试。")
-                }
-            }
-
-            let rawContent = content
-            let logPath = SandboxPaths.shared.lastResponsePath
-            try? rawContent.write(toFile: logPath, atomically: true, encoding: .utf8)
-
-            let jsonStr = extractJSON(from: rawContent)
-
-            if let jsonData = jsonStr.data(using: .utf8),
-               let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
-                return buildScanItems(from: items)
-            }
-
-            if let fixed = tryFixJSON(jsonStr),
-               let jsonData = fixed.data(using: .utf8),
-               let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
-                return buildScanItems(from: items)
-            }
-
-            if let fixed = tryFixTruncatedJSON(jsonStr),
-               let jsonData = fixed.data(using: .utf8),
-               let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
-                return buildScanItems(from: items)
-            }
-
-            if let fixed = tryFixJSON(jsonStr),
-               let jsonData = fixed.data(using: .utf8),
-               let wrapper = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
-                for key in ["items", "data", "results", "list"] {
-                    if let items = wrapper[key] as? [[String: Any]] {
-                        return buildScanItems(from: items)
-                    }
-                }
-            }
-
-            let preview = String(rawContent.prefix(300))
-            return (success: false, items: nil, error: "无法解析大模型返回的 JSON\n原始返回已保存到: \(logPath)\n预览: \(preview)")
-
-        } catch {
-            return (success: false, items: nil, error: error.localizedDescription)
-        }
+        let items = makeAppReviewDemoScanItems()
+        return (success: true, items: items, error: nil)
     }
 
     private func extractJSON(from content: String) -> String {

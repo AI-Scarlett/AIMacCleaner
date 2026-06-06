@@ -17,7 +17,6 @@ struct AIMacCleanerApp: App {
     @AppStorage("sensorMonitorEnabled") private var sensorMonitorEnabled = false
     @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
     @AppStorage("quitBehavior") private var quitBehavior: String = "quitAll"
-    @AppStorage("agentCenterIntegrationEnabled") private var agentCenterIntegrationEnabled = true
 
     var body: some Scene {
         WindowGroup {
@@ -43,15 +42,6 @@ struct AIMacCleanerApp: App {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [service] in
                         if monitorEnabled { service.startMonitoring() }
                     }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        if agentCenterIntegrationEnabled {
-                            appDelegate.initializeAgentCenterServices()
-                        }
-                    }
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .agentCenterShouldInitialize)) { _ in
-                    guard agentCenterIntegrationEnabled else { return }
-                    appDelegate.initializeAgentCenterServices()
                 }
         }
         .windowStyle(.titleBar)
@@ -179,6 +169,13 @@ extension Notification.Name {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindow: NSWindow?
+    private var fallbackWindow: NSWindow?
+    private var fallbackService: ScannerService?
+    private var fallbackLocalizer: Localizer?
+    private var fallbackAgentRegistry: AgentRegistry?
+    private var fallbackIslandViewModel: IslandViewModel?
+    private var fallbackSessionsViewModel: SessionsViewModel?
+    private var fallbackConversationWatcher: ConversationWatcher?
     private var forceTerminateOnce = false
     var service: ScannerService?
     var hookServer: HookServer?
@@ -199,9 +196,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var islandCancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.unhide(nil)
         terminateDuplicateAgentGuardInstances()
         DispatchQueue.main.async { [weak self] in
             self?.setupWindowDelegate()
+            self?.ensureLaunchSurfaceVisible(reason: "launch")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
+            self?.ensureLaunchSurfaceVisible(reason: "launch-retry-1")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
+            self?.ensureLaunchSurfaceVisible(reason: "launch-retry-2")
         }
     }
 
@@ -251,8 +257,109 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @MainActor
+    private func ensureLaunchSurfaceVisible(reason: String) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.unhide(nil)
+
+        if let window = bestMainWindow() {
+            mainWindow = window
+            window.delegate = WindowDelegate.shared
+            show(window: window, reason: reason)
+            return
+        }
+
+        createFallbackMainWindow(reason: reason)
+    }
+
+    @MainActor
+    private func bestMainWindow() -> NSWindow? {
+        if let mainWindow, mainWindow.contentView != nil {
+            return mainWindow
+        }
+
+        return NSApp.windows.first { window in
+            guard window.contentView != nil,
+                  !window.isFloatingPanel,
+                  !window.isMiniaturized,
+                  window.canBecomeMain else {
+                return false
+            }
+            return true
+        }
+    }
+
+    @MainActor
+    private func show(window: NSWindow, reason: String) {
+        if !window.isVisible {
+            window.center()
+        }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        print("[AgentGuard] Launch surface visible via \(reason)")
+    }
+
+    @MainActor
+    private func createFallbackMainWindow(reason: String) {
+        if let fallbackWindow {
+            mainWindow = fallbackWindow
+            show(window: fallbackWindow, reason: "\(reason)-existing-fallback")
+            return
+        }
+
+        let service = self.service ?? fallbackService ?? ScannerService()
+        let localizer = localizerContext ?? fallbackLocalizer ?? Localizer()
+        let agentRegistry = agentRegistryContext ?? fallbackAgentRegistry ?? AgentRegistry()
+        let islandViewModel = islandVM ?? fallbackIslandViewModel ?? IslandViewModel()
+        let sessionsViewModel = sessionsVM ?? fallbackSessionsViewModel ?? SessionsViewModel()
+        let conversationWatcher = conversationWatcherContext ?? fallbackConversationWatcher ?? ConversationWatcher()
+
+        fallbackService = service
+        fallbackLocalizer = localizer
+        fallbackAgentRegistry = agentRegistry
+        fallbackIslandViewModel = islandViewModel
+        fallbackSessionsViewModel = sessionsViewModel
+        fallbackConversationWatcher = conversationWatcher
+
+        self.service = service
+        service.localizer = localizer
+        configureAgentCenterContext(
+            islandViewModel: islandViewModel,
+            sessionsViewModel: sessionsViewModel,
+            agentRegistry: agentRegistry,
+            conversationWatcher: conversationWatcher,
+            localizer: localizer
+        )
+
+        let rootView = ContentView()
+            .environmentObject(service)
+            .environmentObject(localizer)
+            .environmentObject(agentRegistry)
+            .environmentObject(islandViewModel)
+            .environmentObject(sessionsViewModel)
+            .environmentObject(conversationWatcher)
+            .frame(minWidth: 960, minHeight: 640)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "AgentGuard"
+        window.contentView = NSHostingView(rootView: rootView)
+        window.delegate = WindowDelegate.shared
+        window.setFrameAutosaveName("AgentGuardMainWindow")
+
+        fallbackWindow = window
+        mainWindow = window
+        show(window: window, reason: "\(reason)-fallback")
+
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         NSApp.setActivationPolicy(.regular)
+        NSApp.unhide(nil)
         NSApp.activate(ignoringOtherApps: true)
 
         if let window = mainWindow {
@@ -260,6 +367,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else if let window = sender.windows.first(where: { !$0.title.isEmpty && $0.className.contains("Window") }) {
             mainWindow = window
             window.makeKeyAndOrderFront(nil)
+        } else {
+            Task { @MainActor in
+                self.ensureLaunchSurfaceVisible(reason: "reopen")
+            }
         }
         return true
     }

@@ -27,6 +27,7 @@ struct AgentGuardTab: View {
     @State private var showExecuteOps = true
     @State private var chartTimeRange = 0
     @State private var chartHoverDate: Date?
+    @State private var chartRefreshID = UUID()
     @State private var toastMessage: String = ""
     @State private var showToast = false
     @State private var toastTask: Task<Void, Never>?
@@ -74,6 +75,15 @@ struct AgentGuardTab: View {
         .animation(.easeInOut(duration: 0.3), value: showToast)
         .onAppear {
             service.ensureAgentGuardDataPipeline()
+            service.refreshOperationRecordsSnapshot()
+            chartRefreshID = UUID()
+        }
+        .onChange(of: chartTimeRange) { _ in
+            chartHoverDate = nil
+            chartRefreshID = UUID()
+        }
+        .onChange(of: service.operationRecords.count) { _ in
+            chartRefreshID = UUID()
         }
     }
 
@@ -940,6 +950,7 @@ struct AgentGuardTab: View {
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                 }
             }
+            .id(chartRefreshID)
             .chartForegroundStyleScale(domain: activeDomain, range: activeRange)
             .chartXScale(domain: chartXDomain)
             .chartYScale(domain: 0...yMax)

@@ -239,20 +239,15 @@ class Localizer: ObservableObject {
 extension Localizer {
     var settingsTitle: String { t("设置", en: "Settings", zhHant: "設定", ja: "設定", ko: "설정", mt: "Settings") }
     var aiSettings: String { t("AI 设置", en: "AI Settings", zhHant: "AI 設定", ja: "AI 設定", ko: "AI 설정", mt: "AI Settings") }
-    var aiSettingsDesc: String { t("配置大模型 API，用于智能分析目录结构和识别可清理项", en: "Configure LLM API for intelligent directory analysis", zhHant: "配置大模型 API，用於智慧分析目錄結構和識別可清理項", ja: "大規模モデルAPIを設定し、ディレクトリ構造のインテリジェント分析とクリーンアップ項目の識別に使用", ko: "대규모 모델 API를 구성하여 디렉토리 구조 스마트 분석 및 정리 가능 항목 식별에 사용", mt: "Configure LLM API for intelligent directory analysis") }
-    var apiBase: String { t("API Base", en: "API Base", zhHant: "API Base", ja: "API Base", ko: "API Base", mt: "API Base") }
-    var apiKey: String { t("API Key", en: "API Key", zhHant: "API Key", ja: "API Key", ko: "API Key", mt: "API Key") }
-    var modelName: String { t("模型名称", en: "Model Name", zhHant: "模型名稱", ja: "モデル名", ko: "모델 이름", mt: "Model Name") }
-    var recommendedConfig: String { t("推荐配置（点击自动填入）", en: "Recommended presets (click to auto-fill)", zhHant: "推薦配置（點選自動填入）", ja: "推奨設定（クリックで自動入力）", ko: "추천 설정 (클릭 시 자동 입력)", mt: "Recommended presets (click to auto-fill)") }
-    var appReviewDemoMode: String { t("App Review 演示模式", en: "App Review Demo Mode", zhHant: "App Review 演示模式", ja: "App Review デモモード", ko: "App Review 데모 모드", mt: "App Review Demo Mode") }
-    var appReviewDemoModeDesc: String { t("无需外部 API Key，使用本地样例数据展示 AI 扫描流程。", en: "Uses local sample data to demonstrate AI scanning without an external API key.", zhHant: "無需外部 API Key，使用本地樣例資料展示 AI 掃描流程。", ja: "外部 API Key なしでローカルサンプルデータを使って AI スキャンを実演します。", ko: "외부 API Key 없이 로컬 샘플 데이터로 AI 스캔 흐름을 보여줍니다.", mt: "Uses local sample data to demonstrate AI scanning without an external API key.") }
-    var useAppReviewDemo: String { t("使用演示模式", en: "Use Demo Mode", zhHant: "使用演示模式", ja: "デモモードを使用", ko: "데모 모드 사용", mt: "Use Demo Mode") }
+    var aiSettingsDesc: String { t("使用本地样例和规则分析目录结构，不需要登录或外部凭据。", en: "Uses local samples and rule-based analysis. No sign-in or external credentials are required.", zhHant: "使用本地樣例和規則分析目錄結構，不需要登入或外部憑據。", ja: "ローカルサンプルとルールベース分析を使用します。サインインや外部認証情報は不要です。", ko: "로컬 샘플과 규칙 기반 분석을 사용합니다. 로그인이나 외부 자격 증명이 필요하지 않습니다.", mt: "Uses local samples and rule-based analysis. No sign-in or external credentials are required.") }
+    var appReviewDemoMode: String { t("本地 AI 分析", en: "Local AI Analysis", zhHant: "本地 AI 分析", ja: "ローカルAI分析", ko: "로컬 AI 분석", mt: "Local AI Analysis") }
+    var appReviewDemoModeDesc: String { t("所有分析都在本机使用样例数据和规则完成，不连接第三方模型服务。", en: "Analysis runs locally with sample data and rules, without connecting to third-party model services.", zhHant: "所有分析都在本機使用樣例資料和規則完成，不連接第三方模型服務。", ja: "分析はサンプルデータとルールでローカル実行され、第三者モデルサービスには接続しません。", ko: "분석은 샘플 데이터와 규칙으로 로컬에서 실행되며 타사 모델 서비스에 연결하지 않습니다.", mt: "Analysis runs locally with sample data and rules, without connecting to third-party model services.") }
 
     var featureToggles: String { t("功能开关", en: "Feature Toggles", zhHant: "功能開關", ja: "機能切替", ko: "기능 토글", mt: "Feature Toggles") }
     var labSettingsTitle: String { t("实验室说明", en: "Lab Overview", zhHant: "實驗室說明", ja: "ラボ概要", ko: "실험실 안내", mt: "Lab Overview") }
-    var labSettingsDesc: String { t("实验室中的功能处于持续迭代阶段，交互、能力范围、收费方式和入口位置都可能根据反馈进行调整。", en: "Features in Lab are still evolving. Their interaction model, capability scope, pricing model, and entry points may change based on feedback.", zhHant: "實驗室中的功能仍在持續迭代，互動方式、能力範圍、收費模式與入口位置都可能依據回饋調整。", ja: "ラボ内の機能は継続的に進化中です。操作方法、対応範囲、課金方式、導線はフィードバックに応じて変更される場合があります。", ko: "실험실 기능은 계속 개선 중입니다. 상호작용 방식, 기능 범위, 과금 방식, 진입 경로는 피드백에 따라 바뀔 수 있습니다.", mt: "Features in Lab are still evolving. Their interaction model, capability scope, pricing model, and entry points may change based on feedback.") }
-    var labSettingsNotice: String { t("这些功能可能随时调整、下线，或改为单独收费。", en: "These features may be adjusted, removed, or moved to separate paid plans at any time.", zhHant: "這些功能可能隨時調整、下線，或改為單獨收費。", ja: "これらの機能は、随時調整・終了、または個別課金へ変更される可能性があります。", ko: "이 기능들은 언제든 조정되거나 제거되거나 별도 유료 기능으로 전환될 수 있습니다.", mt: "These features may be adjusted, removed, or moved to separate paid plans at any time.") }
-    var labFeaturesOverview: String { t("当前实验室包含以下 6 个功能：", en: "The current Lab includes these 6 features:", zhHant: "目前實驗室包含以下 6 個功能：", ja: "現在のラボには次の6機能が含まれます。", ko: "현재 실험실에는 다음 6개 기능이 포함됩니다.", mt: "The current Lab includes these 6 features:") }
+    var labSettingsDesc: String { t("实验室中的功能处于持续迭代阶段，交互、能力范围和入口位置都可能根据反馈进行调整。", en: "Features in Lab are still evolving. Their interaction model, capability scope, and entry points may change based on feedback.", zhHant: "實驗室中的功能仍在持續迭代，互動方式、能力範圍與入口位置都可能依據回饋調整。", ja: "ラボ内の機能は継続的に進化中です。操作方法、対応範囲、導線はフィードバックに応じて変更される場合があります。", ko: "실험실 기능은 계속 개선 중입니다. 상호작용 방식, 기능 범위, 진입 경로는 피드백에 따라 바뀔 수 있습니다.", mt: "Features in Lab are still evolving. Their interaction model, capability scope, and entry points may change based on feedback.") }
+    var labSettingsNotice: String { t("这些功能可能随时调整、下线，或移动到其他入口。", en: "These features may be adjusted, removed, or moved to another entry point at any time.", zhHant: "這些功能可能隨時調整、下線，或移動到其他入口。", ja: "これらの機能は、随時調整・終了、または別の導線へ移動される場合があります。", ko: "이 기능들은 언제든 조정, 제거 또는 다른 진입 경로로 이동될 수 있습니다.", mt: "These features may be adjusted, removed, or moved to another entry point at any time.") }
+    var labFeaturesOverview: String { t("当前实验室包含以下 5 个功能：", en: "The current Lab includes these 5 features:", zhHant: "目前實驗室包含以下 5 個功能：", ja: "現在のラボには次の5機能が含まれます。", ko: "현재 실험실에는 다음 5개 기능이 포함됩니다.", mt: "The current Lab includes these 5 features:") }
     var labFeatureAgentCenterDesc: String { t("统一查看 Agent 接入状态、Hook 安装情况、审批记录和会话流转。", en: "A central place to review agent integrations, hook installation status, approvals, and session flows.", zhHant: "統一查看 Agent 接入狀態、Hook 安裝情況、審批記錄與會話流轉。", ja: "Agent連携、Hook導入状況、承認履歴、セッション遷移をまとめて確認できます。", ko: "Agent 연동 상태, Hook 설치 현황, 승인 기록, 세션 흐름을 한곳에서 확인합니다.", mt: "A central place to review agent integrations, hook installation status, approvals, and session flows.") }
     var labFeatureCleanerDesc: String { t("扫描缓存、日志、更新包和其它可清理数据，帮助释放磁盘空间。", en: "Scans caches, logs, updater packages, and other removable data to help free disk space.", zhHant: "掃描快取、日誌、更新包與其它可清理資料，協助釋放磁碟空間。", ja: "キャッシュ、ログ、更新パッケージなどをスキャンし、空き容量の確保を支援します。", ko: "캐시, 로그, 업데이트 패키지 등 정리 가능한 데이터를 스캔해 디스크 공간 확보를 돕습니다.", mt: "Scans caches, logs, updater packages, and other removable data to help free disk space.") }
     var labFeatureAppDesc: String { t("管理已安装应用，并提供卸载、重置或缓存清理等实验性操作。", en: "Manages installed apps and offers experimental actions such as uninstall, reset, or cache cleanup.", zhHant: "管理已安裝應用，並提供解除安裝、重置或快取清理等實驗性操作。", ja: "インストール済みアプリを管理し、アンインストール、リセット、キャッシュ整理などの実験的操作を提供します。", ko: "설치된 앱을 관리하고 제거, 초기화, 캐시 정리 같은 실험적 작업을 제공합니다.", mt: "Manages installed apps and offers experimental actions such as uninstall, reset, or cache cleanup.") }
@@ -416,6 +411,8 @@ extension Localizer {
     var otherToolsTitle: String { t("其它工具", en: "Other Tools", zhHant: "其它工具", ja: "その他ツール", ko: "기타 도구", mt: "Other Tools") }
     var otherToolsSubtitle: String { t("管理命令行工具", en: "Manage command line tools", zhHant: "管理命令列工具", ja: "CLIツールを管理", ko: "CLI 도구 관리", mt: "Manage command line tools") }
     var refresh: String { t("刷新", en: "Refresh", zhHant: "重新整理", ja: "更新", ko: "새로고침", mt: "Refresh") }
+    var autoRefresh: String { t("自动刷新", en: "Auto Refresh", zhHant: "自動重新整理", ja: "自動更新", ko: "자동 새로고침", mt: "Auto Refresh") }
+    var off: String { t("关闭", en: "Off", zhHant: "關閉", ja: "オフ", ko: "끄기", mt: "Off") }
     var all: String { t("全部", en: "All", zhHant: "全部", ja: "すべて", ko: "전체", mt: "All") }
     var actionConfirm: String { t("确认操作", en: "Confirm Action", zhHant: "確認操作", ja: "操作の確認", ko: "작업 확인", mt: "Confirm Action") }
     var actionComplete: String { t("操作完成", en: "Action Complete", zhHant: "操作完成", ja: "操作完了", ko: "작업 완료", mt: "Action Complete") }
@@ -424,7 +421,7 @@ extension Localizer {
 
     var agentMonitorTitle: String { t("Agent 监控", en: "Agent Monitor", zhHant: "Agent 監控", ja: "Agent モニター", ko: "Agent 모니터", mt: "Agent Monitor") }
     var systemMonitorTitle: String { t("系统监控", en: "System Monitor", zhHant: "系統監控", ja: "システムモニター", ko: "시스템 모니터", mt: "System Monitor") }
-    var agentMonitorSubtitle: String { t("监控 AI Agent 的文件操作", en: "Monitor AI Agent file operations", zhHant: "監控 AI Agent 的檔案操作", ja: "AI Agentのファイル操作をモニタリング", ko: "AI Agent 파일 작업 모니터링", mt: "Monitor AI Agent file operations") }
+    var agentMonitorSubtitle: String { t("监控 AI Agent 的实时操作、历史会话和本机审计记录", en: "Monitor live AI agent operations, local session history, and audit records", zhHant: "監控 AI Agent 的即時操作、歷史會話和本機審計記錄", ja: "AI Agentのリアルタイム操作、ローカルセッション履歴、監査記録をモニタリング", ko: "AI Agent의 실시간 작업, 로컬 세션 기록, 감사 기록 모니터링", mt: "Monitor live AI agent operations, local session history, and audit records") }
     var monitoring: String { t("监控中", en: "Monitoring", zhHant: "監控中", ja: "モニタリング中", ko: "모니터링 중", mt: "Monitoring") }
     var startMonitoring: String { t("开始监控", en: "Start Monitoring", zhHant: "開始監控", ja: "モニタリング開始", ko: "모니터링 시작", mt: "Start Monitoring") }
     var clear: String { t("清空", en: "Clear", zhHant: "清空", ja: "クリア", ko: "지우기", mt: "Clear") }
@@ -445,28 +442,31 @@ extension Localizer {
     var settingsTabVersion: String { t("版本", en: "Version", zhHant: "版本", ja: "版本", ko: "Version", mt: "Version") }
 
     var navCleaner: String { t("Mac 清理", en: "Mac Cleaner", zhHant: "Mac 清理", ja: "Mac クリーナー", ko: "Mac 클리너", mt: "Mac Cleaner") }
+    var navOverview: String { t("概览", en: "Overview", zhHant: "概覽", ja: "概要", ko: "개요", mt: "Overview") }
     var navApp: String { t("APP 管理", en: "App Manager", zhHant: "APP 管理", ja: "アプリ管理", ko: "앱 관리", mt: "App Manager") }
     var navDependency: String { t("依赖管理", en: "Dependency", zhHant: "依賴管理", ja: "依存関係管理", ko: "의존성 관리", mt: "Dependency") }
     var navOther: String { t("其它工具", en: "Other Tools", zhHant: "其它工具", ja: "その他ツール", ko: "기타 도구", mt: "Other Tools") }
     var navOperations: String { t("Agent 监控", en: "Agent Monitor", zhHant: "Agent 監控", ja: "Agent モニター", ko: "Agent 모니터", mt: "Agent Monitor") }
 
     var subCleaner: String { t("扫描并清理存储空间", en: "Scan and clean storage", zhHant: "掃描並清理儲存空間", ja: "ストレージをスキャンしてクリーンアップ", ko: "저장 공간 스캔 및 정리", mt: "Scan and clean storage") }
+    var subOverview: String { t("Agent Top、实时状态与本机风险概览", en: "Agent Top, live status, and local risk overview", zhHant: "Agent Top、即時狀態與本機風險概覽", ja: "Agent Top、ライブ状態、ローカルリスク概要", ko: "Agent Top, 실시간 상태 및 로컬 위험 개요", mt: "Agent Top, live status, and local risk overview") }
     var subApp: String { t("管理已安装的应用", en: "Manage installed apps", zhHant: "管理已安裝的應用", ja: "インストール済みアプリを管理", ko: "설치된 앱 관리", mt: "Manage installed apps") }
     var subDependency: String { t("管理开发依赖", en: "Manage dev dependencies", zhHant: "管理開發依賴", ja: "開発依存関係を管理", ko: "개발 의존성 관리", mt: "Manage dev dependencies") }
     var subOther: String { t("管理命令行工具", en: "Manage CLI tools", zhHant: "管理命令列工具", ja: "CLIツールを管理", ko: "CLI 도구 관리", mt: "Manage CLI tools") }
-    var subOperations: String { t("监控 AI Agent 的文件操作", en: "Monitor AI Agent file operations", zhHant: "監控 AI Agent 的檔案操作", ja: "AI Agentのファイル操作をモニタリング", ko: "AI Agent 파일 작업 모니터링", mt: "Monitor AI Agent file operations") }
+    var subOperations: String { t("实时操作、历史会话与本机审计", en: "Live operations, session history, and local audit", zhHant: "即時操作、歷史會話與本機審計", ja: "リアルタイム操作、セッション履歴、ローカル監査", ko: "실시간 작업, 세션 기록, 로컬 감사", mt: "Live operations, session history, and local audit") }
 
     var searching: String { t("搜索...", en: "Search...", zhHant: "搜尋...", ja: "検索...", ko: "검색...", mt: "Search...") }
     var notFound: String { t("未发现", en: "Not found", zhHant: "未發現", ja: "見つかりません", ko: "찾을 수 없음", mt: "Not found") }
     var selected: String { t("已选", en: "Selected", zhHant: "已選", ja: "選択済み", ko: "선택됨", mt: "Selected") }
     var selectAllBtn: String { t("全选", en: "Select All", zhHant: "全選", ja: "すべて選択", ko: "전체 선택", mt: "Select All") }
     var cancelBtn: String { t("取消", en: "Cancel", zhHant: "取消", ja: "キャンセル", ko: "취소", mt: "Cancel") }
+    var reviewOnly: String { t("仅查看", en: "Review only", zhHant: "僅查看", ja: "表示のみ", ko: "검토 전용", mt: "Review only") }
     var resetAction: String { t("重置", en: "Reset", zhHant: "重置", ja: "リセット", ko: "재설정", mt: "Reset") }
     var basicUninstall: String { t("基础卸载", en: "Basic Uninstall", zhHant: "基礎解除安裝", ja: "基本アンインストール", ko: "기본 제거", mt: "Basic Uninstall") }
     var fullUninstall: String { t("完全卸载", en: "Full Uninstall", zhHant: "完全解除安裝", ja: "完全アンインストール", ko: "완전 제거", mt: "Full Uninstall") }
     var resetDesc: String { t("清除缓存和历史数据，恢复为全新安装状态（APP本身保留）", en: "Clear cache and data, restore to fresh install state", zhHant: "清除快取和歷史資料，恢復為全新安裝狀態（APP本身保留）", ja: "キャッシュとデータをクリアし、新規インストール状態に復元", ko: "캐시와 데이터를 지우고 새 설치 상태로 복원", mt: "Clear cache and data, restore to fresh install state") }
     var basicUninstallDesc: String { t("仅卸载安装文件，保留缓存和历史数据（重新安装后可恢复）", en: "Uninstall only, keep cache and data", zhHant: "僅解除安裝安裝檔案，保留快取和歷史資料（重新安裝後可恢復）", ja: "アンインストールのみ、キャッシュとデータを保持", ko: "제거만 하고 캐시와 데이터 유지", mt: "Uninstall only, keep cache and data") }
-    var fullUninstallDesc: String { t("卸载并清除所有缓存、历史数据和配置（彻底清除，不可恢复）", en: "Uninstall and clear all data (permanent)", zhHant: "解除安裝並清除所有快取、歷史資料和配置（徹底清除，不可恢復）", ja: "アンインストールと全データ消去（完全削除、復元不可）", ko: "제거 및 모든 데이터 삭제（영구 삭제, 복원 불가）", mt: "Uninstall and clear all data (permanent)") }
+    var fullUninstallDesc: String { t("此 App Store 版本不提供完全卸载操作", en: "Full uninstall is not available in this App Store build", zhHant: "此 App Store 版本不提供完全解除安裝操作", ja: "このApp Store版では完全アンインストールは利用できません", ko: "이 App Store 빌드에서는 전체 제거를 사용할 수 없습니다", mt: "Full uninstall is not available in this App Store build") }
     var confirmAction: String { t("确认操作", en: "Confirm Action", zhHant: "確認操作", ja: "操作の確認", ko: "작업 확인", mt: "Confirm Action") }
     var actionDone: String { t("操作完成", en: "Action Done", zhHant: "操作完成", ja: "操作完了", ko: "작업 완료", mt: "Action Done") }
     var confirmBtn: String { t("确认", en: "Confirm", zhHant: "確認", ja: "確認", ko: "확인", mt: "Confirm") }
@@ -511,6 +511,93 @@ extension Localizer {
     var quitAppKeepMenu: String { t("仅退出应用，保留菜单栏监控", en: "Quit App Only, Keep Menu Bar", zhHant: "僅退出應用，保留選單欄監控", ja: "アプリのみ終了、メニューバーモニターを維持", ko: "앱만 종료, 메뉴 막대 모니터 유지", mt: "Quit App Only, Keep Menu Bar")}
 
     var liveMonitor: String { t("实时监控", en: "Live Monitor", zhHant: "實時監控", ja: "リアルタイムモニター", ko: "실시간 모니터", mt: "Live Monitor") }
+    var overviewCleanupByCategory: String { t("清理分类", en: "Cleanup Categories", zhHant: "清理分類", ja: "クリーンアップ分類", ko: "정리 분류", mt: "Cleanup Categories") }
+    var overviewAppCounts: String { t("应用数量", en: "App Counts", zhHant: "應用數量", ja: "アプリ数", ko: "앱 수", mt: "App Counts") }
+    var overviewAgentOperations: String { t("Agent 审计操作", en: "Agent Audit Operations", zhHant: "Agent 審計操作", ja: "Agent 監査操作", ko: "Agent 감사 작업", mt: "Agent Audit Operations") }
+    var overviewTokenUsage: String { t("按 Agent 的 Token 用量", en: "Token Usage by Agent", zhHant: "按 Agent 的 Token 用量", ja: "Agent 別 Token 使用量", ko: "Agent별 Token 사용량", mt: "Token Usage by Agent") }
+    var overviewAgentRuntime: String { t("Agent 运行状态", en: "Agent Runtime", zhHant: "Agent 執行狀態", ja: "Agent 実行状態", ko: "Agent 실행 상태", mt: "Agent Runtime") }
+    var overviewSubtitle: String { t("会话、上下文、Token、项目和本机服务", en: "Sessions, context, tokens, projects, and local services", zhHant: "會話、上下文、Token、專案與本機服務", ja: "セッション、コンテキスト、トークン、プロジェクト、ローカルサービス", ko: "세션, 컨텍스트, 토큰, 프로젝트 및 로컬 서비스", mt: "Sessions, context, tokens, projects, and local services") }
+    var overviewScanningAgentData: String { t("正在扫描 Agent 数据", en: "Scanning Agent data", zhHant: "正在掃描 Agent 資料", ja: "Agent データをスキャン中", ko: "Agent 데이터 스캔 중", mt: "Scanning Agent data") }
+    var overviewAgentSessionsLoaded: String { t("已读取到 Agent 会话", en: "Agent sessions loaded", zhHant: "已讀取到 Agent 會話", ja: "Agent セッションを読み込みました", ko: "Agent 세션을 불러왔습니다", mt: "Agent sessions loaded") }
+    var overviewAuthorizedNoSessions: String { t("已授权，但没有找到会话文件", en: "Authorized, but no session files found", zhHant: "已授權，但沒有找到會話檔案", ja: "許可済みですがセッションファイルは見つかりません", ko: "승인되었지만 세션 파일을 찾지 못했습니다", mt: "Authorized, but no session files found") }
+    var overviewNoAgentFolders: String { t("还没有授权 Agent 数据目录", en: "No Agent data folders authorized", zhHant: "尚未授權 Agent 資料目錄", ja: "Agent データフォルダは未許可です", ko: "승인된 Agent 데이터 폴더가 없습니다", mt: "No Agent data folders authorized") }
+    var overviewScanningDetail: String { t("正在读取授权目录、进程和最近会话文件。", en: "Reading authorized folders, processes, and recent session files.", zhHant: "正在讀取授權目錄、程序與最近會話檔案。", ja: "許可済みフォルダ、プロセス、最近のセッションファイルを読み込んでいます。", ko: "승인된 폴더, 프로세스, 최근 세션 파일을 읽는 중입니다.", mt: "Reading authorized folders, processes, and recent session files.") }
+    var overviewChooseAgentFolders: String { t("请选择 ~/.codex、~/.claude，或按住 Command 多选需要监控的 Agent 数据目录。", en: "Choose ~/.codex, ~/.claude, or Command-select the Agent data folders to monitor.", zhHant: "請選擇 ~/.codex、~/.claude，或按住 Command 多選要監控的 Agent 資料目錄。", ja: "~/.codex、~/.claude、または監視する Agent データフォルダを Command キーで複数選択してください。", ko: "~/.codex, ~/.claude 또는 모니터링할 Agent 데이터 폴더를 Command 키로 다중 선택하세요.", mt: "Choose ~/.codex, ~/.claude, or Command-select the Agent data folders to monitor.") }
+    var overviewSuggestedFolders: String { t("建议选择 ~/.codex、~/.claude 或包含这些目录的主目录。", en: "Choose ~/.codex, ~/.claude, or the home folder containing them.", zhHant: "建議選擇 ~/.codex、~/.claude 或包含這些目錄的主目錄。", ja: "~/.codex、~/.claude、またはそれらを含むホームフォルダを選択してください。", ko: "~/.codex, ~/.claude 또는 이를 포함하는 홈 폴더를 선택하세요.", mt: "Choose ~/.codex, ~/.claude, or the home folder containing them.") }
+    var overviewNeverScanned: String { t("尚未扫描", en: "Not scanned yet", zhHant: "尚未掃描", ja: "未スキャン", ko: "아직 스캔하지 않음", mt: "Not scanned yet") }
+    var overviewLastScan: String { t("上次扫描", en: "Last scan", zhHant: "上次掃描", ja: "前回スキャン", ko: "마지막 스캔", mt: "Last scan") }
+    var overviewNotAuthorized: String { t("未检测到授权目录", en: "No authorized folders", zhHant: "未偵測到授權目錄", ja: "許可済みフォルダなし", ko: "승인된 폴더 없음", mt: "No authorized folders") }
+    var overviewAuthorizedFolders: String { t("已授权", en: "Authorized", zhHant: "已授權", ja: "許可済み", ko: "승인됨", mt: "Authorized") }
+    var overviewFoldersUnit: String { t("个目录", en: " folders", zhHant: "個目錄", ja: "件", ko: "개 폴더", mt: " folders") }
+    var overviewWaitingForSelection: String { t("等待选择目录", en: "Waiting for folder selection", zhHant: "等待選擇目錄", ja: "フォルダ選択待ち", ko: "폴더 선택 대기 중", mt: "Waiting for folder selection") }
+    var overviewScanningAuthorizedFolders: String { t("正在扫描授权目录", en: "Scanning authorized folders", zhHant: "正在掃描授權目錄", ja: "許可済みフォルダをスキャン中", ko: "승인된 폴더 스캔 중", mt: "Scanning authorized folders") }
+    var overviewRescanning: String { t("正在重新扫描", en: "Rescanning", zhHant: "正在重新掃描", ja: "再スキャン中", ko: "다시 스캔 중", mt: "Rescanning") }
+    var overviewScanning: String { t("正在扫描", en: "Scanning", zhHant: "正在掃描", ja: "スキャン中", ko: "스캔 중", mt: "Scanning") }
+    var overviewWaitingSessions: String { t("等待会话", en: "Waiting for sessions", zhHant: "等待會話", ja: "セッション待ち", ko: "세션 대기 중", mt: "Waiting for sessions") }
+    var overviewAuthorizeFolder: String { t("授权目录", en: "Authorize Folder", zhHant: "授權目錄", ja: "フォルダを許可", ko: "폴더 승인", mt: "Authorize Folder") }
+    var overviewReauthorizeFolder: String { t("重新授权", en: "Re-authorize", zhHant: "重新授權", ja: "再認証", ko: "다시 승인", mt: "Re-authorize") }
+    var overviewSessions: String { t("会话", en: "Sessions", zhHant: "會話", ja: "セッション", ko: "세션", mt: "Sessions") }
+    var overviewSession: String { t("会话", en: "Session", zhHant: "會話", ja: "セッション", ko: "세션", mt: "Session") }
+    var overviewTokensTotal: String { t("Token 总量", en: "Total Tokens", zhHant: "Token 總量", ja: "トークン合計", ko: "총 토큰", mt: "Total Tokens") }
+    var overviewHighestContext: String { t("最高上下文", en: "Peak Context", zhHant: "最高上下文", ja: "最大コンテキスト", ko: "최고 컨텍스트", mt: "Peak Context") }
+    var overviewRealtimeStatus: String { t("实时状态", en: "Live Status", zhHant: "即時狀態", ja: "ライブ状態", ko: "실시간 상태", mt: "Live Status") }
+    var overviewLiveAndHistory: String { t("实时 + 最近历史", en: "Live + recent history", zhHant: "即時 + 最近歷史", ja: "ライブ + 最近の履歴", ko: "실시간 + 최근 기록", mt: "Live + recent history") }
+    var overviewWaitingOrStartAgent: String { t("等待授权或启动 Agent", en: "Authorize or start an Agent", zhHant: "等待授權或啟動 Agent", ja: "許可または Agent 起動待ち", ko: "승인 또는 Agent 시작 대기", mt: "Authorize or start an Agent") }
+    var overviewInputOutputCache: String { t("输入、输出和缓存读", en: "Input, output, and cache read", zhHant: "輸入、輸出與快取讀取", ja: "入力、出力、キャッシュ読み取り", ko: "입력, 출력 및 캐시 읽기", mt: "Input, output, and cache read") }
+    var overviewTokenUse: String { t("Token 使用", en: "Token Usage", zhHant: "Token 使用", ja: "トークン使用量", ko: "토큰 사용량", mt: "Token Usage") }
+    var overviewInput: String { t("输入", en: "Input", zhHant: "輸入", ja: "入力", ko: "입력", mt: "Input") }
+    var overviewOutput: String { t("输出", en: "Output", zhHant: "輸出", ja: "出力", ko: "출력", mt: "Output") }
+    var overviewCacheRead: String { t("缓存读", en: "Cache Read", zhHant: "快取讀取", ja: "キャッシュ読み取り", ko: "캐시 읽기", mt: "Cache Read") }
+    var overviewTotal: String { t("总计", en: "Total", zhHant: "總計", ja: "合計", ko: "합계", mt: "Total") }
+    var overviewRefreshRate: String { t("刷新速率", en: "Refresh Rate", zhHant: "刷新速率", ja: "更新速度", ko: "새로고침 속도", mt: "Refresh Rate") }
+    var overviewCurrentTurn: String { t("当前轮次", en: "Current Turn", zhHant: "目前輪次", ja: "現在のターン", ko: "현재 턴", mt: "Current Turn") }
+    var overviewModel: String { t("模型", en: "Model", zhHant: "模型", ja: "モデル", ko: "모델", mt: "Model") }
+    var overviewProjectContext: String { t("项目上下文", en: "Project Context", zhHant: "專案上下文", ja: "プロジェクトコンテキスト", ko: "프로젝트 컨텍스트", mt: "Project Context") }
+    var overviewNoProject: String { t("暂无项目", en: "No projects yet", zhHant: "暫無專案", ja: "プロジェクトなし", ko: "아직 프로젝트 없음", mt: "No projects yet") }
+    var overviewNoProjectHint: String { t("授权数据目录后会按项目聚合上下文和 Token。", en: "Authorize data folders to group context and tokens by project.", zhHant: "授權資料目錄後會按專案彙總上下文與 Token。", ja: "データフォルダを許可すると、プロジェクト別にコンテキストとトークンを集計します。", ko: "데이터 폴더를 승인하면 프로젝트별 컨텍스트와 토큰을 집계합니다.", mt: "Authorize data folders to group context and tokens by project.") }
+    var overviewSessionList: String { t("会话列表", en: "Session List", zhHant: "會話列表", ja: "セッション一覧", ko: "세션 목록", mt: "Session List") }
+    var overviewSearchPlaceholder: String { t("搜索项目、模型或任务", en: "Search projects, models, or tasks", zhHant: "搜尋專案、模型或任務", ja: "プロジェクト、モデル、タスクを検索", ko: "프로젝트, 모델 또는 작업 검색", mt: "Search projects, models, or tasks") }
+    var overviewNoSessions: String { t("没有可显示的会话", en: "No sessions to show", zhHant: "沒有可顯示的會話", ja: "表示するセッションなし", ko: "표시할 세션 없음", mt: "No sessions to show") }
+    var overviewNoSessionsHint: String { t("授权 ~/.codex / ~/.claude，或启动一个 Agent 会话。", en: "Authorize ~/.codex / ~/.claude, or start an Agent session.", zhHant: "授權 ~/.codex / ~/.claude，或啟動一個 Agent 會話。", ja: "~/.codex / ~/.claude を許可するか、Agent セッションを開始してください。", ko: "~/.codex / ~/.claude를 승인하거나 Agent 세션을 시작하세요.", mt: "Authorize ~/.codex / ~/.claude, or start an Agent session.") }
+    var overviewNoActiveSession: String { t("当前没有活跃会话", en: "No active sessions", zhHant: "目前沒有活躍會話", ja: "アクティブなセッションはありません", ko: "현재 활성 세션 없음", mt: "No active sessions") }
+    var overviewNoActiveSessionHint: String { t("实时监听已就绪；当 Agent 进入思考、执行或等待确认时，会显示在这里。", en: "Live monitoring is ready. Sessions appear here when an Agent is thinking, executing, or waiting for confirmation.", zhHant: "即時監聽已就緒；當 Agent 進入思考、執行或等待確認時，會顯示在這裡。", ja: "ライブ監視は準備完了です。Agent が思考、実行、確認待ちになるとここに表示されます。", ko: "실시간 모니터링이 준비되었습니다. Agent가 사고, 실행 또는 확인 대기 상태가 되면 여기에 표시됩니다.", mt: "Live monitoring is ready. Sessions appear here when an Agent is thinking, executing, or waiting for confirmation.") }
+    var overviewAuthorizeAgentData: String { t("授权 Agent 数据目录", en: "Authorize Agent Data Folder", zhHant: "授權 Agent 資料目錄", ja: "Agent データフォルダを許可", ko: "Agent 데이터 폴더 승인", mt: "Authorize Agent Data Folder") }
+    var overviewShowIsland: String { t("显示灵动岛", en: "Show Island", zhHant: "顯示靈動島", ja: "Island を表示", ko: "Island 표시", mt: "Show Island") }
+    var overviewPreviousSession: String { t("上一条会话", en: "Previous session", zhHant: "上一條會話", ja: "前のセッション", ko: "이전 세션", mt: "Previous session") }
+    var overviewNextSession: String { t("下一条会话", en: "Next session", zhHant: "下一條會話", ja: "次のセッション", ko: "다음 세션", mt: "Next session") }
+    var overviewWaitingAgentSession: String { t("等待 Agent 会话", en: "Waiting for Agent session", zhHant: "等待 Agent 會話", ja: "Agent セッション待ち", ko: "Agent 세션 대기 중", mt: "Waiting for Agent session") }
+    var overviewContextWindow: String { t("上下文窗口", en: "Context Window", zhHant: "上下文視窗", ja: "コンテキストウィンドウ", ko: "컨텍스트 창", mt: "Context Window") }
+    var overviewProject: String { t("项目", en: "Project", zhHant: "專案", ja: "プロジェクト", ko: "프로젝트", mt: "Project") }
+    var overviewLocation: String { t("位置", en: "Location", zhHant: "位置", ja: "場所", ko: "위치", mt: "Location") }
+    var overviewSummary: String { t("摘要", en: "Summary", zhHant: "摘要", ja: "概要", ko: "요약", mt: "Summary") }
+    var overviewMemory: String { t("内存", en: "Memory", zhHant: "記憶體", ja: "メモリ", ko: "메모리", mt: "Memory") }
+    var overviewTurns: String { t("轮", en: "Turns", zhHant: "輪", ja: "ターン", ko: "턴", mt: "Turns") }
+    var overviewNeedAuthorize: String { t("需要授权 Agent 数据目录", en: "Agent data folder authorization needed", zhHant: "需要授權 Agent 資料目錄", ja: "Agent データフォルダの許可が必要です", ko: "Agent 데이터 폴더 승인이 필요합니다", mt: "Agent data folder authorization needed") }
+    var overviewNeedAuthorizeHint: String { t("授权 ~/.codex、~/.claude 或项目目录后，才能读取历史命令、审计记录并持续实时监控。", en: "Authorize ~/.codex, ~/.claude, or a project folder to read command history, audit records, and live monitor data.", zhHant: "授權 ~/.codex、~/.claude 或專案目錄後，才能讀取歷史命令、審計記錄並持續即時監控。", ja: "~/.codex、~/.claude、またはプロジェクトフォルダを許可すると、コマンド履歴、監査記録、ライブ監視データを読み取れます。", ko: "~/.codex, ~/.claude 또는 프로젝트 폴더를 승인하면 명령 기록, 감사 기록, 실시간 모니터링 데이터를 읽을 수 있습니다.", mt: "Authorize ~/.codex, ~/.claude, or a project folder to read command history, audit records, and live monitor data.") }
+    var overviewStatusWaiting: String { t("等待", en: "Waiting", zhHant: "等待", ja: "待機", ko: "대기", mt: "Waiting") }
+    var overviewStatusThinking: String { t("思考", en: "Thinking", zhHant: "思考", ja: "思考中", ko: "생각 중", mt: "Thinking") }
+    var overviewStatusExecuting: String { t("执行", en: "Executing", zhHant: "執行", ja: "実行中", ko: "실행 중", mt: "Executing") }
+    var overviewStatusHistory: String { t("历史", en: "History", zhHant: "歷史", ja: "履歴", ko: "기록", mt: "History") }
+    var overviewStatusDone: String { t("完成", en: "Done", zhHant: "完成", ja: "完了", ko: "완료", mt: "Done") }
+    var overviewStatusUnknown: String { t("未知", en: "Unknown", zhHant: "未知", ja: "不明", ko: "알 수 없음", mt: "Unknown") }
+    var overviewContextHealthy: String { t("健康", en: "Healthy", zhHant: "健康", ja: "正常", ko: "정상", mt: "Healthy") }
+    var overviewContextWatch: String { t("需要关注", en: "Watch", zhHant: "需要關注", ja: "注意", ko: "주의 필요", mt: "Watch") }
+    var overviewContextNearLimit: String { t("接近上限", en: "Near limit", zhHant: "接近上限", ja: "上限に近い", ko: "한도 근접", mt: "Near limit") }
+    var systemHealth: String { t("系统健康", en: "System Health", zhHant: "系統健康", ja: "システム健全性", ko: "시스템 상태", mt: "System Health") }
+    var cleanupRisk: String { t("清理风险", en: "Cleanup Risk", zhHant: "清理風險", ja: "クリーンアップリスク", ko: "정리 위험", mt: "Cleanup Risk") }
+    var appFootprint: String { t("应用占用", en: "App Footprint", zhHant: "應用占用", ja: "アプリ使用量", ko: "앱 사용량", mt: "App Footprint") }
+    var activityMix: String { t("活动构成", en: "Activity Mix", zhHant: "活動構成", ja: "アクティビティ構成", ko: "활동 구성", mt: "Activity Mix") }
+    var diskUsage: String { t("磁盘使用", en: "Disk Usage", zhHant: "磁碟使用", ja: "ディスク使用量", ko: "디스크 사용량", mt: "Disk Usage") }
+    var freeSpace: String { t("剩余", en: "free", zhHant: "剩餘", ja: "空き", ko: "남음", mt: "free") }
+    var memoryUsage: String { t("内存使用", en: "Memory Usage", zhHant: "記憶體使用", ja: "メモリ使用量", ko: "메모리 사용량", mt: "Memory Usage") }
+    var cpuUsage: String { t("CPU 使用", en: "CPU Usage", zhHant: "CPU 使用", ja: "CPU 使用量", ko: "CPU 사용량", mt: "CPU Usage") }
+    var cpuCores: String { t("核心", en: "cores", zhHant: "核心", ja: "コア", ko: "코어", mt: "cores") }
+    var cleanupCandidates: String { t("可清理项", en: "Cleanup Items", zhHant: "可清理項", ja: "クリーンアップ候補", ko: "정리 항목", mt: "Cleanup Items") }
+    var totalSizeLabel: String { t("总大小", en: "Total Size", zhHant: "總大小", ja: "合計サイズ", ko: "총 크기", mt: "Total Size") }
+    var activeAgents: String { t("活跃 Agent", en: "Active Agents", zhHant: "活躍 Agent", ja: "アクティブ Agent", ko: "활성 Agent", mt: "Active Agents") }
+    var contextWindow: String { t("上下文", en: "Context", zhHant: "上下文", ja: "コンテキスト", ko: "컨텍스트", mt: "Context") }
+    var openPorts: String { t("端口", en: "Ports", zhHant: "連接埠", ja: "ポート", ko: "포트", mt: "Ports") }
+    var latestActivity: String { t("最近活动", en: "Latest", zhHant: "最近活動", ja: "最新", ko: "최근", mt: "Latest") }
     var audit: String { t("审计", en: "Audit", zhHant: "審計", ja: "監査", ko: "감사", mt: "Audit") }
     var auditColon: String { t("审计: ", en: "Audit: ", zhHant: "審計: ", ja: "監査: ", ko: "감사: ", mt: "Audit: ") }
     var auditRecordCount: String { t("条记录", en: "records", zhHant: "條記錄", ja: "件の記録", ko: "건의 기록", mt: "records") }
@@ -736,7 +823,7 @@ extension Localizer {
     var updateChecking: String { t("更新检查", en: "Update Checking", zhHant: "更新檢查", ja: "アップデート確認", ko: "업데이트 확인", mt: "Update Checking") }
     var updateCheckingDesc: String { t("互联网模式下，可以检查已安装应用、AI Agent、CLI 工具和依赖的更新", en: "In internet mode, the app can check for updates of installed apps, AI agents, CLI tools, and dependencies.", zhHant: "網際網路模式下，可以檢查已安裝應用、AI Agent、CLI 工具和依賴的更新", ja: "インターネットモードでは、インストール済みアプリ・AI Agent・CLIツール・依存のアップデートを確認できます", ko: "인터넷 모드에서 설치된 앱, AI Agent, CLI 도구, 의존성의 업데이트를 확인할 수 있습니다", mt: "In internet mode, the app can check for updates of installed apps, AI agents, CLI tools, and dependencies.") }
     var movedToTrash: String { t("已移入回收站", en: "Moved to Trash", zhHant: "已移入回收站", ja: "ゴミ箱に移動しました", ko: "휴지통으로 이동됨", mt: "Moved to Trash") }
-    var configureAPIKeyFirst: String { t("请先配置大模型 API Key", en: "Please configure LLM API Key first", zhHant: "請先配置大模型 API Key", ja: "大規模モデルAPI Keyを先に設定してください", ko: "대규모 모델 API Key를 먼저 설정하세요", mt: "Please configure LLM API Key first") }
+    var configureAPIKeyFirst: String { t("本地分析已启用", en: "Local analysis is enabled", zhHant: "本地分析已啟用", ja: "ローカル分析が有効です", ko: "로컬 분석이 활성화되었습니다", mt: "Local analysis is enabled") }
     var appReviewDemoStatus: String { t("正在生成 App Review 演示扫描结果...", en: "Generating App Review demo scan results...", zhHant: "正在生成 App Review 演示掃描結果...", ja: "App Review デモスキャン結果を生成中...", ko: "App Review 데모 스캔 결과 생성 중...", mt: "Generating App Review demo scan results...") }
     var collectingDirInfo: String { t("正在收集目录信息...", en: "Collecting directory info...", zhHant: "正在收集目錄資訊...", ja: "ディレクトリ情報を収集中...", ko: "디렉토리 정보 수집 중...", mt: "Collecting directory info...") }
     var callingAIAnalysis: String { t("正在调用大模型分析...", en: "Calling AI for analysis...", zhHant: "正在呼叫大模型分析...", ja: "AI分析を呼び出し中...", ko: "AI 분석 호출 중...", mt: "Calling AI for analysis...") }
@@ -805,7 +892,7 @@ extension Localizer {
     var updateInstallFailedApp: String { t("更新安装失败：安装包中未找到应用", en: "Update install failed: app not found in installer", zhHant: "更新安裝失敗：安裝包中未找到應用", ja: "アップデートインストール失敗：インストーラーにアプリが見つかりません", ko: "업데이트 설치 실패: 설치 패키지에서 앱을 찾을 수 없음", mt: "Update install failed: app not found in installer") }
     var updateInstallFailedCopy: String { t("更新安装失败：无法复制应用", en: "Update install failed: cannot copy app", zhHant: "更新安裝失敗：無法複製應用", ja: "アップデートインストール失敗：アプリをコピーできません", ko: "업데이트 설치 실패: 앱을 복사할 수 없음", mt: "Update install failed: cannot copy app") }
     var updateSuccess: String { t("已成功更新到最新版本", en: "Successfully updated to latest version", zhHant: "已成功更新到最新版本", ja: "最新バージョンへの更新に成功しました", ko: "최신 버전으로 업데이트 성공", mt: "Successfully updated to latest version") }
-    var pleaseConfigureAPIKey: String { t("⚠️ 请先配置大模型 API Key", en: "⚠️ Please configure LLM API Key first", zhHant: "⚠️ 請先配置大模型 API Key", ja: "⚠️ 大規模モデルAPI Keyを先に設定してください", ko: "⚠️ 대규모 모델 API Key를 먼저 설정하세요", mt: "⚠️ Please configure LLM API Key first") }
+    var pleaseConfigureAPIKey: String { t("本地分析已启用", en: "Local analysis is enabled", zhHant: "本地分析已啟用", ja: "ローカル分析が有効です", ko: "로컬 분석이 활성화되었습니다", mt: "Local analysis is enabled") }
     var analyzingDots: String { t("🔄 分析中...", en: "🔄 Analyzing...", zhHant: "🔄 分析中...", ja: "🔄 分析中...", ko: "🔄 분석 중...", mt: "🔄 Analyzing...") }
     var invalidAPIUrl: String { t("❌ 无效的 API 地址", en: "❌ Invalid API URL", zhHant: "❌ 無效的 API 地址", ja: "❌ 無効なAPI URL", ko: "❌ 유효하지 않은 API URL", mt: "❌ Invalid API URL") }
     var invalidHttpResponse: String { t("❌ 无效的 HTTP 响应", en: "❌ Invalid HTTP response", zhHant: "❌ 無效的 HTTP 響應", ja: "❌ 無効なHTTPレスポンス", ko: "❌ 유효하지 않은 HTTP 응답", mt: "❌ Invalid HTTP response") }
@@ -1063,24 +1150,11 @@ extension Localizer {
     var operationsUnit: String { t("次操作", en: "ops", zhHant: "次操作", ja: "回操作", ko: "회 작업", mt: "ops") }
     var selectDirectory: String { t("选择目录", en: "Select Directory", zhHant: "選擇目錄", ja: "ディレクトリを選択", ko: "디렉토리 선택", mt: "Select Directory") }
     var navToolbox: String { t("实验室", en: "Lab", zhHant: "實驗室", ja: "ラボ", ko: "실험실", mt: "Lab") }
-    var subToolbox: String { t("实验性质工具，功能可能调整、下线或单独收费", en: "Experimental tools that may change, be removed, or be priced separately", zhHant: "實驗性質工具，功能可能調整、下線或單獨收費", ja: "変更、削除、または個別課金される可能性がある実験的ツール", ko: "변경, 제거 또는 별도 과금될 수 있는 실험적 도구", mt: "Experimental tools that may change, be removed, or be priced separately") }
+    var subToolbox: String { t("实验性质工具，功能可能调整、下线或移动入口", en: "Experimental tools that may change, be removed, or move to another entry point", zhHant: "實驗性質工具，功能可能調整、下線或移動入口", ja: "変更、削除、または別の導線へ移動される可能性がある実験的ツール", ko: "변경, 제거 또는 다른 진입 경로로 이동될 수 있는 실험적 도구", mt: "Experimental tools that may change, be removed, or move to another entry point") }
     var tokenScopeTitle: String { t("Token 统计", en: "Token 统计", zhHant: "Token 統計", ja: "Token 統計", ko: "Token 통계", mt: "Token 统计") }
     var tokenScopeSubtitle: String { t("Token、成本、配额与项目归因分析", en: "Token, cost, quota, and project attribution analytics", zhHant: "Token、成本、配額與專案歸因分析", ja: "トークン、コスト、クォータ、プロジェクト帰属分析", ko: "토큰, 비용, 할당량, 프로젝트 귀속 분석", mt: "Token, cost, quota, and project attribution analytics") }
     var tokenScopeSyncNow: String { t("立即同步", en: "Sync Now", zhHant: "立即同步", ja: "今すぐ同期", ko: "지금 동기화", mt: "Sync Now") }
     var tokenScopeSelectDataFolder: String { t("授权数据目录", en: "Authorize Data Folder", zhHant: "授權資料目錄", ja: "データフォルダを許可", ko: "데이터 폴더 승인", mt: "Authorize Data Folder") }
-    var tokenScopeProviderAuth: String { t("Provider 授权", en: "Provider Authorization", zhHant: "Provider 授權", ja: "Provider 認可", ko: "Provider 승인", mt: "Provider Authorization") }
-    var tokenScopeProviderAuthDesc: String { t("显式连接官方 Provider 凭据，或授权本机数据目录。凭据只保存在本机 Keychain。", en: "Explicitly connect official provider credentials or authorize local data folders. Credentials are stored only in the local Keychain.", zhHant: "明確連接官方 Provider 憑據，或授權本機資料目錄。憑據只保存在本機 Keychain。", ja: "公式 Provider 認証情報を明示的に接続するか、ローカルデータフォルダを許可します。認証情報はローカル Keychain のみに保存されます。", ko: "공식 Provider 자격 증명을 명시적으로 연결하거나 로컬 데이터 폴더를 승인합니다. 자격 증명은 로컬 Keychain에만 저장됩니다.", mt: "Explicitly connect official provider credentials or authorize local data folders. Credentials are stored only in the local Keychain.") }
-    var tokenScopeAPIKey: String { t("API Key / Access Token", en: "API Key / Access Token", zhHant: "API Key / Access Token", ja: "API Key / Access Token", ko: "API Key / Access Token", mt: "API Key / Access Token") }
-    var tokenScopeCredentialSaved: String { t("API Key 已保存到 Keychain", en: "API Key saved in Keychain", zhHant: "API Key 已保存到 Keychain", ja: "API Key は Keychain に保存済み", ko: "API Key가 Keychain에 저장됨", mt: "API Key saved in Keychain") }
-    var tokenScopeNotAuthorized: String { t("未授权", en: "Not Authorized", zhHant: "未授權", ja: "未認可", ko: "승인되지 않음", mt: "Not Authorized") }
-    var tokenScopeAPIKeyPrivacy: String { t("不会读取浏览器 Cookie，不抓取网页控制台；仅在你点击保存后写入 Keychain。", en: "AgentGuard does not read browser cookies or scrape web dashboards; it writes this value to Keychain only after you save it.", zhHant: "不會讀取瀏覽器 Cookie，不抓取網頁控制台；僅在你點擊儲存後寫入 Keychain。", ja: "ブラウザ Cookie や Web ダッシュボードは読み取りません。保存時のみ Keychain に書き込みます。", ko: "브라우저 Cookie나 웹 대시보드를 읽지 않으며 저장을 누른 뒤에만 Keychain에 기록합니다.", mt: "AgentGuard does not read browser cookies or scrape web dashboards; it writes this value to Keychain only after you save it.") }
-    var tokenScopeOAuthPolicyNote: String { t("OAuth 可以接入，但必须使用 Provider 官方授权页与明确 scope；当前先支持用户主动粘贴 API Key。后续 Provider 提供稳定 usage API 时，可在这里启用官方 OAuth。", en: "OAuth can be supported when it uses the provider's official authorization page and explicit scopes. This version supports user-supplied API keys first; official OAuth can be enabled here when a provider exposes a stable usage API.", zhHant: "OAuth 可以接入，但必須使用 Provider 官方授權頁與明確 scope；目前先支援使用者主動貼上 API Key。後續 Provider 提供穩定 usage API 時，可在這裡啟用官方 OAuth。", ja: "OAuth は Provider の公式認可ページと明確な scope を使う場合に対応できます。現版ではまずユーザー入力の API Key をサポートし、Provider が安定した usage API を提供したら公式 OAuth を有効化できます。", ko: "OAuth는 Provider의 공식 승인 페이지와 명확한 scope를 사용할 때 지원할 수 있습니다. 현재 버전은 사용자가 직접 입력한 API Key를 먼저 지원하며, Provider가 안정적인 usage API를 제공하면 여기에서 공식 OAuth를 활성화할 수 있습니다.", mt: "OAuth can be supported when it uses the provider's official authorization page and explicit scopes. This version supports user-supplied API keys first; official OAuth can be enabled here when a provider exposes a stable usage API.") }
-    var tokenScopeOpenAIAuthDesc: String { t("用于读取你授权账户的官方用量数据，或结合本机日志做成本估算。", en: "Used to read official usage data for the account you authorize, or to enrich local log-based cost estimates.", zhHant: "用於讀取你授權帳戶的官方用量資料，或結合本機日誌做成本估算。", ja: "認可したアカウントの公式 usage データ取得、またはローカルログのコスト推定補強に使用します。", ko: "승인한 계정의 공식 usage 데이터를 읽거나 로컬 로그 기반 비용 추정을 보강하는 데 사용합니다.", mt: "Used to read official usage data for the account you authorize, or to enrich local log-based cost estimates.") }
-    var tokenScopeAnthropicAuthDesc: String { t("用于 Claude/Anthropic 用量归因；不会读取 Claude 网页 Cookie。", en: "Used for Claude/Anthropic usage attribution; AgentGuard does not read Claude web cookies.", zhHant: "用於 Claude/Anthropic 用量歸因；不會讀取 Claude 網頁 Cookie。", ja: "Claude/Anthropic の usage 帰属に使用します。Claude Web Cookie は読み取りません。", ko: "Claude/Anthropic usage 귀속에 사용하며 Claude 웹 Cookie는 읽지 않습니다.", mt: "Used for Claude/Anthropic usage attribution; AgentGuard does not read Claude web cookies.") }
-    var tokenScopeGoogleAuthDesc: String { t("用于 Gemini API 用量归因；仅使用你主动提供的凭据。", en: "Used for Gemini API usage attribution; only the credential you provide is used.", zhHant: "用於 Gemini API 用量歸因；僅使用你主動提供的憑據。", ja: "Gemini API usage 帰属に使用します。ユーザーが提供した認証情報のみを使用します。", ko: "Gemini API usage 귀속에 사용하며 사용자가 제공한 자격 증명만 사용합니다.", mt: "Used for Gemini API usage attribution; only the credential you provide is used.") }
-    var tokenScopeDeepSeekAuthDesc: String { t("用于 DeepSeek API 用量与成本估算。", en: "Used for DeepSeek API usage and cost attribution.", zhHant: "用於 DeepSeek API 用量與成本估算。", ja: "DeepSeek API の usage とコスト帰属に使用します。", ko: "DeepSeek API usage 및 비용 귀속에 사용합니다.", mt: "Used for DeepSeek API usage and cost attribution.") }
-    var tokenScopeQwenAuthDesc: String { t("用于 Qwen/DashScope 用量归因。", en: "Used for Qwen/DashScope usage attribution.", zhHant: "用於 Qwen/DashScope 用量歸因。", ja: "Qwen/DashScope usage 帰属に使用します。", ko: "Qwen/DashScope usage 귀속에 사용합니다.", mt: "Used for Qwen/DashScope usage attribution.") }
-    var tokenScopeOpenRouterAuthDesc: String { t("用于 OpenRouter 汇总用量与模型成本归因。", en: "Used for OpenRouter aggregated usage and model cost attribution.", zhHant: "用於 OpenRouter 彙總用量與模型成本歸因。", ja: "OpenRouter の集約 usage とモデルコスト帰属に使用します。", ko: "OpenRouter 집계 usage 및 모델 비용 귀속에 사용합니다.", mt: "Used for OpenRouter aggregated usage and model cost attribution.") }
     var tokenScopeLocalData: String { t("本机真实数据", en: "Local Real Data", zhHant: "本機真實資料", ja: "ローカル実データ", ko: "로컬 실제 데이터", mt: "Local Real Data") }
     var tokenScopeSampleData: String { t("实验室示例数据", en: "Lab Sample Data", zhHant: "實驗室範例資料", ja: "ラボサンプルデータ", ko: "실험실 샘플 데이터", mt: "Lab Sample Data") }
     var tokenScopeScanning: String { t("扫描中", en: "Scanning", zhHant: "掃描中", ja: "スキャン中", ko: "스캔 중", mt: "Scanning") }
@@ -1155,7 +1229,7 @@ extension Localizer {
 
     var cmdDeleteFiles: String { t("删除文件", en: "Delete files", zhHant: "刪除檔案", ja: "ファイルを削除", ko: "파일 삭제", mt: "Delete files") }
     var cmdRecursiveDelete: String { t("递归强制删除", en: "Recursive force delete", zhHant: "遞迴強制刪除", ja: "再帰的強制削除", ko: "재귀 강제 삭제", mt: "Recursive force delete") }
-    var cmdDeleteFilesCon: String { t("文件将被永久删除", en: "Files will be permanently removed", zhHant: "檔案將被永久刪除", ja: "ファイルが永久に削除されます", ko: "파일이 영구 삭제됩니다", mt: "Files will be permanently removed") }
+    var cmdDeleteFilesCon: String { t("文件可能被删除；AgentGuard 会提示你先复核", en: "Files may be removed; AgentGuard asks you to review first", zhHant: "檔案可能被刪除；AgentGuard 會提示你先複核", ja: "ファイルが削除される可能性があります。AgentGuardは先に確認を促します", ko: "파일이 제거될 수 있으며 AgentGuard가 먼저 검토를 요청합니다", mt: "Files may be removed; AgentGuard asks you to review first") }
     var cmdRecursiveDeleteCon: String { t("整个目录树将被无条件删除", en: "Entire directory trees will be deleted without confirmation", zhHant: "整個目錄樹將被無條件刪除", ja: "ディレクトリツリー全体が確認なしで削除されます", ko: "전체 디렉토리 트리가 확인 없이 삭제됩니다", mt: "Entire directory trees will be deleted without confirmation") }
     var cmdCreateDir: String { t("创建目录", en: "Create directory", zhHant: "建立目錄", ja: "ディレクトリ作成", ko: "디렉토리 생성", mt: "Create directory") }
     var cmdCreateDirCon: String { t("将创建新的目录", en: "New directory will be created", zhHant: "將建立新的目錄", ja: "新しいディレクトリが作成されます", ko: "새 디렉토리가 생성됩니다", mt: "New directory will be created") }

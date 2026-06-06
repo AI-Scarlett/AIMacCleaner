@@ -335,7 +335,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-					CURRENT_PROJECT_VERSION = 14;
+					CURRENT_PROJECT_VERSION = 21;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
@@ -346,7 +346,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 2.0.0;
+			MARKETING_VERSION = 2.0.2;
 			OPTIMIZATION_LEVEL = "-O";
 				PRODUCT_BUNDLE_IDENTIFIER = com.aimaccleaner.app;
 				PRODUCT_NAME = AgentGuard;
@@ -481,7 +481,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-					CURRENT_PROJECT_VERSION = 14;
+					CURRENT_PROJECT_VERSION = 21;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
@@ -492,7 +492,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 2.0.0;
+			MARKETING_VERSION = 2.0.2;
 			OPTIMIZATION_LEVEL = "-Onone";
 				PRODUCT_BUNDLE_IDENTIFIER = com.aimaccleaner.app;
 				PRODUCT_NAME = AgentGuard;

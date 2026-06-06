@@ -388,7 +388,7 @@ class IntelMigrationScanner: ObservableObject {
                 success = downloadURL != nil
 
             case .cli:
-                try? FileManager.default.removeItem(atPath: appPath)
+                try? FileManager.default.trashItem(at: URL(fileURLWithPath: appPath), resultingItemURL: nil)
 
                 await MainActor.run {
                     if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
@@ -457,7 +457,7 @@ class IntelMigrationScanner: ObservableObject {
                 var resultURL: NSURL?
                 try FileManager.default.trashItem(at: URL(fileURLWithPath: item.path), resultingItemURL: &resultURL)
             case .cli:
-                try FileManager.default.removeItem(atPath: item.path)
+                try FileManager.default.trashItem(at: URL(fileURLWithPath: item.path), resultingItemURL: nil)
             case .homebrew:
                 break
             }

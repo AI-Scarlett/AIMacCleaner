@@ -1143,7 +1143,7 @@ class AgentGuardFeature: ObservableObject {
 
     private func guessCommandDescription(_ cmd: String) -> (function: String, consequence: String) {
         let map: [(patterns: [String], function: String, consequence: String)] = [
-            (["rm "], "Delete files", "Files will be permanently removed"),
+            (["rm "], "Delete files", "Files may be removed; AgentGuard asks you to review first"),
             (["rm -rf", "rm -r"], "Recursive force delete", "Entire directory trees will be deleted without confirmation"),
             (["mkdir "], "Create directory", "New directory will be created"),
             (["cp ", "copy "], "Copy files", "Files will be duplicated to target location"),
@@ -1205,7 +1205,7 @@ class AgentGuardFeature: ObservableObject {
         let map: [String: String] = [
             "Delete files": localizer.cmdDeleteFiles,
             "Recursive force delete": localizer.cmdRecursiveDelete,
-            "Files will be permanently removed": localizer.cmdDeleteFilesCon,
+            "Files may be removed; AgentGuard asks you to review first": localizer.cmdDeleteFilesCon,
             "Entire directory trees will be deleted without confirmation": localizer.cmdRecursiveDeleteCon,
             "Create directory": localizer.cmdCreateDir,
             "New directory will be created": localizer.cmdCreateDirCon,

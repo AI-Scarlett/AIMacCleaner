@@ -180,74 +180,13 @@ class StorageAnalyzer: ObservableObject {
     }
 
     func analyzeFileWithAI(file: StorageFile, config: AIConfig) async -> String? {
-        guard let apiKey = config.apiKey, !apiKey.isEmpty, let apiBase = config.apiBase else { return nil }
-        let prompt = """
-        分析以下文件/目录是否可以安全删除或清理：
-        - 名称: \(file.name)
-        - 路径: \(file.path)
-        - 大小: \(ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file))
-        - 类型: \(file.isDirectory ? "目录" : "文件")
-        \(file.modifiedDate != nil ? "- 最后修改: \(formatDate(file.modifiedDate!))" : "")
-        请简洁回答：
-        1. 这是什么文件/目录？
-        2. 是否可以删除？(可以删除/谨慎删除/不要删除)
-        3. 删除后有什么影响？
-        """
-        let requestBody: [String: Any] = ["model": config.model ?? "gpt-4o-mini", "messages": [["role": "user", "content": prompt]], "temperature": 0.3, "max_tokens": 300]
-        guard let bodyData = try? JSONSerialization.data(withJSONObject: requestBody) else { return nil }
-        let urlString = apiBase.hasSuffix("/v1") ? "\(apiBase)/chat/completions" : "\(apiBase)/v1/chat/completions"
-        guard let url = URL(string: urlString) else { return nil }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = bodyData
-        request.timeoutInterval = 30
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = json["choices"] as? [[String: Any]],
-                  let message = choices.first?["message"] as? [String: Any],
-                  let content = message["content"] as? String else { return nil }
-            return content
-        } catch { return nil }
+        let type = file.isDirectory ? "directory" : "file"
+        return "Local analysis: \(file.name) is a \(type) using \(file.sizeFormatted). Review the path before cleanup; AgentGuard only moves selected items to Trash."
     }
 
     func analyzeCategoryWithAI(category: StorageCategory, config: AIConfig) async -> String? {
-        guard let apiKey = config.apiKey, !apiKey.isEmpty, let apiBase = config.apiBase else { return nil }
-        let topFiles = category.files.prefix(20).map { "- \($0.name): \($0.sizeFormatted) (\($0.path))" }.joined(separator: "\n")
-        let prompt = """
-        分析以下「\(category.name)」类别的存储占用，判断哪些可以删除清理：
-        - 总占用: \(category.sizeFormatted)
-        - 路径: \(category.path)
-        - 主要文件：
-        \(topFiles)
-        请简洁回答：
-        1. 该类别的主要存储占用是什么？
-        2. 哪些可以安全清理？
-        3. 哪些需要谨慎处理？
-        4. 预计可释放多少空间？
-        """
-        let requestBody: [String: Any] = ["model": config.model ?? "gpt-4o-mini", "messages": [["role": "user", "content": prompt]], "temperature": 0.3, "max_tokens": 500]
-        guard let bodyData = try? JSONSerialization.data(withJSONObject: requestBody) else { return nil }
-        let urlString = apiBase.hasSuffix("/v1") ? "\(apiBase)/chat/completions" : "\(apiBase)/v1/chat/completions"
-        guard let url = URL(string: urlString) else { return nil }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = bodyData
-        request.timeoutInterval = 30
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = json["choices"] as? [[String: Any]],
-                  let message = choices.first?["message"] as? [String: Any],
-                  let content = message["content"] as? String else { return nil }
-            return content
-        } catch { return nil }
+        let topFiles = category.files.prefix(3).map(\.name).joined(separator: ", ")
+        return "Local analysis: \(category.name) uses \(category.sizeFormatted). Largest visible items: \(topFiles.isEmpty ? "none" : topFiles). Clean only reviewed items; changes are recoverable from Trash."
     }
 
     private func formatDate(_ date: Date) -> String {

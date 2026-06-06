@@ -117,27 +117,6 @@ struct MenuBarMonitor: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
                 .buttonStyle(.plain)
-
-                Button {
-                    dismissMenuBarPopoverSoon()
-                    NotificationCenter.default.post(name: .agentCenterShouldInitialize, object: nil)
-                    islandViewModel.lastStatusText = localizer.navAgentCenter
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                        islandViewModel.show(level: islandViewModel.approvalQueueCount > 0 ? .expanded : .compact)
-                    }
-                } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Image(systemName: "capsule.portrait.tophalf.filled")
-                        Text(localizer.agentCenterShowIsland)
-                    }
-                    .font(Theme.Font.captionMedium)
-                    .foregroundStyle(Theme.Colors.purple)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Theme.Spacing.xs + 1)
-                    .background(Theme.Colors.purple.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, Theme.Spacing.lg)
             .padding(.top, Theme.Spacing.sm)
@@ -780,34 +759,6 @@ struct MenuBarMonitor: View {
                 }
                 .buttonStyle(.plain)
 
-                if operationMonitorEnabled {
-                    Button {
-                        if service.operationMonitor.aiSelfLearningEnabled {
-                            service.stopAISelfLearning()
-                        } else {
-                            service.startAISelfLearning()
-                        }
-                    } label: {
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Image(systemName: service.operationMonitor.aiSelfLearningEnabled ? "sparkles" : "brain.head.profile")
-                            Text(service.operationMonitor.aiSelfLearningEnabled ? localizer.closeAILabel : localizer.aiAnalysisLabel)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                        }
-                        .font(Theme.Font.captionMedium)
-                        .foregroundStyle(service.operationMonitor.aiSelfLearningEnabled ? .white : Theme.Colors.textSecondary)
-                        .padding(.horizontal, Theme.Spacing.sm)
-                        .padding(.vertical, Theme.Spacing.xs)
-                        .background(service.operationMonitor.aiSelfLearningEnabled ? Theme.Colors.purple.opacity(0.85) : Theme.Colors.cardBg)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(service.operationMonitor.aiSelfLearningEnabled ? Color.clear : Color.primary.opacity(0.1), lineWidth: 0.5)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-
                 Spacer()
 
                 if !displayableOperationRecords.isEmpty {
@@ -829,17 +780,6 @@ struct MenuBarMonitor: View {
                 }
             }
 
-            if operationMonitorEnabled && service.operationMonitor.aiSelfLearningEnabled {
-                HStack(spacing: Theme.Spacing.xs) {
-                    Image(systemName: "brain.head.profile")
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.Colors.purple)
-                    Text(localizer.aiSelfLearningStatus)
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.Colors.purple)
-                    Spacer()
-                }
-            }
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.md)

@@ -12,7 +12,7 @@ actor HookInstaller {
     private let blockStart = "# [AGENTGUARD-START]"
     private let blockEnd = "# [AGENTGUARD-END]"
     private let marker = "agentguard-bridge"
-    private let fallbackBridgeMarker = "# AgentGuard fallback bridge v2"
+    private let fallbackBridgeMarker = "# AgentGuard fallback bridge v3"
 
     func ensureBridgeBinary() throws -> String {
         let home = agentRealHomeURL()
@@ -53,7 +53,6 @@ actor HookInstaller {
         \(fallbackBridgeMarker)
         log_dir="${HOME}/.agentguard"
         log_file="${log_dir}/bridge.log"
-        port="${AGENTGUARD_PORT:-17893}"
         socket="${AGENTGUARD_SOCKET:-/tmp/agentguard.sock}"
         payload="$(cat)"
         if [ -z "$payload" ]; then
@@ -62,15 +61,11 @@ actor HookInstaller {
 
         mkdir -p "$log_dir" 2>/dev/null || true
 
-        if command -v nc >/dev/null 2>&1 && printf '%s\\n' "$payload" | nc -w 2 127.0.0.1 "$port" >/dev/null 2>&1; then
-          exit 0
-        fi
-
         if command -v nc >/dev/null 2>&1 && printf '%s\\n' "$payload" | nc -U -w 2 "$socket" >/dev/null 2>&1; then
           exit 0
         fi
 
-        printf '%s AgentGuard bridge failed to deliver event to 127.0.0.1:%s or %s\\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$port" "$socket" >> "$log_file" 2>/dev/null || true
+        printf '%s AgentGuard bridge failed to deliver event to %s\\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$socket" >> "$log_file" 2>/dev/null || true
         exit 1
         """
         try script.write(to: destPath, atomically: true, encoding: .utf8)
@@ -96,11 +91,10 @@ actor HookInstaller {
     func hookCommand(bridgePath: String, label: String, agentId: String) -> String {
         let env = "/usr/bin/env"
         let socket = "AGENTGUARD_SOCKET=\(shellQuote("/tmp/agentguard.sock"))"
-        let port = "AGENTGUARD_PORT=17893"
         let agLabel = "AGENTGUARD_AGENT=\(shellQuote(label))"
         let agId = "AGENTGUARD_ENGINE_ID=\(shellQuote(agentId))"
         let bridge = shellQuote(bridgePath)
-        return "\(env) \(socket) \(port) \(agLabel) \(agId) \(bridge)"
+        return "\(env) \(socket) \(agLabel) \(agId) \(bridge)"
     }
 
     func injectJSONHooks(at configPath: URL, events: [HookEventDescriptor], hookCommand: String) throws {

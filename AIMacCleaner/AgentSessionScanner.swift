@@ -153,6 +153,7 @@ class AgentSessionScanner: ObservableObject {
         registerClaudeCode()
         registerCodex()
         registerKimi()
+        registerMiniMax()
         registerAider()
         registerCline()
         registerGeminiCLI()
@@ -644,6 +645,26 @@ class AgentSessionScanner: ObservableObject {
         let source = AgentDataSource(
             agentName: "Kimi",
             searchPaths: paths,
+            parser: { [weak self] url, name in
+                self?.parseGenericJSONL(url: url, agentName: name) ?? []
+            }
+        )
+        dataSources.append(source)
+    }
+
+    private func registerMiniMax() {
+        let home = SandboxPaths.realHomeDirectory
+        let paths = [
+            home + "/.minimax",
+            home + "/.minimax-agent",
+            home + "/Library/Application Support/MiniMax",
+            home + "/Library/Application Support/MiniMax Agent",
+            home + "/Library/Application Support/minimax"
+        ]
+        let source = AgentDataSource(
+            agentName: "MiniMax Agent",
+            searchPaths: paths,
+            filePattern: ".json",
             parser: { [weak self] url, name in
                 self?.parseGenericJSONL(url: url, agentName: name) ?? []
             }
