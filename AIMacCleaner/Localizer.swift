@@ -118,13 +118,108 @@ class Localizer: ObservableObject {
         }
     }
 
+    func localizedAppDisplayName(_ name: String) -> String {
+        switch name {
+        case "Homebrew 包管理器": return t("Homebrew 包管理器", en: "Homebrew Package Manager", zhHant: "Homebrew 套件管理器", ja: "Homebrew パッケージマネージャー", ko: "Homebrew 패키지 관리자", mt: "Homebrew Package Manager")
+        case "Node.js 运行环境": return t("Node.js 运行环境", en: "Node.js Runtime", zhHant: "Node.js 執行環境", ja: "Node.js ランタイム", ko: "Node.js 런타임", mt: "Node.js Runtime")
+        case "Python 版本管理": return t("Python 版本管理", en: "Python Version Manager", zhHant: "Python 版本管理", ja: "Python バージョン管理", ko: "Python 버전 관리자", mt: "Python Version Manager")
+        case "Rust 工具链": return t("Rust 工具链", en: "Rust Toolchain", zhHant: "Rust 工具鏈", ja: "Rust ツールチェーン", ko: "Rust 툴체인", mt: "Rust Toolchain")
+        case "Go 语言环境": return t("Go 语言环境", en: "Go Language Environment", zhHant: "Go 語言環境", ja: "Go 言語環境", ko: "Go 언어 환경", mt: "Go Language Environment")
+        case "Docker 容器": return t("Docker 容器", en: "Docker Containers", zhHant: "Docker 容器", ja: "Docker コンテナ", ko: "Docker 컨테이너", mt: "Docker Containers")
+        case "Trae AI 编程助手": return t("Trae AI 编程助手", en: "Trae AI Coding Assistant", zhHant: "Trae AI 編程助手", ja: "Trae AI コーディングアシスタント", ko: "Trae AI 코딩 도우미", mt: "Trae AI Coding Assistant")
+        case "CodeBuddy 编程助手": return t("CodeBuddy 编程助手", en: "CodeBuddy Coding Assistant", zhHant: "CodeBuddy 編程助手", ja: "CodeBuddy コーディングアシスタント", ko: "CodeBuddy 코딩 도우미", mt: "CodeBuddy Coding Assistant")
+        case "Cursor AI 编辑器": return t("Cursor AI 编辑器", en: "Cursor AI Editor", zhHant: "Cursor AI 編輯器", ja: "Cursor AI エディタ", ko: "Cursor AI 에디터", mt: "Cursor AI Editor")
+        case "Windsurf 编辑器": return t("Windsurf 编辑器", en: "Windsurf Editor", zhHant: "Windsurf 編輯器", ja: "Windsurf エディタ", ko: "Windsurf 에디터", mt: "Windsurf Editor")
+        case "豆包 AI 助手": return t("豆包 AI 助手", en: "Doubao AI Assistant", zhHant: "豆包 AI 助手", ja: "Doubao AI アシスタント", ko: "Doubao AI 어시스턴트", mt: "Doubao AI Assistant")
+        case "通义千问 AI": return t("通义千问 AI", en: "Qianwen AI", zhHant: "通義千問 AI", ja: "Qianwen AI", ko: "Qianwen AI", mt: "Qianwen AI")
+        case "Xcode 开发者数据": return t("Xcode 开发者数据", en: "Xcode Developer Data", zhHant: "Xcode 開發者資料", ja: "Xcode 開発者データ", ko: "Xcode 개발자 데이터", mt: "Xcode Developer Data")
+        case "Unity 引擎": return t("Unity 引擎", en: "Unity Engine", zhHant: "Unity 引擎", ja: "Unity エンジン", ko: "Unity 엔진", mt: "Unity Engine")
+        case "Gradle 构建工具": return t("Gradle 构建工具", en: "Gradle Build Tool", zhHant: "Gradle 建置工具", ja: "Gradle ビルドツール", ko: "Gradle 빌드 도구", mt: "Gradle Build Tool")
+        case "Maven 构建工具": return t("Maven 构建工具", en: "Maven Build Tool", zhHant: "Maven 建置工具", ja: "Maven ビルドツール", ko: "Maven 빌드 도구", mt: "Maven Build Tool")
+        case "CocoaPods 依赖管理": return t("CocoaPods 依赖管理", en: "CocoaPods Dependency Manager", zhHant: "CocoaPods 依賴管理", ja: "CocoaPods 依存関係管理", ko: "CocoaPods 의존성 관리자", mt: "CocoaPods Dependency Manager")
+        case "NVM (Node版本管理)": return t("NVM (Node版本管理)", en: "NVM (Node Version Manager)", zhHant: "NVM (Node 版本管理)", ja: "NVM (Node バージョン管理)", ko: "NVM (Node 버전 관리자)", mt: "NVM (Node Version Manager)")
+        case "npm 全局缓存": return t("npm 全局缓存", en: "npm Global Cache", zhHant: "npm 全域快取", ja: "npm グローバルキャッシュ", ko: "npm 전역 캐시", mt: "npm Global Cache")
+        case "pnpm 存储": return t("pnpm 存储", en: "pnpm Store", zhHant: "pnpm 儲存區", ja: "pnpm ストア", ko: "pnpm 저장소", mt: "pnpm Store")
+        case "Cargo (Rust包管理)": return t("Cargo (Rust包管理)", en: "Cargo (Rust Package Manager)", zhHant: "Cargo (Rust 套件管理)", ja: "Cargo (Rust パッケージ管理)", ko: "Cargo (Rust 패키지 관리자)", mt: "Cargo (Rust Package Manager)")
+        case "Conda (Python环境)": return t("Conda (Python环境)", en: "Conda (Python Environment)", zhHant: "Conda (Python 環境)", ja: "Conda (Python 環境)", ko: "Conda (Python 환경)", mt: "Conda (Python Environment)")
+        case "用户本地安装": return t("用户本地安装", en: "User-local Installs", zhHant: "使用者本機安裝", ja: "ユーザーのローカルインストール", ko: "사용자 로컬 설치", mt: "User-local Installs")
+        case "用户缓存目录": return t("用户缓存目录", en: "User Cache Directory", zhHant: "使用者快取目錄", ja: "ユーザーキャッシュディレクトリ", ko: "사용자 캐시 디렉터리", mt: "User Cache Directory")
+        case "Docker 配置": return t("Docker 配置", en: "Docker Config", zhHant: "Docker 配置", ja: "Docker 設定", ko: "Docker 설정", mt: "Docker Config")
+        case "Android SDK 配置": return t("Android SDK 配置", en: "Android SDK Config", zhHant: "Android SDK 配置", ja: "Android SDK 設定", ko: "Android SDK 설정", mt: "Android SDK Config")
+        case "IntelliJ IDEA 配置": return t("IntelliJ IDEA 配置", en: "IntelliJ IDEA Config", zhHant: "IntelliJ IDEA 配置", ja: "IntelliJ IDEA 設定", ko: "IntelliJ IDEA 설정", mt: "IntelliJ IDEA Config")
+        case "ohpm 包管理": return t("ohpm 包管理", en: "ohpm Package Manager", zhHant: "ohpm 套件管理", ja: "ohpm パッケージ管理", ko: "ohpm 패키지 관리자", mt: "ohpm Package Manager")
+        case "Hvigor 构建工具": return t("Hvigor 构建工具", en: "Hvigor Build Tool", zhHant: "Hvigor 建置工具", ja: "Hvigor ビルドツール", ko: "Hvigor 빌드 도구", mt: "Hvigor Build Tool")
+        case "VS Code 配置": return t("VS Code 配置", en: "VS Code Config", zhHant: "VS Code 配置", ja: "VS Code 設定", ko: "VS Code 설정", mt: "VS Code Config")
+        case "PM2 进程管理": return t("PM2 进程管理", en: "PM2 Process Manager", zhHant: "PM2 程序管理", ja: "PM2 プロセスマネージャー", ko: "PM2 프로세스 관리자", mt: "PM2 Process Manager")
+        case "华为开发工具": return t("华为开发工具", en: "Huawei Developer Tools", zhHant: "華為開發工具", ja: "Huawei 開発ツール", ko: "Huawei 개발 도구", mt: "Huawei Developer Tools")
+        case "搜狗输入法": return t("搜狗输入法", en: "Sogou Input Method", zhHant: "搜狗輸入法", ja: "Sogou 入力メソッド", ko: "Sogou 입력기", mt: "Sogou Input Method")
+        case "下载器": return t("下载器", en: "Downloader", zhHant: "下載器", ja: "ダウンローダー", ko: "다운로더", mt: "Downloader")
+        case "Chromium 快照": return t("Chromium 快照", en: "Chromium Snapshots", zhHant: "Chromium 快照", ja: "Chromium スナップショット", ko: "Chromium 스냅샷", mt: "Chromium Snapshots")
+        case "智谱AI": return t("智谱AI", en: "Zhipu AI", zhHant: "智譜AI", ja: "Zhipu AI", ko: "Zhipu AI", mt: "Zhipu AI")
+        case "讯飞星火": return t("讯飞星火", en: "iFlytek Spark", zhHant: "訊飛星火", ja: "iFlytek Spark", ko: "iFlytek Spark", mt: "iFlytek Spark")
+        case "通义灵码": return t("通义灵码", en: "Tongyi Lingma", zhHant: "通義靈碼", ja: "Tongyi Lingma", ko: "Tongyi Lingma", mt: "Tongyi Lingma")
+        case "阶跃星辰": return t("阶跃星辰", en: "StepFun", zhHant: "階躍星辰", ja: "StepFun", ko: "StepFun", mt: "StepFun")
+        default:
+            guard language == .english || language == .maltese else { return name }
+            return englishDisplayNameFallback(name)
+        }
+    }
+
+    private func englishDisplayNameFallback(_ name: String) -> String {
+        var output = name
+        let replacements = [
+            ("包管理器", "Package Manager"),
+            ("包管理", "Package Manager"),
+            ("运行环境", "Runtime"),
+            ("版本管理", "Version Manager"),
+            ("工具链", "Toolchain"),
+            ("语言环境", "Language Environment"),
+            ("编程助手", "Coding Assistant"),
+            ("AI 助手", "AI Assistant"),
+            ("AI 编辑器", "AI Editor"),
+            ("编辑器", "Editor"),
+            ("开发者数据", "Developer Data"),
+            ("开发工具包", "Development Kit"),
+            ("开发工具", "Developer Tools"),
+            ("构建工具", "Build Tool"),
+            ("依赖管理", "Dependency Manager"),
+            ("全局缓存", "Global Cache"),
+            ("缓存", "Cache"),
+            ("存储", "Store"),
+            ("配置", "Config"),
+            ("快照", "Snapshots"),
+            ("容器", "Containers"),
+            ("引擎", "Engine")
+        ]
+        for (from, to) in replacements {
+            output = output.replacingOccurrences(of: from, with: to)
+        }
+        return output
+    }
+
     func localizedAppDescription(_ desc: String, name: String = "") -> String {
         let n = name.isEmpty ? "" : name
         if desc.contains("npm 全局安装") { return t("npm 全局安装的 \(n) 包", en: "Globally installed npm package \(n)", zhHant: "npm 全域安裝的 \(n) 套件", ja: "グローバルにインストールされた npm パッケージ \(n)", ko: "전역 설치된 npm 패키지 \(n)", mt: "Globally installed npm package \(n)") }
         if desc.contains("pip 安装") { return t("pip 安装的 \(n) 包", en: "pip package \(n)", zhHant: "pip 安裝的 \(n) 套件", ja: "pip パッケージ \(n)", ko: "pip 패키지 \(n)", mt: "pip package \(n)") }
         if desc.contains("通过 Homebrew 安装") { return t("通过 Homebrew 安装的 \(n)", en: "\(n) installed by Homebrew", zhHant: "透過 Homebrew 安裝的 \(n)", ja: "Homebrew でインストールされた \(n)", ko: "Homebrew로 설치된 \(n)", mt: "\(n) installed by Homebrew") }
+        if desc.contains("AI代码编辑器") { return t("AI 代码编辑器", en: "AI code editor", zhHant: "AI 程式碼編輯器", ja: "AI コードエディタ", ko: "AI 코드 에디터", mt: "AI code editor") }
+        if desc.contains("AI代码补全") { return t("AI 代码补全工具", en: "AI code completion tool", zhHant: "AI 程式碼補全工具", ja: "AI コード補完ツール", ko: "AI 코드 자동완성 도구", mt: "AI code completion tool") }
+        if desc.contains("AI终端") { return t("AI 终端", en: "AI terminal", zhHant: "AI 終端機", ja: "AI ターミナル", ko: "AI 터미널", mt: "AI terminal") }
+        if desc.contains("AI大模型客户端") { return t("AI 大模型客户端", en: "AI model client", zhHant: "AI 大模型用戶端", ja: "AI モデルクライアント", ko: "AI 모델 클라이언트", mt: "AI model client") }
+        if desc.contains("本地大模型运行环境") { return t("本地大模型运行环境", en: "Local model runtime", zhHant: "本機大模型執行環境", ja: "ローカルモデル実行環境", ko: "로컬 모델 런타임", mt: "Local model runtime") }
+        if desc.contains("AI浏览器自动化") { return t("AI 浏览器自动化", en: "AI browser automation", zhHant: "AI 瀏覽器自動化", ja: "AI ブラウザ自動化", ko: "AI 브라우저 자동화", mt: "AI browser automation") }
+        if desc.contains("AI技能平台") { return t("AI 技能平台", en: "AI skills platform", zhHant: "AI 技能平台", ja: "AI スキルプラットフォーム", ko: "AI 스킬 플랫폼", mt: "AI skills platform") }
+        if desc.contains("MCP工具") { return t("MCP 工具", en: "MCP tool", zhHant: "MCP 工具", ja: "MCP ツール", ko: "MCP 도구", mt: "MCP tool") }
         if desc.contains("AI编程助手") { return t("AI 编程助手", en: "AI coding assistant", zhHant: "AI 編程助手", ja: "AIコーディングアシスタント", ko: "AI 코딩 도우미", mt: "AI coding assistant") }
+        if desc.contains("AI助手") { return t("AI 助手", en: "AI assistant", zhHant: "AI 助手", ja: "AI アシスタント", ko: "AI 어시스턴트", mt: "AI assistant") }
         if desc.contains("命令行工具") { return t("命令行工具", en: "Command line tool", zhHant: "命令列工具", ja: "コマンドラインツール", ko: "명령줄 도구", mt: "Command line tool") }
+        if desc.contains("容器化平台") { return t("容器化平台，包含镜像和容器数据", en: "Container platform with image and container data", zhHant: "容器化平台，包含映像與容器資料", ja: "イメージとコンテナデータを含むコンテナプラットフォーム", ko: "이미지 및 컨테이너 데이터를 포함한 컨테이너 플랫폼", mt: "Container platform with image and container data") }
+        if desc.contains("编译缓存") { return t("编译缓存、派生数据和归档", en: "Build cache, derived data, and archives", zhHant: "編譯快取、衍生資料與封存", ja: "ビルドキャッシュ、派生データ、アーカイブ", ko: "빌드 캐시, 파생 데이터 및 아카이브", mt: "Build cache, derived data, and archives") }
+        if desc.contains("开发工具包") { return t("开发工具包", en: "Development kit", zhHant: "開發工具包", ja: "開発キット", ko: "개발 키트", mt: "Development kit") }
+        if desc.contains("构建工具") { return t("构建工具和缓存", en: "Build tool and cache", zhHant: "建置工具與快取", ja: "ビルドツールとキャッシュ", ko: "빌드 도구 및 캐시", mt: "Build tool and cache") }
+        if desc.contains("编程语言和构建缓存") { return t("编程语言和构建缓存", en: "Programming language and build cache", zhHant: "程式語言與建置快取", ja: "プログラミング言語とビルドキャッシュ", ko: "프로그래밍 언어 및 빌드 캐시", mt: "Programming language and build cache") }
+        if desc.contains("版本管理") { return t("多版本管理工具和缓存", en: "Version manager and cache", zhHant: "多版本管理工具與快取", ja: "バージョン管理ツールとキャッシュ", ko: "버전 관리자 및 캐시", mt: "Version manager and cache") }
+        if desc.contains("用户目录") { return t("用户目录 \(n)", en: "User directory \(n)", zhHant: "使用者目錄 \(n)", ja: "ユーザーディレクトリ \(n)", ko: "사용자 디렉터리 \(n)", mt: "User directory \(n)") }
         if desc.contains("包管理") { return t("包管理工具", en: "Package management tool", zhHant: "套件管理工具", ja: "パッケージ管理ツール", ko: "패키지 관리 도구", mt: "Package management tool") }
         return desc
     }
@@ -133,6 +228,12 @@ class Localizer: ObservableObject {
         let n = name.isEmpty ? "" : name
         if desc.contains("卸载后依赖此包的Python项目将无法运行") { return t("卸载后依赖此包的 Python 项目将无法运行", en: "Python projects depending on this package may stop working after uninstall.", zhHant: "解除安裝後，依賴此套件的 Python 專案可能無法執行。", ja: "アンインストール後、このパッケージに依存する Python プロジェクトが動作しなくなる可能性があります。", ko: "제거 후 이 패키지에 의존하는 Python 프로젝트가 동작하지 않을 수 있습니다.", mt: "Python projects depending on this package may stop working after uninstall.") }
         if desc.contains("卸载后依赖此包的项目将无法运行") { return t("卸载后依赖此包的项目将无法运行", en: "Projects depending on this package may stop working after uninstall.", zhHant: "解除安裝後，依賴此套件的專案可能無法執行。", ja: "アンインストール後、このパッケージに依存するプロジェクトが動作しなくなる可能性があります。", ko: "제거 후 이 패키지에 의존하는 프로젝트가 동작하지 않을 수 있습니다.", mt: "Projects depending on this package may stop working after uninstall.") }
+        if desc.contains("将无法运行") { return t("卸载后相关项目可能无法运行", en: "Related projects may stop working after uninstall.", zhHant: "解除安裝後相關專案可能無法執行。", ja: "アンインストール後、関連プロジェクトが動作しなくなる可能性があります。", ko: "제거 후 관련 프로젝트가 동작하지 않을 수 있습니다.", mt: "Related projects may stop working after uninstall.") }
+        if desc.contains("将无法编译") { return t("卸载后相关项目可能无法编译", en: "Related projects may fail to compile after uninstall.", zhHant: "解除安裝後相關專案可能無法編譯。", ja: "アンインストール後、関連プロジェクトのコンパイルに失敗する可能性があります。", ko: "제거 후 관련 프로젝트 컴파일에 실패할 수 있습니다.", mt: "Related projects may fail to compile after uninstall.") }
+        if desc.contains("需重新编译项目") { return t("清理后项目可能需要重新编译", en: "Projects may need to be rebuilt after cleanup.", zhHant: "清理後專案可能需要重新編譯。", ja: "クリーンアップ後、プロジェクトの再ビルドが必要になる場合があります。", ko: "정리 후 프로젝트를 다시 빌드해야 할 수 있습니다.", mt: "Projects may need to be rebuilt after cleanup.") }
+        if desc.contains("需重新下载所有依赖") { return t("删除后需重新下载所有依赖", en: "All dependencies must be downloaded again after deletion.", zhHant: "刪除後需重新下載所有依賴。", ja: "削除後、すべての依存関係を再ダウンロードする必要があります。", ko: "삭제 후 모든 의존성을 다시 다운로드해야 합니다.", mt: "All dependencies must be downloaded again after deletion.") }
+        if desc.contains("将丢失") { return t("删除后相关数据将丢失", en: "Related data will be lost after deletion.", zhHant: "刪除後相關資料將會遺失。", ja: "削除後、関連データは失われます。", ko: "삭제 후 관련 데이터가 손실됩니다.", mt: "Related data will be lost after deletion.") }
+        if desc.contains("可安全清理") { return t("可安全清理，需要时会重新生成或下载", en: "Safe to clean; data can be regenerated or downloaded again when needed.", zhHant: "可安全清理，需要時會重新產生或下載。", ja: "安全にクリーンアップできます。必要に応じて再生成または再ダウンロードされます。", ko: "안전하게 정리할 수 있으며 필요 시 다시 생성되거나 다운로드됩니다.", mt: "Safe to clean; data can be regenerated or downloaded again when needed.") }
         if desc.contains("可安全卸载") { return t("可安全卸载，重新安装后需重新配置", en: "Safe to uninstall; configuration may be required after reinstall.", zhHant: "可安全解除安裝，重新安裝後需重新配置。", ja: "安全にアンインストールできます。再インストール後に再設定が必要な場合があります。", ko: "안전하게 제거할 수 있으며 재설치 후 재설정이 필요할 수 있습니다.", mt: "Safe to uninstall; configuration may be required after reinstall.") }
         if desc.contains("未知目录") { return t("未知目录，删除前请确认其用途", en: "Unknown directory. Confirm its purpose before deleting.", zhHant: "未知目錄，刪除前請確認用途。", ja: "不明なディレクトリです。削除前に用途を確認してください。", ko: "알 수 없는 디렉터리입니다. 삭제 전 용도를 확인하세요.", mt: "Unknown directory. Confirm its purpose before deleting.") }
         if desc.contains("将不可用") { return t("卸载后 \(n) 可能不可用", en: "\(n) may stop working after uninstall.", zhHant: "解除安裝後 \(n) 可能無法使用。", ja: "アンインストール後、\(n) が使用できなくなる可能性があります。", ko: "제거 후 \(n)이 동작하지 않을 수 있습니다.", mt: "\(n) may stop working after uninstall.") }
@@ -1149,7 +1250,7 @@ extension Localizer {
     var selectDirectory: String { t("选择目录", en: "Select Directory", zhHant: "選擇目錄", ja: "ディレクトリを選択", ko: "디렉토리 선택", mt: "Select Directory") }
     var navToolbox: String { t("实验室", en: "Lab", zhHant: "實驗室", ja: "ラボ", ko: "실험실", mt: "Lab") }
     var subToolbox: String { t("实验性质工具，功能可能调整、下线或移动入口", en: "Experimental tools that may change, be removed, or move to another entry point", zhHant: "實驗性質工具，功能可能調整、下線或移動入口", ja: "変更、削除、または別の導線へ移動される可能性がある実験的ツール", ko: "변경, 제거 또는 다른 진입 경로로 이동될 수 있는 실험적 도구", mt: "Experimental tools that may change, be removed, or move to another entry point") }
-    var tokenScopeTitle: String { t("Token 统计", en: "Token 统计", zhHant: "Token 統計", ja: "Token 統計", ko: "Token 통계", mt: "Token 统计") }
+    var tokenScopeTitle: String { t("Token 统计", en: "Token Analytics", zhHant: "Token 統計", ja: "Token 分析", ko: "Token 분석", mt: "Token Analytics") }
     var tokenScopeSubtitle: String { t("Token、成本、配额与项目归因分析", en: "Token, cost, quota, and project attribution analytics", zhHant: "Token、成本、配額與專案歸因分析", ja: "トークン、コスト、クォータ、プロジェクト帰属分析", ko: "토큰, 비용, 할당량, 프로젝트 귀속 분석", mt: "Token, cost, quota, and project attribution analytics") }
     var tokenScopeSyncNow: String { t("立即同步", en: "Sync Now", zhHant: "立即同步", ja: "今すぐ同期", ko: "지금 동기화", mt: "Sync Now") }
     var tokenScopeSelectDataFolder: String { t("授权数据目录", en: "Authorize Data Folder", zhHant: "授權資料目錄", ja: "データフォルダを許可", ko: "데이터 폴더 승인", mt: "Authorize Data Folder") }

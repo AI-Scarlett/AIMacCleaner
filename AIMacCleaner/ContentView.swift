@@ -1144,7 +1144,7 @@ private final class AgentMonitorOverviewScanner {
                     contextPercent: contextPercent,
                     contextWindow: item.parsed.contextWindow,
                     turnCount: item.parsed.turnCount,
-                    currentTask: item.parsed.currentTask.isEmpty ? "历史会话记录" : item.parsed.currentTask,
+                    currentTask: item.parsed.currentTask.isEmpty ? "History session record" : item.parsed.currentTask,
                     toolCount: item.parsed.toolCount,
                     runningToolCount: item.parsed.runningToolCount,
                     childCount: 0,
@@ -2933,20 +2933,20 @@ private struct AgentCommandCenterView: View {
     private var toolbar: some View {
         HStack(spacing: Theme.Spacing.md) {
             HStack(spacing: Theme.Spacing.xs) {
-                Text("智能体指挥中心")
+                Text(localizer.t("智能体指挥中心", en: "Agent Command Center", zhHant: "智能體指揮中心", ja: "Agent コマンドセンター", ko: "Agent 명령 센터", mt: "Agent Command Center"))
                     .font(.system(size: 18, weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Text("Σ\(compactCount(totalTokens))")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textSecondary)
-                Text("上下文%\(Int((sessions.map(\.contextPercent).max() ?? 0) * 100))")
+                Text("\(localizer.t("上下文", en: "Context", zhHant: "上下文", ja: "コンテキスト", ko: "컨텍스트", mt: "Context"))%\(Int((sessions.map(\.contextPercent).max() ?? 0) * 100))")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(contextColor(sessions.map(\.contextPercent).max() ?? 0))
             }
 
             Spacer()
 
-            TextField("过滤", text: $filterText)
+            TextField(localizer.t("过滤", en: "Filter", zhHant: "篩選", ja: "フィルター", ko: "필터", mt: "Filter"), text: $filterText)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12, weight: .regular, design: .monospaced))
                 .frame(width: 180)
@@ -2956,14 +2956,14 @@ private struct AgentCommandCenterView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .help("上一条会话")
+            .help(localizer.overviewPreviousSession)
 
             Button { moveSelection(1) } label: {
                 Image(systemName: "arrow.down")
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .help("下一条会话")
+            .help(localizer.overviewNextSession)
 
             Button { copySelectedPath() } label: {
                 Image(systemName: "doc.on.doc")
@@ -2987,7 +2987,7 @@ private struct AgentCommandCenterView: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(true)
-            .help("App Store 版本禁用进程终止")
+            .help(localizer.t("App Store 版本禁用进程终止", en: "Process termination is disabled in the App Store build", zhHant: "App Store 版本已停用程序終止", ja: "App Store 版ではプロセス終了は無効です", ko: "App Store 빌드에서는 프로세스 종료가 비활성화되어 있습니다", mt: "Process termination is disabled in the App Store build"))
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.sm)
@@ -3032,14 +3032,14 @@ private struct AgentCommandCenterView: View {
     }
 
     private var contextPanel: some View {
-        CommandCenterPanel(title: "1 上下文", color: Theme.Colors.success) {
+        CommandCenterPanel(title: localizer.t("1 上下文", en: "1 Context", zhHant: "1 上下文", ja: "1 コンテキスト", ko: "1 컨텍스트", mt: "1 Context"), color: Theme.Colors.success) {
             HStack(alignment: .top, spacing: Theme.Spacing.lg) {
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                    Text("Token 速率  0/min")
+                    Text("\(localizer.t("Token 速率", en: "Token rate", zhHant: "Token 速率", ja: "Token レート", ko: "Token 속도", mt: "Token rate"))  0/min")
                         .font(.system(size: 16, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.success)
                     Spacer(minLength: 18)
-                    Text("\(compactCount(totalTokens)) 总计")
+                    Text("\(compactCount(totalTokens)) \(localizer.overviewTotal)")
                         .font(.system(size: 16, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textPrimary)
                 }
@@ -3047,9 +3047,9 @@ private struct AgentCommandCenterView: View {
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                     HStack {
-                        Text("项目").frame(width: 132, alignment: .leading)
-                        Text("上下文").frame(width: 118, alignment: .leading)
-                        Text("窗口").frame(width: 76, alignment: .leading)
+                        Text(localizer.overviewProject).frame(width: 132, alignment: .leading)
+                        Text(localizer.contextWindow).frame(width: 118, alignment: .leading)
+                        Text(localizer.t("窗口", en: "Window", zhHant: "視窗", ja: "ウィンドウ", ko: "창", mt: "Window")).frame(width: 76, alignment: .leading)
                     }
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textSecondary)
@@ -3074,7 +3074,7 @@ private struct AgentCommandCenterView: View {
                     }
 
                     if projectRows.isEmpty {
-                        Text("无活跃会话")
+                        Text(localizer.overviewNoActiveSession)
                             .font(.system(size: 14, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
@@ -3085,7 +3085,7 @@ private struct AgentCommandCenterView: View {
     }
 
     private var quotaPanel: some View {
-        CommandCenterPanel(title: "2 配额", color: Theme.Colors.success) {
+        CommandCenterPanel(title: localizer.t("2 配额", en: "2 Quota", zhHant: "2 配額", ja: "2 クォータ", ko: "2 할당량", mt: "2 Quota"), color: Theme.Colors.success) {
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                 HStack {
                     Text("CLAUDE").frame(width: 86, alignment: .leading)
@@ -3095,19 +3095,19 @@ private struct AgentCommandCenterView: View {
                 .foregroundStyle(Theme.Colors.textPrimary)
 
                 HStack {
-                    Text("— 无数据").frame(width: 86, alignment: .leading)
-                    Text("只读").frame(width: 86, alignment: .leading)
+                    Text("— \(localizer.t("无数据", en: "No data", zhHant: "無資料", ja: "データなし", ko: "데이터 없음", mt: "No data"))").frame(width: 86, alignment: .leading)
+                    Text(localizer.t("只读", en: "Read-only", zhHant: "唯讀", ja: "読み取り専用", ko: "읽기 전용", mt: "Read-only")).frame(width: 86, alignment: .leading)
                         .foregroundStyle(Theme.Colors.success)
                 }
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundStyle(Theme.Colors.textTertiary)
 
-                Text("总计 \(compactCount(totalTokens))  0/min")
+                Text("\(localizer.overviewTotal) \(compactCount(totalTokens))  0/min")
                     .font(.system(size: 14, weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .padding(.top, Theme.Spacing.lg)
 
-                Text("App Store 版只读取授权数据")
+                Text(localizer.t("App Store 版只读取授权数据", en: "App Store build only reads authorized data", zhHant: "App Store 版只讀取授權資料", ja: "App Store 版は許可済みデータのみ読み取ります", ko: "App Store 빌드는 승인된 데이터만 읽습니다", mt: "App Store build only reads authorized data"))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
@@ -3119,12 +3119,12 @@ private struct AgentCommandCenterView: View {
         let session = selectedSession
         return CommandCenterPanel(title: "3 Token", color: Theme.Colors.warning) {
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                tokenLine("总计", value: session?.tokens.total ?? totalTokens, color: Theme.Colors.textPrimary)
-                tokenLine("输入", value: session?.tokens.input ?? 0, color: Theme.Colors.success)
-                tokenLine("输出", value: session?.tokens.output ?? 0, color: Theme.Colors.danger)
-                tokenLine("缓存读", value: session?.tokens.cacheRead ?? 0, color: Theme.Colors.info)
-                tokenLine("缓存写", value: 0, color: Theme.Colors.textTertiary)
-                Text("\(session?.turnCount ?? 0) 轮")
+                tokenLine(localizer.overviewTotal, value: session?.tokens.total ?? totalTokens, color: Theme.Colors.textPrimary)
+                tokenLine(localizer.overviewInput, value: session?.tokens.input ?? 0, color: Theme.Colors.success)
+                tokenLine(localizer.overviewOutput, value: session?.tokens.output ?? 0, color: Theme.Colors.danger)
+                tokenLine(localizer.overviewCacheRead, value: session?.tokens.cacheRead ?? 0, color: Theme.Colors.info)
+                tokenLine(localizer.t("缓存写", en: "Cache Write", zhHant: "快取寫入", ja: "キャッシュ書込", ko: "캐시 쓰기", mt: "Cache Write"), value: 0, color: Theme.Colors.textTertiary)
+                Text("\(session?.turnCount ?? 0) \(localizer.overviewTurns)")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .padding(.top, 2)
@@ -3149,7 +3149,7 @@ private struct AgentCommandCenterView: View {
     }
 
     private var projectsPanel: some View {
-        CommandCenterPanel(title: "4 项目", color: Theme.Colors.warning) {
+        CommandCenterPanel(title: localizer.t("4 项目", en: "4 Projects", zhHant: "4 專案", ja: "4 プロジェクト", ko: "4 프로젝트", mt: "4 Projects"), color: Theme.Colors.warning) {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 ForEach(projectRows.prefix(5), id: \.name) { row in
                     VStack(alignment: .leading, spacing: 1) {
@@ -3157,14 +3157,14 @@ private struct AgentCommandCenterView: View {
                             .font(.system(size: 14, weight: .bold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
-                        Text("会话 \(row.count) · \(compactCount(row.tokens)) · Git 只读")
+                        Text("\(localizer.overviewSessions) \(row.count) · \(compactCount(row.tokens)) · Git \(localizer.t("只读", en: "read-only", zhHant: "唯讀", ja: "読み取り専用", ko: "읽기 전용", mt: "read-only"))")
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textTertiary)
                             .lineLimit(1)
                     }
                 }
                 if projectRows.isEmpty {
-                    Text("暂无项目")
+                    Text(localizer.overviewNoProject)
                         .font(.system(size: 14, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textTertiary)
                 }
@@ -3174,11 +3174,11 @@ private struct AgentCommandCenterView: View {
     }
 
     private var portsPanel: some View {
-        CommandCenterPanel(title: "5 端口", color: Theme.Colors.purple) {
+        CommandCenterPanel(title: localizer.t("5 端口", en: "5 Ports", zhHant: "5 連接埠", ja: "5 ポート", ko: "5 포트", mt: "5 Ports"), color: Theme.Colors.purple) {
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                 HStack {
-                    Text("端口").frame(width: 58, alignment: .leading)
-                    Text("会话").frame(maxWidth: .infinity, alignment: .leading)
+                    Text(localizer.t("端口", en: "Port", zhHant: "連接埠", ja: "ポート", ko: "포트", mt: "Port")).frame(width: 58, alignment: .leading)
+                    Text(localizer.overviewSession).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
                 .foregroundStyle(Theme.Colors.textPrimary)
@@ -3197,12 +3197,12 @@ private struct AgentCommandCenterView: View {
                 }
 
                 if ports.isEmpty {
-                    Text("无开放端口")
+                    Text(localizer.t("无开放端口", en: "No open ports", zhHant: "無開放連接埠", ja: "開いているポートはありません", ko: "열린 포트 없음", mt: "No open ports"))
                         .font(.system(size: 14, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textTertiary)
                 }
 
-                Text("终止端口：App Store 版禁用")
+                Text(localizer.t("终止端口：App Store 版禁用", en: "Port termination: disabled in App Store build", zhHant: "終止連接埠：App Store 版停用", ja: "ポート終了: App Store 版では無効", ko: "포트 종료: App Store 빌드에서 비활성화", mt: "Port termination: disabled in App Store build"))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .padding(.top, Theme.Spacing.sm)
@@ -3212,21 +3212,21 @@ private struct AgentCommandCenterView: View {
     }
 
     private var mcpPanel: some View {
-        CommandCenterPanel(title: "7 MCP 服务", color: Theme.Colors.purple) {
+        CommandCenterPanel(title: localizer.t("7 MCP 服务", en: "7 MCP Services", zhHant: "7 MCP 服務", ja: "7 MCP サービス", ko: "7 MCP 서비스", mt: "7 MCP Services"), color: Theme.Colors.purple) {
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                 HStack {
-                    Text("父进程").frame(width: 86, alignment: .leading)
-                    Text("配置").frame(maxWidth: .infinity, alignment: .leading)
+                    Text(localizer.t("父进程", en: "Parent", zhHant: "父程序", ja: "親プロセス", ko: "상위 프로세스", mt: "Parent")).frame(width: 86, alignment: .leading)
+                    Text(localizer.t("配置", en: "Config", zhHant: "配置", ja: "設定", ko: "설정", mt: "Config")).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
                 .foregroundStyle(Theme.Colors.textPrimary)
 
-                Text("无 MCP 服务器")
+                Text(localizer.t("无 MCP 服务器", en: "No MCP servers", zhHant: "無 MCP 伺服器", ja: "MCP サーバーなし", ko: "MCP 서버 없음", mt: "No MCP servers"))
                     .font(.system(size: 14, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .padding(.top, Theme.Spacing.xs)
 
-                Text("读取配置需用户授权目录")
+                Text(localizer.t("读取配置需用户授权目录", en: "Reading config requires an authorized folder", zhHant: "讀取配置需要使用者授權目錄", ja: "設定の読み取りには許可済みフォルダが必要です", ko: "설정 읽기에는 승인된 폴더가 필요합니다", mt: "Reading config requires an authorized folder"))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .padding(.top, Theme.Spacing.lg)
@@ -3236,7 +3236,7 @@ private struct AgentCommandCenterView: View {
     }
 
     private var sessionsPanel: some View {
-        CommandCenterPanel(title: "6 会话", color: Theme.Colors.danger) {
+        CommandCenterPanel(title: localizer.t("6 会话", en: "6 Sessions", zhHant: "6 會話", ja: "6 セッション", ko: "6 세션", mt: "6 Sessions"), color: Theme.Colors.danger) {
             VStack(spacing: 0) {
                 sessionHeader
 
@@ -3246,13 +3246,13 @@ private struct AgentCommandCenterView: View {
 
                 if sessions.isEmpty {
                     VStack(spacing: Theme.Spacing.sm) {
-                        Text("无活跃会话")
+                        Text(localizer.overviewNoActiveSession)
                             .font(.system(size: 15, weight: .bold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textTertiary)
                         Button {
                             monitor.requestAccessForStalePaths()
                         } label: {
-                            Label("授权 ~/.codex / ~/.claude", systemImage: "folder.badge.plus")
+                            Label(localizer.t("授权 ~/.codex / ~/.claude", en: "Authorize ~/.codex / ~/.claude", zhHant: "授權 ~/.codex / ~/.claude", ja: "~/.codex / ~/.claude を許可", ko: "~/.codex / ~/.claude 승인", mt: "Authorize ~/.codex / ~/.claude"), systemImage: "folder.badge.plus")
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -3266,15 +3266,15 @@ private struct AgentCommandCenterView: View {
     private var sessionHeader: some View {
         HStack(spacing: Theme.Spacing.sm) {
             Text("AI").frame(width: 54, alignment: .leading)
-            Text("项目").frame(width: 130, alignment: .leading)
-            Text("会话").frame(width: 96, alignment: .leading)
-            Text("配置").frame(width: 90, alignment: .leading)
-            Text("摘要").frame(maxWidth: .infinity, alignment: .leading)
-            Text("状态").frame(width: 78, alignment: .leading)
-            Text("模型").frame(width: 92, alignment: .leading)
-            Text("上下文").frame(width: 74, alignment: .trailing)
+            Text(localizer.overviewProject).frame(width: 130, alignment: .leading)
+            Text(localizer.overviewSession).frame(width: 96, alignment: .leading)
+            Text(localizer.t("配置", en: "Config", zhHant: "配置", ja: "設定", ko: "설정", mt: "Config")).frame(width: 90, alignment: .leading)
+            Text(localizer.overviewSummary).frame(maxWidth: .infinity, alignment: .leading)
+            Text(localizer.status).frame(width: 78, alignment: .leading)
+            Text(localizer.overviewModel).frame(width: 92, alignment: .leading)
+            Text(localizer.contextWindow).frame(width: 74, alignment: .trailing)
             Text("Token").frame(width: 86, alignment: .trailing)
-            Text("轮").frame(width: 44, alignment: .trailing)
+            Text(localizer.overviewTurns).frame(width: 44, alignment: .trailing)
         }
         .font(.system(size: 13, weight: .bold, design: .monospaced))
         .foregroundStyle(Theme.Colors.textSecondary)
@@ -3305,7 +3305,7 @@ private struct AgentCommandCenterView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Text("● \(session.status)")
+                Text("● \(localizedStatus(session.status))")
                     .frame(width: 78, alignment: .leading)
                     .foregroundStyle(session.status == "Executing" ? Theme.Colors.danger : Theme.Colors.warning)
                 Text(session.model)
@@ -3333,12 +3333,12 @@ private struct AgentCommandCenterView: View {
     }
 
     private var detailPanel: some View {
-        CommandCenterPanel(title: selectedSession.map { "会话 (▶\(shortSessionId($0.sessionId)) · \($0.projectPath))" } ?? "会话", color: Theme.Colors.danger) {
+        CommandCenterPanel(title: selectedSession.map { "\(localizer.overviewSession) (▶\(shortSessionId($0.sessionId)) · \($0.projectPath))" } ?? localizer.overviewSession, color: Theme.Colors.danger) {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 if let session = selectedSession {
                     HStack(spacing: Theme.Spacing.lg) {
-                        Text("\(session.model) · \(session.turnCount) 轮 · \(session.toolCount) 工具")
-                        Text("上下文 \(Int(session.contextPercent * 100))% / \(windowText(session.contextWindow))")
+                        Text("\(session.model) · \(session.turnCount) \(localizer.overviewTurns) · \(session.toolCount) \(localizer.tokenScopeTools)")
+                        Text("\(localizer.contextWindow) \(Int(session.contextPercent * 100))% / \(windowText(session.contextWindow))")
                         Text("pid \(session.pid.map(String.init) ?? "—")")
                     }
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
@@ -3350,17 +3350,17 @@ private struct AgentCommandCenterView: View {
                         .lineLimit(2)
 
                     HStack(spacing: Theme.Spacing.sm) {
-                        CommandCenterSafeAction(icon: "doc.on.doc", title: "复制") { copySelectedPath() }
-                        CommandCenterSafeAction(icon: "folder", title: "打开") { openSelectedProject() }
-                        CommandCenterDisabledAction(icon: "xmark.octagon", title: "终止")
-                        CommandCenterDisabledAction(icon: "network", title: "断开端口")
+                        CommandCenterSafeAction(icon: "doc.on.doc", title: localizer.t("复制", en: "Copy", zhHant: "複製", ja: "コピー", ko: "복사", mt: "Copy")) { copySelectedPath() }
+                        CommandCenterSafeAction(icon: "folder", title: localizer.t("打开", en: "Open", zhHant: "開啟", ja: "開く", ko: "열기", mt: "Open")) { openSelectedProject() }
+                        CommandCenterDisabledAction(icon: "xmark.octagon", title: localizer.t("终止", en: "Terminate", zhHant: "終止", ja: "終了", ko: "종료", mt: "Terminate"))
+                        CommandCenterDisabledAction(icon: "network", title: localizer.t("断开端口", en: "Disconnect Port", zhHant: "斷開連接埠", ja: "ポート切断", ko: "포트 연결 해제", mt: "Disconnect Port"))
                         Spacer()
-                        Text("只读监控 · 沙盒授权数据源")
+                        Text(localizer.t("只读监控 · 沙盒授权数据源", en: "Read-only monitor · sandbox-authorized data", zhHant: "唯讀監控 · 沙盒授權資料源", ja: "読み取り専用監視 · サンドボックス許可データ", ko: "읽기 전용 모니터 · 샌드박스 승인 데이터", mt: "Read-only monitor · sandbox-authorized data"))
                             .font(.system(size: 12, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
                 } else {
-                    Text("暂无会话。请授权 Agent 数据目录或启动 Codex/Claude 会话。")
+                    Text(localizer.t("暂无会话。请授权 Agent 数据目录或启动 Codex/Claude 会话。", en: "No sessions yet. Authorize an Agent data folder or start a Codex/Claude session.", zhHant: "暫無會話。請授權 Agent 資料目錄或啟動 Codex/Claude 會話。", ja: "セッションはまだありません。Agent データフォルダを許可するか Codex/Claude セッションを開始してください。", ko: "아직 세션이 없습니다. Agent 데이터 폴더를 승인하거나 Codex/Claude 세션을 시작하세요.", mt: "No sessions yet. Authorize an Agent data folder or start a Codex/Claude session."))
                         .font(.system(size: 14, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Theme.Colors.textTertiary)
                 }
@@ -3427,7 +3427,18 @@ private struct AgentCommandCenterView: View {
         if lower.contains("/.codex/") { return "~/.codex" }
         if lower.contains("/.claude/") { return "~/.claude" }
         if lower.contains("/.opencode/") { return "~/.opencode" }
-        return "授权目录"
+        return localizer.t("授权目录", en: "Authorized folder", zhHant: "授權目錄", ja: "許可済みフォルダ", ko: "승인된 폴더", mt: "Authorized folder")
+    }
+
+    private func localizedStatus(_ status: String) -> String {
+        switch status {
+        case "Waiting", "Paused": return localizer.overviewStatusWaiting
+        case "Thinking": return localizer.overviewStatusThinking
+        case "Executing": return localizer.overviewStatusExecuting
+        case "History": return localizer.overviewStatusHistory
+        case "Done": return localizer.overviewStatusDone
+        default: return status
+        }
     }
 
     private func compactCount(_ value: Int) -> String {
@@ -6301,9 +6312,11 @@ struct AddAgentSheetView: View {
     @State private var manualPath: String = ""
 
     private func appList(_ items: [AppInfo]) -> some View {
-        let filtered = searchText.isEmpty ? items : items.filter {
-            $0.displayName.localizedCaseInsensitiveContains(searchText) ||
-            $0.name.localizedCaseInsensitiveContains(searchText)
+        let filtered = searchText.isEmpty ? items : items.filter { app in
+            localizer.localizedAppDisplayName(app.displayName).localizedCaseInsensitiveContains(searchText) ||
+            localizer.localizedAppDescription(app.desc, name: localizer.localizedAppDisplayName(app.displayName)).localizedCaseInsensitiveContains(searchText) ||
+            app.displayName.localizedCaseInsensitiveContains(searchText) ||
+            app.name.localizedCaseInsensitiveContains(searchText)
         }
         return Group {
             if filtered.isEmpty {
@@ -6351,7 +6364,7 @@ struct AddAgentSheetView: View {
                                                 .foregroundColor(.secondary)
                                                 .frame(width: 22, height: 22)
                                         }
-                                        Text(app.displayName)
+                                        Text(localizer.localizedAppDisplayName(app.displayName))
                                             .font(Theme.Font.captionMedium)
                                             .foregroundStyle(Theme.Colors.textPrimary)
                                             .lineLimit(1)
@@ -6482,7 +6495,7 @@ struct AddAgentSheetView: View {
 
                 HStack {
                     if let app = selectedApp {
-                        Text("\(localizer.selected): \(app.displayName)")
+                        Text("\(localizer.selected): \(localizer.localizedAppDisplayName(app.displayName))")
                             .font(Theme.Font.caption)
                             .foregroundColor(.green)
                     } else {
@@ -7222,6 +7235,10 @@ struct AppRowCard: View {
         app.risk == "safe" ? localizer.safe : app.risk == "dangerous" ? localizer.dangerous : localizer.warning
     }
 
+    private var displayName: String {
+        localizer.localizedAppDisplayName(app.displayName)
+    }
+
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
             Button(action: onToggle) {
@@ -7240,7 +7257,7 @@ struct AppRowCard: View {
 
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                 HStack(spacing: Theme.Spacing.sm) {
-                    Text(app.displayName)
+                    Text(displayName)
                         .font(Theme.Font.subheadlineMedium)
                         .foregroundStyle(Theme.Colors.textPrimary)
                         .lineLimit(1)
@@ -7249,7 +7266,7 @@ struct AppRowCard: View {
                         PillBadge(text: localizer.localizedSubCategory(app.subCategory), color: subCategoryColor(app.subCategory), size: .small)
                     }
                 }
-                Text(localizer.localizedAppDescription(app.desc, name: app.displayName))
+                Text(localizer.localizedAppDescription(app.desc, name: displayName))
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .lineLimit(1)
@@ -7274,7 +7291,7 @@ struct AppRowCard: View {
                     .lineLimit(1)
                     .frame(maxWidth: 120, alignment: .leading)
             } else {
-                Text(localizer.localizedRiskDescription(app.riskDesc, name: app.displayName))
+                Text(localizer.localizedRiskDescription(app.riskDesc, name: displayName))
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.warning)
                     .lineLimit(1)
@@ -7368,7 +7385,15 @@ struct AppManagerTab: View {
         }
         if searchText.isEmpty { return base }
         let q = searchText.lowercased()
-        return base.filter { $0.displayName.lowercased().contains(q) || $0.name.lowercased().contains(q) || $0.bundleId.lowercased().contains(q) || $0.desc.lowercased().contains(q) }
+        return base.filter {
+            localizer.localizedAppDisplayName($0.displayName).lowercased().contains(q) ||
+            localizer.localizedAppDescription($0.desc, name: localizer.localizedAppDisplayName($0.displayName)).lowercased().contains(q) ||
+            localizer.localizedRiskDescription($0.riskDesc, name: localizer.localizedAppDisplayName($0.displayName)).lowercased().contains(q) ||
+            $0.displayName.lowercased().contains(q) ||
+            $0.name.lowercased().contains(q) ||
+            $0.bundleId.lowercased().contains(q) ||
+            $0.desc.lowercased().contains(q)
+        }
     }
 
     var selectedApps: [AppInfo] { service.installedApps.filter { selectedAppIds.contains($0.id) } }
