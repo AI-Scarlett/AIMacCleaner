@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import Combine
 import Darwin
 
 @main
@@ -8,7 +7,6 @@ struct AIMacCleanerApp: App {
     @StateObject private var service = ScannerService()
     @StateObject private var localizer = Localizer()
     @StateObject private var agentRegistry = AgentRegistry()
-    @StateObject private var islandViewModel = IslandViewModel()
     @StateObject private var sessionsViewModel = SessionsViewModel()
     @StateObject private var conversationWatcher = ConversationWatcher()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -24,7 +22,6 @@ struct AIMacCleanerApp: App {
                 .environmentObject(service)
                 .environmentObject(localizer)
                 .environmentObject(agentRegistry)
-                .environmentObject(islandViewModel)
                 .environmentObject(sessionsViewModel)
                 .environmentObject(conversationWatcher)
                 .frame(minWidth: 960, minHeight: 640)
@@ -32,7 +29,6 @@ struct AIMacCleanerApp: App {
                     appDelegate.service = service
                     service.localizer = localizer
                     appDelegate.configureAgentCenterContext(
-                        islandViewModel: islandViewModel,
                         sessionsViewModel: sessionsViewModel,
                         agentRegistry: agentRegistry,
                         conversationWatcher: conversationWatcher,
@@ -52,7 +48,6 @@ struct AIMacCleanerApp: App {
             if menuBarMonitorEnabled {
                 MenuBarMonitor(service: service)
                     .environmentObject(localizer)
-                    .environmentObject(islandViewModel)
             } else {
                 Text(localizer.menuBarMonitorClosed)
                     .padding()
@@ -173,7 +168,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var fallbackService: ScannerService?
     private var fallbackLocalizer: Localizer?
     private var fallbackAgentRegistry: AgentRegistry?
-    private var fallbackIslandViewModel: IslandViewModel?
     private var fallbackSessionsViewModel: SessionsViewModel?
     private var fallbackConversationWatcher: ConversationWatcher?
     private var forceTerminateOnce = false
@@ -183,17 +177,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var soundEngine: SoundEngine?
     var webhookNotifier: WebhookNotifier?
     var remoteManager: RemoteManager?
-    var displayController: DisplayController?
     var globalShortcutService: GlobalShortcutService?
     var networkMonitor: NetworkMonitor?
-    var islandWindowController: IslandWindowController?
     var bridgeBinary: BridgeBinary?
-    private var islandVM: IslandViewModel?
     private var sessionsVM: SessionsViewModel?
     private weak var agentRegistryContext: AgentRegistry?
     private weak var conversationWatcherContext: ConversationWatcher?
     private weak var localizerContext: Localizer?
-    private var islandCancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -310,21 +300,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let service = self.service ?? fallbackService ?? ScannerService()
         let localizer = localizerContext ?? fallbackLocalizer ?? Localizer()
         let agentRegistry = agentRegistryContext ?? fallbackAgentRegistry ?? AgentRegistry()
-        let islandViewModel = islandVM ?? fallbackIslandViewModel ?? IslandViewModel()
         let sessionsViewModel = sessionsVM ?? fallbackSessionsViewModel ?? SessionsViewModel()
         let conversationWatcher = conversationWatcherContext ?? fallbackConversationWatcher ?? ConversationWatcher()
 
         fallbackService = service
         fallbackLocalizer = localizer
         fallbackAgentRegistry = agentRegistry
-        fallbackIslandViewModel = islandViewModel
         fallbackSessionsViewModel = sessionsViewModel
         fallbackConversationWatcher = conversationWatcher
 
         self.service = service
         service.localizer = localizer
         configureAgentCenterContext(
-            islandViewModel: islandViewModel,
             sessionsViewModel: sessionsViewModel,
             agentRegistry: agentRegistry,
             conversationWatcher: conversationWatcher,
@@ -335,7 +322,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .environmentObject(service)
             .environmentObject(localizer)
             .environmentObject(agentRegistry)
-            .environmentObject(islandViewModel)
             .environmentObject(sessionsViewModel)
             .environmentObject(conversationWatcher)
             .frame(minWidth: 960, minHeight: 640)
@@ -411,13 +397,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func configureAgentCenterContext(
-        islandViewModel: IslandViewModel,
         sessionsViewModel: SessionsViewModel,
         agentRegistry: AgentRegistry,
         conversationWatcher: ConversationWatcher,
         localizer: Localizer
     ) {
-        islandVM = islandViewModel
         sessionsVM = sessionsViewModel
         agentRegistryContext = agentRegistry
         conversationWatcherContext = conversationWatcher
@@ -426,19 +410,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     func initializeAgentCenterServices() {
-        guard hookServer == nil else { return }
-        guard let islandViewModel = islandVM,
-              let sessionsViewModel = sessionsVM,
+        guard let sessionsViewModel = sessionsVM,
               let agentRegistry = agentRegistryContext,
-              let conversationWatcher = conversationWatcherContext,
-              let localizer = localizerContext else { return }
+              let conversationWatcher = conversationWatcherContext else { return }
+
+        if hookServer != nil {
+            return
+        }
 
         let server = HookServer()
         let store = SessionStore()
         let sound = SoundEngine()
         let webhook = WebhookNotifier()
         let remote = RemoteManager()
-        let display = DisplayController.shared
         let bridge = BridgeBinary()
 
         hookServer = server
@@ -446,27 +430,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         soundEngine = sound
         webhookNotifier = webhook
         remoteManager = remote
-        displayController = display
         bridgeBinary = bridge
 
         Task {
             await remote.setup(hookServer: server)
         }
 
-        display.setup(islandViewModel: islandViewModel, localizer: localizer)
-
-        let windowCtrl = IslandWindowController(
-            displayController: display,
-            islandViewModel: islandViewModel,
-            localizer: localizer
-        )
-        islandWindowController = windowCtrl
-        display.attachIslandWindow(windowCtrl.createWindow())
-
-        islandViewModel.setup(hookServer: server, sessionStore: store)
         sessionsViewModel.setup(sessionStore: store)
         conversationWatcher.setupExternalApprovalBridge(sessionStore: store)
-        bindIslandDisplay(islandViewModel: islandViewModel, display: display)
 
         agentRegistry.setHookInstaller(HookInstaller())
 
@@ -485,7 +456,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     scannerService: service
                 )
                 try await server.start()
-                islandViewModel.startObserving()
                 sessionsViewModel.startObserving()
 
                 let conversationDirs = ConversationWatcher.buildConversationDirectories(
@@ -506,35 +476,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
-    private func bindIslandDisplay(islandViewModel: IslandViewModel, display: DisplayController) {
-        islandCancellables.removeAll()
-
-        islandViewModel.$isVisible
-            .removeDuplicates()
-            .sink { [weak display, weak islandViewModel] visible in
-                guard let display = display else { return }
-                if visible {
-                    display.updateIslandFrame(level: islandViewModel?.displayLevel ?? .compact)
-                    display.showIsland()
-                } else {
-                    display.hideIsland()
-                }
-            }
-            .store(in: &islandCancellables)
-
-        islandViewModel.$displayLevel
-            .removeDuplicates()
-            .sink { [weak display, weak islandViewModel] level in
-                guard let display = display else { return }
-                display.updateIslandFrame(level: level)
-                if islandViewModel?.isVisible == true {
-                    display.showIsland()
-                }
-            }
-            .store(in: &islandCancellables)
-    }
-
-    @MainActor
     func refreshAgentStatusesIfReady() {
         guard let agentRegistry = agentRegistryContext else { return }
         agentRegistry.refreshAllStatuses()
@@ -545,33 +486,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         globalShortcutService = shortcutService
 
         Task {
-            await shortcutService.register(action: .toggleIsland) { [weak self] in
-                if let display = self?.displayController {
-                    if display.isVisible {
-                        display.hideIsland()
-                    } else {
-                        display.showIsland()
-                    }
-                }
-            }
-
             await shortcutService.register(action: .showSessions) { [weak self] in
                 self?.mainWindow?.makeKeyAndOrderFront(nil)
                 NSApp.activate(ignoringOtherApps: true)
-            }
-
-            await shortcutService.register(action: .approveAll) { [weak islandVM = self.islandVM] in
-                if let session = islandVM?.currentSession,
-                   session.pendingPermission != nil {
-                    islandVM?.respondToPermission(.allow)
-                }
-            }
-
-            await shortcutService.register(action: .denyAll) { [weak islandVM = self.islandVM] in
-                if let session = islandVM?.currentSession,
-                   session.pendingPermission != nil {
-                    islandVM?.respondToPermission(.deny)
-                }
             }
 
             await shortcutService.registerAll()
@@ -600,10 +517,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             await hookServer?.stop()
         }
-        islandVM?.stopObserving()
         sessionsVM?.stopObserving()
-        islandWindowController?.cleanup()
-        islandCancellables.removeAll()
     }
 }
 

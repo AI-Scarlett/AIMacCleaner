@@ -449,7 +449,7 @@ extension Localizer {
     var navOperations: String { t("Agent 监控", en: "Agent Monitor", zhHant: "Agent 監控", ja: "Agent モニター", ko: "Agent 모니터", mt: "Agent Monitor") }
 
     var subCleaner: String { t("扫描并清理存储空间", en: "Scan and clean storage", zhHant: "掃描並清理儲存空間", ja: "ストレージをスキャンしてクリーンアップ", ko: "저장 공간 스캔 및 정리", mt: "Scan and clean storage") }
-    var subOverview: String { t("Agent Top、实时状态与本机风险概览", en: "Agent Top, live status, and local risk overview", zhHant: "Agent Top、即時狀態與本機風險概覽", ja: "Agent Top、ライブ状態、ローカルリスク概要", ko: "Agent Top, 실시간 상태 및 로컬 위험 개요", mt: "Agent Top, live status, and local risk overview") }
+    var subOverview: String { t("Agent Top、实时会话与本机风险概览", en: "Agent Top, live sessions, and local risk overview", zhHant: "Agent Top、即時會話與本機風險概覽", ja: "Agent Top、ライブセッション、ローカルリスク概要", ko: "Agent Top, 실시간 세션 및 로컬 위험 개요", mt: "Agent Top, live sessions, and local risk overview") }
     var subApp: String { t("管理已安装的应用", en: "Manage installed apps", zhHant: "管理已安裝的應用", ja: "インストール済みアプリを管理", ko: "설치된 앱 관리", mt: "Manage installed apps") }
     var subDependency: String { t("管理开发依赖", en: "Manage dev dependencies", zhHant: "管理開發依賴", ja: "開発依存関係を管理", ko: "개발 의존성 관리", mt: "Manage dev dependencies") }
     var subOther: String { t("管理命令行工具", en: "Manage CLI tools", zhHant: "管理命令列工具", ja: "CLIツールを管理", ko: "CLI 도구 관리", mt: "Manage CLI tools") }
@@ -539,8 +539,10 @@ extension Localizer {
     var overviewSessions: String { t("会话", en: "Sessions", zhHant: "會話", ja: "セッション", ko: "세션", mt: "Sessions") }
     var overviewSession: String { t("会话", en: "Session", zhHant: "會話", ja: "セッション", ko: "세션", mt: "Session") }
     var overviewTokensTotal: String { t("Token 总量", en: "Total Tokens", zhHant: "Token 總量", ja: "トークン合計", ko: "총 토큰", mt: "Total Tokens") }
-    var overviewHighestContext: String { t("最高上下文", en: "Peak Context", zhHant: "最高上下文", ja: "最大コンテキスト", ko: "최고 컨텍스트", mt: "Peak Context") }
-    var overviewRealtimeStatus: String { t("实时状态", en: "Live Status", zhHant: "即時狀態", ja: "ライブ状態", ko: "실시간 상태", mt: "Live Status") }
+    var overviewLiveActivity: String { t("实时活动", en: "Live activity", zhHant: "即時活動", ja: "ライブアクティビティ", ko: "실시간 활동", mt: "Live activity") }
+    var overviewRealtimeConversations: String { t("实时对话数", en: "Live Conversations", zhHant: "即時對話數", ja: "ライブ会話数", ko: "실시간 대화 수", mt: "Live Conversations") }
+    var overviewRealtimeToolCalls: String { t("实时工具调用数", en: "Live Tool Calls", zhHant: "即時工具呼叫數", ja: "ライブツール呼び出し", ko: "실시간 도구 호출 수", mt: "Live Tool Calls") }
+    var overviewRealtimeAgentRuns: String { t("实时 Agent 运行数", en: "Live Agent Runs", zhHant: "即時 Agent 執行數", ja: "ライブ Agent 実行数", ko: "실시간 Agent 실행 수", mt: "Live Agent Runs") }
     var overviewLiveAndHistory: String { t("实时 + 最近历史", en: "Live + recent history", zhHant: "即時 + 最近歷史", ja: "ライブ + 最近の履歴", ko: "실시간 + 최근 기록", mt: "Live + recent history") }
     var overviewWaitingOrStartAgent: String { t("等待授权或启动 Agent", en: "Authorize or start an Agent", zhHant: "等待授權或啟動 Agent", ja: "許可または Agent 起動待ち", ko: "승인 또는 Agent 시작 대기", mt: "Authorize or start an Agent") }
     var overviewInputOutputCache: String { t("输入、输出和缓存读", en: "Input, output, and cache read", zhHant: "輸入、輸出與快取讀取", ja: "入力、出力、キャッシュ読み取り", ko: "입력, 출력 및 캐시 읽기", mt: "Input, output, and cache read") }
@@ -560,9 +562,8 @@ extension Localizer {
     var overviewNoSessions: String { t("没有可显示的会话", en: "No sessions to show", zhHant: "沒有可顯示的會話", ja: "表示するセッションなし", ko: "표시할 세션 없음", mt: "No sessions to show") }
     var overviewNoSessionsHint: String { t("授权 ~/.codex / ~/.claude，或启动一个 Agent 会话。", en: "Authorize ~/.codex / ~/.claude, or start an Agent session.", zhHant: "授權 ~/.codex / ~/.claude，或啟動一個 Agent 會話。", ja: "~/.codex / ~/.claude を許可するか、Agent セッションを開始してください。", ko: "~/.codex / ~/.claude를 승인하거나 Agent 세션을 시작하세요.", mt: "Authorize ~/.codex / ~/.claude, or start an Agent session.") }
     var overviewNoActiveSession: String { t("当前没有活跃会话", en: "No active sessions", zhHant: "目前沒有活躍會話", ja: "アクティブなセッションはありません", ko: "현재 활성 세션 없음", mt: "No active sessions") }
-    var overviewNoActiveSessionHint: String { t("实时监听已就绪；当 Agent 进入思考、执行或等待确认时，会显示在这里。", en: "Live monitoring is ready. Sessions appear here when an Agent is thinking, executing, or waiting for confirmation.", zhHant: "即時監聽已就緒；當 Agent 進入思考、執行或等待確認時，會顯示在這裡。", ja: "ライブ監視は準備完了です。Agent が思考、実行、確認待ちになるとここに表示されます。", ko: "실시간 모니터링이 준비되었습니다. Agent가 사고, 실행 또는 확인 대기 상태가 되면 여기에 표시됩니다.", mt: "Live monitoring is ready. Sessions appear here when an Agent is thinking, executing, or waiting for confirmation.") }
+    var overviewNoActiveSessionHint: String { t("实时监听已就绪；当 Agent 进入思考、执行或等待输入时，会显示在这里。", en: "Live monitoring is ready. Sessions appear here when an Agent is thinking, executing, or waiting for input.", zhHant: "即時監聽已就緒；當 Agent 進入思考、執行或等待輸入時，會顯示在這裡。", ja: "ライブ監視は準備完了です。Agent が思考、実行、入力待ちになるとここに表示されます。", ko: "실시간 모니터링이 준비되었습니다. Agent가 사고, 실행 또는 입력 대기 상태가 되면 여기에 표시됩니다.", mt: "Live monitoring is ready. Sessions appear here when an Agent is thinking, executing, or waiting for input.") }
     var overviewAuthorizeAgentData: String { t("授权 Agent 数据目录", en: "Authorize Agent Data Folder", zhHant: "授權 Agent 資料目錄", ja: "Agent データフォルダを許可", ko: "Agent 데이터 폴더 승인", mt: "Authorize Agent Data Folder") }
-    var overviewShowIsland: String { t("显示灵动岛", en: "Show Island", zhHant: "顯示靈動島", ja: "Island を表示", ko: "Island 표시", mt: "Show Island") }
     var overviewPreviousSession: String { t("上一条会话", en: "Previous session", zhHant: "上一條會話", ja: "前のセッション", ko: "이전 세션", mt: "Previous session") }
     var overviewNextSession: String { t("下一条会话", en: "Next session", zhHant: "下一條會話", ja: "次のセッション", ko: "다음 세션", mt: "Next session") }
     var overviewWaitingAgentSession: String { t("等待 Agent 会话", en: "Waiting for Agent session", zhHant: "等待 Agent 會話", ja: "Agent セッション待ち", ko: "Agent 세션 대기 중", mt: "Waiting for Agent session") }
@@ -924,14 +925,12 @@ extension Localizer {
     var agentCenterHookStatus: String { t("Hook 状态", en: "Hook Status", zhHant: "Hook 狀態", ja: "Hook状態", ko: "Hook 상태", mt: "Hook Status") }
     var agentCenterHookUnsupported: String { t("当前 Agent 暂不支持 Hook 接入", en: "This agent does not support hook connection yet.", zhHant: "目前 Agent 暫不支援 Hook 接入", ja: "このAgentはまだHook接続に対応していません。", ko: "이 Agent는 아직 Hook 연결을 지원하지 않습니다.", mt: "This agent does not support hook connection yet.") }
     var agentCenterUnsupported: String { t("暂不支持", en: "Unsupported", zhHant: "暫不支援", ja: "未対応", ko: "미지원", mt: "Unsupported") }
-    var agentCenterShowIsland: String { t("显示灵动岛", en: "Show Island", zhHant: "顯示靈動島", ja: "アイランドを表示", ko: "아일랜드 표시", mt: "Show Island") }
-    var islandExpand: String { t("展开", en: "Expand", zhHant: "展開", ja: "展開", ko: "펼치기", mt: "Expand") }
     var agentCenterPending: String { t("待审批", en: "Pending", zhHant: "待審批", ja: "保留中", ko: "대기", mt: "Pending") }
     var agentCenterHistory: String { t("历史", en: "History", zhHant: "歷史", ja: "履歴", ko: "기록", mt: "History") }
     var agentCenterNoApprovals: String { t("暂无待审批事项", en: "No pending approvals", zhHant: "暫無待審批事項", ja: "保留中の承認はありません", ko: "대기 중인 승인이 없습니다", mt: "No pending approvals") }
     var agentCenterNoApprovalHistory: String { t("暂无审批历史", en: "No approval history", zhHant: "暫無審批歷史", ja: "承認履歴はありません", ko: "승인 기록이 없습니다", mt: "No approval history") }
     var agentCenterApprovalHistoryHint: String { t("这里会保留最近的 Agent 会话和已处理审批，方便回看。", en: "Recent agent sessions and handled approvals stay here for review.", zhHant: "這裡會保留最近的 Agent 會話和已處理審批，方便回看。", ja: "最近のAgentセッションと処理済み承認をここで確認できます。", ko: "최근 Agent 세션과 처리된 승인을 여기에서 다시 볼 수 있습니다.", mt: "Recent agent sessions and handled approvals stay here for review.") }
-    var agentCenterPendingApprovalsHint: String { t("安装 Hook 后，权限请求、问题和计划审批会在这里和灵动岛中出现。", en: "After hooks are installed, permission requests, questions, and plan approvals appear here and in the island.", zhHant: "安裝 Hook 後，權限請求、問題和計劃審批會在這裡和靈動島中出現。", ja: "Hookをインストールすると、権限リクエスト、質問、計画承認がここ とアイランドに表示されます。", ko: "Hook 설치 후 권한 요청, 질문, 계획 승인이 여기와 아일랜드에 표시됩니다.", mt: "After hooks are installed, permission requests, questions, and plan approvals appear here and in the island.") }
+    var agentCenterPendingApprovalsHint: String { t("安装 Hook 后，权限请求、问题和计划审批会保留在 Agent Center 中处理。", en: "After hooks are installed, permission requests, questions, and plan approvals stay in Agent Center.", zhHant: "安裝 Hook 後，權限請求、問題和計劃審批會保留在 Agent Center 中處理。", ja: "Hookをインストールすると、権限リクエスト、質問、計画承認はAgent Centerに表示されます。", ko: "Hook 설치 후 권한 요청, 질문, 계획 승인은 Agent Center에 유지됩니다.", mt: "After hooks are installed, permission requests, questions, and plan approvals stay in Agent Center.") }
     var agentCenterPermission: String { t("权限请求", en: "Permission", zhHant: "權限請求", ja: "権限", ko: "권한", mt: "Permission") }
     var agentCenterQuestion: String { t("问题", en: "Question", zhHant: "問題", ja: "質問", ko: "질문", mt: "Question") }
     var agentCenterTextReply: String { t("文字回复", en: "Text Reply", zhHant: "文字回覆", ja: "テキスト返信", ko: "텍스트 답변", mt: "Text Reply") }
@@ -958,7 +957,6 @@ extension Localizer {
     var agentNoSessionSelected: String { t("未选择会话", en: "No session selected", zhHant: "未選擇會話", ja: "セッション未選択", ko: "세션이 선택되지 않음", mt: "No session selected") }
     var agentSessionDetail: String { t("会话详情", en: "Session Detail", zhHant: "會話詳情", ja: "セッション詳細", ko: "세션 상세", mt: "Session Detail") }
     var agentGuardReady: String { t("AgentGuard 就绪", en: "AgentGuard Ready", zhHant: "AgentGuard 就緒", ja: "AgentGuard 準備完了", ko: "AgentGuard 준비됨", mt: "AgentGuard Ready") }
-    var agentPinIsland: String { t("固定灵动岛", en: "Pin island", zhHant: "固定靈動島", ja: "アイランドを固定", ko: "아일랜드 고정", mt: "Pin island") }
     var agentDetailOverview: String { t("概览", en: "Overview", zhHant: "概覽", ja: "概要", ko: "개요", mt: "Overview") }
     var agentDetailTools: String { t("工具", en: "Tools", zhHant: "工具", ja: "ツール", ko: "도구", mt: "Tools") }
     var agentDetailSubagents: String { t("子 Agent", en: "Subagents", zhHant: "子 Agent", ja: "サブAgent", ko: "하위 Agent", mt: "Subagents") }

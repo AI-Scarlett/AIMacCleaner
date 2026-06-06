@@ -18,7 +18,6 @@ private enum AgentCenterColumns {
 struct AgentCenterView: View {
     @EnvironmentObject var agentRegistry: AgentRegistry
     @EnvironmentObject var sessionsViewModel: SessionsViewModel
-    @EnvironmentObject var islandViewModel: IslandViewModel
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
     @State private var selectedAgentId: String?
@@ -423,12 +422,7 @@ struct AgentCenterView: View {
                         LazyVStack(spacing: 8) {
                             ForEach(sessions) { session in
                                 ApprovalSessionRow(session: session, localizer: localizer, isHistory: isHistory) {
-                                    islandViewModel.currentSession = session
-                                    if isHistory {
-                                        islandViewModel.showDetail(for: session)
-                                    } else {
-                                        islandViewModel.show(level: .expanded)
-                                    }
+                                    selectedApprovalScope = isHistory ? .history : .pending
                                 }
                             }
                         }

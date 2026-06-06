@@ -717,6 +717,7 @@ struct AgentMonitorSessionSnapshot: Identifiable {
     let turnCount: Int
     let currentTask: String
     let toolCount: Int
+    let runningToolCount: Int
     let childCount: Int
     let ports: [Int]
     let memoryMB: Int?
@@ -864,6 +865,7 @@ private final class AgentMonitorOverviewScanner {
         let currentTask: String
         let status: String
         let toolCount: Int
+        let runningToolCount: Int
         let latestActivity: Date?
         let sourcePath: String
     }
@@ -1144,6 +1146,7 @@ private final class AgentMonitorOverviewScanner {
                     turnCount: item.parsed.turnCount,
                     currentTask: item.parsed.currentTask.isEmpty ? "历史会话记录" : item.parsed.currentTask,
                     toolCount: item.parsed.toolCount,
+                    runningToolCount: item.parsed.runningToolCount,
                     childCount: 0,
                     ports: [],
                     memoryMB: process.map { max($0.rssKB / 1024, 1) },
@@ -1475,6 +1478,7 @@ private final class AgentMonitorOverviewScanner {
                 turnCount: turns,
                 currentTask: title.isEmpty ? "OpenCode session" : title,
                 toolCount: 0,
+                runningToolCount: 0,
                 childCount: proc.map { descendants(of: $0.pid, children: childrenMap(processInfo)).count } ?? 0,
                 ports: [],
                 memoryMB: proc.map { max($0.rssKB / 1024, 1) },
@@ -1564,6 +1568,7 @@ private final class AgentMonitorOverviewScanner {
                 turnCount: turns,
                 currentTask: title.isEmpty ? label : title,
                 toolCount: 0,
+                runningToolCount: processAlive ? 1 : 0,
                 childCount: pid.map { descendants(of: $0, children: childrenMap(processInfo)).count } ?? 0,
                 ports: [],
                 memoryMB: proc.map { max($0.rssKB / 1024, 1) },
@@ -1637,6 +1642,7 @@ private final class AgentMonitorOverviewScanner {
                 turnCount: messageCount,
                 currentTask: title.isEmpty ? "MiniMax conversation" : title,
                 toolCount: 0,
+                runningToolCount: status == "Thinking" ? 1 : 0,
                 childCount: liveProcess.map { descendants(of: $0.pid, children: childrenMap(processInfo)).count } ?? 0,
                 ports: [],
                 memoryMB: liveProcess.map { max($0.rssKB / 1024, 1) },
@@ -1687,6 +1693,7 @@ private final class AgentMonitorOverviewScanner {
                 turnCount: parsed.turnCount,
                 currentTask: parsed.currentTask.isEmpty ? "waiting for input" : parsed.currentTask,
                 toolCount: parsed.toolCount,
+                runningToolCount: parsed.runningToolCount,
                 childCount: childPids.count,
                 ports: Array(Set(ports)).sorted(),
                 memoryMB: proc.map { max($0.rssKB / 1024, 1) },
@@ -1729,6 +1736,7 @@ private final class AgentMonitorOverviewScanner {
         var contextWindow = 200_000
         var turnCount = 0
         var currentTask = ""
+        var latestUserInstruction = ""
         var activeGoalObjective = ""
         var activeGoalStatus = ""
         var status = "History"
@@ -1764,6 +1772,14 @@ private final class AgentMonitorOverviewScanner {
                 let eventType = stringValue(payload, keys: ["type"]) ?? ""
                 if eventType == "task_started" {
                     status = "Thinking"
+                } else if eventType == "user_message" {
+                    if let message = normalizedInstruction(stringValue(payload, keys: ["message", "text", "content"])) {
+                        latestUserInstruction = message
+                        currentTask = message
+                        if status != "Executing" && status != "Paused" && status != "Done" {
+                            status = "Thinking"
+                        }
+                    }
                 } else if eventType == "agent_message" {
                     turnCount += 1
                     if pendingCalls.isEmpty && status != "Done" {
@@ -1790,19 +1806,22 @@ private final class AgentMonitorOverviewScanner {
                     if !objective.isEmpty {
                         activeGoalObjective = objective
                         activeGoalStatus = goalStatus
+                        if latestUserInstruction.isEmpty {
+                            latestUserInstruction = normalizedInstruction(objective) ?? ""
+                        }
                         if isUnfinishedGoalStatus(goalStatus) {
-                            currentTask = objective
+                            currentTask = latestUserInstruction.isEmpty ? objective : latestUserInstruction
                             status = goalStatus == "active" ? "Executing" : "Paused"
                         } else {
                             status = "Done"
                         }
                     }
                 } else if eventType == "task_complete" {
-                    currentTask = activeGoalObjective
+                    currentTask = latestUserInstruction.isEmpty ? activeGoalObjective : latestUserInstruction
                     pendingCalls.removeAll()
                     status = statusForGoal(activeGoalStatus)
                 } else if eventType == "turn_aborted" {
-                    currentTask = activeGoalObjective
+                    currentTask = latestUserInstruction.isEmpty ? activeGoalObjective : latestUserInstruction
                     pendingCalls.removeAll()
                     status = statusForGoal(activeGoalStatus)
                 }
@@ -1810,19 +1829,26 @@ private final class AgentMonitorOverviewScanner {
 
             if type == "response_item", let payload {
                 let payloadType = stringValue(payload, keys: ["type"]) ?? ""
-                if payloadType == "function_call" || payloadType == "custom_tool_call" {
+                if payloadType == "message",
+                   stringValue(payload, keys: ["role"]) == "user",
+                   let message = normalizedInstruction(messageContent(from: payload)) {
+                    latestUserInstruction = message
+                    currentTask = message
+                    if status != "Executing" && status != "Paused" && status != "Done" {
+                        status = "Thinking"
+                    }
+                } else if payloadType == "function_call" || payloadType == "custom_tool_call" {
                     let name = stringValue(payload, keys: ["name"]) ?? "tool"
                     let arg = parseToolArgument(payload)
-                    currentTask = arg.isEmpty ? name : "\(name) \(arg)"
+                    let toolTask = arg.isEmpty ? name : "\(name) \(arg)"
                     toolCount += 1
                     status = "Executing"
                     if let callID = stringValue(payload, keys: ["call_id", "callId", "id"]) {
-                        pendingCalls[callID] = currentTask
+                        pendingCalls[callID] = toolTask
                     }
                 } else if payloadType == "function_call_output",
                           let callID = stringValue(payload, keys: ["call_id", "callId", "id"]) {
                     pendingCalls.removeValue(forKey: callID)
-                    currentTask = Array(pendingCalls.values).last ?? ""
                     status = pendingCalls.isEmpty ? "Thinking" : "Executing"
                 }
             }
@@ -1830,16 +1856,20 @@ private final class AgentMonitorOverviewScanner {
 
         if !pendingCalls.isEmpty {
             status = "Executing"
-            if !activeGoalObjective.isEmpty {
+            if !latestUserInstruction.isEmpty {
+                currentTask = latestUserInstruction
+            } else if !activeGoalObjective.isEmpty {
                 currentTask = activeGoalObjective
             }
         } else if isUnfinishedGoalStatus(activeGoalStatus), !activeGoalObjective.isEmpty {
-            currentTask = activeGoalObjective
+            currentTask = latestUserInstruction.isEmpty ? activeGoalObjective : latestUserInstruction
             if activeGoalStatus != "active" {
                 status = "Paused"
             } else {
                 status = "Executing"
             }
+        } else if !latestUserInstruction.isEmpty {
+            currentTask = latestUserInstruction
         } else if currentTask.isEmpty, !activeGoalObjective.isEmpty {
             currentTask = activeGoalObjective
         }
@@ -1855,18 +1885,20 @@ private final class AgentMonitorOverviewScanner {
             currentTask: currentTask,
             status: status,
             toolCount: toolCount,
+            runningToolCount: pendingCalls.count,
             latestActivity: latestActivity ?? ((try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate),
             sourcePath: url.path
         )
     }
 
     private func sessionText(from url: URL) -> String? {
+        let fullReadLimit = 120_000_000
         let headLimit = 1_000_000
-        let tailLimit = 20_000_000
+        let tailLimit = 80_000_000
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let size = try? handle.seekToEnd() else { return nil }
-        if size <= UInt64(tailLimit) {
+        if size <= UInt64(fullReadLimit) {
             try? handle.seek(toOffset: 0)
             guard let data = try? handle.readToEnd() else { return nil }
             return String(decoding: data, as: UTF8.self)
@@ -1963,6 +1995,7 @@ private final class AgentMonitorOverviewScanner {
                 turnCount: parsed.turnCount,
                 currentTask: parsed.currentTask.isEmpty ? "live session activity" : parsed.currentTask,
                 toolCount: parsed.toolCount,
+                runningToolCount: parsed.runningToolCount,
                 childCount: childPids.count,
                 ports: [],
                 memoryMB: proc.map { max($0.rssKB / 1024, 1) },
@@ -2104,6 +2137,33 @@ private final class AgentMonitorOverviewScanner {
             }
         }
         return ""
+    }
+
+    private func messageContent(from payload: [String: Any]) -> String? {
+        if let text = stringValue(payload, keys: ["message", "text", "content"]) {
+            return text
+        }
+        guard let content = payload["content"] as? [[String: Any]] else { return nil }
+        let parts = content.compactMap { item -> String? in
+            let type = stringValue(item, keys: ["type"]) ?? ""
+            guard type == "input_text" || type == "text" else { return nil }
+            return stringValue(item, keys: ["text", "content"])
+        }
+        let joined = parts.joined(separator: "\n")
+        return joined.isEmpty ? nil : joined
+    }
+
+    private func normalizedInstruction(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let collapsed = value
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !collapsed.isEmpty else { return nil }
+        return String(collapsed.prefix(500))
     }
 
     private func parsePort(from line: String) -> Int? {
@@ -3388,7 +3448,6 @@ private struct AgentCommandDashboardView: View {
     @ObservedObject var monitor: OperationMonitor
     @EnvironmentObject var localizer: Localizer
     @EnvironmentObject var service: ScannerService
-    @EnvironmentObject var islandViewModel: IslandViewModel
     let onRefresh: () -> Void
 
     @State private var selectedSessionID: String?
@@ -3438,7 +3497,18 @@ private struct AgentCommandDashboardView: View {
     }
 
     private var totalTokens: Int { allSessions.reduce(0) { $0 + $1.tokens.total } }
-    private var maxContext: Double { allSessions.map(\.contextPercent).max() ?? 0 }
+    private var realtimeConversationCount: Int { activeSessions.count }
+    private var realtimeToolCallCount: Int {
+        activeSessions.reduce(0) { total, session in
+            let liveTools = max(session.runningToolCount, session.status == "Executing" && session.toolCount > 0 ? 1 : 0)
+            return total + liveTools
+        }
+    }
+    private var realtimeAgentRunCount: Int {
+        let livePids = Set(activeSessions.compactMap(\.pid))
+        if !livePids.isEmpty { return livePids.count }
+        return Set(activeSessions.map(\.agentName)).count
+    }
     private var dataStatusIcon: String {
         if store.isScanning { return "arrow.triangle.2.circlepath" }
         if !allSessions.isEmpty { return "checkmark.seal.fill" }
@@ -3784,22 +3854,33 @@ private struct AgentCommandDashboardView: View {
     }
 
     private var metricStrip: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: Theme.Spacing.sm)], spacing: Theme.Spacing.sm) {
-            metricCard(title: localizer.overviewSessions, value: "\(allSessions.count)", detail: allSessions.isEmpty ? localizer.overviewWaitingOrStartAgent : "\(activeSessions.count) \(localizer.overviewRealtimeStatus)", color: Theme.Colors.success)
-            metricCard(title: localizer.overviewTokensTotal, value: compactCount(totalTokens), detail: localizer.overviewInputOutputCache, color: Theme.Colors.teal)
-            metricCard(title: localizer.overviewHighestContext, value: "\(Int(maxContext * 100))%", detail: contextDetail(maxContext), color: contextColor(maxContext))
-            metricCard(title: localizer.overviewRealtimeStatus, value: selectedActiveSession.map { statusText($0.status) } ?? localizer.overviewWaitingSessions, detail: selectedActiveSession?.projectName ?? localizer.overviewWaitingSessions, color: selectedActiveSession.map { statusColor($0.status) } ?? Theme.Colors.textTertiary)
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 118), spacing: Theme.Spacing.sm), count: 5), spacing: Theme.Spacing.sm) {
+            metricCard(icon: "rectangle.3.group", title: localizer.overviewSessions, value: "\(allSessions.count)", detail: localizer.overviewLiveAndHistory, color: Theme.Colors.success)
+            metricCard(icon: "chart.bar.xaxis", title: localizer.overviewTokensTotal, value: compactCount(totalTokens), detail: localizer.overviewInputOutputCache, color: Theme.Colors.teal)
+            metricCard(icon: "bubble.left.and.bubble.right.fill", title: localizer.overviewRealtimeConversations, value: "\(realtimeConversationCount)", detail: selectedActiveSession?.projectName ?? localizer.overviewWaitingSessions, color: Theme.Colors.info)
+            metricCard(icon: "wrench.and.screwdriver.fill", title: localizer.overviewRealtimeToolCalls, value: "\(realtimeToolCallCount)", detail: activeSessions.isEmpty ? localizer.overviewWaitingSessions : localizer.overviewLiveActivity, color: Theme.Colors.warning)
+            metricCard(icon: "cpu.fill", title: localizer.overviewRealtimeAgentRuns, value: "\(realtimeAgentRunCount)", detail: activeSessions.isEmpty ? localizer.overviewWaitingSessions : "\(activeSessions.count) \(localizer.overviewSessions)", color: Theme.Colors.purple)
         }
         .frame(maxWidth: .infinity)
     }
 
-    private func metricCard(title: String, value: String, detail: String, color: Color) -> some View {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.Colors.textSecondary)
+    private func metricCard(icon: String, title: String, value: String, detail: String, color: Color) -> some View {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: Theme.Spacing.xs) {
+                    Image(systemName: icon)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(color)
+                        .frame(width: 20, height: 20)
+                        .background(color.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                    Text(title)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.76)
+                }
                 Text(value)
-                    .font(.system(size: 24, weight: .bold))
+                    .font(.system(size: 21, weight: .bold))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
@@ -3821,12 +3902,6 @@ private struct AgentCommandDashboardView: View {
 
     private var currentSessionUsageCard: some View {
         dashboardCard(title: "\(localizer.currentSession) / \(localizer.overviewTokenUse)", icon: "chart.bar.xaxis", color: Theme.Colors.teal) {
-            Button { openActiveSessionIsland() } label: { Image(systemName: "capsule.portrait.tophalf.filled") }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(selectedActiveSession == nil && selectedSession == nil)
-                .help(localizer.agentCenterShowIsland)
-
             Button { showingSessionDetail = true } label: { Image(systemName: "sidebar.right") }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -3873,7 +3948,7 @@ private struct AgentCommandDashboardView: View {
                                 sessionField(localizer.overviewMemory, memoryText(session.memoryMB), width: 58)
                                 sessionField(localizer.overviewTurns, "\(session.turnCount)", width: 38)
                                 sessionField("pid", session.pid.map(String.init) ?? "—", width: 58)
-                                sessionField("tool", "\(session.toolCount)", width: 42)
+                                sessionField("tool", "\(max(session.runningToolCount, session.toolCount))", width: 42)
                             }
                         }
 
@@ -3902,7 +3977,7 @@ private struct AgentCommandDashboardView: View {
                 Circle()
                     .fill(Theme.Colors.success)
                     .frame(width: 8, height: 8)
-                Text(localizer.overviewRealtimeStatus)
+                Text(localizer.overviewLiveActivity)
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(Theme.Colors.success)
             }
@@ -4303,59 +4378,6 @@ private struct AgentCommandDashboardView: View {
             return
         }
         selectedSessionID = sessions.first?.id
-    }
-
-    private func openActiveSessionIsland() {
-        if selectedActiveSession == nil, let firstActive = activeSessions.first {
-            selectedSessionID = firstActive.id
-        }
-        (NSApp.delegate as? AppDelegate)?.initializeAgentCenterServices()
-        let islandSessions = activeSessions.map(overviewIslandSession)
-        islandViewModel.syncOverviewSessions(islandSessions, selectedID: selectedActiveSession?.sessionId)
-        islandViewModel.show(level: .compact)
-    }
-
-    private func overviewIslandSession(_ session: AgentMonitorSessionSnapshot) -> SessionState {
-        var state = SessionState(
-            id: session.sessionId,
-            agentType: session.agentName,
-            engineLabel: session.model,
-            engineConfigRoot: configRoot(for: session),
-            project: session.projectName,
-            cwd: session.projectPath.isEmpty ? session.sourcePath : session.projectPath,
-            terminal: "",
-            phase: islandPhase(for: session.status),
-            startedAt: session.latestActivity ?? Date()
-        )
-        state.tokens = TokenUsage(
-            input: UInt64(max(session.tokens.input, 0)),
-            output: UInt64(max(session.tokens.output, 0)),
-            cacheRead: UInt64(max(session.tokens.cacheRead, 0)),
-            cacheCreate: 0
-        )
-        state.contextWindow = ContextWindowInfo(
-            totalInputTokens: UInt64(max(session.tokens.input + session.tokens.cacheRead, 0)),
-            totalOutputTokens: UInt64(max(session.tokens.output, 0)),
-            contextWindowSize: UInt64(max(session.contextWindow, 0)),
-            usedPercentage: session.contextPercent
-        )
-        state.description = session.currentTask
-        state.sessionTitle = session.currentTask
-        state.lastToolName = session.toolCount > 0 ? "\(session.toolCount) tools" : nil
-        state.lastToolTarget = displayLocation(for: session)
-        if let pid = session.pid {
-            state.pid = UInt32(max(pid, 0))
-        }
-        return state
-    }
-
-    private func islandPhase(for status: String) -> SessionPhase {
-        switch status {
-        case "Waiting", "Paused": return .waitingInput
-        case "Thinking", "Executing": return .processing
-        case "Done": return .done
-        default: return .idle
-        }
     }
 
     private func moveSelection(_ offset: Int) {

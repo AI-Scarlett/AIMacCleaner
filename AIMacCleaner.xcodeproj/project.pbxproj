@@ -35,7 +35,6 @@
 		B11489EBA07AFF91901E5BDC /* RemoteSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11489EBA07AFF91901E5BDC /* RemoteSession.swift */; };
 		B1712D8634BF4A5E29CE347D /* HookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1712D8634BF4A5E29CE347D /* HookServer.swift */; };
 		B19D9C30A5F322BBB46336EF /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19D9C30A5F322BBB46336EF /* SessionStore.swift */; };
-		B1743DD40B02E12CB2B88BD8 /* DisplayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1743DD40B02E12CB2B88BD8 /* DisplayController.swift */; };
 		B1CB1C1EC5D8A8B7339E9AFD /* BridgeCLI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CB1C1EC5D8A8B7339E9AFD /* BridgeCLI.swift */; };
 		B175BC6C9C2E7D3F2CACDC8F /* HookInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = F175BC6C9C2E7D3F2CACDC8F /* HookInstaller.swift */; };
 		B19948494C5C9A903E5553A2 /* AgentRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19948494C5C9A903E5553A2 /* AgentRegistry.swift */; };
@@ -43,14 +42,7 @@
 		B12F105F2E5B94DAD7EF232A /* CodexGeminiCursorAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F12F105F2E5B94DAD7EF232A /* CodexGeminiCursorAdapter.swift */; };
 		B145B686AD7E5C0C3633409D /* TraeQoderCodeBuddyAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F145B686AD7E5C0C3633409D /* TraeQoderCodeBuddyAdapter.swift */; };
 		B1436AA450765168B656E482 /* RemainingAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1436AA450765168B656E482 /* RemainingAdapters.swift */; };
-		B16326838149DB3E2EEAC577 /* IslandViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16326838149DB3E2EEAC577 /* IslandViewModel.swift */; };
 		B1644250F9446255A8A3A49C /* SessionsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1644250F9446255A8A3A49C /* SessionsViewModel.swift */; };
-		B1CDA887DE2C3C9AF8CA6AD1 /* IslandView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CDA887DE2C3C9AF8CA6AD1 /* IslandView.swift */; };
-		B1D3658381C75AE6F3229EC4 /* IslandWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D3658381C75AE6F3229EC4 /* IslandWindow.swift */; };
-		B1F50987BDD1446308F935DB /* PermissionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F50987BDD1446308F935DB /* PermissionSheet.swift */; };
-		B13BBC98F9975B3EA1519592 /* QuestionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13BBC98F9975B3EA1519592 /* QuestionSheet.swift */; };
-		B153B9A761DC9ACB510520EA /* PlanApprovalSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F153B9A761DC9ACB510520EA /* PlanApprovalSheet.swift */; };
-		B18AAFE634153E0AB06DA48E /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18AAFE634153E0AB06DA48E /* SessionDetailView.swift */; };
 		B1392AC20DE265F58CE10AB5 /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1392AC20DE265F58CE10AB5 /* SettingsViews.swift */; };
 		B13E668BF2E559285340D67D /* AgentCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13E668BF2E559285340D67D /* AgentCenterView.swift */; };
 		B1A95FA8F48DAA383602B812 /* SoundEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A95FA8F48DAA383602B812 /* SoundEngine.swift */; };
@@ -94,7 +86,6 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		F11489EBA07AFF91901E5BDC /* RemoteSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/RemoteSession.swift; sourceTree = "<group>"; };
 		F1712D8634BF4A5E29CE347D /* HookServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Engine/HookServer.swift; sourceTree = "<group>"; };
 		F19D9C30A5F322BBB46336EF /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Engine/SessionStore.swift; sourceTree = "<group>"; };
-		F1743DD40B02E12CB2B88BD8 /* DisplayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Engine/DisplayController.swift; sourceTree = "<group>"; };
 		F1CB1C1EC5D8A8B7339E9AFD /* BridgeCLI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Engine/BridgeCLI.swift; sourceTree = "<group>"; };
 		F175BC6C9C2E7D3F2CACDC8F /* HookInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Adapters/HookInstaller.swift; sourceTree = "<group>"; };
 		F19948494C5C9A903E5553A2 /* AgentRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Adapters/AgentRegistry.swift; sourceTree = "<group>"; };
@@ -102,14 +93,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		F12F105F2E5B94DAD7EF232A /* CodexGeminiCursorAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Adapters/CodexGeminiCursorAdapter.swift; sourceTree = "<group>"; };
 		F145B686AD7E5C0C3633409D /* TraeQoderCodeBuddyAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Adapters/TraeQoderCodeBuddyAdapter.swift; sourceTree = "<group>"; };
 		F1436AA450765168B656E482 /* RemainingAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Adapters/RemainingAdapters.swift; sourceTree = "<group>"; };
-		F16326838149DB3E2EEAC577 /* IslandViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModels/IslandViewModel.swift; sourceTree = "<group>"; };
 		F1644250F9446255A8A3A49C /* SessionsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModels/SessionsViewModel.swift; sourceTree = "<group>"; };
-		F1CDA887DE2C3C9AF8CA6AD1 /* IslandView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Island/IslandView.swift; sourceTree = "<group>"; };
-		F1D3658381C75AE6F3229EC4 /* IslandWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Island/IslandWindow.swift; sourceTree = "<group>"; };
-		F1F50987BDD1446308F935DB /* PermissionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Island/PermissionSheet.swift; sourceTree = "<group>"; };
-		F13BBC98F9975B3EA1519592 /* QuestionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Island/QuestionSheet.swift; sourceTree = "<group>"; };
-		F153B9A761DC9ACB510520EA /* PlanApprovalSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Island/PlanApprovalSheet.swift; sourceTree = "<group>"; };
-		F18AAFE634153E0AB06DA48E /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Island/SessionDetailView.swift; sourceTree = "<group>"; };
 		F1392AC20DE265F58CE10AB5 /* SettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Settings/SettingsViews.swift; sourceTree = "<group>"; };
 		F13E668BF2E559285340D67D /* AgentCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/AgentCenter/AgentCenterView.swift; sourceTree = "<group>"; };
 		F1A95FA8F48DAA383602B812 /* SoundEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/SoundEngine.swift; sourceTree = "<group>"; };
@@ -172,7 +156,6 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				F11489EBA07AFF91901E5BDC /* RemoteSession.swift */,
 				F1712D8634BF4A5E29CE347D /* HookServer.swift */,
 				F19D9C30A5F322BBB46336EF /* SessionStore.swift */,
-				F1743DD40B02E12CB2B88BD8 /* DisplayController.swift */,
 				F1CB1C1EC5D8A8B7339E9AFD /* BridgeCLI.swift */,
 				F175BC6C9C2E7D3F2CACDC8F /* HookInstaller.swift */,
 				F19948494C5C9A903E5553A2 /* AgentRegistry.swift */,
@@ -180,14 +163,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				F12F105F2E5B94DAD7EF232A /* CodexGeminiCursorAdapter.swift */,
 				F145B686AD7E5C0C3633409D /* TraeQoderCodeBuddyAdapter.swift */,
 				F1436AA450765168B656E482 /* RemainingAdapters.swift */,
-				F16326838149DB3E2EEAC577 /* IslandViewModel.swift */,
 				F1644250F9446255A8A3A49C /* SessionsViewModel.swift */,
-				F1CDA887DE2C3C9AF8CA6AD1 /* IslandView.swift */,
-				F1D3658381C75AE6F3229EC4 /* IslandWindow.swift */,
-				F1F50987BDD1446308F935DB /* PermissionSheet.swift */,
-				F13BBC98F9975B3EA1519592 /* QuestionSheet.swift */,
-				F153B9A761DC9ACB510520EA /* PlanApprovalSheet.swift */,
-				F18AAFE634153E0AB06DA48E /* SessionDetailView.swift */,
 				F1392AC20DE265F58CE10AB5 /* SettingsViews.swift */,
 				F13E668BF2E559285340D67D /* AgentCenterView.swift */,
 				F1A95FA8F48DAA383602B812 /* SoundEngine.swift */,
@@ -296,7 +272,6 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				B11489EBA07AFF91901E5BDC /* RemoteSession.swift in Sources */,
 				B1712D8634BF4A5E29CE347D /* HookServer.swift in Sources */,
 				B19D9C30A5F322BBB46336EF /* SessionStore.swift in Sources */,
-				B1743DD40B02E12CB2B88BD8 /* DisplayController.swift in Sources */,
 				B1CB1C1EC5D8A8B7339E9AFD /* BridgeCLI.swift in Sources */,
 				B175BC6C9C2E7D3F2CACDC8F /* HookInstaller.swift in Sources */,
 				B19948494C5C9A903E5553A2 /* AgentRegistry.swift in Sources */,
@@ -304,14 +279,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				B12F105F2E5B94DAD7EF232A /* CodexGeminiCursorAdapter.swift in Sources */,
 				B145B686AD7E5C0C3633409D /* TraeQoderCodeBuddyAdapter.swift in Sources */,
 				B1436AA450765168B656E482 /* RemainingAdapters.swift in Sources */,
-				B16326838149DB3E2EEAC577 /* IslandViewModel.swift in Sources */,
 				B1644250F9446255A8A3A49C /* SessionsViewModel.swift in Sources */,
-				B1CDA887DE2C3C9AF8CA6AD1 /* IslandView.swift in Sources */,
-				B1D3658381C75AE6F3229EC4 /* IslandWindow.swift in Sources */,
-				B1F50987BDD1446308F935DB /* PermissionSheet.swift in Sources */,
-				B13BBC98F9975B3EA1519592 /* QuestionSheet.swift in Sources */,
-				B153B9A761DC9ACB510520EA /* PlanApprovalSheet.swift in Sources */,
-				B18AAFE634153E0AB06DA48E /* SessionDetailView.swift in Sources */,
 				B1392AC20DE265F58CE10AB5 /* SettingsViews.swift in Sources */,
 				B13E668BF2E559285340D67D /* AgentCenterView.swift in Sources */,
 				B1A95FA8F48DAA383602B812 /* SoundEngine.swift in Sources */,

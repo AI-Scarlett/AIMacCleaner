@@ -4,7 +4,6 @@ import Darwin
 struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
-    @EnvironmentObject var islandViewModel: IslandViewModel
     @State private var selectedTab: MonitorTab = .operations
     @AppStorage("networkMode") private var networkMode = "internet"
     @State private var alertThreshold: Double = 10.0
@@ -885,8 +884,7 @@ struct MenuBarMonitor: View {
 
     private func dismissMenuBarPopoverSoon() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            let islandWindow = (NSApp.delegate as? AppDelegate)?.islandWindowController?.currentWindow
-            for window in NSApp.windows where window !== islandWindow {
+            for window in NSApp.windows {
                 if window.isFloatingPanel || window.level != .normal {
                     window.orderOut(nil)
                 }

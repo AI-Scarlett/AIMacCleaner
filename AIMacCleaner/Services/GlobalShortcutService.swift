@@ -35,11 +35,8 @@ struct GlobalShortcut: Identifiable, Codable {
     }
 
     enum ShortcutAction: String, Codable, CaseIterable {
-        case toggleIsland = "toggle_island"
         case showSessions = "show_sessions"
         case showAgentCenter = "show_agent_center"
-        case approveAll = "approve_all"
-        case denyAll = "deny_all"
         case startStopServer = "start_stop_server"
         case toggleMonitoring = "toggle_monitoring"
     }
@@ -109,32 +106,11 @@ actor GlobalShortcutService {
 
     static let defaultShortcuts: [GlobalShortcut] = [
         GlobalShortcut(
-            id: "toggle_island",
-            name: "Toggle Dynamic Island",
-            keyCode: 11,
-            modifiers: [.command, .shift],
-            action: .toggleIsland
-        ),
-        GlobalShortcut(
             id: "show_sessions",
             name: "Show Sessions",
             keyCode: 11,
             modifiers: [.command, .option],
             action: .showSessions
-        ),
-        GlobalShortcut(
-            id: "approve_all",
-            name: "Approve All Pending",
-            keyCode: 0,
-            modifiers: [.command, .option],
-            action: .approveAll
-        ),
-        GlobalShortcut(
-            id: "deny_all",
-            name: "Deny All Pending",
-            keyCode: 2,
-            modifiers: [.command, .option],
-            action: .denyAll
         ),
     ]
 
