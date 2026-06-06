@@ -799,6 +799,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
                         let key = "\($0.agentName)|\($0.sessionId)|\($0.sourcePath)"
                         guard !activeKeys.contains(key) else { return false }
                         if Self.isActiveSession($0) {
+                            if $0.status == "Paused" { return true }
                             return ($0.latestActivity ?? .distantPast) >= retentionCutoff
                         }
                         return true
@@ -824,7 +825,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
     }
 
     private static func isActiveSession(_ session: AgentMonitorSessionSnapshot) -> Bool {
-        ["Thinking", "Executing", "Waiting"].contains(session.status) ||
+        ["Thinking", "Executing", "Waiting", "Paused"].contains(session.status) ||
         (!session.currentTask.isEmpty && session.status != "History" && session.status != "Done")
     }
 }
@@ -1068,7 +1069,12 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func isRealtimeActiveSession(_ session: AgentMonitorSessionSnapshot) -> Bool {
-        ["Thinking", "Executing", "Waiting"].contains(session.status) ||
+        ["Thinking", "Executing", "Waiting", "Paused"].contains(session.status) ||
+        (!session.currentTask.isEmpty && session.status != "History" && session.status != "Done")
+    }
+
+    private func isParsedSessionActive(_ session: ParsedSession) -> Bool {
+        ["Thinking", "Executing", "Waiting", "Paused"].contains(session.status) ||
         (!session.currentTask.isEmpty && session.status != "History" && session.status != "Done")
     }
 
@@ -1105,13 +1111,19 @@ private final class AgentMonitorOverviewScanner {
         }
 
         let liveProcessByAgent = Dictionary(grouping: processInfo.values, by: { matchingSpecName($0.command) ?? "" })
-        let fileRows = parsedRows
-            .sorted {
+        let sortedParsedRows = parsedRows.sorted {
                 let left = $0.parsed.latestActivity ?? .distantPast
                 let right = $1.parsed.latestActivity ?? .distantPast
                 return left > right
             }
-            .prefix(60)
+        var selectedSourcePaths = Set<String>()
+        let prioritizedRows = sortedParsedRows.filter {
+            isParsedSessionActive($0.parsed) && selectedSourcePaths.insert($0.parsed.sourcePath).inserted
+        } + sortedParsedRows.filter {
+            selectedSourcePaths.insert($0.parsed.sourcePath).inserted
+        }.prefix(60)
+        let fileRows = prioritizedRows
+            .prefix(120)
             .map { item in
                 let process = liveProcessByAgent[item.spec.name]?.first
                 let pid = process?.pid
@@ -1693,7 +1705,7 @@ private final class AgentMonitorOverviewScanner {
         currentTask: String,
         parsedStatus: String
     ) -> String {
-        if ["Executing", "Thinking"].contains(parsedStatus) {
+        if ["Executing", "Thinking", "Paused"].contains(parsedStatus) {
             return parsedStatus
         }
         guard isAlive else { return parsedStatus == "History" ? "Done" : parsedStatus }
@@ -1706,8 +1718,7 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func parseSessionFile(_ url: URL) -> ParsedSession? {
-        guard let data = try? Data(contentsOf: url), data.count <= 20_000_000 else { return nil }
-        let text = String(decoding: data, as: UTF8.self)
+        guard let text = sessionText(from: url) else { return nil }
         var sessionId = url.deletingPathExtension().lastPathComponent
         var cwd = ""
         var model = ""
@@ -1725,7 +1736,7 @@ private final class AgentMonitorOverviewScanner {
         var latestActivity: Date?
         var pendingCalls: [String: String] = [:]
 
-        for line in text.split(whereSeparator: \.isNewline).suffix(20_000) {
+        for line in text.split(whereSeparator: \.isNewline) {
             guard let lineData = String(line).data(using: .utf8),
                   let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { continue }
             if let timestamp = date(from: object) {
@@ -1779,21 +1790,21 @@ private final class AgentMonitorOverviewScanner {
                     if !objective.isEmpty {
                         activeGoalObjective = objective
                         activeGoalStatus = goalStatus
-                        if goalStatus == "active" {
+                        if isUnfinishedGoalStatus(goalStatus) {
                             currentTask = objective
-                            if pendingCalls.isEmpty {
-                                status = "Thinking"
-                            }
+                            status = goalStatus == "active" ? "Executing" : "Paused"
+                        } else {
+                            status = "Done"
                         }
                     }
                 } else if eventType == "task_complete" {
                     currentTask = activeGoalObjective
                     pendingCalls.removeAll()
-                    status = activeGoalStatus == "active" ? "Thinking" : "Done"
+                    status = statusForGoal(activeGoalStatus)
                 } else if eventType == "turn_aborted" {
                     currentTask = activeGoalObjective
                     pendingCalls.removeAll()
-                    status = activeGoalStatus == "active" ? "Thinking" : "Done"
+                    status = statusForGoal(activeGoalStatus)
                 }
             }
 
@@ -1822,10 +1833,12 @@ private final class AgentMonitorOverviewScanner {
             if !activeGoalObjective.isEmpty {
                 currentTask = activeGoalObjective
             }
-        } else if activeGoalStatus == "active", !activeGoalObjective.isEmpty {
+        } else if isUnfinishedGoalStatus(activeGoalStatus), !activeGoalObjective.isEmpty {
             currentTask = activeGoalObjective
-            if status == "History" || status == "Done" {
-                status = "Thinking"
+            if activeGoalStatus != "active" {
+                status = "Paused"
+            } else {
+                status = "Executing"
             }
         } else if currentTask.isEmpty, !activeGoalObjective.isEmpty {
             currentTask = activeGoalObjective
@@ -1845,6 +1858,33 @@ private final class AgentMonitorOverviewScanner {
             latestActivity: latestActivity ?? ((try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate),
             sourcePath: url.path
         )
+    }
+
+    private func sessionText(from url: URL) -> String? {
+        let headLimit = 1_000_000
+        let tailLimit = 20_000_000
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let size = try? handle.seekToEnd() else { return nil }
+        if size <= UInt64(tailLimit) {
+            try? handle.seek(toOffset: 0)
+            guard let data = try? handle.readToEnd() else { return nil }
+            return String(decoding: data, as: UTF8.self)
+        }
+        try? handle.seek(toOffset: 0)
+        let head = (try? handle.read(upToCount: headLimit)) ?? Data()
+        try? handle.seek(toOffset: size - UInt64(tailLimit))
+        let tail = (try? handle.readToEnd()) ?? Data()
+        return String(decoding: head, as: UTF8.self) + "\n" + String(decoding: tail, as: UTF8.self)
+    }
+
+    private func isUnfinishedGoalStatus(_ status: String) -> Bool {
+        !status.isEmpty && status.lowercased() != "complete"
+    }
+
+    private func statusForGoal(_ status: String) -> String {
+        guard isUnfinishedGoalStatus(status) else { return "Done" }
+        return status == "active" ? "Executing" : "Paused"
     }
 
     private func scanProcessInfo() -> [Int: ProcessInfo] {
@@ -1903,9 +1943,9 @@ private final class AgentMonitorOverviewScanner {
                 childPids: childPids,
                 processInfo: processInfo,
                 currentTask: parsed.currentTask,
-                parsedStatus: parsed.status == "Done" ? "Thinking" : parsed.status
+                parsedStatus: parsed.status
             )
-            guard ["Thinking", "Executing", "Waiting"].contains(status) else { continue }
+            guard ["Thinking", "Executing", "Waiting", "Paused"].contains(status) else { continue }
             let contextPercent = parsed.contextWindow > 0 ? min(Double(parsed.lastContextTokens) / Double(parsed.contextWindow), 1) : 0
             let projectName = lastPathSegment(parsed.cwd).isEmpty ? spec.name : lastPathSegment(parsed.cwd)
             rows.append(AgentMonitorSessionSnapshot(
@@ -3488,7 +3528,7 @@ private struct AgentCommandDashboardView: View {
     }
 
     private func isActiveSession(_ session: AgentMonitorSessionSnapshot) -> Bool {
-        ["Thinking", "Executing", "Waiting"].contains(session.status) ||
+        ["Thinking", "Executing", "Waiting", "Paused"].contains(session.status) ||
         (!session.currentTask.isEmpty && session.status != "History" && session.status != "Done")
     }
 
@@ -4311,7 +4351,7 @@ private struct AgentCommandDashboardView: View {
 
     private func islandPhase(for status: String) -> SessionPhase {
         switch status {
-        case "Waiting": return .waitingInput
+        case "Waiting", "Paused": return .waitingInput
         case "Thinking", "Executing": return .processing
         case "Done": return .done
         default: return .idle
@@ -4366,6 +4406,7 @@ private struct AgentCommandDashboardView: View {
     private func statusText(_ status: String) -> String {
         switch status {
         case "Waiting": return localizer.overviewStatusWaiting
+        case "Paused": return pausedStatusText
         case "Thinking": return localizer.overviewStatusThinking
         case "Executing": return localizer.overviewStatusExecuting
         case "History": return localizer.overviewStatusHistory
@@ -4377,11 +4418,22 @@ private struct AgentCommandDashboardView: View {
     private func statusColor(_ status: String) -> Color {
         switch status {
         case "Waiting": return Theme.Colors.info
+        case "Paused": return Theme.Colors.warning
         case "Thinking": return Theme.Colors.purple
         case "Executing": return Theme.Colors.success
         case "History": return Theme.Colors.textTertiary
         case "Done": return Theme.Colors.info
         default: return Theme.Colors.textTertiary
+        }
+    }
+
+    private var pausedStatusText: String {
+        switch localizer.language {
+        case .simplifiedChinese: return "暂停"
+        case .traditionalChinese: return "暫停"
+        case .japanese: return "一時停止"
+        case .korean: return "일시 중지"
+        case .english, .maltese: return "Paused"
         }
     }
 
