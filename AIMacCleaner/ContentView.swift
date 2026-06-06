@@ -106,7 +106,13 @@ struct ContentView: View {
             detailContent
         }
         .frame(minWidth: 960, minHeight: 640)
-        .onAppear { service.refreshDiskInfo() }
+        .onAppear {
+            service.refreshDiskInfo()
+            service.refreshHardwareInfo()
+            service.refreshCachedSurfacesInBackground(minInterval: 30)
+            overviewStore.refresh(force: true)
+            service.importKnownAgentHistory()
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(service)
@@ -694,7 +700,7 @@ struct AgentMonitorOverviewRow: Identifiable {
     let projectPath: String
 }
 
-struct AgentMonitorTokenBreakdown {
+struct AgentMonitorTokenBreakdown: Codable {
     let input: Int
     let output: Int
     let cacheRead: Int
@@ -702,7 +708,7 @@ struct AgentMonitorTokenBreakdown {
     var total: Int { input + output + cacheRead }
 }
 
-struct AgentMonitorSessionSnapshot: Identifiable {
+struct AgentMonitorSessionSnapshot: Identifiable, Codable {
     let id: String
     let agentName: String
     let pid: Int?
@@ -725,7 +731,7 @@ struct AgentMonitorSessionSnapshot: Identifiable {
     let sourcePath: String
 }
 
-struct AgentMonitorUsageSnapshot: Identifiable {
+struct AgentMonitorUsageSnapshot: Identifiable, Codable {
     let id: String
     let agentName: String
     let sessionCount: Int
@@ -753,14 +759,26 @@ final class AgentMonitorOverviewStore: ObservableObject {
     private var lastRealtimeRefreshDate: Date?
     private let activeRetentionWindow: TimeInterval = 10 * 60
 
+    private struct Cache: Codable {
+        var version: Int = 1
+        var updatedAt: Date = Date()
+        var snapshots: [AgentMonitorUsageSnapshot] = []
+        var sessions: [AgentMonitorSessionSnapshot] = []
+        var authorizedRoots: [String] = []
+        var scannedRoots: [String] = []
+        var lastScanDate: Date?
+    }
+
     init() {
         scannedRoots = UserDefaults.standard.stringArray(forKey: cachedRootsKey) ?? []
+        loadCache()
     }
 
     func refresh(force: Bool = false) {
         refreshRealtime()
         if !force,
            let lastScanDate,
+           !snapshots.isEmpty,
            Date().timeIntervalSince(lastScanDate) < 45 {
             return
         }
@@ -778,6 +796,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
                 UserDefaults.standard.set(result.scannedRoots, forKey: self.cachedRootsKey)
                 self.lastScanDate = Date()
                 self.isScanning = false
+                self.saveCache()
             }
         }
     }
@@ -812,6 +831,10 @@ final class AgentMonitorOverviewStore: ObservableObject {
                             if left == right { return $0.agentName < $1.agentName }
                             return left > right
                         }
+                    let realtimeSnapshots = Self.usageSnapshots(from: self.sessions)
+                    if !realtimeSnapshots.isEmpty {
+                        self.snapshots = Self.mergedSnapshots(primary: realtimeSnapshots, fallback: self.snapshots)
+                    }
                 }
                 if !result.authorizedRoots.isEmpty {
                     self.authorizedRoots = result.authorizedRoots
@@ -819,6 +842,11 @@ final class AgentMonitorOverviewStore: ObservableObject {
                 if self.scannedRoots.isEmpty, !result.scannedRoots.isEmpty {
                     self.scannedRoots = result.scannedRoots
                 }
+                let cachedSessionSnapshots = Self.usageSnapshots(from: self.sessions)
+                if !cachedSessionSnapshots.isEmpty {
+                    self.snapshots = Self.mergedSnapshots(primary: cachedSessionSnapshots, fallback: self.snapshots)
+                }
+                self.saveCache()
                 self.lastRealtimeRefreshDate = Date()
                 self.isRefreshingRealtime = false
             }
@@ -828,6 +856,71 @@ final class AgentMonitorOverviewStore: ObservableObject {
     private static func isActiveSession(_ session: AgentMonitorSessionSnapshot) -> Bool {
         ["Thinking", "Executing", "Waiting", "Paused"].contains(session.status) ||
         (!session.currentTask.isEmpty && session.status != "History" && session.status != "Done")
+    }
+
+    private static func usageSnapshots(from sessions: [AgentMonitorSessionSnapshot]) -> [AgentMonitorUsageSnapshot] {
+        Dictionary(grouping: sessions, by: \.agentName).map { agentName, rows in
+            let latest = rows.compactMap(\.latestActivity).max()
+            let top = rows.max {
+                ($0.latestActivity ?? .distantPast) < ($1.latestActivity ?? .distantPast)
+            }
+            return AgentMonitorUsageSnapshot(
+                id: agentName,
+                agentName: agentName,
+                sessionCount: Set(rows.map(\.sessionId)).count,
+                totalTokens: rows.reduce(0) { $0 + $1.tokens.total },
+                contextPercent: rows.map(\.contextPercent).max() ?? 0,
+                processCount: Set(rows.compactMap(\.pid)).count,
+                portCount: rows.reduce(0) { $0 + $1.ports.count },
+                latestActivity: latest,
+                projectPath: top?.projectPath ?? "",
+                sourcePath: top?.sourcePath ?? ""
+            )
+        }
+        .sorted {
+            let left = $0.latestActivity ?? .distantPast
+            let right = $1.latestActivity ?? .distantPast
+            if left == right { return $0.agentName < $1.agentName }
+            return left > right
+        }
+    }
+
+    private static func mergedSnapshots(primary: [AgentMonitorUsageSnapshot], fallback: [AgentMonitorUsageSnapshot]) -> [AgentMonitorUsageSnapshot] {
+        var byName = Dictionary(uniqueKeysWithValues: fallback.map { ($0.agentName, $0) })
+        for snapshot in primary {
+            byName[snapshot.agentName] = snapshot
+        }
+        return Array(byName.values).sorted {
+            let left = $0.latestActivity ?? .distantPast
+            let right = $1.latestActivity ?? .distantPast
+            if left == right { return $0.agentName < $1.agentName }
+            return left > right
+        }
+    }
+
+    private func loadCache() {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: SandboxPaths.shared.agentMonitorCachePath)),
+              let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
+        snapshots = cache.snapshots
+        sessions = cache.sessions
+        authorizedRoots = cache.authorizedRoots
+        if !cache.scannedRoots.isEmpty {
+            scannedRoots = cache.scannedRoots
+        }
+        lastScanDate = cache.lastScanDate
+    }
+
+    private func saveCache() {
+        let cache = Cache(
+            updatedAt: Date(),
+            snapshots: snapshots,
+            sessions: Array(sessions.prefix(240)),
+            authorizedRoots: authorizedRoots,
+            scannedRoots: scannedRoots,
+            lastScanDate: lastScanDate
+        )
+        guard let data = try? JSONEncoder().encode(cache) else { return }
+        try? data.write(to: URL(fileURLWithPath: SandboxPaths.shared.agentMonitorCachePath), options: .atomic)
     }
 }
 
@@ -1055,6 +1148,15 @@ private final class AgentMonitorOverviewScanner {
             children: children
         )
         liveSessions.append(contentsOf: recentSessions)
+        for root in fixedRoots {
+            if root.hasSuffix("/opencode.db") {
+                liveSessions.append(contentsOf: parseOpenCodeDBSessions(path: root, processInfo: processInfo))
+            } else if root.hasSuffix("/sqlite.db"), root.lowercased().contains("minimax") {
+                liveSessions.append(contentsOf: parseMiniMaxDBSessions(path: root, processInfo: processInfo))
+            } else if root.hasSuffix("/nexus.db"), root.lowercased().contains("minimax") {
+                liveSessions.append(contentsOf: parseMiniMaxNexusDBSessions(path: root, processInfo: processInfo))
+            }
+        }
         let activeSessions = uniqueSessions(liveSessions.filter { isRealtimeActiveSession($0) })
             .sorted {
                 let left = $0.latestActivity ?? .distantPast
@@ -1224,9 +1326,21 @@ private final class AgentMonitorOverviewScanner {
                 return [root, root + "/sqlite.db", root + "/nexus/nexus.db", root + "/sessions", root + "/logs"]
             }
         default:
+            guard isRootLikelyForSpec(root, spec: spec) else { return [] }
             return genericAgentRoots(root)
         }
         return []
+    }
+
+    private func isRootLikelyForSpec(_ root: String, spec: AgentSpec) -> Bool {
+        let lower = root.lowercased()
+        let compactName = spec.name.lowercased().replacingOccurrences(of: " ", with: "")
+        if lower.contains(compactName) { return true }
+        if spec.processKeywords.contains(where: { lower.contains($0.lowercased()) }) { return true }
+        let last = URL(fileURLWithPath: lower).lastPathComponent
+        return last.hasPrefix(".") && spec.processKeywords.contains { keyword in
+            last.contains(keyword.lowercased())
+        }
     }
 
     private func genericAgentRoots(_ root: String) -> [String] {
@@ -1303,7 +1417,10 @@ private final class AgentMonitorOverviewScanner {
             return []
         }
         var files: [URL] = []
+        var visited = 0
         for case let url as URL in enumerator {
+            visited += 1
+            if visited > 8000 { break }
             let name = url.lastPathComponent.lowercased()
             if ["node_modules", ".git", "cache", "caches", "deriveddata", "tmp", "logs", "log", "telemetry", "plugins", ".builtin-skills"].contains(name) {
                 enumerator.skipDescendants()
@@ -1521,6 +1638,14 @@ private final class AgentMonitorOverviewScanner {
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
         defer { sqlite3_finalize(stmt) }
 
+        let liveMiniMaxProcesses = processInfo.values.filter { matchingSpecName($0.command) == "MiniMax Agent" }
+        let liveByCwd = Dictionary(grouping: liveMiniMaxProcesses, by: { processCwd(pid: $0.pid) ?? "" })
+        let fallbackLiveProcess = liveMiniMaxProcesses.first {
+            $0.command.localizedCaseInsensitiveContains("opencode serve")
+        } ?? liveMiniMaxProcesses.first {
+            $0.command.localizedCaseInsensitiveContains("daemon.js")
+        } ?? liveMiniMaxProcesses.first
+        var claimedFallbackProcess = false
         var rows: [AgentMonitorSessionSnapshot] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
             let sessionId = sqliteText(stmt, 0)
@@ -1539,16 +1664,24 @@ private final class AgentMonitorOverviewScanner {
             let cache = Int(sqlite3_column_int64(stmt, 12))
             let turns = Int(sqlite3_column_int64(stmt, 13))
             let pid = pidValue > 0 ? pidValue : nil
-            let proc = pid.flatMap { processInfo[$0] }
+            let latest = dateFromMilliseconds(activeMs > 0 ? activeMs : updatedMs)
+            let hasActiveStatus = ["start", "running", "active", "working", "processing", "progress", "queued", "pending"]
+                .contains { rawStatus.contains($0) }
+            var proc = pid.flatMap { processInfo[$0] } ?? liveByCwd[workspace]?.first
+            if proc == nil, hasActiveStatus, !claimedFallbackProcess, let fallbackLiveProcess {
+                proc = fallbackLiveProcess
+                claimedFallbackProcess = true
+            }
+            let resolvedPID = pid ?? proc?.pid
+            let isLive = processAlive || proc != nil
             let status: String
             if rawStatus.contains("finish") || rawStatus.contains("done") || rawStatus.contains("complete") {
-                status = processAlive ? "Waiting" : "Done"
-            } else if processAlive || proc != nil {
-                status = "Thinking"
+                status = isLive ? "Waiting" : "Done"
+            } else if hasActiveStatus || isLive {
+                status = "Executing"
             } else {
                 status = "History"
             }
-            let latest = dateFromMilliseconds(activeMs > 0 ? activeMs : updatedMs)
             let contextWindow = 512_000
             let contextPercent = min(Double(input + cache) / Double(contextWindow), 1)
             let label = agent.isEmpty ? "MiniMax" : "MiniMax \(agent)"
@@ -1556,7 +1689,7 @@ private final class AgentMonitorOverviewScanner {
             rows.append(AgentMonitorSessionSnapshot(
                 id: "MiniMax-\(sessionId)-db",
                 agentName: "MiniMax Agent",
-                pid: pid,
+                pid: resolvedPID,
                 sessionId: sessionId,
                 status: status,
                 projectName: lastPathSegment(workspace).isEmpty ? label : lastPathSegment(workspace),
@@ -1568,8 +1701,8 @@ private final class AgentMonitorOverviewScanner {
                 turnCount: turns,
                 currentTask: title.isEmpty ? label : title,
                 toolCount: 0,
-                runningToolCount: processAlive ? 1 : 0,
-                childCount: pid.map { descendants(of: $0, children: childrenMap(processInfo)).count } ?? 0,
+                runningToolCount: status == "Executing" ? 1 : 0,
+                childCount: resolvedPID.map { descendants(of: $0, children: childrenMap(processInfo)).count } ?? 0,
                 ports: [],
                 memoryMB: proc.map { max($0.rssKB / 1024, 1) },
                 latestActivity: latest,
@@ -2024,7 +2157,10 @@ private final class AgentMonitorOverviewScanner {
                 if isRecentlyModified(url, cutoff: cutoff) {
                     results.append(url)
                 }
-            } else if lower.contains("/.claude") || lower.contains("claude") || lower.contains("codex") {
+            } else if specForSessionPath(root) != nil || specs.contains(where: { spec in
+                lower.contains(spec.name.lowercased().replacingOccurrences(of: " ", with: "")) ||
+                spec.processKeywords.contains(where: { lower.contains($0.lowercased()) })
+            }) {
                 results.append(contentsOf: sessionFiles(in: root, cutoff: cutoff, maxFiles: 80))
             }
             if results.count >= 160 { break }
@@ -2119,9 +2255,13 @@ private final class AgentMonitorOverviewScanner {
 
     private func isAgentSessionPath(_ path: String) -> Bool {
         let lower = path.lowercased()
-        return (lower.contains("/.codex/sessions/") && lower.hasSuffix(".jsonl")) ||
-            (lower.contains("/.claude/") && lower.hasSuffix(".jsonl")) ||
-            (lower.contains("/.opencode/") && (lower.hasSuffix(".jsonl") || lower.hasSuffix(".db")))
+        guard lower.hasSuffix(".jsonl") || lower.hasSuffix(".json") || lower.hasSuffix(".log") || lower.hasSuffix(".db") || lower.hasSuffix(".vscdb") else {
+            return false
+        }
+        if lower.contains("/.codex/sessions/") || lower.contains("/.claude/") || lower.contains("/.opencode/") {
+            return true
+        }
+        return specForSessionPath(path) != nil
     }
 
     private func parseToolArgument(_ payload: [String: Any]) -> String {
@@ -2696,6 +2836,7 @@ struct AppOverviewTab: View {
     private func refresh() {
         service.refreshDiskInfo()
         service.refreshHardwareInfo()
+        service.refreshCachedSurfacesInBackground()
         overviewStore.refresh()
         sessionScanner.localizer = localizer
         sessionScanner.isScanning = true

@@ -51,6 +51,9 @@ class SandboxPaths {
     var bookmarksPath: String { dataDirectory + "/bookmarks.json" }
     var scanBookmarksPath: String { dataDirectory + "/scan_bookmarks.json" }
     var tokenScopeBookmarksPath: String { dataDirectory + "/tokenscope_bookmarks.json" }
+    var scannerCachePath: String { dataDirectory + "/scanner_cache_v1.json" }
+    var tokenScopeCachePath: String { dataDirectory + "/tokenscope_cache_v1.json" }
+    var agentMonitorCachePath: String { dataDirectory + "/agent_monitor_cache_v1.json" }
     var lastResponsePath: String { dataDirectory + "/last_response.txt" }
     var alertsPath: String { dataDirectory + "/alerts.json" }
     var alertRulePath: String { dataDirectory + "/alert_rule.json" }
@@ -74,6 +77,9 @@ class SandboxPaths {
             (home + "/.aimaccleaner_bookmarks.json", shared.bookmarksPath),
             (home + "/.aimaccleaner_scan_bookmarks.json", shared.scanBookmarksPath),
             (home + "/.aimaccleaner_tokenscope_bookmarks.json", shared.tokenScopeBookmarksPath),
+            (home + "/.aimaccleaner_scanner_cache_v1.json", shared.scannerCachePath),
+            (home + "/.aimaccleaner_tokenscope_cache_v1.json", shared.tokenScopeCachePath),
+            (home + "/.aimaccleaner_agent_monitor_cache_v1.json", shared.agentMonitorCachePath),
             (home + "/.aimaccleaner_last_response.txt", shared.lastResponsePath),
             (home + "/.aimaccleaner_alerts.json", shared.alertsPath),
             (home + "/.aimaccleaner_alert_rule.json", shared.alertRulePath),

@@ -890,8 +890,16 @@ private final class TokenScopeStore: ObservableObject {
     private var autoRefreshTimer: Timer?
     private var scanInFlight = false
 
+    private struct Cache: Codable {
+        var version: Int = 1
+        var updatedAt: Date = Date()
+        var records: [TokenScopeUsageRecord] = []
+        var sources: [TokenScopeSourceStatus] = []
+    }
+
     init() {
         sources = scanner.defaultSourceStatuses()
+        loadCache()
     }
 
     var hasRealData: Bool { !records.isEmpty }
@@ -967,8 +975,26 @@ private final class TokenScopeStore: ObservableObject {
                 self.scanCompleted = true
                 self.isScanning = false
                 self.scanInFlight = false
+                self.saveCache()
             }
         }
+    }
+
+    private func loadCache() {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: SandboxPaths.shared.tokenScopeCachePath)),
+              let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
+        records = cache.records
+        summaries = TokenScopeRange.cachedSummaries(for: cache.records)
+        if !cache.sources.isEmpty {
+            sources = cache.sources
+        }
+        scanCompleted = !cache.records.isEmpty || !cache.sources.isEmpty
+    }
+
+    private func saveCache() {
+        let cache = Cache(updatedAt: Date(), records: records, sources: sources)
+        guard let data = try? JSONEncoder().encode(cache) else { return }
+        try? data.write(to: URL(fileURLWithPath: SandboxPaths.shared.tokenScopeCachePath), options: .atomic)
     }
 }
 
@@ -1042,7 +1068,7 @@ private final class TokenScopeBookmarkStore {
 
 // MARK: - Domain Models
 
-private enum TokenScopeSource: String, CaseIterable {
+private enum TokenScopeSource: String, CaseIterable, Codable {
     case claude
     case codex
     case piAgent
@@ -1128,7 +1154,7 @@ private enum TokenScopeSource: String, CaseIterable {
     }
 }
 
-private struct TokenScopeUsageRecord: Identifiable, Hashable {
+private struct TokenScopeUsageRecord: Identifiable, Codable, Hashable {
     let id: String
     let source: TokenScopeSource
     let timestamp: Date
@@ -1363,7 +1389,7 @@ private struct TokenScopeSummary {
     }
 }
 
-private struct TokenScopeSourceStatus: Identifiable {
+private struct TokenScopeSourceStatus: Identifiable, Codable {
     let id: TokenScopeSource
     let source: TokenScopeSource
     let path: String

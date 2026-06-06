@@ -106,7 +106,7 @@ struct IgnoreResult: Codable {
     let ignored: [String]?
 }
 
-struct AppInfo: Identifiable, Hashable {
+struct AppInfo: Identifiable, Codable, Hashable {
     let id: String
     let name: String
     let displayName: String
@@ -353,7 +353,7 @@ struct CustomAgentSource: Codable, Identifiable {
     let addedAt: Date
 }
 
-struct DiscoveredAgent: Identifiable {
+struct DiscoveredAgent: Identifiable, Codable {
     let id: String
     let name: String
     let sessionCount: Int
@@ -362,7 +362,7 @@ struct DiscoveredAgent: Identifiable {
     let dataPath: String
 }
 
-struct AgentOpRecord: Identifiable {
+struct AgentOpRecord: Identifiable, Codable {
     let id: String
     let agentName: String
     let sessionId: String
@@ -384,7 +384,7 @@ struct TargetedFileOp: Identifiable {
     let fileSize: Int64
 }
 
-struct HardwareInfo {
+struct HardwareInfo: Codable {
     var cpuUsage: Double
     var cpuCoreCount: Int
     var cpuTemperature: Double?

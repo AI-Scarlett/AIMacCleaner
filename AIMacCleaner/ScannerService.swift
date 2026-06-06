@@ -23,15 +23,56 @@ class ScannerService: ObservableObject {
     private var ignoreFilePath: String { SandboxPaths.shared.ignoreListPath }
     private var aiConfigFilePath: String { SandboxPaths.shared.aiConfigPath }
     private var scanBookmarksPath: String { SandboxPaths.shared.scanBookmarksPath }
+    private var scannerCachePath: String { SandboxPaths.shared.scannerCachePath }
     private var authorizedScanRoots: Set<String> = []
     private var hasRestoredScanBookmarks = false
+    private var lastCachedSurfaceRefreshTime: Date = .distantPast
+
+    private struct ScannerCache: Codable {
+        var version: Int = 1
+        var updatedAt: Date = Date()
+        var scanItems: [ScanItem] = []
+        var diskInfo: DiskInfo?
+        var hardwareInfo: HardwareInfo?
+        var installedApps: [AppInfo] = []
+        var operationRecords: [OperationRecord] = []
+    }
 
     init() {
         loadIgnores()
         loadAIConfigFromDisk()
+        loadScannerCache()
         operationMonitor.guardFeature = guardFeature
-        diskInfo = getDiskInfoNative()
-        hardwareInfo = safeGetHardwareInfo()
+        if diskInfo == nil { diskInfo = getDiskInfoNative() }
+        if hardwareInfo == nil { hardwareInfo = safeGetHardwareInfo() }
+    }
+
+    private func loadScannerCache() {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: scannerCachePath)),
+              let cache = try? JSONDecoder().decode(ScannerCache.self, from: data) else { return }
+        scanItems = cache.scanItems
+        diskInfo = cache.diskInfo
+        hardwareInfo = cache.hardwareInfo
+        installedApps = cache.installedApps
+        operationRecords = cache.operationRecords
+        processedOperationRecordIDs = Set(cache.operationRecords.map(\.id))
+        if !cache.operationRecords.isEmpty {
+            operationMonitor.mergeHistoricalRecords(cache.operationRecords)
+            guardFeature.rebuildAnalytics(from: cache.operationRecords)
+        }
+    }
+
+    private func saveScannerCache() {
+        let cache = ScannerCache(
+            updatedAt: Date(),
+            scanItems: scanItems,
+            diskInfo: diskInfo,
+            hardwareInfo: hardwareInfo,
+            installedApps: installedApps,
+            operationRecords: Array(operationRecords.prefix(10000))
+        )
+        guard let data = try? JSONEncoder().encode(cache) else { return }
+        try? data.write(to: URL(fileURLWithPath: scannerCachePath), options: .atomic)
     }
 
     // MARK: - Disk Info
@@ -82,10 +123,12 @@ class ScannerService: ObservableObject {
 
     func refreshDiskInfo() {
         diskInfo = getDiskInfoNative()
+        saveScannerCache()
     }
 
     func refreshHardwareInfo() {
         hardwareInfo = safeGetHardwareInfo()
+        saveScannerCache()
     }
 
     private func safeGetHardwareInfo() -> HardwareInfo {
@@ -368,12 +411,22 @@ class ScannerService: ObservableObject {
 
     // MARK: - Local Scan
 
-    func scanLocal() async {
+    func scanLocal(promptForAccess: Bool = true) async {
         isScanning = true
         errorMessage = nil
         restoreScanAccessFromBookmarks()
 
-        if authorizedScanRoots.isEmpty, !requestLocalScanAccess() {
+        if authorizedScanRoots.isEmpty {
+            guard promptForAccess, requestLocalScanAccess() else {
+                if promptForAccess {
+                    errorMessage = localizer?.selectMonitorDirs ?? "Please select folders to scan"
+                }
+                isScanning = false
+                return
+            }
+        }
+
+        if authorizedScanRoots.isEmpty {
             errorMessage = localizer?.selectMonitorDirs ?? "Please select folders to scan"
             isScanning = false
             return
@@ -432,6 +485,20 @@ class ScannerService: ObservableObject {
         scanItems = items
         refreshDiskInfo()
         isScanning = false
+        saveScannerCache()
+    }
+
+    func refreshCachedSurfacesInBackground(minInterval: TimeInterval = 120) {
+        guard Date().timeIntervalSince(lastCachedSurfaceRefreshTime) > minInterval else { return }
+        lastCachedSurfaceRefreshTime = Date()
+        Task {
+            if !isScanning {
+                await scanLocal(promptForAccess: false)
+            }
+            if !isScanningApps {
+                await scanInstalledApps()
+            }
+        }
     }
 
     nonisolated private static func expandUserPath(_ path: String) -> String {
@@ -470,13 +537,21 @@ class ScannerService: ObservableObject {
             do {
                 var stale = false
                 let url = try URL(resolvingBookmarkData: bookmark, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale)
-                guard url.startAccessingSecurityScopedResource() else { continue }
+                guard url.startAccessingSecurityScopedResource() else {
+                    if FileManager.default.fileExists(atPath: path) {
+                        restored.insert(path)
+                    }
+                    continue
+                }
                 restored.insert(url.path)
                 if stale, let newBookmark = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
                     refreshed.removeValue(forKey: path)
                     refreshed[url.path] = newBookmark
                 }
             } catch {
+                if FileManager.default.fileExists(atPath: path) {
+                    restored.insert(path)
+                }
                 continue
             }
         }
@@ -588,6 +663,7 @@ class ScannerService: ObservableObject {
 
     func removeScannedItems(ids: [String]) {
         scanItems.removeAll { ids.contains($0.id) }
+        saveScannerCache()
     }
 
     // MARK: - Ignore
@@ -600,6 +676,7 @@ class ScannerService: ObservableObject {
                 scanItems[i].ignored = true
             }
         }
+        saveScannerCache()
     }
 
     func unignoreItems(ids: [String]) {
@@ -610,6 +687,7 @@ class ScannerService: ObservableObject {
                 scanItems[i].ignored = false
             }
         }
+        saveScannerCache()
     }
 
     private func loadIgnores() {
@@ -671,6 +749,7 @@ class ScannerService: ObservableObject {
         isAiScanning = false
         refreshDiskInfo()
         aiStatusMessage = "\(localizer?.aiScanComplete ?? "AI scan complete, found") \(newItems.count) \(localizer?.itemsLabel ?? "items")"
+        saveScannerCache()
     }
 
     private func makeAppReviewDemoScanItems() -> [ScanItem] {
@@ -737,6 +816,7 @@ class ScannerService: ObservableObject {
     // MARK: - App Management
 
     func scanInstalledApps() async {
+        guard !isScanningApps else { return }
         isScanningApps = true
         let apps = await Task.detached(priority: .userInitiated) {
             var results: [AppInfo] = []
@@ -814,6 +894,7 @@ class ScannerService: ObservableObject {
 
         installedApps = apps
         isScanningApps = false
+        saveScannerCache()
     }
 
     nonisolated private func scanAppDir(_ dir: String, fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
@@ -1448,6 +1529,7 @@ class ScannerService: ObservableObject {
         processedOperationRecordIDs.removeAll()
         lastAgentHistoryImportTime = Date()
         guardFeature.rebuildAnalytics(from: [])
+        saveScannerCache()
     }
 
     func ingestAgentSessionRecords(_ records: [AgentOpRecord]) {
@@ -1460,6 +1542,7 @@ class ScannerService: ObservableObject {
         operationRecords = operationMonitor.records
         processedOperationRecordIDs = Set(operationRecords.map(\.id))
         guardFeature.rebuildAnalytics(from: operationRecords)
+        saveScannerCache()
     }
 
     func ingestHookAuditRecord(_ record: OperationRecord) {
@@ -1472,6 +1555,7 @@ class ScannerService: ObservableObject {
         operationRecords = operationMonitor.records
         processedOperationRecordIDs = Set(operationRecords.map(\.id))
         guardFeature.rebuildAnalytics(from: operationRecords)
+        saveScannerCache()
     }
 
     func importKnownAgentHistory() {
@@ -1565,6 +1649,7 @@ class ScannerService: ObservableObject {
                 )
 
                 if Date().timeIntervalSince(self.lastAutoSaveTime) > 30 {
+                    self.saveScannerCache()
                     self.guardFeature.saveHourlyStats()
                     self.guardFeature.saveAlerts()
                     self.guardFeature.saveCommandRules()
