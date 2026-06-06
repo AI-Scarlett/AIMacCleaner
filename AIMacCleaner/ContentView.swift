@@ -824,7 +824,8 @@ final class AgentMonitorOverviewStore: ObservableObject {
     }
 
     private static func isActiveSession(_ session: AgentMonitorSessionSnapshot) -> Bool {
-        ["Thinking", "Executing", "Waiting"].contains(session.status) || !session.currentTask.isEmpty
+        ["Thinking", "Executing", "Waiting"].contains(session.status) ||
+        (!session.currentTask.isEmpty && session.status != "History" && session.status != "Done")
     }
 }
 
@@ -1068,7 +1069,8 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func isRealtimeActiveSession(_ session: AgentMonitorSessionSnapshot) -> Bool {
-        ["Thinking", "Executing", "Waiting"].contains(session.status) || !session.currentTask.isEmpty
+        ["Thinking", "Executing", "Waiting"].contains(session.status) ||
+        (!session.currentTask.isEmpty && session.status != "History" && session.status != "Done")
     }
 
     private func scanRecentSessionFiles(excluding liveSources: Set<String>, processInfo: [Int: ProcessInfo], authorizedRoots: [String]) -> [AgentMonitorSessionSnapshot] {
@@ -1776,16 +1778,14 @@ private final class AgentMonitorOverviewScanner {
                             if pendingCalls.isEmpty {
                                 status = "Thinking"
                             }
-                        } else if currentTask == objective {
-                            currentTask = ""
                         }
                     }
                 } else if eventType == "task_complete" {
-                    currentTask = activeGoalStatus == "active" ? activeGoalObjective : ""
+                    currentTask = activeGoalObjective
                     pendingCalls.removeAll()
                     status = activeGoalStatus == "active" ? "Thinking" : "Done"
                 } else if eventType == "turn_aborted" {
-                    currentTask = activeGoalStatus == "active" ? activeGoalObjective : ""
+                    currentTask = activeGoalObjective
                     pendingCalls.removeAll()
                     status = activeGoalStatus == "active" ? "Thinking" : "Done"
                 }
@@ -1818,6 +1818,8 @@ private final class AgentMonitorOverviewScanner {
             if status == "History" || status == "Done" {
                 status = "Thinking"
             }
+        } else if currentTask.isEmpty, !activeGoalObjective.isEmpty {
+            currentTask = activeGoalObjective
         }
         guard !cwd.isEmpty || input + output + cache > 0 || toolCount > 0 else { return nil }
         return ParsedSession(
@@ -3340,7 +3342,6 @@ private struct AgentCommandDashboardView: View {
     @ObservedObject var monitor: OperationMonitor
     @EnvironmentObject var localizer: Localizer
     @EnvironmentObject var service: ScannerService
-    @EnvironmentObject var islandViewModel: IslandViewModel
     let onRefresh: () -> Void
 
     @State private var selectedSessionID: String?
@@ -3348,6 +3349,7 @@ private struct AgentCommandDashboardView: View {
     @State private var authorizationStatus = ""
     @State private var visibleSessionCount = 24
     @State private var showingSessionDetail = false
+    @State private var showingActiveIsland = false
 
     private var allSessions: [AgentMonitorSessionSnapshot] {
         let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -3480,35 +3482,41 @@ private struct AgentCommandDashboardView: View {
     }
 
     private func isActiveSession(_ session: AgentMonitorSessionSnapshot) -> Bool {
-        switch session.status {
-        case "Thinking", "Executing", "Waiting":
-            return true
-        default:
-            return false
-        }
+        ["Thinking", "Executing", "Waiting"].contains(session.status) ||
+        (!session.currentTask.isEmpty && session.status != "History" && session.status != "Done")
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if monitor.needsReauthorization { authorizationBanner }
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                if monitor.needsReauthorization { authorizationBanner }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                    dataStatusCard
-                    metricStrip
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                        dataStatusCard
+                        metricStrip
 
-                    currentSessionUsageCard
-                    sessionListCard
+                        currentSessionUsageCard
+                        sessionListCard
 
-                    VStack(spacing: Theme.Spacing.md) {
-                        projectCard
+                        VStack(spacing: Theme.Spacing.md) {
+                            projectCard
+                        }
+                        .frame(maxWidth: .infinity, alignment: .top)
                     }
-                    .frame(maxWidth: .infinity, alignment: .top)
+                    .padding(Theme.Spacing.xl)
                 }
-                .padding(Theme.Spacing.xl)
+                .background(Theme.Colors.sidebarBg.opacity(0.24))
             }
-            .background(Theme.Colors.sidebarBg.opacity(0.24))
+
+            if showingActiveIsland {
+                activeSessionIslandOverlay
+                    .padding(.top, Theme.Spacing.lg)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(20)
+            }
         }
+        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: showingActiveIsland)
         .onAppear {
             onRefresh()
             normalizeSelection()
@@ -3777,7 +3785,7 @@ private struct AgentCommandDashboardView: View {
 
     private var currentSessionUsageCard: some View {
         dashboardCard(title: "\(localizer.currentSession) / \(localizer.overviewTokenUse)", icon: "chart.bar.xaxis", color: Theme.Colors.teal) {
-            Button { showActiveSessionIsland() } label: { Image(systemName: "capsule.portrait.tophalf.filled") }
+            Button { showingActiveIsland = true } label: { Image(systemName: "capsule.portrait.tophalf.filled") }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(selectedActiveSession == nil && selectedSession == nil)
@@ -3850,6 +3858,92 @@ private struct AgentCommandDashboardView: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 220, alignment: .top)
+    }
+
+    private var activeSessionIslandOverlay: some View {
+        let session = selectedActiveSession ?? selectedSession
+        return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "capsule.portrait.tophalf.filled")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.teal)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(session?.projectName ?? localizer.overviewWaitingAgentSession)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(1)
+                    Text(session.map { "\(statusText($0.status)) · \($0.agentName)" } ?? localizer.overviewNoActiveSession)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(session.map { statusColor($0.status) } ?? Theme.Colors.textTertiary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Button { showingSessionDetail = true } label: {
+                    Image(systemName: "sidebar.right")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .disabled(session == nil)
+                .help(localizer.agentSessionDetail)
+
+                Button { showingActiveIsland = false } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .help(localizer.confirmBtn)
+            }
+
+            if let session {
+                Text(session.currentTask.isEmpty ? localizer.overviewWaitingAgentSession : session.currentTask)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: Theme.Spacing.sm) {
+                    islandMetric("token", compactCount(session.tokens.total), Theme.Colors.teal)
+                    islandMetric(localizer.contextWindow, "\(Int(session.contextPercent * 100))%", contextColor(session.contextPercent))
+                    islandMetric(localizer.overviewModel, session.model, Theme.Colors.textPrimary)
+                    islandMetric("pid", session.pid.map(String.init) ?? "-", Theme.Colors.textPrimary)
+                }
+            } else {
+                Text(localizer.overviewNoActiveSessionHint)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.sm)
+        .frame(width: 520, alignment: .leading)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(Theme.Colors.teal.opacity(0.35), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+    }
+
+    private func islandMetric(_ title: String, _ value: String, _ color: Color) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textTertiary)
+            Text(value)
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Theme.Colors.cardBg.opacity(0.75))
+        .clipShape(Capsule())
     }
 
     private var activeSessionEmptyState: some View {
@@ -4289,65 +4383,6 @@ private struct AgentCommandDashboardView: View {
         let path = session.projectPath.isEmpty ? session.sourcePath : session.projectPath
         guard !path.isEmpty else { return }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-    }
-
-    private func showActiveSessionIsland() {
-        let session = selectedActiveSession ?? selectedSession
-        (NSApp.delegate as? AppDelegate)?.initializeAgentCenterServices()
-        if let session {
-            islandViewModel.lastAgentIcon = "terminal.fill"
-            islandViewModel.currentSession = islandSessionState(from: session)
-            islandViewModel.sessionToDetail = islandViewModel.currentSession
-            islandViewModel.lastStatusText = "\(statusText(session.status)) · \(session.projectName) · \(compactCount(session.tokens.total)) token"
-            islandViewModel.blinking = session.status == "Executing" || session.status == "Thinking"
-            islandViewModel.show(level: .expanded)
-        } else {
-            islandViewModel.lastAgentIcon = "terminal.fill"
-            islandViewModel.lastStatusText = localizer.overviewWaitingAgentSession
-            islandViewModel.blinking = false
-            islandViewModel.show(level: .compact)
-        }
-    }
-
-    private func islandSessionState(from session: AgentMonitorSessionSnapshot) -> SessionState {
-        var state = SessionState(
-            id: session.sessionId,
-            agentType: session.agentName,
-            engineLabel: session.model,
-            engineConfigRoot: configRoot(for: session),
-            project: session.projectName,
-            cwd: session.projectPath.isEmpty ? session.sourcePath : session.projectPath,
-            terminal: "",
-            phase: phase(for: session.status),
-            startedAt: session.latestActivity ?? Date()
-        )
-        state.tokens = TokenUsage(
-            input: UInt64(max(session.tokens.input, 0)),
-            output: UInt64(max(session.tokens.output, 0)),
-            cacheRead: UInt64(max(session.tokens.cacheRead, 0)),
-            cacheCreate: 0
-        )
-        state.contextWindow = ContextWindowInfo(
-            totalInputTokens: UInt64(max(session.tokens.input + session.tokens.cacheRead, 0)),
-            totalOutputTokens: UInt64(max(session.tokens.output, 0)),
-            contextWindowSize: UInt64(max(session.contextWindow, 0)),
-            usedPercentage: session.contextPercent
-        )
-        state.description = session.currentTask
-        state.sessionTitle = session.currentTask
-        state.lastToolName = session.toolCount > 0 ? "\(session.toolCount) tools" : nil
-        state.lastToolTarget = displayLocation(for: session)
-        if let pid = session.pid { state.pid = UInt32(max(pid, 0)) }
-        return state
-    }
-
-    private func phase(for status: String) -> SessionPhase {
-        switch status {
-        case "Waiting": return .waitingInput
-        case "Thinking", "Executing": return .processing
-        case "Done": return .done
-        default: return .idle
-        }
     }
 
     private func loadMoreOverviewSessionsText(remaining: Int) -> String {
