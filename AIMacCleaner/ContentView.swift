@@ -2747,6 +2747,8 @@ private final class AgentMonitorOverviewScanner {
         var toolCount = 0
         var pendingTools = Set<String>()
         var latestActivity: Date?
+        var sawTitleGeneratorPrompt = false
+        var sawRealUserInstruction = false
 
         for line in text.split(whereSeparator: \.isNewline) {
             guard let data = String(line).data(using: .utf8),
@@ -2759,8 +2761,14 @@ private final class AgentMonitorOverviewScanner {
             if let value = stringValue(message, keys: ["model"]), !value.isEmpty { model = value }
             let role = stringValue(message, keys: ["role"]) ?? type
             if role == "user" {
-                if let task = normalizedInstruction(textContent(message["content"])), !task.isEmpty {
+                let rawContent = textContent(message["content"])
+                let isTitlePrompt = isConversationTitleGeneratorPrompt(rawContent)
+                sawTitleGeneratorPrompt = sawTitleGeneratorPrompt || isTitlePrompt
+                if let task = normalizedInstruction(rawContent), !task.isEmpty {
                     currentTask = task
+                    if !isTitlePrompt {
+                        sawRealUserInstruction = true
+                    }
                 }
                 for block in message["content"] as? [[String: Any]] ?? [] where stringValue(block, keys: ["type"]) == "tool_result" {
                     if let id = stringValue(block, keys: ["tool_use_id", "toolUseId"]) { pendingTools.remove(id) }
@@ -2780,9 +2788,17 @@ private final class AgentMonitorOverviewScanner {
                 }
             }
         }
+        let isPureTitleGeneratorSession = sawTitleGeneratorPrompt &&
+            !sawRealUserInstruction &&
+            input + output + cache == 0 &&
+            toolCount == 0
+        if isPureTitleGeneratorSession {
+            currentTask = ""
+        }
         let isSyntheticTitleSession = model == "<synthetic>" &&
-            currentTask.localizedCaseInsensitiveContains("conversation title generator")
+            (currentTask.localizedCaseInsensitiveContains("conversation title generator") || sawTitleGeneratorPrompt)
         guard !isSyntheticTitleSession,
+              !isPureTitleGeneratorSession,
               !cwd.isEmpty || input + output + cache > 0 || toolCount > 0 || !currentTask.isEmpty else { return nil }
         return ParsedSession(
             sessionId: sessionId,
@@ -3411,6 +3427,11 @@ private final class AgentMonitorOverviewScanner {
 
     private func normalizedInstruction(_ value: String?) -> String? {
         guard let value else { return nil }
+        if isConversationTitleGeneratorPrompt(value),
+           let embedded = embeddedUserMessage(fromTitleGeneratorPrompt: value),
+           !embedded.isEmpty {
+            return normalizedInstruction(embedded)
+        }
         let visibleText = removingAgentMetadataBlocks(from: value)
         let collapsed = visibleText
             .replacingOccurrences(of: "\r\n", with: "\n")
@@ -3436,6 +3457,31 @@ private final class AgentMonitorOverviewScanner {
         guard !noisyFragments.contains(where: { lower.contains($0) }) else { return nil }
         guard collapsed != "{}" && collapsed != "[]" && lower != "null" else { return nil }
         return String(collapsed.prefix(500))
+    }
+
+    private func isConversationTitleGeneratorPrompt(_ value: String?) -> Bool {
+        guard let value else { return false }
+        let lower = value.lowercased()
+        return lower.contains("conversation title generator") &&
+            lower.contains("user message:")
+    }
+
+    private func embeddedUserMessage(fromTitleGeneratorPrompt value: String) -> String? {
+        guard let marker = value.range(of: "User message:", options: [.caseInsensitive]) else { return nil }
+        var remainder = String(value[marker.upperBound...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let stopMarkers = [
+            "\n\nAssistant message:",
+            "\n\nAssistant response:",
+            "\n\nConversation:",
+            "\n\nTitle:"
+        ]
+        for stop in stopMarkers {
+            if let range = remainder.range(of: stop, options: [.caseInsensitive]) {
+                remainder = String(remainder[..<range.lowerBound])
+            }
+        }
+        return remainder.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func removingAgentMetadataBlocks(from text: String) -> String {
