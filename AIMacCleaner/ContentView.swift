@@ -397,84 +397,119 @@ struct ContentView: View {
     private var sidebarFooter: some View {
         Group {
             if sidebarCollapsed {
-                VStack(spacing: Theme.Spacing.sm) {
-                    Button {
+                VStack(spacing: 8) {
+                    footerIconButton(icon: "sidebar.right", color: Theme.Colors.textSecondary, help: localizer.expandSidebar) {
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                             sidebarCollapsed = false
                         }
-                    } label: {
-                        Image(systemName: "sidebar.right")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Theme.Colors.textSecondary)
                     }
-                    .buttonStyle(.plain)
-                    .help(localizer.expandSidebar)
 
-                    Button { showSettings = true } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Theme.Colors.textSecondary)
+                    footerIconButton(icon: "gearshape", color: Theme.Colors.textSecondary, help: localizer.settings) {
+                        showSettings = true
                     }
-                    .buttonStyle(.plain)
-                    .help(localizer.settings)
 
                     appearanceModeButton
+                    languageToggleButton
 
-                    Image(systemName: networkMode == "internet" ? "globe" : "lock.circle")
-                        .font(.system(size: 9))
-                        .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
-
-                    Text("v\(service.currentVersion)")
-                        .font(.system(size: 9))
-                        .foregroundStyle(Theme.Colors.textTertiary)
+                    footerStatusDot
                 }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 8)
+                .background(footerPanelBackground(cornerRadius: 12))
                 .padding(.vertical, Theme.Spacing.lg)
             } else {
-                VStack(spacing: Theme.Spacing.sm) {
-                    HStack(spacing: Theme.Spacing.sm) {
-                        Button { showSettings = true } label: {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 14))
-                                .foregroundStyle(Theme.Colors.textSecondary)
+                VStack(spacing: 8) {
+                    HStack(spacing: 7) {
+                        footerIconButton(icon: "gearshape", color: Theme.Colors.textSecondary, help: localizer.settings) {
+                            showSettings = true
                         }
-                        .buttonStyle(.plain)
-                        .help(localizer.settings)
 
                         appearanceModeButton
 
-                        Spacer()
-                    }
-
-                    HStack(spacing: Theme.Spacing.sm) {
                         languageToggleButton
 
-                        Image(systemName: networkMode == "internet" ? "globe" : "lock.circle")
-                            .font(.system(size: 10))
-                            .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
-
-                        Text("v\(service.currentVersion)")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Theme.Colors.textTertiary)
-
                         Spacer()
 
-                        Button {
+                        footerIconButton(icon: "sidebar.left", color: Theme.Colors.textTertiary, help: localizer.collapseSidebar) {
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                                 sidebarCollapsed = true
                             }
-                        } label: {
-                            Image(systemName: "sidebar.left")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Theme.Colors.textTertiary)
                         }
-                        .buttonStyle(.plain)
-                        .help(localizer.collapseSidebar)
                     }
+
+                    HStack(spacing: 6) {
+                        Image(systemName: networkMode == "internet" ? "globe" : "lock.circle")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
+
+                        Text(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
+                            .lineLimit(1)
+
+                        Text("v\(service.currentVersion)")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 9)
                 }
-                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(8)
+                .background(footerPanelBackground(cornerRadius: 14))
+                .padding(.horizontal, Theme.Spacing.md)
                 .padding(.vertical, Theme.Spacing.md)
             }
         }
+    }
+
+    private func footerPanelBackground(cornerRadius: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius)
+            .fill(Theme.Colors.sidebarBg.opacity(0.78))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(Theme.Colors.cardBg.opacity(0.52))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Theme.Colors.teal.opacity(0.26),
+                                Theme.Colors.separator.opacity(0.42),
+                                Theme.Colors.purple.opacity(0.18)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(color: Theme.Colors.teal.opacity(0.08), radius: 10, x: 0, y: 0)
+    }
+
+    private func footerIconButton(icon: String, color: Color, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: sidebarCollapsed ? 12 : 11, weight: .semibold))
+        }
+        .buttonStyle(.plain)
+        .modifier(HUDIconChrome(color: color, disabled: false, size: sidebarCollapsed ? 30 : 28, radius: 8))
+        .help(help)
+    }
+
+    private var footerStatusDot: some View {
+        VStack(spacing: 5) {
+            Circle()
+                .fill(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
+                .frame(width: 5, height: 5)
+                .shadow(color: (networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning).opacity(0.55), radius: 4, x: 0, y: 0)
+            Text("v")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(Theme.Colors.textTertiary)
+        }
+        .frame(width: 30, height: 30)
+        .help("\(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus) · v\(service.currentVersion)")
     }
 
     private var appearanceModeButton: some View {
@@ -542,21 +577,22 @@ struct ContentView: View {
             }
         }
         .foregroundStyle(color)
-        .frame(width: sidebarCollapsed ? 30 : nil, height: 28)
-        .padding(.horizontal, sidebarCollapsed ? 0 : 9)
+        .frame(width: sidebarCollapsed ? 30 : nil, height: 30)
+        .frame(maxWidth: sidebarCollapsed ? nil : .infinity)
+        .padding(.horizontal, sidebarCollapsed ? 0 : 8)
         .background(
-            RoundedRectangle(cornerRadius: 7)
-                .fill(color.opacity(0.09))
+            RoundedRectangle(cornerRadius: 8)
+                .fill(color.opacity(0.1))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7)
+                    RoundedRectangle(cornerRadius: 8)
                         .fill(Theme.Colors.cardBg.opacity(0.55))
                 )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 7)
+            RoundedRectangle(cornerRadius: 8)
                 .stroke(
                     LinearGradient(
-                        colors: [color.opacity(0.55), Theme.Colors.separator.opacity(0.35)],
+                        colors: [color.opacity(0.62), color.opacity(0.16)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
@@ -5118,22 +5154,24 @@ private struct AgentCommandCenterView: View {
 private struct HUDIconChrome: ViewModifier {
     let color: Color
     let disabled: Bool
+    var size: CGFloat = 28
+    var radius: CGFloat = 8
 
     func body(content: Content) -> some View {
         content
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(disabled ? Theme.Colors.textTertiary : color)
-            .frame(width: 28, height: 28)
+            .frame(width: size, height: size)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: radius)
                     .fill(disabled ? Theme.Colors.sidebarBg.opacity(0.45) : color.opacity(0.1))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: radius)
                             .fill(Theme.Colors.cardBg.opacity(disabled ? 0.45 : 0.55))
                     )
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: radius)
                     .stroke(
                         LinearGradient(
                             colors: disabled
