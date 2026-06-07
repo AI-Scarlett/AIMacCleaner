@@ -12,6 +12,29 @@ struct ContentView: View {
     @State private var hoveredItem: NavItem?
     @StateObject private var overviewStore = AgentMonitorOverviewStore()
     @AppStorage("networkMode") private var networkMode = "internet"
+    @AppStorage("appearanceMode") private var appearanceMode = AppearanceMode.system.rawValue
+
+    private enum AppearanceMode: String, CaseIterable {
+        case system
+        case light
+        case dark
+
+        var colorScheme: ColorScheme? {
+            switch self {
+            case .system: nil
+            case .light: .light
+            case .dark: .dark
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .system: "circle.lefthalf.filled"
+            case .light: "sun.max"
+            case .dark: "moon"
+            }
+        }
+    }
 
     private var isToolboxSubItemSelected: Bool {
         [.tokenScope, .cleaner, .app, .dependency, .other, .migration].contains(selectedTab)
@@ -121,6 +144,11 @@ struct ContentView: View {
                 .environmentObject(service)
                 .environmentObject(localizer)
         }
+        .preferredColorScheme(currentAppearanceMode.colorScheme)
+    }
+
+    private var currentAppearanceMode: AppearanceMode {
+        AppearanceMode(rawValue: appearanceMode) ?? .system
     }
 
     private var sidebar: some View {
@@ -390,7 +418,7 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                     .help(localizer.settings)
 
-                    languageToggleButton
+                    appearanceModeButton
 
                     Image(systemName: networkMode == "internet" ? "globe" : "lock.circle")
                         .font(.system(size: 9))
@@ -412,12 +440,14 @@ struct ContentView: View {
                         .buttonStyle(.plain)
                         .help(localizer.settings)
 
-                        languageToggleButton
+                        appearanceModeButton
 
                         Spacer()
                     }
 
                     HStack(spacing: Theme.Spacing.sm) {
+                        languageToggleButton
+
                         Image(systemName: networkMode == "internet" ? "globe" : "lock.circle")
                             .font(.system(size: 10))
                             .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
@@ -444,6 +474,29 @@ struct ContentView: View {
                 .padding(.horizontal, Theme.Spacing.lg)
                 .padding(.vertical, Theme.Spacing.md)
             }
+        }
+    }
+
+    private var appearanceModeButton: some View {
+        Picker("", selection: $appearanceMode) {
+            ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                Label(appearanceModeTitle(mode), systemImage: mode.icon)
+                    .tag(mode.rawValue)
+            }
+        }
+        .pickerStyle(.menu)
+        .frame(minWidth: sidebarCollapsed ? 34 : 52, maxWidth: sidebarCollapsed ? 34 : 78)
+        .help(appearanceModeTitle(currentAppearanceMode))
+    }
+
+    private func appearanceModeTitle(_ mode: AppearanceMode) -> String {
+        switch mode {
+        case .system:
+            return localizer.t("跟随系统", en: "System", zhHant: "跟隨系統", ja: "システム", ko: "시스템", mt: "System")
+        case .light:
+            return localizer.t("浅色主题", en: "Light", zhHant: "淺色主題", ja: "ライト", ko: "라이트", mt: "Light")
+        case .dark:
+            return localizer.t("深色主题", en: "Dark", zhHant: "深色主題", ja: "ダーク", ko: "다크", mt: "Dark")
         }
     }
 
