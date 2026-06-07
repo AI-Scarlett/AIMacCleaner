@@ -785,7 +785,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
             refreshRealtime()
             return
         }
-        guard !isScanning, !isRefreshingRealtime else { return }
+        guard !isScanning else { return }
         isScanning = true
         Task.detached(priority: .utility) { [scanner] in
             let result = scanner.scan()
@@ -799,7 +799,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
                 if !result.sessions.isEmpty {
                     self.sessions = Self.mergedSessions(
                         primary: result.sessions,
-                        fallback: self.sessions,
+                        fallback: Self.sanitizedSessions(self.sessions),
                         activeRetentionWindow: self.activeRetentionWindow
                     )
                 }
@@ -833,7 +833,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
                 if !result.sessions.isEmpty {
                     self.sessions = Self.mergedSessions(
                         primary: result.sessions,
-                        fallback: self.sessions,
+                        fallback: Self.sanitizedSessions(self.sessions),
                         activeRetentionWindow: self.activeRetentionWindow
                     )
                     let realtimeSnapshots = Self.usageSnapshots(from: self.sessions)
@@ -851,6 +851,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
                 if !cachedSessionSnapshots.isEmpty {
                     self.snapshots = Self.mergedSnapshots(primary: cachedSessionSnapshots, fallback: Self.sanitizedSnapshots(self.snapshots))
                 }
+                self.lastScanDate = Date()
                 self.saveCache()
                 self.lastRealtimeRefreshDate = Date()
                 self.isRefreshingRealtime = false
@@ -955,6 +956,34 @@ final class AgentMonitorOverviewStore: ObservableObject {
         return Array(rows.prefix(400))
     }
 
+    private static func sanitizedSessions(_ sessions: [AgentMonitorSessionSnapshot]) -> [AgentMonitorSessionSnapshot] {
+        sessions.filter { !isInvalidCachedSession($0) }
+    }
+
+    private static func isInvalidCachedSession(_ session: AgentMonitorSessionSnapshot) -> Bool {
+        if session.agentName == "Claude Code",
+           session.model == "<synthetic>",
+           session.tokens.total == 0,
+           session.toolCount == 0,
+           session.runningToolCount == 0,
+           session.turnCount <= 1,
+           session.currentTask.localizedCaseInsensitiveContains("Claude Code session") {
+            return true
+        }
+        let lowerTask = session.currentTask.lowercased()
+        if session.agentName == "Claude Code",
+           session.tokens.total == 0,
+           session.toolCount == 0,
+           lowerTask.contains("conversation title generator") {
+            return true
+        }
+        if session.agentName == "Claude Code",
+           lowerTask.contains("this session is being continued from a previous conversation") {
+            return true
+        }
+        return false
+    }
+
     private static func mergedSession(
         primary: AgentMonitorSessionSnapshot,
         fallback: AgentMonitorSessionSnapshot
@@ -1031,7 +1060,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: SandboxPaths.shared.agentMonitorCachePath)),
               let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
         snapshots = cache.snapshots
-        sessions = cache.sessions
+        sessions = Self.sanitizedSessions(cache.sessions)
         authorizedRoots = cache.authorizedRoots
         if !cache.scannedRoots.isEmpty {
             scannedRoots = cache.scannedRoots
@@ -1043,7 +1072,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
         let cache = Cache(
             updatedAt: Date(),
             snapshots: snapshots,
-            sessions: Array(sessions.prefix(240)),
+            sessions: Array(Self.sanitizedSessions(sessions).prefix(240)),
             authorizedRoots: authorizedRoots,
             scannedRoots: scannedRoots,
             lastScanDate: lastScanDate
@@ -3452,7 +3481,11 @@ private final class AgentMonitorOverviewScanner {
             "<turn_aborted",
             "<codex_internal_context",
             "an async command you ran earlier has completed.",
-            "sender (untrusted metadata):"
+            "sender (untrusted metadata):",
+            "this session is being continued from a previous conversation",
+            "pre-compaction memory flush",
+            "a new session was started via /new or /reset",
+            "conversation info (untrusted metadata):"
         ]
         guard !noisyFragments.contains(where: { lower.contains($0) }) else { return nil }
         guard collapsed != "{}" && collapsed != "[]" && lower != "null" else { return nil }
