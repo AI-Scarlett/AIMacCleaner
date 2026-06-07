@@ -2023,7 +2023,19 @@ private final class AgentMonitorOverviewScanner {
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
         defer { sqlite3_finalize(stmt) }
 
-        let liveByCwd = Dictionary(grouping: processInfo.values.filter { matchingSpecName($0.command) == "OpenCode" }, by: { processCwd(pid: $0.pid) ?? "" })
+        let openCodeLikeProcesses = processInfo.values.filter {
+            let lower = $0.command.lowercased()
+            return matchingSpecName($0.command) == "OpenCode" ||
+                lower.contains("opencode") ||
+                lower.contains("open-code")
+        }
+        let miniMaxProcesses = processInfo.values.filter { matchingSpecName($0.command) == "MiniMax Agent" }
+        let liveByCwd = Dictionary(grouping: openCodeLikeProcesses + miniMaxProcesses, by: { processCwd(pid: $0.pid) ?? "" })
+        let fallbackMiniMaxProcess = miniMaxProcesses.first {
+            $0.command.localizedCaseInsensitiveContains("opencode serve")
+        } ?? miniMaxProcesses.first {
+            $0.command.localizedCaseInsensitiveContains("daemon.js")
+        } ?? miniMaxProcesses.first
         var rows: [AgentMonitorSessionSnapshot] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
             let sessionId = sqliteText(stmt, 0)
@@ -2041,19 +2053,28 @@ private final class AgentMonitorOverviewScanner {
                 ?? normalizedInstruction(title)
                 ?? "OpenCode session"
             let latest = dateFromMilliseconds(updatedMs)
-            let proc = liveByCwd[directory]?.first
-            let isLive = proc != nil
-            let status = isLive ? "Waiting" : "Done"
-            let contextWindow = 200_000
+            let hostedByMiniMax = isMiniMaxHostedOpenCodeSession(directory: directory, projectName: projectName)
+            let proc = liveByCwd[directory]?.first ?? (hostedByMiniMax ? fallbackMiniMaxProcess : nil)
+            let isRecent = latest.map { Date().timeIntervalSince($0) < (hostedByMiniMax ? 2 * 60 * 60 : 30 * 60) } ?? false
+            let isLive = proc != nil && isRecent
+            let status: String
+            if hostedByMiniMax, isRecent {
+                status = proc == nil ? "Waiting" : "Executing"
+            } else {
+                status = isLive ? "Waiting" : "Done"
+            }
+            let agentName = hostedByMiniMax ? "MiniMax Agent" : "OpenCode"
+            let contextWindow = hostedByMiniMax ? 512_000 : 200_000
             let contextPercent = min(Double(input + cache) / Double(contextWindow), 1)
+            let fallbackProject = hostedByMiniMax ? "MiniMax" : "OpenCode"
 
             rows.append(AgentMonitorSessionSnapshot(
-                id: "OpenCode-\(sessionId)-db",
-                agentName: "OpenCode",
+                id: "\(hostedByMiniMax ? "MiniMax-OpenCode" : "OpenCode")-\(sessionId)-db",
+                agentName: agentName,
                 pid: proc?.pid,
                 sessionId: sessionId,
                 status: status,
-                projectName: projectName.isEmpty ? (lastPathSegment(directory).isEmpty ? "OpenCode" : lastPathSegment(directory)) : projectName,
+                projectName: projectName.isEmpty ? (lastPathSegment(directory).isEmpty ? fallbackProject : lastPathSegment(directory)) : projectName,
                 projectPath: directory,
                 model: model.isEmpty ? "—" : model,
                 tokens: AgentMonitorTokenBreakdown(input: input, output: output, cacheRead: cache),
@@ -2072,6 +2093,14 @@ private final class AgentMonitorOverviewScanner {
             ))
         }
         return rows
+    }
+
+    private func isMiniMaxHostedOpenCodeSession(directory: String, projectName: String) -> Bool {
+        let combined = "\(directory) \(projectName)".lowercased()
+        return combined.contains("/.minimax/") ||
+            combined.contains("/.mavis/") ||
+            combined.contains("minimax") ||
+            combined.contains("mavis")
     }
 
     private func parseMiniMaxDBSessions(path: String, processInfo: [Int: ProcessInfo]) -> [AgentMonitorSessionSnapshot] {
