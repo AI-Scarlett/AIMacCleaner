@@ -2812,7 +2812,11 @@ private final class AgentMonitorOverviewScanner {
             if let value = stringValue(object, keys: ["cwd", "projectPath"]), !value.isEmpty { cwd = value }
             let type = stringValue(object, keys: ["type"]) ?? ""
             guard let message = object["message"] as? [String: Any] else { continue }
-            if let value = stringValue(message, keys: ["model"]), !value.isEmpty { model = value }
+            if let value = stringValue(message, keys: ["model"]),
+               !value.isEmpty,
+               value != "<synthetic>" {
+                model = value
+            }
             let role = stringValue(message, keys: ["role"]) ?? type
             if role == "user" {
                 let rawContent = textContent(message["content"])
@@ -2826,11 +2830,13 @@ private final class AgentMonitorOverviewScanner {
             } else if role == "assistant" {
                 turnCount += 1
                 if let usage = message["usage"] as? [String: Any] {
+                    let promptInput = intKeys(usage, ["input_tokens", "prompt_tokens"])
                     let cached = intKeys(usage, ["cache_read_input_tokens", "cached_input_tokens"])
-                    input += max(0, intKeys(usage, ["input_tokens", "prompt_tokens"]) - cached)
+                    let createdCache = intKeys(usage, ["cache_creation_input_tokens"])
+                    input += promptInput
                     output += intKeys(usage, ["output_tokens", "completion_tokens"])
-                    cache += cached + intKeys(usage, ["cache_creation_input_tokens"])
-                    lastContextTokens = max(lastContextTokens, intKeys(usage, ["input_tokens", "prompt_tokens", "cache_read_input_tokens"]))
+                    cache += cached + createdCache
+                    lastContextTokens = max(lastContextTokens, promptInput + cached + createdCache)
                 }
                 for block in message["content"] as? [[String: Any]] ?? [] where stringValue(block, keys: ["type"]) == "tool_use" {
                     toolCount += 1
@@ -4897,8 +4903,8 @@ private struct AgentCommandCenterView: View {
         }
         if lower == "<synthetic>" {
             return session.agentName == "Claude Code"
-                ? "Claude Desktop / \(localizer.t("标题任务", en: "title task", zhHant: "標題任務", ja: "タイトルタスク", ko: "제목 작업", mt: "title task"))"
-                : "\(session.agentName) / \(localizer.t("合成任务", en: "synthetic task", zhHant: "合成任務", ja: "合成タスク", ko: "합성 작업", mt: "synthetic task"))"
+                ? "Claude Desktop"
+                : session.agentName
         }
         if lower.hasPrefix("aimami_relay_") {
             return "Codex Relay"
@@ -6087,8 +6093,8 @@ private struct AgentCommandDashboardView: View {
         }
         if lower == "<synthetic>" {
             return session.agentName == "Claude Code"
-                ? "Claude Desktop / \(localizer.t("标题任务", en: "title task", zhHant: "標題任務", ja: "タイトルタスク", ko: "제목 작업", mt: "title task"))"
-                : "\(session.agentName) / \(localizer.t("合成任务", en: "synthetic task", zhHant: "合成任務", ja: "合成タスク", ko: "합성 작업", mt: "synthetic task"))"
+                ? "Claude Desktop"
+                : session.agentName
         }
         if lower.hasPrefix("aimami_relay_") {
             return "Codex Relay"
