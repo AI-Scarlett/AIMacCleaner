@@ -478,14 +478,23 @@ struct ContentView: View {
     }
 
     private var appearanceModeButton: some View {
-        Picker("", selection: $appearanceMode) {
+        Menu {
             ForEach(AppearanceMode.allCases, id: \.self) { mode in
-                Label(appearanceModeTitle(mode), systemImage: mode.icon)
-                    .tag(mode.rawValue)
+                Button {
+                    appearanceMode = mode.rawValue
+                } label: {
+                    Label(appearanceModeTitle(mode), systemImage: mode.icon)
+                }
             }
+        } label: {
+            footerGlassControl(
+                icon: currentAppearanceMode.icon,
+                title: sidebarCollapsed ? "" : appearanceModeTitle(currentAppearanceMode),
+                color: Theme.Colors.teal
+            )
         }
-        .pickerStyle(.menu)
-        .frame(minWidth: sidebarCollapsed ? 34 : 52, maxWidth: sidebarCollapsed ? 34 : 78)
+        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
         .help(appearanceModeTitle(currentAppearanceMode))
     }
 
@@ -501,15 +510,60 @@ struct ContentView: View {
     }
 
     private var languageToggleButton: some View {
-        Picker("", selection: $localizer.language) {
+        Menu {
             ForEach(AppLanguage.allCases, id: \.self) { lang in
-                Text(lang.nativeName)
-                    .font(.system(size: 10))
-                    .tag(lang)
+                Button {
+                    localizer.language = lang
+                } label: {
+                    Text(lang.nativeName)
+                }
+            }
+        } label: {
+            footerGlassControl(
+                icon: "globe.asia.australia",
+                title: sidebarCollapsed ? "" : localizer.language.nativeName,
+                color: Theme.Colors.info
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
+        .help(localizer.languageLabel)
+    }
+
+    private func footerGlassControl(icon: String, title: String, color: Color) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: sidebarCollapsed ? 12 : 11, weight: .semibold))
+            if !title.isEmpty {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
             }
         }
-        .pickerStyle(.menu)
-        .frame(minWidth: sidebarCollapsed ? 36 : 60, maxWidth: sidebarCollapsed ? 36 : 100)
+        .foregroundStyle(color)
+        .frame(width: sidebarCollapsed ? 30 : nil, height: 28)
+        .padding(.horizontal, sidebarCollapsed ? 0 : 9)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(color.opacity(0.09))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(Theme.Colors.cardBg.opacity(0.55))
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(
+                    LinearGradient(
+                        colors: [color.opacity(0.55), Theme.Colors.separator.opacity(0.35)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+        .shadow(color: color.opacity(0.12), radius: 6, x: 0, y: 0)
     }
 
     private var networkStatusBadge: some View {
@@ -5061,6 +5115,41 @@ private struct AgentCommandCenterView: View {
     }
 }
 
+private struct HUDIconChrome: ViewModifier {
+    let color: Color
+    let disabled: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(disabled ? Theme.Colors.textTertiary : color)
+            .frame(width: 28, height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(disabled ? Theme.Colors.sidebarBg.opacity(0.45) : color.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Theme.Colors.cardBg.opacity(disabled ? 0.45 : 0.55))
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(
+                        LinearGradient(
+                            colors: disabled
+                                ? [Theme.Colors.separator.opacity(0.5), Theme.Colors.separator.opacity(0.2)]
+                                : [color.opacity(0.65), color.opacity(0.16)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(color: disabled ? .clear : color.opacity(0.14), radius: 7, x: 0, y: 0)
+            .opacity(disabled ? 0.55 : 1)
+    }
+}
+
 private struct AgentCommandDashboardView: View {
     @ObservedObject var store: AgentMonitorOverviewStore
     @ObservedObject var monitor: OperationMonitor
@@ -5325,29 +5414,21 @@ private struct AgentCommandDashboardView: View {
                     .stroke(Theme.Colors.separator.opacity(0.65), lineWidth: 1)
             )
 
-            Button { moveSelection(-1) } label: { Image(systemName: "chevron.up") }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(sessions.count < 2)
-                .help(localizer.overviewPreviousSession)
+            sessionHudButton(icon: "chevron.up", color: Theme.Colors.info, disabled: sessions.count < 2, help: localizer.overviewPreviousSession) {
+                moveSelection(-1)
+            }
 
-            Button { moveSelection(1) } label: { Image(systemName: "chevron.down") }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(sessions.count < 2)
-                .help(localizer.overviewNextSession)
+            sessionHudButton(icon: "chevron.down", color: Theme.Colors.info, disabled: sessions.count < 2, help: localizer.overviewNextSession) {
+                moveSelection(1)
+            }
 
-            Button { copySelectedPath() } label: { Image(systemName: "doc.on.doc") }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(selectedSession == nil)
-                .help(localizer.copyPath)
+            sessionHudButton(icon: "doc.on.doc", color: Theme.Colors.teal, disabled: selectedSession == nil, help: localizer.copyPath) {
+                copySelectedPath()
+            }
 
-            Button { openSelectedProject() } label: { Image(systemName: "folder") }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(selectedSession?.projectPath.isEmpty ?? true)
-                .help(localizer.openInFinder)
+            sessionHudButton(icon: "folder", color: Theme.Colors.warning, disabled: selectedSession?.projectPath.isEmpty ?? true, help: localizer.openInFinder) {
+                openSelectedProject()
+            }
 
             Button {
                 authorizationStatus = localizer.overviewRescanning
@@ -5355,8 +5436,8 @@ private struct AgentCommandDashboardView: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .buttonStyle(.plain)
+            .modifier(HUDIconChrome(color: Theme.Colors.purple, disabled: store.isScanning))
             .disabled(store.isScanning)
             .help(localizer.refresh)
         }
@@ -5525,37 +5606,37 @@ private struct AgentCommandDashboardView: View {
         )
     }
 
+    private func sessionHudButton(icon: String, color: Color, disabled: Bool, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+        }
+        .buttonStyle(.plain)
+        .modifier(HUDIconChrome(color: color, disabled: disabled))
+        .disabled(disabled)
+        .help(help)
+    }
+
     private var currentSessionUsageCard: some View {
         dashboardCard(title: "\(localizer.currentSession) / \(localizer.overviewTokenUse)", icon: "chart.bar.xaxis", color: Theme.Colors.teal) {
-            Button { showingSessionDetail = true } label: { Image(systemName: "sidebar.right") }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(selectedActiveSession == nil && selectedSession == nil)
-                .help(localizer.agentSessionDetail)
+            sessionHudButton(icon: "sidebar.right", color: Theme.Colors.teal, disabled: selectedActiveSession == nil && selectedSession == nil, help: localizer.agentSessionDetail) {
+                showingSessionDetail = true
+            }
 
-            Button { moveSelection(-1) } label: { Image(systemName: "chevron.up") }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(activeSessions.count < 2)
-                .help(localizer.overviewPreviousSession)
+            sessionHudButton(icon: "chevron.up", color: Theme.Colors.info, disabled: activeSessions.count < 2, help: localizer.overviewPreviousSession) {
+                moveSelection(-1)
+            }
 
-            Button { moveSelection(1) } label: { Image(systemName: "chevron.down") }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(activeSessions.count < 2)
-                .help(localizer.overviewNextSession)
+            sessionHudButton(icon: "chevron.down", color: Theme.Colors.info, disabled: activeSessions.count < 2, help: localizer.overviewNextSession) {
+                moveSelection(1)
+            }
 
-            Button { copySelectedPath() } label: { Image(systemName: "doc.on.doc") }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(selectedSession == nil)
-                .help(localizer.copyPath)
+            sessionHudButton(icon: "doc.on.doc", color: Theme.Colors.teal, disabled: selectedSession == nil, help: localizer.copyPath) {
+                copySelectedPath()
+            }
 
-            Button { openSelectedProject() } label: { Image(systemName: "folder") }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(selectedSession?.projectPath.isEmpty ?? true)
-                .help(localizer.openInFinder)
+            sessionHudButton(icon: "folder", color: Theme.Colors.warning, disabled: selectedSession?.projectPath.isEmpty ?? true, help: localizer.openInFinder) {
+                openSelectedProject()
+            }
         } content: {
             if let session = selectedActiveSession {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
