@@ -4782,14 +4782,14 @@ private struct AgentCommandCenterView: View {
                 Text("● \(localizedStatus(session.status))")
                     .frame(width: 78, alignment: .leading)
                     .foregroundStyle(session.status == "Executing" ? Theme.Colors.danger : Theme.Colors.warning)
-                Text(session.model)
+                Text(sessionModelText(session))
                     .frame(width: 92, alignment: .leading)
                     .lineLimit(1)
                     .foregroundStyle(Theme.Colors.textSecondary)
-                Text("\(Int(session.contextPercent * 100))%")
+                Text(sessionContextPercentText(session))
                     .frame(width: 74, alignment: .trailing)
                     .foregroundStyle(contextColor(session.contextPercent))
-                Text(compactCount(session.tokens.total))
+                Text(sessionTokenText(session))
                     .frame(width: 86, alignment: .trailing)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Text("\(session.turnCount)")
@@ -4811,8 +4811,8 @@ private struct AgentCommandCenterView: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 if let session = selectedSession {
                     HStack(spacing: Theme.Spacing.lg) {
-                        Text("\(session.model) · \(session.turnCount) \(localizer.overviewTurns) · \(session.toolCount) \(localizer.tokenScopeTools)")
-                        Text("\(localizer.contextWindow) \(Int(session.contextPercent * 100))% / \(windowText(session.contextWindow))")
+                        Text("\(sessionModelText(session)) · \(session.turnCount) \(localizer.overviewTurns) · \(session.toolCount) \(localizer.tokenScopeTools)")
+                        Text("\(localizer.contextWindow) \(sessionContextText(session))")
                         Text("pid \(session.pid.map(String.init) ?? "—")")
                     }
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
@@ -4885,8 +4885,48 @@ private struct AgentCommandCenterView: View {
         return DisplayTime.withSeconds.string(from: date)
     }
 
+    private func unreportedText() -> String {
+        localizer.t("未上报", en: "unreported", zhHant: "未上報", ja: "未報告", ko: "미보고", mt: "unreported")
+    }
+
+    private func sessionModelText(_ session: AgentMonitorSessionSnapshot) -> String {
+        let raw = session.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = raw.lowercased()
+        if raw.isEmpty || raw == "—" || lower == "null" || lower == "unknown" {
+            return "\(session.agentName) / \(unreportedText())"
+        }
+        if lower == "<synthetic>" {
+            return session.agentName == "Claude Code"
+                ? "Claude Desktop / \(localizer.t("标题任务", en: "title task", zhHant: "標題任務", ja: "タイトルタスク", ko: "제목 작업", mt: "title task"))"
+                : "\(session.agentName) / \(localizer.t("合成任务", en: "synthetic task", zhHant: "合成任務", ja: "合成タスク", ko: "합성 작업", mt: "synthetic task"))"
+        }
+        if lower.hasPrefix("aimami_relay_") {
+            return "Codex Relay"
+        }
+        if raw.count > 36 || raw.range(of: #"^[A-Za-z0-9_-]{24,}$"#, options: .regularExpression) != nil {
+            return "\(session.agentName) / \(localizer.t("内部模型", en: "internal model", zhHant: "內部模型", ja: "内部モデル", ko: "내부 모델", mt: "internal model"))"
+        }
+        return raw
+    }
+
+    private func sessionTokenText(_ session: AgentMonitorSessionSnapshot) -> String {
+        session.tokens.total > 0 ? compactCount(session.tokens.total) : unreportedText()
+    }
+
+    private func sessionContextPercentText(_ session: AgentMonitorSessionSnapshot) -> String {
+        if session.contextPercent == 0, session.tokens.total == 0 { return unreportedText() }
+        return "\(Int(session.contextPercent * 100))%"
+    }
+
+    private func sessionContextText(_ session: AgentMonitorSessionSnapshot) -> String {
+        if session.contextPercent == 0, session.tokens.total == 0 {
+            return "\(unreportedText()) / \(windowText(session.contextWindow))"
+        }
+        return "\(Int(session.contextPercent * 100))% / \(windowText(session.contextWindow))"
+    }
+
     private func windowText(_ window: Int) -> String {
-        guard window > 0 else { return "—" }
+        guard window > 0 else { return unreportedText() }
         if window >= 1_000_000 { return String(format: "%.1fM", Double(window) / 1_000_000.0) }
         if window >= 1_000 { return String(format: "%.1fk", Double(window) / 1_000.0) }
         return "\(window)"
@@ -5141,8 +5181,10 @@ private struct AgentCommandDashboardView: View {
                     contextColor: contextColor(session.contextPercent),
                     displayLocation: displayLocation(for: session),
                     configRoot: configRoot(for: session),
+                    modelText: sessionModelText(session),
+                    contextText: sessionContextText(session),
+                    tokenText: sessionTokenText(session),
                     shortSessionId: shortSessionId(session.sessionId),
-                    windowText: windowText(session.contextWindow),
                     memoryText: memoryText(session.memoryMB),
                     compactCount: compactCount,
                     onCopyPath: { copyPath(for: session) },
@@ -5438,9 +5480,9 @@ private struct AgentCommandDashboardView: View {
                                 sessionField(localizer.t("时间", en: "Time", zhHant: "時間", ja: "時刻", ko: "시간", mt: "Time"), sessionInstructionTimeText(session), width: 72)
                                 sessionField(localizer.overviewLocation, displayLocation(for: session), width: 150)
                                 sessionField(localizer.status, statusText(session.status), width: 64, color: statusColor(session.status))
-                                sessionField(localizer.overviewModel, session.model, width: 86)
-                                sessionField(localizer.contextWindow, "\(Int(session.contextPercent * 100))% / \(windowText(session.contextWindow))", width: 104, color: contextColor(session.contextPercent))
-                                sessionField("token", compactCount(session.tokens.total), width: 70, color: Theme.Colors.teal)
+                                sessionField(localizer.overviewModel, sessionModelText(session), width: 108)
+                                sessionField(localizer.contextWindow, sessionContextText(session), width: 118, color: contextColor(session.contextPercent))
+                                sessionField("token", sessionTokenText(session), width: 82, color: Theme.Colors.teal)
                                 sessionField(localizer.overviewMemory, memoryText(session.memoryMB), width: 58)
                                 sessionField(localizer.overviewTurns, "\(session.turnCount)", width: 38)
                                 sessionField("pid", session.pid.map(String.init) ?? "—", width: 58)
@@ -5678,19 +5720,19 @@ private struct AgentCommandDashboardView: View {
                     .lineLimit(1)
                     .frame(width: 70, alignment: .leading)
 
-                Text(session.model)
+                Text(sessionModelText(session))
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .frame(width: 96, alignment: .leading)
 
-                Text("\(Int(session.contextPercent * 100))%")
+                Text(sessionContextPercentText(session))
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(contextColor(session.contextPercent))
                     .frame(width: 70, alignment: .trailing)
 
-                Text(compactCount(session.tokens.total))
+                Text(sessionTokenText(session))
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(Theme.Colors.teal)
                     .frame(width: 78, alignment: .trailing)
@@ -6033,8 +6075,48 @@ private struct AgentCommandDashboardView: View {
         return DisplayTime.withSeconds.string(from: date)
     }
 
+    private func unreportedText() -> String {
+        localizer.t("未上报", en: "unreported", zhHant: "未上報", ja: "未報告", ko: "미보고", mt: "unreported")
+    }
+
+    private func sessionModelText(_ session: AgentMonitorSessionSnapshot) -> String {
+        let raw = session.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = raw.lowercased()
+        if raw.isEmpty || raw == "—" || lower == "null" || lower == "unknown" {
+            return "\(session.agentName) / \(unreportedText())"
+        }
+        if lower == "<synthetic>" {
+            return session.agentName == "Claude Code"
+                ? "Claude Desktop / \(localizer.t("标题任务", en: "title task", zhHant: "標題任務", ja: "タイトルタスク", ko: "제목 작업", mt: "title task"))"
+                : "\(session.agentName) / \(localizer.t("合成任务", en: "synthetic task", zhHant: "合成任務", ja: "合成タスク", ko: "합성 작업", mt: "synthetic task"))"
+        }
+        if lower.hasPrefix("aimami_relay_") {
+            return "Codex Relay"
+        }
+        if raw.count > 36 || raw.range(of: #"^[A-Za-z0-9_-]{24,}$"#, options: .regularExpression) != nil {
+            return "\(session.agentName) / \(localizer.t("内部模型", en: "internal model", zhHant: "內部模型", ja: "内部モデル", ko: "내부 모델", mt: "internal model"))"
+        }
+        return raw
+    }
+
+    private func sessionTokenText(_ session: AgentMonitorSessionSnapshot) -> String {
+        session.tokens.total > 0 ? compactCount(session.tokens.total) : unreportedText()
+    }
+
+    private func sessionContextPercentText(_ session: AgentMonitorSessionSnapshot) -> String {
+        if session.contextPercent == 0, session.tokens.total == 0 { return unreportedText() }
+        return "\(Int(session.contextPercent * 100))%"
+    }
+
+    private func sessionContextText(_ session: AgentMonitorSessionSnapshot) -> String {
+        if session.contextPercent == 0, session.tokens.total == 0 {
+            return "\(unreportedText()) / \(windowText(session.contextWindow))"
+        }
+        return "\(Int(session.contextPercent * 100))% / \(windowText(session.contextWindow))"
+    }
+
     private func windowText(_ window: Int) -> String {
-        guard window > 0 else { return "—" }
+        guard window > 0 else { return unreportedText() }
         if window >= 1_000_000 { return String(format: "%.1fM", Double(window) / 1_000_000.0) }
         if window >= 1_000 { return String(format: "%.1fk", Double(window) / 1_000.0) }
         return "\(window)"
@@ -6063,8 +6145,10 @@ private struct ActiveSessionDetailSheet: View {
     let contextColor: Color
     let displayLocation: String
     let configRoot: String
+    let modelText: String
+    let contextText: String
+    let tokenText: String
     let shortSessionId: String
-    let windowText: String
     let memoryText: String
     let compactCount: (Int) -> String
     let onCopyPath: () -> Void
@@ -6160,10 +6244,10 @@ private struct ActiveSessionDetailSheet: View {
     private var metricsGrid: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: Theme.Spacing.sm)], spacing: Theme.Spacing.sm) {
             infoTile(localizer.overviewSession, shortSessionId, Theme.Colors.warning)
-            infoTile(localizer.overviewModel, session.model, Theme.Colors.textPrimary)
+            infoTile(localizer.overviewModel, modelText, Theme.Colors.textPrimary)
             infoTile(localizer.overviewProject, session.projectName, Theme.Colors.info)
             infoTile(localizer.overviewLocation, displayLocation, Theme.Colors.textPrimary)
-            infoTile(localizer.contextWindow, "\(Int(session.contextPercent * 100))% / \(windowText)", contextColor)
+            infoTile(localizer.contextWindow, contextText, contextColor)
             infoTile(localizer.overviewMemory, memoryText, Theme.Colors.textPrimary)
             infoTile(localizer.overviewTurns, "\(session.turnCount)", Theme.Colors.textPrimary)
             infoTile("PID", session.pid.map(String.init) ?? "-", Theme.Colors.textPrimary)
@@ -6177,7 +6261,7 @@ private struct ActiveSessionDetailSheet: View {
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
-                Text(compactCount(session.tokens.total))
+                Text(tokenText)
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(Theme.Colors.teal)
             }
