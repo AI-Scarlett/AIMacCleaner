@@ -731,6 +731,7 @@ struct AgentMonitorSessionSnapshot: Identifiable, Codable {
     let ports: [Int]
     let memoryMB: Int?
     let latestActivity: Date?
+    let instructionDate: Date?
     let sourcePath: String
 }
 
@@ -1021,6 +1022,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
             ports: primary.ports,
             memoryMB: primary.memoryMB ?? fallback.memoryMB,
             latestActivity: maxDate(primary.latestActivity, fallback.latestActivity),
+            instructionDate: newest.instructionDate ?? newest.latestActivity ?? fallback.instructionDate,
             sourcePath: primary.sourcePath
         )
     }
@@ -1118,6 +1120,7 @@ private final class AgentMonitorOverviewScanner {
         let toolCount: Int
         let runningToolCount: Int
         let latestActivity: Date?
+        let instructionDate: Date?
         let sourcePath: String
     }
 
@@ -1483,15 +1486,26 @@ private final class AgentMonitorOverviewScanner {
             .map { item in
                 let agentName = resolvedAgentName(specName: item.spec.name, parsed: item.parsed)
                 let process = liveProcessByAgent[agentName]?.first
+                    ?? (agentName == "Claude Code" ? processInfo.values.first { $0.command.lowercased().contains("/claude.app/") } : nil)
                 let pid = process?.pid
                 let contextPercent = item.parsed.contextWindow > 0 ? min(Double(item.parsed.lastContextTokens) / Double(item.parsed.contextWindow), 1) : 0
                 let projectName = lastPathSegment(item.parsed.cwd).isEmpty ? agentName : lastPathSegment(item.parsed.cwd)
+                let recentWindow: TimeInterval = agentName == "Claude Code" ? 10 * 60 : 180
+                let isRecent = item.parsed.latestActivity.map { abs(Date().timeIntervalSince($0)) < recentWindow } == true
+                let status = isRecent ? liveStatus(
+                    isAlive: process != nil,
+                    process: process,
+                    childPids: [],
+                    processInfo: processInfo,
+                    currentTask: item.parsed.currentTask,
+                    parsedStatus: item.parsed.status
+                ) : item.parsed.status
                 return AgentMonitorSessionSnapshot(
                     id: "\(agentName)-\(item.parsed.sessionId)-history-\(item.parsed.sourcePath)",
                     agentName: agentName,
                     pid: pid,
                     sessionId: item.parsed.sessionId,
-                    status: item.parsed.status,
+                    status: status,
                     projectName: projectName,
                     projectPath: item.parsed.cwd,
                     model: item.parsed.model.isEmpty ? "—" : item.parsed.model,
@@ -1506,6 +1520,7 @@ private final class AgentMonitorOverviewScanner {
                     ports: [],
                     memoryMB: process.map { max($0.rssKB / 1024, 1) },
                     latestActivity: item.parsed.latestActivity,
+                    instructionDate: item.parsed.instructionDate ?? item.parsed.latestActivity,
                     sourcePath: item.parsed.sourcePath
                 )
             }
@@ -1965,6 +1980,7 @@ private final class AgentMonitorOverviewScanner {
                 ports: [],
                 memoryMB: process.map { max($0.rssKB / 1024, 1) },
                 latestActivity: latest,
+                instructionDate: parsed?.instructionDate ?? latest,
                 sourcePath: goal.rolloutPath.isEmpty ? goalsPath : goal.rolloutPath
             )
         }
@@ -2051,6 +2067,7 @@ private final class AgentMonitorOverviewScanner {
                 ports: [],
                 memoryMB: proc.map { max($0.rssKB / 1024, 1) },
                 latestActivity: latest,
+                instructionDate: latest,
                 sourcePath: path
             ))
         }
@@ -2164,6 +2181,7 @@ private final class AgentMonitorOverviewScanner {
                 ports: [],
                 memoryMB: proc.map { max($0.rssKB / 1024, 1) },
                 latestActivity: latest,
+                instructionDate: latest,
                 sourcePath: path
             ))
         }
@@ -2265,6 +2283,7 @@ private final class AgentMonitorOverviewScanner {
                 ports: [],
                 memoryMB: liveProcess.map { max($0.rssKB / 1024, 1) },
                 latestActivity: latest,
+                instructionDate: latest,
                 sourcePath: path
             ))
         }
@@ -2322,6 +2341,7 @@ private final class AgentMonitorOverviewScanner {
                 ports: [],
                 memoryMB: liveProcess.map { max($0.rssKB / 1024, 1) },
                 latestActivity: updated,
+                instructionDate: updated,
                 sourcePath: source
             )
         }
@@ -2392,6 +2412,7 @@ private final class AgentMonitorOverviewScanner {
                 ports: [],
                 memoryMB: liveProcess.map { max($0.rssKB / 1024, 1) },
                 latestActivity: updated,
+                instructionDate: updated,
                 sourcePath: path
             )
         }
@@ -2528,6 +2549,7 @@ private final class AgentMonitorOverviewScanner {
                 ports: Array(Set(ports)).sorted(),
                 memoryMB: proc.map { max($0.rssKB / 1024, 1) },
                 latestActivity: parsed.latestActivity,
+                instructionDate: parsed.instructionDate ?? parsed.latestActivity,
                 sourcePath: parsed.sourcePath
             )
             }
@@ -2604,6 +2626,7 @@ private final class AgentMonitorOverviewScanner {
         var turnCount = 0
         var currentTask = ""
         var latestUserInstruction = ""
+        var latestUserInstructionDate: Date?
         var activeGoalObjective = ""
         var activeGoalStatus = ""
         var status = "History"
@@ -2642,6 +2665,7 @@ private final class AgentMonitorOverviewScanner {
                 } else if eventType == "user_message" {
                     if let message = normalizedInstruction(stringValue(payload, keys: ["message", "text", "content"])) {
                         latestUserInstruction = message
+                        latestUserInstructionDate = date(from: object) ?? latestActivity ?? latestUserInstructionDate
                         currentTask = message
                         if status != "Executing" && status != "Paused" && status != "Done" {
                             status = "Thinking"
@@ -2704,6 +2728,7 @@ private final class AgentMonitorOverviewScanner {
                    stringValue(payload, keys: ["role"]) == "user",
                    let message = normalizedInstruction(messageContent(from: payload)) {
                     latestUserInstruction = message
+                    latestUserInstructionDate = date(from: object) ?? latestActivity ?? latestUserInstructionDate
                     currentTask = message
                     if status != "Executing" && status != "Paused" && status != "Done" {
                         status = "Thinking"
@@ -2758,6 +2783,7 @@ private final class AgentMonitorOverviewScanner {
             toolCount: toolCount,
             runningToolCount: pendingCalls.count,
             latestActivity: latestActivity ?? ((try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate),
+            instructionDate: latestUserInstructionDate ?? latestActivity,
             sourcePath: url.path
         )
     }
@@ -2776,8 +2802,7 @@ private final class AgentMonitorOverviewScanner {
         var toolCount = 0
         var pendingTools = Set<String>()
         var latestActivity: Date?
-        var sawTitleGeneratorPrompt = false
-        var sawRealUserInstruction = false
+        var latestUserInstructionDate: Date?
 
         for line in text.split(whereSeparator: \.isNewline) {
             guard let data = String(line).data(using: .utf8),
@@ -2791,13 +2816,9 @@ private final class AgentMonitorOverviewScanner {
             let role = stringValue(message, keys: ["role"]) ?? type
             if role == "user" {
                 let rawContent = textContent(message["content"])
-                let isTitlePrompt = isConversationTitleGeneratorPrompt(rawContent)
-                sawTitleGeneratorPrompt = sawTitleGeneratorPrompt || isTitlePrompt
                 if let task = normalizedInstruction(rawContent), !task.isEmpty {
                     currentTask = task
-                    if !isTitlePrompt {
-                        sawRealUserInstruction = true
-                    }
+                    latestUserInstructionDate = date(from: object) ?? latestActivity ?? latestUserInstructionDate
                 }
                 for block in message["content"] as? [[String: Any]] ?? [] where stringValue(block, keys: ["type"]) == "tool_result" {
                     if let id = stringValue(block, keys: ["tool_use_id", "toolUseId"]) { pendingTools.remove(id) }
@@ -2817,17 +2838,9 @@ private final class AgentMonitorOverviewScanner {
                 }
             }
         }
-        let isPureTitleGeneratorSession = sawTitleGeneratorPrompt &&
-            !sawRealUserInstruction &&
-            input + output + cache == 0 &&
-            toolCount == 0
-        if isPureTitleGeneratorSession {
-            currentTask = ""
-        }
         let isSyntheticTitleSession = model == "<synthetic>" &&
-            (currentTask.localizedCaseInsensitiveContains("conversation title generator") || sawTitleGeneratorPrompt)
+            currentTask.localizedCaseInsensitiveContains("conversation title generator")
         guard !isSyntheticTitleSession,
-              !isPureTitleGeneratorSession,
               !cwd.isEmpty || input + output + cache > 0 || toolCount > 0 || !currentTask.isEmpty else { return nil }
         return ParsedSession(
             sessionId: sessionId,
@@ -2842,6 +2855,7 @@ private final class AgentMonitorOverviewScanner {
             toolCount: toolCount,
             runningToolCount: pendingTools.count,
             latestActivity: latestActivity ?? ((try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate),
+            instructionDate: latestUserInstructionDate ?? latestActivity,
             sourcePath: url.path
         )
     }
@@ -2855,6 +2869,7 @@ private final class AgentMonitorOverviewScanner {
         var turnCount = 0
         var toolCount = 0
         var currentTask = ""
+        var latestUserInstructionDate: Date?
         var latestActivity: Date?
         var lastContextTokens = 0
         var pendingTools = Set<String>()
@@ -2866,6 +2881,7 @@ private final class AgentMonitorOverviewScanner {
             let role = stringValue(message, keys: ["role"]) ?? ""
             if role == "user", let task = normalizedInstruction(textContent(message["content"])), !task.isEmpty {
                 currentTask = task
+                latestUserInstructionDate = date(from: object) ?? latestActivity ?? latestUserInstructionDate
             }
             if role == "assistant" {
                 turnCount += 1
@@ -2899,6 +2915,7 @@ private final class AgentMonitorOverviewScanner {
             toolCount: toolCount,
             runningToolCount: pendingTools.count,
             latestActivity: latestActivity ?? ((try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate),
+            instructionDate: latestUserInstructionDate ?? latestActivity,
             sourcePath: url.path
         )
     }
@@ -2923,6 +2940,7 @@ private final class AgentMonitorOverviewScanner {
                 toolCount: 0,
                 runningToolCount: activeAgents,
                 latestActivity: dateFromISO(stringValue(object, keys: ["updated_at", "updatedAt"]) ?? ""),
+                instructionDate: dateFromISO(stringValue(object, keys: ["updated_at", "updatedAt"]) ?? ""),
                 sourcePath: url.path
             )
         }
@@ -2935,9 +2953,13 @@ private final class AgentMonitorOverviewScanner {
         var cache = 0
         var turns = 0
         var tools = 0
+        var latestUserInstructionDate: Date?
         for message in object["messages"] as? [[String: Any]] ?? [] {
             let role = stringValue(message, keys: ["role"]) ?? ""
-            if role == "user", let task = normalizedInstruction(textContent(message["content"])), !task.isEmpty { currentTask = task }
+            if role == "user", let task = normalizedInstruction(textContent(message["content"])), !task.isEmpty {
+                currentTask = task
+                latestUserInstructionDate = dateFromAny(message["timestamp"] ?? message["created_at"] ?? message["createdAt"]) ?? latestUserInstructionDate
+            }
             if role == "assistant" {
                 turns += 1
                 tools += (message["tool_calls"] as? [Any])?.count ?? 0
@@ -2963,6 +2985,7 @@ private final class AgentMonitorOverviewScanner {
             runningToolCount: 0,
             latestActivity: dateFromISO(stringValue(object, keys: ["updated_at", "session_start", "created_at"]) ?? "")
                 ?? ((try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate),
+            instructionDate: latestUserInstructionDate ?? dateFromISO(stringValue(object, keys: ["updated_at", "session_start", "created_at"]) ?? ""),
             sourcePath: url.path
         )
     }
@@ -3078,6 +3101,7 @@ private final class AgentMonitorOverviewScanner {
                 ports: [],
                 memoryMB: proc.map { max($0.rssKB / 1024, 1) },
                 latestActivity: parsed.latestActivity,
+                instructionDate: parsed.instructionDate ?? parsed.latestActivity,
                 sourcePath: parsed.sourcePath
             ))
         }
@@ -3132,6 +3156,7 @@ private final class AgentMonitorOverviewScanner {
                 ports: [],
                 memoryMB: process.map { max($0.rssKB / 1024, 1) },
                 latestActivity: parsed.latestActivity,
+                instructionDate: parsed.instructionDate ?? parsed.latestActivity,
                 sourcePath: parsed.sourcePath
             )
         }
@@ -3164,8 +3189,10 @@ private final class AgentMonitorOverviewScanner {
             let agentName = resolvedAgentName(specName: spec.name, parsed: parsed)
             guard seen.insert("\(agentName)|\(parsed.sessionId)").inserted else { return nil }
             let process = liveProcessByAgent[agentName]?.first
+                ?? (agentName == "Claude Code" ? processInfo.values.first { $0.command.lowercased().contains("/claude.app/") } : nil)
             let childPids = process.map { descendants(of: $0.pid, children: children) } ?? []
-            let isRecent = parsed.latestActivity.map { abs(Date().timeIntervalSince($0)) < 180 } == true
+            let recentWindow: TimeInterval = agentName == "Claude Code" ? 10 * 60 : 180
+            let isRecent = parsed.latestActivity.map { abs(Date().timeIntervalSince($0)) < recentWindow } == true
             let status = isRecent ? liveStatus(
                 isAlive: process != nil,
                 process: process,
@@ -3195,6 +3222,7 @@ private final class AgentMonitorOverviewScanner {
                 ports: [],
                 memoryMB: isRecent ? process.map { max($0.rssKB / 1024, 1) } : nil,
                 latestActivity: parsed.latestActivity,
+                instructionDate: parsed.instructionDate ?? parsed.latestActivity,
                 sourcePath: parsed.sourcePath
             )
         }
@@ -4710,6 +4738,7 @@ private struct AgentCommandCenterView: View {
             Text("AI").frame(width: 54, alignment: .leading)
             Text(localizer.overviewProject).frame(width: 130, alignment: .leading)
             Text(localizer.overviewSession).frame(width: 96, alignment: .leading)
+            Text(localizer.t("时间", en: "Time", zhHant: "時間", ja: "時刻", ko: "시간", mt: "Time")).frame(width: 72, alignment: .leading)
             Text(localizer.t("配置", en: "Config", zhHant: "配置", ja: "設定", ko: "설정", mt: "Config")).frame(width: 90, alignment: .leading)
             Text(localizer.overviewSummary).frame(maxWidth: .infinity, alignment: .leading)
             Text(localizer.status).frame(width: 78, alignment: .leading)
@@ -4739,6 +4768,9 @@ private struct AgentCommandCenterView: View {
                 Text(shortSessionId(session.sessionId))
                     .frame(width: 96, alignment: .leading)
                     .foregroundStyle(Theme.Colors.warning)
+                Text(sessionInstructionTimeText(session))
+                    .frame(width: 72, alignment: .leading)
+                    .foregroundStyle(Theme.Colors.textTertiary)
                 Text(configRoot(for: session))
                     .frame(width: 90, alignment: .leading)
                     .foregroundStyle(Theme.Colors.textTertiary)
@@ -4846,6 +4878,11 @@ private struct AgentCommandCenterView: View {
     private func selectedWindowText(forProject projectName: String) -> String {
         let window = sessions.first(where: { $0.projectName == projectName })?.contextWindow ?? 0
         return windowText(window)
+    }
+
+    private func sessionInstructionTimeText(_ session: AgentMonitorSessionSnapshot) -> String {
+        guard let date = session.instructionDate ?? session.latestActivity else { return "—" }
+        return DisplayTime.withSeconds.string(from: date)
     }
 
     private func windowText(_ window: Int) -> String {
@@ -5398,6 +5435,7 @@ private struct AgentCommandDashboardView: View {
                                 sessionField("AI", agentCode(session.agentName), width: 44, color: agentColor(session.agentName))
                                 sessionField(localizer.overviewProject, session.projectName, width: 116)
                                 sessionField(localizer.overviewSession, shortSessionId(session.sessionId), width: 84, color: Theme.Colors.warning)
+                                sessionField(localizer.t("时间", en: "Time", zhHant: "時間", ja: "時刻", ko: "시간", mt: "Time"), sessionInstructionTimeText(session), width: 72)
                                 sessionField(localizer.overviewLocation, displayLocation(for: session), width: 150)
                                 sessionField(localizer.status, statusText(session.status), width: 64, color: statusColor(session.status))
                                 sessionField(localizer.overviewModel, session.model, width: 86)
@@ -5551,7 +5589,7 @@ private struct AgentCommandDashboardView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .frame(minWidth: 1120, alignment: .leading)
+                    .frame(minWidth: 1180, alignment: .leading)
                 }
             }
         }
@@ -5563,8 +5601,9 @@ private struct AgentCommandDashboardView: View {
             tableHeader("AI", width: 58, alignment: .leading)
             tableHeader(localizer.overviewProject, width: 130, alignment: .leading)
             tableHeader(localizer.overviewSession, width: 92, alignment: .leading)
-            tableHeader(localizer.overviewLocation, width: 116, alignment: .leading)
-            tableHeader(localizer.overviewSummary, width: 260, alignment: .leading)
+            tableHeader(localizer.t("时间", en: "Time", zhHant: "時間", ja: "時刻", ko: "시간", mt: "Time"), width: 76, alignment: .leading)
+            tableHeader(localizer.overviewLocation, width: 108, alignment: .leading)
+            tableHeader(localizer.overviewSummary, width: 248, alignment: .leading)
             tableHeader(localizer.status, width: 70, alignment: .leading)
             tableHeader(localizer.overviewModel, width: 96, alignment: .leading)
             tableHeader(localizer.contextWindow, width: 70, alignment: .trailing)
@@ -5613,19 +5652,25 @@ private struct AgentCommandDashboardView: View {
                     .lineLimit(1)
                     .frame(width: 92, alignment: .leading)
 
+                Text(sessionInstructionTimeText(session))
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .lineLimit(1)
+                    .frame(width: 76, alignment: .leading)
+
                 Text(displayLocation(for: session))
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .frame(width: 116, alignment: .leading)
+                    .frame(width: 108, alignment: .leading)
 
                 Text(session.currentTask)
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(width: 260, alignment: .leading)
+                    .frame(width: 248, alignment: .leading)
 
                 Text(statusText(session.status))
                     .font(Theme.Font.captionMedium)
@@ -5981,6 +6026,11 @@ private struct AgentCommandDashboardView: View {
 
     private func shortSessionId(_ sessionId: String) -> String {
         String(sessionId.prefix(8))
+    }
+
+    private func sessionInstructionTimeText(_ session: AgentMonitorSessionSnapshot) -> String {
+        guard let date = session.instructionDate ?? session.latestActivity else { return "—" }
+        return DisplayTime.withSeconds.string(from: date)
     }
 
     private func windowText(_ window: Int) -> String {
