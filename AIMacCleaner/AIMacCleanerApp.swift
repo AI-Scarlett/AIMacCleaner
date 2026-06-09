@@ -9,6 +9,7 @@ struct AIMacCleanerApp: App {
     @StateObject private var agentRegistry = AgentRegistry()
     @StateObject private var sessionsViewModel = SessionsViewModel()
     @StateObject private var conversationWatcher = ConversationWatcher()
+    @StateObject private var overviewStore = AgentMonitorOverviewStore()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @AppStorage("monitorEnabled") private var monitorEnabled = false
     @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = false
@@ -18,7 +19,7 @@ struct AIMacCleanerApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(overviewStore: overviewStore)
                 .environmentObject(service)
                 .environmentObject(localizer)
                 .environmentObject(agentRegistry)
@@ -27,6 +28,7 @@ struct AIMacCleanerApp: App {
                 .frame(minWidth: 960, minHeight: 640)
                 .onAppear {
                     appDelegate.service = service
+                    appDelegate.overviewStore = overviewStore
                     service.localizer = localizer
                     appDelegate.configureAgentCenterContext(
                         sessionsViewModel: sessionsViewModel,
@@ -34,6 +36,7 @@ struct AIMacCleanerApp: App {
                         conversationWatcher: conversationWatcher,
                         localizer: localizer
                     )
+                    overviewStore.startBackgroundRefresh()
                     NSApp.setActivationPolicy(.regular)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [service] in
                         if monitorEnabled { service.startMonitoring() }
@@ -170,8 +173,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var fallbackAgentRegistry: AgentRegistry?
     private var fallbackSessionsViewModel: SessionsViewModel?
     private var fallbackConversationWatcher: ConversationWatcher?
+    private var fallbackOverviewStore: AgentMonitorOverviewStore?
     private var forceTerminateOnce = false
     var service: ScannerService?
+    var overviewStore: AgentMonitorOverviewStore?
     var hookServer: HookServer?
     var sessionStore: SessionStore?
     var soundEngine: SoundEngine?
@@ -302,15 +307,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let agentRegistry = agentRegistryContext ?? fallbackAgentRegistry ?? AgentRegistry()
         let sessionsViewModel = sessionsVM ?? fallbackSessionsViewModel ?? SessionsViewModel()
         let conversationWatcher = conversationWatcherContext ?? fallbackConversationWatcher ?? ConversationWatcher()
+        let overviewStore = self.overviewStore ?? fallbackOverviewStore ?? AgentMonitorOverviewStore()
 
         fallbackService = service
         fallbackLocalizer = localizer
         fallbackAgentRegistry = agentRegistry
         fallbackSessionsViewModel = sessionsViewModel
         fallbackConversationWatcher = conversationWatcher
+        fallbackOverviewStore = overviewStore
 
         self.service = service
+        self.overviewStore = overviewStore
         service.localizer = localizer
+        overviewStore.startBackgroundRefresh()
         configureAgentCenterContext(
             sessionsViewModel: sessionsViewModel,
             agentRegistry: agentRegistry,
@@ -318,7 +327,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             localizer: localizer
         )
 
-        let rootView = ContentView()
+        let rootView = ContentView(overviewStore: overviewStore)
             .environmentObject(service)
             .environmentObject(localizer)
             .environmentObject(agentRegistry)

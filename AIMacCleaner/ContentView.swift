@@ -6,11 +6,11 @@ struct ContentView: View {
     @State private var selectedTab: NavItem = .overview
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
+    @ObservedObject var overviewStore: AgentMonitorOverviewStore
     @State private var showSettings = false
     @State private var sidebarCollapsed = false
     @State private var toolboxExpanded = false
     @State private var hoveredItem: NavItem?
-    @StateObject private var overviewStore = AgentMonitorOverviewStore()
     @AppStorage("networkMode") private var networkMode = "internet"
     @AppStorage("appearanceMode") private var appearanceMode = AppearanceMode.system.rawValue
 
@@ -134,10 +134,8 @@ struct ContentView: View {
             service.refreshHardwareInfo()
             service.refreshCachedSurfacesInBackground(minInterval: 30)
             overviewStore.refresh()
+            overviewStore.startBackgroundRefresh()
             service.importKnownAgentHistory()
-        }
-        .onReceive(Timer.publish(every: 10, on: .main, in: .common).autoconnect()) { _ in
-            overviewStore.refresh()
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -902,8 +900,12 @@ final class AgentMonitorOverviewStore: ObservableObject {
 
     private let scanner = AgentMonitorOverviewScanner()
     private let cachedRootsKey = "agentMonitorOverview.scannedRoots"
+    private var backgroundRefreshTimer: Timer?
     private var isRefreshingRealtime = false
+    private var focusedRefreshKeysInFlight: Set<String> = []
+    private var lastFocusedRefreshByKey: [String: Date] = [:]
     private var lastRealtimeRefreshDate: Date?
+    private var lastFullScanDate: Date?
     private let activeRetentionWindow: TimeInterval = 30 * 60
 
     private struct Cache: Codable {
@@ -914,6 +916,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
         var authorizedRoots: [String] = []
         var scannedRoots: [String] = []
         var lastScanDate: Date?
+        var lastFullScanDate: Date?
     }
 
     init() {
@@ -921,10 +924,26 @@ final class AgentMonitorOverviewStore: ObservableObject {
         loadCache()
     }
 
+    deinit {
+        backgroundRefreshTimer?.invalidate()
+    }
+
+    func startBackgroundRefresh() {
+        guard backgroundRefreshTimer == nil else { return }
+        refresh()
+        let timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refresh()
+            }
+        }
+        backgroundRefreshTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
     func refresh(force: Bool = false) {
         let needsFullScan = force ||
             snapshots.isEmpty ||
-            (lastScanDate.map { Date().timeIntervalSince($0) >= 6 * 60 * 60 } ?? false)
+            (lastFullScanDate.map { Date().timeIntervalSince($0) >= 6 * 60 * 60 } ?? true)
         if !needsFullScan {
             refreshRealtime()
             return
@@ -951,6 +970,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
                 self.scannedRoots = result.scannedRoots
                 UserDefaults.standard.set(result.scannedRoots, forKey: self.cachedRootsKey)
                 self.lastScanDate = Date()
+                self.lastFullScanDate = self.lastScanDate
                 self.isScanning = false
                 self.saveCache()
             }
@@ -999,6 +1019,26 @@ final class AgentMonitorOverviewStore: ObservableObject {
                 self.saveCache()
                 self.lastRealtimeRefreshDate = Date()
                 self.isRefreshingRealtime = false
+            }
+        }
+    }
+
+    func refreshFocusedSession(_ session: AgentMonitorSessionSnapshot) {
+        guard Self.isActiveSession(session) else { return }
+        let key = Self.sessionKey(session)
+        guard !focusedRefreshKeysInFlight.contains(key) else { return }
+        if let last = lastFocusedRefreshByKey[key],
+           Date().timeIntervalSince(last) < 1.5 {
+            return
+        }
+        focusedRefreshKeysInFlight.insert(key)
+        lastFocusedRefreshByKey[key] = Date()
+        Task.detached(priority: .userInitiated) { [scanner] in
+            let refreshed = scanner.scanSession(session)
+            await MainActor.run {
+                self.focusedRefreshKeysInFlight.remove(key)
+                guard let refreshed else { return }
+                self.applyFocusedSessionRefresh(refreshed, previousKey: key)
             }
         }
     }
@@ -1130,12 +1170,16 @@ final class AgentMonitorOverviewStore: ObservableObject {
 
     private static func mergedSession(
         primary: AgentMonitorSessionSnapshot,
-        fallback: AgentMonitorSessionSnapshot
+        fallback: AgentMonitorSessionSnapshot,
+        preserveNewerWaitingState: Bool = true
     ) -> AgentMonitorSessionSnapshot {
         let primaryIsNewer = (primary.latestActivity ?? .distantPast) >= (fallback.latestActivity ?? .distantPast)
         let newest = primaryIsNewer ? primary : fallback
+        let fallbackIsNewer = (fallback.latestActivity ?? .distantPast) > (primary.latestActivity ?? .distantPast)
         let status: String
-        if ["Paused", "Waiting"].contains(fallback.status),
+        if preserveNewerWaitingState,
+           fallbackIsNewer,
+           ["Paused", "Waiting"].contains(fallback.status),
            ["Done", "History"].contains(primary.status) {
             status = fallback.status
         } else {
@@ -1168,6 +1212,40 @@ final class AgentMonitorOverviewStore: ObservableObject {
             instructionDate: newest.instructionDate ?? newest.latestActivity ?? fallback.instructionDate,
             sourcePath: primary.sourcePath
         )
+    }
+
+    private func applyFocusedSessionRefresh(_ refreshed: AgentMonitorSessionSnapshot, previousKey: String) {
+        let refreshedKey = Self.sessionKey(refreshed)
+        var byKey = Dictionary(uniqueKeysWithValues: Self.sanitizedSessions(sessions).map { (Self.sessionKey($0), $0) })
+        let fallback = byKey.removeValue(forKey: previousKey) ?? byKey[refreshedKey]
+        if let fallback {
+            byKey[refreshedKey] = Self.mergedSession(
+                primary: refreshed,
+                fallback: fallback,
+                preserveNewerWaitingState: false
+            )
+        } else {
+            byKey[refreshedKey] = refreshed
+        }
+        sessions = Array(byKey.values)
+            .sorted {
+                let leftActive = Self.isActiveSession($0)
+                let rightActive = Self.isActiveSession($1)
+                if leftActive != rightActive { return leftActive }
+                let left = $0.latestActivity ?? .distantPast
+                let right = $1.latestActivity ?? .distantPast
+                if left == right { return $0.agentName < $1.agentName }
+                return left > right
+            }
+            .prefix(400)
+            .map { $0 }
+
+        let focusedSnapshots = Self.usageSnapshots(from: sessions)
+        if !focusedSnapshots.isEmpty {
+            snapshots = Self.mergedSnapshots(primary: focusedSnapshots, fallback: Self.sanitizedSnapshots(snapshots))
+        }
+        lastScanDate = Date()
+        saveCache()
     }
 
     private static func sessionKey(_ session: AgentMonitorSessionSnapshot) -> String {
@@ -1211,6 +1289,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
             scannedRoots = cache.scannedRoots
         }
         lastScanDate = cache.lastScanDate ?? (cache.snapshots.isEmpty ? nil : cache.updatedAt)
+        lastFullScanDate = cache.lastFullScanDate ?? cache.lastScanDate
     }
 
     private func saveCache() {
@@ -1220,7 +1299,8 @@ final class AgentMonitorOverviewStore: ObservableObject {
             sessions: Array(Self.sanitizedSessions(sessions).prefix(240)),
             authorizedRoots: authorizedRoots,
             scannedRoots: scannedRoots,
-            lastScanDate: lastScanDate
+            lastScanDate: lastScanDate,
+            lastFullScanDate: lastFullScanDate
         )
         guard let data = try? JSONEncoder().encode(cache) else { return }
         try? data.write(to: URL(fileURLWithPath: SandboxPaths.shared.agentMonitorCachePath), options: .atomic)
@@ -1552,6 +1632,44 @@ private final class AgentMonitorOverviewScanner {
             authorizedRoots: authorizedRoots,
             scannedRoots: fixedRoots.sorted { $0.count < $1.count }
         )
+    }
+
+    fileprivate func scanSession(_ session: AgentMonitorSessionSnapshot) -> AgentMonitorSessionSnapshot? {
+        let processInfo = scanProcessInfo()
+        let children = childrenMap(processInfo)
+        let sourcePath = session.sourcePath
+        let lower = sourcePath.lowercased()
+        let rows: [AgentMonitorSessionSnapshot]
+        if lower.hasSuffix("/opencode.db") {
+            rows = parseOpenCodeDBSessions(path: sourcePath, processInfo: processInfo)
+        } else if lower.hasSuffix("/sqlite.db"), lower.contains("minimax") {
+            rows = parseMiniMaxDBSessions(path: sourcePath, processInfo: processInfo)
+        } else if lower.hasSuffix("/nexus.db"), lower.contains("minimax") {
+            rows = parseMiniMaxNexusDBSessions(path: sourcePath, processInfo: processInfo)
+        } else if lower.hasSuffix(".vscdb"), lower.contains("cursor") {
+            rows = parseCursorDBSessions(path: sourcePath, processInfo: processInfo)
+        } else if lower.hasSuffix("/sessions.json"), lower.contains("openclaw") || lower.contains("qclaw") {
+            rows = parseOpenClawSessionStore(path: sourcePath, processInfo: processInfo)
+        } else if ["json", "jsonl", "log"].contains(URL(fileURLWithPath: sourcePath).pathExtension.lowercased()),
+                  fileManager.fileExists(atPath: sourcePath),
+                  let parsed = parseSessionFile(URL(fileURLWithPath: sourcePath)) {
+            let agentName = resolvedAgentName(
+                specName: specForSessionPath(sourcePath)?.name ?? session.agentName,
+                parsed: parsed
+            )
+            return snapshotFromParsedSession(
+                parsed,
+                agentName: agentName,
+                processInfo: processInfo,
+                children: children,
+                idSuffix: "focused"
+            )
+        } else {
+            return nil
+        }
+        return rows.first { $0.sessionId == session.sessionId }
+            ?? rows.first { $0.id == session.id }
+            ?? rows.first { $0.agentName == session.agentName && $0.sourcePath == session.sourcePath }
     }
 
     private func isRealtimeActiveSession(_ session: AgentMonitorSessionSnapshot) -> Bool {
@@ -3338,6 +3456,52 @@ private final class AgentMonitorOverviewScanner {
                 sourcePath: parsed.sourcePath
             )
         }
+    }
+
+    private func snapshotFromParsedSession(
+        _ parsed: ParsedSession,
+        agentName: String,
+        processInfo: [Int: ProcessInfo],
+        children: [Int: [Int]],
+        idSuffix: String
+    ) -> AgentMonitorSessionSnapshot {
+        let process = processInfo.values.first { matchingSpecName($0.command) == agentName }
+            ?? (agentName == "Claude Code" ? processInfo.values.first { $0.command.lowercased().contains("/claude.app/") } : nil)
+        let childPids = process.map { descendants(of: $0.pid, children: children) } ?? []
+        let status = liveStatus(
+            isAlive: process != nil,
+            process: process,
+            childPids: childPids,
+            processInfo: processInfo,
+            currentTask: parsed.currentTask,
+            parsedStatus: parsed.status
+        )
+        let contextPercent = parsed.contextWindow > 0
+            ? min(Double(parsed.lastContextTokens) / Double(parsed.contextWindow), 1)
+            : 0
+        return AgentMonitorSessionSnapshot(
+            id: "\(agentName)-\(parsed.sessionId)-\(idSuffix)",
+            agentName: agentName,
+            pid: process?.pid,
+            sessionId: parsed.sessionId,
+            status: status,
+            projectName: lastPathSegment(parsed.cwd).isEmpty ? agentName : lastPathSegment(parsed.cwd),
+            projectPath: parsed.cwd,
+            model: parsed.model.isEmpty ? "—" : parsed.model,
+            tokens: parsed.tokens,
+            contextPercent: contextPercent,
+            contextWindow: parsed.contextWindow,
+            turnCount: parsed.turnCount,
+            currentTask: parsed.currentTask.isEmpty ? "\(agentName) session" : parsed.currentTask,
+            toolCount: parsed.toolCount,
+            runningToolCount: status == "Executing" ? parsed.runningToolCount : 0,
+            childCount: childPids.count,
+            ports: [],
+            memoryMB: process.map { max($0.rssKB / 1024, 1) },
+            latestActivity: parsed.latestActivity,
+            instructionDate: parsed.instructionDate ?? parsed.latestActivity,
+            sourcePath: parsed.sourcePath
+        )
     }
 
     private func scanPriorityHistorySessions(
@@ -5376,13 +5540,22 @@ private struct AgentCommandDashboardView: View {
         .onAppear {
             onRefresh()
             normalizeSelection()
+            refreshSelectedActiveSessionIfNeeded()
+        }
+        .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
+            refreshSelectedActiveSessionIfNeeded()
         }
         .onChange(of: store.sessions.map(\.id).joined(separator: "|")) { _ in
             normalizeSelection()
+            refreshSelectedActiveSessionIfNeeded()
+        }
+        .onChange(of: selectedSessionID ?? "") { _ in
+            refreshSelectedActiveSessionIfNeeded()
         }
         .onChange(of: filterText) { _ in
             visibleSessionCount = 24
             normalizeSelection()
+            refreshSelectedActiveSessionIfNeeded()
         }
         .onChange(of: store.scannedRoots.joined(separator: "|")) { _ in
             authorizationStatus = localizedScanCoverageStatus
@@ -6130,6 +6303,12 @@ private struct AgentCommandDashboardView: View {
             return
         }
         selectedSessionID = sessions.first?.id
+    }
+
+    private func refreshSelectedActiveSessionIfNeeded() {
+        guard let session = selectedActiveSession,
+              isActiveSession(session) else { return }
+        store.refreshFocusedSession(session)
     }
 
     private func moveSelection(_ offset: Int) {
