@@ -133,7 +133,10 @@ class AgentSessionScanner: ObservableObject {
                 continue
             }
             let lastComponent = url.lastPathComponent
-            if lastComponent == ".git" { return true }
+            if lastComponent == ".git" {
+                enumerator.skipDescendants()
+                continue
+            }
             if lastComponent.hasPrefix(".") && lastComponent != ".jsonl" {
                 enumerator.skipDescendants()
                 continue
@@ -253,7 +256,7 @@ class AgentSessionScanner: ObservableObject {
                             continue
                         }
 
-                        if path.hasSuffix(".jsonl") || path.hasSuffix(source.filePattern) || path.hasSuffix(".sqlite") || path.hasSuffix(".vscdb") || path.hasSuffix(".db") || path.hasSuffix(".md") || (itemURL.pathExtension == "json" && (path.contains("file-changes") || path.contains("session") || path.contains("events") || path.contains("conversation") || path.contains("trajectory") || itemURL.lastPathComponent == "entries.json")) {
+                        if self.isSessionCandidate(itemURL, pattern: source.filePattern) {
                             sessionCount += 1
                             if let attrs = try? self.fileManager.attributesOfItem(atPath: path),
                                let modDate = attrs[.modificationDate] as? Date {
@@ -307,12 +310,24 @@ class AgentSessionScanner: ObservableObject {
     }
 
     func scanAgentOps(agentName: String) {
+        DispatchQueue.main.async {
+            self.opRecords = []
+            self.scanError = ""
+            self.isScanning = true
+        }
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
             guard !self.isScanningOps else {
                 print("[AgentSessionScanner] scanAgentOps already in progress, skipping")
-                DispatchQueue.main.async { self.isScanning = false }
+                DispatchQueue.main.async {
+                    self.scanError = self.localizer?.t(
+                        "另一个 Agent 审计仍在解析，请稍后重试。",
+                        en: "Another agent audit is still parsing. Try again in a moment."
+                    ) ?? "Another agent audit is still parsing. Try again in a moment."
+                    self.isScanning = false
+                }
                 return
             }
             self.isScanningOps = true
@@ -325,6 +340,8 @@ class AgentSessionScanner: ObservableObject {
 
             var allRecords: [AgentOpRecord] = []
             let home = SandboxPaths.realHomeDirectory
+            var candidateCount = 0
+            var parsedFileCount = 0
 
             let matchingSources = self.dataSources.filter { $0.agentName == agentName }
             print("[AgentSessionScanner] scanAgentOps: \(agentName), found \(matchingSources.count) data sources")
@@ -342,20 +359,26 @@ class AgentSessionScanner: ObservableObject {
                     self.fileManager.fileExists(atPath: basePath, isDirectory: &isDir)
                     if isDir.boolValue {
                         let urls = self.findSessionFiles(in: basePath, pattern: source.filePattern)
+                        candidateCount += urls.count
                         print("[AgentSessionScanner] found \(urls.count) session files in \(basePath)")
                         for url in urls {
                             let records = source.parser(url, agentName)
+                            if !records.isEmpty { parsedFileCount += 1 }
                             allRecords.append(contentsOf: records)
                         }
                     } else {
+                        candidateCount += 1
                         let url = URL(fileURLWithPath: basePath)
                         let records = source.parser(url, agentName)
+                        if !records.isEmpty { parsedFileCount += 1 }
                         allRecords.append(contentsOf: records)
                     }
                 }
             }
 
             allRecords.sort { $0.timestamp > $1.timestamp }
+            var seenRecordIds = Set<String>()
+            allRecords = allRecords.filter { seenRecordIds.insert($0.id).inserted }
             if allRecords.count > 10000 { allRecords = Array(allRecords.prefix(10000)) }
 
             if allRecords.isEmpty, agentName == "Codex" {
@@ -374,6 +397,29 @@ class AgentSessionScanner: ObservableObject {
 
             DispatchQueue.main.async {
                 self.opRecords = allRecords
+                if allRecords.isEmpty {
+                    if matchingSources.isEmpty {
+                        self.scanError = self.localizer?.t(
+                            "未找到 \(agentName) 的审计数据源。请重新扫描或手动添加数据目录。",
+                            en: "No audit data source is registered for \(agentName). Rescan or add its data folder manually."
+                        ) ?? "No audit data source is registered for \(agentName)."
+                    } else if candidateCount == 0 {
+                        self.scanError = self.localizer?.t(
+                            "已找到 \(agentName)，但数据目录中没有受支持的会话文件。",
+                            en: "\(agentName) was found, but its data folders contain no supported session files."
+                        ) ?? "No supported session files found."
+                    } else {
+                        self.scanError = self.localizer?.t(
+                            "检查了 \(candidateCount) 个会话文件，但没有解析到可审计操作。可能是数据格式尚未支持或目录权限不足。",
+                            en: "Checked \(candidateCount) session files but parsed no auditable operations. The format may be unsupported or folder access may be restricted."
+                        ) ?? "No auditable operations parsed."
+                    }
+                } else {
+                    self.scanError = self.localizer?.t(
+                        "已从 \(parsedFileCount)/\(candidateCount) 个会话文件解析 \(allRecords.count) 条审计记录。",
+                        en: "Parsed \(allRecords.count) audit records from \(parsedFileCount)/\(candidateCount) session files."
+                    ) ?? "Parsed \(allRecords.count) audit records."
+                }
                 print("[AgentSessionScanner] Found \(allRecords.count) op records for \(agentName)")
             }
         }
@@ -429,7 +475,7 @@ class AgentSessionScanner: ObservableObject {
             }
             let lastComponent = url.lastPathComponent
             if lastComponent == ".git" {
-                results.append(url)
+                if pattern == ".git" { results.append(url) }
                 enumerator.skipDescendants()
                 continue
             }
@@ -437,16 +483,39 @@ class AgentSessionScanner: ObservableObject {
                 enumerator.skipDescendants()
                 continue
             }
-            let ext = url.pathExtension
-            if ext == "jsonl" || url.path.hasSuffix(pattern) || ext == "sqlite" || ext == "md" || ext == "db" {
-                results.append(url)
-            } else if ext == "json" && (url.path.contains("file-changes") || url.path.contains("session") || url.path.contains("events") || url.path.contains("conversation") || url.path.contains("trajectory") || url.lastPathComponent == "entries.json") {
-                results.append(url)
-            } else if ext == "vscdb" {
+            if isSessionCandidate(url, pattern: pattern) {
                 results.append(url)
             }
         }
         return results
+    }
+
+    private func isSessionCandidate(_ url: URL, pattern: String) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        let normalizedPattern = pattern.lowercased()
+        if normalizedPattern == ".git" {
+            return url.lastPathComponent == ".git"
+        }
+        if normalizedPattern == "*" {
+            if ["jsonl", "vscdb", "sqlite", "db", "md"].contains(ext) { return true }
+            return ext == "json" && isLikelySessionJSON(url)
+        }
+        if normalizedPattern.hasPrefix(".") {
+            return ext == String(normalizedPattern.dropFirst())
+        }
+        return url.path.lowercased().hasSuffix(normalizedPattern)
+    }
+
+    private func isLikelySessionJSON(_ url: URL) -> Bool {
+        let path = url.path.lowercased()
+        let name = url.lastPathComponent.lowercased()
+        return path.contains("file-changes")
+            || path.contains("session")
+            || path.contains("events")
+            || path.contains("conversation")
+            || path.contains("trajectory")
+            || path.contains("history")
+            || name == "entries.json"
     }
 
     private func discoverCodexAgent() -> DiscoveredAgent? {
@@ -1218,7 +1287,10 @@ class AgentSessionScanner: ObservableObject {
 
         for table in tables {
             let lower = table.lowercased()
-            if lower.contains("session") || lower.contains("message") || lower.contains("conversation") || lower.contains("workflow") {
+            if lower.contains("session") || lower.contains("message") || lower.contains("conversation")
+                || lower.contains("workflow") || lower.contains("history") || lower.contains("event")
+                || lower.contains("log") || lower.contains("trace") || lower.contains("action")
+                || lower.contains("tool") || lower.contains("task") {
                 let q = "SELECT * FROM \"\(table)\" ORDER BY rowid DESC LIMIT 100;"
                 var stmt2: OpaquePointer?
                 if sqlite3_prepare_v2(dbRef, q, -1, &stmt2, nil) == SQLITE_OK {
@@ -1604,38 +1676,14 @@ class AgentSessionScanner: ObservableObject {
             let existingSources = dataSources.filter { $0.agentName == name }
             if !existingSources.isEmpty { continue }
 
-            let parser: (URL, String) -> [AgentOpRecord]
-            if isVSCode {
-                parser = { [weak self] url, agentName in
-                    guard let self = self else { return [] }
-                    let ext = url.pathExtension
-                    if ext == "vscdb" {
-                        return self.parseVscdbSQLite(url: url, agentName: agentName)
-                    } else if ext == "json" && url.path.contains("file-changes") {
-                        return self.parseFileChangesJSON(url: url, agentName: agentName)
-                    } else {
-                        return self.parseGenericJSONL(url: url, agentName: agentName)
-                    }
-                }
-            } else {
-                parser = { [weak self] url, agentName in
-                    guard let self = self else { return [] }
-                    let ext = url.pathExtension
-                    if ext == "vscdb" {
-                        return self.parseVscdbSQLite(url: url, agentName: agentName)
-                    } else if ext == "json" && url.path.contains("file-changes") {
-                        return self.parseFileChangesJSON(url: url, agentName: agentName)
-                    } else if ext == "db" || ext == "sqlite" {
-                        return self.parseGenericJSONL(url: url, agentName: agentName)
-                    } else {
-                        return self.parseGenericJSONL(url: url, agentName: agentName)
-                    }
-                }
+            let parser: (URL, String) -> [AgentOpRecord] = { [weak self] url, agentName in
+                self?.parseAutoDetectedSource(url: url, agentName: agentName) ?? []
             }
 
             let source = AgentDataSource(
                 agentName: name,
                 searchPaths: paths,
+                filePattern: "*",
                 isVSCodeType: isVSCode,
                 parser: parser
             )
@@ -2424,6 +2472,20 @@ class AgentSessionScanner: ObservableObject {
         )]
     }
 
+    func parseAutoDetectedSource(url: URL, agentName: String) -> [AgentOpRecord] {
+        let ext = url.pathExtension.lowercased()
+        if ext == "vscdb" {
+            return parseVscdbSQLite(url: url, agentName: agentName)
+        }
+        if ext == "db" || ext == "sqlite" {
+            return parseAutoGenSQLite(url: url, agentName: agentName)
+        }
+        if ext == "json" && url.path.lowercased().contains("file-changes") {
+            return parseFileChangesJSON(url: url, agentName: agentName)
+        }
+        return parseGenericJSONL(url: url, agentName: agentName)
+    }
+
     func parseGenericJSONL(url: URL, agentName: String) -> [AgentOpRecord] {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
         var records: [AgentOpRecord] = []
@@ -2442,6 +2504,29 @@ class AgentSessionScanner: ObservableObject {
             if type == "session_meta" || type == "turn_context" {
                 if let payload = json["payload"] as? [String: Any] {
                     cwd = payload["cwd"] as? String ?? cwd
+                }
+            }
+
+            if type == "function_call" || type == "custom_tool_call" || type == "tool_call" {
+                if let record = genericToolCallRecord(json, agentName: agentName, sessionId: sessionId, cwd: cwd, ts: ts) {
+                    records.append(record)
+                }
+            } else if let payload = json["payload"] as? [String: Any] {
+                let payloadType = payload["type"] as? String ?? ""
+                if payloadType == "function_call" || payloadType == "custom_tool_call" || payloadType == "tool_call",
+                   let record = genericToolCallRecord(payload, agentName: agentName, sessionId: sessionId, cwd: cwd, ts: ts) {
+                    records.append(record)
+                }
+            }
+
+            if let toolCalls = json["tool_calls"] as? [[String: Any]] {
+                for call in toolCalls {
+                    if let function = call["function"] as? [String: Any],
+                       let record = genericToolCallRecord(function, agentName: agentName, sessionId: sessionId, cwd: cwd, ts: ts) {
+                        records.append(record)
+                    } else if let record = genericToolCallRecord(call, agentName: agentName, sessionId: sessionId, cwd: cwd, ts: ts) {
+                        records.append(record)
+                    }
                 }
             }
 
@@ -2504,6 +2589,158 @@ class AgentSessionScanner: ObservableObject {
             }
         }
 
+        if records.isEmpty,
+           let data = content.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data) {
+            records.append(contentsOf: recordsFromGenericJSONObject(
+                object,
+                agentName: agentName,
+                sessionId: sessionId,
+                cwd: cwd,
+                timestamp: Date(),
+                depth: 0
+            ))
+        }
+
+        if records.isEmpty {
+            records.append(contentsOf: extractOpsFromText(
+                content,
+                agentName: agentName,
+                sessionId: sessionId,
+                cwd: cwd,
+                ts: fileModificationDate(url) ?? Date()
+            ))
+        }
+
+        if records.isEmpty, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let summary = content
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            records.append(AgentOpRecord(
+                id: "\(url.path)_session",
+                agentName: agentName,
+                sessionId: sessionId,
+                projectDir: cwd,
+                timestamp: fileModificationDate(url) ?? Date(),
+                toolName: "session",
+                targetPath: cwd,
+                opType: "Chat",
+                detail: String(summary.prefix(240))
+            ))
+        }
+
+        return records
+    }
+
+    private func fileModificationDate(_ url: URL) -> Date? {
+        (try? fileManager.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
+    }
+
+    private func genericToolCallRecord(
+        _ value: [String: Any],
+        agentName: String,
+        sessionId: String,
+        cwd: String,
+        ts: Date
+    ) -> AgentOpRecord? {
+        let toolName = value["name"] as? String
+            ?? value["tool_name"] as? String
+            ?? value["tool"] as? String
+            ?? value["action"] as? String
+            ?? ""
+        guard !toolName.isEmpty else { return nil }
+
+        var input = value["input"] as? [String: Any]
+            ?? value["arguments"] as? [String: Any]
+            ?? value["args"] as? [String: Any]
+            ?? [:]
+        let argumentsText = value["arguments"] as? String
+            ?? value["input"] as? String
+            ?? value["args"] as? String
+            ?? ""
+        if input.isEmpty, let parsed = parseJSONString(argumentsText) {
+            input = parsed
+        }
+
+        let target = stringArg(input, ["file_path", "path", "file", "target", "cwd", "workdir"])
+            ?? firstPathLikeToken(in: argumentsText)
+            ?? cwd
+        let detail = stringArg(input, ["command", "cmd", "query", "pattern", "content"])
+            ?? argumentsText
+
+        return AgentOpRecord(
+            id: UUID().uuidString,
+            agentName: agentName,
+            sessionId: sessionId,
+            projectDir: stringArg(input, ["cwd", "workdir"]) ?? cwd,
+            timestamp: ts,
+            toolName: toolName,
+            targetPath: target,
+            opType: classifyOpType(toolName),
+            detail: String(detail.prefix(300))
+        )
+    }
+
+    private func recordsFromGenericJSONObject(
+        _ object: Any,
+        agentName: String,
+        sessionId: String,
+        cwd: String,
+        timestamp: Date,
+        depth: Int
+    ) -> [AgentOpRecord] {
+        guard depth < 8 else { return [] }
+        if let array = object as? [Any] {
+            return array.prefix(500).flatMap {
+                recordsFromGenericJSONObject(
+                    $0,
+                    agentName: agentName,
+                    sessionId: sessionId,
+                    cwd: cwd,
+                    timestamp: timestamp,
+                    depth: depth + 1
+                )
+            }
+        }
+        guard let dict = object as? [String: Any] else { return [] }
+
+        let nextSessionId = dict["session_id"] as? String
+            ?? dict["sessionId"] as? String
+            ?? dict["conversation_id"] as? String
+            ?? sessionId
+        let nextCwd = dict["cwd"] as? String
+            ?? dict["projectDir"] as? String
+            ?? dict["workspace"] as? String
+            ?? cwd
+        let nextTimestamp = parseTimestamp(dict["timestamp"] as? String)
+            ?? parseTimestamp(dict["createdAt"] as? String)
+            ?? timestamp
+
+        var records: [AgentOpRecord] = []
+        let type = (dict["type"] as? String ?? "").lowercased()
+        if type.contains("tool") || type.contains("function") || dict["tool_name"] != nil || dict["action"] != nil {
+            if let record = genericToolCallRecord(
+                dict,
+                agentName: agentName,
+                sessionId: nextSessionId,
+                cwd: nextCwd,
+                ts: nextTimestamp
+            ) {
+                records.append(record)
+            }
+        }
+
+        for value in dict.values {
+            records.append(contentsOf: recordsFromGenericJSONObject(
+                value,
+                agentName: agentName,
+                sessionId: nextSessionId,
+                cwd: nextCwd,
+                timestamp: nextTimestamp,
+                depth: depth + 1
+            ))
+            if records.count >= 1000 { break }
+        }
         return records
     }
 

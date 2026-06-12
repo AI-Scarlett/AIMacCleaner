@@ -17,6 +17,14 @@ struct AIMacCleanerApp: App {
     @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
     @AppStorage("quitBehavior") private var quitBehavior: String = "quitAll"
 
+    init() {
+        let defaults = UserDefaults.standard
+        let palette = defaults.string(forKey: "colorPalette")
+        if palette == nil || palette == AppColorPalette.aurora.rawValue {
+            defaults.set(AppColorPalette.porcelain.rawValue, forKey: "colorPalette")
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView(overviewStore: overviewStore)

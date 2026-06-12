@@ -12,10 +12,12 @@ struct SettingsView: View {
     @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = false
     @AppStorage("networkMode") private var networkMode = "internet"
     @AppStorage("quitBehavior") private var quitBehavior: String = "quitAll"
+    @AppStorage("colorPalette") private var colorPalette = AppColorPalette.porcelain.rawValue
 
     enum SettingsTab: String, CaseIterable {
         case ai = "AI"
         case features = "Features"
+        case appearance = "Appearance"
         case lab = "Lab"
         case monitor = "Monitor"
         case network = "Network"
@@ -30,6 +32,7 @@ struct SettingsView: View {
             switch self {
             case .ai: "brain"
             case .features: "switch.2"
+            case .appearance: "paintpalette.fill"
             case .lab: "flask"
             case .monitor: "bell.badge"
             case .network: "network"
@@ -42,6 +45,7 @@ struct SettingsView: View {
             switch self {
             case .ai: "AI"
             case .features: "Features"
+            case .appearance: "Appearance"
             case .lab: "Lab"
             case .monitor: "Monitor"
             case .network: "Network"
@@ -54,6 +58,7 @@ struct SettingsView: View {
             switch self {
             case .ai: localizer.settingsTabAI
             case .features: localizer.settingsTabFeatures
+            case .appearance: localizer.t("外观", en: "Appearance", zhHant: "外觀", ja: "外観", ko: "외관", mt: "Appearance")
             case .lab: localizer.settingsTabLab
             case .monitor: localizer.settingsTabMonitor
             case .network: localizer.networkLabel
@@ -66,11 +71,16 @@ struct SettingsView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Image(systemName: "gearshape.2.fill")
-                    .font(Theme.Font.title2)
-                    .foregroundStyle(Theme.Colors.accent)
+                ZStack {
+                    RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                        .fill(Theme.Colors.accent.opacity(0.14))
+                    Image(systemName: "gearshape.2.fill")
+                        .font(Theme.Font.title2)
+                        .foregroundStyle(Theme.Colors.accent)
+                }
+                .frame(width: 44, height: 44)
                 Text(localizer.settingsTitle)
-                    .font(Theme.Font.title2Bold)
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
                 Button { dismiss() } label: {
@@ -80,7 +90,13 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
             }
             .padding(Theme.Spacing.xl)
-            Divider()
+            .background(.ultraThinMaterial)
+            .background(Theme.Colors.elevatedCardBg.opacity(0.58))
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Theme.Gradients.glassStroke)
+                    .frame(height: 1)
+            }
 
             HStack(spacing: 0) {
                 VStack(spacing: Theme.Spacing.xs) {
@@ -117,14 +133,20 @@ struct SettingsView: View {
                 .frame(width: 140)
                 .padding(.horizontal, Theme.Spacing.sm)
                 .padding(.vertical, Theme.Spacing.md)
-                .background(Theme.Colors.sidebarBg)
-                Divider()
+                .background(Theme.Gradients.sidebar)
+                .background(.ultraThinMaterial)
+                .overlay(alignment: .trailing) {
+                    Rectangle()
+                        .fill(Theme.Gradients.glassStroke)
+                        .frame(width: 1)
+                }
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                         switch selectedTab {
                         case .ai: aiSection
                         case .features: featuresSection
+                        case .appearance: appearanceSection
                         case .lab: labSection
                         case .monitor: monitorSection
                         case .network: networkSection
@@ -138,33 +160,140 @@ struct SettingsView: View {
                 }
             }
 
-            Divider()
             HStack {
                 Spacer()
                 Button(localizer.cancel) { dismiss() }
-                    .font(Theme.Font.subheadlineMedium)
-                    .foregroundStyle(Theme.Colors.textSecondary)
-                    .padding(.horizontal, Theme.Spacing.lg)
-                    .padding(.vertical, Theme.Spacing.sm)
-                    .background(Theme.Colors.cardBg)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
-                    )
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 34))
                 Button(localizer.save) { saveSettings() }
-                    .font(Theme.Font.subheadlineMedium)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, Theme.Spacing.lg)
-                    .padding(.vertical, Theme.Spacing.sm)
-                    .background(Theme.Colors.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
             }
             .padding(Theme.Spacing.lg)
+            .background(.ultraThinMaterial)
+            .background(Theme.Colors.elevatedCardBg.opacity(0.52))
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(Theme.Gradients.glassStroke)
+                    .frame(height: 1)
+            }
         }
         .frame(width: 680, height: 520)
+        .appCanvas()
+    }
+
+    private var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            SectionHeader(title: localizer.t("主题色彩", en: "Color Themes"), icon: "paintpalette.fill")
+            Text(localizer.t(
+                "每套主题都有自己的性格，并自动适配浅色和深色模式。",
+                en: "Each theme has its own story and automatically adapts to light and dark mode."
+            ))
+            .font(Theme.Font.caption)
+            .foregroundStyle(Theme.Colors.textSecondary)
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Theme.Spacing.md) {
+                ForEach(AppColorPalette.allCases, id: \.self) { palette in
+                    paletteCard(palette)
+                }
+            }
+        }
+    }
+
+    private func paletteCard(_ palette: AppColorPalette) -> some View {
+        let isSelected = colorPalette == palette.rawValue
+        return Button {
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                colorPalette = palette.rawValue
+                UserDefaults.standard.set(palette.rawValue, forKey: "colorPalette")
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    paletteSwatches(palette)
+                    Spacer()
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(Theme.Font.subheadline)
+                            .foregroundStyle(Theme.Colors.accent)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(paletteTitle(palette))
+                        .font(Theme.Font.subheadlineMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(paletteStory(palette))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: Theme.Spacing.xs) {
+                    Label(localizer.t("浅色", en: "Light"), systemImage: "sun.max.fill")
+                    Label(localizer.t("深色", en: "Dark"), systemImage: "moon.fill")
+                }
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.Colors.textTertiary)
+            }
+            .padding(Theme.Spacing.md)
+            .frame(maxWidth: .infinity, minHeight: 148, alignment: .topLeading)
+            .background(isSelected ? Theme.Colors.accent.opacity(0.10) : Theme.Colors.cardBg)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                    .stroke(isSelected ? Theme.Colors.accent.opacity(0.45) : Theme.Colors.separator.opacity(0.7), lineWidth: isSelected ? 1.5 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func paletteSwatches(_ palette: AppColorPalette) -> some View {
+        HStack(spacing: -5) {
+            ForEach(Array(palettePreviewColors(palette).enumerated()), id: \.offset) { _, color in
+                Circle()
+                    .fill(color)
+                    .frame(width: 24, height: 24)
+                    .overlay(Circle().stroke(Color.white.opacity(0.75), lineWidth: 1))
+            }
+        }
+    }
+
+    private func palettePreviewColors(_ palette: AppColorPalette) -> [Color] {
+        switch palette {
+        case .aurora:
+            return [Color(red: 0.129, green: 0.784, blue: 0.839), Color(red: 0.204, green: 0.851, blue: 0.565), Color(red: 0.918, green: 0.984, blue: 0.984)]
+        case .rose:
+            return [Color(red: 0.933, green: 0.267, blue: 0.553), Color(red: 0.702, green: 0.365, blue: 0.930), Color(red: 1.000, green: 0.940, blue: 0.972)]
+        case .shield:
+            return [Color(red: 0.286, green: 0.416, blue: 0.686), Color(red: 0.392, green: 0.610, blue: 1.000), Color(red: 0.915, green: 0.950, blue: 1.000)]
+        case .porcelain:
+            return [Color(red: 0.286, green: 0.416, blue: 0.686), Color.white, Color(red: 0.895, green: 0.910, blue: 0.940)]
+        }
+    }
+
+    private func paletteTitle(_ palette: AppColorPalette) -> String {
+        switch palette {
+        case .aurora:
+            return localizer.t("极光青绿", en: "Aurora Cyan", zhHant: "極光青綠")
+        case .rose:
+            return localizer.t("玫瑰行动", en: "Rose Signal", zhHant: "玫瑰行動")
+        case .shield:
+            return localizer.t("蓝盾主题色", en: "Blue Shield", zhHant: "藍盾主題色")
+        case .porcelain:
+            return localizer.t("纯白默认", en: "Default White", zhHant: "純白預設")
+        }
+    }
+
+    private func paletteStory(_ palette: AppColorPalette) -> String {
+        switch palette {
+        case .aurora:
+            return localizer.t("像凌晨的状态面板，保留现在这套清爽科技感。", en: "A calm early-morning operations board; this keeps the current fresh tech mood.")
+        case .rose:
+            return localizer.t("更柔和、更有亲和力，适合想要一点情绪温度的工作台。", en: "Softer and warmer, for a workspace with a little more emotional temperature.")
+        case .shield:
+            return localizer.t("取自图标的深蓝玻璃与电光蓝高光，更像品牌默认主题。", en: "Deep glass blue and electric highlights sampled from the app icon, intended as the brand default.")
+        case .porcelain:
+            return localizer.t("默认主题。白底、蓝盾强调、低灰度层级，适合长时间盯数据。", en: "The default theme: white canvas, blue shield accents, and quiet layers for dense data.")
+        }
     }
 
     private var aiSection: some View {
@@ -277,6 +406,19 @@ struct SettingsView: View {
                     )
                 )
 
+                ToggleSetting(
+                    icon: "trash.slash",
+                    title: localizer.preventAutoEmptyTrash,
+                    desc: localizer.t(
+                        "AgentGuard 不会自动清空废纸篓；受保护项在废纸篓中时会持续提醒。",
+                        en: "AgentGuard never empties Trash automatically. It reminds you while guarded items remain in Trash."
+                    ),
+                    isOn: Binding(
+                        get: { service.preventAutoEmptyTrash },
+                        set: { service.preventAutoEmptyTrash = $0 }
+                    )
+                )
+
                 VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                     Text(localizer.maxOperationRecords)
                         .font(Theme.Font.captionMedium)
@@ -340,13 +482,13 @@ struct SettingsView: View {
                 VStack(spacing: Theme.Spacing.sm) {
                     LabFeatureRow(
                         icon: "arrow.down.doc.fill",
-                        color: .blue,
+                        color: Theme.Colors.accent,
                         title: localizer.navCleaner,
                         desc: localizer.labFeatureCleanerDesc
                     )
                     LabFeatureRow(
                         icon: "app.badge",
-                        color: .cyan,
+                        color: Theme.Colors.info,
                         title: localizer.navApp,
                         desc: localizer.labFeatureAppDesc
                     )
@@ -480,18 +622,18 @@ struct SettingsView: View {
                     .font(Theme.Font.caption)
                 Text(lang.label)
                     .font(Theme.Font.captionMedium)
-                    .foregroundStyle(isSelected ? Theme.Colors.teal : Theme.Colors.textSecondary)
+                    .foregroundStyle(isSelected ? Theme.Colors.accent : Theme.Colors.textSecondary)
             }
             .frame(minWidth: 80)
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm - 2)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .fill(isSelected ? Theme.Colors.teal.opacity(0.15) : Theme.Colors.cardBg)
+                    .fill(isSelected ? Theme.Colors.accent.opacity(0.12) : Theme.Colors.cardBg)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(isSelected ? Theme.Colors.teal.opacity(0.5) : Color.primary.opacity(0.1), lineWidth: 1)
+                    .stroke(isSelected ? Theme.Colors.accent.opacity(0.42) : Color.primary.opacity(0.1), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -578,9 +720,28 @@ struct ToggleSetting: View {
                     .foregroundStyle(Theme.Colors.textSecondary)
             }
             Spacer()
-            Toggle("", isOn: $isOn)
-                .toggleStyle(.switch)
-                .labelsHidden()
+            Button {
+                withAnimation(.spring(response: 0.24, dampingFraction: 0.78)) {
+                    isOn.toggle()
+                }
+            } label: {
+                ZStack(alignment: isOn ? .trailing : .leading) {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(isOn ? Theme.Colors.accent.opacity(0.92) : Theme.Colors.sidebarBg.opacity(0.8))
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 20, height: 20)
+                        .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
+                        .padding(3)
+                }
+                .frame(width: 48, height: 26)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(isOn ? Color.white.opacity(0.28) : Theme.Colors.separator.opacity(0.6), lineWidth: 1)
+                )
+                .shadow(color: isOn ? Theme.Colors.accent.opacity(0.18) : .clear, radius: 9, y: 4)
+            }
+            .buttonStyle(.plain)
         }
         .padding(.vertical, Theme.Spacing.xs)
     }

@@ -106,6 +106,8 @@ class Localizer: ObservableObject {
         switch cat {
         case "包管理", "Package Manager": return t("包管理", en: "Package Manager", zhHant: "包管理", ja: "パッケージ管理", ko: "패키지 관리", mt: "Package Manager")
         case "开发", "Development": return t("开发", en: "Development", zhHant: "開發", ja: "開発", ko: "개발", mt: "Development")
+        case "项目产物", "Project Artifacts": return t("项目产物", en: "Project Artifacts", zhHant: "項目產物", ja: "プロジェクト成果物", ko: "프로젝트 산출물", mt: "Project Artifacts")
+        case "安装包", "Installers": return t("安装包", en: "Installers", zhHant: "安裝套件", ja: "インストーラ", ko: "설치 패키지", mt: "Installers")
         case "应用", "Apps": return t("应用", en: "Apps", zhHant: "應用", ja: "アプリ", ko: "앱", mt: "Apps")
         case "其它", "Other": return t("其它", en: "Other", zhHant: "其它", ja: "その他", ko: "기타", mt: "Other")
         case "浏览器", "Browser": return t("浏览器", en: "Browser", zhHant: "瀏覽器", ja: "ブラウザ", ko: "브라우저", mt: "Browser")
@@ -458,7 +460,7 @@ extension Localizer {
 
     var operationSettings: String { t("操作监控", en: "Operation Monitor", zhHant: "操作監控", ja: "操作モニター", ko: "작업 모니터", mt: "Operation Monitor") }
     var moveToTrash: String { t("删除移入回收站", en: "Move to Trash", zhHant: "刪除移入回收站", ja: "ゴミ箱に移動", ko: "휴지통으로 이동", mt: "Move to Trash") }
-    var preventAutoEmptyTrash: String { t("禁止自动清空回收站", en: "Prevent Auto Empty Trash", zhHant: "禁止自動清空回收站", ja: "ゴミ箱の自動空にを禁止", ko: "휴지통 자동 비우기 금지", mt: "Prevent Auto Empty Trash") }
+    var preventAutoEmptyTrash: String { t("禁止自动清空废纸篓", en: "Prevent Auto Empty Trash", zhHant: "禁止自動清空垃圾桶", ja: "ゴミ箱を自動で空にしない", ko: "휴지통 자동 비우기 방지", mt: "Prevent Auto Empty Trash") }
     var pauseMonitoring: String { t("暂停监控", en: "Pause Monitoring", zhHant: "暫停監控", ja: "モニタリング一時停止", ko: "모니터링 일시정지", mt: "Pause Monitoring") }
     var startMonitoringBtn: String { t("开始监控", en: "Start Monitoring", zhHant: "開始監控", ja: "モニタリング開始", ko: "모니터링 시작", mt: "Start Monitoring") }
     var clearRecords: String { t("清空", en: "Clear", zhHant: "清空", ja: "クリア", ko: "지우기", mt: "Clear") }
@@ -618,6 +620,10 @@ extension Localizer {
     var overviewTokenUsage: String { t("按 Agent 的 Token 用量", en: "Token Usage by Agent", zhHant: "按 Agent 的 Token 用量", ja: "Agent 別 Token 使用量", ko: "Agent별 Token 사용량", mt: "Token Usage by Agent") }
     var overviewAgentRuntime: String { t("Agent 运行状态", en: "Agent Runtime", zhHant: "Agent 執行狀態", ja: "Agent 実行状態", ko: "Agent 실행 상태", mt: "Agent Runtime") }
     var overviewSubtitle: String { t("会话、上下文、Token、项目和本机服务", en: "Sessions, context, tokens, projects, and local services", zhHant: "會話、上下文、Token、專案與本機服務", ja: "セッション、コンテキスト、トークン、プロジェクト、ローカルサービス", ko: "세션, 컨텍스트, 토큰, 프로젝트 및 로컬 서비스", mt: "Sessions, context, tokens, projects, and local services") }
+    var commandCenterTitle: String { t("AgentGuard 指挥中心", en: "AgentGuard Command Center", zhHant: "AgentGuard 指揮中心", ja: "AgentGuard コマンドセンター", ko: "AgentGuard 명령 센터", mt: "AgentGuard Command Center") }
+    var monitoringLive: String { t("实时监控中", en: "Monitoring Live", zhHant: "即時監控中", ja: "ライブ監視中", ko: "실시간 모니터링 중", mt: "Monitoring Live") }
+    var workspaceSection: String { t("工作区", en: "Workspace", zhHant: "工作區", ja: "ワークスペース", ko: "작업 공간", mt: "Workspace") }
+    var protectionOn: String { t("保护已开启", en: "Protection on", zhHant: "保護已開啟", ja: "保護オン", ko: "보호 켜짐", mt: "Protection on") }
     var overviewScanningAgentData: String { t("正在扫描 Agent 数据", en: "Scanning Agent data", zhHant: "正在掃描 Agent 資料", ja: "Agent データをスキャン中", ko: "Agent 데이터 스캔 중", mt: "Scanning Agent data") }
     var overviewAgentSessionsLoaded: String { t("已读取到 Agent 会话", en: "Agent sessions loaded", zhHant: "已讀取到 Agent 會話", ja: "Agent セッションを読み込みました", ko: "Agent 세션을 불러왔습니다", mt: "Agent sessions loaded") }
     var overviewAuthorizedNoSessions: String { t("已授权，但没有找到会话文件", en: "Authorized, but no session files found", zhHant: "已授權，但沒有找到會話檔案", ja: "許可済みですがセッションファイルは見つかりません", ko: "승인되었지만 세션 파일을 찾지 못했습니다", mt: "Authorized, but no session files found") }
@@ -960,6 +966,7 @@ extension Localizer {
     var colSize: String { t("大小", en: "Size", zhHant: "大小", ja: "サイズ", ko: "크기", mt: "Size") }
     var colName: String { t("名称", en: "Name", zhHant: "名稱", ja: "名前", ko: "이름", mt: "Name") }
     var colSource: String { t("来源", en: "Source", zhHant: "來源", ja: "ソース", ko: "소스", mt: "Source") }
+    var configCol: String { t("配置", en: "Config", zhHant: "配置", ja: "設定", ko: "설정", mt: "Config") }
     var colApp: String { t("应用", en: "App", zhHant: "應用", ja: "アプリ", ko: "앱", mt: "App") }
     var colRisk: String { t("风险", en: "Risk", zhHant: "風險", ja: "リスク", ko: "위험", mt: "Risk") }
     var colDesc: String { t("说明", en: "Description", zhHant: "說明", ja: "説明", ko: "설명", mt: "Description") }
@@ -978,6 +985,52 @@ extension Localizer {
     var insufficientDataPrefix: String { t("监控数据不足（仅有", en: "Insufficient data (only", zhHant: "監控資料不足（僅有", ja: "モニタリングデータ不足（わずか", ko: "모니터링 데이터 부족（단", mt: "Insufficient data (only") }
     var continueMonitorRetry: String { t("条），继续监控后重试", en: "records), continue monitoring and retry", zhHant: "條），繼續監控後重試", ja: "件）、モニタリングを継続して再試行してください", ko: "건）, 모니터링을 계속한 후 재시도하세요", mt: "records), continue monitoring and retry") }
     var curationComplete: String { t("梳理完成：", en: "Curation complete: ", zhHant: "梳理完成：", ja: "整理完了：", ko: "정리 완료: ", mt: "Curation complete: ") }
+    var unavailableInMacAppStoreBuild: String { t("Mac App Store 版本暂不可用", en: "Unavailable in Mac App Store build", zhHant: "Mac App Store 版本暫不可用", ja: "Mac App Store版では利用できません", ko: "Mac App Store 빌드에서는 사용할 수 없음", mt: "Unavailable in Mac App Store build") }
+    var localAnalysisNoExternalAI: String { t("本地分析模式不会使用外部 AI 服务。", en: "Local analysis mode does not use external AI services.", zhHant: "本地分析模式不會使用外部 AI 服務。", ja: "ローカル分析モードでは外部AIサービスを使用しません。", ko: "로컬 분석 모드는 외부 AI 서비스를 사용하지 않습니다.", mt: "Local analysis mode does not use external AI services.") }
+    func localMonitorReviewed(records: Int) -> String {
+        t("本地监控已复核 \(records) 条记录，不会调用外部 AI 服务。",
+          en: "Local monitor reviewed \(records) records without external AI services.",
+          zhHant: "本地監控已覆核 \(records) 條記錄，不會呼叫外部 AI 服務。",
+          ja: "ローカルモニターが \(records) 件の記録を確認しました。外部AIサービスは使用していません。",
+          ko: "로컬 모니터가 \(records)개 기록을 검토했으며 외부 AI 서비스를 사용하지 않았습니다.",
+          mt: "Local monitor reviewed \(records) records without external AI services.")
+    }
+    func localImpactSummary(appName: String, risk: String, type: String, isSafe: Bool) -> String {
+        switch type {
+        case "app":
+            return t("本地：\(appName) 是已安装应用。AgentGuard 仅展示清单和缓存上下文；App Store 版本已禁用卸载操作。风险：\(risk)。",
+                     en: "Local: \(appName) is an installed app. AgentGuard shows inventory and cache context only; uninstall actions are disabled in this App Store build. Risk: \(risk).",
+                     zhHant: "本地：\(appName) 是已安裝應用。AgentGuard 僅展示清單和快取上下文；App Store 版本已停用解除安裝操作。風險：\(risk)。",
+                     ja: "ローカル：\(appName) はインストール済みアプリです。AgentGuardは一覧とキャッシュ情報のみを表示し、このApp Store版ではアンインストール操作は無効です。リスク：\(risk)。",
+                     ko: "로컬: \(appName)은 설치된 앱입니다. AgentGuard는 목록과 캐시 컨텍스트만 표시하며 이 App Store 빌드에서는 제거 작업이 비활성화되어 있습니다. 위험: \(risk).",
+                     mt: "Local: \(appName) is an installed app. AgentGuard shows inventory and cache context only; uninstall actions are disabled in this App Store build. Risk: \(risk).")
+        case "dependency":
+            return t("本地：\(appName) 可能被项目依赖。请检查路径；除非确认没有项目依赖它，否则建议保留。风险：\(risk)。",
+                     en: "Local: \(appName) may be required by projects. Review its path and keep it unless you are sure no project depends on it. Risk: \(risk).",
+                     zhHant: "本地：\(appName) 可能被專案依賴。請檢查路徑；除非確認沒有專案依賴它，否則建議保留。風險：\(risk)。",
+                     ja: "ローカル：\(appName) はプロジェクトに必要な可能性があります。パスを確認し、依存するプロジェクトがないと確信できる場合以外は保持してください。リスク：\(risk)。",
+                     ko: "로컬: \(appName)은 프로젝트에 필요할 수 있습니다. 경로를 검토하고 의존하는 프로젝트가 없다고 확신할 때만 제거하세요. 위험: \(risk).",
+                     mt: "Local: \(appName) may be required by projects. Review its path and keep it unless you are sure no project depends on it. Risk: \(risk).")
+        default:
+            if isSafe {
+                return t("本地：\(appName) 看起来是缓存或临时数据。请先查看路径，确认后再移入废纸篓。",
+                         en: "Local: \(appName) appears to be cache or temporary data. Move items to Trash only after reviewing the listed paths.",
+                         zhHant: "本地：\(appName) 看起來是快取或暫存資料。請先查看路徑，確認後再移入垃圾桶。",
+                         ja: "ローカル：\(appName) はキャッシュまたは一時データのようです。表示されたパスを確認してからゴミ箱に移動してください。",
+                         ko: "로컬: \(appName)은 캐시 또는 임시 데이터로 보입니다. 표시된 경로를 검토한 뒤 휴지통으로 이동하세요.",
+                         mt: "Local: \(appName) appears to be cache or temporary data. Move items to Trash only after reviewing the listed paths.")
+            }
+            return t("本地：请谨慎检查 \(appName) 后再清理。AgentGuard 会避免不可逆操作，并通过废纸篓保持可恢复。",
+                     en: "Local: Review \(appName) carefully before cleanup. AgentGuard avoids irreversible actions and keeps cleanup recoverable through Trash.",
+                     zhHant: "本地：請謹慎檢查 \(appName) 後再清理。AgentGuard 會避免不可逆操作，並透過垃圾桶保持可恢復。",
+                     ja: "ローカル：クリーンアップ前に \(appName) を慎重に確認してください。AgentGuardは不可逆操作を避け、ゴミ箱経由で復元可能にします。",
+                     ko: "로컬: 정리 전에 \(appName)을 신중히 검토하세요. AgentGuard는 되돌릴 수 없는 작업을 피하고 휴지통을 통해 복구 가능하게 유지합니다.",
+                     mt: "Local: Review \(appName) carefully before cleanup. AgentGuard avoids irreversible actions and keeps cleanup recoverable through Trash.")
+        }
+    }
+    var appUninstallDisabled: String { t("Mac App Store 版本已禁用应用卸载操作。", en: "App uninstall actions are disabled in the Mac App Store build.", zhHant: "Mac App Store 版本已停用應用解除安裝操作。", ja: "Mac App Store版ではアプリのアンインストール操作は無効です。", ko: "Mac App Store 빌드에서는 앱 제거 작업이 비활성화되어 있습니다.", mt: "App uninstall actions are disabled in the Mac App Store build.") }
+    var fullUninstallDisabled: String { t("Mac App Store 版本已禁用完全卸载操作。", en: "Full uninstall actions are disabled in the Mac App Store build.", zhHant: "Mac App Store 版本已停用完全解除安裝操作。", ja: "Mac App Store版では完全アンインストール操作は無効です。", ko: "Mac App Store 빌드에서는 전체 제거 작업이 비활성화되어 있습니다.", mt: "Full uninstall actions are disabled in the Mac App Store build.") }
+    var appResetDisabled: String { t("Mac App Store 版本已禁用应用重置操作。", en: "App reset actions are disabled in the Mac App Store build.", zhHant: "Mac App Store 版本已停用應用重置操作。", ja: "Mac App Store版ではアプリのリセット操作は無効です。", ko: "Mac App Store 빌드에서는 앱 재설정 작업이 비활성화되어 있습니다.", mt: "App reset actions are disabled in the Mac App Store build.") }
     var allInternalOps: String { t("条事件均在 agent 自身项目目录内，无对外部文件的操作", en: "events are all within the agent's own project directory, no external file operations", zhHant: "條事件均在 agent 自身專案目錄內，無對外部檔案的操作", ja: "件のイベントはすべてagent自身のプロジェクトディレクトリ内で、外部ファイルへの操作はありません", ko: "건의 이벤트가 모두 agent 자체 프로젝트 디렉토리 내에 있으며 외부 파일 작업이 없습니다", mt: "events are all within the agent's own project directory, no external file operations") }
     var allSystemOps: String { t("均为系统内部操作，未发现对外部文件的改动", en: "All are internal system operations, no external file changes detected", zhHant: "均為系統內部操作，未發現對外部檔案的改動", ja: "すべてシステム内部操作で、外部ファイルへの変更は検出されませんでした", ko: "모두 시스템 내부 작업이며 외부 파일 변경이 감지되지 않았습니다", mt: "All are internal system operations, no external file changes detected") }
     var identifiedAgentOps: String { t("识别到", en: "Identified", zhHant: "識別到", ja: "認識", ko: "인식", mt: "Identified") }

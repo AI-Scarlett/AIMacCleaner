@@ -38,7 +38,7 @@ struct TokenScopeLabView: View {
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                     TokenScopeStatusStrip(
                         summary: summary,
                         store: store,
@@ -64,7 +64,7 @@ struct TokenScopeLabView: View {
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.vertical, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.md)
             }
             .background(Theme.Colors.background)
         }
@@ -160,8 +160,7 @@ private struct TokenScopeStatusStrip: View {
     let localizer: Localizer
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            HStack(alignment: .top, spacing: Theme.Spacing.lg) {
+        HStack(alignment: .center, spacing: Theme.Spacing.md) {
                 VStack(alignment: .leading, spacing: 4) {
                     Label(statusText, systemImage: statusIcon)
                         .font(Theme.Font.captionMedium)
@@ -170,10 +169,21 @@ private struct TokenScopeStatusStrip: View {
                     Text(statusDetail)
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
+                .frame(width: 260, alignment: .leading)
 
-                Spacer(minLength: Theme.Spacing.lg)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        TokenScopeMetricTile(icon: "sum", title: localizer.tokenScopeTotalTokens, value: TokenScopeFormat.tokens(summary.totals.total), color: Theme.Colors.teal)
+                        TokenScopeMetricTile(icon: "arrow.down.circle.fill", title: localizer.tokenScopeInputTokens, value: TokenScopeFormat.tokens(summary.totals.input), color: Theme.Colors.info)
+                        TokenScopeMetricTile(icon: "arrow.up.circle.fill", title: localizer.tokenScopeOutputTokens, value: TokenScopeFormat.tokens(summary.totals.output), color: Theme.Colors.success)
+                        TokenScopeMetricTile(icon: "memorychip.fill", title: localizer.tokenScopeCacheTokens, value: TokenScopeFormat.tokens(summary.totals.cacheTotal), color: Theme.Colors.purple)
+                        TokenScopeMetricTile(icon: "dollarsign.circle.fill", title: localizer.tokenScopeEstimatedSpend, value: TokenScopeFormat.currency(summary.totals.cost), color: Theme.Colors.warning)
+                    }
+                }
+                .frame(maxWidth: .infinity)
 
                 Picker("", selection: $selectedRange) {
                     ForEach(TokenScopeRange.allCases, id: \.self) { range in
@@ -181,18 +191,9 @@ private struct TokenScopeStatusStrip: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 260)
+                .frame(width: 210)
             }
-
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.Spacing.md), count: 5), spacing: Theme.Spacing.md) {
-                TokenScopeMetricTile(icon: "sum", title: localizer.tokenScopeTotalTokens, value: TokenScopeFormat.tokens(summary.totals.total), color: Theme.Colors.teal)
-                TokenScopeMetricTile(icon: "arrow.down.circle.fill", title: localizer.tokenScopeInputTokens, value: TokenScopeFormat.tokens(summary.totals.input), color: Theme.Colors.info)
-                TokenScopeMetricTile(icon: "arrow.up.circle.fill", title: localizer.tokenScopeOutputTokens, value: TokenScopeFormat.tokens(summary.totals.output), color: Theme.Colors.success)
-                TokenScopeMetricTile(icon: "memorychip.fill", title: localizer.tokenScopeCacheTokens, value: TokenScopeFormat.tokens(summary.totals.cacheTotal), color: Theme.Colors.purple)
-                TokenScopeMetricTile(icon: "dollarsign.circle.fill", title: localizer.tokenScopeEstimatedSpend, value: TokenScopeFormat.currency(summary.totals.cost), color: Theme.Colors.warning)
-            }
-        }
-        .cardStyle()
+        .cardStyle(padding: Theme.Spacing.sm + 2, cornerRadius: Theme.Radius.lg)
     }
 
     private var statusText: String {
@@ -444,7 +445,7 @@ private struct TokenScopeOverviewPanel: View {
                             }
                     }
                 }
-                .frame(height: 280)
+                .frame(height: 420)
             }
             .cardStyle()
 
@@ -588,24 +589,29 @@ private struct TokenScopeMetricTile: View {
     let color: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+        HStack(alignment: .center, spacing: Theme.Spacing.xs + 2) {
             Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(color)
-                .frame(width: 30, height: 30)
+                .frame(width: 24, height: 24)
                 .background(color.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-            Text(value)
-                .font(Theme.Font.title2Bold)
-                .foregroundStyle(Theme.Colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            Text(title)
-                .font(Theme.Font.captionMedium)
-                .foregroundStyle(Theme.Colors.textSecondary)
-                .lineLimit(1)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                Text(title)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(1)
+            }
         }
-        .padding(Theme.Spacing.md)
+        .frame(width: 122, alignment: .leading)
+        .padding(.horizontal, Theme.Spacing.xs + 2)
+        .padding(.vertical, Theme.Spacing.xs + 1)
         .background(Theme.Colors.background.opacity(0.55))
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }

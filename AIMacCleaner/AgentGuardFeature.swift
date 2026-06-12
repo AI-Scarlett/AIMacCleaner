@@ -22,6 +22,8 @@ struct GuardAlert: Identifiable, Codable {
         case protectedDir = "protected_dir"
         case processLaunch = "process_launch"
         case processExit = "process_exit"
+        case trashReminder = "trash_reminder"
+        case trashCleared = "trash_cleared"
     }
 
     enum AlertSeverity: String, Codable {
@@ -45,6 +47,23 @@ struct GuardAlert: Identifiable, Codable {
             }
         }
     }
+}
+
+struct ProtectedTrashItem: Identifiable, Codable, Hashable {
+    let id: String
+    let originalPath: String
+    let trashPath: String
+    let protectedRoot: String
+    let name: String
+    let size: Int64
+    let fileCount: Int
+    let movedAt: Date
+}
+
+private struct ProtectedPathSnapshot {
+    let path: String
+    let size: Int64
+    let fileCount: Int
 }
 
 struct AlertRule: Codable {
@@ -214,6 +233,7 @@ class AgentGuardFeature: ObservableObject {
     @Published var alerts: [GuardAlert] = []
     @Published var alertRule: AlertRule = AlertRule()
     @Published var protectedDirs: [String] = []
+    @Published var protectedTrashItems: [ProtectedTrashItem] = []
     @Published var processLifecycleEvents: [ProcessLifecycleEvent] = []
     @Published var hourlyStats: [HourlyStats] = []
     @Published var commandRules: [CommandRule] = []
@@ -221,6 +241,7 @@ class AgentGuardFeature: ObservableObject {
     private var alertsPath: String { SandboxPaths.shared.alertsPath }
     private var alertRulePath: String { SandboxPaths.shared.alertRulePath }
     private var protectedDirsPath: String { SandboxPaths.shared.protectedDirsPath }
+    private var protectedTrashItemsPath: String { SandboxPaths.shared.protectedTrashItemsPath }
     private var lifecyclePath: String { SandboxPaths.shared.lifecyclePath }
     private var hourlyStatsPath: String { SandboxPaths.shared.hourlyStatsPath }
     private var commandRulesPath: String { SandboxPaths.shared.cmdRulesPath }
@@ -234,6 +255,9 @@ class AgentGuardFeature: ObservableObject {
     private var knownPids: Set<pid_t> = []
     private var knownAgentPids: [pid_t: String] = [:]
     private var lastStatsSaveTime: Date = .distantPast
+    private var lastProtectedTrashReminderTime: Date = .distantPast
+    private var protectedDirectorySnapshots: [String: [String: ProtectedPathSnapshot]] = [:]
+    private let maxProtectedDirectorySnapshotItems = 5000
     private var alertRuleSaveTask: Task<Void, Never>?
     private var commandRegexCache: [String: Regex<AnyRegexOutput>] = [:]
     private var failedRegexRuleIds: Set<String> = []
@@ -253,6 +277,7 @@ class AgentGuardFeature: ObservableObject {
         loadAlerts()
         loadAlertRule()
         loadProtectedDirs()
+        loadProtectedTrashItems()
         loadLifecycleEvents()
         loadHourlyStats()
         loadCommandRules()
@@ -832,15 +857,223 @@ class AgentGuardFeature: ObservableObject {
     // MARK: - Protected Directory Management
 
     func addProtectedDir(_ path: String) {
-        let expanded = NSString(string: path).expandingTildeInPath
+        let expanded = normalizedPath(path)
         guard !protectedDirs.contains(expanded) else { return }
         protectedDirs.append(expanded)
+        protectedDirectorySnapshots.removeValue(forKey: expanded)
         saveProtectedDirs()
     }
 
     func removeProtectedDir(_ path: String) {
-        protectedDirs.removeAll { $0 == path }
+        let expanded = normalizedPath(path)
+        protectedDirs.removeAll { normalizedPath($0) == expanded }
+        protectedDirectorySnapshots.removeValue(forKey: expanded)
         saveProtectedDirs()
+    }
+
+    func isPathProtected(_ path: String) -> Bool {
+        protectedRoot(containing: path) != nil
+    }
+
+    func protectedRoot(containing path: String) -> String? {
+        let expanded = normalizedPath(path).lowercased()
+        for dir in protectedDirs {
+            let root = normalizedPath(dir).lowercased()
+            if expanded == root || expanded.hasPrefix(root + "/") {
+                return dir
+            }
+        }
+        return nil
+    }
+
+    func recordProtectedTrashItem(originalPath: String, trashPath: String, size: Int64, fileCount: Int) {
+        guard let root = protectedRoot(containing: originalPath) else { return }
+        let normalizedOriginal = normalizedPath(originalPath)
+        let normalizedTrash = normalizedPath(trashPath)
+        protectedTrashItems.removeAll { $0.originalPath == normalizedOriginal || $0.trashPath == normalizedTrash }
+        let item = ProtectedTrashItem(
+            id: UUID().uuidString,
+            originalPath: normalizedOriginal,
+            trashPath: normalizedTrash,
+            protectedRoot: root,
+            name: (normalizedOriginal as NSString).lastPathComponent,
+            size: size,
+            fileCount: fileCount,
+            movedAt: Date()
+        )
+        protectedTrashItems.insert(item, at: 0)
+        saveProtectedTrashItems()
+        fireProtectedTrashReminder(for: [item], immediate: true)
+    }
+
+    func auditProtectedTrashItems() {
+        guard !protectedTrashItems.isEmpty else { return }
+        let fm = FileManager.default
+        let missing = protectedTrashItems.filter { !fm.fileExists(atPath: $0.trashPath) }
+        let retained = protectedTrashItems.filter { fm.fileExists(atPath: $0.trashPath) }
+
+        if !missing.isEmpty {
+            protectedTrashItems = retained
+            saveProtectedTrashItems()
+            let names = missing.prefix(3).map(\.name).joined(separator: ", ")
+            let alert = GuardAlert(
+                id: UUID().uuidString,
+                timestamp: Date(),
+                alertType: .trashCleared,
+                severity: .critical,
+                title: localizer?.t("受保护项已离开废纸篓", en: "Protected item left Trash") ?? "Protected item left Trash",
+                message: localizer?.t(
+                    "\(missing.count) 个受保护项已不在废纸篓中，可能已被清空。请确认是否仍需要恢复：\(names)",
+                    en: "\(missing.count) protected item(s) are no longer in Trash and may have been emptied. Confirm whether recovery is still needed: \(names)"
+                ) ?? "\(missing.count) protected item(s) are no longer in Trash.",
+                agentName: "AgentGuard",
+                targetPath: missing.first?.trashPath ?? "",
+                detail: missing.map(\.originalPath).joined(separator: "\n")
+            )
+            fireAlert(alert)
+        }
+
+        if !retained.isEmpty {
+            fireProtectedTrashReminder(for: retained, immediate: false)
+        }
+    }
+
+    func auditProtectedDirectoryDeletions() {
+        guard !protectedDirs.isEmpty else {
+            protectedDirectorySnapshots.removeAll()
+            return
+        }
+
+        let roots = protectedDirs.map(normalizedPath)
+        let rootSet = Set(roots)
+        protectedDirectorySnapshots = protectedDirectorySnapshots.filter { rootSet.contains($0.key) }
+
+        for root in roots {
+            let current = snapshotProtectedDirectory(root)
+            guard let previous = protectedDirectorySnapshots[root] else {
+                protectedDirectorySnapshots[root] = current
+                continue
+            }
+
+            let missingItems = previous.keys
+                .filter { current[$0] == nil }
+                .compactMap { previous[$0] }
+            for item in topLevelMissingSnapshots(from: missingItems).prefix(10) {
+                if let trashPath = inferredTrashPath(forOriginalPath: item.path) {
+                    recordProtectedTrashItem(
+                        originalPath: item.path,
+                        trashPath: trashPath,
+                        size: item.size,
+                        fileCount: item.fileCount
+                    )
+                }
+            }
+
+            protectedDirectorySnapshots[root] = current
+        }
+    }
+
+    func forgetProtectedTrashItem(id: String) {
+        protectedTrashItems.removeAll { $0.id == id }
+        saveProtectedTrashItems()
+    }
+
+    func clearResolvedProtectedTrashItems() {
+        let fm = FileManager.default
+        protectedTrashItems.removeAll { !fm.fileExists(atPath: $0.trashPath) }
+        saveProtectedTrashItems()
+    }
+
+    private func fireProtectedTrashReminder(for items: [ProtectedTrashItem], immediate: Bool) {
+        guard !items.isEmpty else { return }
+        let now = Date()
+        if !immediate && now.timeIntervalSince(lastProtectedTrashReminderTime) < 3600 { return }
+        lastProtectedTrashReminderTime = now
+
+        let names = items.prefix(3).map(\.name).joined(separator: ", ")
+        let alert = GuardAlert(
+            id: UUID().uuidString,
+            timestamp: now,
+            alertType: .trashReminder,
+            severity: .warning,
+            title: localizer?.t("废纸篓中有受保护项", en: "Protected items are in Trash") ?? "Protected items are in Trash",
+            message: localizer?.t(
+                "\(items.count) 个守护目录项目已在废纸篓中。清空废纸篓前请确认是否需要恢复：\(names)",
+                en: "\(items.count) guarded item(s) are in Trash. Review before emptying Trash: \(names)"
+            ) ?? "\(items.count) guarded item(s) are in Trash. Review before emptying Trash.",
+            agentName: "AgentGuard",
+            targetPath: items.first?.trashPath ?? "",
+            detail: items.map { "\($0.originalPath) -> \($0.trashPath)" }.joined(separator: "\n")
+        )
+        fireAlert(alert)
+    }
+
+    private func snapshotProtectedDirectory(_ root: String) -> [String: ProtectedPathSnapshot] {
+        let fm = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: root, isDirectory: &isDirectory) else { return [:] }
+
+        var snapshot: [String: ProtectedPathSnapshot] = [:]
+        addSnapshotItem(path: root, to: &snapshot)
+
+        guard isDirectory.boolValue else { return snapshot }
+        let rootURL = URL(fileURLWithPath: root, isDirectory: true)
+        let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey, .totalFileAllocatedSizeKey]
+        let options: FileManager.DirectoryEnumerationOptions = [.skipsPackageDescendants]
+        guard let enumerator = fm.enumerator(at: rootURL, includingPropertiesForKeys: keys, options: options) else {
+            return snapshot
+        }
+
+        for case let url as URL in enumerator {
+            addSnapshotItem(path: url.path, to: &snapshot)
+            if snapshot.count >= maxProtectedDirectorySnapshotItems { break }
+        }
+        return snapshot
+    }
+
+    private func addSnapshotItem(path: String, to snapshot: inout [String: ProtectedPathSnapshot]) {
+        let normalized = normalizedPath(path)
+        guard snapshot[normalized] == nil else { return }
+        let fm = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: normalized, isDirectory: &isDirectory) else { return }
+        let attrs = (try? fm.attributesOfItem(atPath: normalized)) ?? [:]
+        let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
+        snapshot[normalized] = ProtectedPathSnapshot(path: normalized, size: size, fileCount: isDirectory.boolValue ? 1 : 0)
+    }
+
+    private func topLevelMissingSnapshots(from items: [ProtectedPathSnapshot]) -> [ProtectedPathSnapshot] {
+        var selected: [ProtectedPathSnapshot] = []
+        for item in items.sorted(by: { $0.path.count < $1.path.count }) {
+            let isNestedUnderSelected = selected.contains { selectedItem in
+                item.path.hasPrefix(selectedItem.path.hasSuffix("/") ? selectedItem.path : selectedItem.path + "/")
+            }
+            if !isNestedUnderSelected {
+                selected.append(item)
+            }
+        }
+        return selected
+    }
+
+    private func inferredTrashPath(forOriginalPath originalPath: String) -> String? {
+        let name = URL(fileURLWithPath: originalPath).lastPathComponent
+        guard !name.isEmpty else { return nil }
+        let fm = FileManager.default
+        var trashDirs = fm.urls(for: .trashDirectory, in: .userDomainMask).map(\.path)
+        trashDirs.append(NSHomeDirectory() + "/.Trash")
+
+        for dir in Array(Set(trashDirs)) {
+            let candidate = (dir as NSString).appendingPathComponent(name)
+            if fm.fileExists(atPath: candidate) {
+                return normalizedPath(candidate)
+            }
+        }
+        return nil
+    }
+
+    private func normalizedPath(_ path: String) -> String {
+        let expanded = NSString(string: path).expandingTildeInPath
+        return (expanded as NSString).standardizingPath
     }
 
     // MARK: - Alert Management
@@ -1374,12 +1607,23 @@ class AgentGuardFeature: ObservableObject {
     private func loadProtectedDirs() {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: protectedDirsPath)),
               let decoded = try? JSONDecoder().decode([String].self, from: data) else { return }
-        protectedDirs = decoded
+        protectedDirs = decoded.map { normalizedPath($0) }
     }
 
     private func saveProtectedDirs() {
         guard let data = try? JSONEncoder().encode(protectedDirs) else { return }
         writeAtomically(data, to: protectedDirsPath)
+    }
+
+    private func loadProtectedTrashItems() {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: protectedTrashItemsPath)),
+              let decoded = try? JSONDecoder().decode([ProtectedTrashItem].self, from: data) else { return }
+        protectedTrashItems = decoded
+    }
+
+    private func saveProtectedTrashItems() {
+        guard let data = try? JSONEncoder().encode(protectedTrashItems) else { return }
+        writeAtomically(data, to: protectedTrashItemsPath)
     }
 
     private func loadLifecycleEvents() {

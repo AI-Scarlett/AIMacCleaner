@@ -38,7 +38,7 @@ struct AgentGuardTab: View {
                 icon: "shield.fill",
                 title: localizer.navAgentGuard,
                 subtitle: localizer.subAgentGuard,
-                color: Theme.Colors.warning
+                color: Theme.Colors.accent
             )
 
             segmentPicker
@@ -90,16 +90,21 @@ struct AgentGuardTab: View {
     private var segmentPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
-                SegmentButton(title: localizer.guardDashboard, icon: "gauge", index: 0, tint: Theme.Colors.warning, selected: $selectedSegment)
-                SegmentButton(title: localizer.alertCenter, icon: "bell.badge", index: 1, tint: Theme.Colors.warning, selected: $selectedSegment)
-                SegmentButton(title: localizer.alertRules, icon: "slider.horizontal.3", index: 2, tint: Theme.Colors.warning, selected: $selectedSegment)
-                SegmentButton(title: localizer.commandRules, icon: "terminal", index: 3, tint: Theme.Colors.warning, selected: $selectedSegment)
-                SegmentButton(title: localizer.protectedDirs, icon: "folder.badge.eye", index: 4, tint: Theme.Colors.warning, selected: $selectedSegment)
+                SegmentButton(title: localizer.guardDashboard, icon: "gauge", index: 0, tint: Theme.Colors.accent, selected: $selectedSegment)
+                SegmentButton(title: localizer.alertCenter, icon: "bell.badge", index: 1, tint: Theme.Colors.accent, selected: $selectedSegment)
+                SegmentButton(title: localizer.alertRules, icon: "slider.horizontal.3", index: 2, tint: Theme.Colors.accent, selected: $selectedSegment)
+                SegmentButton(title: localizer.commandRules, icon: "terminal", index: 3, tint: Theme.Colors.accent, selected: $selectedSegment)
+                SegmentButton(title: localizer.protectedDirs, icon: "folder.badge.eye", index: 4, tint: Theme.Colors.accent, selected: $selectedSegment)
             }
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.md)
-        .background(Theme.Colors.background)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.66))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.Colors.separator)
+                .frame(height: 1)
+        }
     }
 
     // MARK: - Dashboard
@@ -734,6 +739,12 @@ struct AgentGuardTab: View {
                 .buttonStyle(.plain)
             }
 
+            protectedDirSafetyCard
+
+            if !service.guardFeature.protectedTrashItems.isEmpty {
+                protectedTrashReminderCard
+            }
+
             if service.guardFeature.protectedDirs.isEmpty {
                 emptyStateView(icon: "folder.badge.eye", message: localizer.noProtectedDirs, hint: localizer.noProtectedDirsHint, color: Theme.Colors.info)
             } else {
@@ -746,6 +757,91 @@ struct AgentGuardTab: View {
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.lg)
+    }
+
+    private var protectedDirSafetyCard: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.md) {
+            Image(systemName: "lock.shield.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Theme.Colors.warning)
+                .frame(width: 34, height: 34)
+                .background(Theme.Colors.warning.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Text(localizer.t("守护目录防误删", en: "Guarded Directory Safety"))
+                    .font(Theme.Font.subheadlineMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(localizer.t(
+                    "AgentGuard 内部清理守护目录项目时需要系统身份验证；项目移入废纸篓后会持续提醒。出于 App Store 沙盒边界，Finder 或终端中的手动清空不会被强制拦截。",
+                    en: "Cleanup of guarded directory items inside AgentGuard requires system authentication. Once moved to Trash, AgentGuard keeps reminding you. To stay within App Store sandbox boundaries, manual emptying from Finder or Terminal is not forcibly blocked."
+                ))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: Theme.Spacing.sm)
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.Colors.warning.opacity(0.07))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Theme.Colors.warning.opacity(0.18), lineWidth: 0.8)
+        )
+    }
+
+    private var protectedTrashReminderCard: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "trash.slash.fill")
+                    .foregroundStyle(Theme.Colors.danger)
+                Text(localizer.t("废纸篓待确认", en: "Trash Review Needed"))
+                    .font(Theme.Font.subheadlineMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                PillBadge(
+                    text: "\(service.guardFeature.protectedTrashItems.count) \(localizer.itemsLabel)",
+                    color: Theme.Colors.warning,
+                    size: .small
+                )
+                Spacer()
+                Button {
+                    service.guardFeature.clearResolvedProtectedTrashItems()
+                } label: {
+                    Label(localizer.t("清理已失效记录", en: "Clear Resolved"), systemImage: "checkmark.circle")
+                        .font(Theme.Font.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            Text(localizer.t(
+                "这些项目来自守护目录，已被移入废纸篓。清空废纸篓前请确认是否需要恢复或保留。",
+                en: "These guarded items have been moved to Trash. Review them before emptying Trash."
+            ))
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+
+            VStack(spacing: Theme.Spacing.xs) {
+                ForEach(Array(service.guardFeature.protectedTrashItems.prefix(5))) { item in
+                    protectedTrashItemRow(item)
+                }
+                if service.guardFeature.protectedTrashItems.count > 5 {
+                    Text("+\(service.guardFeature.protectedTrashItems.count - 5) \(localizer.itemsLabel)")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.Colors.danger.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Theme.Colors.danger.opacity(0.16), lineWidth: 0.8)
+        )
     }
 
     // MARK: - Dashboard Trend Chart
@@ -1373,6 +1469,67 @@ struct AgentGuardTab: View {
         .background(Theme.Colors.cardBg)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
+
+    private func protectedTrashItemRow(_ item: ProtectedTrashItem) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: FileManager.default.fileExists(atPath: item.trashPath) ? "trash.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(FileManager.default.fileExists(atPath: item.trashPath) ? Theme.Colors.warning : Theme.Colors.danger)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .lineLimit(1)
+                Text(item.originalPath)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+
+            Text("\(service.formatSize(item.size)) · \(relativeTrashAge(item.movedAt))")
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .lineLimit(1)
+
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.trashPath)])
+            } label: {
+                Image(systemName: "folder")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(!FileManager.default.fileExists(atPath: item.trashPath))
+            .help(localizer.openInFinder)
+
+            Button {
+                service.guardFeature.forgetProtectedTrashItem(id: item.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help(localizer.clearResults)
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(Theme.Colors.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    private func relativeTrashAge(_ date: Date) -> String {
+        let minutes = max(Int(Date().timeIntervalSince(date) / 60), 0)
+        if minutes < 1 { return localizer.t("刚刚", en: "just now") }
+        if minutes < 60 { return "\(minutes) \(localizer.minuteUnit)" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours) \(localizer.hoursUnit)" }
+        return "\(hours / 24) d"
+    }
 }
 
 // MARK: - Supporting Views
@@ -1392,16 +1549,21 @@ struct SegmentButton: View {
         } label: {
             HStack(spacing: Theme.Spacing.xs) {
                 Image(systemName: icon)
-                    .font(.system(size: 10, weight: selected == index ? .semibold : .medium))
+                    .font(.system(size: 10, weight: .bold))
                 Text(title)
-                    .font(.system(size: 11, weight: selected == index ? .semibold : .regular))
+                    .font(.system(size: 11, weight: selected == index ? .bold : .semibold))
             }
-            .foregroundStyle(selected == index ? .white : Theme.Colors.textTertiary)
+            .foregroundStyle(selected == index ? .white : Theme.Colors.textSecondary)
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .fill(selected == index ? tint : Color.clear)
+                    .fill(selected == index ? AnyShapeStyle(Theme.Gradients.hero) : AnyShapeStyle(Theme.Colors.elevatedCardBg.opacity(0.55)))
+                    .shadow(color: selected == index ? tint.opacity(0.28) : .clear, radius: 10, y: 4)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .stroke(selected == index ? Color.white.opacity(0.28) : Theme.Colors.separator, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -1417,8 +1579,12 @@ struct StatCard: View {
     var body: some View {
         VStack(spacing: Theme.Spacing.sm) {
             Image(systemName: icon)
-                .font(.system(size: 18))
-                .foregroundStyle(color)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 38, height: 38)
+                .background(Theme.Gradients.hero)
+                .clipShape(RoundedRectangle(cornerRadius: 13))
+                .shadow(color: Theme.Colors.accent.opacity(0.18), radius: 9, y: 4)
             Text(value)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
                 .foregroundStyle(Theme.Colors.textPrimary)
@@ -1435,11 +1601,12 @@ struct StatCard: View {
         .padding(.vertical, Theme.Spacing.lg)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .fill(Theme.Colors.cardBg)
+                .fill(Theme.Colors.elevatedCardBg)
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(color.opacity(0.15), lineWidth: 1)
+                .stroke(Theme.Colors.separator, lineWidth: 1)
         )
+        .shadow(color: Theme.Shadow.mdColor, radius: 14, y: 6)
     }
 }

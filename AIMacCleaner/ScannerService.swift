@@ -2,6 +2,7 @@ import Foundation
 import Combine
 @preconcurrency import UserNotifications
 import AppKit
+import LocalAuthentication
 import IOKit
 import IOKit.ps
 
@@ -38,11 +39,28 @@ class ScannerService: ObservableObject {
         var operationRecords: [OperationRecord] = []
     }
 
+    private struct MaintenanceCandidate {
+        enum Kind: Equatable {
+            case projectArtifact
+            case installer
+        }
+
+        let kind: Kind
+        let path: String
+        let displayName: String
+        let projectName: String
+        let size: Int64
+        let fileCount: Int
+        let modifiedAt: Date?
+    }
+
     init() {
         loadIgnores()
         loadAIConfigFromDisk()
         loadScannerCache()
         operationMonitor.guardFeature = guardFeature
+        guardFeature.auditProtectedDirectoryDeletions()
+        guardFeature.auditProtectedTrashItems()
         if diskInfo == nil { diskInfo = getDiskInfoNative() }
         if hardwareInfo == nil { hardwareInfo = safeGetHardwareInfo() }
     }
@@ -478,6 +496,46 @@ class ScannerService: ObservableObject {
                 ))
             }
 
+            let maintenanceCandidates = Self.scanMaintenanceCandidates(roots: roots)
+            for candidate in maintenanceCandidates {
+                let isProjectArtifact = candidate.kind == .projectArtifact
+                let idPrefix = isProjectArtifact ? "maintenance.project" : "maintenance.installer"
+                let category = isProjectArtifact
+                    ? (currentLocalizer?.t("项目构建", en: "Project Builds") ?? "Project Builds")
+                    : (currentLocalizer?.t("安装包", en: "Installers") ?? "Installers")
+                let name = isProjectArtifact
+                    ? "\(candidate.projectName) · \(candidate.displayName)"
+                    : candidate.displayName
+                let app = isProjectArtifact
+                    ? candidate.projectName
+                    : (currentLocalizer?.t("下载与安装", en: "Downloads & Installers") ?? "Downloads & Installers")
+                let riskDesc = isProjectArtifact
+                    ? (currentLocalizer?.t(
+                        "项目构建产物可重新生成；删除前请确认项目当前不在构建或运行。",
+                        en: "Project build artifacts can be regenerated. Confirm the project is not building or running before removal."
+                    ) ?? "Project build artifacts can be regenerated after review.")
+                    : (currentLocalizer?.t(
+                        "已下载的安装包；确认应用已安装且无需保留离线安装文件后再删除。",
+                        en: "Downloaded installer. Remove it only after confirming the app is installed and the offline installer is no longer needed."
+                    ) ?? "Downloaded installer; review before removal.")
+
+                results.append(ScanItem(
+                    id: "\(idPrefix).\(candidate.path)",
+                    name: name,
+                    category: category,
+                    app: app,
+                    risk: "caution",
+                    riskDesc: riskDesc,
+                    path: candidate.path,
+                    realPath: candidate.path,
+                    size: candidate.size,
+                    fileCount: candidate.fileCount,
+                    ignored: savedIgnores.contains("\(idPrefix).\(candidate.path)"),
+                    reason: Self.maintenanceReason(for: candidate, localizer: currentLocalizer),
+                    source: "local"
+                ))
+            }
+
             results.sort { $0.size > $1.size }
             return results
         }.value
@@ -486,6 +544,145 @@ class ScannerService: ObservableObject {
         refreshDiskInfo()
         isScanning = false
         saveScannerCache()
+    }
+
+    nonisolated private static func maintenanceReason(for candidate: MaintenanceCandidate, localizer: Localizer?) -> String {
+        guard let modifiedAt = candidate.modifiedAt else {
+            return localizer?.t("预览后移入废纸篓", en: "Review before moving to Trash") ?? "Review before moving to Trash"
+        }
+        let days = max(Int(Date().timeIntervalSince(modifiedAt) / 86_400), 0)
+        if days < 7 {
+            return localizer?.t(
+                "最近 \(days) 天内使用，默认仅供审阅",
+                en: "Used within the last \(days) days; review only by default"
+            ) ?? "Recently used; review only by default"
+        }
+        return localizer?.t(
+            "约 \(days) 天未更新，确认后可移入废纸篓",
+            en: "Not updated for about \(days) days; move to Trash after review"
+        ) ?? "Older item; move to Trash after review"
+    }
+
+    nonisolated private static func scanMaintenanceCandidates(roots: Set<String>) -> [MaintenanceCandidate] {
+        let fm = FileManager.default
+        let artifactNames: Set<String> = [
+            "node_modules", "target", ".build", "build", "dist", ".next", ".nuxt",
+            ".pytest_cache", ".mypy_cache", ".ruff_cache", "__pycache__", ".turbo",
+            ".parcel-cache", ".dart_tool", ".zig-cache", ".cxx"
+        ]
+        let projectMarkers = [
+            ".git", "package.json", "Cargo.toml", "Package.swift", "pyproject.toml",
+            "requirements.txt", "go.mod", "pubspec.yaml", "pom.xml", "build.gradle"
+        ]
+        let installerExtensions: Set<String> = ["dmg", "pkg", "xip", "iso"]
+        let skipDirectories: Set<String> = [
+            "Library", "Applications", ".Trash", ".git", ".codex", ".claude",
+            "Pictures", "Music", "Movies", ".cache"
+        ]
+        let scanRoots = roots.isEmpty ? defaultMaintenanceRoots(fileManager: fm) : Array(roots)
+        var results: [MaintenanceCandidate] = []
+        var seenPaths = Set<String>()
+        var visitedEntries = 0
+
+        for root in scanRoots where fm.fileExists(atPath: root) {
+            guard let enumerator = fm.enumerator(
+                at: URL(fileURLWithPath: root),
+                includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .contentModificationDateKey, .fileSizeKey, .isSymbolicLinkKey],
+                options: [.skipsPackageDescendants],
+                errorHandler: nil
+            ) else { continue }
+
+            for case let url as URL in enumerator {
+                visitedEntries += 1
+                if visitedEntries > 40_000 || results.count >= 250 {
+                    enumerator.skipDescendants()
+                    break
+                }
+
+                let relativePath = String(url.path.dropFirst(min(root.count + 1, url.path.count)))
+                let depth = relativePath.split(separator: "/").count
+                if depth > 7 {
+                    enumerator.skipDescendants()
+                    continue
+                }
+
+                let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .contentModificationDateKey, .fileSizeKey, .isSymbolicLinkKey])
+                if values?.isSymbolicLink == true {
+                    enumerator.skipDescendants()
+                    continue
+                }
+
+                if values?.isDirectory == true {
+                    let name = url.lastPathComponent
+                    if skipDirectories.contains(name) {
+                        enumerator.skipDescendants()
+                        continue
+                    }
+                    guard artifactNames.contains(name), isProjectArtifact(url, markers: projectMarkers, fileManager: fm) else { continue }
+
+                    enumerator.skipDescendants()
+                    let path = url.standardizedFileURL.path
+                    guard seenPaths.insert(path).inserted else { continue }
+                    let (size, count) = calculateDirectorySizeStatic(at: path)
+                    guard size >= 5 * 1_024 * 1_024 else { continue }
+                    results.append(MaintenanceCandidate(
+                        kind: .projectArtifact,
+                        path: path,
+                        displayName: name,
+                        projectName: url.deletingLastPathComponent().lastPathComponent,
+                        size: size,
+                        fileCount: count,
+                        modifiedAt: values?.contentModificationDate
+                    ))
+                    continue
+                }
+
+                guard values?.isRegularFile == true else { continue }
+                let ext = url.pathExtension.lowercased()
+                let lowerName = url.lastPathComponent.lowercased()
+                let looksLikeInstallerZip = ext == "zip" && (lowerName.contains("installer") || lowerName.contains("setup") || lowerName.contains("install"))
+                guard installerExtensions.contains(ext) || looksLikeInstallerZip else { continue }
+                let size = Int64(values?.fileSize ?? 0)
+                guard size >= 50 * 1_024 * 1_024 else { continue }
+                let path = url.standardizedFileURL.path
+                guard seenPaths.insert(path).inserted else { continue }
+                results.append(MaintenanceCandidate(
+                    kind: .installer,
+                    path: path,
+                    displayName: url.lastPathComponent,
+                    projectName: url.deletingLastPathComponent().lastPathComponent,
+                    size: size,
+                    fileCount: 1,
+                    modifiedAt: values?.contentModificationDate
+                ))
+            }
+        }
+
+        return results.sorted { $0.size > $1.size }
+    }
+
+    nonisolated private static func defaultMaintenanceRoots(fileManager: FileManager) -> [String] {
+        let home = SandboxPaths.realHomeDirectory
+        return ["Documents", "Downloads", "Desktop", "Developer", "Projects", "GitHub", "Code"]
+            .map { (home as NSString).appendingPathComponent($0) }
+            .filter { fileManager.fileExists(atPath: $0) }
+    }
+
+    nonisolated private static func isProjectArtifact(_ url: URL, markers: [String], fileManager: FileManager) -> Bool {
+        let parent = url.deletingLastPathComponent()
+        let grandparent = parent.deletingLastPathComponent()
+        for base in [parent, grandparent] {
+            for marker in markers {
+                if fileManager.fileExists(atPath: base.appendingPathComponent(marker).path) {
+                    return true
+                }
+            }
+            if let contents = try? fileManager.contentsOfDirectory(atPath: base.path),
+               contents.contains(where: { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") }) {
+                return true
+            }
+        }
+        return false
     }
 
     func refreshCachedSurfacesInBackground(minInterval: TimeInterval = 120) {
@@ -632,22 +829,33 @@ class ScannerService: ObservableObject {
         var failCount = 0
 
         let itemsToDelete = scanItems.filter { ids.contains($0.id) }
+        let targetPaths = itemsToDelete.flatMap { pathsToDelete(for: $0) }
+
+        guard await authorizeProtectedDeletionIfNeeded(paths: targetPaths) else {
+            let failures = targetPaths.filter { guardFeature.isPathProtected($0) }.map {
+                DeleteItemResult(
+                    id: nil,
+                    path: $0,
+                    success: false,
+                    message: localizer?.t("系统身份验证未通过，已取消守护目录清理。", en: "System authentication was not completed, so protected cleanup was cancelled.") ?? "System authentication was not completed."
+                )
+            }
+            return DeleteResult(success: false, results: failures, deleted: 0, failed: failures.count)
+        }
 
         for item in itemsToDelete {
-            var pathsToDelete: [String] = []
-
-            if let rule = SCAN_RULES.first(where: { $0.id == item.id }) {
-                pathsToDelete = rule.paths.map { Self.expandUserPath($0) }
-            } else if let realPath = item.realPath, !realPath.isEmpty {
-                pathsToDelete = [realPath]
-            } else {
-                pathsToDelete = [Self.expandUserPath(item.path)]
-            }
-
-            for expanded in pathsToDelete {
+            for expanded in pathsToDelete(for: item) {
                 do {
                     if FileManager.default.fileExists(atPath: expanded) {
-                        try moveToTrash(atPath: expanded)
+                        let trashPath = try moveToTrash(atPath: expanded)
+                        if let trashPath, guardFeature.isPathProtected(expanded) {
+                            guardFeature.recordProtectedTrashItem(
+                                originalPath: expanded,
+                                trashPath: trashPath,
+                                size: item.size,
+                                fileCount: item.fileCount
+                            )
+                        }
                         successCount += 1
                         deleteResults.append(DeleteItemResult(id: item.id, path: expanded, success: true, message: localizer?.movedToTrash ?? "Moved to Trash"))
                     }
@@ -659,6 +867,44 @@ class ScannerService: ObservableObject {
         }
 
         return DeleteResult(success: true, results: deleteResults, deleted: successCount, failed: failCount)
+    }
+
+    private func pathsToDelete(for item: ScanItem) -> [String] {
+        if let rule = SCAN_RULES.first(where: { $0.id == item.id }) {
+            return rule.paths.map { Self.expandUserPath($0) }
+        }
+        if let realPath = item.realPath, !realPath.isEmpty {
+            return [realPath]
+        }
+        return [Self.expandUserPath(item.path)]
+    }
+
+    private func authorizeProtectedDeletionIfNeeded(paths: [String]) async -> Bool {
+        let protectedPaths = paths.filter { guardFeature.isPathProtected($0) }
+        guard !protectedPaths.isEmpty else { return true }
+
+        let reason = localizer?.t(
+            "需要确认你的身份，才能将守护目录中的文件移入废纸篓。",
+            en: "Confirm your identity before moving guarded directory items to Trash."
+        ) ?? "Confirm your identity before moving guarded directory items to Trash."
+
+        let context = LAContext()
+        context.localizedCancelTitle = localizer?.cancelBtn ?? "Cancel"
+        var authError: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &authError) else {
+            errorMessage = authError?.localizedDescription ?? (localizer?.t("此设备当前无法进行系统身份验证。", en: "System authentication is not available on this Mac.") ?? "System authentication is not available on this Mac.")
+            return false
+        }
+
+        let success = await withCheckedContinuation { continuation in
+            context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
+                continuation.resume(returning: success)
+            }
+        }
+        if !success {
+            errorMessage = localizer?.t("系统身份验证未通过，已取消守护目录清理。", en: "System authentication was not completed, so protected cleanup was cancelled.") ?? "System authentication was not completed."
+        }
+        return success
     }
 
     func removeScannedItems(ids: [String]) {
@@ -818,6 +1064,8 @@ class ScannerService: ObservableObject {
     func scanInstalledApps() async {
         guard !isScanningApps else { return }
         isScanningApps = true
+        restoreScanAccessFromBookmarks()
+        let maintenanceRoots = authorizedScanRoots
         let apps = await Task.detached(priority: .userInitiated) {
             var results: [AppInfo] = []
             let fm = FileManager.default
@@ -843,6 +1091,7 @@ class ScannerService: ObservableObject {
 
             self.scanCLIAndAgents(fm: fm, results: &results, seen: &seenIds)
             self.scanDynamicCLITools(fm: fm, results: &results, seen: &seenIds)
+            self.appendMaintenanceInventory(roots: maintenanceRoots, results: &results, seen: &seenIds)
 
             let home = SandboxPaths.realHomeDirectory
             for i in results.indices where results[i].appType == .other && results[i].appPath.hasSuffix(".app") {
@@ -895,6 +1144,45 @@ class ScannerService: ObservableObject {
         installedApps = apps
         isScanningApps = false
         saveScannerCache()
+    }
+
+    nonisolated private func appendMaintenanceInventory(
+        roots: Set<String>,
+        results: inout [AppInfo],
+        seen: inout Set<String>
+    ) {
+        for candidate in Self.scanMaintenanceCandidates(roots: roots) {
+            let isProjectArtifact = candidate.kind == .projectArtifact
+            let idPrefix = isProjectArtifact ? "maintenance.project" : "maintenance.installer"
+            let id = "\(idPrefix).\(candidate.path)"
+            guard seen.insert(id).inserted else { continue }
+
+            results.append(AppInfo(
+                id: id,
+                name: candidate.displayName,
+                displayName: isProjectArtifact ? "\(candidate.projectName) · \(candidate.displayName)" : candidate.displayName,
+                desc: isProjectArtifact
+                    ? "Regenerable project build artifact"
+                    : "Downloaded installer ready for review",
+                bundleId: id,
+                appPath: candidate.path,
+                iconPath: nil,
+                version: nil,
+                appSize: candidate.size,
+                cacheSize: 0,
+                dataSize: 0,
+                totalSize: candidate.size,
+                appType: isProjectArtifact ? .dependency : .other,
+                subCategory: isProjectArtifact ? "Project Artifacts" : "Installers",
+                risk: "caution",
+                riskDesc: isProjectArtifact
+                    ? "Review before removal; active projects may currently depend on this build output."
+                    : "Review before removal; keep it if you still need an offline installer.",
+                canUninstall: false,
+                canClean: false,
+                canReset: false
+            ))
+        }
     }
 
     nonisolated private func scanAppDir(_ dir: String, fm: FileManager, results: inout [AppInfo], seen: inout Set<String>) {
@@ -1672,7 +1960,7 @@ class ScannerService: ObservableObject {
         operationMonitor.aiSelfLearningEnabled = false
         aiLearningTimer?.invalidate()
         aiLearningTimer = nil
-        operationMonitor.curationMessage = "Local analysis mode does not use external AI services."
+        operationMonitor.curationMessage = localizer?.localAnalysisNoExternalAI ?? "Local analysis mode does not use external AI services."
     }
 
     func stopAISelfLearning() {
@@ -1710,7 +1998,7 @@ class ScannerService: ObservableObject {
         operationMonitor.isCurating = false
         operationMonitor.curationMessage = events.isEmpty
             ? (localizer?.noMonitorData ?? "No monitoring data, please enable Agent monitoring and wait for file operations")
-            : "\(localizer?.curationComplete ?? "Curation complete: ")Local monitor reviewed \(events.count) records without external AI services."
+            : "\(localizer?.curationComplete ?? "Curation complete: ")\(localizer?.localMonitorReviewed(records: events.count) ?? "Local monitor reviewed \(events.count) records without external AI services.")"
     }
 
     private func parseCurationResponse(raw: String, events: [OperationRecord]) -> [CuratedRecord]? {
@@ -1803,10 +2091,14 @@ class ScannerService: ObservableObject {
         refreshDiskInfo()
         refreshHardwareInfo()
         checkAndAlert()
+        guardFeature.auditProtectedDirectoryDeletions()
+        guardFeature.auditProtectedTrashItems()
         monitorTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshDiskInfo()
                 self?.checkAndAlert()
+                self?.guardFeature.auditProtectedDirectoryDeletions()
+                self?.guardFeature.auditProtectedTrashItems()
             }
         }
         hardwareTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
@@ -1895,31 +2187,38 @@ class ScannerService: ObservableObject {
 
     private func localImpactSummary(for app: AppInfo) -> String {
         let risk = (ScanItem.RiskLevel(rawValue: app.risk) ?? .caution).localizedLabel(localizer ?? Localizer()).lowercased()
-        if app.appType == .app {
-            return "Local: \(app.displayName) is an installed app. AgentGuard shows inventory and cache context only; uninstall actions are disabled in this App Store build. Risk: \(risk)."
+        let type: String
+        switch app.appType {
+        case .app: type = "app"
+        case .dependency: type = "dependency"
+        default: type = "other"
         }
-        if app.appType == .dependency {
-            return "Local: \(app.displayName) may be required by projects. Review its path and keep it unless you are sure no project depends on it. Risk: \(risk)."
-        }
-        if app.risk == "safe" {
-            return "Local: \(app.displayName) appears to be cache or temporary data. Move items to Trash only after reviewing the listed paths."
-        }
-        return "Local: Review \(app.displayName) carefully before cleanup. AgentGuard avoids irreversible actions and keeps cleanup recoverable through Trash."
+        return (localizer ?? Localizer()).localImpactSummary(
+            appName: app.displayName,
+            risk: risk,
+            type: type,
+            isSafe: app.risk == "safe"
+        )
     }
 
-    private func moveToTrash(atPath path: String) throws {
+    private func moveToTrash(atPath path: String) throws -> String? {
         let fm = FileManager.default
-        guard fm.fileExists(atPath: path) else { return }
+        guard fm.fileExists(atPath: path) else { return nil }
         let url = URL(fileURLWithPath: path)
         var resultURL: NSURL?
         try fm.trashItem(at: url, resultingItemURL: &resultURL)
+        return resultURL?.path
     }
 
     func emptyTrashIfAllowed() {
-        guard trashInsteadOfDelete && !preventAutoEmptyTrash else { return }
-        let script = NSAppleScript(source: "tell application \"Finder\" to empty trash")
-        var error: NSDictionary?
-        script?.executeAndReturnError(&error)
+        guard trashInsteadOfDelete else { return }
+        guardFeature.auditProtectedTrashItems()
+        if !guardFeature.protectedTrashItems.isEmpty {
+            errorMessage = localizer?.t(
+                "废纸篓中有守护目录项目。AgentGuard 不会自动清空废纸篓，请先在守护目录中确认是否需要恢复。",
+                en: "Trash contains guarded items. AgentGuard will not empty Trash automatically; review recovery needs in Guarded Directories first."
+            ) ?? "Trash contains guarded items. AgentGuard will not empty Trash automatically."
+        }
     }
 
     private enum ManagedAppAction {
@@ -2044,17 +2343,17 @@ class ScannerService: ObservableObject {
     }
 
     func basicUninstall(app: AppInfo) async -> Bool {
-        errorMessage = "App uninstall actions are disabled in the Mac App Store build."
+        errorMessage = localizer?.appUninstallDisabled ?? "App uninstall actions are disabled in the Mac App Store build."
         return false
     }
 
     func fullUninstall(app: AppInfo) async -> Bool {
-        errorMessage = "Full uninstall actions are disabled in the Mac App Store build."
+        errorMessage = localizer?.fullUninstallDisabled ?? "Full uninstall actions are disabled in the Mac App Store build."
         return false
     }
 
     func resetApp(app: AppInfo) async -> Bool {
-        errorMessage = "App reset actions are disabled in the Mac App Store build."
+        errorMessage = localizer?.appResetDisabled ?? "App reset actions are disabled in the Mac App Store build."
         return false
     }
 

@@ -58,6 +58,7 @@ class SandboxPaths {
     var alertsPath: String { dataDirectory + "/alerts.json" }
     var alertRulePath: String { dataDirectory + "/alert_rule.json" }
     var protectedDirsPath: String { dataDirectory + "/protected_dirs.json" }
+    var protectedTrashItemsPath: String { dataDirectory + "/protected_trash_items.json" }
     var lifecyclePath: String { dataDirectory + "/lifecycle.json" }
     var hourlyStatsPath: String { dataDirectory + "/hourly_stats.json" }
     var cmdRulesPath: String { dataDirectory + "/cmd_rules.json" }
@@ -84,6 +85,7 @@ class SandboxPaths {
             (home + "/.aimaccleaner_alerts.json", shared.alertsPath),
             (home + "/.aimaccleaner_alert_rule.json", shared.alertRulePath),
             (home + "/.aimaccleaner_protected_dirs.json", shared.protectedDirsPath),
+            (home + "/.aimaccleaner_protected_trash_items.json", shared.protectedTrashItemsPath),
             (home + "/.aimaccleaner_lifecycle.json", shared.lifecyclePath),
             (home + "/.aimaccleaner_hourly_stats.json", shared.hourlyStatsPath),
             (home + "/.aimaccleaner_cmd_rules.json", shared.cmdRulesPath),

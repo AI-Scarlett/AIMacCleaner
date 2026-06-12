@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var hoveredItem: NavItem?
     @AppStorage("networkMode") private var networkMode = "internet"
     @AppStorage("appearanceMode") private var appearanceMode = AppearanceMode.system.rawValue
+    @AppStorage("colorPalette") private var colorPalette = AppColorPalette.porcelain.rawValue
 
     private enum AppearanceMode: String, CaseIterable {
         case system
@@ -76,16 +77,16 @@ struct ContentView: View {
 
         var color: Color {
             switch self {
-            case .cleaner: .blue
-            case .app: .cyan
-            case .dependency: .orange
-            case .other: .gray
+            case .cleaner: Theme.Colors.info
+            case .app: Theme.Colors.accent
+            case .dependency: Theme.Colors.warning
+            case .other: Theme.Colors.textSecondary
             case .overview: Theme.Colors.info
-            case .operations: Theme.Colors.teal
-            case .agentGuard: .orange
-            case .toolbox: .blue
-            case .tokenScope: Theme.Colors.teal
-            case .migration: .purple
+            case .operations: Theme.Colors.accent
+            case .agentGuard: Theme.Colors.accent
+            case .toolbox: Theme.Colors.info
+            case .tokenScope: Theme.Colors.accent
+            case .migration: Theme.Colors.purple
             }
         }
 
@@ -123,12 +124,12 @@ struct ContentView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar
-            Rectangle()
-                .fill(Theme.Colors.separator)
-                .frame(width: 0.5)
             detailContent
+                .appCanvas()
         }
         .frame(minWidth: 960, minHeight: 640)
+        .background(.clear)
+        .id(colorPalette)
         .onAppear {
             service.refreshDiskInfo()
             service.refreshHardwareInfo()
@@ -172,51 +173,70 @@ struct ContentView: View {
         .frame(width: sidebarCollapsed ? Theme.Sidebar.collapsedWidth : Theme.Sidebar.expandedWidth)
         .background(
             ZStack {
-                Theme.Colors.sidebarBg
                 Theme.Gradients.sidebar
+                Circle()
+                    .fill(Theme.Colors.accent.opacity(0.16))
+                    .frame(width: 170, height: 170)
+                    .blur(radius: 42)
+                    .offset(x: -72, y: -260)
+                Rectangle()
+                    .fill(Theme.Colors.sidebarBg.opacity(0.82))
             }
         )
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(Theme.Colors.separator)
+                .frame(width: 1)
+        }
     }
 
     private var sidebarLogo: some View {
         HStack(spacing: 0) {
             if !sidebarCollapsed {
-                HStack(spacing: Theme.Spacing.sm) {
-                    Image(nsImage: NSApp.applicationIconImage)
-                        .resizable()
-                        .frame(width: 24, height: 24)
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                    Text(localizer.appName)
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Theme.Gradients.accent)
+                HStack(spacing: Theme.Spacing.sm + 2) {
+                    AgentGuardMark(size: 46)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("AgentGuard")
+                            .font(.system(size: 18, weight: .black, design: .rounded))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Theme.Colors.success)
+                                .frame(width: 7, height: 7)
+                                .shadow(color: Theme.Colors.success.opacity(0.65), radius: 5)
+                            Text(localizer.monitoringLive)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(Theme.Colors.success)
+                                .lineLimit(1)
+                        }
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .frame(width: Theme.Sidebar.iconSize + 2, height: Theme.Sidebar.iconSize + 2)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                AgentGuardMark(size: Theme.Sidebar.iconSize + 12)
                     .frame(maxWidth: .infinity)
             }
         }
         .padding(.top, Theme.Spacing.xl)
-        .padding(.bottom, Theme.Spacing.lg)
+        .padding(.bottom, Theme.Spacing.md)
         .padding(.horizontal, sidebarCollapsed ? Theme.Spacing.xs : Theme.Spacing.md)
     }
 
     private var sidebarNavItems: some View {
         VStack(alignment: sidebarCollapsed ? .center : .leading, spacing: Theme.Spacing.xs) {
             if !sidebarCollapsed {
-                Text(localizer.features)
-                    .font(Theme.Font.captionMedium)
+                Text(localizer.workspaceSection)
+                    .font(.system(size: 10, weight: .black))
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .textCase(.uppercase)
+                    .tracking(1.2)
                     .padding(.horizontal, Theme.Spacing.lg)
                     .padding(.top, Theme.Spacing.lg)
                     .padding(.bottom, Theme.Spacing.xs)
             } else {
-                Text(localizer.features)
-                    .font(.system(size: 8, weight: .semibold))
+                Text("AI")
+                    .font(.system(size: 8, weight: .black))
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .padding(.top, Theme.Spacing.lg)
                     .padding(.bottom, Theme.Spacing.xs)
@@ -252,7 +272,7 @@ struct ContentView: View {
                 }
             }
         }
-        .padding(.horizontal, sidebarCollapsed ? Theme.Spacing.xs : Theme.Spacing.sm)
+        .padding(.horizontal, sidebarCollapsed ? Theme.Spacing.xs : Theme.Spacing.md)
     }
 
     private var toolboxSection: some View {
@@ -268,13 +288,16 @@ struct ContentView: View {
                         .frame(width: 3, height: Theme.Sidebar.itemHeight * 0.5)
 
                     Image(systemName: NavItem.toolbox.icon)
-                        .font(.system(size: Theme.Sidebar.iconSize * 0.65, weight: .medium))
-                        .foregroundStyle(hoveredItem == .toolbox ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
-                        .frame(width: Theme.Sidebar.iconSize)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(hoveredItem == .toolbox ? Theme.Colors.accent : Theme.Colors.textSecondary)
+                        .frame(width: 36, height: 32)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Theme.Colors.textPrimary.opacity(0.045))
+                        )
 
                     Text(NavItem.toolbox.label(localizer))
-                        .font(.system(size: 13))
-                        .fontWeight(.regular)
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(hoveredItem == .toolbox ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
 
                     Spacer()
@@ -283,8 +306,8 @@ struct ContentView: View {
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(Theme.Colors.textTertiary)
                 }
-                .padding(.horizontal, Theme.Spacing.md)
-                .padding(.vertical, Theme.Spacing.md + 1)
+                .frame(minHeight: Theme.Sidebar.itemHeight)
+                .padding(.horizontal, Theme.Spacing.sm)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Sidebar.itemRadius)
                         .fill(hoveredItem == .toolbox ? Theme.Colors.cardHover : Color.clear)
@@ -303,22 +326,26 @@ struct ContentView: View {
                         } label: {
                             HStack(spacing: Theme.Spacing.sm) {
                                 Image(systemName: item.icon)
-                                    .font(.system(size: 11, weight: selectedTab == item ? .semibold : .regular))
-                                    .foregroundStyle(selectedTab == item ? item.color : Theme.Colors.textTertiary)
-                                    .frame(width: 16)
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(selectedTab == item ? Color.white : Theme.Colors.textTertiary)
+                                    .frame(width: 26, height: 24)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 9)
+                                            .fill(selectedTab == item ? AnyShapeStyle(Theme.Gradients.hero) : AnyShapeStyle(Theme.Colors.textPrimary.opacity(0.035)))
+                                    )
 
                                 Text(item.label(localizer))
                                     .font(.system(size: 12))
-                                    .fontWeight(selectedTab == item ? .semibold : .regular)
+                                    .fontWeight(selectedTab == item ? .bold : .semibold)
                                     .foregroundStyle(selectedTab == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
 
                                 Spacer()
                             }
                             .padding(.horizontal, Theme.Spacing.md + Theme.Spacing.lg)
-                            .padding(.vertical, Theme.Spacing.sm + 2)
+                            .padding(.vertical, Theme.Spacing.xs + 2)
                             .background(
-                                RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                    .fill(selectedTab == item ? item.color.opacity(0.08) : Color.clear)
+                                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                                    .fill(selectedTab == item ? Theme.Colors.elevatedCardBg.opacity(0.82) : Color.clear)
                             )
                         }
                         .buttonStyle(.plain)
@@ -335,46 +362,72 @@ struct ContentView: View {
     private func sidebarExpandedItem(_ item: NavItem) -> some View {
         HStack(spacing: Theme.Spacing.sm + 2) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(selectedTab == item ? item.color : Color.clear)
-                .frame(width: 3, height: Theme.Sidebar.itemHeight * 0.5)
+                .fill(selectedTab == item ? Theme.Gradients.hero : LinearGradient(colors: [.clear], startPoint: .top, endPoint: .bottom))
+                .frame(width: 3, height: Theme.Sidebar.itemHeight * 0.52)
 
             Image(systemName: item.icon)
-                .font(.system(size: Theme.Sidebar.iconSize * 0.65, weight: .medium))
-                .foregroundStyle(selectedTab == item ? item.color : (hoveredItem == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary))
-                .frame(width: Theme.Sidebar.iconSize)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(selectedTab == item ? Color.white : (hoveredItem == item ? Theme.Colors.accent : Theme.Colors.textSecondary))
+                .frame(width: 36, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(selectedTab == item ? AnyShapeStyle(Theme.Gradients.hero) : AnyShapeStyle(Theme.Colors.textPrimary.opacity(0.045)))
+                )
+                .shadow(color: selectedTab == item ? Theme.Colors.accent.opacity(0.20) : .clear, radius: 10, y: 5)
 
             Text(item.label(localizer))
-                .font(.system(size: 12))
-                .fontWeight(.regular)
+                .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(selectedTab == item ? Theme.Colors.textPrimary : (hoveredItem == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary))
                 .lineLimit(1)
 
             Spacer()
 
             if selectedTab == item {
-                Circle()
-                    .fill(item.color.opacity(0.6))
-                    .frame(width: 5, height: 5)
+                Text(navMeta(for: item))
+                    .font(.system(size: 10, weight: .black))
+                    .foregroundStyle(Theme.Colors.textTertiary)
             }
         }
-        .padding(.horizontal, Theme.Spacing.md)
-        .padding(.vertical, Theme.Spacing.sm + 1)
+        .frame(minHeight: Theme.Sidebar.itemHeight)
+        .padding(.horizontal, Theme.Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: Theme.Sidebar.itemRadius)
-                .fill(selectedTab == item ? item.color.opacity(0.1) : (hoveredItem == item ? Theme.Colors.cardHover : Color.clear))
+                .fill(selectedTab == item ? Theme.Colors.elevatedCardBg : (hoveredItem == item ? Theme.Colors.cardHover : Color.clear))
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Sidebar.itemRadius)
-                .stroke(selectedTab == item ? item.color.opacity(0.2) : Color.clear, lineWidth: 1)
+                .stroke(selectedTab == item ? Theme.Colors.separator : Color.clear, lineWidth: 1)
         )
+        .shadow(color: selectedTab == item ? Theme.Shadow.mdColor : .clear, radius: 12, y: 6)
+    }
+
+    private func navMeta(for item: NavItem) -> String {
+        switch item {
+        case .overview: return localizer.t("实时", en: "Live", zhHant: "即時", ja: "ライブ", ko: "실시간", mt: "Live")
+        case .agentGuard: return service.guardFeature.unreadAlertCount > 0 ? "\(service.guardFeature.unreadAlertCount)" : localizer.t("守护", en: "Guard", zhHant: "守護", ja: "保護", ko: "보호", mt: "Guard")
+        case .operations: return service.operationRecords.isEmpty ? localizer.t("审计", en: "Audit", zhHant: "稽核", ja: "監査", ko: "감사", mt: "Audit") : "\(service.operationRecords.count)"
+        case .toolbox: return localizer.t("工具", en: "Tools", zhHant: "工具", ja: "ツール", ko: "도구", mt: "Tools")
+        case .tokenScope: return localizer.t("测试", en: "Beta", zhHant: "測試", ja: "ベータ", ko: "베타", mt: "Beta")
+        case .cleaner:
+            let total = service.scanItems.reduce(Int64(0)) { $0 + $1.size }
+            return total > 0 ? service.formatSize(total) : localizer.t("清理", en: "Clean", zhHant: "清理", ja: "クリーン", ko: "정리", mt: "Clean")
+        case .app: return service.installedApps.isEmpty ? localizer.t("应用", en: "Apps", zhHant: "應用", ja: "アプリ", ko: "앱", mt: "Apps") : "\(service.installedApps.count)"
+        case .dependency: return localizer.t("依赖", en: "Deps", zhHant: "依賴", ja: "依存", ko: "의존성", mt: "Deps")
+        case .other: return "CLI"
+        case .migration: return localizer.t("适配", en: "Intel", zhHant: "適配", ja: "Intel", ko: "Intel", mt: "Intel")
+        }
     }
 
     private func sidebarCollapsedItem(_ item: NavItem) -> some View {
         VStack(spacing: Theme.Spacing.xs) {
             Image(systemName: item.icon)
-                .font(.system(size: Theme.Sidebar.iconSize * 0.75, weight: selectedTab == item ? .semibold : .medium))
-                .foregroundStyle(selectedTab == item ? item.color : (hoveredItem == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary))
-                .frame(width: 24, height: 24)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(selectedTab == item ? Color.white : (hoveredItem == item ? Theme.Colors.accent : Theme.Colors.textSecondary))
+                .frame(width: 34, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(selectedTab == item ? AnyShapeStyle(Theme.Gradients.hero) : AnyShapeStyle(Theme.Colors.textPrimary.opacity(0.045)))
+                )
             Text(item.label(localizer).split(separator: " ").first.map(String.init) ?? "")
                 .font(.system(size: 8, weight: selectedTab == item ? .semibold : .regular))
                 .foregroundStyle(selectedTab == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
@@ -384,11 +437,11 @@ struct ContentView: View {
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .fill(selectedTab == item ? item.color.opacity(0.12) : (hoveredItem == item ? Theme.Colors.cardHover : Color.clear))
+                .fill(selectedTab == item ? Theme.Colors.elevatedCardBg : (hoveredItem == item ? Theme.Colors.cardHover : Color.clear))
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(selectedTab == item ? item.color.opacity(0.25) : Color.clear, lineWidth: 1)
+                .stroke(selectedTab == item ? Theme.Colors.separator : Color.clear, lineWidth: 1)
         )
     }
 
@@ -416,44 +469,38 @@ struct ContentView: View {
                 .background(footerPanelBackground(cornerRadius: 12))
                 .padding(.vertical, Theme.Spacing.lg)
             } else {
-                VStack(spacing: 8) {
-                    HStack(spacing: 7) {
-                        footerIconButton(icon: "gearshape", color: Theme.Colors.textSecondary, help: localizer.settings) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(networkMode == "internet" ? Theme.Colors.success : Theme.Colors.warning)
+                            .frame(width: 8, height: 8)
+                            .shadow(color: (networkMode == "internet" ? Theme.Colors.success : Theme.Colors.warning).opacity(0.55), radius: 5)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(localizer.protectionOn)
+                                .font(.system(size: 12, weight: .black))
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Text("\(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus) · v\(service.currentVersion)")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 4)
+                    }
+
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
+                        footerLabeledButton(icon: "gearshape", title: localizer.settings, color: Theme.Colors.textSecondary) {
                             showSettings = true
                         }
-
                         appearanceModeButton
-
                         languageToggleButton
-
-                        Spacer()
-
-                        footerIconButton(icon: "sidebar.left", color: Theme.Colors.textTertiary, help: localizer.collapseSidebar) {
+                        footerLabeledButton(icon: "sidebar.left", title: localizer.collapseSidebar, color: Theme.Colors.textTertiary) {
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                                 sidebarCollapsed = true
                             }
                         }
                     }
-
-                    HStack(spacing: 6) {
-                        Image(systemName: networkMode == "internet" ? "globe" : "lock.circle")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
-
-                        Text(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus)
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
-                            .lineLimit(1)
-
-                        Text("v\(service.currentVersion)")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(Theme.Colors.textTertiary)
-
-                        Spacer()
-                    }
-                    .padding(.horizontal, 9)
                 }
-                .padding(8)
+                .padding(10)
                 .background(footerPanelBackground(cornerRadius: 14))
                 .padding(.horizontal, Theme.Spacing.md)
                 .padding(.vertical, Theme.Spacing.md)
@@ -463,19 +510,15 @@ struct ContentView: View {
 
     private func footerPanelBackground(cornerRadius: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: cornerRadius)
-            .fill(Theme.Colors.sidebarBg.opacity(0.78))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(Theme.Colors.cardBg.opacity(0.52))
-            )
+            .fill(Theme.Colors.elevatedCardBg.opacity(0.76))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .stroke(
                         LinearGradient(
                             colors: [
-                                Theme.Colors.teal.opacity(0.26),
-                                Theme.Colors.separator.opacity(0.42),
-                                Theme.Colors.purple.opacity(0.18)
+                                Color.white.opacity(0.86),
+                                Theme.Colors.accent.opacity(0.22),
+                                Theme.Colors.separator
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -483,7 +526,7 @@ struct ContentView: View {
                         lineWidth: 1
                     )
             )
-            .shadow(color: Theme.Colors.teal.opacity(0.08), radius: 10, x: 0, y: 0)
+            .shadow(color: Theme.Shadow.mdColor, radius: 12, x: 0, y: 6)
     }
 
     private func footerIconButton(icon: String, color: Color, help: String, action: @escaping () -> Void) -> some View {
@@ -494,6 +537,14 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .modifier(HUDIconChrome(color: color, disabled: false, size: sidebarCollapsed ? 30 : 28, radius: 8))
         .help(help)
+    }
+
+    private func footerLabeledButton(icon: String, title: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            footerGlassControl(icon: icon, title: title, color: color)
+        }
+        .buttonStyle(.plain)
+        .help(title)
     }
 
     private var footerStatusDot: some View {
@@ -523,7 +574,7 @@ struct ContentView: View {
             footerGlassControl(
                 icon: currentAppearanceMode.icon,
                 title: sidebarCollapsed ? "" : appearanceModeTitle(currentAppearanceMode),
-                color: Theme.Colors.teal
+                color: Theme.Colors.accent
             )
         }
         .menuStyle(.borderlessButton)
@@ -569,7 +620,7 @@ struct ContentView: View {
                 .font(.system(size: sidebarCollapsed ? 12 : 11, weight: .semibold))
             if !title.isEmpty {
                 Text(title)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 10, weight: .bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
             }
@@ -577,14 +628,10 @@ struct ContentView: View {
         .foregroundStyle(color)
         .frame(width: sidebarCollapsed ? 30 : nil, height: 30)
         .frame(maxWidth: sidebarCollapsed ? nil : .infinity)
-        .padding(.horizontal, sidebarCollapsed ? 0 : 8)
+        .padding(.horizontal, sidebarCollapsed ? 0 : 7)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(color.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Theme.Colors.cardBg.opacity(0.55))
-                )
+                .fill(color.opacity(0.10))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
@@ -675,19 +722,24 @@ struct PageHeader: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.lg) {
-            Image(systemName: icon)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(color)
-                .frame(width: 36, height: 36)
-                .background(color.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            ZStack {
+                RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                    .fill(Theme.Gradients.hero)
+                RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                    .stroke(Color.white.opacity(0.70), lineWidth: 1)
+                Image(systemName: icon)
+                    .font(.system(size: 21, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 38, height: 38)
+            .shadow(color: Theme.Colors.accent.opacity(0.18), radius: 10, y: 5)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(Theme.Font.headline)
+                    .font(.system(size: 22, weight: .black, design: .rounded))
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Text(subtitle)
-                    .font(Theme.Font.caption)
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.Colors.textSecondary)
             }
 
@@ -696,8 +748,102 @@ struct PageHeader: View {
             trailing
         }
         .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, Theme.Spacing.lg)
-        .background(Theme.Colors.background)
+        .padding(.vertical, Theme.Spacing.sm + 2)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.68))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.Colors.separator)
+                .frame(height: 1)
+        }
+    }
+}
+
+struct ScanningStatusPill: View {
+    let title: String
+    let color: Color
+    @State private var rotation: Double = 0
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.xs + 2) {
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .font(.system(size: 12, weight: .bold))
+            Text(title)
+                .font(Theme.Font.subheadlineMedium)
+                .lineLimit(1)
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, Theme.Spacing.sm + 4)
+        .padding(.vertical, Theme.Spacing.xs + 3)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .fill(color.opacity(0.09))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(color.opacity(0.20), lineWidth: 1)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .trim(from: 0.02, to: 0.30)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            color.opacity(0),
+                            color.opacity(0.90),
+                            Color.white.opacity(0.92)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    style: StrokeStyle(lineWidth: 2.2, lineCap: .round)
+                )
+                .rotationEffect(.degrees(rotation))
+                .padding(1)
+        }
+        .shadow(color: color.opacity(0.16), radius: 10, x: 0, y: 0)
+        .onAppear {
+            withAnimation(.linear(duration: 1.35).repeatForever(autoreverses: false)) {
+                rotation = 360
+            }
+        }
+    }
+}
+
+struct ScanningProgressCaption: View {
+    let detail: String
+    let color: Color
+    @State private var progress: CGFloat = -0.55
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            Text(detail)
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(color)
+                .lineLimit(1)
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(color.opacity(0.14))
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [color.opacity(0), color.opacity(0.95), Color.white.opacity(0.85), color.opacity(0)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: max(42, proxy.size.width * 0.42))
+                        .offset(x: proxy.size.width * progress)
+                        .shadow(color: color.opacity(0.35), radius: 6, x: 0, y: 0)
+                }
+            }
+            .frame(width: 142, height: 4)
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.25).repeatForever(autoreverses: false)) {
+                progress = 1.15
+            }
+        }
     }
 }
 
@@ -709,12 +855,12 @@ struct ToolboxTab: View {
     @State private var selectedTool = 0
 
     private let tools: [(icon: String, title: (Localizer) -> String, subtitle: (Localizer) -> String, color: Color)] = [
-        ("chart.xyaxis.line", { $0.tokenScopeTitle }, { $0.tokenScopeSubtitle }, Theme.Colors.teal),
-        ("arrow.down.doc.fill", { $0.navCleaner }, { $0.subCleaner }, .blue),
-        ("app.badge", { $0.navApp }, { $0.subApp }, .cyan),
-        ("cube.box", { $0.navDependency }, { $0.subDependency }, .orange),
-        ("terminal", { $0.navOther }, { $0.subOther }, .gray),
-        ("arrow.triangle.2.circlepath", { $0.navMigration }, { $0.subMigration }, .purple),
+        ("chart.xyaxis.line", { $0.tokenScopeTitle }, { $0.tokenScopeSubtitle }, Theme.Colors.accent),
+        ("arrow.down.doc.fill", { $0.navCleaner }, { $0.subCleaner }, Theme.Colors.info),
+        ("app.badge", { $0.navApp }, { $0.subApp }, Theme.Colors.accent),
+        ("cube.box", { $0.navDependency }, { $0.subDependency }, Theme.Colors.warning),
+        ("terminal", { $0.navOther }, { $0.subOther }, Theme.Colors.textSecondary),
+        ("arrow.triangle.2.circlepath", { $0.navMigration }, { $0.subMigration }, Theme.Colors.purple),
     ]
 
     var body: some View {
@@ -723,7 +869,7 @@ struct ToolboxTab: View {
                 icon: "wrench.and.screwdriver.fill",
                 title: localizer.navToolbox,
                 subtitle: localizer.subToolbox,
-                color: .blue
+                color: Theme.Colors.accent
             )
 
             ScrollView {
@@ -829,6 +975,9 @@ fileprivate enum ResultListColumns {
     static let size: CGFloat = 70
     static let description: CGFloat = 180
     static let actions: CGFloat = 58
+    static let spacing: CGFloat = 12
+    static let rowPadding: CGFloat = 24
+    static let total: CGFloat = selection + state + name + source + project + risk + size + description + actions + spacing * 8 + rowPadding * 2
 }
 
 struct AgentMonitorOverviewRow: Identifiable {
@@ -4344,7 +4493,7 @@ struct AppOverviewTab: View {
             .prefix(6)
             .enumerated()
             .map { index, row in
-                let colors: [Color] = [Theme.Colors.teal, Theme.Colors.info, Theme.Colors.purple, Theme.Colors.success, Theme.Colors.warning, Theme.Colors.danger]
+                let colors: [Color] = [Theme.Colors.accent, Theme.Colors.info, Theme.Colors.purple, Theme.Colors.warning, Theme.Colors.danger, Theme.Colors.textSecondary]
                 return OverviewSlice(label: row.agentName, value: Double(row.totalTokens), color: colors[index % colors.count])
             }
     }
@@ -4363,7 +4512,7 @@ struct AppOverviewTab: View {
                 icon: "chart.bar.xaxis",
                 title: localizer.navOverview,
                 subtitle: localizer.overviewSubtitle,
-                color: Theme.Colors.teal
+                color: Theme.Colors.accent
             )
 
             AgentCommandDashboardView(
@@ -4386,9 +4535,9 @@ struct AppOverviewTab: View {
             StatCardView(icon: "internaldrive", iconColor: Theme.Colors.info, title: localizer.diskSpaceLabel, value: service.diskInfo.map { formatGB($0.freeGb) } ?? "—", subtitle: localizer.available)
             StatCardView(icon: "externaldrive", iconColor: Theme.Colors.warning, title: localizer.cleanupCandidates, value: formatBytes(cleanupTotalSize), subtitle: nil)
             StatCardView(icon: "eye.fill", iconColor: Theme.Colors.success, title: localizer.agentMonitorTitle, value: "\(totalOperations)", subtitle: localizer.totalOps)
-            StatCardView(icon: "sum", iconColor: Theme.Colors.teal, title: localizer.tokenScopeTotalTokens, value: compactCount(totalTokens), subtitle: nil)
+            StatCardView(icon: "sum", iconColor: Theme.Colors.info, title: localizer.tokenScopeTotalTokens, value: compactCount(totalTokens), subtitle: nil)
             if !service.installedApps.isEmpty {
-                StatCardView(icon: "app.badge", iconColor: Theme.Colors.cyan, title: localizer.navApp, value: "\(service.installedApps.count)", subtitle: localizer.itemsLabel)
+                StatCardView(icon: "app.badge", iconColor: Theme.Colors.accent, title: localizer.navApp, value: "\(service.installedApps.count)", subtitle: localizer.itemsLabel)
             }
         }
     }
@@ -4526,7 +4675,7 @@ struct AppOverviewTab: View {
         let lower = category.lowercased()
         if lower.contains("agent") { return Theme.Colors.purple }
         if lower.contains("开发") || lower.contains("dev") { return Theme.Colors.info }
-        if lower.contains("系统") || lower.contains("system") { return Theme.Colors.teal }
+        if lower.contains("系统") || lower.contains("system") { return Theme.Colors.info }
         if lower.contains("浏览") || lower.contains("browser") { return Theme.Colors.warning }
         if lower.contains("办公") || lower.contains("office") { return Theme.Colors.success }
         return Theme.Colors.accent
@@ -4539,7 +4688,7 @@ struct AppOverviewTab: View {
         case .delete: return Theme.Colors.danger
         case .move: return Theme.Colors.warning
         case .rename: return Theme.Colors.purple
-        case .read: return Theme.Colors.teal
+        case .read: return Theme.Colors.info
         case .execute: return Theme.Colors.purple
         }
     }
@@ -4573,10 +4722,12 @@ private struct CommandCenterPanel<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             Text(title)
-                .font(.system(size: 15, weight: .bold, design: .monospaced))
+                .font(.system(size: 14, weight: .black, design: .rounded))
                 .foregroundStyle(Theme.Colors.textPrimary)
-                .padding(.horizontal, Theme.Spacing.xs)
-                .background(Theme.Colors.cardBg)
+                .padding(.horizontal, Theme.Spacing.sm)
+                .padding(.vertical, 2)
+                .background(color.opacity(0.10))
+                .clipShape(Capsule())
                 .offset(y: -2)
 
             content
@@ -4587,9 +4738,13 @@ private struct CommandCenterPanel<Content: View>: View {
         .padding(.top, Theme.Spacing.xs)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(color.opacity(0.72), lineWidth: 1)
-                .background(Theme.Colors.cardBg.opacity(0.72))
+                .fill(Theme.Colors.elevatedCardBg.opacity(0.78))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.Colors.separator, lineWidth: 1)
+                )
         )
+        .shadow(color: Theme.Shadow.smColor, radius: 8, y: 4)
     }
 }
 
@@ -4623,6 +4778,7 @@ private struct CommandCenterSafeAction: View {
 }
 
 private struct CommandCenterDisabledAction: View {
+    @EnvironmentObject var localizer: Localizer
     let icon: String
     let title: String
 
@@ -4634,7 +4790,7 @@ private struct CommandCenterDisabledAction: View {
         .buttonStyle(.bordered)
         .controlSize(.small)
         .disabled(true)
-        .help("Unavailable in Mac App Store build")
+        .help(localizer.unavailableInMacAppStoreBuild)
     }
 }
 
@@ -5028,7 +5184,7 @@ private struct AgentCommandCenterView: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                 HStack {
                     Text(localizer.t("父进程", en: "Parent", zhHant: "父程序", ja: "親プロセス", ko: "상위 프로세스", mt: "Parent")).frame(width: 86, alignment: .leading)
-                    Text(localizer.t("配置", en: "Config", zhHant: "配置", ja: "設定", ko: "설정", mt: "Config")).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(localizer.configCol).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
                 .foregroundStyle(Theme.Colors.textPrimary)
@@ -5081,7 +5237,7 @@ private struct AgentCommandCenterView: View {
             Text(localizer.overviewProject).frame(width: 130, alignment: .leading)
             Text(localizer.overviewSession).frame(width: 96, alignment: .leading)
             Text(localizer.t("时间", en: "Time", zhHant: "時間", ja: "時刻", ko: "시간", mt: "Time")).frame(width: 72, alignment: .leading)
-            Text(localizer.t("配置", en: "Config", zhHant: "配置", ja: "設定", ko: "설정", mt: "Config")).frame(width: 90, alignment: .leading)
+            Text(localizer.configCol).frame(width: 90, alignment: .leading)
             Text(localizer.overviewSummary).frame(maxWidth: .infinity, alignment: .leading)
             Text(localizer.status).frame(width: 78, alignment: .leading)
             Text(localizer.overviewModel).frame(width: 92, alignment: .leading)
@@ -5349,6 +5505,8 @@ private struct HUDIconChrome: ViewModifier {
             )
             .shadow(color: disabled ? .clear : color.opacity(0.14), radius: 7, x: 0, y: 0)
             .opacity(disabled ? 0.55 : 1)
+            .scaleEffect(disabled ? 1 : 1.0)
+            .animation(.spring(response: 0.22, dampingFraction: 0.78), value: disabled)
     }
 }
 
@@ -5491,6 +5649,53 @@ private struct AgentCommandDashboardView: View {
             return "Grouped \(allSessions.count) sessions, \(activeSessions.count) active, \(projectRows.count) projects, and \(compactCount(totalTokens)) tokens."
         }
     }
+    private var localizedCommandCenterIntro: String {
+        switch localizer.language {
+        case .simplifiedChinese:
+            return "关键数据已按会话、活跃状态、项目和 Token 聚合。"
+        case .traditionalChinese:
+            return "關鍵資料已按會話、活躍狀態、專案和 Token 彙總。"
+        case .japanese:
+            return "主要データをセッション、稼働状況、プロジェクト、Token 別に集計しています。"
+        case .korean:
+            return "핵심 데이터를 세션, 활성 상태, 프로젝트, Token 기준으로 집계했습니다."
+        case .english, .maltese:
+            return "Key data is grouped by sessions, activity, projects, and tokens."
+        }
+    }
+
+    private var sessionChartValues: [Double] {
+        Dictionary(grouping: allSessions, by: \.agentName)
+            .map { Double($0.value.count) }
+            .sorted(by: >)
+            .prefix(6)
+            .map { $0 }
+    }
+
+    private var activeChartValues: [Double] {
+        let values = activeSessions
+            .sorted { $0.contextPercent > $1.contextPercent }
+            .prefix(6)
+            .map { max($0.contextPercent, 0.18) }
+        return values.isEmpty && !allSessions.isEmpty ? [0.08] : values
+    }
+
+    private var projectChartValues: [Double] {
+        projectRows
+            .map { Double($0.count) }
+            .sorted(by: >)
+            .prefix(6)
+            .map { $0 }
+    }
+
+    private var tokenChartValues: [Double] {
+        projectRows
+            .map { Double($0.tokens) }
+            .sorted(by: >)
+            .prefix(6)
+            .map { $0 }
+    }
+
     private var projectRows: [(name: String, context: Double, tokens: Int, count: Int)] {
         Dictionary(grouping: allSessions, by: \.projectName)
             .map { name, rows in
@@ -5522,8 +5727,7 @@ private struct AgentCommandDashboardView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                    dataStatusCard
-                    metricStrip
+                    commandCenterHero
 
                     currentSessionUsageCard
                     sessionListCard
@@ -5586,6 +5790,255 @@ private struct AgentCommandDashboardView: View {
         }
     }
 
+    private var commandCenterHero: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(alignment: .center, spacing: Theme.Spacing.sm + 2) {
+                ZStack(alignment: .bottomTrailing) {
+                    AgentGuardMark(size: 28, showGlow: false)
+                    Circle()
+                        .fill(activeSessions.isEmpty ? Theme.Colors.textTertiary : Theme.Colors.success)
+                        .frame(width: 9, height: 9)
+                        .overlay(
+                            Circle()
+                                .stroke(Theme.Colors.elevatedCardBg, lineWidth: 2)
+                        )
+                        .shadow(color: Theme.Colors.success.opacity(activeSessions.isEmpty ? 0 : 0.55), radius: 7)
+                }
+
+                Text(activeSessions.isEmpty ? localizer.overviewWaitingSessions : localizer.overviewLiveActivity)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(activeSessions.isEmpty ? Theme.Colors.textSecondary : Theme.Colors.success)
+                    .textCase(.uppercase)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(localizer.commandCenterTitle)
+                        .font(.system(size: 15, weight: .black, design: .rounded))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+
+                    Text(localizedCommandCenterIntro)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            heroMetricsGrid
+
+            HStack(alignment: .center, spacing: Theme.Spacing.md) {
+                VStack(alignment: .leading, spacing: 3) {
+                    if store.isScanning {
+                        ScanningStatusPill(title: dataStatusTitle, color: dataStatusColor)
+                    } else {
+                        Text(dataStatusTitle)
+                            .font(Theme.Font.subheadlineMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if store.isScanning {
+                    ScanningProgressCaption(detail: dataStatusDetail, color: dataStatusColor)
+                        .frame(minWidth: 156, alignment: .trailing)
+                } else {
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text(localizedAuthorizationStatus)
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(dataStatusColor)
+                            .lineLimit(1)
+                        Text(lastScanText)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                            .lineLimit(1)
+                    }
+                    .frame(minWidth: 132, alignment: .trailing)
+                }
+
+                Button {
+                    authorizationStatus = localizer.overviewRescanning
+                    store.refresh(force: true)
+                } label: {
+                    Label(localizer.refresh, systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 30))
+                .disabled(store.isScanning)
+
+                Button {
+                    authorizationStatus = localizer.overviewWaitingForSelection
+                    monitor.requestAccessForStalePaths()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        authorizationStatus = localizer.overviewScanningAuthorizedFolders
+                        service.importKnownAgentHistory()
+                        onRefresh()
+                    }
+                } label: {
+                    Label(store.authorizedRoots.isEmpty ? localizer.overviewAuthorizeFolder : localizer.overviewReauthorizeFolder, systemImage: "folder.badge.plus")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .primary, minHeight: 30))
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.sm + 2)
+            .background(Theme.Colors.elevatedCardBg.opacity(0.58))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                    .stroke(dataStatusColor.opacity(0.16), lineWidth: 1)
+            )
+        }
+        .padding(Theme.Spacing.md)
+        .background(
+            ZStack(alignment: .topTrailing) {
+                LinearGradient(
+                    colors: [
+                        Theme.Colors.elevatedCardBg,
+                        Theme.Colors.accent.opacity(0.055),
+                        Theme.Colors.info.opacity(0.035)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                Circle()
+                    .fill(Theme.Colors.accent.opacity(0.075))
+                    .frame(width: 180, height: 180)
+                    .blur(radius: 34)
+                    .offset(x: 76, y: -90)
+                Circle()
+                    .stroke(Theme.Colors.info.opacity(0.12), lineWidth: 1)
+                    .frame(width: 132, height: 132)
+                    .offset(x: -40, y: 58)
+            }
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.xxl))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.xxl)
+                .stroke(Theme.Gradients.glassStroke, lineWidth: 1)
+        )
+        .shadow(color: Theme.Shadow.lgColor, radius: 26, y: 14)
+    }
+
+    private var heroMetricsGrid: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 124), spacing: Theme.Spacing.sm), count: 4), spacing: Theme.Spacing.sm) {
+            heroMetricChart(
+                title: localizer.overviewSessions,
+                value: "\(allSessions.count)",
+                detail: localizer.overviewLiveAndHistory,
+                icon: "rectangle.3.group",
+                color: Theme.Colors.info,
+                values: sessionChartValues
+            )
+            heroMetricChart(
+                title: localizer.activeAgents,
+                value: "\(activeSessions.count)",
+                detail: localizer.overviewLiveActivity,
+                icon: "dot.radiowaves.left.and.right",
+                color: Theme.Colors.success,
+                values: activeChartValues
+            )
+            heroMetricChart(
+                title: localizer.overviewProject,
+                value: "\(projectRows.count)",
+                detail: localizer.overviewProjectContext,
+                icon: "folder.fill",
+                color: Theme.Colors.warning,
+                values: projectChartValues
+            )
+            heroMetricChart(
+                title: localizer.overviewTokensTotal,
+                value: compactCount(totalTokens),
+                detail: localizer.overviewInputOutputCache,
+                icon: "sum",
+                color: Theme.Colors.purple,
+                values: tokenChartValues
+            )
+        }
+    }
+
+    private func heroMetricChart(title: String, value: String, detail: String, icon: String, color: Color, values: [Double]) -> some View {
+        let safeValues = values.isEmpty ? [0.08, 0.16, 0.10, 0.22] : values
+        let maxValue = max(safeValues.max() ?? 1, 1)
+
+        return VStack(alignment: .leading, spacing: Theme.Spacing.xs + 1) {
+            HStack(alignment: .top, spacing: Theme.Spacing.xs + 2) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 22, height: 22)
+                    .background(color)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+                    Text(value)
+                        .font(.system(size: 18, weight: .black, design: .rounded))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            HStack(alignment: .bottom, spacing: 4) {
+                ForEach(Array(safeValues.enumerated()), id: \.offset) { index, item in
+                    Capsule()
+                        .fill(color.opacity(index == 0 ? 0.95 : 0.34 + min(0.36, item / maxValue * 0.36)))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: max(5, CGFloat(item / maxValue) * 20))
+                }
+            }
+            .frame(height: 22, alignment: .bottom)
+
+            Text(detail)
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.sm + 1)
+        .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.74))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                .stroke(color.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private func heroSignal(title: String, value: String, icon: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .background(Theme.Gradients.hero)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            Text(value)
+                .font(.system(size: 22, weight: .black, design: .rounded))
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .lineLimit(1)
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .lineLimit(1)
+        }
+        .frame(width: 116, alignment: .leading)
+        .padding(Theme.Spacing.md)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                .stroke(Theme.Colors.separator, lineWidth: 1)
+        )
+    }
+
     private var commandToolbar: some View {
         HStack(spacing: Theme.Spacing.md) {
             HStack(spacing: Theme.Spacing.sm) {
@@ -5633,7 +6086,7 @@ private struct AgentCommandDashboardView: View {
                 moveSelection(1)
             }
 
-            sessionHudButton(icon: "doc.on.doc", color: Theme.Colors.teal, disabled: selectedSession == nil, help: localizer.copyPath) {
+            sessionHudButton(icon: "doc.on.doc", color: Theme.Colors.accent, disabled: selectedSession == nil, help: localizer.copyPath) {
                 copySelectedPath()
             }
 
@@ -5704,17 +6157,10 @@ private struct AgentCommandDashboardView: View {
 
     private var dataStatusCard: some View {
         HStack(alignment: .center, spacing: Theme.Spacing.md) {
-                Image(systemName: dataStatusIcon)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(dataStatusColor)
-                    .frame(width: 34, height: 34)
-                    .background(dataStatusColor.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(dataStatusTitle)
+                    Label(dataStatusTitle, systemImage: dataStatusIcon)
                         .font(Theme.Font.subheadlineMedium)
-                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .foregroundStyle(dataStatusColor)
                     Text(dataStatusDetail)
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
@@ -5741,8 +6187,7 @@ private struct AgentCommandDashboardView: View {
                 } label: {
                     Label(localizer.refresh, systemImage: "arrow.clockwise")
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 30))
                 .disabled(store.isScanning)
 
                 Button {
@@ -5756,24 +6201,24 @@ private struct AgentCommandDashboardView: View {
                 } label: {
                     Label(store.authorizedRoots.isEmpty ? localizer.overviewAuthorizeFolder : localizer.overviewReauthorizeFolder, systemImage: "folder.badge.plus")
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .tint(Theme.Colors.warning)
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .primary, minHeight: 30))
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.md)
-        .background(Theme.Colors.cardBg)
+        .background(.ultraThinMaterial)
+        .background(Theme.Colors.elevatedCardBg)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .stroke(dataStatusColor.opacity(0.18), lineWidth: 1)
         )
+        .shadow(color: dataStatusColor.opacity(0.06), radius: 16, y: 8)
     }
 
     private var metricStrip: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 118), spacing: Theme.Spacing.sm), count: 5), spacing: Theme.Spacing.sm) {
-            metricCard(icon: "rectangle.3.group", title: localizer.overviewSessions, value: "\(allSessions.count)", detail: localizer.overviewLiveAndHistory, color: Theme.Colors.success)
-            metricCard(icon: "chart.bar.xaxis", title: localizer.overviewTokensTotal, value: compactCount(totalTokens), detail: localizer.overviewInputOutputCache, color: Theme.Colors.teal)
+            metricCard(icon: "rectangle.3.group", title: localizer.overviewSessions, value: "\(allSessions.count)", detail: localizer.overviewLiveAndHistory, color: Theme.Colors.accent)
+            metricCard(icon: "chart.bar.xaxis", title: localizer.overviewTokensTotal, value: compactCount(totalTokens), detail: localizer.overviewInputOutputCache, color: Theme.Colors.info)
             metricCard(icon: "bubble.left.and.bubble.right.fill", title: localizer.overviewRealtimeConversations, value: "\(realtimeConversationCount)", detail: selectedActiveSession?.projectName ?? localizer.overviewWaitingSessions, color: Theme.Colors.info)
             metricCard(icon: "wrench.and.screwdriver.fill", title: localizer.overviewRealtimeToolCalls, value: "\(realtimeToolCallCount)", detail: activeSessions.isEmpty ? localizer.overviewWaitingSessions : localizer.overviewLiveActivity, color: Theme.Colors.warning)
             metricCard(icon: "cpu.fill", title: localizer.overviewRealtimeAgentRuns, value: "\(realtimeAgentRunCount)", detail: activeSessions.isEmpty ? localizer.overviewWaitingSessions : "\(activeSessions.count) \(localizer.overviewSessions)", color: Theme.Colors.purple)
@@ -5786,10 +6231,11 @@ private struct AgentCommandDashboardView: View {
                 HStack(spacing: Theme.Spacing.xs) {
                     Image(systemName: icon)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(color)
-                        .frame(width: 20, height: 20)
-                        .background(color.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(Theme.Gradients.hero)
+                        .clipShape(RoundedRectangle(cornerRadius: 11))
+                        .shadow(color: Theme.Colors.accent.opacity(0.18), radius: 8, y: 4)
                     Text(title)
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
@@ -5809,12 +6255,14 @@ private struct AgentCommandDashboardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Theme.Spacing.md)
         .padding(.vertical, Theme.Spacing.sm)
-        .background(Theme.Colors.cardBg)
+        .background(.ultraThinMaterial)
+        .background(Theme.Colors.elevatedCardBg)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(color.opacity(0.26), lineWidth: 1)
+                .stroke(Theme.Colors.separator, lineWidth: 1)
         )
+        .shadow(color: Theme.Shadow.mdColor, radius: 12, y: 6)
     }
 
     private func sessionHudButton(icon: String, color: Color, disabled: Bool, help: String, action: @escaping () -> Void) -> some View {
@@ -5828,8 +6276,8 @@ private struct AgentCommandDashboardView: View {
     }
 
     private var currentSessionUsageCard: some View {
-        dashboardCard(title: "\(localizer.currentSession) / \(localizer.overviewTokenUse)", icon: "chart.bar.xaxis", color: Theme.Colors.teal) {
-            sessionHudButton(icon: "sidebar.right", color: Theme.Colors.teal, disabled: selectedActiveSession == nil && selectedSession == nil, help: localizer.agentSessionDetail) {
+        dashboardCard(title: "\(localizer.currentSession) / \(localizer.overviewTokenUse)", icon: "chart.bar.xaxis", color: Theme.Colors.accent) {
+            sessionHudButton(icon: "sidebar.right", color: Theme.Colors.accent, disabled: selectedActiveSession == nil && selectedSession == nil, help: localizer.agentSessionDetail) {
                 showingSessionDetail = true
             }
 
@@ -5841,7 +6289,7 @@ private struct AgentCommandDashboardView: View {
                 moveSelection(1)
             }
 
-            sessionHudButton(icon: "doc.on.doc", color: Theme.Colors.teal, disabled: selectedSession == nil, help: localizer.copyPath) {
+            sessionHudButton(icon: "doc.on.doc", color: Theme.Colors.accent, disabled: selectedSession == nil, help: localizer.copyPath) {
                 copySelectedPath()
             }
 
@@ -5862,7 +6310,7 @@ private struct AgentCommandDashboardView: View {
                                 sessionField(localizer.status, statusText(session.status), width: 64, color: statusColor(session.status))
                                 sessionField(localizer.overviewModel, sessionModelText(session), width: 108)
                                 sessionField(localizer.contextWindow, sessionContextText(session), width: 118, color: contextColor(session.contextPercent))
-                                sessionField("token", sessionTokenText(session), width: 82, color: Theme.Colors.teal)
+                                sessionField("token", sessionTokenText(session), width: 82, color: Theme.Colors.info)
                                 sessionField(localizer.overviewMemory, memoryText(session.memoryMB), width: 58)
                                 sessionField(localizer.overviewTurns, "\(session.turnCount)", width: 38)
                                 sessionField("pid", session.pid.map(String.init) ?? "—", width: 58)
@@ -5982,8 +6430,7 @@ private struct AgentCommandDashboardView: View {
                     } label: {
                         Label(localizer.overviewAuthorizeAgentData, systemImage: "folder.badge.plus")
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .primary, minHeight: 34))
                 }
                 .frame(maxWidth: .infinity, minHeight: 180)
             } else {
@@ -6001,7 +6448,7 @@ private struct AgentCommandDashboardView: View {
                                     Spacer()
                                     Label(loadMoreOverviewSessionsText(remaining: sessions.count - visibleSessionCount), systemImage: "arrow.down.circle")
                                         .font(Theme.Font.captionMedium)
-                                        .foregroundStyle(Theme.Colors.teal)
+                                        .foregroundStyle(Theme.Colors.info)
                                     Spacer()
                                 }
                                 .padding(Theme.Spacing.sm)
@@ -6114,7 +6561,7 @@ private struct AgentCommandDashboardView: View {
 
                 Text(sessionTokenText(session))
                     .font(Theme.Font.captionMedium)
-                    .foregroundStyle(Theme.Colors.teal)
+                    .foregroundStyle(Theme.Colors.info)
                     .frame(width: 78, alignment: .trailing)
 
                 Text(memoryText(session.memoryMB))
@@ -6136,12 +6583,14 @@ private struct AgentCommandDashboardView: View {
                 }
             }
             .padding(Theme.Spacing.md)
-            .background(selected ? Theme.Colors.accent.opacity(0.08) : Theme.Colors.sidebarBg.opacity(0.35))
+            .background(.ultraThinMaterial)
+            .background(selected ? Theme.Colors.accent.opacity(0.12) : Theme.Colors.elevatedCardBg.opacity(0.58))
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .stroke(selected ? Theme.Colors.accent.opacity(0.4) : Color.clear, lineWidth: 1)
+                    .stroke(selected ? Theme.Colors.accent.opacity(0.44) : Theme.Colors.separator.opacity(0.18), lineWidth: 1)
             )
+            .shadow(color: selected ? Theme.Colors.accent.opacity(0.10) : .clear, radius: 12, y: 6)
         }
         .buttonStyle(.plain)
     }
@@ -6157,12 +6606,13 @@ private struct AgentCommandDashboardView: View {
             HStack(spacing: Theme.Spacing.sm) {
                 Image(systemName: icon)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(color)
-                    .frame(width: 26, height: 26)
-                    .background(color.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(Theme.Gradients.hero)
+                    .clipShape(RoundedRectangle(cornerRadius: 11))
+                    .shadow(color: Theme.Colors.accent.opacity(0.16), radius: 8, y: 4)
                 Text(title)
-                    .font(Theme.Font.subheadlineMedium)
+                    .font(.system(size: 15, weight: .black, design: .rounded))
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
                 actions()
@@ -6171,12 +6621,13 @@ private struct AgentCommandDashboardView: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(Theme.Spacing.md)
-        .background(Theme.Colors.cardBg.opacity(0.98))
+        .background(Theme.Colors.elevatedCardBg.opacity(0.86))
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(color.opacity(0.3), lineWidth: 1)
+                .stroke(Theme.Colors.separator, lineWidth: 1)
         )
+        .shadow(color: Theme.Shadow.mdColor, radius: 18, y: 9)
     }
 
     private func tokenRow(_ title: String, value: Int, total: Int, color: Color) -> some View {
@@ -6207,7 +6658,7 @@ private struct AgentCommandDashboardView: View {
             tokenRow(localizer.overviewInput, value: session.tokens.input, total: max(session.tokens.total, 1), color: Theme.Colors.success)
             tokenRow(localizer.overviewOutput, value: session.tokens.output, total: max(session.tokens.total, 1), color: Theme.Colors.danger)
             tokenRow(localizer.overviewCacheRead, value: session.tokens.cacheRead, total: max(session.tokens.total, 1), color: Theme.Colors.info)
-            tokenRow(localizer.overviewTotal, value: session.tokens.total, total: max(session.tokens.total, 1), color: Theme.Colors.teal)
+            tokenRow(localizer.overviewTotal, value: session.tokens.total, total: max(session.tokens.total, 1), color: Theme.Colors.info)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -6271,7 +6722,7 @@ private struct AgentCommandDashboardView: View {
             .font(.system(size: 11, weight: .bold))
             .foregroundStyle(.white)
             .frame(width: 34, height: 34)
-            .background(name == "Codex" ? Theme.Colors.teal : Theme.Colors.purple)
+            .background(name == "Codex" ? Theme.Colors.accent : Theme.Colors.purple)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
 
@@ -6400,7 +6851,7 @@ private struct AgentCommandDashboardView: View {
     }
 
     private func agentColor(_ name: String) -> Color {
-        if name.localizedCaseInsensitiveContains("codex") { return Theme.Colors.teal }
+        if name.localizedCaseInsensitiveContains("codex") { return Theme.Colors.accent }
         if name.localizedCaseInsensitiveContains("claude") { return Theme.Colors.purple }
         if name.localizedCaseInsensitiveContains("opencode") { return Theme.Colors.success }
         return Theme.Colors.info
@@ -6564,9 +7015,9 @@ private struct ActiveSessionDetailSheet: View {
         HStack(spacing: Theme.Spacing.md) {
             Image(systemName: "sidebar.right")
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Theme.Colors.teal)
+                .foregroundStyle(.white)
                 .frame(width: 38, height: 38)
-                .background(Theme.Colors.teal.opacity(0.12))
+                .background(Theme.Gradients.hero)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
 
             VStack(alignment: .leading, spacing: 3) {
@@ -6649,11 +7100,11 @@ private struct ActiveSessionDetailSheet: View {
                 Spacer()
                 Text(tokenText)
                     .font(Theme.Font.captionMedium)
-                    .foregroundStyle(Theme.Colors.teal)
+                    .foregroundStyle(Theme.Colors.info)
             }
             ProgressView(value: min(Double(session.tokens.total) / Double(max(session.contextWindow, 1)), 1))
                 .progressViewStyle(.linear)
-                .tint(Theme.Colors.teal)
+                .tint(Theme.Colors.info)
             HStack(spacing: Theme.Spacing.sm) {
                 infoTile(localizer.overviewInput, compactCount(session.tokens.input), Theme.Colors.success)
                 infoTile(localizer.overviewOutput, compactCount(session.tokens.output), Theme.Colors.danger)
@@ -6668,8 +7119,8 @@ private struct ActiveSessionDetailSheet: View {
     private var pathBlock: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             detailRow(title: localizer.overviewProject, value: session.projectPath.isEmpty ? "-" : session.projectPath)
-            detailRow(title: "Source", value: session.sourcePath)
-            detailRow(title: "Config", value: configRoot)
+            detailRow(title: localizer.sourceCol, value: session.sourcePath)
+            detailRow(title: localizer.configCol, value: configRoot)
         }
         .padding(Theme.Spacing.md)
         .background(Theme.Colors.sidebarBg.opacity(0.45))
@@ -6681,12 +7132,12 @@ private struct ActiveSessionDetailSheet: View {
             Button { onCopyPath() } label: {
                 Label(localizer.copyPath, systemImage: "doc.on.doc")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .secondary, minHeight: 34))
 
             Button { onOpenProject() } label: {
                 Label(localizer.openInFinder, systemImage: "folder")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .secondary, minHeight: 34))
 
             Spacer()
 
@@ -6694,11 +7145,12 @@ private struct ActiveSessionDetailSheet: View {
                 Text(localizer.confirmBtn)
                     .frame(minWidth: 72)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Theme.Colors.teal)
+            .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.md)
+        .background(.ultraThinMaterial)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.52))
     }
 
     private func infoTile(_ title: String, _ value: String, _ color: Color) -> some View {
@@ -6755,12 +7207,11 @@ private struct ActiveSessionEmptySheet: View {
                 Text(localizer.confirmBtn)
                     .frame(minWidth: 72)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Theme.Colors.teal)
+            .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
         }
         .padding(Theme.Spacing.xl)
         .frame(width: 460, height: 300)
-        .background(Theme.Colors.cardBg)
+        .appCanvas()
     }
 }
 
@@ -6903,7 +7354,7 @@ struct OperationLogTab: View {
                 icon: "eye.fill",
                 title: localizer.agentMonitorTitle,
                 subtitle: localizer.agentMonitorSubtitle,
-                color: .green
+                color: Theme.Colors.accent
             ) {
                 HStack(spacing: 8) {
                     Button { refreshAgentMonitor() } label: {
@@ -7081,7 +7532,7 @@ struct OperationLogTab: View {
                 .background {
                     if viewMode == mode {
                         RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                            .fill(Theme.Colors.teal)
+                            .fill(Theme.Colors.accent)
                             .matchedGeometryEffect(id: "segment", in: segmentNS)
                     }
                 }
@@ -7467,21 +7918,11 @@ struct OperationLogTab: View {
         let ds = AgentDataSource(
             agentName: source.name,
             searchPaths: paths,
+            filePattern: "*",
             isCustom: true,
             isVSCodeType: isVSCode,
             parser: { [sessionScanner] url, agentName in
-                let ext = url.pathExtension
-                if ext == "vscdb" {
-                    return sessionScanner.parseVscdbSQLite(url: url, agentName: agentName)
-                } else if ext == "json" && url.path.contains("file-changes") {
-                    return sessionScanner.parseFileChangesJSON(url: url, agentName: agentName)
-                } else if ext == "db" {
-                    return sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
-                } else if ext == "sqlite" {
-                    return sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
-                } else {
-                    return sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
-                }
+                sessionScanner.parseAutoDetectedSource(url: url, agentName: agentName)
             }
         )
         sessionScanner.registerSource(ds)
@@ -7511,17 +7952,11 @@ struct OperationLogTab: View {
             let ds = AgentDataSource(
                 agentName: app.displayName,
                 searchPaths: existingPaths,
+                filePattern: "*",
                 isCustom: true,
                 isVSCodeType: isVSCode,
                 parser: { [sessionScanner] url, agentName in
-                    let ext = url.pathExtension
-                    if ext == "vscdb" {
-                        return sessionScanner.parseVscdbSQLite(url: url, agentName: agentName)
-                    } else if ext == "json" && url.path.contains("file-changes") {
-                        return sessionScanner.parseFileChangesJSON(url: url, agentName: agentName)
-                    } else {
-                        return sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
-                    }
+                    sessionScanner.parseAutoDetectedSource(url: url, agentName: agentName)
                 }
             )
             sessionScanner.registerSource(ds)
@@ -7880,6 +8315,22 @@ struct OperationLogTab: View {
                     Text(localizer.noOpRecordsLabel)
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
+                    if !sessionScanner.scanError.isEmpty {
+                        Text(sessionScanner.scanError)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.warning)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 560)
+                    }
+                    Button {
+                        sessionScanner.isScanning = true
+                        sessionScanner.scanAgentOps(agentName: sel)
+                    } label: {
+                        Label(localizer.scanRefresh, systemImage: "arrow.clockwise")
+                            .font(Theme.Font.captionMedium)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -8082,21 +8533,11 @@ struct OperationLogTab: View {
             let ds = AgentDataSource(
                 agentName: src.name,
                 searchPaths: paths,
+                filePattern: "*",
                 isCustom: true,
                 isVSCodeType: isVSCode,
                 parser: { [sessionScanner] url, agentName in
-                    let ext = url.pathExtension
-                    if ext == "vscdb" {
-                        return sessionScanner.parseVscdbSQLite(url: url, agentName: agentName)
-                    } else if ext == "json" && url.path.contains("file-changes") {
-                        return sessionScanner.parseFileChangesJSON(url: url, agentName: agentName)
-                    } else if ext == "db" {
-                        return sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
-                    } else if ext == "sqlite" {
-                        return sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
-                    } else {
-                        return sessionScanner.parseGenericJSONL(url: url, agentName: agentName)
-                    }
+                    sessionScanner.parseAutoDetectedSource(url: url, agentName: agentName)
                 }
             )
             sessionScanner.registerSource(ds)
@@ -8125,11 +8566,14 @@ struct OperationLogTab: View {
             let topFiles = fileSummary.sorted { $0.value > $1.value }.prefix(10).map { "\($0.key) (\($0.value)\(localizer.timesUnit))" }.joined(separator: "\n")
             let opCounts = opSummary.map { "\($0.key): \($0.value)\(localizer.timesUnit)" }.joined(separator: ", ")
             try? await Task.sleep(nanoseconds: 250_000_000)
-            if localizer.language == .english {
-                aiSummary = "Local analysis for \(agentName): \(records.count) audit records. Operation mix: \(opCounts). Main touched paths:\n\(topFiles)\nRecommendation: review write/delete operations before approving broad file access."
-            } else {
-                aiSummary = "本地分析：Agent「\(agentName)」共有 \(records.count) 条审计记录。操作分布：\(opCounts)。高频文件：\n\(topFiles)\n建议：重点复核写入、删除和执行类操作，再批准大范围文件访问。"
-            }
+            aiSummary = localizer.t(
+                "本地分析：Agent「\(agentName)」共有 \(records.count) 条审计记录。操作分布：\(opCounts)。高频文件：\n\(topFiles)\n建议：重点复核写入、删除和执行类操作，再批准大范围文件访问。",
+                en: "Local analysis for \(agentName): \(records.count) audit records. Operation mix: \(opCounts). Main touched paths:\n\(topFiles)\nRecommendation: review write/delete operations before approving broad file access.",
+                zhHant: "本地分析：Agent「\(agentName)」共有 \(records.count) 條審計記錄。操作分佈：\(opCounts)。高頻檔案：\n\(topFiles)\n建議：重點覆核寫入、刪除和執行類操作，再批准大範圍檔案存取。",
+                ja: "ローカル分析：Agent「\(agentName)」には \(records.count) 件の監査記録があります。操作内訳：\(opCounts)。主な対象パス：\n\(topFiles)\n推奨：広範なファイルアクセスを承認する前に、書き込み・削除・実行操作を確認してください。",
+                ko: "로컬 분석: Agent \"\(agentName)\"에 감사 기록 \(records.count)건이 있습니다. 작업 분포: \(opCounts). 주요 접근 경로:\n\(topFiles)\n권장: 광범위한 파일 접근을 승인하기 전에 쓰기, 삭제, 실행 작업을 중점적으로 검토하세요.",
+                mt: "Local analysis for \(agentName): \(records.count) audit records. Operation mix: \(opCounts). Main touched paths:\n\(topFiles)\nRecommendation: review write/delete operations before approving broad file access."
+            )
             isGeneratingSummary = false
         }
     }
@@ -8403,8 +8847,8 @@ struct AddAgentSheetView: View {
                         }
                         .padding(.horizontal, Theme.Spacing.md)
                         .padding(.vertical, Theme.Spacing.sm)
-                        .background(selectedTab == tab.0 ? Theme.Colors.teal.opacity(0.12) : Color.clear)
-                        .foregroundStyle(selectedTab == tab.0 ? Theme.Colors.teal : Theme.Colors.textSecondary)
+                        .background(selectedTab == tab.0 ? Theme.Colors.accent.opacity(0.12) : Color.clear)
+                        .foregroundStyle(selectedTab == tab.0 ? Theme.Colors.accent : Theme.Colors.textSecondary)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                     }
                     .buttonStyle(.plain)
@@ -8442,7 +8886,7 @@ struct AddAgentSheetView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, Theme.Spacing.sm)
-                        .background(Theme.Gradients.success)
+                        .background(Theme.Gradients.accent)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                     }
                     .buttonStyle(.plain)
@@ -8485,7 +8929,7 @@ struct AddAgentSheetView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.regular)
-                    .tint(.green)
+                    .tint(Theme.Colors.accent)
                     .disabled(selectedApp == nil || (selectedApp != nil && existingNames.contains(selectedApp!.displayName)))
                 }
                 .padding(Theme.Spacing.lg)
@@ -8625,7 +9069,7 @@ struct MacCleanerTab: View {
                 icon: "arrow.down.doc.fill",
                 title: localizer.macCleanerTitle,
                 subtitle: localizer.macCleanerSubtitle,
-                color: .blue
+                color: Theme.Colors.accent
             ) {
                 HStack(spacing: Theme.Spacing.sm) {
                     Button { Task { await service.scanLocal() } } label: {
@@ -8665,6 +9109,7 @@ struct MacCleanerTab: View {
             }
 
             diskCard
+            maintenanceOverviewBar
             Divider()
 
             if service.isAiScanning || service.isEnhancedScanning {
@@ -8750,7 +9195,7 @@ struct MacCleanerTab: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, Theme.Spacing.md)
                         .padding(.vertical, Theme.Spacing.sm)
-                        .background(Theme.Gradients.success)
+                        .background(Theme.Gradients.accent)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                     }
                     .buttonStyle(.plain)
@@ -8872,7 +9317,7 @@ struct MacCleanerTab: View {
                         .foregroundStyle(.white)
                         .frame(width: 120)
                         .padding(.vertical, Theme.Spacing.sm)
-                        .background(Theme.Gradients.success)
+                        .background(Theme.Gradients.accent)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                 }
                 .buttonStyle(.plain)
@@ -8906,21 +9351,71 @@ struct MacCleanerTab: View {
                         }
                         HStack(spacing: Theme.Spacing.sm) {
                             CompactStatItem(icon: "arrow.up.circle.fill", iconColor: disk.freeGb < 20 ? Theme.Colors.danger : Theme.Colors.success, title: localizer.available, value: String(format: "%.0f GB", disk.freeGb))
-                            CompactStatItem(icon: "sparkles", iconColor: Theme.Colors.cyan, title: localizer.releasable, value: service.formatSize(totalCleanable))
+                            CompactStatItem(icon: "sparkles", iconColor: Theme.Colors.info, title: localizer.releasable, value: service.formatSize(totalCleanable))
                         }
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.lg)
                 .padding(.vertical, Theme.Spacing.md)
-                .background(Theme.Colors.cardBg)
+                .background(.ultraThinMaterial)
+                .background(Theme.Colors.elevatedCardBg)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+                        .stroke(Theme.Gradients.glassStroke, lineWidth: 1)
                 )
+                .shadow(color: Theme.Colors.info.opacity(0.06), radius: 18, y: 8)
                 .padding(.horizontal, Theme.Spacing.lg)
                 .padding(.vertical, Theme.Spacing.xs)
             }
+        }
+    }
+
+    private var maintenanceOverviewBar: some View {
+        let projectItems = service.scanItems.filter { $0.id.hasPrefix("maintenance.project.") }
+        let installerItems = service.scanItems.filter { $0.id.hasPrefix("maintenance.installer.") }
+
+        return HStack(spacing: Theme.Spacing.sm) {
+            Label(localizer.t("先预览再清理", en: "Review before cleanup"), systemImage: "checklist")
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(Theme.Colors.accent)
+
+            Label(localizer.t("默认移入废纸篓", en: "Trash by default"), systemImage: "trash.slash")
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+
+            Spacer()
+
+            if !projectItems.isEmpty {
+                Button { filterCategory = projectItems.first?.category ?? "" } label: {
+                    PillBadge(
+                        text: "\(localizer.t("项目产物", en: "Project artifacts")) \(projectItems.count)",
+                        color: Theme.Colors.purple,
+                        size: .small
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            if !installerItems.isEmpty {
+                Button { filterCategory = installerItems.first?.category ?? "" } label: {
+                    PillBadge(
+                        text: "\(localizer.t("安装包", en: "Installers")) \(installerItems.count)",
+                        color: Theme.Colors.warning,
+                        size: .small
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.xs + 1)
+        .background(.ultraThinMaterial)
+        .background(Theme.Colors.accent.opacity(0.045))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.Colors.accent.opacity(0.12))
+                .frame(height: 1)
         }
     }
 
@@ -9008,145 +9503,148 @@ struct MacCleanerTab: View {
     }
 
     private var resultList: some View {
-        ScrollView {
-            LazyVStack(spacing: Theme.Spacing.sm) {
-                HStack(spacing: Theme.Spacing.md) {
-                    Color.clear.frame(width: ResultListColumns.selection)
-                    Color.clear.frame(width: ResultListColumns.state)
-                    Text(localizer.nameCol)
-                        .frame(width: ResultListColumns.name, alignment: .center)
-                    Text(localizer.sourceCol)
-                        .frame(width: ResultListColumns.source, alignment: .center)
-                    Text(localizer.projectCol)
-                        .frame(width: ResultListColumns.project, alignment: .center)
-                    Text(localizer.riskCol)
-                        .frame(width: ResultListColumns.risk, alignment: .center)
-                    Text(localizer.sizeCol)
-                        .frame(width: ResultListColumns.size, alignment: .center)
-                    Text(localizer.descriptionCol)
-                        .frame(width: ResultListColumns.description, alignment: .center)
-                    Spacer()
-                    Text(localizer.actionCol)
-                        .frame(width: ResultListColumns.actions, alignment: .center)
-                }
-                .font(Theme.Font.captionMedium)
-                .foregroundStyle(Theme.Colors.textTertiary)
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.xs)
-                .background(Theme.Colors.sidebarBg.opacity(0.35))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        GeometryReader { proxy in
+            let tableWidth = max(ResultListColumns.total, proxy.size.width - Theme.Spacing.xl * 2)
 
-                ForEach(filteredItems) { item in
-                    HStack(spacing: Theme.Spacing.md) {
-                        Toggle("", isOn: Binding(
-                            get: { selectedIds.contains(item.id) },
-                            set: { _ in
-                                if selectedIds.contains(item.id) {
-                                    selectedIds.remove(item.id)
+            ScrollView([.horizontal, .vertical]) {
+                LazyVStack(spacing: Theme.Spacing.sm) {
+                    HStack(spacing: ResultListColumns.spacing) {
+                        Color.clear.frame(width: ResultListColumns.selection)
+                        Color.clear.frame(width: ResultListColumns.state)
+                        Text(localizer.nameCol)
+                            .frame(width: ResultListColumns.name, alignment: .center)
+                        Text(localizer.sourceCol)
+                            .frame(width: ResultListColumns.source, alignment: .center)
+                        Text(localizer.projectCol)
+                            .frame(width: ResultListColumns.project, alignment: .center)
+                        Text(localizer.riskCol)
+                            .frame(width: ResultListColumns.risk, alignment: .center)
+                        Text(localizer.sizeCol)
+                            .frame(width: ResultListColumns.size, alignment: .center)
+                        Text(localizer.descriptionCol)
+                            .frame(width: ResultListColumns.description, alignment: .center)
+                        Text(localizer.actionCol)
+                            .frame(width: ResultListColumns.actions, alignment: .center)
+                    }
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .padding(.horizontal, ResultListColumns.rowPadding)
+                    .padding(.vertical, Theme.Spacing.xs)
+                    .frame(width: tableWidth, alignment: .leading)
+                    .background(Theme.Colors.sidebarBg.opacity(0.35))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+                    ForEach(filteredItems) { item in
+                        HStack(spacing: ResultListColumns.spacing) {
+                            Toggle("", isOn: Binding(
+                                get: { selectedIds.contains(item.id) },
+                                set: { _ in
+                                    if selectedIds.contains(item.id) {
+                                        selectedIds.remove(item.id)
+                                    } else {
+                                        selectedIds.insert(item.id)
+                                    }
+                                }
+                            ))
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                            .frame(width: ResultListColumns.selection, alignment: .leading)
+
+                            Group {
+                                if item.ignored {
+                                    Image(systemName: "eye.slash")
+                                        .font(Theme.Font.caption)
+                                        .foregroundStyle(Theme.Colors.textTertiary)
                                 } else {
-                                    selectedIds.insert(item.id)
+                                    Color.clear
                                 }
                             }
-                        ))
-                        .toggleStyle(.checkbox)
-                        .labelsHidden()
-                        .frame(width: ResultListColumns.selection, alignment: .leading)
+                            .frame(width: ResultListColumns.state, alignment: .center)
 
-                        Group {
-                            if item.ignored {
-                                Image(systemName: "eye.slash")
-                                    .font(Theme.Font.caption)
-                                    .foregroundStyle(Theme.Colors.textTertiary)
+                            Text(item.name)
+                                .font(Theme.Font.bodyMedium)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(width: ResultListColumns.name, alignment: .leading)
+                                .help(item.name)
+
+                            PillBadge(
+                                text: item.sourceType.localizedLabel(localizer),
+                                color: item.sourceType == .ai ? Theme.Colors.purple : Theme.Colors.info,
+                                size: .small
+                            )
+                            .frame(width: ResultListColumns.source, alignment: .center)
+
+                            Text(item.app)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(width: ResultListColumns.project, alignment: .leading)
+                                .help(item.app)
+
+                            PillBadge(
+                                text: item.riskLevel.localizedLabel(localizer),
+                                color: riskColor(item.riskLevel),
+                                size: .small
+                            )
+                            .frame(width: ResultListColumns.risk, alignment: .center)
+
+                            Text(service.formatSize(item.size))
+                                .font(Theme.Font.subheadlineMedium)
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.Colors.info)
+                                .frame(width: ResultListColumns.size, alignment: .trailing)
+
+                            Text(item.reason ?? item.riskDesc)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(item.sourceType == .ai ? Theme.Colors.purple : Theme.Colors.warning)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(width: ResultListColumns.description, alignment: .leading)
+                                .help(item.reason ?? item.riskDesc)
+
+                            HStack(spacing: Theme.Spacing.xs) {
+                                Button { confirmDeleteSingle(item) } label: {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(Theme.Colors.danger)
+                                        .padding(Theme.Spacing.xs)
+                                        .background(Theme.Colors.danger.opacity(0.08))
+                                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                                }
+                                .buttonStyle(.plain)
+
+                                Button { toggleIgnore(item) } label: {
+                                    Image(systemName: item.ignored ? "eye" : "eye.slash")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                        .padding(Theme.Spacing.xs)
+                                        .background(Theme.Colors.textSecondary.opacity(0.08))
+                                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .frame(width: ResultListColumns.actions, alignment: .trailing)
+                        }
+                        .padding(.horizontal, ResultListColumns.rowPadding)
+                        .padding(.vertical, Theme.Spacing.sm + 2)
+                        .frame(width: tableWidth, alignment: .leading)
+                        .cardStyle(padding: 0, cornerRadius: Theme.Radius.md)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if selectedIds.contains(item.id) {
+                                selectedIds.remove(item.id)
                             } else {
-                                Color.clear
+                                selectedIds.insert(item.id)
                             }
-                        }
-                        .frame(width: ResultListColumns.state, alignment: .center)
-
-                        Text(item.name)
-                            .font(Theme.Font.bodyMedium)
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .frame(width: ResultListColumns.name, alignment: .leading)
-                            .help(item.name)
-
-                        PillBadge(
-                            text: item.sourceType.localizedLabel(localizer),
-                            color: item.sourceType == .ai ? Theme.Colors.purple : Theme.Colors.info,
-                            size: .small
-                        )
-                        .frame(width: ResultListColumns.source, alignment: .center)
-
-                        Text(item.app)
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .frame(width: ResultListColumns.project, alignment: .leading)
-                            .help(item.app)
-
-                        PillBadge(
-                            text: item.riskLevel.localizedLabel(localizer),
-                            color: riskColor(item.riskLevel),
-                            size: .small
-                        )
-                        .frame(width: ResultListColumns.risk, alignment: .center)
-
-                        Text(service.formatSize(item.size))
-                            .font(Theme.Font.subheadlineMedium)
-                            .monospacedDigit()
-                            .foregroundStyle(Theme.Colors.cyan)
-                            .frame(width: ResultListColumns.size, alignment: .trailing)
-
-                        Text(item.reason ?? item.riskDesc)
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(item.sourceType == .ai ? Theme.Colors.purple : Theme.Colors.warning)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .frame(width: ResultListColumns.description, alignment: .leading)
-                            .help(item.reason ?? item.riskDesc)
-
-                        Spacer()
-
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Button { confirmDeleteSingle(item) } label: {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(Theme.Colors.danger)
-                                    .padding(Theme.Spacing.xs)
-                                    .background(Theme.Colors.danger.opacity(0.08))
-                                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                            }
-                            .buttonStyle(.plain)
-
-                            Button { toggleIgnore(item) } label: {
-                                Image(systemName: item.ignored ? "eye" : "eye.slash")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(Theme.Colors.textSecondary)
-                                    .padding(Theme.Spacing.xs)
-                                    .background(Theme.Colors.textSecondary.opacity(0.08))
-                                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .frame(width: ResultListColumns.actions, alignment: .trailing)
-                    }
-                    .padding(.horizontal, Theme.Spacing.lg)
-                    .padding(.vertical, Theme.Spacing.md)
-                    .cardStyle(padding: 0, cornerRadius: Theme.Radius.md)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if selectedIds.contains(item.id) {
-                            selectedIds.remove(item.id)
-                        } else {
-                            selectedIds.insert(item.id)
                         }
                     }
                 }
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.vertical, Theme.Spacing.sm)
             }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.vertical, Theme.Spacing.sm)
         }
     }
 
@@ -9268,7 +9766,7 @@ struct AppRowCard: View {
             Text(formatSize(app.totalSize))
                 .font(Theme.Font.subheadlineMedium)
                 .monospacedDigit()
-                .foregroundStyle(Theme.Colors.cyan)
+                .foregroundStyle(Theme.Colors.info)
                 .frame(width: 80, alignment: .trailing)
 
             Text(localizer.reviewOnly)
@@ -9405,6 +9903,13 @@ struct AppManagerTab: View {
                     title: localizer.warning,
                     value: "\(filteredApps.filter { $0.risk == "caution" || $0.risk == "dangerous" }.count)",
                     subtitle: nil
+                )
+                StatCardView(
+                    icon: "checklist",
+                    iconColor: Theme.Colors.info,
+                    title: localizer.t("待复核", en: "Review First"),
+                    value: "\(filteredApps.filter { $0.risk != "safe" }.count)",
+                    subtitle: localizer.t("删除前预览", en: "Preview before removal")
                 )
             }
             .padding(.horizontal, Theme.Spacing.xl)
@@ -9691,6 +10196,8 @@ struct AppManagerTab: View {
         case "CLI": .blue
         case "Package Manager", "包管理": .orange
         case "Development", "开发": .green
+        case "Project Artifacts", "项目产物": .purple
+        case "Installers", "安装包": .orange
         case "Apps", "应用": .cyan
         case "Other", "其它": .gray
         default: .gray
@@ -9703,6 +10210,8 @@ struct AppManagerTab: View {
         case "CLI": "terminal"
         case "Package Manager", "包管理": "cube.box"
         case "Development", "开发": "hammer"
+        case "Project Artifacts", "项目产物": "shippingbox"
+        case "Installers", "安装包": "externaldrive.badge.plus"
         case "Apps", "应用": "app.fill"
         case "Other", "其它": "questionmark.folder"
         default: "folder"
@@ -9986,7 +10495,7 @@ struct SensorMonitorTab: View {
                 HStack(spacing: 6) {
                     SensorFilterChip(label: localizer.all, icon: "sensor.fill", color: .gray, isActive: filterType == nil) { filterType = nil }
                     SensorFilterChip(label: localizer.camera, icon: "video.fill", color: .red, isActive: filterType == .camera) { filterType = .camera }
-                    SensorFilterChip(label: localizer.microphone, icon: "mic.fill", color: .blue, isActive: filterType == .microphone) { filterType = .microphone }
+                    SensorFilterChip(label: localizer.microphone, icon: "mic.fill", color: Theme.Colors.info, isActive: filterType == .microphone) { filterType = .microphone }
                 }
 
                 Spacer()
