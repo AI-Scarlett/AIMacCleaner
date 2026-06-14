@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
 
     @State private var selectedTab: SettingsTab = .features
+    @State private var showAIConfig = false
 
     @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
     @AppStorage("sensorMonitorEnabled") private var sensorMonitorEnabled = false
@@ -25,7 +26,7 @@ struct SettingsView: View {
         case version = "Version"
 
         static var visibleTabs: [SettingsTab] {
-            allCases.filter { $0 != .ai }
+            allCases
         }
 
         var icon: String {
@@ -178,6 +179,11 @@ struct SettingsView: View {
         }
         .frame(width: 680, height: 520)
         .appCanvas()
+        .sheet(isPresented: $showAIConfig) {
+            AIConfigView()
+                .environmentObject(service)
+                .environmentObject(localizer)
+        }
     }
 
     private var appearanceSection: some View {
@@ -319,6 +325,11 @@ struct SettingsView: View {
                 }
 
                 Spacer()
+
+                Button(localizer.t("模型设置", en: "Model Settings")) {
+                    showAIConfig = true
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .ghost, minHeight: 32))
             }
             .cardStyle()
         }
@@ -689,7 +700,6 @@ struct SettingsView: View {
     }
 
     private func saveSettings() {
-        service.saveLocalAIConfig()
         if operationMonitorEnabled {
             service.startOperationMonitor()
         } else {

@@ -951,21 +951,43 @@ class ScannerService: ObservableObject {
     // MARK: - AI Config
 
     func loadAIConfigFromDisk() {
-        let config = localAIConfig()
+        let config: AIConfig
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: aiConfigFilePath)),
+           let decoded = try? JSONDecoder().decode(AIConfig.self, from: data) {
+            config = decoded.model == AIConfig.appReviewDemoModel ? defaultAIConfig() : decoded
+        } else {
+            config = defaultAIConfig()
+        }
         saveAIConfigMetadata(config)
         aiConfig = config
     }
 
     func saveLocalAIConfig() {
-        let config = localAIConfig()
+        let config = defaultAIConfig()
         saveAIConfigMetadata(config)
         aiConfig = config
     }
 
-    private func localAIConfig() -> AIConfig {
+    func saveAIConfig(apiBase: String, apiKey: String, model: String) {
+        let trimmedBase = apiBase.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let config = AIConfig(
+            apiBase: trimmedBase.isEmpty ? nil : trimmedBase,
+            apiKey: trimmedKey.isEmpty ? nil : trimmedKey,
+            model: trimmedModel.isEmpty ? AIConfig.appleIntelligenceModel : trimmedModel,
+            hasKey: !trimmedKey.isEmpty
+        )
+        saveAIConfigMetadata(config)
+        aiConfig = config
+    }
+
+    private func defaultAIConfig() -> AIConfig {
         AIConfig(
-            model: AIConfig.appReviewDemoModel,
-            hasKey: true
+            apiBase: nil,
+            apiKey: nil,
+            model: AIConfig.appleIntelligenceModel,
+            hasKey: false
         )
     }
 
@@ -977,25 +999,34 @@ class ScannerService: ObservableObject {
     // MARK: - AI Scan
 
     func startAiScan() async {
-        await runAppReviewDemoAiScan()
-    }
-
-    private func runAppReviewDemoAiScan() async {
         isAiScanning = true
         errorMessage = nil
-        aiStatusMessage = localizer?.appReviewDemoStatus ?? "Generating App Review demo scan results..."
-        try? await Task.sleep(nanoseconds: 700_000_000)
+        aiStatusMessage = localizer?.t(
+            "正在使用 Apple Intelligence 分析本机目录...",
+            en: "Analyzing local directories with Apple Intelligence..."
+        ) ?? "Analyzing local directories with Apple Intelligence..."
 
-        let demoItems = makeAppReviewDemoScanItems()
-        let existingIds = Set(scanItems.map(\.id))
-        let newItems = demoItems.filter { !existingIds.contains($0.id) }
+        let config = aiConfig ?? defaultAIConfig()
+        let dirInfo = await Task.detached(priority: .userInitiated) { Self.collectDirInfoStatic() }.value
+        let result = await callLLM(config: config, dirInfo: dirInfo)
 
-        scanItems.append(contentsOf: newItems)
-        scanItems.sort { $0.size > $1.size }
-        isAiScanning = false
-        refreshDiskInfo()
-        aiStatusMessage = "\(localizer?.aiScanComplete ?? "AI scan complete, found") \(newItems.count) \(localizer?.itemsLabel ?? "items")"
-        saveScannerCache()
+        defer {
+            isAiScanning = false
+            saveScannerCache()
+        }
+
+        if result.success, let items = result.items {
+            let existingIds = Set(scanItems.map(\.id))
+            let newItems = items.filter { !existingIds.contains($0.id) }
+            scanItems.append(contentsOf: newItems)
+            scanItems.sort { $0.size > $1.size }
+            refreshDiskInfo()
+            aiStatusMessage = "\(localizer?.aiScanComplete ?? "AI scan complete, found") \(newItems.count) \(localizer?.itemsLabel ?? "items")"
+        } else {
+            let message = result.error ?? "AI scan failed"
+            errorMessage = message
+            aiStatusMessage = message
+        }
     }
 
     private func makeAppReviewDemoScanItems() -> [ScanItem] {
@@ -1957,10 +1988,17 @@ class ScannerService: ObservableObject {
     private var aiLearningTimer: Timer?
 
     func startAISelfLearning() {
-        operationMonitor.aiSelfLearningEnabled = false
+        operationMonitor.aiSelfLearningEnabled = true
         aiLearningTimer?.invalidate()
-        aiLearningTimer = nil
-        operationMonitor.curationMessage = localizer?.localAnalysisNoExternalAI ?? "Local analysis mode does not use external AI services."
+        aiLearningTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                await self?.curateWithAI()
+            }
+        }
+        operationMonitor.curationMessage = localizer?.t(
+            "Apple Intelligence 会在本机定期整理监控记录。",
+            en: "Apple Intelligence will periodically curate monitoring records on this Mac."
+        ) ?? "Apple Intelligence will periodically curate monitoring records on this Mac."
     }
 
     func stopAISelfLearning() {
@@ -1995,10 +2033,46 @@ class ScannerService: ObservableObject {
         operationMonitor.isCurating = true
         operationMonitor.discoverAgentSelfDirs()
         let (events, _) = operationMonitor.getRawDataForCuration()
+
+        guard !events.isEmpty else {
+            operationMonitor.isCurating = false
+            operationMonitor.curationMessage = localizer?.noMonitorData ?? "No monitoring data, please enable Agent monitoring and wait for file operations"
+            return
+        }
+
+        let sample = events.prefix(120).map { event in
+            [
+                "agent": event.agentName,
+                "op": event.operationType.rawValue,
+                "path": event.targetPath,
+                "detail": event.detail,
+                "size": event.fileSize
+            ] as [String: Any]
+        }
+
+        let jsonData = (try? JSONSerialization.data(withJSONObject: Array(sample), options: [.prettyPrinted])) ?? Data()
+        let prompt = """
+        Analyze these local macOS Agent activity records. Return a JSON array only.
+        Each item must include: agent, op, path, confidence, evidence, suggestion.
+        Prefer records that are actionable, user-created, and not system noise.
+
+        Records:
+        \(String(data: jsonData, encoding: .utf8) ?? "[]")
+        """
+
+        do {
+            let response = try await AppleIntelligenceService.generate(
+                instructions: "You are a macOS privacy and developer operations assistant. Return strict JSON only.",
+                prompt: prompt,
+                maximumResponseTokens: 4096
+            )
+            let curated = parseCurationResponse(raw: response.content, events: events) ?? []
+            operationMonitor.saveCuratedRecords(curated)
+            operationMonitor.curationMessage = "\(localizer?.curationComplete ?? "Curation complete: ")\(curated.count)"
+        } catch {
+            operationMonitor.curationMessage = error.localizedDescription
+        }
         operationMonitor.isCurating = false
-        operationMonitor.curationMessage = events.isEmpty
-            ? (localizer?.noMonitorData ?? "No monitoring data, please enable Agent monitoring and wait for file operations")
-            : "\(localizer?.curationComplete ?? "Curation complete: ")\(localizer?.localMonitorReviewed(records: events.count) ?? "Local monitor reviewed \(events.count) records without external AI services.")"
     }
 
     private func parseCurationResponse(raw: String, events: [OperationRecord]) -> [CuratedRecord]? {
@@ -2357,7 +2431,7 @@ class ScannerService: ObservableObject {
         return false
     }
 
-    private func collectDirInfo() -> String {
+    nonisolated private static func collectDirInfoStatic() -> String {
         var lines: [String] = []
         let scanDirs: [(String, String, Int)] = [
             ("~/Library/Caches", "User Caches", 100),
@@ -2391,7 +2465,7 @@ class ScannerService: ObservableObject {
             var entries: [(String, Int64)] = []
             for name in contents.prefix(maxEntries) {
                 let fullPath = (expanded as NSString).appendingPathComponent(name)
-                let (size, _) = Self.calculateDirectorySizeStatic(at: fullPath)
+                let (size, _) = calculateDirectorySizeStatic(at: fullPath)
                 if size > 0 {
                     entries.append((name, size))
                 }
@@ -2399,7 +2473,7 @@ class ScannerService: ObservableObject {
             entries.sort { $0.1 > $1.1 }
 
             for (name, size) in entries {
-                lines.append("  \(formatSize(size))  \(name)")
+                lines.append("  \(formatSizeStatic(size))  \(name)")
             }
         }
 
@@ -2407,8 +2481,108 @@ class ScannerService: ObservableObject {
     }
 
     private func callLLM(config: AIConfig, dirInfo: String) async -> (success: Bool, items: [ScanItem]?, error: String?) {
-        let items = makeAppReviewDemoScanItems()
-        return (success: true, items: items, error: nil)
+        let systemPrompt = """
+        You are AgentGuard's macOS storage analysis assistant. Analyze only the local directory summary provided by the app.
+        Return strict JSON only, as an array of objects with these keys:
+        name, category, app, risk, risk_desc, path, reason.
+        Only recommend paths that are present in the supplied summary. Prefer caches, logs, old installers, generated build artifacts, and temporary agent data. Do not recommend deleting documents, source code, keychains, photos, mail, or system files.
+        risk must be one of: safe, caution, danger.
+        """
+        let userPrompt = """
+        Analyze this local directory summary and recommend cleanup candidates.
+
+        \(dirInfo)
+        """
+        let selectedModel = config.model?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let wantsExternalProvider = selectedModel?.isEmpty == false
+            && selectedModel != AIConfig.appleIntelligenceModel
+            && selectedModel != AIConfig.appReviewDemoModel
+
+        if wantsExternalProvider, config.hasKey == true, let key = config.apiKey, !key.isEmpty {
+            return await callExternalLLM(config: config, systemPrompt: systemPrompt, userPrompt: userPrompt)
+        }
+
+        do {
+            let response = try await AppleIntelligenceService.generate(
+                instructions: systemPrompt,
+                prompt: userPrompt,
+                maximumResponseTokens: 4096
+            )
+            return parseAIResult(response.content)
+        } catch {
+            if let key = config.apiKey, !key.isEmpty, wantsExternalProvider {
+                return await callExternalLLM(config: config, systemPrompt: systemPrompt, userPrompt: userPrompt)
+            }
+            return (success: false, items: nil, error: error.localizedDescription)
+        }
+    }
+
+    private func callExternalLLM(config: AIConfig, systemPrompt: String, userPrompt: String) async -> (success: Bool, items: [ScanItem]?, error: String?) {
+        guard let apiKey = config.apiKey, !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return (success: false, items: nil, error: localizer?.configureAPIKeyFirst ?? "Please configure API key first")
+        }
+
+        let base = (config.apiBase?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? config.apiBase! : "https://api.openai.com/v1")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: "\(base)/chat/completions") else {
+            return (success: false, items: nil, error: "Invalid API base URL")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let body: [String: Any] = [
+            "model": config.model ?? "gpt-4o-mini",
+            "temperature": 0.1,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userPrompt]
+            ]
+        ]
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                let bodyText = String(data: data, encoding: .utf8) ?? ""
+                return (success: false, items: nil, error: "LLM request failed: \(http.statusCode) \(bodyText)")
+            }
+            guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = obj["choices"] as? [[String: Any]],
+                  let message = choices.first?["message"] as? [String: Any],
+                  let content = message["content"] as? String else {
+                return (success: false, items: nil, error: "LLM response format was not recognized")
+            }
+            return parseAIResult(content)
+        } catch {
+            return (success: false, items: nil, error: error.localizedDescription)
+        }
+    }
+
+    private func parseAIResult(_ content: String) -> (success: Bool, items: [ScanItem]?, error: String?) {
+        try? content.write(toFile: SandboxPaths.shared.lastResponsePath, atomically: true, encoding: .utf8)
+        let json = extractJSON(from: content)
+
+        if let data = json.data(using: .utf8),
+           let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            return buildScanItems(from: items)
+        }
+
+        if let fixed = tryFixJSON(json),
+           let data = fixed.data(using: .utf8),
+           let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            return buildScanItems(from: items)
+        }
+
+        if let fixed = tryFixTruncatedJSON(json),
+           let data = fixed.data(using: .utf8),
+           let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            return buildScanItems(from: items)
+        }
+
+        return (success: false, items: nil, error: localizer?.aiNoJsonArray ?? "AI did not return JSON array")
     }
 
     private func extractJSON(from content: String) -> String {
@@ -2533,6 +2707,13 @@ class ScannerService: ObservableObject {
     // MARK: - Utility
 
     func formatSize(_ bytes: Int64) -> String {
+        if bytes >= 1073741824 { return String(format: "%.1f GB", Double(bytes) / 1073741824.0) }
+        if bytes >= 1048576 { return String(format: "%.1f MB", Double(bytes) / 1048576.0) }
+        if bytes >= 1024 { return String(format: "%.1f KB", Double(bytes) / 1024.0) }
+        return "\(bytes) B"
+    }
+
+    nonisolated private static func formatSizeStatic(_ bytes: Int64) -> String {
         if bytes >= 1073741824 { return String(format: "%.1f GB", Double(bytes) / 1073741824.0) }
         if bytes >= 1048576 { return String(format: "%.1f MB", Double(bytes) / 1048576.0) }
         if bytes >= 1024 { return String(format: "%.1f KB", Double(bytes) / 1024.0) }
