@@ -72,17 +72,11 @@ struct DiskInfo: Codable {
 }
 
 struct AIConfig: Codable {
-    let apiBase: String?
-    let apiKey: String?
     let model: String?
     let hasKey: Bool?
 
     static let appleIntelligenceModel = "apple-intelligence"
     static let appReviewDemoModel = "app-review-local-demo"
-
-    enum CodingKeys: String, CodingKey {
-        case apiBase = "api_base", apiKey = "api_key", model, hasKey = "has_key"
-    }
 }
 
 struct DeleteResult: Codable {

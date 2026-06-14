@@ -968,24 +968,8 @@ class ScannerService: ObservableObject {
         aiConfig = config
     }
 
-    func saveAIConfig(apiBase: String, apiKey: String, model: String) {
-        let trimmedBase = apiBase.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        let config = AIConfig(
-            apiBase: trimmedBase.isEmpty ? nil : trimmedBase,
-            apiKey: trimmedKey.isEmpty ? nil : trimmedKey,
-            model: trimmedModel.isEmpty ? AIConfig.appleIntelligenceModel : trimmedModel,
-            hasKey: !trimmedKey.isEmpty
-        )
-        saveAIConfigMetadata(config)
-        aiConfig = config
-    }
-
     private func defaultAIConfig() -> AIConfig {
         AIConfig(
-            apiBase: nil,
-            apiKey: nil,
             model: AIConfig.appleIntelligenceModel,
             hasKey: false
         )
@@ -2493,15 +2477,6 @@ class ScannerService: ObservableObject {
 
         \(dirInfo)
         """
-        let selectedModel = config.model?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let wantsExternalProvider = selectedModel?.isEmpty == false
-            && selectedModel != AIConfig.appleIntelligenceModel
-            && selectedModel != AIConfig.appReviewDemoModel
-
-        if wantsExternalProvider, config.hasKey == true, let key = config.apiKey, !key.isEmpty {
-            return await callExternalLLM(config: config, systemPrompt: systemPrompt, userPrompt: userPrompt)
-        }
-
         do {
             let response = try await AppleIntelligenceService.generate(
                 instructions: systemPrompt,
@@ -2509,53 +2484,6 @@ class ScannerService: ObservableObject {
                 maximumResponseTokens: 4096
             )
             return parseAIResult(response.content)
-        } catch {
-            if let key = config.apiKey, !key.isEmpty, wantsExternalProvider {
-                return await callExternalLLM(config: config, systemPrompt: systemPrompt, userPrompt: userPrompt)
-            }
-            return (success: false, items: nil, error: error.localizedDescription)
-        }
-    }
-
-    private func callExternalLLM(config: AIConfig, systemPrompt: String, userPrompt: String) async -> (success: Bool, items: [ScanItem]?, error: String?) {
-        guard let apiKey = config.apiKey, !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return (success: false, items: nil, error: localizer?.configureAPIKeyFirst ?? "Please configure API key first")
-        }
-
-        let base = (config.apiBase?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? config.apiBase! : "https://api.openai.com/v1")
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: "\(base)/chat/completions") else {
-            return (success: false, items: nil, error: "Invalid API base URL")
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let body: [String: Any] = [
-            "model": config.model ?? "gpt-4o-mini",
-            "temperature": 0.1,
-            "messages": [
-                ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": userPrompt]
-            ]
-        ]
-
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (data, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                let bodyText = String(data: data, encoding: .utf8) ?? ""
-                return (success: false, items: nil, error: "LLM request failed: \(http.statusCode) \(bodyText)")
-            }
-            guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = obj["choices"] as? [[String: Any]],
-                  let message = choices.first?["message"] as? [String: Any],
-                  let content = message["content"] as? String else {
-                return (success: false, items: nil, error: "LLM response format was not recognized")
-            }
-            return parseAIResult(content)
         } catch {
             return (success: false, items: nil, error: error.localizedDescription)
         }
