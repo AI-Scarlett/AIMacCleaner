@@ -78,7 +78,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		D8E9F0A1B2C3D4E5F6A7B8C9 /* SandboxPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandboxPaths.swift; sourceTree = "<group>"; };
 		F2A3B4C5D6E7F8091A2B3C4D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		FF55AA66BB77CC88DD99EE00 /* AIMacCleaner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIMacCleaner.entitlements; sourceTree = "<group>"; };
-		FD0E8A971151EDD2952E2662 /* AIMacCleaner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgentGuard.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FD0E8A971151EDD2952E2662 /* AIMacCleaner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TraceFence.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AABBCCDDEEFF001122334455 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F117E0A1AEF225339E28D092 /* AgentEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/AgentEvent.swift; sourceTree = "<group>"; };
 		F1CB3C538A176AD4ED450956 /* AgentSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/AgentSession.swift; sourceTree = "<group>"; };
@@ -196,7 +196,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 			name = AIMacCleaner;
 			packageProductDependencies = (
 			);
-			productName = AgentGuard;
+			productName = TraceFence;
 			productReference = FD0E8A971151EDD2952E2662 /* AIMacCleaner.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -307,21 +307,21 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-					CURRENT_PROJECT_VERSION = 27;
+					CURRENT_PROJECT_VERSION = 29;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
-			INFOPLIST_KEY_CFBundleDisplayName = AgentGuard;
+			INFOPLIST_KEY_CFBundleDisplayName = TraceFence;
 			INFOPLIST_KEY_LSMinimumSystemVersion = 13.0;
 			LD_RUNPATH_SEARCH_PATHS = (
 				"$(inherited)",
 				"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 3.1.0;
+			MARKETING_VERSION = 3.1.1;
 			OPTIMIZATION_LEVEL = "-O";
 				PRODUCT_BUNDLE_IDENTIFIER = com.aimaccleaner.app;
-				PRODUCT_NAME = AgentGuard;
+				PRODUCT_NAME = TraceFence;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
 			};
@@ -453,21 +453,21 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-					CURRENT_PROJECT_VERSION = 27;
+					CURRENT_PROJECT_VERSION = 29;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
-			INFOPLIST_KEY_CFBundleDisplayName = AgentGuard;
+			INFOPLIST_KEY_CFBundleDisplayName = TraceFence;
 			INFOPLIST_KEY_LSMinimumSystemVersion = 13.0;
 			LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 3.1.0;
+			MARKETING_VERSION = 3.1.1;
 			OPTIMIZATION_LEVEL = "-Onone";
 				PRODUCT_BUNDLE_IDENTIFIER = com.aimaccleaner.app;
-				PRODUCT_NAME = AgentGuard;
+				PRODUCT_NAME = TraceFence;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
 			};

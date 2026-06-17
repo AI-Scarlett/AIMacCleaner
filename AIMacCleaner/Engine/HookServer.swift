@@ -210,7 +210,7 @@ actor HookServer {
     private func resumePendingRequestsForShutdown() {
         for entries in pendingPermissions.values {
             for entry in entries {
-                entry.continuation.resume(returning: permissionResponse(decision: .deny(reason: "AgentGuard stopped"), raw: [:]))
+                entry.continuation.resume(returning: permissionResponse(decision: .deny(reason: "TraceFence stopped"), raw: [:]))
             }
         }
         pendingPermissions.removeAll()
@@ -221,7 +221,7 @@ actor HookServer {
         pendingQuestions.removeAll()
 
         for entry in pendingPlans.values {
-            entry.continuation.resume(returning: PlanResponse(mode: "cancel", message: "AgentGuard stopped"))
+            entry.continuation.resume(returning: PlanResponse(mode: "cancel", message: "TraceFence stopped"))
         }
         pendingPlans.removeAll()
     }

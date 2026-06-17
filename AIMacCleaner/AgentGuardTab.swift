@@ -773,8 +773,8 @@ struct AgentGuardTab: View {
                     .font(Theme.Font.subheadlineMedium)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Text(localizer.t(
-                    "AgentGuard 内部清理守护目录项目时需要系统身份验证；项目移入废纸篓后会持续提醒。出于 App Store 沙盒边界，Finder 或终端中的手动清空不会被强制拦截。",
-                    en: "Cleanup of guarded directory items inside AgentGuard requires system authentication. Once moved to Trash, AgentGuard keeps reminding you. To stay within App Store sandbox boundaries, manual emptying from Finder or Terminal is not forcibly blocked."
+                    "TraceFence 内部清理守护目录项目时需要系统身份验证；项目移入废纸篓后会持续提醒。出于 App Store 沙盒边界，Finder 或终端中的手动清空不会被强制拦截。",
+                    en: "Cleanup of guarded directory items inside TraceFence requires system authentication. Once moved to Trash, TraceFence keeps reminding you. To stay within App Store sandbox boundaries, manual emptying from Finder or Terminal is not forcibly blocked."
                 ))
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)

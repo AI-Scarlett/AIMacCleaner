@@ -196,7 +196,7 @@ struct ContentView: View {
                 HStack(spacing: Theme.Spacing.sm + 2) {
                     AgentGuardMark(size: 46)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("AgentGuard")
+                        Text("TraceFence")
                             .font(.system(size: 18, weight: .black, design: .rounded))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)

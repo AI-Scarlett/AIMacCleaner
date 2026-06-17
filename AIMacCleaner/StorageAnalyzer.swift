@@ -181,7 +181,7 @@ class StorageAnalyzer: ObservableObject {
 
     func analyzeFileWithAI(file: StorageFile, config: AIConfig) async -> String? {
         let type = file.isDirectory ? "directory" : "file"
-        return "Local analysis: \(file.name) is a \(type) using \(file.sizeFormatted). Review the path before cleanup; AgentGuard only moves selected items to Trash."
+        return "Local analysis: \(file.name) is a \(type) using \(file.sizeFormatted). Review the path before cleanup; TraceFence only moves selected items to Trash."
     }
 
     func analyzeCategoryWithAI(category: StorageCategory, config: AIConfig) async -> String? {

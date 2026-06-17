@@ -244,9 +244,9 @@ struct PermissionDecision {
     var updatedPermissions: [[String: AnyCodable]]? = nil
 
     static let allow = PermissionDecision(decision: "allow")
-    static let deny = PermissionDecision(decision: "deny", reason: "Blocked by AgentGuard")
+    static let deny = PermissionDecision(decision: "deny", reason: "Blocked by TraceFence")
     static func deny(reason: String?) -> PermissionDecision {
-        PermissionDecision(decision: "deny", reason: reason?.isEmpty == false ? reason : "Blocked by AgentGuard")
+        PermissionDecision(decision: "deny", reason: reason?.isEmpty == false ? reason : "Blocked by TraceFence")
     }
     static func allowAlways(reason: String?) -> PermissionDecision {
         PermissionDecision(decision: "allow", reason: reason, always: true)

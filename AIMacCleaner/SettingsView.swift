@@ -421,8 +421,8 @@ struct SettingsView: View {
                     icon: "trash.slash",
                     title: localizer.preventAutoEmptyTrash,
                     desc: localizer.t(
-                        "AgentGuard 不会自动清空废纸篓；受保护项在废纸篓中时会持续提醒。",
-                        en: "AgentGuard never empties Trash automatically. It reminds you while guarded items remain in Trash."
+                        "TraceFence 不会自动清空废纸篓；受保护项在废纸篓中时会持续提醒。",
+                        en: "TraceFence never empties Trash automatically. It reminds you while guarded items remain in Trash."
                     ),
                     isOn: Binding(
                         get: { service.preventAutoEmptyTrash },

@@ -1020,7 +1020,7 @@ class ScannerService: ObservableObject {
                 id: "app-review-demo-download-installers",
                 name: "Demo: Downloaded installer archives",
                 category: "Downloads",
-                app: "AgentGuard Demo",
+                app: "TraceFence Demo",
                 risk: "safe",
                 riskDesc: "Sample AI result for App Review. These downloaded installer archives can usually be removed after installation.",
                 path: "~/Downloads",
@@ -1035,11 +1035,11 @@ class ScannerService: ObservableObject {
                 id: "app-review-demo-agent-cache",
                 name: "Demo: AI agent cache",
                 category: "AI Agent",
-                app: "AgentGuard Demo",
+                app: "TraceFence Demo",
                 risk: "caution",
                 riskDesc: "Sample AI result for App Review. Cache files are generally safe to review, but active sessions may need to regenerate data.",
-                path: "~/Library/Caches/AgentGuardDemo",
-                realPath: "\(home)/Library/Caches/AgentGuardDemo",
+                path: "~/Library/Caches/TraceFenceDemo",
+                realPath: "\(home)/Library/Caches/TraceFenceDemo",
                 size: 640_000_000,
                 fileCount: 84,
                 ignored: false,
@@ -1050,11 +1050,11 @@ class ScannerService: ObservableObject {
                 id: "app-review-demo-agent-logs",
                 name: "Demo: AI agent diagnostic logs",
                 category: "AI Agent",
-                app: "AgentGuard Demo",
+                app: "TraceFence Demo",
                 risk: "safe",
                 riskDesc: "Sample AI result for App Review. Rotated diagnostic logs can be removed when they are no longer needed for debugging.",
-                path: "~/Library/Logs/AgentGuardDemo",
-                realPath: "\(home)/Library/Logs/AgentGuardDemo",
+                path: "~/Library/Logs/TraceFenceDemo",
+                realPath: "\(home)/Library/Logs/TraceFenceDemo",
                 size: 210_000_000,
                 fileCount: 37,
                 ignored: false,
@@ -2273,9 +2273,9 @@ class ScannerService: ObservableObject {
         guardFeature.auditProtectedTrashItems()
         if !guardFeature.protectedTrashItems.isEmpty {
             errorMessage = localizer?.t(
-                "废纸篓中有守护目录项目。AgentGuard 不会自动清空废纸篓，请先在守护目录中确认是否需要恢复。",
-                en: "Trash contains guarded items. AgentGuard will not empty Trash automatically; review recovery needs in Guarded Directories first."
-            ) ?? "Trash contains guarded items. AgentGuard will not empty Trash automatically."
+                "废纸篓中有守护目录项目。TraceFence 不会自动清空废纸篓，请先在守护目录中确认是否需要恢复。",
+                en: "Trash contains guarded items. TraceFence will not empty Trash automatically; review recovery needs in Guarded Directories first."
+            ) ?? "Trash contains guarded items. TraceFence will not empty Trash automatically."
         }
     }
 
@@ -2466,7 +2466,7 @@ class ScannerService: ObservableObject {
 
     private func callLLM(config: AIConfig, dirInfo: String) async -> (success: Bool, items: [ScanItem]?, error: String?) {
         let systemPrompt = """
-        You are AgentGuard's macOS storage analysis assistant. Analyze only the local directory summary provided by the app.
+        You are TraceFence's macOS storage analysis assistant. Analyze only the local directory summary provided by the app.
         Return strict JSON only, as an array of objects with these keys:
         name, category, app, risk, risk_desc, path, reason.
         Only recommend paths that are present in the supplied summary. Prefer caches, logs, old installers, generated build artifacts, and temporary agent data. Do not recommend deleting documents, source code, keychains, photos, mail, or system files.

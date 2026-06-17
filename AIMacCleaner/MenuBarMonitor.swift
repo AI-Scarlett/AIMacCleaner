@@ -99,7 +99,7 @@ struct MenuBarMonitor: View {
                     dismissMenuBarPopoverSoon()
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("AgentGuard") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
+                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("AgentGuard") || $0.title.contains("TraceFence") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
                         window.makeKeyAndOrderFront(nil)
                     }
                 } label: {

@@ -5,9 +5,9 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>AgentGuard</string>
+	<string>TraceFence</string>
 	<key>CFBundleExecutable</key>
-	<string>AgentGuard</string>
+	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
@@ -15,13 +15,13 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>AgentGuard</string>
+	<string>TraceFence</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>27</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
@@ -35,11 +35,11 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2025 AI-Scarlett. All rights reserved.</string>
 	<key>NSDesktopFolderUsageDescription</key>
-	<string>AgentGuard scans folders you choose, such as Desktop project folders, to find AI agent caches, logs, and temporary files that can be reviewed before cleanup.</string>
+	<string>TraceFence scans folders you choose, such as Desktop project folders, to find AI agent caches, logs, and temporary files that can be reviewed before cleanup.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
-	<string>AgentGuard scans folders you choose, such as Documents workspaces, to identify AI agent caches, logs, and temporary files that can be reviewed before cleanup.</string>
+	<string>TraceFence scans folders you choose, such as Documents workspaces, to identify AI agent caches, logs, and temporary files that can be reviewed before cleanup.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
-	<string>AgentGuard uses access to your Downloads folder only when you choose to scan or monitor it. For example, it can identify downloaded app installers, AI agent logs, cache archives, and temporary files so you can review them before cleanup or include them in local token and agent activity statistics.</string>
+	<string>TraceFence uses access to your Downloads folder only when you choose to scan or monitor it. For example, it can identify downloaded app installers, AI agent logs, cache archives, and temporary files so you can review them before cleanup or include them in local token and agent activity statistics.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

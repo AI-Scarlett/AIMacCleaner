@@ -241,7 +241,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupWindowDelegate() {
         for window in NSApp.windows {
-            if window.title.contains("AgentWatch") || window.title.contains("AgentGuard") || window.className.contains("Window") {
+            if window.title.contains("AgentWatch") || window.title.contains("AgentGuard") || window.title.contains("TraceFence") || window.className.contains("Window") {
                 mainWindow = window
             }
             window.delegate = WindowDelegate.shared
@@ -349,10 +349,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "AgentGuard"
+        window.title = "TraceFence"
         window.contentView = NSHostingView(rootView: rootView)
         window.delegate = WindowDelegate.shared
-        window.setFrameAutosaveName("AgentGuardMainWindow")
+        window.setFrameAutosaveName("TraceFenceMainWindow")
 
         fallbackWindow = window
         mainWindow = window
