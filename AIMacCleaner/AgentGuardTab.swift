@@ -50,6 +50,7 @@ struct AgentGuardTab: View {
                 case 2: alertRulesView
                 case 3: commandRulesView
                 case 4: protectedDirsView
+                case 5: AgentToolkitView()
                 default: dashboardView
                 }
             }
@@ -95,6 +96,13 @@ struct AgentGuardTab: View {
                 SegmentButton(title: localizer.alertRules, icon: "slider.horizontal.3", index: 2, tint: Theme.Colors.accent, selected: $selectedSegment)
                 SegmentButton(title: localizer.commandRules, icon: "terminal", index: 3, tint: Theme.Colors.accent, selected: $selectedSegment)
                 SegmentButton(title: localizer.protectedDirs, icon: "folder.badge.eye", index: 4, tint: Theme.Colors.accent, selected: $selectedSegment)
+                SegmentButton(
+                    title: localizer.t("Agent 工具箱", en: "Agent Toolkit", zhHant: "Agent 工具箱", ja: "Agent ツールキット", ko: "Agent 도구 상자", mt: "Agent Toolkit"),
+                    icon: "cross.case.fill",
+                    index: 5,
+                    tint: Theme.Colors.accent,
+                    selected: $selectedSegment
+                )
             }
         }
         .padding(.horizontal, Theme.Spacing.xl)

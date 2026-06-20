@@ -26,6 +26,7 @@
 		DD33EE44FF55AA66BB77CC88 /* IntelMigrationTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE44FF55AA66BB77CC88DD99 /* IntelMigrationTab.swift */; };
 		GA1HB2IC3JD4KE5LF6MG7NH8 /* AgentGuardFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = HA2IB3JC4KD5LE6MF7NG8OI9 /* AgentGuardFeature.swift */; };
 		IA3JB4KC5LD6ME7NF8OG9PJ0 /* AgentGuardTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = JA4KC5LD6ME7NF8OG9PH0QJ1 /* AgentGuardTab.swift */; };
+		TF01AGENTTOOLKIT00000001 /* AgentToolkitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TF02AGENTTOOLKIT00000002 /* AgentToolkitView.swift */; };
 		C7D8E9F0A1B2C3D4E5F6A7B8 /* SandboxPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E9F0A1B2C3D4E5F6A7B8C9 /* SandboxPaths.swift */; };
 		E1F2A3B4C5D6E7F8091A2B3C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F2A3B4C5D6E7F8091A2B3C4D /* PrivacyInfo.xcprivacy */; };
 		B117E0A1AEF225339E28D092 /* AgentEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F117E0A1AEF225339E28D092 /* AgentEvent.swift */; };
@@ -75,6 +76,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		EE44FF55AA66BB77CC88DD99 /* IntelMigrationTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntelMigrationTab.swift; sourceTree = "<group>"; };
 		HA2IB3JC4KD5LE6MF7NG8OI9 /* AgentGuardFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGuardFeature.swift; sourceTree = "<group>"; };
 		JA4KC5LD6ME7NF8OG9PH0QJ1 /* AgentGuardTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGuardTab.swift; sourceTree = "<group>"; };
+		TF02AGENTTOOLKIT00000002 /* AgentToolkitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolkitView.swift; sourceTree = "<group>"; };
 		D8E9F0A1B2C3D4E5F6A7B8C9 /* SandboxPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandboxPaths.swift; sourceTree = "<group>"; };
 		F2A3B4C5D6E7F8091A2B3C4D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		FF55AA66BB77CC88DD99EE00 /* AIMacCleaner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIMacCleaner.entitlements; sourceTree = "<group>"; };
@@ -149,6 +151,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				F15EC33FFB79FB101CE80521 /* ScannerService.swift */,
 				HA2IB3JC4KD5LE6MF7NG8OI9 /* AgentGuardFeature.swift */,
 				JA4KC5LD6ME7NF8OG9PH0QJ1 /* AgentGuardTab.swift */,
+				TF02AGENTTOOLKIT00000002 /* AgentToolkitView.swift */,
 				D8E9F0A1B2C3D4E5F6A7B8C9 /* SandboxPaths.swift */,
 				F2A3B4C5D6E7F8091A2B3C4D /* PrivacyInfo.xcprivacy */,
 				F117E0A1AEF225339E28D092 /* AgentEvent.swift */,
@@ -267,6 +270,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				BE25C05BB068770416C5ED04 /* ScannerService.swift in Sources */,
 				GA1HB2IC3JD4KE5LF6MG7NH8 /* AgentGuardFeature.swift in Sources */,
 				IA3JB4KC5LD6ME7NF8OG9PJ0 /* AgentGuardTab.swift in Sources */,
+				TF01AGENTTOOLKIT00000001 /* AgentToolkitView.swift in Sources */,
 				C7D8E9F0A1B2C3D4E5F6A7B8 /* SandboxPaths.swift in Sources */,
 				B117E0A1AEF225339E28D092 /* AgentEvent.swift in Sources */,
 				B1CB3C538A176AD4ED450956 /* AgentSession.swift in Sources */,
