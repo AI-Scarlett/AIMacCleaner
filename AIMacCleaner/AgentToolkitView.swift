@@ -4,7 +4,6 @@ import AppKit
 struct AgentToolkitView: View {
     @EnvironmentObject private var localizer: Localizer
     @StateObject private var model = AgentToolkitModel()
-    @State private var pendingAction: AgentProcessAction?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
@@ -15,40 +14,11 @@ struct AgentToolkitView: View {
                 aiSummaryCard
             }
             diagnosticGroups
-
-            if !model.isSandboxed {
-                runningAgents
-            }
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.lg)
         .onAppear {
             model.runDiagnostics()
-        }
-        .alert(
-            localizer.t(
-                "确认进程操作",
-                en: "Confirm Process Action",
-                zhHant: "確認程序操作",
-                ja: "プロセス操作を確認",
-                ko: "프로세스 작업 확인",
-                mt: "Confirm Process Action"
-            ),
-            isPresented: Binding(
-                get: { pendingAction != nil },
-                set: { if !$0 { pendingAction = nil } }
-            ),
-            presenting: pendingAction
-        ) { action in
-            Button(action.buttonTitle(localizer), role: action.isDestructive ? .destructive : nil) {
-                model.perform(action)
-                pendingAction = nil
-            }
-            Button(localizer.cancel, role: .cancel) {
-                pendingAction = nil
-            }
-        } message: { action in
-            Text(action.confirmation(localizer))
         }
     }
 
@@ -171,13 +141,11 @@ struct AgentToolkitView: View {
             Spacer()
 
             Label(
-                model.isSandboxed
-                    ? localizer.t("App Store 安全模式", en: "App Store Safe Mode", zhHant: "App Store 安全模式", ja: "App Store セーフモード", ko: "App Store 안전 모드", mt: "App Store Safe Mode")
-                    : localizer.t("官网增强模式", en: "Direct Advanced Mode", zhHant: "官網增強模式", ja: "直販拡張モード", ko: "직접 배포 고급 모드", mt: "Direct Advanced Mode"),
-                systemImage: model.isSandboxed ? "lock.shield.fill" : "bolt.shield.fill"
+                localizer.t("本地安全诊断", en: "Local Safe Diagnostics", zhHant: "本機安全診斷", ja: "ローカル安全診断", ko: "로컬 안전 진단", mt: "Local Safe Diagnostics"),
+                systemImage: "lock.shield.fill"
             )
             .font(Theme.Font.captionMedium)
-            .foregroundStyle(model.isSandboxed ? Theme.Colors.success : Theme.Colors.warning)
+            .foregroundStyle(Theme.Colors.success)
         }
         .padding(Theme.Spacing.md)
         .background(Theme.Colors.elevatedCardBg)
@@ -235,9 +203,9 @@ struct AgentToolkitView: View {
                 color: Theme.Colors.info
             )
             diagnosticMetric(
-                value: "\(model.runningAgents.count)",
-                title: localizer.t("运行实例", en: "Running Agents", zhHant: "執行實例", ja: "実行中 Agent", ko: "실행 중 Agent", mt: "Running Agents"),
-                icon: "waveform.path.ecg",
+                value: "ON",
+                title: localizer.t("隐私保护", en: "Privacy Guard", zhHant: "隱私保護", ja: "プライバシー保護", ko: "개인정보 보호", mt: "Privacy Guard"),
+                icon: "lock.shield.fill",
                 color: Theme.Colors.accent
             )
         }
@@ -333,10 +301,8 @@ struct AgentToolkitView: View {
                 : localizer.t("可用存储空间偏低", en: "Available storage is low", zhHant: "可用儲存空間偏低", ja: "空き容量が少なくなっています", ko: "사용 가능한 저장 공간이 부족함", mt: "Available storage is low")
         case .privacy:
             return localizer.t("凭证安全诊断", en: "Credential-safe diagnostics", zhHant: "憑證安全診斷", ja: "認証情報を保護する診断", ko: "자격 증명 보호 진단", mt: "Credential-safe diagnostics")
-        case .mode(let sandboxed):
-            return sandboxed
-                ? localizer.t("App Store 沙盒已启用", en: "App Store sandbox is active", zhHant: "App Store 沙盒已啟用", ja: "App Store サンドボックスが有効です", ko: "App Store 샌드박스가 활성화됨", mt: "App Store sandbox is active")
-                : localizer.t("官网版增强控制可用", en: "Direct advanced controls are available", zhHant: "官網版增強控制可用", ja: "直販版の拡張操作を利用できます", ko: "직접 배포 고급 제어를 사용할 수 있음", mt: "Direct advanced controls are available")
+        case .mode:
+            return localizer.t("沙盒保护已启用", en: "Sandbox protection is active", zhHant: "沙盒保護已啟用", ja: "サンドボックス保護が有効です", ko: "샌드박스 보호가 활성화됨", mt: "Sandbox protection is active")
         }
     }
 
@@ -365,75 +331,8 @@ struct AgentToolkitView: View {
             )
         case .privacy:
             return localizer.t("TraceFence 只检查凭证文件是否存在，不读取、复制或展示任何密钥内容。", en: "TraceFence checks whether credential files exist, but does not read, copy, or display secret values.", zhHant: "TraceFence 只檢查憑證檔案是否存在，不讀取、複製或顯示任何金鑰內容。", ja: "TraceFence は認証ファイルの存在のみ確認し、秘密値を読み取り・コピー・表示しません。", ko: "TraceFence는 자격 증명 파일의 존재 여부만 확인하며 비밀 값을 읽거나 복사하거나 표시하지 않습니다.", mt: "TraceFence checks whether credential files exist, but does not read, copy, or display secret values.")
-        case .mode(let sandboxed):
-            return sandboxed
-                ? localizer.t("只检查用户明确授权的文件；进程终止和配置修复功能已禁用。", en: "Only user-authorized files are inspected. Process termination and configuration repair are disabled.", zhHant: "只檢查使用者明確授權的檔案；程序終止與設定修復功能已停用。", ja: "ユーザーが許可したファイルのみ確認し、プロセス終了と設定修復は無効です。", ko: "사용자가 명시적으로 승인한 파일만 검사하며 프로세스 종료 및 설정 복구는 비활성화됩니다.", mt: "Only user-authorized files are inspected. Process termination and configuration repair are disabled.")
-                : localizer.t("本机进程控制已经开放，并且每次操作都需要明确确认。", en: "Local process controls are available and always require explicit confirmation.", zhHant: "本機程序控制已經開放，而且每次操作都需要明確確認。", ja: "ローカルプロセス操作を利用でき、毎回明示的な確認が必要です。", ko: "로컬 프로세스 제어를 사용할 수 있으며 매번 명시적인 확인이 필요합니다.", mt: "Local process controls are available and always require explicit confirmation.")
-        }
-    }
-
-    private var runningAgents: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            HStack {
-                Text(localizer.t("进程控制", en: "Process Control", zhHant: "程序控制", ja: "プロセス制御", ko: "프로세스 제어", mt: "Process Control"))
-                    .font(Theme.Font.subheadline)
-                    .foregroundStyle(Theme.Colors.textPrimary)
-                Spacer()
-                Text(localizer.t("仅官网版 · 每次操作均需确认", en: "Direct build only · every action requires confirmation", zhHant: "僅官網版 · 每次操作均需確認", ja: "直販版のみ・操作ごとに確認", ko: "직접 배포 버전 전용 · 매 작업 확인", mt: "Direct build only · every action requires confirmation"))
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.Colors.textTertiary)
-            }
-
-            if model.runningAgents.isEmpty {
-                Text(localizer.t("当前未发现运行中的受支持 Agent。", en: "No supported running agents were found.", zhHant: "目前未發現執行中的支援 Agent。", ja: "対応する実行中 Agent は見つかりませんでした。", ko: "현재 실행 중인 지원 Agent가 없습니다.", mt: "No supported running agents were found."))
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.Colors.textSecondary)
-                    .padding(Theme.Spacing.md)
-            } else {
-                ForEach(model.runningAgents) { process in
-                    HStack(spacing: Theme.Spacing.md) {
-                        Image(systemName: "terminal.fill")
-                            .foregroundStyle(Theme.Colors.accent)
-                            .frame(width: 28, height: 28)
-                            .background(Theme.Colors.accent.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(process.name)
-                                .font(Theme.Font.bodyMedium)
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                            Text("PID \(process.pid) · \(process.command)")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                                .lineLimit(1)
-                        }
-
-                        Spacer()
-
-                        Button(localizer.t("关闭", en: "Quit", zhHant: "關閉", ja: "終了", ko: "종료", mt: "Quit")) {
-                            pendingAction = .terminate(process)
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button(localizer.t("强制关闭", en: "Force Quit", zhHant: "強制關閉", ja: "強制終了", ko: "강제 종료", mt: "Force Quit")) {
-                            pendingAction = .forceTerminate(process)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(Theme.Colors.danger)
-
-                        if process.bundleURL != nil {
-                            Button(localizer.t("重启", en: "Restart", zhHant: "重新啟動", ja: "再起動", ko: "재시작", mt: "Restart")) {
-                                pendingAction = .restart(process)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Theme.Colors.accent)
-                        }
-                    }
-                    .padding(Theme.Spacing.md)
-                    .background(Theme.Colors.cardBg)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                }
-            }
+        case .mode:
+            return localizer.t("只检查用户明确授权的文件，不读取凭证内容。", en: "Only user-authorized files are inspected, and credential contents are never read.", zhHant: "只檢查使用者明確授權的檔案，不讀取憑證內容。", ja: "ユーザーが許可したファイルのみ確認し、認証情報の内容は読み取りません。", ko: "사용자가 명시적으로 승인한 파일만 검사하며 자격 증명 내용은 읽지 않습니다.", mt: "Only user-authorized files are inspected, and credential contents are never read.")
         }
     }
 }
@@ -482,59 +381,9 @@ private struct AgentBackupResult {
     let errorDescription: String?
 }
 
-private struct AgentRunningProcess: Identifiable {
-    let id: Int32
-    let pid: Int32
-    let name: String
-    let command: String
-    let bundleIdentifier: String?
-    let bundleURL: URL?
-}
-
-private enum AgentProcessAction {
-    case terminate(AgentRunningProcess)
-    case forceTerminate(AgentRunningProcess)
-    case restart(AgentRunningProcess)
-
-    var process: AgentRunningProcess {
-        switch self {
-        case .terminate(let process), .forceTerminate(let process), .restart(let process):
-            process
-        }
-    }
-
-    var isDestructive: Bool {
-        if case .forceTerminate = self { return true }
-        return false
-    }
-
-    func buttonTitle(_ localizer: Localizer) -> String {
-        switch self {
-        case .terminate:
-            localizer.t("确认关闭", en: "Confirm Quit", zhHant: "確認關閉", ja: "終了を確認", ko: "종료 확인", mt: "Confirm Quit")
-        case .forceTerminate:
-            localizer.t("强制关闭", en: "Force Quit", zhHant: "強制關閉", ja: "強制終了", ko: "강제 종료", mt: "Force Quit")
-        case .restart:
-            localizer.t("确认重启", en: "Confirm Restart", zhHant: "確認重新啟動", ja: "再起動を確認", ko: "재시작 확인", mt: "Confirm Restart")
-        }
-    }
-
-    func confirmation(_ localizer: Localizer) -> String {
-        switch self {
-        case .terminate:
-            localizer.t("将向 \(process.name) 发送正常退出请求。未保存的 Agent 工作可能受到影响。", en: "TraceFence will ask \(process.name) to quit. Unsaved agent work may be affected.", zhHant: "將向 \(process.name) 傳送正常退出請求。未儲存的 Agent 工作可能受到影響。", ja: "\(process.name) に通常終了を要求します。未保存の作業に影響する場合があります。", ko: "\(process.name)에 정상 종료를 요청합니다. 저장되지 않은 작업이 영향을 받을 수 있습니다.", mt: "TraceFence will ask \(process.name) to quit. Unsaved agent work may be affected.")
-        case .forceTerminate:
-            localizer.t("将立即强制关闭 \(process.name)。未保存内容可能丢失。", en: "\(process.name) will be force quit immediately. Unsaved content may be lost.", zhHant: "將立即強制關閉 \(process.name)。未儲存內容可能遺失。", ja: "\(process.name) を直ちに強制終了します。未保存の内容は失われる可能性があります。", ko: "\(process.name)을 즉시 강제 종료합니다. 저장되지 않은 내용이 손실될 수 있습니다.", mt: "\(process.name) will be force quit immediately. Unsaved content may be lost.")
-        case .restart:
-            localizer.t("将关闭并重新打开 \(process.name)。请先保存正在进行的工作。", en: "\(process.name) will quit and reopen. Save ongoing work first.", zhHant: "將關閉並重新開啟 \(process.name)。請先儲存進行中的工作。", ja: "\(process.name) を終了して再度開きます。進行中の作業を保存してください。", ko: "\(process.name)을 종료한 후 다시 엽니다. 진행 중인 작업을 먼저 저장하세요.", mt: "\(process.name) will quit and reopen. Save ongoing work first.")
-        }
-    }
-}
-
 @MainActor
 private final class AgentToolkitModel: ObservableObject {
     @Published var items: [AgentDiagnosticItem] = []
-    @Published var runningAgents: [AgentRunningProcess] = []
     @Published var sessionFileCount = 0
     @Published var isWorking = false
     @Published var progressText = ""
@@ -542,8 +391,6 @@ private final class AgentToolkitModel: ObservableObject {
     @Published var lastOperationSucceeded = true
     @Published var aiSummary = ""
     @Published var isAnalyzing = false
-
-    let isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
 
     var healthyCount: Int { items.filter { $0.status == .healthy }.count }
     var warningCount: Int { items.filter { $0.status == .warning }.count }
@@ -554,14 +401,11 @@ private final class AgentToolkitModel: ObservableObject {
         progressText = "..."
 
         let roots = authorizedRoots()
-        let sandboxed = isSandboxed
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = Self.buildDiagnostics(roots: roots, sandboxed: sandboxed)
-            let processes = sandboxed ? [] : Self.discoverRunningAgents()
+            let result = Self.buildDiagnostics(roots: roots, sandboxed: true)
             DispatchQueue.main.async {
                 self.items = result.items
                 self.sessionFileCount = result.sessionCount
-                self.runningAgents = processes
                 self.progressText = ""
                 self.isWorking = false
             }
@@ -633,14 +477,12 @@ private final class AgentToolkitModel: ObservableObject {
         let warningCount = self.warningCount
         let healthyCount = self.healthyCount
         let sessionCount = sessionFileCount
-        let runningCount = runningAgents.count
-        let mode = isSandboxed ? "App Store sandbox" : "direct advanced"
 
         Task {
             do {
                 let result = try await AppleIntelligenceService.generate(
                     instructions: "You are TraceFence's on-device agent health specialist. Give a concise, calm diagnostic summary. Never invent missing facts. Do not request or expose credentials. Respond in \(languageName).",
-                    prompt: "Health checks: \(healthyCount) healthy, \(warningCount) warnings. Readable session files: \(sessionCount). Running supported agents: \(runningCount). Product mode: \(mode). Explain the current state and provide at most three prioritized next steps. No session content or secret values are included.",
+                    prompt: "Health checks: \(healthyCount) healthy, \(warningCount) warnings. Readable session files: \(sessionCount). Sandbox protection is active. Explain the current state and provide at most three prioritized next steps. No session content or secret values are included.",
                     maximumResponseTokens: 500
                 )
                 aiSummary = result.content
@@ -655,37 +497,6 @@ private final class AgentToolkitModel: ObservableObject {
                 )
             }
             isAnalyzing = false
-        }
-    }
-
-    func perform(_ action: AgentProcessAction) {
-        guard !isSandboxed else { return }
-        let process = action.process
-        let runningApplication = NSRunningApplication(processIdentifier: process.pid)
-
-        switch action {
-        case .terminate:
-            if runningApplication?.terminate() != true {
-                Darwin.kill(process.pid, SIGTERM)
-            }
-        case .forceTerminate:
-            if runningApplication?.forceTerminate() != true {
-                Darwin.kill(process.pid, SIGKILL)
-            }
-        case .restart:
-            guard let bundleURL = process.bundleURL else { return }
-            if runningApplication?.terminate() != true {
-                Darwin.kill(process.pid, SIGTERM)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                let configuration = NSWorkspace.OpenConfiguration()
-                configuration.activates = true
-                NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration)
-            }
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            self.runDiagnostics()
         }
     }
 
@@ -713,22 +524,6 @@ private final class AgentToolkitModel: ObservableObject {
             }
         }
 
-        if !isSandboxed {
-            let home = SandboxPaths.realHomeDirectory
-            let candidates = [
-                "\(home)/.codex/sessions",
-                "\(home)/.codex/archived_sessions",
-                "\(home)/.claude/projects",
-                "\(home)/.cursor",
-                "\(home)/.gemini",
-                "\(home)/.config/opencode"
-            ]
-            for path in candidates where FileManager.default.fileExists(atPath: path) {
-                if seen.insert(path).inserted {
-                    urls.append(URL(fileURLWithPath: path, isDirectory: true))
-                }
-            }
-        }
         return urls
     }
 
@@ -881,66 +676,6 @@ private final class AgentToolkitModel: ObservableObject {
         } catch {
             try? FileManager.default.removeItem(at: backupRoot)
             return AgentBackupResult(success: false, copied: 0, folderName: backupRoot.lastPathComponent, errorDescription: error.localizedDescription)
-        }
-    }
-
-    nonisolated private static func discoverRunningAgents() -> [AgentRunningProcess] {
-        let keywords = ["codex", "claude", "cursor", "windsurf", "gemini", "opencode", "trae", "kiro"]
-        var processes: [Int32: AgentRunningProcess] = [:]
-
-        for application in NSWorkspace.shared.runningApplications {
-            let name = application.localizedName ?? ""
-            let bundleIdentifier = application.bundleIdentifier ?? ""
-            let haystack = "\(name) \(bundleIdentifier)".lowercased()
-            guard keywords.contains(where: haystack.contains) else { continue }
-            processes[application.processIdentifier] = AgentRunningProcess(
-                id: application.processIdentifier,
-                pid: application.processIdentifier,
-                name: name.isEmpty ? bundleIdentifier : name,
-                command: bundleIdentifier,
-                bundleIdentifier: application.bundleIdentifier,
-                bundleURL: application.bundleURL
-            )
-        }
-
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/ps")
-        task.arguments = ["-axo", "pid=,command="]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe()
-        do {
-            try task.run()
-            task.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(decoding: data, as: UTF8.self)
-            for line in output.split(separator: "\n") {
-                let parts = line.trimmingCharacters(in: .whitespaces).split(maxSplits: 1, whereSeparator: \.isWhitespace)
-                guard parts.count == 2,
-                      let pid = Int32(parts[0]),
-                      pid != ProcessInfo.processInfo.processIdentifier else { continue }
-                let command = String(parts[1])
-                let lower = command.lowercased()
-                guard keywords.contains(where: { lower.contains($0) }),
-                      !lower.contains("tracefence") else { continue }
-                if processes[pid] == nil {
-                    let executable = URL(fileURLWithPath: command.split(separator: " ").first.map(String.init) ?? command).lastPathComponent
-                    processes[pid] = AgentRunningProcess(
-                        id: pid,
-                        pid: pid,
-                        name: executable.isEmpty ? "Agent" : executable,
-                        command: command,
-                        bundleIdentifier: nil,
-                        bundleURL: nil
-                    )
-                }
-            }
-        } catch {
-            // App process discovery above still provides useful results.
-        }
-
-        return processes.values.sorted { lhs, rhs in
-            lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
     }
 
