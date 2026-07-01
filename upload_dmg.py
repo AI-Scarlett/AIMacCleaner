@@ -11,7 +11,7 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.28")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.29")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"

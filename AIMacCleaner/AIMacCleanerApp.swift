@@ -56,7 +56,6 @@ struct AIMacCleanerApp: App {
                     NSApp.setActivationPolicy(.regular)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [service, licenseService] in
                         licenseService.refreshTrialState()
-                        Task { await licenseService.refreshStoredLicenseIfPresent() }
                         if monitorEnabled, licenseService.canUseProFeatures {
                             service.startMonitoring()
                         }

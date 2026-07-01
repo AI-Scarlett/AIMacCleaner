@@ -397,6 +397,7 @@ struct MenuBarMonitor: View {
         case "api": return "API"
         case "web": return localizer.t("网页会话", en: "Web session", zhHant: "網頁會話", ja: "Web セッション", ko: "웹 세션", mt: "Web session")
         case "cli": return "CLI"
+        case "auto": return localizer.t("自动读取", en: "Auto", zhHant: "自動讀取", ja: "自動読み取り", ko: "자동 읽기", mt: "Auto")
         case "setup": return localizer.t("可选配置", en: "Optional setup", zhHant: "可選配置", ja: "任意設定", ko: "선택 설정", mt: "Optional setup")
         default: return source
         }
@@ -436,6 +437,8 @@ struct MenuBarMonitor: View {
             return localizer.t("其它 Provider", en: "Other Providers", zhHant: "其它 Provider", ja: "その他の Provider", ko: "기타 Provider", mt: "Other Providers")
         case "Optional setup", "可选配置":
             return localizer.t("可选配置", en: "Optional setup", zhHant: "可選配置", ja: "任意設定", ko: "선택 설정", mt: "Optional setup")
+        case "auto", "Auto", "AUTO":
+            return localizer.t("自动读取", en: "Auto", zhHant: "自動讀取", ja: "自動読み取り", ko: "자동 읽기", mt: "Auto")
         case "Manual reset credits", "Manual reset credit", "manual_reset", "manual reset", "手动重置次数":
             return localizer.t("手动重置", en: "Manual reset", zhHant: "手動重置", ja: "手動リセット", ko: "수동 재설정", mt: "Manual reset")
         case "Rate-limit reset", "Rate limit reset", "rate_limit_reset", "rate limit reset", "速率重置":
@@ -498,13 +501,19 @@ struct MenuBarMonitor: View {
             return providerNoFetchStrategy(provider)
         }
         if let provider = providerName(from: text, prefix: "需要配置 ", suffix: " 的 API Key。") {
-            return localizer.t("需要配置 \(provider) 的 API Key。可先在终端运行：codexbar config set-api-key --provider \(provider.lowercased()) --stdin", en: "Configure the \(provider) API key. You can run in Terminal: codexbar config set-api-key --provider \(provider.lowercased()) --stdin", zhHant: "需要配置 \(provider) 的 API Key。可先在終端機執行：codexbar config set-api-key --provider \(provider.lowercased()) --stdin", ja: "\(provider) API キーを設定してください。Terminal で codexbar config set-api-key --provider \(provider.lowercased()) --stdin を実行できます。", ko: "\(provider) API Key를 설정하세요. 터미널에서 codexbar config set-api-key --provider \(provider.lowercased()) --stdin 을 실행할 수 있습니다.", mt: "Configure the \(provider) API key. You can run in Terminal: codexbar config set-api-key --provider \(provider.lowercased()) --stdin")
+            return providerApiKeySetupHint(provider)
         }
         if let provider = providerName(from: text, prefix: "Configure the ", suffix: " API key.") {
-            return localizer.t("需要配置 \(provider) 的 API Key。可先在终端运行：codexbar config set-api-key --provider \(provider.lowercased()) --stdin", en: text, zhHant: "需要配置 \(provider) 的 API Key。可先在終端機執行：codexbar config set-api-key --provider \(provider.lowercased()) --stdin", ja: text, ko: text, mt: text)
+            return providerApiKeySetupHint(provider)
+        }
+        if let provider = providerName(from: text, prefix: "Configure the ", suffix: " API key or account credentials, then refresh the TraceFence provider monitor.") {
+            return providerApiKeySetupHint(provider)
         }
         if let provider = providerName(from: text, prefix: "本机已检测到 ", suffix: "，但额度读取器无法调用它的命令行工具。") {
-            return localizer.t("本机已检测到 \(provider)，但额度读取器无法调用它的命令行工具。请重新安装或修复 \(provider) CLI，确保终端中可直接运行。", en: "\(provider) appears to be installed, but the quota reader cannot run its CLI. Reinstall or repair the \(provider) CLI so it works directly in Terminal.", zhHant: "本機已偵測到 \(provider)，但額度讀取器無法呼叫它的命令列工具。請重新安裝或修復 \(provider) CLI，確保終端機中可直接執行。", ja: "\(provider) はインストール済みのようですが、クォータリーダーが CLI を実行できません。\(provider) CLI を再インストールまたは修復し、Terminal で直接実行できるようにしてください。", ko: "\(provider)이 설치된 것으로 보이지만 할당량 리더가 CLI를 실행할 수 없습니다. \(provider) CLI를 다시 설치하거나 복구해 터미널에서 직접 실행되도록 하세요.", mt: "\(provider) appears to be installed, but the quota reader cannot run its CLI. Reinstall or repair the \(provider) CLI so it works directly in Terminal.")
+            return providerCliRepairHint(provider)
+        }
+        if let provider = providerName(before: " appears to be installed, but the quota reader cannot run its CLI", in: text) {
+            return providerCliRepairHint(provider)
         }
         if text.contains("This provider is enabled, but its CLI was not found.") || text.contains("已启用该 provider，但本机未检测到命令行工具。") {
             return localizer.t("已启用该 provider，但本机未检测到命令行工具。安装对应 CLI 并确保命令在 PATH 中后即可监控。", en: text, zhHant: "已啟用該 provider，但本機未偵測到命令列工具。安裝對應 CLI 並確保命令在 PATH 中後即可監控。", ja: text, ko: text, mt: text)
@@ -570,6 +579,12 @@ struct MenuBarMonitor: View {
         return value.isEmpty ? nil : value
     }
 
+    private func providerName(before marker: String, in text: String) -> String? {
+        guard let range = text.range(of: marker) else { return nil }
+        let value = String(text[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
     private func providerApiKeyMissing(_ provider: String) -> String {
         localizer.t("\(provider) API Key 未配置", en: "\(provider) API key is not configured", zhHant: "\(provider) API Key 未配置", ja: "\(provider) API キーが未設定です", ko: "\(provider) API Key가 설정되지 않았습니다", mt: "\(provider) API key is not configured")
     }
@@ -588,6 +603,28 @@ struct MenuBarMonitor: View {
 
     private func providerNoFetchStrategy(_ provider: String) -> String {
         localizer.t("\(provider) 暂无可用读取方式", en: "No available fetch strategy for \(provider)", zhHant: "\(provider) 暫無可用讀取方式", ja: "\(provider) で利用可能な読み取り方式がありません", ko: "\(provider)에 사용할 수 있는 읽기 방식이 없습니다", mt: "No available fetch strategy for \(provider)")
+    }
+
+    private func providerApiKeySetupHint(_ provider: String) -> String {
+        localizer.t(
+            "需要配置 \(provider) 的 API Key 或账号凭证，然后刷新 TraceFence 额度监控。",
+            en: "Configure the \(provider) API key or account credentials, then refresh the TraceFence provider monitor.",
+            zhHant: "需要配置 \(provider) 的 API Key 或帳號憑證，然後重新整理 TraceFence 額度監控。",
+            ja: "\(provider) の API キーまたはアカウント認証情報を設定してから、TraceFence のクォータ監視を更新してください。",
+            ko: "\(provider) API Key 또는 계정 인증 정보를 설정한 뒤 TraceFence 할당량 모니터를 새로고침하세요.",
+            mt: "Configure the \(provider) API key or account credentials, then refresh the TraceFence provider monitor."
+        )
+    }
+
+    private func providerCliRepairHint(_ provider: String) -> String {
+        localizer.t(
+            "本机已检测到 \(provider)，但额度读取器无法调用它的命令行工具。请重新安装或修复 \(provider) CLI，确保终端中可直接运行。",
+            en: "\(provider) appears to be installed, but the quota reader cannot run its CLI. Reinstall or repair the \(provider) CLI so it works directly in Terminal.",
+            zhHant: "本機已偵測到 \(provider)，但額度讀取器無法呼叫它的命令列工具。請重新安裝或修復 \(provider) CLI，確保終端機中可直接執行。",
+            ja: "\(provider) はインストール済みのようですが、クォータリーダーが CLI を実行できません。\(provider) CLI を再インストールまたは修復し、Terminal で直接実行できるようにしてください。",
+            ko: "\(provider)이 설치된 것으로 보이지만 할당량 리더가 CLI를 실행할 수 없습니다. \(provider) CLI를 다시 설치하거나 복구해 터미널에서 직접 실행되도록 하세요.",
+            mt: "\(provider) appears to be installed, but the quota reader cannot run its CLI. Reinstall or repair the \(provider) CLI so it works directly in Terminal."
+        )
     }
 
     private func quotaWindowRow(_ window: ProviderQuotaWindow) -> some View {
@@ -760,25 +797,53 @@ struct MenuBarMonitor: View {
         guard let date else {
             return localizer.t("重置时间未知", en: "Reset time unknown", zhHant: "重置時間未知", ja: "リセット時刻不明", ko: "재설정 시간 알 수 없음", mt: "Reset time unknown")
         }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        let relative = formatter.localizedString(for: date, relativeTo: Date())
+        let relative = relativeTimeText(for: date)
         let time = DateFormatter.localizedString(from: date, dateStyle: .none, timeStyle: .short)
         return localizer.t("重置 \(relative) · \(time)", en: "Resets \(relative) · \(time)", zhHant: "重置 \(relative) · \(time)", ja: "\(relative) にリセット · \(time)", ko: "\(relative) 재설정 · \(time)", mt: "Resets \(relative) · \(time)")
     }
 
     private func dateTimeText(_ date: Date) -> String {
-        let relative = RelativeDateTimeFormatter()
-        relative.unitsStyle = .short
-        let relativeText = relative.localizedString(for: date, relativeTo: Date())
+        let relativeText = relativeTimeText(for: date)
         let absolute = DateFormatter.localizedString(from: date, dateStyle: .short, timeStyle: .short)
         return "\(relativeText) · \(absolute)"
     }
 
     private func relativeRefreshText(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter.localizedString(for: date, relativeTo: Date())
+        relativeTimeText(for: date)
+    }
+
+    private func relativeTimeText(for date: Date) -> String {
+        let delta = Int(date.timeIntervalSince(Date()))
+        if delta >= 0 {
+            if delta < 60 {
+                return localizer.t("不到 1 分钟后", en: "in <1 min", zhHant: "不到 1 分鐘後", ja: "1分以内", ko: "1분 이내", mt: "in <1 min")
+            }
+            if delta < 3600 {
+                let minutes = max(1, delta / 60)
+                return localizer.t("\(minutes) 分钟后", en: "in \(minutes) min.", zhHant: "\(minutes) 分鐘後", ja: "\(minutes)分後", ko: "\(minutes)분 후", mt: "in \(minutes) min.")
+            }
+            if delta < 86_400 {
+                let hours = max(1, delta / 3600)
+                return localizer.t("\(hours) 小时后", en: "in \(hours) hr.", zhHant: "\(hours) 小時後", ja: "\(hours)時間後", ko: "\(hours)시간 후", mt: "in \(hours) hr.")
+            }
+            let days = max(1, delta / 86_400)
+            return localizer.t("\(days) 天后", en: "in \(days) days", zhHant: "\(days) 天後", ja: "\(days)日後", ko: "\(days)일 후", mt: "in \(days) days")
+        }
+
+        let elapsed = abs(delta)
+        if elapsed < 60 {
+            return localizer.t("刚刚", en: "just now", zhHant: "剛剛", ja: "たった今", ko: "방금", mt: "just now")
+        }
+        if elapsed < 3600 {
+            let minutes = max(1, elapsed / 60)
+            return localizer.t("\(minutes) 分钟前", en: "\(minutes) min. ago", zhHant: "\(minutes) 分鐘前", ja: "\(minutes)分前", ko: "\(minutes)분 전", mt: "\(minutes) min. ago")
+        }
+        if elapsed < 86_400 {
+            let hours = max(1, elapsed / 3600)
+            return localizer.t("\(hours) 小时前", en: "\(hours) hr. ago", zhHant: "\(hours) 小時前", ja: "\(hours)時間前", ko: "\(hours)시간 전", mt: "\(hours) hr. ago")
+        }
+        let days = max(1, elapsed / 86_400)
+        return localizer.t("\(days) 天前", en: "\(days) days ago", zhHant: "\(days) 天前", ja: "\(days)日前", ko: "\(days)일 전", mt: "\(days) days ago")
     }
 
     private var hardwareOverview: some View {

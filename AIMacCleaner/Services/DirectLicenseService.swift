@@ -42,6 +42,7 @@ final class DirectLicenseService: ObservableObject {
     @Published private(set) var snapshot: DirectLicenseSnapshot
     @Published private(set) var trialSnapshot: DirectTrialSnapshot
     @Published private(set) var isBusy = false
+    @Published private(set) var licenseSyncedThisRun = false
 
     var isLicensed: Bool { snapshot.status == .licensed }
     var trialDuration: TimeInterval { 48 * 60 * 60 }
@@ -52,10 +53,6 @@ final class DirectLicenseService: ObservableObject {
     var trialRemainingSeconds: TimeInterval {
         max(0, trialSnapshot.expiresAt.timeIntervalSinceNow)
     }
-    var hasStoredLicense: Bool {
-        readSecret(account: licenseAccount) != nil
-    }
-
     var purchaseURL: URL? {
         let rawValue = (Bundle.main.object(forInfoDictionaryKey: "TraceFenceCheckoutURL") as? String)
             ?? UserDefaults.standard.string(forKey: "traceFenceCheckoutURL")
@@ -97,14 +94,6 @@ final class DirectLicenseService: ObservableObject {
 
     func refreshTrialState() {
         trialSnapshot = loadOrStartTrial()
-    }
-
-    func refreshStoredLicenseIfPresent() async {
-        guard hasStoredLicense else {
-            refreshTrialState()
-            return
-        }
-        await validateCurrentLicense()
     }
 
     func activate(licenseKey rawLicenseKey: String) async {
@@ -152,6 +141,7 @@ final class DirectLicenseService: ObservableObject {
     func validateCurrentLicense() async {
         guard let licenseKey = readSecret(account: licenseAccount) else {
             snapshot = .empty
+            licenseSyncedThisRun = false
             persistSnapshot()
             return
         }
@@ -171,6 +161,7 @@ final class DirectLicenseService: ObservableObject {
         } catch {
             snapshot.status = .error
             snapshot.message = error.localizedDescription
+            licenseSyncedThisRun = false
             persistSnapshot()
         }
 
@@ -202,6 +193,7 @@ final class DirectLicenseService: ObservableObject {
         deleteSecret(account: licenseAccount)
         deleteSecret(account: instanceAccount)
         snapshot = .empty
+        licenseSyncedThisRun = false
         refreshTrialState()
         persistSnapshot()
     }
@@ -230,10 +222,11 @@ final class DirectLicenseService: ObservableObject {
 
     private func apply(response: LemonLicenseResponse, fallbackKey: String) {
         let licenseKey = response.licenseKey
+        let existingInstanceId = snapshot.instanceId
         snapshot = DirectLicenseSnapshot(
             status: status(from: licenseKey?.status, valid: response.valid ?? response.activated ?? false),
             licenseKeySuffix: licenseKey?.key?.suffixText ?? fallbackKey.suffixText,
-            instanceId: response.instance?.id ?? readSecret(account: instanceAccount),
+            instanceId: response.instance?.id ?? existingInstanceId,
             customerName: response.meta?.customerName,
             customerEmail: response.meta?.customerEmail,
             productName: response.meta?.productName,
@@ -243,6 +236,7 @@ final class DirectLicenseService: ObservableObject {
             lastValidatedAt: Date(),
             message: response.error
         )
+        licenseSyncedThisRun = true
         persistSnapshot()
     }
 

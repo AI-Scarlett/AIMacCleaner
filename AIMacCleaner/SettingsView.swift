@@ -880,14 +880,24 @@ struct SettingsView: View {
         let snapshot = licenseService.snapshot
         switch snapshot.status {
         case .licensed:
-            let usage = licenseUsageText(snapshot)
+            if licenseService.licenseSyncedThisRun {
+                let usage = licenseUsageText(snapshot)
+                return localizer.t(
+                    "这台 Mac 已绑定。\(usage)",
+                    en: "This Mac is activated. \(usage)",
+                    zhHant: "這台 Mac 已綁定。\(usage)",
+                    ja: "このMacは有効化済みです。\(usage)",
+                    ko: "이 Mac은 활성화되었습니다. \(usage)",
+                    mt: "This Mac is activated. \(usage)"
+                )
+            }
             return localizer.t(
-                "这台 Mac 已绑定。\(usage)",
-                en: "This Mac is activated. \(usage)",
-                zhHant: "這台 Mac 已綁定。\(usage)",
-                ja: "このMacは有効化済みです。\(usage)",
-                ko: "이 Mac은 활성화되었습니다. \(usage)",
-                mt: "This Mac is activated. \(usage)"
+                "这台 Mac 已绑定。点击“重新验证”同步最新设备名额。",
+                en: "This Mac is activated. Click Recheck to sync the latest device limit.",
+                zhHant: "這台 Mac 已綁定。點擊「重新驗證」同步最新裝置名額。",
+                ja: "このMacは有効化済みです。「再確認」をクリックして最新のデバイス上限を同期してください。",
+                ko: "이 Mac은 활성화되었습니다. 다시 확인을 눌러 최신 기기 한도를 동기화하세요.",
+                mt: "This Mac is activated. Click Recheck to sync the latest device limit."
             )
         case .unlicensed:
             if licenseService.isTrialActive {
