@@ -10,6 +10,7 @@ struct AIMacCleanerApp: App {
     @StateObject private var sessionsViewModel = SessionsViewModel()
     @StateObject private var conversationWatcher = ConversationWatcher()
     @StateObject private var overviewStore = AgentMonitorOverviewStore()
+    @StateObject private var providerQuotaService = ProviderQuotaService()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @AppStorage("monitorEnabled") private var monitorEnabled = false
     @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = false
@@ -57,7 +58,7 @@ struct AIMacCleanerApp: App {
 
         MenuBarExtra {
             if menuBarMonitorEnabled {
-                MenuBarMonitor(service: service)
+                MenuBarMonitor(service: service, quotaService: providerQuotaService)
                     .environmentObject(localizer)
             } else {
                 Text(localizer.menuBarMonitorClosed)
@@ -71,7 +72,12 @@ struct AIMacCleanerApp: App {
 
     @ViewBuilder
     private var menuBarLabel: some View {
-        if let disk = service.diskInfo {
+        if let quota = providerQuotaService.menuBarSummary, !quota.isEmpty {
+            HStack(spacing: 3) {
+                MenuBarShieldEyeIcon()
+                Text(quota)
+            }
+        } else if let disk = service.diskInfo {
             HStack(spacing: 3) {
                 MenuBarShieldEyeIcon()
                 Text(String(format: "%.0f%%", 100.0 - disk.usedPct))

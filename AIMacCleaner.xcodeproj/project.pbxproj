@@ -53,8 +53,24 @@
 		B1DE3880A0446E246F14E423 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1DE3880A0446E246F14E423 /* NetworkMonitor.swift */; };
 		B116459B8B7913107AAE0C86 /* ConversationWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */; };
 		B11900112233445566778899 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11900112233445566778899 /* AppleIntelligenceService.swift */; };
+		D1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */; };
+		TF10CODEXBARRESOURCE0001 /* codexbar in Copy bundled helper */ = {isa = PBXBuildFile; fileRef = TF11CODEXBARRESOURCE0002 /* codexbar */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		TF13COPYCODEXBARPHASE01 /* Copy bundled helper */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 6;
+			files = (
+				TF10CODEXBARRESOURCE0001 /* codexbar in Copy bundled helper */,
+			);
+			name = "Copy bundled helper";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		1A2B3C4D5E6F7A8B9C0D1E2F /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -106,6 +122,8 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		F1DE3880A0446E246F14E423 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/NetworkMonitor.swift; sourceTree = "<group>"; };
 		F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ConversationWatcher.swift; sourceTree = "<group>"; };
 		F11900112233445566778899 /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AppleIntelligenceService.swift; sourceTree = "<group>"; };
+		E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ProviderQuotaService.swift; sourceTree = "<group>"; };
+		TF11CODEXBARRESOURCE0002 /* codexbar */ = {isa = PBXFileReference; lastKnownFileType = file; path = Resources/codexbar; sourceTree = "<group>"; };
 		CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenScopeLabView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -178,6 +196,8 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				F1DE3880A0446E246F14E423 /* NetworkMonitor.swift */,
 				F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */,
 				F11900112233445566778899 /* AppleIntelligenceService.swift */,
+				E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */,
+				TF11CODEXBARRESOURCE0002 /* codexbar */,
 			);
 			path = AIMacCleaner;
 			sourceTree = "<group>";
@@ -191,6 +211,8 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 			buildPhases = (
 				1966423F0571FCFAFFCD6863 /* Sources */,
 				2DA348074FE152181CBDA495 /* Resources */,
+				TF13COPYCODEXBARPHASE01 /* Copy bundled helper */,
+				TF12SIGNCODEXBARPHASE001 /* Sign bundled codexbar */,
 			);
 			buildRules = (
 			);
@@ -248,6 +270,31 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		TF12SIGNCODEXBARPHASE001 /* Sign bundled codexbar */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_FOLDER_PATH)/codexbar",
+				"$(SRCROOT)/$(CODE_SIGN_ENTITLEMENTS)",
+			);
+			name = "Sign bundled codexbar";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\n\nHELPER=\"${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/codexbar\"\nENTITLEMENTS=\"${SRCROOT}/${CODE_SIGN_ENTITLEMENTS}\"\n\nif [ \"${CODE_SIGNING_ALLOWED:-NO}\" != \"YES\" ]; then\n  exit 0\nfi\n\nif [ -z \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ]; then\n  exit 0\nfi\n\nif [ -x \"$HELPER\" ] && [ -f \"$ENTITLEMENTS\" ]; then\n  /usr/bin/codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" --options runtime --entitlements \"$ENTITLEMENTS\" \"$HELPER\"\nfi\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		1966423F0571FCFAFFCD6863 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -296,6 +343,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				B1DE3880A0446E246F14E423 /* NetworkMonitor.swift in Sources */,
 				B116459B8B7913107AAE0C86 /* ConversationWatcher.swift in Sources */,
 				B11900112233445566778899 /* AppleIntelligenceService.swift in Sources */,
+				D1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift in Sources */,
 				CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */,
 			2A3B4C5D6E7F8A9B0C1D2E3F /* Theme.swift in Sources */,
 			);
@@ -307,11 +355,12 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		0EE1F611468A2D2C671555E1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-					CODE_SIGN_STYLE = Automatic;
-					COMBINE_HIDPI_IMAGES = YES;
-					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-					CURRENT_PROJECT_VERSION = 31;
+					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+					ARCHS = arm64;
+						CODE_SIGN_STYLE = Automatic;
+						COMBINE_HIDPI_IMAGES = YES;
+						CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
+						CURRENT_PROJECT_VERSION = 35;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
@@ -322,7 +371,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 3.1.2;
+			MARKETING_VERSION = 3.1.3;
 			OPTIMIZATION_LEVEL = "-O";
 				PRODUCT_BUNDLE_IDENTIFIER = com.aimaccleaner.app;
 				PRODUCT_NAME = TraceFence;
@@ -457,7 +506,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-					CURRENT_PROJECT_VERSION = 31;
+						CURRENT_PROJECT_VERSION = 35;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
@@ -468,7 +517,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 3.1.2;
+			MARKETING_VERSION = 3.1.3;
 			OPTIMIZATION_LEVEL = "-Onone";
 				PRODUCT_BUNDLE_IDENTIFIER = com.aimaccleaner.app;
 				PRODUCT_NAME = TraceFence;
