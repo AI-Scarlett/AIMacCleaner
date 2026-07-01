@@ -6,6 +6,9 @@ struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
 
     @State private var selectedTab: SettingsTab = .features
+    @StateObject private var licenseService = DirectLicenseService.shared
+    @StateObject private var updateService = DirectUpdateService.shared
+    @State private var licenseKeyInput = ""
 
     @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
     @AppStorage("sensorMonitorEnabled") private var sensorMonitorEnabled = false
@@ -17,6 +20,7 @@ struct SettingsView: View {
     enum SettingsTab: String, CaseIterable {
         case ai = "AI"
         case features = "Features"
+        case license = "License"
         case appearance = "Appearance"
         case lab = "Lab"
         case monitor = "Monitor"
@@ -32,6 +36,7 @@ struct SettingsView: View {
             switch self {
             case .ai: "brain"
             case .features: "switch.2"
+            case .license: "key.fill"
             case .appearance: "paintpalette.fill"
             case .lab: "flask"
             case .monitor: "bell.badge"
@@ -45,6 +50,7 @@ struct SettingsView: View {
             switch self {
             case .ai: "AI"
             case .features: "Features"
+            case .license: "License"
             case .appearance: "Appearance"
             case .lab: "Lab"
             case .monitor: "Monitor"
@@ -58,6 +64,7 @@ struct SettingsView: View {
             switch self {
             case .ai: localizer.settingsTabAI
             case .features: localizer.settingsTabFeatures
+            case .license: localizer.t("授权", en: "License", zhHant: "授權", ja: "ライセンス", ko: "라이선스", mt: "License")
             case .appearance: localizer.t("外观", en: "Appearance", zhHant: "外觀", ja: "外観", ko: "외관", mt: "Appearance")
             case .lab: localizer.settingsTabLab
             case .monitor: localizer.settingsTabMonitor
@@ -146,6 +153,7 @@ struct SettingsView: View {
                         switch selectedTab {
                         case .ai: aiSection
                         case .features: featuresSection
+                        case .license: licenseSection
                         case .appearance: appearanceSection
                         case .lab: labSection
                         case .monitor: monitorSection
@@ -178,6 +186,9 @@ struct SettingsView: View {
         }
         .frame(width: 680, height: 520)
         .appCanvas()
+        .task {
+            licenseService.refreshTrialState()
+        }
     }
 
     private var appearanceSection: some View {
@@ -374,6 +385,107 @@ struct SettingsView: View {
         }
     }
 
+    private var licenseSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            SectionHeader(title: localizer.t("TraceFence 授权", en: "TraceFence License", zhHant: "TraceFence 授權", ja: "TraceFence ライセンス", ko: "TraceFence 라이선스", mt: "TraceFence License"), icon: "key.fill")
+            Text(localizer.t(
+                "未购买用户可体验 48 小时；购买后由 Lemon Squeezy 处理付款、税务、发票与 License Key，TraceFence 只在本机保存授权密钥并验证状态。",
+                en: "Unlicensed users get a 48-hour local trial. After purchase, Lemon Squeezy handles checkout, tax, invoices, and license keys; TraceFence stores the key locally and validates it.",
+                zhHant: "未購買使用者可體驗 48 小時；購買後由 Lemon Squeezy 處理付款、稅務、發票與 License Key，TraceFence 只在本機保存授權密鑰並驗證狀態。",
+                ja: "未購入ユーザーは48時間のローカルトライアルを利用できます。購入後は Lemon Squeezy が決済、税務、請求書、ライセンスキーを処理し、TraceFence はキーをローカル保存して検証します。",
+                ko: "미구매 사용자는 48시간 로컬 평가판을 사용할 수 있습니다. 구매 후 Lemon Squeezy가 결제, 세금, 인보이스, 라이선스 키를 처리하고 TraceFence는 키를 로컬에 저장해 검증합니다.",
+                mt: "Unlicensed users get a 48-hour local trial. After purchase, Lemon Squeezy handles checkout, tax, invoices, and license keys; TraceFence stores the key locally and validates it."
+            ))
+            .font(Theme.Font.caption)
+            .foregroundStyle(Theme.Colors.textSecondary)
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                HStack(spacing: Theme.Spacing.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: Theme.Radius.md)
+                            .fill(licenseStatusColor.opacity(0.12))
+                        Image(systemName: licenseStatusIcon)
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(licenseStatusColor)
+                    }
+                    .frame(width: 46, height: 46)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(licenseStatusTitle)
+                            .font(Theme.Font.bodyMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text(licenseStatusDetail)
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .lineLimit(2)
+                    }
+                    Spacer()
+                    if licenseService.isBusy {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+
+                if let message = licenseService.snapshot.message, !message.isEmpty {
+                    Label(message, systemImage: "info.circle")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Divider().overlay(Theme.Colors.separator)
+
+                HStack(spacing: Theme.Spacing.sm) {
+                    TextField(localizer.t("输入 License Key", en: "Enter license key", zhHant: "輸入 License Key", ja: "ライセンスキーを入力", ko: "라이선스 키 입력", mt: "Enter license key"), text: $licenseKeyInput)
+                        .textFieldStyle(.plain)
+                        .font(Theme.Font.caption)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .background(Theme.Colors.elevatedCardBg.opacity(0.75))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .stroke(Theme.Colors.separator.opacity(0.75), lineWidth: 1)
+                        )
+
+                    Button {
+                        Task { await licenseService.activate(licenseKey: licenseKeyInput) }
+                    } label: {
+                        Label(localizer.t("激活", en: "Activate", zhHant: "啟用", ja: "有効化", ko: "활성화", mt: "Activate"), systemImage: "checkmark.seal.fill")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
+                    .disabled(licenseService.isBusy)
+                }
+
+                HStack(spacing: Theme.Spacing.sm) {
+                    Button {
+                        licenseService.openPurchasePage()
+                    } label: {
+                        Label(localizer.t("购买 TraceFence Pro", en: "Buy TraceFence Pro", zhHant: "購買 TraceFence Pro", ja: "TraceFence Pro を購入", ko: "TraceFence Pro 구매", mt: "Buy TraceFence Pro"), systemImage: "cart.fill")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 32))
+
+                    Button {
+                        Task { await licenseService.validateCurrentLicense() }
+                    } label: {
+                        Label(localizer.t("重新验证", en: "Recheck", zhHant: "重新驗證", ja: "再確認", ko: "다시 확인", mt: "Recheck"), systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .ghost, minHeight: 32))
+                    .disabled(licenseService.isBusy)
+
+                    Button {
+                        Task { await licenseService.deactivateCurrentLicense() }
+                    } label: {
+                        Label(localizer.t("解绑本机", en: "Deactivate Mac", zhHant: "解除本機", ja: "このMacを解除", ko: "이 Mac 비활성화", mt: "Deactivate Mac"), systemImage: "xmark.circle")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.danger, variant: .ghost, minHeight: 32))
+                    .disabled(licenseService.isBusy || licenseService.snapshot.status == .unlicensed)
+                }
+            }
+            .cardStyle()
+        }
+    }
+
     private var monitorSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             SectionHeader(title: localizer.monitorSettings, icon: "bell.badge")
@@ -410,8 +522,8 @@ struct SettingsView: View {
                     icon: "trash.slash",
                     title: localizer.preventAutoEmptyTrash,
                     desc: localizer.t(
-                        "AgentGuard 不会自动清空废纸篓；受保护项在废纸篓中时会持续提醒。",
-                        en: "AgentGuard never empties Trash automatically. It reminds you while guarded items remain in Trash."
+                        "TraceFence 不会自动清空废纸篓；受保护项在废纸篓中时会持续提醒。",
+                        en: "TraceFence never empties Trash automatically. It reminds you while guarded items remain in Trash."
                     ),
                     isOn: Binding(
                         get: { service.preventAutoEmptyTrash },
@@ -643,37 +755,88 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             SectionHeader(title: localizer.versionUpdate, icon: "arrow.up.circle")
 
-            HStack {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                    HStack(spacing: Theme.Spacing.sm) {
-                        Text(localizer.currentVersion)
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                        Text("v\(service.currentVersion)")
-                            .font(Theme.Font.captionMedium)
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: Theme.Radius.md)
+                            .fill(Theme.Colors.accent.opacity(0.12))
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.accent)
+                    }
+                    .frame(width: 46, height: 46)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("TraceFence v\(updateService.currentVersion)")
+                            .font(Theme.Font.bodyMedium)
                             .foregroundStyle(Theme.Colors.textPrimary)
-                        Circle()
-                            .fill(Theme.Colors.success)
-                            .frame(width: 6, height: 6)
+                        Text(localizer.t(
+                            "更新将自动下载、校验、安装并重新启动，原有文件夹授权会继续保留。",
+                            en: "Updates are downloaded, verified, installed, and relaunched automatically while preserving folder access.",
+                            zhHant: "更新會自動下載、驗證、安裝並重新啟動，原有資料夾授權會繼續保留。",
+                            ja: "アップデートは自動的にダウンロード、検証、インストール、再起動され、フォルダアクセスは保持されます。",
+                            ko: "업데이트는 자동으로 다운로드, 검증, 설치 및 재시작되며 기존 폴더 접근 권한은 유지됩니다.",
+                            mt: "Updates are downloaded, verified, installed, and relaunched automatically while preserving folder access."
+                        ))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    if updateService.isChecking || updateService.isDownloading || updateService.isInstalling {
+                        ProgressView()
+                            .controlSize(.small)
                     }
                 }
-                Spacer()
-                if let appStoreURL {
-                    Button {
-                        NSWorkspace.shared.open(appStoreURL)
-                    } label: {
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Image(systemName: "arrow.up.circle")
-                            Text(localizer.checkUpdate)
+
+                if let latest = updateService.latestUpdate {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                        Text(localizer.t("发现新版本 v\(latest.version)", en: "New version available v\(latest.version)"))
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.success)
+                        if !latest.notes.isEmpty {
+                            Text(latest.notes)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .lineLimit(3)
                         }
-                        .font(Theme.Font.captionMedium)
-                        .foregroundStyle(Theme.Colors.accent)
-                        .padding(.horizontal, Theme.Spacing.md)
-                        .padding(.vertical, Theme.Spacing.xs + 1)
-                        .background(Theme.Colors.accent.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     }
-                    .buttonStyle(.plain)
+                }
+
+                if let message = updateService.message {
+                    Label(message, systemImage: "info.circle")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: Theme.Spacing.sm) {
+                    Button {
+                        Task { await updateService.checkForUpdates() }
+                    } label: {
+                        Label(updateService.isChecking ? localizer.downloadingUpdate : localizer.checkUpdate, systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .secondary, minHeight: 32))
+                    .disabled(updateService.isChecking || updateService.isDownloading || updateService.isInstalling)
+
+                    if updateService.latestUpdate != nil {
+                        Button {
+                            Task { await updateService.downloadLatestUpdate() }
+                        } label: {
+                            Label(
+                                updateService.isDownloading
+                                    ? localizer.downloadingUpdateFmt
+                                    : updateService.isInstalling
+                                        ? localizer.t("正在安装…", en: "Installing…", zhHant: "正在安裝…", ja: "インストール中…", ko: "설치 중…", mt: "Installing…")
+                                        : localizer.t("更新并重启", en: "Update and Relaunch", zhHant: "更新並重新啟動", ja: "更新して再起動", ko: "업데이트 및 재시작", mt: "Update and Relaunch"),
+                                systemImage: "arrow.down.circle.fill"
+                            )
+                        }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.success, variant: .primary, minHeight: 32))
+                        .disabled(updateService.isChecking || updateService.isDownloading || updateService.isInstalling)
+                    }
                 }
             }
             .cardStyle()
@@ -688,9 +851,131 @@ struct SettingsView: View {
         return URL(string: "macappstore://apps.apple.com/app/id\(appStoreID)")
     }
 
+    private var licenseStatusTitle: String {
+        if licenseService.isTrialActive {
+            return localizer.t("48 小时试用中", en: "48-hour trial active", zhHant: "48 小時試用中", ja: "48時間トライアル中", ko: "48시간 평가판 사용 중", mt: "48-hour trial active")
+        }
+        if licenseService.isTrialExpired {
+            return localizer.t("试用已结束", en: "Trial ended", zhHant: "試用已結束", ja: "トライアル終了", ko: "평가판 종료", mt: "Trial ended")
+        }
+        switch licenseService.snapshot.status {
+        case .licensed:
+            return localizer.t("授权已激活", en: "License active", zhHant: "授權已啟用", ja: "ライセンス有効", ko: "라이선스 활성", mt: "License active")
+        case .expired:
+            return localizer.t("授权已过期", en: "License expired", zhHant: "授權已過期", ja: "ライセンス期限切れ", ko: "라이선스 만료", mt: "License expired")
+        case .disabled:
+            return localizer.t("授权已停用", en: "License disabled", zhHant: "授權已停用", ja: "ライセンス無効", ko: "라이선스 비활성", mt: "License disabled")
+        case .inactive:
+            return localizer.t("授权未激活", en: "License inactive", zhHant: "授權未啟用", ja: "ライセンス未有効", ko: "라이선스 미활성", mt: "License inactive")
+        case .validating:
+            return localizer.t("正在验证授权", en: "Validating license", zhHant: "正在驗證授權", ja: "ライセンス確認中", ko: "라이선스 확인 중", mt: "Validating license")
+        case .error:
+            return localizer.t("授权验证异常", en: "License check failed", zhHant: "授權驗證異常", ja: "ライセンス確認失敗", ko: "라이선스 확인 실패", mt: "License check failed")
+        case .unlicensed:
+            return localizer.t("尚未授权", en: "Not licensed", zhHant: "尚未授權", ja: "未ライセンス", ko: "라이선스 없음", mt: "Not licensed")
+        }
+    }
+
+    private var licenseStatusDetail: String {
+        let snapshot = licenseService.snapshot
+        switch snapshot.status {
+        case .licensed:
+            let usage = licenseUsageText(snapshot)
+            return localizer.t(
+                "这台 Mac 已绑定。\(usage)",
+                en: "This Mac is activated. \(usage)",
+                zhHant: "這台 Mac 已綁定。\(usage)",
+                ja: "このMacは有効化済みです。\(usage)",
+                ko: "이 Mac은 활성화되었습니다. \(usage)",
+                mt: "This Mac is activated. \(usage)"
+            )
+        case .unlicensed:
+            if licenseService.isTrialActive {
+                return localizer.t(
+                    "剩余 \(trialRemainingText)。试用期内可扫描、浏览和预览清理，Pro 解锁增强扫描与执行清理。",
+                    en: "\(trialRemainingText) left. Trial can scan, browse, and preview cleanup; Pro unlocks enhanced scan and cleanup actions.",
+                    zhHant: "剩餘 \(trialRemainingText)。試用期內可掃描、瀏覽和預覽清理，Pro 解鎖增強掃描與執行清理。",
+                    ja: "残り \(trialRemainingText)。トライアルではスキャン、閲覧、整理プレビューが使え、Pro で強化スキャンと整理実行が解放されます。",
+                    ko: "\(trialRemainingText) 남음. 평가판은 스캔, 탐색, 정리 미리보기를 사용할 수 있고 Pro는 강화 스캔과 정리 실행을 해제합니다.",
+                    mt: "\(trialRemainingText) left. Trial can scan, browse, and preview cleanup; Pro unlocks enhanced scan and cleanup actions."
+                )
+            }
+            if licenseService.isTrialExpired {
+                return localizer.t(
+                    "48 小时试用已结束。购买并激活 TraceFence Pro 后可继续使用扫描和高级操作。",
+                    en: "The 48-hour trial has ended. Buy and activate TraceFence Pro to continue scanning and using advanced actions.",
+                    zhHant: "48 小時試用已結束。購買並啟用 TraceFence Pro 後可繼續使用掃描和高級操作。",
+                    ja: "48時間トライアルは終了しました。TraceFence Pro を購入して有効化すると、スキャンと高度な操作を続けられます。",
+                    ko: "48시간 평가판이 종료되었습니다. TraceFence Pro를 구매하고 활성화하면 스캔과 고급 작업을 계속 사용할 수 있습니다.",
+                    mt: "The 48-hour trial has ended. Buy and activate TraceFence Pro to continue scanning and using advanced actions."
+                )
+            }
+            return localizer.t("购买后粘贴 Lemon Squeezy 发出的 License Key 即可激活。", en: "After purchase, paste the license key from Lemon Squeezy to activate.", zhHant: "購買後貼上 Lemon Squeezy 發出的 License Key 即可啟用。", ja: "購入後、Lemon Squeezy のライセンスキーを貼り付けて有効化します。", ko: "구매 후 Lemon Squeezy에서 받은 라이선스 키를 붙여 넣어 활성화하세요.", mt: "After purchase, paste the license key from Lemon Squeezy to activate.")
+        default:
+            return snapshot.licenseKeySuffix.map {
+                localizer.t("License Key：\($0)", en: "License key: \($0)", zhHant: "License Key：\($0)", ja: "ライセンスキー：\($0)", ko: "라이선스 키: \($0)", mt: "License key: \($0)")
+            } ?? localizer.t("请重新验证或重新输入 License Key。", en: "Recheck or enter the license key again.", zhHant: "請重新驗證或重新輸入 License Key。", ja: "再確認するか、ライセンスキーを再入力してください。", ko: "다시 확인하거나 라이선스 키를 다시 입력하세요.", mt: "Recheck or enter the license key again.")
+        }
+    }
+
+    private var licenseStatusIcon: String {
+        if licenseService.isTrialActive { return "timer.circle.fill" }
+        if licenseService.isTrialExpired { return "lock.circle.fill" }
+        switch licenseService.snapshot.status {
+        case .licensed: return "checkmark.seal.fill"
+        case .validating: return "arrow.triangle.2.circlepath"
+        case .expired, .disabled, .error: return "exclamationmark.triangle.fill"
+        default: return "key.fill"
+        }
+    }
+
+    private var licenseStatusColor: Color {
+        if licenseService.isTrialActive { return Theme.Colors.warning }
+        if licenseService.isTrialExpired { return Theme.Colors.danger }
+        switch licenseService.snapshot.status {
+        case .licensed: return Theme.Colors.success
+        case .expired, .disabled, .error: return Theme.Colors.danger
+        case .validating: return Theme.Colors.info
+        default: return Theme.Colors.accent
+        }
+    }
+
+    private func licenseUsageText(_ snapshot: DirectLicenseSnapshot) -> String {
+        if let usage = snapshot.activationUsage, let limit = snapshot.activationLimit {
+            return localizer.t("已使用 \(usage)/\(limit) 个设备名额。", en: "\(usage)/\(limit) activations used.", zhHant: "已使用 \(usage)/\(limit) 個裝置名額。", ja: "\(usage)/\(limit) 台分を使用中。", ko: "\(usage)/\(limit)개 활성화 사용 중.", mt: "\(usage)/\(limit) activations used.")
+        }
+        if let limit = snapshot.activationLimit {
+            return localizer.t("最多可激活 \(limit) 台设备。", en: "Up to \(limit) device activations.", zhHant: "最多可啟用 \(limit) 台裝置。", ja: "最大 \(limit) 台まで有効化できます。", ko: "최대 \(limit)개 기기에서 활성화할 수 있습니다.", mt: "Up to \(limit) device activations.")
+        }
+        if let usage = snapshot.activationUsage {
+            return localizer.t("已使用 \(usage) 个设备名额。", en: "\(usage) activations used.", zhHant: "已使用 \(usage) 個裝置名額。", ja: "\(usage) 台分を使用中。", ko: "\(usage)개 활성화 사용 중.", mt: "\(usage) activations used.")
+        }
+        if let email = snapshot.customerEmail {
+            return localizer.t("绑定账号：\(email)", en: "Account: \(email)", zhHant: "綁定帳號：\(email)", ja: "アカウント：\(email)", ko: "계정: \(email)", mt: "Account: \(email)")
+        }
+        return snapshot.licenseKeySuffix.map {
+            localizer.t("License Key：\($0)", en: "License key: \($0)", zhHant: "License Key：\($0)", ja: "ライセンスキー：\($0)", ko: "라이선스 키: \($0)", mt: "License key: \($0)")
+        } ?? ""
+    }
+
+    private var trialRemainingText: String {
+        let seconds = Int(licenseService.trialRemainingSeconds.rounded(.down))
+        let hours = max(0, seconds / 3600)
+        let minutes = max(0, (seconds % 3600) / 60)
+        if hours > 0 {
+            return localizer.t("\(hours) 小时 \(minutes) 分钟", en: "\(hours)h \(minutes)m", zhHant: "\(hours) 小時 \(minutes) 分鐘", ja: "\(hours)時間\(minutes)分", ko: "\(hours)시간 \(minutes)분", mt: "\(hours)h \(minutes)m")
+        }
+        return localizer.t("\(minutes) 分钟", en: "\(minutes)m", zhHant: "\(minutes) 分鐘", ja: "\(minutes)分", ko: "\(minutes)분", mt: "\(minutes)m")
+    }
+
     private func saveSettings() {
         service.saveLocalAIConfig()
         if operationMonitorEnabled {
+            guard licenseService.canUseProFeatures else {
+                selectedTab = .license
+                licenseService.refreshTrialState()
+                return
+            }
             service.startOperationMonitor()
         } else {
             service.stopOperationMonitor()

@@ -47,10 +47,10 @@ struct CursorAdapter: AgentAdapter {
     func detectInstallation() -> Bool { detectCLI("cursor") || detectApp(named: "Cursor") }
     var hooksInstalled: Bool { checkCursorYolo() }
     func installHooks(installer: HookInstaller) async throws {
-        throw AgentError.hookInstallFailed("Cursor desktop does not expose compatible AgentGuard hooks yet. Use Cursor CLI when available.")
+        throw AgentError.hookInstallFailed("Cursor desktop does not expose compatible TraceFence hooks yet. Use Cursor CLI when available.")
     }
     func removeHooks(installer: HookInstaller) async throws {
-        throw AgentError.hookUninstallFailed("Cursor desktop has no AgentGuard hook to remove.")
+        throw AgentError.hookUninstallFailed("Cursor desktop has no TraceFence hook to remove.")
     }
 
     private func checkCursorYolo() -> Bool {

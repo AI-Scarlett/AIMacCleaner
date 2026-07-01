@@ -883,6 +883,8 @@ private struct TokenScopeEmptyInline: View {
 // MARK: - Store
 
 private final class TokenScopeStore: ObservableObject {
+    private static let cacheVersion = 2
+
     @Published private(set) var records: [TokenScopeUsageRecord] = []
     @Published private var summaries: [TokenScopeRange: TokenScopeSummary] = TokenScopeRange.emptySummaries
     @Published private(set) var sources: [TokenScopeSourceStatus]
@@ -891,13 +893,13 @@ private final class TokenScopeStore: ObservableObject {
 
     private let scanner = TokenScopeScanner()
     private let bookmarkStore = TokenScopeBookmarkStore()
-    private let scanQueue = DispatchQueue(label: "com.aimaccleaner.tokenscope.scan", qos: .utility)
+    private let scanQueue = DispatchQueue(label: "com.tracefence.tokenscope.scan", qos: .utility)
     private var generation = 0
     private var autoRefreshTimer: Timer?
     private var scanInFlight = false
 
     private struct Cache: Codable {
-        var version: Int = 1
+        var version: Int = TokenScopeStore.cacheVersion
         var updatedAt: Date = Date()
         var records: [TokenScopeUsageRecord] = []
         var sources: [TokenScopeSourceStatus] = []
@@ -989,6 +991,7 @@ private final class TokenScopeStore: ObservableObject {
     private func loadCache() {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: SandboxPaths.shared.tokenScopeCachePath)),
               let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
+        guard cache.version == Self.cacheVersion else { return }
         records = cache.records
         summaries = TokenScopeRange.cachedSummaries(for: cache.records)
         if !cache.sources.isEmpty {
@@ -998,7 +1001,7 @@ private final class TokenScopeStore: ObservableObject {
     }
 
     private func saveCache() {
-        let cache = Cache(updatedAt: Date(), records: records, sources: sources)
+        let cache = Cache(version: Self.cacheVersion, updatedAt: Date(), records: records, sources: sources)
         guard let data = try? JSONEncoder().encode(cache) else { return }
         try? data.write(to: URL(fileURLWithPath: SandboxPaths.shared.tokenScopeCachePath), options: .atomic)
     }
@@ -1952,7 +1955,7 @@ private enum TokenScopeCodexAdapter {
         let modified = TokenScopeJSON.fileModifiedDate(file)
         var sessionID = sessionID(for: file, root: sessionsRoot)
         var records: [TokenScopeUsageRecord] = []
-        var currentModel: String?
+        var currentModel = firstKnownModel(in: file)
         var currentProject = inferProject(from: file, root: sessionsRoot)
         var previousTotals: TokenScopeUsage?
         var currentTurnID: String?
@@ -1992,7 +1995,7 @@ private enum TokenScopeCodexAdapter {
                     ?? TokenScopeModelName.normalize(TokenScopeJSON.string(info, keys: ["model", "model_name"]))
                     ?? TokenScopeModelName.normalize(TokenScopeJSON.string(object, path: ["payload", "model"]))
                     ?? currentModel
-                    ?? "gpt-5"
+                    ?? TokenScopeModelName.unknown
                 currentModel = model
                 let turnID = codexTurnID(from: TokenScopeJSON.value(object, path: ["payload"])) ?? currentTurnID
                 records.append(record(
@@ -2013,7 +2016,7 @@ private enum TokenScopeCodexAdapter {
                 let timestamp = TokenScopeJSON.date(object, keys: ["timestamp", "created_at", "createdAt"]) ?? modified
                 let model = currentModel
                     ?? TokenScopeModelName.normalize(TokenScopeJSON.firstString(object, paths: [["model"], ["model_name"], ["data", "model"], ["data", "model_name"], ["result", "model"], ["response", "model"]]))
-                    ?? "gpt-5"
+                    ?? TokenScopeModelName.unknown
                 currentModel = model
                 let eventProject = TokenScopeJSON.firstString(object, paths: [["cwd"], ["workdir"], ["workspace"], ["project_path"], ["data", "cwd"], ["result", "cwd"], ["response", "cwd"]]) ?? currentProject
                 records.append(record(
@@ -2030,6 +2033,54 @@ private enum TokenScopeCodexAdapter {
         }
 
         return records
+    }
+
+    private static func firstKnownModel(in file: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+        defer { try? handle.close() }
+
+        let maxScanBytes = 2 * 1024 * 1024
+        let newline = UInt8(ascii: "\n")
+        var remainingBytes = min((try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0, maxScanBytes)
+        var buffer = Data()
+        buffer.reserveCapacity(64 * 1024)
+
+        func model(from line: Data) -> String? {
+            guard !line.isEmpty else { return nil }
+            let prefix = line.prefix(4096)
+            guard let prefixText = String(data: prefix, encoding: .utf8),
+                  prefixText.contains("\"type\":\"session_meta\"") || prefixText.contains("\"type\":\"turn_context\"") else {
+                return nil
+            }
+            if line.count <= 256 * 1024,
+               let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+               let model = TokenScopeModelName.best(in: object) {
+                return model
+            }
+            guard let context = lightweightContextObject(from: line) else { return nil }
+            return TokenScopeModelName.best(in: context)
+        }
+
+        while remainingBytes > 0 {
+            let readSize = min(256 * 1024, remainingBytes)
+            guard let chunk = try? handle.read(upToCount: readSize), !chunk.isEmpty else { break }
+            remainingBytes -= chunk.count
+
+            var start = chunk.startIndex
+            for index in chunk.indices where chunk[index] == newline {
+                buffer.append(chunk[start..<index])
+                if let model = model(from: buffer) {
+                    return model
+                }
+                buffer.removeAll(keepingCapacity: true)
+                start = chunk.index(after: index)
+            }
+            if start < chunk.endIndex {
+                buffer.append(chunk[start..<chunk.endIndex])
+            }
+        }
+
+        return model(from: buffer)
     }
 
     private static func usageDelta(info: Any?, previousTotals: inout TokenScopeUsage?) -> TokenScopeUsage? {

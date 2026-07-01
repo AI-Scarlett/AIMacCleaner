@@ -31,6 +31,11 @@ class AgentSessionScanner: ObservableObject {
     private var dataSources: [AgentDataSource] = []
     private var isScanningAgents = false
     private var isScanningOps = false
+    private let codexRolloutMetadataReadLimit = 256 * 1024
+    private let codexRolloutMetadataLineLimit = 250
+    private let operationFilesPerSourceLimit = 80
+    private let codexOperationTailReadLimit = 512 * 1024
+    private let codexOperationLineLimit = 900
 
     init() {
         registerBuiltInSources()
@@ -186,18 +191,24 @@ class AgentSessionScanner: ObservableObject {
     }
 
     func scanAllAgents() {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        guard !isScanningAgents else {
+            print("[AgentSessionScanner] scanAllAgents already in progress, skipping")
+            return
+        }
+
+        isScanningAgents = true
+        isScanning = true
+        scanError = ""
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
 
-            self.isScanningAgents = true
             defer {
                 DispatchQueue.main.async {
                     self.isScanningAgents = false
                     self.isScanning = false
                 }
             }
-
-            DispatchQueue.main.async { self.scanError = "" }
 
             var merged: [String: DiscoveredAgent] = [:]
 
@@ -451,7 +462,7 @@ class AgentSessionScanner: ObservableObject {
             var isDir: ObjCBool = false
             fileManager.fileExists(atPath: basePath, isDirectory: &isDir)
             if isDir.boolValue {
-                let urls = findSessionFiles(in: basePath, pattern: source.filePattern)
+                let urls = recentSessionFiles(in: basePath, pattern: source.filePattern, limit: operationFilesPerSourceLimit)
                 for url in urls {
                     records.append(contentsOf: source.parser(url, source.agentName))
                 }
@@ -461,6 +472,19 @@ class AgentSessionScanner: ObservableObject {
         }
 
         return records
+    }
+
+    private func recentSessionFiles(in dir: String, pattern: String, limit: Int) -> [URL] {
+        let urls = findSessionFiles(in: dir, pattern: pattern)
+        let dated = urls.map { (url: $0, modifiedAt: modificationDate(for: $0)) }
+        let sorted = dated.sorted { $0.modifiedAt > $1.modifiedAt }.map(\.url)
+        guard sorted.count > limit else { return sorted }
+        return Array(sorted.prefix(limit))
+    }
+
+    private func modificationDate(for url: URL) -> Date {
+        let attrs = try? fileManager.attributesOfItem(atPath: url.path)
+        return (attrs?[.modificationDate] as? Date) ?? .distantPast
     }
 
     private func findSessionFiles(in dir: String, pattern: String) -> [URL] {
@@ -562,13 +586,22 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func summarizeCodexRollout(url: URL) -> (activityCount: Int, latestActivity: Date?, projectDirs: Set<String>) {
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return (0, nil, []) }
-        var activityCount = 0
-        var latestActivity: Date?
+        let attrs = try? fileManager.attributesOfItem(atPath: url.path)
+        let fileSize = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+        var activityCount = fileSize > 0 ? 1 : 0
+        var latestActivity = attrs?[.modificationDate] as? Date
         var projectDirs = Set<String>()
 
-        for line in content.components(separatedBy: "\n") {
-            guard let data = line.data(using: .utf8),
+        guard let handle = try? FileHandle(forReadingFrom: url) else {
+            return (activityCount, latestActivity, projectDirs)
+        }
+        defer { try? handle.close() }
+
+        let data = (try? handle.read(upToCount: codexRolloutMetadataReadLimit)) ?? Data()
+        let content = String(decoding: data, as: UTF8.self)
+
+        for line in content.split(separator: "\n", omittingEmptySubsequences: true).prefix(codexRolloutMetadataLineLimit) {
+            guard let data = String(line).data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
 
             if let ts = parseTimestamp(json["timestamp"] as? String), latestActivity == nil || ts > latestActivity! {
@@ -586,12 +619,12 @@ class AgentSessionScanner: ObservableObject {
                 let payloadType = payload["type"] as? String ?? ""
                 let role = payload["role"] as? String ?? ""
                 if payloadType == "function_call" || role == "user" || role == "assistant" {
-                    activityCount += 1
+                    activityCount = max(activityCount, 1)
                 }
             } else if type == "event_msg", let payload = json["payload"] as? [String: Any] {
                 let eventType = payload["type"] as? String ?? ""
                 if eventType == "user_message" || eventType == "agent_message" {
-                    activityCount += 1
+                    activityCount = max(activityCount, 1)
                 }
             }
         }
@@ -638,8 +671,8 @@ class AgentSessionScanner: ObservableObject {
         guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return (0, nil) }
         defer { sqlite3_close(db) }
 
-        let count = sqliteInt(db, "SELECT COUNT(*) FROM logs WHERE feedback_log_body LIKE '%codex.op=%' OR feedback_log_body LIKE '%function_call%' OR feedback_log_body LIKE '%tool_call%'")
-        let latest = sqliteInt(db, "SELECT MAX(ts) FROM logs")
+        let count = sqliteInt(db, "SELECT COUNT(DISTINCT thread_id) FROM logs WHERE thread_id IS NOT NULL")
+        let latest = sqliteInt(db, "SELECT ts FROM logs ORDER BY ts DESC, ts_nanos DESC, id DESC LIMIT 1")
         let latestDate = latest > 0 ? Date(timeIntervalSince1970: TimeInterval(latest)) : nil
         return (count, latestDate)
     }
@@ -1765,13 +1798,13 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func parseCodexJSONL(url: URL, agentName: String) -> [AgentOpRecord] {
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        guard let content = readCodexOperationWindow(url: url) else { return [] }
         var records: [AgentOpRecord] = []
         let sessionId = url.deletingPathExtension().lastPathComponent
         var cwd = ""
 
-        for line in content.components(separatedBy: "\n") {
-            guard let data = line.data(using: .utf8),
+        for line in content.split(separator: "\n", omittingEmptySubsequences: true).suffix(codexOperationLineLimit) {
+            guard let data = String(line).data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
 
             let type = json["type"] as? String ?? ""
@@ -1844,6 +1877,28 @@ class AgentSessionScanner: ObservableObject {
         }
 
         return records
+    }
+
+    private func readCodexOperationWindow(url: URL) -> String? {
+        let attrs = try? fileManager.attributesOfItem(atPath: url.path)
+        let fileSize = (attrs?[.size] as? NSNumber)?.uint64Value ?? 0
+        guard fileSize > 0 else { return nil }
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+
+        let maxBytes = UInt64(codexOperationTailReadLimit)
+        let startOffset = fileSize > maxBytes ? fileSize - maxBytes : 0
+        do {
+            try handle.seek(toOffset: startOffset)
+            guard let data = try handle.readToEnd() else { return nil }
+            var content = String(decoding: data, as: UTF8.self)
+            if startOffset > 0, let firstBreak = content.firstIndex(of: "\n") {
+                content = String(content[content.index(after: firstBreak)...])
+            }
+            return content
+        } catch {
+            return nil
+        }
     }
 
     private func parseCodexDataSource(url: URL, agentName: String) -> [AgentOpRecord] {

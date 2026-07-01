@@ -1,0 +1,938 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentGuard UI Redesign V4</title>
+  <style>
+    :root {
+      --bg: #eafbfb;
+      --bg-2: #dff8f5;
+      --canvas: #f8ffff;
+      --panel: rgba(255,255,255,.82);
+      --panel-strong: #ffffff;
+      --sidebar: rgba(225, 249, 246, .86);
+      --line: rgba(16, 86, 96, .13);
+      --line-strong: rgba(16, 86, 96, .20);
+      --text: #10252c;
+      --muted: #55717a;
+      --quiet: #7e989f;
+      --cyan: #21c8d6;
+      --cyan-2: #0fb5c8;
+      --green: #34d990;
+      --green-2: #1dc77d;
+      --amber: #f0a93a;
+      --red: #f46565;
+      --blue: #4ba3ff;
+      --shadow: 0 24px 70px rgba(17, 110, 120, .16);
+      --shadow-soft: 0 12px 34px rgba(17, 110, 120, .11);
+      --radius-xl: 28px;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --radius-sm: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 12% 4%, rgba(33,200,214,.25), transparent 30%),
+        radial-gradient(circle at 82% 0%, rgba(52,217,144,.22), transparent 32%),
+        linear-gradient(135deg, #f5ffff 0%, var(--bg) 48%, #eefdf5 100%);
+    }
+
+    .deck {
+      width: min(1540px, calc(100vw - 44px));
+      margin: 24px auto 72px;
+    }
+
+    .intro {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 14px 16px;
+      margin-bottom: 20px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255,255,255,.72);
+      backdrop-filter: blur(18px);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .intro-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 15px;
+      font-weight: 860;
+    }
+
+    .mini-mark,
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      background: linear-gradient(145deg, var(--cyan), var(--green));
+      box-shadow: 0 14px 30px rgba(33, 200, 214, .24);
+      color: white;
+    }
+
+    .mini-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+    }
+
+    .mini-mark svg { width: 21px; height: 21px; }
+
+    .jump {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .jump a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 760;
+      padding: 8px 11px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+    }
+
+    .jump a:hover {
+      color: var(--text);
+      background: white;
+      border-color: var(--line);
+    }
+
+    .screen {
+      margin-bottom: 34px;
+    }
+
+    .screen-label {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 20px;
+      margin: 0 4px 12px;
+    }
+
+    .screen-label h2 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+
+    .screen-label p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .mock {
+      height: 820px;
+      min-height: 760px;
+      display: grid;
+      grid-template-columns: 258px minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 32px;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.94), rgba(240,255,252,.80)),
+        var(--canvas);
+      box-shadow: var(--shadow);
+    }
+
+    .sidebar {
+      position: relative;
+      padding: 22px 15px;
+      border-right: 1px solid var(--line);
+      background:
+        radial-gradient(circle at 22% 12%, rgba(33,200,214,.18), transparent 36%),
+        linear-gradient(180deg, rgba(255,255,255,.74), var(--sidebar));
+    }
+
+    .brand {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 12px;
+      align-items: center;
+      padding: 8px;
+      margin-bottom: 20px;
+    }
+
+    .brand-mark {
+      width: 46px;
+      height: 46px;
+      border-radius: 15px;
+    }
+
+    .brand-mark svg {
+      width: 28px;
+      height: 28px;
+      filter: drop-shadow(0 2px 3px rgba(0,0,0,.18));
+    }
+
+    .brand-name {
+      font-size: 18px;
+      font-weight: 900;
+      line-height: 1.05;
+    }
+
+    .brand-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 6px;
+      color: var(--green-2);
+      font-size: 11px;
+      font-weight: 820;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 12px rgba(52,217,144,.7);
+    }
+
+    .group-title {
+      margin: 20px 11px 8px;
+      color: var(--quiet);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .tab {
+      position: relative;
+      display: grid;
+      grid-template-columns: 36px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      min-height: 46px;
+      margin: 4px 0;
+      padding: 7px 10px 7px 8px;
+      border-radius: 16px;
+      color: var(--muted);
+      border: 1px solid transparent;
+    }
+
+    .tab.active {
+      color: var(--text);
+      background: rgba(255,255,255,.88);
+      border-color: var(--line);
+      box-shadow: 0 12px 28px rgba(17,110,120,.10);
+    }
+
+    .tab.active:before {
+      content: "";
+      position: absolute;
+      left: -1px;
+      top: 10px;
+      bottom: 10px;
+      width: 3px;
+      border-radius: 999px;
+      background: linear-gradient(180deg, var(--cyan), var(--green));
+    }
+
+    .tab-icon {
+      width: 36px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      background: rgba(16, 86, 96, .045);
+      color: inherit;
+      font-size: 15px;
+      font-weight: 850;
+    }
+
+    .tab.active .tab-icon {
+      color: white;
+      background: linear-gradient(145deg, var(--cyan), var(--green));
+      box-shadow: 0 10px 20px rgba(33,200,214,.22);
+    }
+
+    .tab-name {
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .tab-meta {
+      color: var(--quiet);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .badge {
+      min-width: 22px;
+      height: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 7px;
+      border-radius: 999px;
+      background: rgba(240,169,58,.16);
+      color: #b06f13;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .side-card {
+      position: absolute;
+      left: 15px;
+      right: 15px;
+      bottom: 18px;
+      padding: 14px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.68);
+      box-shadow: 0 14px 28px rgba(17,110,120,.08);
+    }
+
+    .side-card strong {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .side-card span {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .main {
+      padding: 24px;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 92% 8%, rgba(52,217,144,.12), transparent 28%),
+        linear-gradient(180deg, rgba(255,255,255,.44), rgba(247,255,255,.58));
+    }
+
+    .page-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      color: var(--cyan-2);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 31px;
+      line-height: 1.04;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+      max-width: 720px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.76);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 820;
+      box-shadow: 0 8px 18px rgba(17,110,120,.06);
+    }
+
+    .btn.primary {
+      border: none;
+      color: white;
+      background: linear-gradient(145deg, var(--cyan), var(--green));
+      box-shadow: 0 14px 28px rgba(33,200,214,.24);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 250px;
+      gap: 18px;
+      padding: 22px;
+      margin-bottom: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-xl);
+      background:
+        radial-gradient(circle at 16% 12%, rgba(33,200,214,.18), transparent 36%),
+        linear-gradient(145deg, rgba(255,255,255,.94), rgba(235,253,247,.88));
+      box-shadow: var(--shadow-soft);
+    }
+
+    .hero-title {
+      font-size: 24px;
+      font-weight: 900;
+      line-height: 1.16;
+      max-width: 680px;
+    }
+
+    .hero-copy {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.56;
+    }
+
+    .hero-widget {
+      display: grid;
+      place-items: center;
+      border-radius: 22px;
+      background:
+        linear-gradient(145deg, rgba(33,200,214,.12), rgba(52,217,144,.11)),
+        rgba(255,255,255,.72);
+      border: 1px solid var(--line);
+    }
+
+    .ring {
+      width: 126px;
+      height: 126px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle, #fff 57%, transparent 58%),
+        conic-gradient(var(--green) 0 72%, rgba(16,86,96,.11) 72% 100%);
+      box-shadow: inset 0 0 0 1px rgba(16,86,96,.08), 0 16px 34px rgba(33,200,214,.15);
+    }
+
+    .ring strong {
+      display: block;
+      font-size: 31px;
+      line-height: 1;
+      text-align: center;
+    }
+
+    .ring span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .grid { display: grid; gap: 14px; }
+    .metrics { grid-template-columns: repeat(4, 1fr); }
+    .two { grid-template-columns: 1.2fr .8fr; }
+    .three { grid-template-columns: repeat(3, 1fr); }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: var(--panel);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .metric {
+      min-height: 118px;
+      padding: 16px;
+    }
+
+    .metric-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .metric-icon {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      color: white;
+      background: linear-gradient(145deg, var(--cyan), var(--green));
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .metric-value {
+      margin-top: 17px;
+      font-size: 29px;
+      font-weight: 930;
+    }
+
+    .metric-note {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .panel {
+      padding: 17px;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 13px;
+    }
+
+    .panel-title {
+      font-size: 15px;
+      font-weight: 900;
+    }
+
+    .link {
+      color: var(--cyan-2);
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    .rows {
+      display: grid;
+      gap: 8px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 38px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      min-height: 58px;
+      padding: 10px;
+      border-radius: 16px;
+      background: rgba(255,255,255,.62);
+      border: 1px solid rgba(16,86,96,.08);
+    }
+
+    .row.emphasis {
+      background: linear-gradient(90deg, rgba(33,200,214,.11), rgba(52,217,144,.08)), white;
+      border-color: rgba(33,200,214,.22);
+    }
+
+    .avatar {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 13px;
+      color: white;
+      background: linear-gradient(145deg, var(--cyan), var(--green));
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .row-title {
+      font-size: 13px;
+      font-weight: 850;
+    }
+
+    .row-sub {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 24px;
+      padding: 0 9px;
+      border-radius: 999px;
+      background: rgba(52,217,144,.14);
+      color: #138954;
+      font-size: 11px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .chip.cyan {
+      background: rgba(33,200,214,.14);
+      color: #087d8b;
+    }
+
+    .chip.amber {
+      background: rgba(240,169,58,.16);
+      color: #a86a0f;
+    }
+
+    .chip.red {
+      background: rgba(244,101,101,.13);
+      color: #ba3838;
+    }
+
+    .mini-chart {
+      height: 180px;
+      display: flex;
+      align-items: end;
+      gap: 10px;
+      padding: 18px 14px 10px;
+      border-radius: 18px;
+      background:
+        linear-gradient(180deg, rgba(33,200,214,.08), rgba(52,217,144,.06)),
+        rgba(255,255,255,.54);
+      border: 1px solid rgba(16,86,96,.08);
+    }
+
+    .bar {
+      flex: 1;
+      min-width: 18px;
+      border-radius: 999px 999px 8px 8px;
+      background: linear-gradient(180deg, var(--cyan), var(--green));
+      opacity: .82;
+    }
+
+    .path-card {
+      display: grid;
+      grid-template-columns: 42px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 13px;
+      border-radius: 18px;
+      background: white;
+      border: 1px solid var(--line);
+    }
+
+    .folder {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 14px;
+      background: rgba(33,200,214,.12);
+      color: var(--cyan-2);
+      font-weight: 900;
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .setting {
+      min-height: 104px;
+      padding: 16px;
+      border-radius: 20px;
+      background: rgba(255,255,255,.72);
+      border: 1px solid var(--line);
+    }
+
+    .setting strong {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 7px;
+    }
+
+    .setting p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .switch {
+      width: 44px;
+      height: 26px;
+      border-radius: 999px;
+      background: linear-gradient(145deg, var(--cyan), var(--green));
+      position: relative;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.25);
+    }
+
+    .switch:after {
+      content: "";
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      top: 3px;
+      right: 3px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 3px 8px rgba(17,110,120,.24);
+    }
+
+    .screen-foot {
+      margin-top: 12px;
+      color: var(--quiet);
+      font-size: 12px;
+    }
+
+    @media (max-width: 1180px) {
+      .mock { grid-template-columns: 230px minmax(0, 1fr); }
+      .metrics, .three { grid-template-columns: repeat(2, 1fr); }
+      .two { grid-template-columns: 1fr; }
+      .hero { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <div class="intro">
+      <div class="intro-title">
+        <div class="mini-mark"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 16.2C10.9 14.8 12.4 13.5 14.6 12.7C14.9 12.6 15 12.3 15 11.8V7.2C15 4.5 12.9 2.6 9 1.5C5.1 2.6 3 4.5 3 7.2V11.8C3 12.3 3.1 12.6 3.4 12.7C5.6 13.5 7.1 14.8 9 16.2Z" stroke-width="1.9"/><path d="M4.2 9C6.3 5.2 11.7 5.2 13.8 9C11.7 12.8 6.3 12.8 4.2 9Z" fill="currentColor" stroke-width="0"/><circle cx="9" cy="9" r="2.5" fill="#10252c"/><path d="M7.7 10.4L9.4 9L7.7 7.6M9.9 7.4H11.5" stroke-width="1.15"/></svg></div>
+        <div>AgentGuard UI Redesign V4 · 明亮青绿主题 · 全页面设计稿</div>
+      </div>
+      <nav class="jump">
+        <a href="#command">Command</a>
+        <a href="#approvals">Approvals</a>
+        <a href="#sessions">Sessions</a>
+        <a href="#activity">Activity</a>
+        <a href="#protected">Protected</a>
+        <a href="#cleanup">Cleanup</a>
+        <a href="#lab">Lab</a>
+        <a href="#settings">Settings</a>
+      </nav>
+    </div>
+
+    <section class="screen" id="command">
+      <div class="screen-label">
+        <div><h2>01 · Command Center</h2><p>首页是明亮版指挥中心，聚焦整体状态、待审批、活跃 AI 和最近操作。</p></div>
+      </div>
+      <div class="mock">
+        <aside class="sidebar"><div class="brand"><div class="brand-mark"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 16.2C10.9 14.8 12.4 13.5 14.6 12.7C14.9 12.6 15 12.3 15 11.8V7.2C15 4.5 12.9 2.6 9 1.5C5.1 2.6 3 4.5 3 7.2V11.8C3 12.3 3.1 12.6 3.4 12.7C5.6 13.5 7.1 14.8 9 16.2Z" stroke-width="1.9"/><path d="M4.2 9C6.3 5.2 11.7 5.2 13.8 9C11.7 12.8 6.3 12.8 4.2 9Z" fill="currentColor" stroke-width="0"/><circle cx="9" cy="9" r="2.5" fill="#10252c"/><path d="M7.7 10.4L9.4 9L7.7 7.6M9.9 7.4H11.5" stroke-width="1.15"/></svg></div><div><div class="brand-name">AgentGuard</div><div class="brand-status"><span class="dot"></span> Monitoring Live</div></div></div><div class="group-title">Workspace</div><div class="tab active"><div class="tab-icon">⌘</div><div class="tab-name">Command</div><div class="tab-meta">Live</div></div><div class="tab"><div class="tab-icon">✓</div><div class="tab-name">Approvals</div><div class="badge">3</div></div><div class="tab"><div class="tab-icon">S</div><div class="tab-name">Sessions</div><div class="tab-meta">12</div></div><div class="tab"><div class="tab-icon">↯</div><div class="tab-name">Activity</div><div class="tab-meta">Audit</div></div><div class="tab"><div class="tab-icon">◎</div><div class="tab-name">Protected</div><div class="tab-meta">8</div></div><div class="group-title">Tools</div><div class="tab"><div class="tab-icon">♻</div><div class="tab-name">Cleanup</div><div class="tab-meta">2.4G</div></div><div class="tab"><div class="tab-icon">◇</div><div class="tab-name">Lab</div><div class="tab-meta">Beta</div></div><div class="tab"><div class="tab-icon">⚙</div><div class="tab-name">Settings</div><div></div></div><div class="side-card"><strong><span class="dot"></span> Protection on</strong><span>4 active agents · 8 protected folders · bright icon-aligned theme</span></div></aside>
+        <main class="main">
+          <div class="page-head">
+            <div>
+              <div class="eyebrow"><span class="dot"></span> Live Protection</div>
+              <h3>Command Center</h3>
+              <div class="lead">A lighter command center that follows the cyan-green icon theme while keeping operational density.</div>
+            </div>
+            <div class="actions"><div class="btn">Refresh</div><div class="btn">Authorize Folder</div><div class="btn primary">Review 3 approvals</div></div>
+          </div>
+          <section class="hero">
+            <div><div class="hero-title">AgentGuard is actively watching AI tools and protected folders.</div><div class="hero-copy">This version avoids the heavy dark dashboard feel. The surfaces are clean, bright, and connected to the original icon palette.</div></div>
+            <div class="hero-widget"><div class="ring"><div><strong>92</strong><span>Health</span></div></div></div>
+          </section>
+          <section class="grid metrics">
+            <div class="card metric"><div class="metric-top"><span>Approvals</span><span class="metric-icon">✓</span></div><div class="metric-value">3</div><div class="metric-note">Waiting for review</div></div>
+            <div class="card metric"><div class="metric-top"><span>Active Agents</span><span class="metric-icon">AI</span></div><div class="metric-value">4</div><div class="metric-note">Codex, Claude, Cursor, Gemini</div></div>
+            <div class="card metric"><div class="metric-top"><span>Operations</span><span class="metric-icon">↯</span></div><div class="metric-value">1,284</div><div class="metric-note">Captured today</div></div>
+            <div class="card metric"><div class="metric-top"><span>Protected</span><span class="metric-icon">⌘</span></div><div class="metric-value">8</div><div class="metric-note">High-trust folders</div></div>
+          </section>
+          <section class="grid two" style="margin-top:14px">
+            <div class="card panel"><div class="panel-head"><div class="panel-title">Live Activity</div><div class="link">Open log</div></div><div class="rows"><div class="row emphasis"><div class="avatar">C</div><div><div class="row-title">Codex edited Theme.swift</div><div class="row-sub">UI system · 18 seconds ago</div></div><div class="chip">Allowed</div></div><div class="row"><div class="avatar">CL</div><div><div class="row-title">Claude Code requested write access</div><div class="row-sub">Protected project folder · needs approval</div></div><div class="chip amber">Review</div></div><div class="row"><div class="avatar">G</div><div><div class="row-title">Gemini scanned session data</div><div class="row-sub">Read-only audit event</div></div><div class="chip cyan">Logged</div></div></div></div>
+            <div class="card panel"><div class="panel-head"><div class="panel-title">Today Trend</div><div class="chip">Low risk</div></div><div class="mini-chart"><div class="bar" style="height:45%"></div><div class="bar" style="height:66%"></div><div class="bar" style="height:38%"></div><div class="bar" style="height:76%"></div><div class="bar" style="height:54%"></div><div class="bar" style="height:88%"></div><div class="bar" style="height:62%"></div></div></div>
+          </section>
+        </main>
+      </div>
+    </section>
+
+    <section class="screen" id="approvals">
+      <div class="screen-label"><div><h2>02 · Approvals</h2><p>审批页要更像决策队列：风险、影响路径、建议动作都一眼清楚。</p></div></div>
+      <div class="mock">
+        <aside class="sidebar"><div class="brand"><div class="brand-mark"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 16.2C10.9 14.8 12.4 13.5 14.6 12.7C14.9 12.6 15 12.3 15 11.8V7.2C15 4.5 12.9 2.6 9 1.5C5.1 2.6 3 4.5 3 7.2V11.8C3 12.3 3.1 12.6 3.4 12.7C5.6 13.5 7.1 14.8 9 16.2Z" stroke-width="1.9"/><path d="M4.2 9C6.3 5.2 11.7 5.2 13.8 9C11.7 12.8 6.3 12.8 4.2 9Z" fill="currentColor" stroke-width="0"/><circle cx="9" cy="9" r="2.5" fill="#10252c"/><path d="M7.7 10.4L9.4 9L7.7 7.6M9.9 7.4H11.5" stroke-width="1.15"/></svg></div><div><div class="brand-name">AgentGuard</div><div class="brand-status"><span class="dot"></span> Monitoring Live</div></div></div><div class="group-title">Workspace</div><div class="tab"><div class="tab-icon">⌘</div><div class="tab-name">Command</div><div class="tab-meta">Live</div></div><div class="tab active"><div class="tab-icon">✓</div><div class="tab-name">Approvals</div><div class="badge">3</div></div><div class="tab"><div class="tab-icon">S</div><div class="tab-name">Sessions</div><div class="tab-meta">12</div></div><div class="tab"><div class="tab-icon">↯</div><div class="tab-name">Activity</div><div class="tab-meta">Audit</div></div><div class="tab"><div class="tab-icon">◎</div><div class="tab-name">Protected</div><div class="tab-meta">8</div></div><div class="group-title">Tools</div><div class="tab"><div class="tab-icon">♻</div><div class="tab-name">Cleanup</div><div class="tab-meta">2.4G</div></div><div class="tab"><div class="tab-icon">◇</div><div class="tab-name">Lab</div><div class="tab-meta">Beta</div></div><div class="tab"><div class="tab-icon">⚙</div><div class="tab-name">Settings</div><div></div></div><div class="side-card"><strong><span class="dot"></span> Protection on</strong><span>4 active agents · 8 protected folders · bright icon-aligned theme</span></div></aside>
+        <main class="main">
+          <div class="page-head">
+            <div><div class="eyebrow"><span class="dot"></span> Decision Queue</div><h3>Approvals</h3><div class="lead">Each approval card explains who requested it, what will change, and why it matters.</div></div>
+            <div class="actions"><div class="btn">Filter</div><div class="btn">Deny selected</div><div class="btn primary">Approve safe items</div></div>
+          </div>
+          <section class="grid three">
+            <div class="card metric"><div class="metric-top"><span>Pending</span><span class="metric-icon">3</span></div><div class="metric-value">3</div><div class="metric-note">Need your decision</div></div>
+            <div class="card metric"><div class="metric-top"><span>High impact</span><span class="metric-icon">!</span></div><div class="metric-value">1</div><div class="metric-note">Release config touched</div></div>
+            <div class="card metric"><div class="metric-top"><span>Auto allowed</span><span class="metric-icon">✓</span></div><div class="metric-value">42</div><div class="metric-note">Matched trusted rules</div></div>
+          </section>
+          <section class="card panel" style="margin-top:14px">
+            <div class="panel-head"><div class="panel-title">Pending Requests</div><div class="link">Approval policy</div></div>
+            <div class="rows">
+              <div class="row emphasis"><div class="avatar">C</div><div><div class="row-title">Codex wants to modify AppStoreExportOptions.plist</div><div class="row-sub">High impact · release signing behavior · /Downloads/MacCleaner</div></div><div class="chip amber">Review</div></div>
+              <div class="row"><div class="avatar">CL</div><div><div class="row-title">Claude Code requests write access to docs</div><div class="row-sub">Medium impact · documentation only · 4 files</div></div><div class="chip cyan">Details</div></div>
+              <div class="row"><div class="avatar">CU</div><div><div class="row-title">Cursor asks to clean generated build cache</div><div class="row-sub">Low impact · reversible cleanup · 1.2 GB</div></div><div class="chip">Safe</div></div>
+            </div>
+          </section>
+          <div class="screen-foot">Design rule: approval actions should be visually stable and always include affected path + impact level.</div>
+        </main>
+      </div>
+    </section>
+
+    <section class="screen" id="sessions">
+      <div class="screen-label"><div><h2>03 · Sessions</h2><p>会话页突出 AI 工具状态、上下文、token、子进程和实时活跃度。</p></div></div>
+      <div class="mock">
+        <aside class="sidebar"><div class="brand"><div class="brand-mark"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 16.2C10.9 14.8 12.4 13.5 14.6 12.7C14.9 12.6 15 12.3 15 11.8V7.2C15 4.5 12.9 2.6 9 1.5C5.1 2.6 3 4.5 3 7.2V11.8C3 12.3 3.1 12.6 3.4 12.7C5.6 13.5 7.1 14.8 9 16.2Z" stroke-width="1.9"/><path d="M4.2 9C6.3 5.2 11.7 5.2 13.8 9C11.7 12.8 6.3 12.8 4.2 9Z" fill="currentColor" stroke-width="0"/><circle cx="9" cy="9" r="2.5" fill="#10252c"/><path d="M7.7 10.4L9.4 9L7.7 7.6M9.9 7.4H11.5" stroke-width="1.15"/></svg></div><div><div class="brand-name">AgentGuard</div><div class="brand-status"><span class="dot"></span> Monitoring Live</div></div></div><div class="group-title">Workspace</div><div class="tab"><div class="tab-icon">⌘</div><div class="tab-name">Command</div><div class="tab-meta">Live</div></div><div class="tab"><div class="tab-icon">✓</div><div class="tab-name">Approvals</div><div class="badge">3</div></div><div class="tab active"><div class="tab-icon">S</div><div class="tab-name">Sessions</div><div class="tab-meta">12</div></div><div class="tab"><div class="tab-icon">↯</div><div class="tab-name">Activity</div><div class="tab-meta">Audit</div></div><div class="tab"><div class="tab-icon">◎</div><div class="tab-name">Protected</div><div class="tab-meta">8</div></div><div class="group-title">Tools</div><div class="tab"><div class="tab-icon">♻</div><div class="tab-name">Cleanup</div><div class="tab-meta">2.4G</div></div><div class="tab"><div class="tab-icon">◇</div><div class="tab-name">Lab</div><div class="tab-meta">Beta</div></div><div class="tab"><div class="tab-icon">⚙</div><div class="tab-name">Settings</div><div></div></div><div class="side-card"><strong><span class="dot"></span> Protection on</strong><span>4 active agents · 8 protected folders · bright icon-aligned theme</span></div></aside>
+        <main class="main">
+          <div class="page-head">
+            <div><div class="eyebrow"><span class="dot"></span> Agent Runtime</div><h3>Sessions</h3><div class="lead">A brighter session dashboard inspired by live monitoring, but visually aligned with the icon theme.</div></div>
+            <div class="actions"><div class="btn">Scan agents</div><div class="btn primary">Start monitor</div></div>
+          </div>
+          <section class="grid metrics">
+            <div class="card metric"><div class="metric-top"><span>Live Sessions</span><span class="metric-icon">S</span></div><div class="metric-value">12</div><div class="metric-note">Across 4 agents</div></div>
+            <div class="card metric"><div class="metric-top"><span>Context</span><span class="metric-icon">%</span></div><div class="metric-value">68%</div><div class="metric-note">Highest active load</div></div>
+            <div class="card metric"><div class="metric-top"><span>Tokens</span><span class="metric-icon">T</span></div><div class="metric-value">841K</div><div class="metric-note">Observed today</div></div>
+            <div class="card metric"><div class="metric-top"><span>Child Proc</span><span class="metric-icon">P</span></div><div class="metric-value">17</div><div class="metric-note">Runtime processes</div></div>
+          </section>
+          <section class="grid two" style="margin-top:14px">
+            <div class="card panel"><div class="panel-head"><div class="panel-title">Active AI Sessions</div><div class="link">Sort by context</div></div><div class="rows">
+              <div class="row emphasis"><div class="avatar">C</div><div><div class="row-title">Codex · MacCleaner UI redesign</div><div class="row-sub">cwd /Downloads/MacCleaner · context 68% · 4 child processes</div></div><div class="chip">Live</div></div>
+              <div class="row"><div class="avatar">CL</div><div><div class="row-title">Claude Code · Hook diagnostics</div><div class="row-sub">context 42% · 2 watched ports · 18 min active</div></div><div class="chip cyan">Stable</div></div>
+              <div class="row"><div class="avatar">G</div><div><div class="row-title">Gemini CLI · Doc review</div><div class="row-sub">context 25% · no writes · read-only</div></div><div class="chip">Idle</div></div>
+            </div></div>
+            <div class="card panel"><div class="panel-head"><div class="panel-title">Token Mix</div><div class="chip cyan">Today</div></div><div class="mini-chart"><div class="bar" style="height:70%"></div><div class="bar" style="height:42%"></div><div class="bar" style="height:84%"></div><div class="bar" style="height:35%"></div><div class="bar" style="height:62%"></div></div></div>
+          </section>
+        </main>
+      </div>
+    </section>
+
+    <section class="screen" id="activity">
+      <div class="screen-label"><div><h2>04 · Activity</h2><p>操作流水页更清晰地区分读、写、执行、删除和来源工具。</p></div></div>
+      <div class="mock">
+        <aside class="sidebar"><div class="brand"><div class="brand-mark"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 16.2C10.9 14.8 12.4 13.5 14.6 12.7C14.9 12.6 15 12.3 15 11.8V7.2C15 4.5 12.9 2.6 9 1.5C5.1 2.6 3 4.5 3 7.2V11.8C3 12.3 3.1 12.6 3.4 12.7C5.6 13.5 7.1 14.8 9 16.2Z" stroke-width="1.9"/><path d="M4.2 9C6.3 5.2 11.7 5.2 13.8 9C11.7 12.8 6.3 12.8 4.2 9Z" fill="currentColor" stroke-width="0"/><circle cx="9" cy="9" r="2.5" fill="#10252c"/><path d="M7.7 10.4L9.4 9L7.7 7.6M9.9 7.4H11.5" stroke-width="1.15"/></svg></div><div><div class="brand-name">AgentGuard</div><div class="brand-status"><span class="dot"></span> Monitoring Live</div></div></div><div class="group-title">Workspace</div><div class="tab"><div class="tab-icon">⌘</div><div class="tab-name">Command</div><div class="tab-meta">Live</div></div><div class="tab"><div class="tab-icon">✓</div><div class="tab-name">Approvals</div><div class="badge">3</div></div><div class="tab"><div class="tab-icon">S</div><div class="tab-name">Sessions</div><div class="tab-meta">12</div></div><div class="tab active"><div class="tab-icon">↯</div><div class="tab-name">Activity</div><div class="tab-meta">Audit</div></div><div class="tab"><div class="tab-icon">◎</div><div class="tab-name">Protected</div><div class="tab-meta">8</div></div><div class="group-title">Tools</div><div class="tab"><div class="tab-icon">♻</div><div class="tab-name">Cleanup</div><div class="tab-meta">2.4G</div></div><div class="tab"><div class="tab-icon">◇</div><div class="tab-name">Lab</div><div class="tab-meta">Beta</div></div><div class="tab"><div class="tab-icon">⚙</div><div class="tab-name">Settings</div><div></div></div><div class="side-card"><strong><span class="dot"></span> Protection on</strong><span>4 active agents · 8 protected folders · bright icon-aligned theme</span></div></aside>
+        <main class="main">
+          <div class="page-head">
+            <div><div class="eyebrow"><span class="dot"></span> Audit Trail</div><h3>Activity</h3><div class="lead">Dense but readable audit stream with consistent chips and row rhythm.</div></div>
+            <div class="actions"><div class="btn">Export CSV</div><div class="btn">Export JSON</div><div class="btn primary">Refresh</div></div>
+          </div>
+          <section class="card panel">
+            <div class="panel-head"><div class="panel-title">Operation Stream</div><div class="chip cyan">1,284 today</div></div>
+            <div class="rows">
+              <div class="row emphasis"><div class="avatar">W</div><div><div class="row-title">Write · AIMacCleaner/Theme.swift</div><div class="row-sub">Codex · 08:42 · captured from file monitor</div></div><div class="chip amber">Write</div></div>
+              <div class="row"><div class="avatar">R</div><div><div class="row-title">Read · project.pbxproj</div><div class="row-sub">Cursor · 08:39 · project metadata</div></div><div class="chip cyan">Read</div></div>
+              <div class="row"><div class="avatar">X</div><div><div class="row-title">Execute · xcodebuild debug build</div><div class="row-sub">Codex · 08:33 · trusted command</div></div><div class="chip">Execute</div></div>
+              <div class="row"><div class="avatar">D</div><div><div class="row-title">Delete · DerivedData cache item</div><div class="row-sub">Claude Code · reversible cleanup</div></div><div class="chip red">Delete</div></div>
+            </div>
+          </section>
+          <section class="grid three" style="margin-top:14px">
+            <div class="card metric"><div class="metric-top"><span>Writes</span><span class="metric-icon">W</span></div><div class="metric-value">74</div><div class="metric-note">12 require attention</div></div>
+            <div class="card metric"><div class="metric-top"><span>Reads</span><span class="metric-icon">R</span></div><div class="metric-value">1,040</div><div class="metric-note">Mostly project scans</div></div>
+            <div class="card metric"><div class="metric-top"><span>Executes</span><span class="metric-icon">X</span></div><div class="metric-value">38</div><div class="metric-note">Build and verification</div></div>
+          </section>
+        </main>
+      </div>
+    </section>
+
+    <section class="screen" id="protected">
+      <div class="screen-label"><div><h2>05 · Protected</h2><p>受保护目录页要让用户知道哪些目录被保护、为什么保护、最近是否有触达。</p></div></div>
+      <div class="mock">
+        <aside class="sidebar"><div class="brand"><div class="brand-mark"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 16.2C10.9 14.8 12.4 13.5 14.6 12.7C14.9 12.6 15 12.3 15 11.8V7.2C15 4.5 12.9 2.6 9 1.5C5.1 2.6 3 4.5 3 7.2V11.8C3 12.3 3.1 12.6 3.4 12.7C5.6 13.5 7.1 14.8 9 16.2Z" stroke-width="1.9"/><path d="M4.2 9C6.3 5.2 11.7 5.2 13.8 9C11.7 12.8 6.3 12.8 4.2 9Z" fill="currentColor" stroke-width="0"/><circle cx="9" cy="9" r="2.5" fill="#10252c"/><path d="M7.7 10.4L9.4 9L7.7 7.6M9.9 7.4H11.5" stroke-width="1.15"/></svg></div><div><div class="brand-name">AgentGuard</div><div class="brand-status"><span class="dot"></span> Monitoring Live</div></div></div><div class="group-title">Workspace</div><div class="tab"><div class="tab-icon">⌘</div><div class="tab-name">Command</div><div class="tab-meta">Live</div></div><div class="tab"><div class="tab-icon">✓</div><div class="tab-name">Approvals</div><div class="badge">3</div></div><div class="tab"><div class="tab-icon">S</div><div class="tab-name">Sessions</div><div class="tab-meta">12</div></div><div class="tab"><div class="tab-icon">↯</div><div class="tab-name">Activity</div><div class="tab-meta">Audit</div></div><div class="tab active"><div class="tab-icon">◎</div><div class="tab-name">Protected</div><div class="tab-meta">8</div></div><div class="group-title">Tools</div><div class="tab"><div class="tab-icon">♻</div><div class="tab-name">Cleanup</div><div class="tab-meta">2.4G</div></div><div class="tab"><div class="tab-icon">◇</div><div class="tab-name">Lab</div><div class="tab-meta">Beta</div></div><div class="tab"><div class="tab-icon">⚙</div><div class="tab-name">Settings</div><div></div></div><div class="side-card"><strong><span class="dot"></span> Protection on</strong><span>4 active agents · 8 protected folders · bright icon-aligned theme</span></div></aside>
+        <main class="main">
+          <div class="page-head">
+            <div><div class="eyebrow"><span class="dot"></span> Trust Boundaries</div><h3>Protected Folders</h3><div class="lead">A folder-first layout for high-signal paths and sensitive project areas.</div></div>
+            <div class="actions"><div class="btn">Reauthorize</div><div class="btn primary">Add protected folder</div></div>
+          </div>
+          <section class="grid two">
+            <div class="card panel"><div class="panel-head"><div class="panel-title">Protected Paths</div><div class="chip">8 folders</div></div><div class="rows">
+              <div class="path-card"><div class="folder">⌘</div><div><div class="row-title">/Users/zhouxiaoming/Downloads/MacCleaner</div><div class="row-sub">Project root · 842 operations today</div></div><div class="chip">Live</div></div>
+              <div class="path-card"><div class="folder">🔑</div><div><div class="row-title">~/.appstoreconnect/private_keys</div><div class="row-sub">Signing credentials · high sensitivity</div></div><div class="chip amber">Strict</div></div>
+              <div class="path-card"><div class="folder">⌂</div><div><div class="row-title">~/.codex</div><div class="row-sub">Agent session data · audit enabled</div></div><div class="chip cyan">Audit</div></div>
+            </div></div>
+            <div class="card panel"><div class="panel-head"><div class="panel-title">Protection Map</div><div class="link">Edit rules</div></div><div class="mini-chart"><div class="bar" style="height:88%"></div><div class="bar" style="height:58%"></div><div class="bar" style="height:76%"></div><div class="bar" style="height:44%"></div><div class="bar" style="height:62%"></div></div></div>
+          </section>
+          <section class="grid three" style="margin-top:14px">
+            <div class="card metric"><div class="metric-top"><span>Strict</span><span class="metric-icon">!</span></div><div class="metric-value">2</div><div class="metric-note">Always ask</div></div>
+            <div class="card metric"><div class="metric-top"><span>Audit</span><span class="metric-icon">A</span></div><div class="metric-value">5</div><div class="metric-note">Record changes</div></div>
+            <div class="card metric"><div class="metric-top"><span>Trusted</span><span class="metric-icon">✓</span></div><div class="metric-value">1</div><div class="metric-note">Auto allow known tools</div></div>
+          </section>
+        </main>
+      </div>
+    </section>
+
+    <section class="screen" id="cleanup">
+      <div class="screen-label"><div><h2>06 · Cleanup</h2><p>清理页不再像普通 Mac Cleaner，视觉上仍然属于 AgentGuard。</p></div></div>
+      <div class="mock">
+        <aside class="sidebar"><div class="brand"><div class="brand-mark"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 16.2C10.9 14.8 12.4 13.5 14.6 12.7C14.9 12.6 15 12.3 15 11.8V7.2C15 4.5 12.9 2.6 9 1.5C5.1 2.6 3 4.5 3 7.2V11.8C3 12.3 3.1 12.6 3.4 12.7C5.6 13.5 7.1 14.8 9 16.2Z" stroke-width="1.9"/><path d="M4.2 9C6.3 5.2 11.7 5.2 13.8 9C11.7 12.8 6.3 12.8 4.2 9Z" fill="currentColor" stroke-width="0"/><circle cx="9" cy="9" r="2.5" fill="#10252c"/><path d="M7.7 10.4L9.4 9L7.7 7.6M9.9 7.4H11.5" stroke-width="1.15"/></svg></div><div><div class="brand-name">AgentGuard</div><div class="brand-status"><span class="dot"></span> Monitoring Live</div></div></div><div class="group-title">Workspace</div><div class="tab"><div class="tab-icon">⌘</div><div class="tab-name">Command</div><div class="tab-meta">Live</div></div><div class="tab"><div class="tab-icon">✓</div><div class="tab-name">Approvals</div><div class="badge">3</div></div><div class="tab"><div class="tab-icon">S</div><div class="tab-name">Sessions</div><div class="tab-meta">12</div></div><div class="tab"><div class="tab-icon">↯</div><div class="tab-name">Activity</div><div class="tab-meta">Audit</div></div><div class="tab"><div class="tab-icon">◎</div><div class="tab-name">Protected</div><div class="tab-meta">8</div></div><div class="group-title">Tools</div><div class="tab active"><div class="tab-icon">♻</div><div class="tab-name">Cleanup</div><div class="tab-meta">2.4G</div></div><div class="tab"><div class="tab-icon">◇</div><div class="tab-name">Lab</div><div class="tab-meta">Beta</div></div><div class="tab"><div class="tab-icon">⚙</div><div class="tab-name">Settings</div><div></div></div><div class="side-card"><strong><span class="dot"></span> Protection on</strong><span>4 active agents · 8 protected folders · bright icon-aligned theme</span></div></aside>
+        <main class="main">
+          <div class="page-head">
+            <div><div class="eyebrow"><span class="dot"></span> Safe Cleanup</div><h3>Cleanup</h3><div class="lead">Cleanup should be calm and reversible, with preview-first actions and clear source grouping.</div></div>
+            <div class="actions"><div class="btn">Rescan</div><div class="btn">Ignore selected</div><div class="btn primary">Review cleanup</div></div>
+          </div>
+          <section class="hero">
+            <div><div class="hero-title">2.4 GB can be reviewed without touching protected work.</div><div class="hero-copy">Use the same cyan-green system, not a separate cleaner-app style. Every item explains source, risk, and destination.</div></div>
+            <div class="hero-widget"><div class="ring"><div><strong>2.4</strong><span>GB</span></div></div></div>
+          </section>
+          <section class="grid three">
+            <div class="card metric"><div class="metric-top"><span>App Cache</span><span class="metric-icon">A</span></div><div class="metric-value">1.1G</div><div class="metric-note">Safe after preview</div></div>
+            <div class="card metric"><div class="metric-top"><span>Build Data</span><span class="metric-icon">B</span></div><div class="metric-value">920M</div><div class="metric-note">DerivedData and archives</div></div>
+            <div class="card metric"><div class="metric-top"><span>Logs</span><span class="metric-icon">L</span></div><div class="metric-value">380M</div><div class="metric-note">Old diagnostic files</div></div>
+          </section>
+          <section class="card panel" style="margin-top:14px"><div class="panel-head"><div class="panel-title">Cleanup Preview</div><div class="chip cyan">Trash by default</div></div><div class="rows"><div class="row emphasis"><div class="avatar">B</div><div><div class="row-title">DerivedData build products</div><div class="row-sub">920 MB · generated by Xcode · safe to recreate</div></div><div class="chip">Preview</div></div><div class="row"><div class="avatar">L</div><div><div class="row-title">Old AgentGuard diagnostics</div><div class="row-sub">380 MB · older than 30 days</div></div><div class="chip cyan">Logs</div></div><div class="row"><div class="avatar">A</div><div><div class="row-title">Application cache</div><div class="row-sub">1.1 GB · app cache only, no user documents</div></div><div class="chip amber">Review</div></div></div></section>
+        </main>
+      </div>
+    </section>
+
+    <section class="screen" id="lab">
+      <div class="screen-label"><div><h2>07 · Lab</h2><p>实验室页统一成轻量模块卡片，不再像临时功能堆叠。</p></div></div>
+      <div class="mock">
+        <aside class="sidebar"><div class="brand"><div class="brand-mark"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 16.2C10.9 14.8 12.4 13.5 14.6 12.7C14.9 12.6 15 12.3 15 11.8V7.2C15 4.5 12.9 2.6 9 1.5C5.1 2.6 3 4.5 3 7.2V11.8C3 12.3 3.1 12.6 3.4 12.7C5.6 13.5 7.1 14.8 9 16.2Z" stroke-width="1.9"/><path d="M4.2 9C6.3 5.2 11.7 5.2 13.8 9C11.7 12.8 6.3 12.8 4.2 9Z" fill="currentColor" stroke-width="0"/><circle cx="9" cy="9" r="2.5" fill="#10252c"/><path d="M7.7 10.4L9.4 9L7.7 7.6M9.9 7.4H11.5" stroke-width="1.15"/></svg></div><div><div class="brand-name">AgentGuard</div><div class="brand-status"><span class="dot"></span> Monitoring Live</div></div></div><div class="group-title">Workspace</div><div class="tab"><div class="tab-icon">⌘</div><div class="tab-name">Command</div><div class="tab-meta">Live</div></div><div class="tab"><div class="tab-icon">✓</div><div class="tab-name">Approvals</div><div class="badge">3</div></div><div class="tab"><div class="tab-icon">S</div><div class="tab-name">Sessions</div><div class="tab-meta">12</div></div><div class="tab"><div class="tab-icon">↯</div><div class="tab-name">Activity</div><div class="tab-meta">Audit</div></div><div class="tab"><div class="tab-icon">◎</div><div class="tab-name">Protected</div><div class="tab-meta">8</div></div><div class="group-title">Tools</div><div class="tab"><div class="tab-icon">♻</div><div class="tab-name">Cleanup</div><div class="tab-meta">2.4G</div></div><div class="tab active"><div class="tab-icon">◇</div><div class="tab-name">Lab</div><div class="tab-meta">Beta</div></div><div class="tab"><div class="tab-icon">⚙</div><div class="tab-name">Settings</div><div></div></div><div class="side-card"><strong><span class="dot"></span> Protection on</strong><span>4 active agents · 8 protected folders · bright icon-aligned theme</span></div></aside>
+        <main class="main">
+          <div class="page-head">
+            <div><div class="eyebrow"><span class="dot"></span> Experiments</div><h3>Lab</h3><div class="lead">Experimental features should still feel like first-class AgentGuard surfaces.</div></div>
+            <div class="actions"><div class="btn">Feedback</div><div class="btn primary">Enable selected</div></div>
+          </div>
+          <section class="grid three">
+            <div class="card panel"><div class="panel-head"><div class="panel-title">TokenScope</div><div class="chip cyan">Beta</div></div><div class="hero-copy">Analyze Codex and Claude usage, context pressure, and model cost signals.</div><div class="mini-chart"><div class="bar" style="height:38%"></div><div class="bar" style="height:62%"></div><div class="bar" style="height:78%"></div><div class="bar" style="height:46%"></div></div></div>
+            <div class="card panel"><div class="panel-head"><div class="panel-title">Agent Rules</div><div class="chip">Preview</div></div><div class="hero-copy">Recommend allow, ask, and block rules based on observed behavior.</div><div class="rows"><div class="row"><div class="avatar">R</div><div><div class="row-title">Rule suggestions</div><div class="row-sub">12 candidates found</div></div><div class="chip">Open</div></div></div></div>
+            <div class="card panel"><div class="panel-head"><div class="panel-title">Session Replay</div><div class="chip amber">Soon</div></div><div class="hero-copy">Replay major file events around an AI session timeline.</div><div class="rows"><div class="row"><div class="avatar">▶</div><div><div class="row-title">Replay unavailable</div><div class="row-sub">Requires richer timeline data</div></div><div class="chip amber">Plan</div></div></div></div>
+          </section>
+          <section class="card panel" style="margin-top:14px"><div class="panel-head"><div class="panel-title">Lab Principles</div><div class="link">Manage flags</div></div><div class="settings-grid"><div class="setting"><strong>Visible value first</strong><p>Every Lab module must show data or a clear reason why data is missing.</p></div><div class="setting"><strong>Same UI language</strong><p>No separate dark cards or experimental-only decoration.</p></div></div></section>
+        </main>
+      </div>
+    </section>
+
+    <section class="screen" id="settings">
+      <div class="screen-label"><div><h2>08 · Settings</h2><p>设置页要克制、清晰，和主产品保持同一套明亮青绿系统。</p></div></div>
+      <div class="mock">
+        <aside class="sidebar"><div class="brand"><div class="brand-mark"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 16.2C10.9 14.8 12.4 13.5 14.6 12.7C14.9 12.6 15 12.3 15 11.8V7.2C15 4.5 12.9 2.6 9 1.5C5.1 2.6 3 4.5 3 7.2V11.8C3 12.3 3.1 12.6 3.4 12.7C5.6 13.5 7.1 14.8 9 16.2Z" stroke-width="1.9"/><path d="M4.2 9C6.3 5.2 11.7 5.2 13.8 9C11.7 12.8 6.3 12.8 4.2 9Z" fill="currentColor" stroke-width="0"/><circle cx="9" cy="9" r="2.5" fill="#10252c"/><path d="M7.7 10.4L9.4 9L7.7 7.6M9.9 7.4H11.5" stroke-width="1.15"/></svg></div><div><div class="brand-name">AgentGuard</div><div class="brand-status"><span class="dot"></span> Monitoring Live</div></div></div><div class="group-title">Workspace</div><div class="tab"><div class="tab-icon">⌘</div><div class="tab-name">Command</div><div class="tab-meta">Live</div></div><div class="tab"><div class="tab-icon">✓</div><div class="tab-name">Approvals</div><div class="badge">3</div></div><div class="tab"><div class="tab-icon">S</div><div class="tab-name">Sessions</div><div class="tab-meta">12</div></div><div class="tab"><div class="tab-icon">↯</div><div class="tab-name">Activity</div><div class="tab-meta">Audit</div></div><div class="tab"><div class="tab-icon">◎</div><div class="tab-name">Protected</div><div class="tab-meta">8</div></div><div class="group-title">Tools</div><div class="tab"><div class="tab-icon">♻</div><div class="tab-name">Cleanup</div><div class="tab-meta">2.4G</div></div><div class="tab"><div class="tab-icon">◇</div><div class="tab-name">Lab</div><div class="tab-meta">Beta</div></div><div class="tab active"><div class="tab-icon">⚙</div><div class="tab-name">Settings</div><div></div></div><div class="side-card"><strong><span class="dot"></span> Protection on</strong><span>4 active agents · 8 protected folders · bright icon-aligned theme</span></div></aside>
+        <main class="main">
+          <div class="page-head">
+            <div><div class="eyebrow"><span class="dot"></span> Preferences</div><h3>Settings</h3><div class="lead">Settings should feel operational and trustworthy, not like default macOS form controls dropped into the app.</div></div>
+            <div class="actions"><div class="btn">Reset</div><div class="btn primary">Save changes</div></div>
+          </div>
+          <section class="settings-grid">
+            <div class="setting"><div style="display:flex;justify-content:space-between;gap:12px"><div><strong>Monitor at launch</strong><p>Start AgentGuard monitoring when the app opens.</p></div><div class="switch"></div></div></div>
+            <div class="setting"><div style="display:flex;justify-content:space-between;gap:12px"><div><strong>Approval notifications</strong><p>Show a clear prompt when AI tools touch protected files.</p></div><div class="switch"></div></div></div>
+            <div class="setting"><strong>Theme</strong><p>Default to the bright icon-aligned theme. Dark mode can exist later, but should not be the primary design direction.</p></div>
+            <div class="setting"><strong>Trusted Agents</strong><p>Codex, Claude Code, Cursor, Gemini CLI, and custom tools can share the same profile card pattern.</p></div>
+            <div class="setting"><strong>Export</strong><p>Use concise export controls with readable status, not raw technical settings first.</p></div>
+            <div class="setting"><strong>Privacy</strong><p>Explain local-only monitoring and sandbox boundaries in plain language.</p></div>
+          </section>
+          <section class="card panel" style="margin-top:14px"><div class="panel-head"><div class="panel-title">System Health</div><div class="chip">Ready</div></div><div class="rows"><div class="row emphasis"><div class="avatar">✓</div><div><div class="row-title">Menu bar monitor connected</div><div class="row-sub">Shield-eye icon remains the source of visual identity</div></div><div class="chip">Healthy</div></div></div></section>
+        </main>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

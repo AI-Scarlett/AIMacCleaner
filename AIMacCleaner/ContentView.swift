@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var selectedTab: NavItem = .overview
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
+    @EnvironmentObject var licenseService: DirectLicenseService
     @ObservedObject var overviewStore: AgentMonitorOverviewStore
     @State private var showSettings = false
     @State private var sidebarCollapsed = false
@@ -131,17 +132,16 @@ struct ContentView: View {
         .background(.clear)
         .id(colorPalette)
         .onAppear {
+            licenseService.refreshTrialState()
             service.refreshDiskInfo()
             service.refreshHardwareInfo()
-            service.refreshCachedSurfacesInBackground(minInterval: 30)
-            overviewStore.refresh()
             overviewStore.startBackgroundRefresh()
-            service.importKnownAgentHistory()
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(service)
                 .environmentObject(localizer)
+                .environmentObject(licenseService)
         }
         .preferredColorScheme(currentAppearanceMode.colorScheme)
     }
@@ -196,7 +196,7 @@ struct ContentView: View {
                 HStack(spacing: Theme.Spacing.sm + 2) {
                     AgentGuardMark(size: 46)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("AgentGuard")
+                        Text(localizer.appName)
                             .font(.system(size: 18, weight: .black, design: .rounded))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
@@ -1079,10 +1079,12 @@ final class AgentMonitorOverviewStore: ObservableObject {
 
     func startBackgroundRefresh() {
         guard backgroundRefreshTimer == nil else { return }
-        refresh()
-        let timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            self?.refreshRealtime()
+        }
+        let timer = Timer(timeInterval: 120, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.refresh()
+                self?.refreshRealtime()
             }
         }
         backgroundRefreshTimer = timer
@@ -1129,7 +1131,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
     func refreshRealtime() {
         guard !isScanning, !isRefreshingRealtime else { return }
         if let lastRealtimeRefreshDate,
-           Date().timeIntervalSince(lastRealtimeRefreshDate) < 5 {
+           Date().timeIntervalSince(lastRealtimeRefreshDate) < 90 {
             return
         }
         isRefreshingRealtime = true
@@ -1177,12 +1179,12 @@ final class AgentMonitorOverviewStore: ObservableObject {
         let key = Self.sessionKey(session)
         guard !focusedRefreshKeysInFlight.contains(key) else { return }
         if let last = lastFocusedRefreshByKey[key],
-           Date().timeIntervalSince(last) < 1.5 {
+           Date().timeIntervalSince(last) < 60 {
             return
         }
         focusedRefreshKeysInFlight.insert(key)
         lastFocusedRefreshByKey[key] = Date()
-        Task.detached(priority: .userInitiated) { [scanner] in
+        Task.detached(priority: .utility) { [scanner] in
             let refreshed = scanner.scanSession(session)
             await MainActor.run {
                 self.focusedRefreshKeysInFlight.remove(key)
@@ -1516,9 +1518,39 @@ private final class AgentMonitorOverviewScanner {
     private let fileManager = FileManager.default
     private let parsedSessionCacheLock = NSLock()
     private var parsedSessionCache: [String: ParsedSessionCacheEntry] = [:]
+    private let discoveryCacheLock = NSLock()
+    private var specsCache: [AgentSpec] = []
+    private var specsCacheDate: Date = .distantPast
+    private var cursorStateDBPathCache: [String] = []
+    private var cursorStateDBPathCacheDate: Date = .distantPast
+    private var openClawSessionStorePathCache: [String] = []
+    private var openClawSessionStorePathCacheDate: Date = .distantPast
+    private let discoveryCacheTTL: TimeInterval = 180
+    private let processInfoCacheLock = NSLock()
+    private var processInfoCache: [Int: ProcessInfo] = [:]
+    private var processInfoCacheDate: Date = .distantPast
+    private let processInfoCacheTTL: TimeInterval = 45
     private var home: String { SandboxPaths.realHomeDirectory }
 
     private var specs: [AgentSpec] {
+        discoveryCacheLock.lock()
+        if !specsCache.isEmpty, Date().timeIntervalSince(specsCacheDate) < discoveryCacheTTL {
+            let cached = specsCache
+            discoveryCacheLock.unlock()
+            return cached
+        }
+        discoveryCacheLock.unlock()
+
+        let built = buildSpecs()
+
+        discoveryCacheLock.lock()
+        specsCache = built
+        specsCacheDate = Date()
+        discoveryCacheLock.unlock()
+        return built
+    }
+
+    private func buildSpecs() -> [AgentSpec] {
         var base = [
             AgentSpec(name: "Claude Code", roots: ["~/.claude", "~/.claude/projects", "~/.claude/sessions", "~/.config/claude/projects"], processKeywords: ["claude", "claude-code", "anthropic"], contextWindow: 200_000),
             AgentSpec(name: "Codex", roots: ["~/.codex/sessions", "~/.codex/archived_sessions", "~/.codex/goals_1.sqlite", "~/.codex/state_5.sqlite"], processKeywords: ["codex"], contextWindow: 200_000),
@@ -1747,6 +1779,8 @@ private final class AgentMonitorOverviewScanner {
             processInfo: processInfo,
             children: children
         ))
+        let hasCursorProcess = processInfo.values.contains { $0.command.lowercased().contains("cursor") }
+        var parsedCursorDatabaseCount = 0
         for root in fixedRoots {
             if root.hasSuffix("/opencode.db") {
                 liveSessions.append(contentsOf: parseOpenCodeDBSessions(path: root, processInfo: processInfo))
@@ -1755,7 +1789,9 @@ private final class AgentMonitorOverviewScanner {
             } else if root.hasSuffix("/nexus.db"), root.lowercased().contains("minimax") {
                 liveSessions.append(contentsOf: parseMiniMaxNexusDBSessions(path: root, processInfo: processInfo))
             } else if root.hasSuffix(".vscdb"), root.lowercased().contains("cursor") {
-                liveSessions.append(contentsOf: parseCursorDBSessions(path: root, processInfo: processInfo))
+                guard hasCursorProcess, parsedCursorDatabaseCount < 6 else { continue }
+                parsedCursorDatabaseCount += 1
+                liveSessions.append(contentsOf: parseCursorDBSessions(path: root, processInfo: processInfo, rowLimit: 800))
             } else if root.hasSuffix("/sessions.json"), root.lowercased().contains("openclaw") || root.lowercased().contains("qclaw") {
                 liveSessions.append(contentsOf: parseOpenClawSessionStore(path: root, processInfo: processInfo))
             }
@@ -2077,6 +2113,15 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func cursorStateDBPaths() -> [String] {
+        discoveryCacheLock.lock()
+        if !cursorStateDBPathCache.isEmpty,
+           Date().timeIntervalSince(cursorStateDBPathCacheDate) < discoveryCacheTTL {
+            let cached = cursorStateDBPathCache
+            discoveryCacheLock.unlock()
+            return cached
+        }
+        discoveryCacheLock.unlock()
+
         let bases = [
             home + "/Library/Application Support/Cursor/User",
             home + "/.cursor"
@@ -2087,15 +2132,29 @@ private final class AgentMonitorOverviewScanner {
             if fileManager.fileExists(atPath: globalDB) { paths.insert(globalDB) }
             let workspaceStorage = base + "/workspaceStorage"
             guard let workspaces = try? fileManager.contentsOfDirectory(atPath: workspaceStorage) else { continue }
-            for workspace in workspaces.prefix(300) {
+            for workspace in workspaces.prefix(80) {
                 let db = workspaceStorage + "/" + workspace + "/state.vscdb"
                 if fileManager.fileExists(atPath: db) { paths.insert(db) }
             }
         }
-        return paths.sorted()
+        let sorted = paths.sorted()
+        discoveryCacheLock.lock()
+        cursorStateDBPathCache = sorted
+        cursorStateDBPathCacheDate = Date()
+        discoveryCacheLock.unlock()
+        return sorted
     }
 
     private func openClawSessionStorePaths() -> [String] {
+        discoveryCacheLock.lock()
+        if !openClawSessionStorePathCache.isEmpty,
+           Date().timeIntervalSince(openClawSessionStorePathCacheDate) < discoveryCacheTTL {
+            let cached = openClawSessionStorePathCache
+            discoveryCacheLock.unlock()
+            return cached
+        }
+        discoveryCacheLock.unlock()
+
         let agentRoots = [
             home + "/.openclaw/agents",
             home + "/.qclaw/agents",
@@ -2110,7 +2169,12 @@ private final class AgentMonitorOverviewScanner {
                 if fileManager.fileExists(atPath: store) { paths.insert(store) }
             }
         }
-        return paths.sorted()
+        let sorted = paths.sorted()
+        discoveryCacheLock.lock()
+        openClawSessionStorePathCache = sorted
+        openClawSessionStorePathCacheDate = Date()
+        discoveryCacheLock.unlock()
+        return sorted
     }
 
     private func isClaudeProfileRoot(_ path: String) -> Bool {
@@ -2786,7 +2850,7 @@ private final class AgentMonitorOverviewScanner {
         }
     }
 
-    private func parseCursorDBSessions(path: String, processInfo: [Int: ProcessInfo]) -> [AgentMonitorSessionSnapshot] {
+    private func parseCursorDBSessions(path: String, processInfo: [Int: ProcessInfo], rowLimit: Int = 5000) -> [AgentMonitorSessionSnapshot] {
         guard fileManager.fileExists(atPath: path), fileManager.isReadableFile(atPath: path) else { return [] }
         var db: OpaquePointer?
         guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return [] }
@@ -2801,11 +2865,12 @@ private final class AgentMonitorOverviewScanner {
                 .removingPercentEncoding ?? ""
         }
         let dbModified = (try? URL(fileURLWithPath: path).resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-        let liveProcess = processInfo.values.first { matchingSpecName($0.command) == "Cursor" }
+        let liveProcess = processInfo.values.first { $0.command.lowercased().contains("cursor") }
+        let boundedRowLimit = max(100, min(rowLimit, 5000))
         let sql = """
         SELECT key, value FROM ItemTable
         WHERE lower(key) LIKE '%composer%' OR lower(key) LIKE '%chat%' OR lower(key) LIKE '%agent%'
-        LIMIT 5000;
+        LIMIT \(boundedRowLimit);
         """
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
@@ -3465,6 +3530,15 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func scanProcessInfo() -> [Int: ProcessInfo] {
+        processInfoCacheLock.lock()
+        if !processInfoCache.isEmpty,
+           Date().timeIntervalSince(processInfoCacheDate) < processInfoCacheTTL {
+            let cached = processInfoCache
+            processInfoCacheLock.unlock()
+            return cached
+        }
+        processInfoCacheLock.unlock()
+
         let output = run("/bin/ps", ["-ww", "-eo", "pid=,ppid=,rss=,%cpu=,command="])
         var result: [Int: ProcessInfo] = [:]
         for line in output.components(separatedBy: .newlines) {
@@ -3477,6 +3551,10 @@ private final class AgentMonitorOverviewScanner {
             let command = String(parts[4])
             result[pid] = ProcessInfo(pid: pid, ppid: ppid, rssKB: rss, cpu: cpu, command: command)
         }
+        processInfoCacheLock.lock()
+        processInfoCache = result
+        processInfoCacheDate = Date()
+        processInfoCacheLock.unlock()
         return result
     }
 
@@ -5075,7 +5153,7 @@ private struct AgentCommandCenterView: View {
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .padding(.top, Theme.Spacing.lg)
 
-                Text(localizer.t("App Store 版只读取授权数据", en: "App Store build only reads authorized data", zhHant: "App Store 版只讀取授權資料", ja: "App Store 版は許可済みデータのみ読み取ります", ko: "App Store 빌드는 승인된 데이터만 읽습니다", mt: "App Store build only reads authorized data"))
+                Text(localizer.t("直售版本机读取 · 不上传数据", en: "Direct build reads locally · no data upload", zhHant: "直售版本機讀取 · 不上傳資料", ja: "直販版はローカルで読み取り · データはアップロードしません", ko: "직접 배포 빌드는 로컬에서 읽음 · 데이터 업로드 없음", mt: "Direct build reads locally · no data upload"))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
@@ -5327,7 +5405,7 @@ private struct AgentCommandCenterView: View {
                         CommandCenterDisabledAction(icon: "xmark.octagon", title: localizer.t("终止", en: "Terminate", zhHant: "終止", ja: "終了", ko: "종료", mt: "Terminate"))
                         CommandCenterDisabledAction(icon: "network", title: localizer.t("断开端口", en: "Disconnect Port", zhHant: "斷開連接埠", ja: "ポート切断", ko: "포트 연결 해제", mt: "Disconnect Port"))
                         Spacer()
-                        Text(localizer.t("只读监控 · 沙盒授权数据源", en: "Read-only monitor · sandbox-authorized data", zhHant: "唯讀監控 · 沙盒授權資料源", ja: "読み取り専用監視 · サンドボックス許可データ", ko: "읽기 전용 모니터 · 샌드박스 승인 데이터", mt: "Read-only monitor · sandbox-authorized data"))
+                        Text(localizer.t("直售版监控 · 本机数据源", en: "Direct monitor · local data sources", zhHant: "直售版監控 · 本機資料源", ja: "直販版モニター · ローカルデータソース", ko: "직접 배포 모니터 · 로컬 데이터 소스", mt: "Direct monitor · local data sources"))
                             .font(.system(size: 12, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
@@ -5510,6 +5588,32 @@ private struct HUDIconChrome: ViewModifier {
     }
 }
 
+private struct AgentCommandProjectRow: Identifiable {
+    let name: String
+    let context: Double
+    let tokens: Int
+    let count: Int
+
+    var id: String { name }
+}
+
+private struct AgentCommandDashboardData {
+    let allSessions: [AgentMonitorSessionSnapshot]
+    let activeSessions: [AgentMonitorSessionSnapshot]
+    let selectedSession: AgentMonitorSessionSnapshot?
+    let selectedActiveSession: AgentMonitorSessionSnapshot?
+    let displayedSessions: [AgentMonitorSessionSnapshot]
+    let totalTokens: Int
+    let projectRows: [AgentCommandProjectRow]
+    let sessionChartValues: [Double]
+    let activeChartValues: [Double]
+    let projectChartValues: [Double]
+    let tokenChartValues: [Double]
+    let realtimeToolCallCount: Int
+    let realtimeAgentRunCount: Int
+    let sessionSignature: String
+}
+
 private struct AgentCommandDashboardView: View {
     @ObservedObject var store: AgentMonitorOverviewStore
     @ObservedObject var monitor: OperationMonitor
@@ -5522,6 +5626,92 @@ private struct AgentCommandDashboardView: View {
     @State private var authorizationStatus = ""
     @State private var visibleSessionCount = 24
     @State private var showingSessionDetail = false
+
+    private func makeDashboardData() -> AgentCommandDashboardData {
+        let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let allSessions: [AgentMonitorSessionSnapshot]
+        if query.isEmpty {
+            allSessions = store.sessions
+        } else {
+            allSessions = store.sessions.filter {
+                $0.agentName.lowercased().contains(query) ||
+                $0.projectName.lowercased().contains(query) ||
+                $0.projectPath.lowercased().contains(query) ||
+                $0.model.lowercased().contains(query) ||
+                $0.currentTask.lowercased().contains(query)
+            }
+        }
+
+        let activeSessions = allSessions.filter(isActiveSession)
+        let selectedSession = selectedSessionID.flatMap { id in
+            allSessions.first { $0.id == id }
+        } ?? allSessions.first
+        let selectedActiveSession = selectedSessionID.flatMap { id in
+            activeSessions.first { $0.id == id }
+        } ?? activeSessions.first
+
+        let projectRows = Dictionary(grouping: allSessions, by: \.projectName)
+            .map { name, rows in
+                AgentCommandProjectRow(
+                    name: name,
+                    context: rows.map(\.contextPercent).max() ?? 0,
+                    tokens: rows.reduce(0) { $0 + $1.tokens.total },
+                    count: rows.count
+                )
+            }
+            .sorted {
+                if $0.context == $1.context { return $0.tokens > $1.tokens }
+                return $0.context > $1.context
+            }
+
+        let totalTokens = max(
+            allSessions.reduce(0) { $0 + $1.tokens.total },
+            store.snapshots.reduce(0) { $0 + $1.totalTokens }
+        )
+        let activeChartValues = activeSessions
+            .sorted { $0.contextPercent > $1.contextPercent }
+            .prefix(6)
+            .map { max($0.contextPercent, 0.18) }
+        let livePids = Set(activeSessions.compactMap(\.pid))
+
+        return AgentCommandDashboardData(
+            allSessions: allSessions,
+            activeSessions: activeSessions,
+            selectedSession: selectedSession,
+            selectedActiveSession: selectedActiveSession,
+            displayedSessions: Array(allSessions.prefix(visibleSessionCount)),
+            totalTokens: totalTokens,
+            projectRows: projectRows,
+            sessionChartValues: Dictionary(grouping: allSessions, by: \.agentName)
+                .map { Double($0.value.count) }
+                .sorted(by: >)
+                .prefix(6)
+                .map { $0 },
+            activeChartValues: activeChartValues.isEmpty && !allSessions.isEmpty ? [0.08] : activeChartValues,
+            projectChartValues: projectRows
+                .map { Double($0.count) }
+                .sorted(by: >)
+                .prefix(6)
+                .map { $0 },
+            tokenChartValues: projectRows
+                .map { Double($0.tokens) }
+                .sorted(by: >)
+                .prefix(6)
+                .map { $0 },
+            realtimeToolCallCount: activeSessions.reduce(0) { total, session in
+                let liveTools = max(session.runningToolCount, session.status == "Executing" && session.toolCount > 0 ? 1 : 0)
+                return total + liveTools
+            },
+            realtimeAgentRunCount: !livePids.isEmpty ? livePids.count : Set(activeSessions.map(\.agentName)).count,
+            sessionSignature: [
+                "\(store.sessions.count)",
+                store.sessions.first?.id ?? "",
+                store.sessions.last?.id ?? "",
+                "\(Int(store.sessions.first?.latestActivity?.timeIntervalSince1970 ?? 0))",
+                "\(Int(store.sessions.last?.latestActivity?.timeIntervalSince1970 ?? 0))"
+            ].joined(separator: "|")
+        )
+    }
 
     private var allSessions: [AgentMonitorSessionSnapshot] {
         let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -5581,9 +5771,9 @@ private struct AgentCommandDashboardView: View {
         if !livePids.isEmpty { return livePids.count }
         return Set(activeSessions.map(\.agentName)).count
     }
-    private var dataStatusIcon: String {
+    private func dataStatusIcon(_ data: AgentCommandDashboardData) -> String {
         if store.isScanning { return "arrow.triangle.2.circlepath" }
-        if !allSessions.isEmpty { return "checkmark.seal.fill" }
+        if !data.allSessions.isEmpty { return "checkmark.seal.fill" }
         if !store.authorizedRoots.isEmpty { return "folder.badge.questionmark" }
         return "exclamationmark.triangle.fill"
     }
@@ -5593,15 +5783,15 @@ private struct AgentCommandDashboardView: View {
         if !store.authorizedRoots.isEmpty { return Theme.Colors.info }
         return Theme.Colors.warning
     }
-    private var dataStatusTitle: String {
+    private func dataStatusTitle(_ data: AgentCommandDashboardData) -> String {
         if store.isScanning { return localizer.overviewScanningAgentData }
-        if !allSessions.isEmpty { return localizer.overviewAgentSessionsLoaded }
+        if !data.allSessions.isEmpty { return localizer.overviewAgentSessionsLoaded }
         if !store.authorizedRoots.isEmpty { return localizer.overviewAuthorizedNoSessions }
         return localizer.overviewNoAgentFolders
     }
-    private var dataStatusDetail: String {
+    private func dataStatusDetail(_ data: AgentCommandDashboardData) -> String {
         if store.isScanning { return localizer.overviewScanningDetail }
-        if !allSessions.isEmpty { return localizedAggregationSummary }
+        if !data.allSessions.isEmpty { return localizedAggregationSummary(data) }
         if !store.scannedRoots.isEmpty { return "\(localizedScanCoverageStatus): \(store.scannedRoots.prefix(6).map(shortRoot).joined(separator: ", ")). \(localizer.overviewSuggestedFolders)" }
         if !store.authorizedRoots.isEmpty { return "\(localizer.overviewAuthorizedFolders): \(store.authorizedRoots.map(shortRoot).joined(separator: ", ")). \(localizer.overviewSuggestedFolders)" }
         return localizer.overviewChooseAgentFolders
@@ -5635,18 +5825,18 @@ private struct AgentCommandDashboardView: View {
             return "Scanned \(store.scannedRoots.count) agent data sources"
         }
     }
-    private var localizedAggregationSummary: String {
+    private func localizedAggregationSummary(_ data: AgentCommandDashboardData) -> String {
         switch localizer.language {
         case .simplifiedChinese:
-            return "已聚合 \(allSessions.count) 个会话，其中 \(activeSessions.count) 个活跃，会话覆盖 \(projectRows.count) 个项目和 \(compactCount(totalTokens)) Token。"
+            return "已聚合 \(data.allSessions.count) 个会话，其中 \(data.activeSessions.count) 个活跃，会话覆盖 \(data.projectRows.count) 个项目和 \(compactCount(data.totalTokens)) Token。"
         case .traditionalChinese:
-            return "已彙總 \(allSessions.count) 個會話，其中 \(activeSessions.count) 個活躍，覆蓋 \(projectRows.count) 個專案和 \(compactCount(totalTokens)) Token。"
+            return "已彙總 \(data.allSessions.count) 個會話，其中 \(data.activeSessions.count) 個活躍，覆蓋 \(data.projectRows.count) 個專案和 \(compactCount(data.totalTokens)) Token。"
         case .japanese:
-            return "\(allSessions.count) 件のセッション、うち \(activeSessions.count) 件がアクティブ、\(projectRows.count) 件のプロジェクト、\(compactCount(totalTokens)) トークンを集計しました。"
+            return "\(data.allSessions.count) 件のセッション、うち \(data.activeSessions.count) 件がアクティブ、\(data.projectRows.count) 件のプロジェクト、\(compactCount(data.totalTokens)) トークンを集計しました。"
         case .korean:
-            return "\(allSessions.count)개 세션 중 \(activeSessions.count)개 활성, \(projectRows.count)개 프로젝트, \(compactCount(totalTokens)) 토큰을 집계했습니다."
+            return "\(data.allSessions.count)개 세션 중 \(data.activeSessions.count)개 활성, \(data.projectRows.count)개 프로젝트, \(compactCount(data.totalTokens)) 토큰을 집계했습니다."
         case .english, .maltese:
-            return "Grouped \(allSessions.count) sessions, \(activeSessions.count) active, \(projectRows.count) projects, and \(compactCount(totalTokens)) tokens."
+            return "Grouped \(data.allSessions.count) sessions, \(data.activeSessions.count) active, \(data.projectRows.count) projects, and \(compactCount(data.totalTokens)) tokens."
         }
     }
     private var localizedCommandCenterIntro: String {
@@ -5722,18 +5912,20 @@ private struct AgentCommandDashboardView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        let data = makeDashboardData()
+
+        return VStack(spacing: 0) {
             if monitor.needsReauthorization { authorizationBanner }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                    commandCenterHero
+                    commandCenterHero(data)
 
-                    currentSessionUsageCard
-                    sessionListCard
+                    currentSessionUsageCard(data)
+                    sessionListCard(data)
 
                     VStack(spacing: Theme.Spacing.md) {
-                        projectCard
+                        projectCard(data)
                     }
                     .frame(maxWidth: .infinity, alignment: .top)
                 }
@@ -5744,28 +5936,29 @@ private struct AgentCommandDashboardView: View {
         .onAppear {
             onRefresh()
             normalizeSelection()
-            refreshSelectedActiveSessionIfNeeded()
+            refreshSelectedActiveSessionIfNeeded(data)
         }
-        .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
-            refreshSelectedActiveSessionIfNeeded()
+        .onReceive(Timer.publish(every: 8, on: .main, in: .common).autoconnect()) { _ in
+            refreshSelectedActiveSessionIfNeeded(makeDashboardData())
         }
-        .onChange(of: store.sessions.map(\.id).joined(separator: "|")) { _ in
+        .onChange(of: data.sessionSignature) { _ in
             normalizeSelection()
-            refreshSelectedActiveSessionIfNeeded()
+            refreshSelectedActiveSessionIfNeeded(makeDashboardData())
         }
         .onChange(of: selectedSessionID ?? "") { _ in
-            refreshSelectedActiveSessionIfNeeded()
+            refreshSelectedActiveSessionIfNeeded(makeDashboardData())
         }
         .onChange(of: filterText) { _ in
             visibleSessionCount = 24
             normalizeSelection()
-            refreshSelectedActiveSessionIfNeeded()
+            refreshSelectedActiveSessionIfNeeded(makeDashboardData())
         }
         .onChange(of: store.scannedRoots.joined(separator: "|")) { _ in
             authorizationStatus = localizedScanCoverageStatus
         }
         .sheet(isPresented: $showingSessionDetail) {
-            if let session = selectedActiveSession ?? selectedSession {
+            let sheetData = makeDashboardData()
+            if let session = sheetData.selectedActiveSession ?? sheetData.selectedSession {
                 ActiveSessionDetailSheet(
                     session: session,
                     statusText: statusText(session.status),
@@ -5790,24 +5983,24 @@ private struct AgentCommandDashboardView: View {
         }
     }
 
-    private var commandCenterHero: some View {
+    private func commandCenterHero(_ data: AgentCommandDashboardData) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             HStack(alignment: .center, spacing: Theme.Spacing.sm + 2) {
                 ZStack(alignment: .bottomTrailing) {
                     AgentGuardMark(size: 28, showGlow: false)
                     Circle()
-                        .fill(activeSessions.isEmpty ? Theme.Colors.textTertiary : Theme.Colors.success)
+                        .fill(data.activeSessions.isEmpty ? Theme.Colors.textTertiary : Theme.Colors.success)
                         .frame(width: 9, height: 9)
                         .overlay(
                             Circle()
                                 .stroke(Theme.Colors.elevatedCardBg, lineWidth: 2)
                         )
-                        .shadow(color: Theme.Colors.success.opacity(activeSessions.isEmpty ? 0 : 0.55), radius: 7)
+                        .shadow(color: Theme.Colors.success.opacity(data.activeSessions.isEmpty ? 0 : 0.55), radius: 7)
                 }
 
-                Text(activeSessions.isEmpty ? localizer.overviewWaitingSessions : localizer.overviewLiveActivity)
+                Text(data.activeSessions.isEmpty ? localizer.overviewWaitingSessions : localizer.overviewLiveActivity)
                     .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(activeSessions.isEmpty ? Theme.Colors.textSecondary : Theme.Colors.success)
+                    .foregroundStyle(data.activeSessions.isEmpty ? Theme.Colors.textSecondary : Theme.Colors.success)
                     .textCase(.uppercase)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -5827,14 +6020,14 @@ private struct AgentCommandDashboardView: View {
                 Spacer(minLength: 0)
             }
 
-            heroMetricsGrid
+            heroMetricsGrid(data)
 
             HStack(alignment: .center, spacing: Theme.Spacing.md) {
                 VStack(alignment: .leading, spacing: 3) {
                     if store.isScanning {
-                        ScanningStatusPill(title: dataStatusTitle, color: dataStatusColor)
+                        ScanningStatusPill(title: dataStatusTitle(data), color: dataStatusColor)
                     } else {
-                        Text(dataStatusTitle)
+                        Text(dataStatusTitle(data))
                             .font(Theme.Font.subheadlineMedium)
                             .foregroundStyle(Theme.Colors.textPrimary)
                     }
@@ -5842,7 +6035,7 @@ private struct AgentCommandDashboardView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 if store.isScanning {
-                    ScanningProgressCaption(detail: dataStatusDetail, color: dataStatusColor)
+                    ScanningProgressCaption(detail: dataStatusDetail(data), color: dataStatusColor)
                         .frame(minWidth: 156, alignment: .trailing)
                 } else {
                     VStack(alignment: .trailing, spacing: 3) {
@@ -5920,39 +6113,39 @@ private struct AgentCommandDashboardView: View {
         .shadow(color: Theme.Shadow.lgColor, radius: 26, y: 14)
     }
 
-    private var heroMetricsGrid: some View {
+    private func heroMetricsGrid(_ data: AgentCommandDashboardData) -> some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 124), spacing: Theme.Spacing.sm), count: 4), spacing: Theme.Spacing.sm) {
             heroMetricChart(
                 title: localizer.overviewSessions,
-                value: "\(allSessions.count)",
+                value: "\(data.allSessions.count)",
                 detail: localizer.overviewLiveAndHistory,
                 icon: "rectangle.3.group",
                 color: Theme.Colors.info,
-                values: sessionChartValues
+                values: data.sessionChartValues
             )
             heroMetricChart(
                 title: localizer.activeAgents,
-                value: "\(activeSessions.count)",
+                value: "\(data.activeSessions.count)",
                 detail: localizer.overviewLiveActivity,
                 icon: "dot.radiowaves.left.and.right",
                 color: Theme.Colors.success,
-                values: activeChartValues
+                values: data.activeChartValues
             )
             heroMetricChart(
                 title: localizer.overviewProject,
-                value: "\(projectRows.count)",
+                value: "\(data.projectRows.count)",
                 detail: localizer.overviewProjectContext,
                 icon: "folder.fill",
                 color: Theme.Colors.warning,
-                values: projectChartValues
+                values: data.projectChartValues
             )
             heroMetricChart(
                 title: localizer.overviewTokensTotal,
-                value: compactCount(totalTokens),
+                value: compactCount(data.totalTokens),
                 detail: localizer.overviewInputOutputCache,
                 icon: "sum",
                 color: Theme.Colors.purple,
-                values: tokenChartValues
+                values: data.tokenChartValues
             )
         }
     }
@@ -6156,12 +6349,14 @@ private struct AgentCommandDashboardView: View {
     }
 
     private var dataStatusCard: some View {
-        HStack(alignment: .center, spacing: Theme.Spacing.md) {
+        let data = makeDashboardData()
+
+        return HStack(alignment: .center, spacing: Theme.Spacing.md) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Label(dataStatusTitle, systemImage: dataStatusIcon)
+                    Label(dataStatusTitle(data), systemImage: dataStatusIcon(data))
                         .font(Theme.Font.subheadlineMedium)
                         .foregroundStyle(dataStatusColor)
-                    Text(dataStatusDetail)
+                    Text(dataStatusDetail(data))
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .lineLimit(1)
@@ -6275,29 +6470,29 @@ private struct AgentCommandDashboardView: View {
         .help(help)
     }
 
-    private var currentSessionUsageCard: some View {
+    private func currentSessionUsageCard(_ data: AgentCommandDashboardData) -> some View {
         dashboardCard(title: "\(localizer.currentSession) / \(localizer.overviewTokenUse)", icon: "chart.bar.xaxis", color: Theme.Colors.accent) {
-            sessionHudButton(icon: "sidebar.right", color: Theme.Colors.accent, disabled: selectedActiveSession == nil && selectedSession == nil, help: localizer.agentSessionDetail) {
+            sessionHudButton(icon: "sidebar.right", color: Theme.Colors.accent, disabled: data.selectedActiveSession == nil && data.selectedSession == nil, help: localizer.agentSessionDetail) {
                 showingSessionDetail = true
             }
 
-            sessionHudButton(icon: "chevron.up", color: Theme.Colors.info, disabled: activeSessions.count < 2, help: localizer.overviewPreviousSession) {
+            sessionHudButton(icon: "chevron.up", color: Theme.Colors.info, disabled: data.activeSessions.count < 2, help: localizer.overviewPreviousSession) {
                 moveSelection(-1)
             }
 
-            sessionHudButton(icon: "chevron.down", color: Theme.Colors.info, disabled: activeSessions.count < 2, help: localizer.overviewNextSession) {
+            sessionHudButton(icon: "chevron.down", color: Theme.Colors.info, disabled: data.activeSessions.count < 2, help: localizer.overviewNextSession) {
                 moveSelection(1)
             }
 
-            sessionHudButton(icon: "doc.on.doc", color: Theme.Colors.accent, disabled: selectedSession == nil, help: localizer.copyPath) {
+            sessionHudButton(icon: "doc.on.doc", color: Theme.Colors.accent, disabled: data.selectedSession == nil, help: localizer.copyPath) {
                 copySelectedPath()
             }
 
-            sessionHudButton(icon: "folder", color: Theme.Colors.warning, disabled: selectedSession?.projectPath.isEmpty ?? true, help: localizer.openInFinder) {
+            sessionHudButton(icon: "folder", color: Theme.Colors.warning, disabled: data.selectedSession?.projectPath.isEmpty ?? true, help: localizer.openInFinder) {
                 openSelectedProject()
             }
         } content: {
-            if let session = selectedActiveSession {
+            if let session = data.selectedActiveSession {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                     VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -6356,15 +6551,15 @@ private struct AgentCommandDashboardView: View {
         .frame(maxWidth: .infinity, minHeight: 168)
     }
 
-    private var projectCard: some View {
+    private func projectCard(_ data: AgentCommandDashboardData) -> some View {
         dashboardCard(title: localizer.overviewProjectContext, icon: "folder", color: Theme.Colors.info) {
             EmptyView()
         } content: {
-            if projectRows.isEmpty {
+            if data.projectRows.isEmpty {
                 emptyState(icon: "folder", title: localizer.overviewNoProject, detail: localizer.overviewNoProjectHint)
             } else {
                 VStack(spacing: Theme.Spacing.sm) {
-                    ForEach(projectRows.prefix(8), id: \.name) { row in
+                    ForEach(data.projectRows.prefix(8)) { row in
                         HStack(spacing: Theme.Spacing.md) {
                             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                                 Text(row.name)
@@ -6398,7 +6593,7 @@ private struct AgentCommandDashboardView: View {
         .frame(maxWidth: .infinity, minHeight: 260, alignment: .top)
     }
 
-    private var sessionListCard: some View {
+    private func sessionListCard(_ data: AgentCommandDashboardData) -> some View {
         dashboardCard(title: localizer.overviewSessionList, icon: "list.bullet.rectangle", color: Theme.Colors.danger) {
             HStack(spacing: Theme.Spacing.xs) {
                 Image(systemName: "magnifyingglass")
@@ -6422,7 +6617,7 @@ private struct AgentCommandDashboardView: View {
             .background(Theme.Colors.sidebarBg.opacity(0.45))
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         } content: {
-            if sessions.isEmpty {
+            if data.allSessions.isEmpty {
                 VStack(spacing: Theme.Spacing.md) {
                     emptyState(icon: "dot.radiowaves.left.and.right", title: localizer.overviewNoSessions, detail: localizer.overviewNoSessionsHint)
                     Button {
@@ -6437,16 +6632,16 @@ private struct AgentCommandDashboardView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     VStack(spacing: Theme.Spacing.xs) {
                         sessionTableHeader
-                        ForEach(displayedSessions) { session in
-                            sessionTableRow(session)
+                        ForEach(data.displayedSessions) { session in
+                            sessionTableRow(session, selectedID: data.selectedSession?.id)
                         }
-                        if visibleSessionCount < sessions.count {
+                        if visibleSessionCount < data.allSessions.count {
                             Button {
-                                visibleSessionCount = min(visibleSessionCount + 24, sessions.count)
+                                visibleSessionCount = min(visibleSessionCount + 24, data.allSessions.count)
                             } label: {
                                 HStack {
                                     Spacer()
-                                    Label(loadMoreOverviewSessionsText(remaining: sessions.count - visibleSessionCount), systemImage: "arrow.down.circle")
+                                    Label(loadMoreOverviewSessionsText(remaining: data.allSessions.count - visibleSessionCount), systemImage: "arrow.down.circle")
                                         .font(Theme.Font.captionMedium)
                                         .foregroundStyle(Theme.Colors.info)
                                     Spacer()
@@ -6493,8 +6688,8 @@ private struct AgentCommandDashboardView: View {
             .frame(width: width, alignment: alignment)
     }
 
-    private func sessionTableRow(_ session: AgentMonitorSessionSnapshot) -> some View {
-        let selected = selectedSession?.id == session.id
+    private func sessionTableRow(_ session: AgentMonitorSessionSnapshot, selectedID: String?) -> some View {
+        let selected = selectedID == session.id
         return Button {
             selectedSessionID = session.id
         } label: {
@@ -6756,8 +6951,8 @@ private struct AgentCommandDashboardView: View {
         selectedSessionID = sessions.first?.id
     }
 
-    private func refreshSelectedActiveSessionIfNeeded() {
-        guard let session = selectedActiveSession,
+    private func refreshSelectedActiveSessionIfNeeded(_ data: AgentCommandDashboardData) {
+        guard let session = data.selectedActiveSession,
               isActiveSession(session) else { return }
         store.refreshFocusedSession(session)
     }
@@ -9031,6 +9226,7 @@ struct TargetedOpsTable: View {
 struct MacCleanerTab: View {
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
+    @EnvironmentObject var licenseService: DirectLicenseService
     @State private var selectedIds = Set<String>()
     @State private var filterCategory = ""
     @State private var filterApp = ""
@@ -9043,6 +9239,7 @@ struct MacCleanerTab: View {
     @State private var cleanedSize: Int64 = 0
     @State private var cleanedCount = 0
     @State private var searchText = ""
+    @State private var paywallMessage = ""
 
     var filteredItems: [ScanItem] {
         service.scanItems.filter { item in
@@ -9072,7 +9269,7 @@ struct MacCleanerTab: View {
                 color: Theme.Colors.accent
             ) {
                 HStack(spacing: Theme.Spacing.sm) {
-                    Button { Task { await service.scanLocal() } } label: {
+                    Button { runCoreAction { await service.scanLocal() } } label: {
                         HStack(spacing: Theme.Spacing.sm) {
                             Image(systemName: "magnifyingglass")
                                 .font(.system(size: 14, weight: .semibold))
@@ -9089,7 +9286,7 @@ struct MacCleanerTab: View {
                     .disabled(service.isScanning)
                     .opacity(service.isScanning ? 0.5 : 1)
 
-                    Button { Task { await service.startEnhancedScan() } } label: {
+                    Button { runProAction { await service.startEnhancedScan() } } label: {
                         HStack(spacing: Theme.Spacing.sm) {
                             Image(systemName: "bolt.fill")
                                 .font(.system(size: 14, weight: .semibold))
@@ -9186,7 +9383,7 @@ struct MacCleanerTab: View {
                     }
 
                     Spacer()
-                    Button { smartClean() } label: {
+                    Button { requireProAction { smartClean() } } label: {
                         HStack(spacing: Theme.Spacing.xs) {
                             Image(systemName: "wand.and.stars")
                             Text(localizer.smartClean)
@@ -9250,7 +9447,7 @@ struct MacCleanerTab: View {
                         .controlSize(.small)
                         .disabled(selectedIds.isEmpty)
 
-                        Button { confirmDeleteSelected() } label: {
+                        Button { requireProAction { confirmDeleteSelected() } } label: {
                             HStack(spacing: Theme.Spacing.xs) {
                                 Image(systemName: "trash")
                                 Text(localizer.deleteSelected)
@@ -9280,6 +9477,24 @@ struct MacCleanerTab: View {
             SettingsView()
                 .environmentObject(service)
                 .environmentObject(localizer)
+                .environmentObject(licenseService)
+        }
+        .onAppear {
+            licenseService.refreshTrialState()
+        }
+        .alert(localizer.t("需要 TraceFence Pro", en: "TraceFence Pro required"), isPresented: Binding(
+            get: { !paywallMessage.isEmpty },
+            set: { if !$0 { paywallMessage = "" } }
+        )) {
+            Button(localizer.t("购买 Pro", en: "Buy Pro")) {
+                licenseService.openPurchasePage()
+                paywallMessage = ""
+            }
+            Button(localizer.cancel, role: .cancel) {
+                paywallMessage = ""
+            }
+        } message: {
+            Text(paywallMessage)
         }
         .alert(localizer.confirmDelete, isPresented: $showDeleteConfirm) {
             Button(localizer.cancelBtn, role: .cancel) {}
@@ -9453,14 +9668,14 @@ struct MacCleanerTab: View {
                     subtitle: localizer.localScanSubtitle,
                     iconColor: Theme.Colors.accent,
                     isDisabled: service.isScanning
-                ) { Task { await service.scanLocal() } }
+                ) { runCoreAction { await service.scanLocal() } }
                 ScanActionCard(
                     icon: "bolt.fill",
                     title: localizer.enhancedScan,
                     subtitle: localizer.enhancedScanSubtitle,
                     iconColor: Theme.Colors.warning,
                     isDisabled: service.isEnhancedScanning
-                ) { Task { await service.startEnhancedScan() } }
+                ) { runProAction { await service.startEnhancedScan() } }
             }
             Spacer()
         }
@@ -9606,7 +9821,7 @@ struct MacCleanerTab: View {
                                 .help(item.reason ?? item.riskDesc)
 
                             HStack(spacing: Theme.Spacing.xs) {
-                                Button { confirmDeleteSingle(item) } label: {
+                                Button { requireProAction { confirmDeleteSingle(item) } } label: {
                                     Image(systemName: "trash")
                                         .font(.system(size: 11, weight: .medium))
                                         .foregroundStyle(Theme.Colors.danger)
@@ -9675,6 +9890,44 @@ struct MacCleanerTab: View {
     }
     private func ignoreSelected() { service.ignoreItems(ids: Array(selectedIds)); selectedIds.removeAll() }
     private func toggleIgnore(_ item: ScanItem) { if item.ignored { service.unignoreItems(ids: [item.id]) } else { service.ignoreItems(ids: [item.id]) } }
+
+    private func runCoreAction(_ action: @escaping () async -> Void) {
+        licenseService.refreshTrialState()
+        guard licenseService.canUseCoreFeatures else {
+            showTrialExpiredPrompt()
+            return
+        }
+        Task { await action() }
+    }
+
+    private func runProAction(_ action: @escaping () async -> Void) {
+        guard requireProAccess() else { return }
+        Task { await action() }
+    }
+
+    private func requireProAction(_ action: () -> Void) {
+        guard requireProAccess() else { return }
+        action()
+    }
+
+    private func requireProAccess() -> Bool {
+        licenseService.refreshTrialState()
+        guard licenseService.canUseProFeatures else {
+            paywallMessage = localizer.t(
+                "试用期可以扫描、浏览和预览清理结果；增强扫描、智能清理和删除执行需要激活 TraceFence Pro。",
+                en: "The trial can scan, browse, and preview cleanup results. Enhanced scan, smart cleanup, and delete actions require TraceFence Pro."
+            )
+            return false
+        }
+        return true
+    }
+
+    private func showTrialExpiredPrompt() {
+        paywallMessage = localizer.t(
+            "48 小时试用已结束。购买并激活 TraceFence Pro 后可继续扫描和使用高级操作。",
+            en: "The 48-hour trial has ended. Buy and activate TraceFence Pro to continue scanning and using advanced actions."
+        )
+    }
 }
 
 // MARK: - App Manager Tab

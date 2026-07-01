@@ -1,0 +1,269 @@
+import AppKit
+import Combine
+import SwiftUI
+
+@MainActor
+final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelegate {
+    private weak var service: ScannerService?
+    private weak var quotaService: ProviderQuotaService?
+    private weak var localizer: Localizer?
+    private var statusItem: NSStatusItem?
+    private var popover: NSPopover?
+    private var cancellables: Set<AnyCancellable> = []
+    private var labelRefreshWorkItem: DispatchWorkItem?
+    private var heartbeatTimer: Timer?
+    private var globalDismissMonitor: Any?
+    private var localDismissMonitor: Any?
+    private var isEnabled = false
+
+    func configure(
+        service: ScannerService,
+        quotaService: ProviderQuotaService,
+        localizer: Localizer,
+        isEnabled: Bool
+    ) {
+        self.service = service
+        self.quotaService = quotaService
+        self.localizer = localizer
+        bindPublishersIfNeeded()
+        setEnabled(isEnabled)
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        isEnabled = enabled
+        if enabled {
+            ensureStatusItem()
+            updateButtonLabel()
+        } else {
+            closePopover()
+            removeStatusItem()
+        }
+    }
+
+    private func bindPublishersIfNeeded() {
+        guard cancellables.isEmpty else { return }
+
+        service?.objectWillChange
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.scheduleButtonLabelRefresh()
+                }
+            }
+            .store(in: &cancellables)
+
+        quotaService?.objectWillChange
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.scheduleButtonLabelRefresh()
+                }
+            }
+            .store(in: &cancellables)
+
+        localizer?.objectWillChange
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.scheduleButtonLabelRefresh()
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func ensureStatusItem() {
+        guard isEnabled else { return }
+        if statusItem == nil {
+            statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        }
+        configureStatusButton()
+        startHeartbeat()
+    }
+
+    private func configureStatusButton() {
+        guard let button = statusItem?.button else {
+            rebuildStatusItem()
+            return
+        }
+        button.image = MenuBarShieldEyeTemplateImage.shared.copy() as? NSImage
+        button.image?.isTemplate = true
+        button.imagePosition = .imageLeft
+        button.target = self
+        button.action = #selector(statusItemClicked(_:))
+        button.sendAction(on: [.leftMouseDown, .rightMouseDown])
+        button.toolTip = "TraceFence"
+    }
+
+    private func rebuildStatusItem() {
+        if let statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+        }
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        configureStatusButton()
+        updateButtonLabel()
+    }
+
+    private func removeStatusItem() {
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
+        if let statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+        }
+        statusItem = nil
+    }
+
+    private func startHeartbeat() {
+        guard heartbeatTimer == nil else { return }
+        let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.repairStatusItemIfNeeded()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        heartbeatTimer = timer
+    }
+
+    private func repairStatusItemIfNeeded() {
+        guard isEnabled else { return }
+        guard let button = statusItem?.button else {
+            rebuildStatusItem()
+            return
+        }
+        if button.target == nil || button.action == nil {
+            configureStatusButton()
+        }
+        updateButtonLabel()
+    }
+
+    private func scheduleButtonLabelRefresh() {
+        guard isEnabled else { return }
+        labelRefreshWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.updateButtonLabel()
+        }
+        labelRefreshWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: workItem)
+    }
+
+    private func updateButtonLabel() {
+        guard isEnabled else { return }
+        ensureStatusItem()
+        guard let button = statusItem?.button else { return }
+
+        let title = currentStatusTitle().map { " \($0)" } ?? ""
+        button.attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold),
+                .foregroundColor: NSColor.labelColor
+            ]
+        )
+    }
+
+    private func currentStatusTitle() -> String? {
+        if let quota = quotaService?.menuBarSummary, !quota.isEmpty {
+            return quota
+        }
+        if let disk = service?.diskInfo {
+            return String(format: "%.0f%%", 100.0 - disk.usedPct)
+        }
+        return nil
+    }
+
+    @objc private func statusItemClicked(_ sender: Any?) {
+        guard isEnabled else { return }
+        repairStatusItemIfNeeded()
+        if popover?.isShown == true {
+            closePopover()
+        } else {
+            showPopover()
+        }
+    }
+
+    private func showPopover() {
+        guard let service, let quotaService, let localizer else { return }
+        guard let button = statusItem?.button else {
+            rebuildStatusItem()
+            return
+        }
+
+        closePopover()
+        quotaService.start()
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = false
+        popover.contentSize = NSSize(width: 520, height: 640)
+        popover.delegate = self
+        popover.contentViewController = NSHostingController(
+            rootView: MenuBarMonitor(service: service, quotaService: quotaService)
+                .environmentObject(localizer)
+        )
+        self.popover = popover
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        installDismissMonitors(anchor: button)
+    }
+
+    private func closePopover() {
+        removeDismissMonitors()
+        popover?.close()
+        popover?.contentViewController = nil
+        popover = nil
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        removeDismissMonitors()
+        popover?.contentViewController = nil
+        popover = nil
+    }
+
+    private func installDismissMonitors(anchor: NSStatusBarButton) {
+        removeDismissMonitors()
+
+        globalDismissMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
+            Task { @MainActor in
+                if event.type == .keyDown, event.keyCode != 53 {
+                    return
+                }
+                self?.closePopover()
+            }
+        }
+
+        localDismissMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self, weak anchor] event in
+            guard let self else { return event }
+            if event.type == .keyDown {
+                if event.keyCode == 53 {
+                    self.closePopover()
+                    return nil
+                }
+                return event
+            }
+
+            if self.eventIsInsidePopover(event) || self.eventIsInsideStatusButton(event, anchor: anchor) {
+                return event
+            }
+
+            self.closePopover()
+            return event
+        }
+    }
+
+    private func removeDismissMonitors() {
+        if let globalDismissMonitor {
+            NSEvent.removeMonitor(globalDismissMonitor)
+            self.globalDismissMonitor = nil
+        }
+        if let localDismissMonitor {
+            NSEvent.removeMonitor(localDismissMonitor)
+            self.localDismissMonitor = nil
+        }
+    }
+
+    private func eventIsInsidePopover(_ event: NSEvent) -> Bool {
+        guard let popoverWindow = popover?.contentViewController?.view.window else { return false }
+        return event.window === popoverWindow
+    }
+
+    private func eventIsInsideStatusButton(_ event: NSEvent, anchor: NSStatusBarButton?) -> Bool {
+        guard let anchor, event.window === anchor.window else { return false }
+        let point = anchor.convert(event.locationInWindow, from: nil)
+        return anchor.bounds.contains(point)
+    }
+}

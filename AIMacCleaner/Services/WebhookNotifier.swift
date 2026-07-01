@@ -20,7 +20,7 @@ struct WebhookPayload: Codable {
 
 actor WebhookNotifier {
     private var config: WebhookConfig = WebhookConfig()
-    private let configPath = NSHomeDirectory() + "/.aimaccleaner_webhook_config.json"
+    private let configPath = NSHomeDirectory() + "/.tracefence_webhook_config.json"
     private var session: URLSession
 
     init() {
@@ -61,12 +61,12 @@ actor WebhookNotifier {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("AgentGuard/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("TraceFence/3.1", forHTTPHeaderField: "User-Agent")
         request.httpBody = body
 
         if let secret = config.secret, !secret.isEmpty {
             let signature = hmacSHA256(body: body, secret: secret)
-            request.setValue(signature, forHTTPHeaderField: "X-AgentGuard-Signature")
+            request.setValue(signature, forHTTPHeaderField: "X-TraceFence-Signature")
         }
 
         for attempt in 0...retryCount {

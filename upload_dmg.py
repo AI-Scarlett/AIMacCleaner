@@ -1,125 +1,195 @@
-import subprocess
-import requests
+#!/usr/bin/env python3
+import argparse
+import hashlib
 import json
+import os
+import subprocess
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 
-def get_github_token():
+REPO = "AI-Scarlett/TraceFence"
+APP_NAME = "TraceFence"
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.28")
+TAG = f"v{VERSION}"
+DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
+RELEASE_NAME = f"{APP_NAME} {TAG}"
+
+
+def github_token():
+    if os.environ.get("GITHUB_TOKEN"):
+        return os.environ["GITHUB_TOKEN"]
     result = subprocess.run(
-        ['git', 'credential', 'fill'],
-        input=b'protocol=https\nhost=github.com\n',
-        capture_output=True
+        ["git", "credential", "fill"],
+        input=b"protocol=https\nhost=github.com\n",
+        capture_output=True,
+        check=False,
     )
     for line in result.stdout.decode().splitlines():
-        if line.startswith('password='):
-            return line.split('=', 1)[1]
+        if line.startswith("password="):
+            return line.split("=", 1)[1]
     return None
 
-VERSION = "1.0.0"
-DMG_PATH = f"/tmp/AgentGuard-v{VERSION}-arm64.dmg"
-REPO = "AI-Scarlett/AIMacCleaner"
-TAG = f"v{VERSION}"
 
-token = get_github_token()
-headers = {'Authorization': f'token {token}'}
+def request(method, path_or_url, token, data=None, headers=None):
+    if path_or_url.startswith("https://"):
+        url = path_or_url
+    else:
+        url = f"https://api.github.com/repos/{REPO}{path_or_url}"
+    body = None
+    merged_headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": f"{APP_NAME}-release-uploader",
+        "Authorization": f"Bearer {token}",
+    }
+    if headers:
+        merged_headers.update(headers)
+    if data is not None:
+        body = json.dumps(data).encode()
+        merged_headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=body, headers=merged_headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as response:
+            payload = response.read()
+            return json.loads(payload.decode()) if payload else None
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode(errors="replace")
+        raise RuntimeError(f"{method} {url} failed: HTTP {error.code} {detail}") from error
 
-print(f"Checking for existing release {TAG}...")
-response = requests.get(
-    f'https://api.github.com/repos/{REPO}/releases/tags/{TAG}',
-    headers=headers
-)
 
-if response.status_code == 200:
-    release_info = response.json()
-    release_id = release_info['id']
-    print(f"Release {TAG} already exists (id={release_id})")
-else:
-    print(f"Creating new release {TAG}...")
-    body_text = """## v1.0.0 AgentGuard 首个 App Store 版本
-
-### 🎨 布局优化
-- Agent监控：图表改为一行显示，去除下方多余留白
-- Mac清理：重新设计磁盘信息卡片布局，ProgressRing与统计项同行显示
-- 新增CompactStatItem组件，解决4个统计卡片叠加覆盖问题
-- 顶部功能按钮不再被遮挡
-
-### ⚙️ 可配置项
-- 操作记录最大条数改为可配置（500-10000），在设置>监控中调整
-- 使用UserDefaults持久化配置
-
-### 🖥️ APP名称和图标
-- APP名称统一为AgentGuard
-- 重新生成应用图标（哨兵之眼风格）
-- Icon文件位置: Assets.xcassets/AppIcon.appiconset/
-"""
-    create_response = requests.post(
-        f'https://api.github.com/repos/{REPO}/releases',
-        headers={**headers, 'Content-Type': 'application/json'},
-        data=json.dumps({
-            'tag_name': TAG,
-            'name': f'AIMacCleaner {TAG}',
-            'body': body_text,
-            'draft': False,
-            'prerelease': False
-        })
+def upload_asset(upload_url, token, path, name, content_type):
+    with open(path, "rb") as file:
+        data = file.read()
+    url = upload_url.replace("{?name,label}", "")
+    url = f"{url}?{urllib.parse.urlencode({'name': name})}"
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "Content-Type": content_type,
+            "User-Agent": f"{APP_NAME}-release-uploader",
+        },
+        method="POST",
     )
-    create_response.raise_for_status()
-    release_info = create_response.json()
-    release_id = release_info['id']
-    print(f"Release {TAG} created successfully!")
+    with urllib.request.urlopen(req, timeout=300) as response:
+        return json.loads(response.read().decode())
 
-# Delete existing assets for this release
-print("Checking for existing assets...")
-assets_response = requests.get(
-    f'https://api.github.com/repos/{REPO}/releases/{release_id}/assets',
-    headers=headers
-)
-for asset in assets_response.json():
-    print(f"Deleting old asset: {asset['name']}")
-    delete_response = requests.delete(
-        f'https://api.github.com/repos/{REPO}/releases/assets/{asset["id"]}',
-        headers=headers
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def find_or_create_release(token):
+    try:
+        release = request("GET", f"/releases/tags/{TAG}", token)
+        print(f"Found release {TAG}: {release['html_url']}")
+        return release
+    except RuntimeError:
+        print(f"Creating release {TAG}...")
+    return request(
+        "POST",
+        "/releases",
+        token,
+        {
+            "tag_name": TAG,
+            "name": RELEASE_NAME,
+            "body": (
+                "TraceFence direct-download release.\n\n"
+                "- Localizes provider quota reset-credit labels in Chinese mode, including manual resets and Codex Spark reset windows.\n"
+                "- Keeps provider quota service messages language-neutral so menu-bar diagnostics follow the selected app language.\n"
+                "- Fixes remaining menu-bar quota window titles that could stay Chinese in English mode.\n"
+                "- Replaces the SwiftUI MenuBarExtra entry with a resilient AppKit status item and popover controller.\n"
+                "- Rebuilds stale menu bar popovers on click and repairs the status item periodically during long runs.\n"
+                "- Adds hard timeouts around provider quota subprocess calls so background quota reads cannot hang indefinitely.\n"
+                "- Optimizes Codex rollout discovery to read lightweight metadata instead of loading multi-GB session logs into memory.\n"
+                "- Avoids full-text scans of Codex logs_2.sqlite during menu bar agent discovery.\n"
+                "- Caches overview dashboard aggregates per render so long-running main windows no longer starve menu bar clicks.\n"
+                "- Lowers high-frequency focused-session refresh work to utility priority and a calmer polling cadence.\n"
+                "- Opens the status popover on mouse-down for a faster, more native menu bar response.\n"
+                "- Limits Codex operation import to recent session files and bounded log tails to avoid long-running CPU spikes.\n"
+                "- Replaces expensive full-session UI fingerprints with lightweight count/latest markers.\n"
+                "- Stops full historical audit import from running automatically on app launch; audit history now loads from Agent Guard actions.\n"
+                "- Caches file modification dates before sorting session logs to avoid repeated filesystem metadata reads.\n"
+                "- Fixes direct-update installation hanging when the old app process refuses to quit.\n"
+                "- Lets the updater helper terminate the old process and continue installation safely.\n"
+                "- Fixes direct-update download validation when GitHub asset metadata is temporarily stale.\n"
+                "- Uses SHA256 checksums as the authoritative installer validation when available.\n"
+                "- Adds no-cache update checks to avoid stale release metadata after a package replacement.\n"
+                "- Bundles the provider quota engine inside TraceFence so releases no longer depend on an external CodexBar checkout.\n"
+                "- Closes the menu bar popover when users click outside the panel or press Escape.\n"
+                "- Refreshes saved Lemon Squeezy license state from the server so activation usage and device limits stay current.\n"
+                "- Restores the default release build path to signed and Apple-notarized output.\n"
+            ),
+            "draft": False,
+            "prerelease": False,
+        },
     )
-    delete_response.raise_for_status()
 
-# Upload DMG
-upload_url = release_info['upload_url'].replace('{?name,label}', '')
-print(f"Uploading DMG: {DMG_PATH}...")
 
-with open(DMG_PATH, 'rb') as f:
-    response = requests.post(
-        f"{upload_url}?name=AgentGuard-{TAG}-arm64.dmg",
-        headers={**headers, 'Content-Type': 'application/octet-stream'},
-        data=f
-    )
-response.raise_for_status()
-print("DMG uploaded successfully!")
+def clean_release_assets(token, release):
+    assets = request("GET", f"/releases/{release['id']}/assets", token) or []
+    for asset in assets:
+        name = asset["name"].lower()
+        if name.endswith(".dmg") or "source" in name or name.endswith(".zip") or name.endswith(".sha256"):
+            print(f"Deleting old asset: {asset['name']}")
+            request("DELETE", f"/releases/assets/{asset['id']}", token)
 
-# Also upload the source code as a zip
-import zipfile
-import os
-import tempfile
 
-print("Creating source code zip...")
-zip_path = f"/tmp/AgentGuard-{TAG}-source.zip"
-source_dir = "/Users/zhouxiaoming/Downloads/MacCleaner"
+def clean_historical_release_assets(token, keep_release_id):
+    page = 1
+    while True:
+        releases = request("GET", f"/releases?per_page=100&page={page}", token) or []
+        if not releases:
+            return
+        for release in releases:
+            if release["id"] == keep_release_id:
+                continue
+            clean_release_assets(token, release)
+        page += 1
 
-with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-    for root, dirs, files in os.walk(source_dir):
-        if '.git' in root or 'DerivedData' in root or 'build' in root:
-            continue
-        for file in files:
-            file_path = os.path.join(root, file)
-            arcname = os.path.relpath(file_path, source_dir)
-            zipf.write(file_path, arcname)
 
-print(f"Uploading source code zip: {zip_path}...")
-with open(zip_path, 'rb') as f:
-    response = requests.post(
-        f"{upload_url}?name=AgentGuard-{TAG}-source.zip",
-        headers={**headers, 'Content-Type': 'application/zip'},
-        data=f
-    )
-response.raise_for_status()
-print("Source code zip uploaded successfully!")
+def main():
+    parser = argparse.ArgumentParser(description="Publish the latest TraceFence DMG to GitHub Releases.")
+    parser.add_argument("--dmg", default=DMG_PATH)
+    parser.add_argument("--clean-historical-assets", action="store_true")
+    args = parser.parse_args()
 
-print(f"\nRelease URL: {release_info['html_url']}")
-print("Done!")
+    token = github_token()
+    if not token:
+        print("Missing GitHub token. Run `gh auth login` or set GITHUB_TOKEN.", file=sys.stderr)
+        return 1
+    if not os.path.exists(args.dmg):
+        print(f"DMG not found: {args.dmg}", file=sys.stderr)
+        return 1
+
+    release = find_or_create_release(token)
+    clean_release_assets(token, release)
+    if args.clean_historical_assets:
+        clean_historical_release_assets(token, release["id"])
+
+    digest = sha256_file(args.dmg)
+    sha_path = f"{args.dmg}.sha256"
+    with open(sha_path, "w") as file:
+        file.write(f"{digest}  {os.path.basename(args.dmg)}\n")
+
+    upload_url = release["upload_url"]
+    dmg_name = os.path.basename(args.dmg)
+    print(f"Uploading {dmg_name}...")
+    upload_asset(upload_url, token, args.dmg, dmg_name, "application/octet-stream")
+    print(f"Uploading {os.path.basename(sha_path)}...")
+    upload_asset(upload_url, token, sha_path, os.path.basename(sha_path), "text/plain")
+
+    print(f"Release URL: {release['html_url']}")
+    print(f"SHA256: {digest}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

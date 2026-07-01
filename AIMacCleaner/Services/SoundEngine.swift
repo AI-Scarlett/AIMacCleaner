@@ -49,7 +49,7 @@ struct SoundProfile: Codable {
 actor SoundEngine {
     private var audioPlayers: [String: AVAudioPlayer] = [:]
     private var profile: SoundProfile = .default
-    private let profilePath = NSHomeDirectory() + "/.aimaccleaner_sound_profile.json"
+    private let profilePath = NSHomeDirectory() + "/.tracefence_sound_profile.json"
 
     init() {
         Task { await loadProfile() }

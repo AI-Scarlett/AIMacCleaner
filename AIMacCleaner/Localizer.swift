@@ -37,12 +37,12 @@ enum AppLanguage: String, CaseIterable {
 
     var appName: String {
         switch self {
-        case .simplifiedChinese: return "Agent卫士"
-        case .english: return "AgentGuard"
-        case .traditionalChinese: return "Agent衛士"
-        case .japanese: return "Agentガード"
-        case .korean: return "Agent가드"
-        case .maltese: return "AgentGuard"
+        case .simplifiedChinese: return "TraceFence"
+        case .english: return "TraceFence"
+        case .traditionalChinese: return "TraceFence"
+        case .japanese: return "TraceFence"
+        case .korean: return "TraceFence"
+        case .maltese: return "TraceFence"
         }
     }
 
@@ -467,7 +467,7 @@ extension Localizer {
     var clearResults: String { t("清除结果", en: "Clear Results", zhHant: "清除結果", ja: "結果をクリア", ko: "결과 지우기", mt: "Clear Results") }
     var viewFullLog: String { t("查看完整记录", en: "View Full Log", zhHant: "檢視完整記錄", ja: "完全なログを表示", ko: "전체 기록 보기", mt: "View Full Log") }
     var quitApp: String { t("退出", en: "Quit", zhHant: "退出", ja: "終了", ko: "종료", mt: "Quit") }
-    var openAIMacCleaner: String { t("打开 Agent卫士", en: "Open AgentGuard", zhHant: "打開 Agent衛士", ja: "AgentGuardを開く", ko: "AgentGuard 열기", mt: "Open AgentGuard") }
+    var openAIMacCleaner: String { t("打开 TraceFence", en: "Open TraceFence", zhHant: "打開 TraceFence", ja: "TraceFenceを開く", ko: "TraceFence 열기", mt: "Open TraceFence") }
     var checkForUpdate: String { t("检查更新", en: "Check for Updates", zhHant: "檢查更新", ja: "アップデートを確認", ko: "업데이트 확인", mt: "Check for Updates") }
     var checkingUpdate: String { t("检查中...", en: "Checking...", zhHant: "檢查中...", ja: "確認中...", ko: "확인 중...", mt: "Checking...") }
     var running: String { t("运行中", en: "Running", zhHant: "執行中", ja: "実行中", ko: "실행 중", mt: "Running") }
@@ -620,7 +620,7 @@ extension Localizer {
     var overviewTokenUsage: String { t("按 Agent 的 Token 用量", en: "Token Usage by Agent", zhHant: "按 Agent 的 Token 用量", ja: "Agent 別 Token 使用量", ko: "Agent별 Token 사용량", mt: "Token Usage by Agent") }
     var overviewAgentRuntime: String { t("Agent 运行状态", en: "Agent Runtime", zhHant: "Agent 執行狀態", ja: "Agent 実行状態", ko: "Agent 실행 상태", mt: "Agent Runtime") }
     var overviewSubtitle: String { t("会话、上下文、Token、项目和本机服务", en: "Sessions, context, tokens, projects, and local services", zhHant: "會話、上下文、Token、專案與本機服務", ja: "セッション、コンテキスト、トークン、プロジェクト、ローカルサービス", ko: "세션, 컨텍스트, 토큰, 프로젝트 및 로컬 서비스", mt: "Sessions, context, tokens, projects, and local services") }
-    var commandCenterTitle: String { t("AgentGuard 指挥中心", en: "AgentGuard Command Center", zhHant: "AgentGuard 指揮中心", ja: "AgentGuard コマンドセンター", ko: "AgentGuard 명령 센터", mt: "AgentGuard Command Center") }
+    var commandCenterTitle: String { t("TraceFence 指挥中心", en: "TraceFence Command Center", zhHant: "TraceFence 指揮中心", ja: "TraceFence コマンドセンター", ko: "TraceFence 명령 센터", mt: "TraceFence Command Center") }
     var monitoringLive: String { t("实时监控中", en: "Monitoring Live", zhHant: "即時監控中", ja: "ライブ監視中", ko: "실시간 모니터링 중", mt: "Monitoring Live") }
     var workspaceSection: String { t("工作区", en: "Workspace", zhHant: "工作區", ja: "ワークスペース", ko: "작업 공간", mt: "Workspace") }
     var protectionOn: String { t("保护已开启", en: "Protection on", zhHant: "保護已開啟", ja: "保護オン", ko: "보호 켜짐", mt: "Protection on") }
@@ -998,12 +998,12 @@ extension Localizer {
     func localImpactSummary(appName: String, risk: String, type: String, isSafe: Bool) -> String {
         switch type {
         case "app":
-            return t("本地：\(appName) 是已安装应用。AgentGuard 仅展示清单和缓存上下文；App Store 版本已禁用卸载操作。风险：\(risk)。",
-                     en: "Local: \(appName) is an installed app. AgentGuard shows inventory and cache context only; uninstall actions are disabled in this App Store build. Risk: \(risk).",
-                     zhHant: "本地：\(appName) 是已安裝應用。AgentGuard 僅展示清單和快取上下文；App Store 版本已停用解除安裝操作。風險：\(risk)。",
-                     ja: "ローカル：\(appName) はインストール済みアプリです。AgentGuardは一覧とキャッシュ情報のみを表示し、このApp Store版ではアンインストール操作は無効です。リスク：\(risk)。",
-                     ko: "로컬: \(appName)은 설치된 앱입니다. AgentGuard는 목록과 캐시 컨텍스트만 표시하며 이 App Store 빌드에서는 제거 작업이 비활성화되어 있습니다. 위험: \(risk).",
-                     mt: "Local: \(appName) is an installed app. AgentGuard shows inventory and cache context only; uninstall actions are disabled in this App Store build. Risk: \(risk).")
+            return t("本地：\(appName) 是已安装应用。TraceFence 仅展示清单和缓存上下文；直售版默认禁用卸载操作。风险：\(risk)。",
+                     en: "Local: \(appName) is an installed app. TraceFence shows inventory and cache context only; uninstall actions are disabled by default in this direct build. Risk: \(risk).",
+                     zhHant: "本地：\(appName) 是已安裝應用。TraceFence 僅展示清單和快取上下文；直售版預設停用解除安裝操作。風險：\(risk)。",
+                     ja: "ローカル：\(appName) はインストール済みアプリです。TraceFenceは一覧とキャッシュ情報のみを表示し、この直販版ではアンインストール操作はデフォルトで無効です。リスク：\(risk)。",
+                     ko: "로컬: \(appName)은 설치된 앱입니다. TraceFence는 목록과 캐시 컨텍스트만 표시하며 이 직접 배포 빌드에서는 제거 작업이 기본적으로 비활성화되어 있습니다. 위험: \(risk).",
+                     mt: "Local: \(appName) is an installed app. TraceFence shows inventory and cache context only; uninstall actions are disabled by default in this direct build. Risk: \(risk).")
         case "dependency":
             return t("本地：\(appName) 可能被项目依赖。请检查路径；除非确认没有项目依赖它，否则建议保留。风险：\(risk)。",
                      en: "Local: \(appName) may be required by projects. Review its path and keep it unless you are sure no project depends on it. Risk: \(risk).",
@@ -1020,12 +1020,12 @@ extension Localizer {
                          ko: "로컬: \(appName)은 캐시 또는 임시 데이터로 보입니다. 표시된 경로를 검토한 뒤 휴지통으로 이동하세요.",
                          mt: "Local: \(appName) appears to be cache or temporary data. Move items to Trash only after reviewing the listed paths.")
             }
-            return t("本地：请谨慎检查 \(appName) 后再清理。AgentGuard 会避免不可逆操作，并通过废纸篓保持可恢复。",
-                     en: "Local: Review \(appName) carefully before cleanup. AgentGuard avoids irreversible actions and keeps cleanup recoverable through Trash.",
-                     zhHant: "本地：請謹慎檢查 \(appName) 後再清理。AgentGuard 會避免不可逆操作，並透過垃圾桶保持可恢復。",
-                     ja: "ローカル：クリーンアップ前に \(appName) を慎重に確認してください。AgentGuardは不可逆操作を避け、ゴミ箱経由で復元可能にします。",
-                     ko: "로컬: 정리 전에 \(appName)을 신중히 검토하세요. AgentGuard는 되돌릴 수 없는 작업을 피하고 휴지통을 통해 복구 가능하게 유지합니다.",
-                     mt: "Local: Review \(appName) carefully before cleanup. AgentGuard avoids irreversible actions and keeps cleanup recoverable through Trash.")
+            return t("本地：请谨慎检查 \(appName) 后再清理。TraceFence 会避免不可逆操作，并通过废纸篓保持可恢复。",
+                     en: "Local: Review \(appName) carefully before cleanup. TraceFence avoids irreversible actions and keeps cleanup recoverable through Trash.",
+                     zhHant: "本地：請謹慎檢查 \(appName) 後再清理。TraceFence 會避免不可逆操作，並透過垃圾桶保持可恢復。",
+                     ja: "ローカル：クリーンアップ前に \(appName) を慎重に確認してください。TraceFenceは不可逆操作を避け、ゴミ箱経由で復元可能にします。",
+                     ko: "로컬: 정리 전에 \(appName)을 신중히 검토하세요. TraceFence는 되돌릴 수 없는 작업을 피하고 휴지통을 통해 복구 가능하게 유지합니다.",
+                     mt: "Local: Review \(appName) carefully before cleanup. TraceFence avoids irreversible actions and keeps cleanup recoverable through Trash.")
         }
     }
     var appUninstallDisabled: String { t("Mac App Store 版本已禁用应用卸载操作。", en: "App uninstall actions are disabled in the Mac App Store build.", zhHant: "Mac App Store 版本已停用應用解除安裝操作。", ja: "Mac App Store版ではアプリのアンインストール操作は無効です。", ko: "Mac App Store 빌드에서는 앱 제거 작업이 비활성화되어 있습니다.", mt: "App uninstall actions are disabled in the Mac App Store build.") }
@@ -1110,7 +1110,7 @@ extension Localizer {
     var agentSendReply: String { t("发送回复", en: "Send Reply", zhHant: "傳送回覆", ja: "返信を送信", ko: "답변 보내기", mt: "Send Reply") }
     var agentNoSessionSelected: String { t("未选择会话", en: "No session selected", zhHant: "未選擇會話", ja: "セッション未選択", ko: "세션이 선택되지 않음", mt: "No session selected") }
     var agentSessionDetail: String { t("会话详情", en: "Session Detail", zhHant: "會話詳情", ja: "セッション詳細", ko: "세션 상세", mt: "Session Detail") }
-    var agentGuardReady: String { t("AgentGuard 就绪", en: "AgentGuard Ready", zhHant: "AgentGuard 就緒", ja: "AgentGuard 準備完了", ko: "AgentGuard 준비됨", mt: "AgentGuard Ready") }
+    var agentGuardReady: String { t("TraceFence 就绪", en: "TraceFence Ready", zhHant: "TraceFence 就緒", ja: "TraceFence 準備完了", ko: "TraceFence 준비됨", mt: "TraceFence Ready") }
     var agentDetailOverview: String { t("概览", en: "Overview", zhHant: "概覽", ja: "概要", ko: "개요", mt: "Overview") }
     var agentDetailTools: String { t("工具", en: "Tools", zhHant: "工具", ja: "ツール", ko: "도구", mt: "Tools") }
     var agentDetailSubagents: String { t("子 Agent", en: "Subagents", zhHant: "子 Agent", ja: "サブAgent", ko: "하위 Agent", mt: "Subagents") }
@@ -1155,7 +1155,7 @@ extension Localizer {
     var agentDenyReasonOrInstruction: String { t("拒绝理由或补充任务指令", en: "Deny reason or follow-up instruction", zhHant: "拒絕理由或補充任務指令", ja: "拒否理由または追加タスク指示", ko: "거부 이유 또는 추가 작업 지시", mt: "Deny reason or follow-up instruction") }
     var agentDenyReasonPlaceholder: String { t("可填写拒绝原因，也可以写新的任务指令", en: "Add a reason, or type a new task instruction", zhHant: "可填寫拒絕原因，也可以寫新的任務指令", ja: "理由、または新しいタスク指示を入力", ko: "이유를 추가하거나 새 작업 지시를 입력", mt: "Add a reason, or type a new task instruction") }
     var agentExternalApprovalTitle: String { t("外部审批请求", en: "External approval request", zhHant: "外部審批請求", ja: "外部承認リクエスト", ko: "외부 승인 요청", mt: "External approval request") }
-    var agentExternalApprovalHint: String { t("请回到来源 Agent 完成批准或拒绝。AgentGuard 会在这里保留提醒和历史。", en: "Return to the source agent to approve or reject it. AgentGuard keeps the reminder and history here.", zhHant: "請回到來源 Agent 完成批准或拒絕。AgentGuard 會在這裡保留提醒和歷史。", ja: "元のAgentに戻って承認または拒否してください。AgentGuardはここに通知と履歴を残します。", ko: "원본 Agent로 돌아가 승인 또는 거부하세요. AgentGuard는 여기에서 알림과 기록을 유지합니다.", mt: "Return to the source agent to approve or reject it. AgentGuard keeps the reminder and history here.") }
+    var agentExternalApprovalHint: String { t("请回到来源 Agent 完成批准或拒绝。TraceFence 会在这里保留提醒和历史。", en: "Return to the source agent to approve or reject it. TraceFence keeps the reminder and history here.", zhHant: "請回到來源 Agent 完成批准或拒絕。TraceFence 會在這裡保留提醒和歷史。", ja: "元のAgentに戻って承認または拒否してください。TraceFenceはここに通知と履歴を残します。", ko: "원본 Agent로 돌아가 승인 또는 거부하세요. TraceFence는 여기에서 알림과 기록을 유지합니다.", mt: "Return to the source agent to approve or reject it. TraceFence keeps the reminder and history here.") }
     var agentOpenSourceApp: String { t("打开来源应用", en: "Open Source App", zhHant: "開啟來源應用", ja: "元アプリを開く", ko: "원본 앱 열기", mt: "Open Source App") }
     var agentMarkHandled: String { t("标记已处理", en: "Mark Handled", zhHant: "標記已處理", ja: "処理済みにする", ko: "처리됨 표시", mt: "Mark Handled") }
     var agentDesignPreview: String { t("设计稿预览", en: "Design Preview", zhHant: "設計稿預覽", ja: "デザインプレビュー", ko: "디자인 미리보기", mt: "Design Preview") }
@@ -1311,7 +1311,7 @@ extension Localizer {
     var tokenScopeSampleData: String { t("实验室示例数据", en: "Lab Sample Data", zhHant: "實驗室範例資料", ja: "ラボサンプルデータ", ko: "실험실 샘플 데이터", mt: "Lab Sample Data") }
     var tokenScopeScanning: String { t("扫描中", en: "Scanning", zhHant: "掃描中", ja: "スキャン中", ko: "스캔 중", mt: "Scanning") }
     var tokenScopeHeroTitle: String { t("AI Coding 成本控制台", en: "AI Coding Cost Console", zhHant: "AI Coding 成本控制台", ja: "AI Coding コストコンソール", ko: "AI Coding 비용 콘솔", mt: "AI Coding Cost Console") }
-    var tokenScopeIntro: String { t("把 Claude、Codex、Pi Agent、Trae、CodeBuddy、Gemini 等工具的 token、模型、项目和会话归因放在同一个原生视图里。通过“授权数据目录”读取用户明确授权的本机日志，不读取浏览器 Cookie，也不抓取网页。", en: "Review tokens, models, projects, and sessions from Claude, Codex, Pi Agent, Trae, CodeBuddy, Gemini, and other tools in one native view. Use Authorize Data Folder to read local logs you explicitly allow; AgentGuard does not read browser cookies or scrape web dashboards.", zhHant: "把 Claude、Codex、Pi Agent、Trae、CodeBuddy、Gemini 等工具的 token、模型、專案與會話歸因放在同一個原生視圖裡。透過「授權資料目錄」讀取使用者明確授權的本機日誌，不讀取瀏覽器 Cookie，也不抓取網頁。", ja: "Claude、Codex、Pi Agent、Trae、CodeBuddy、Gemini などのトークン、モデル、プロジェクト、セッション帰属をひとつのネイティブ画面で確認できます。「データフォルダを許可」で明示的に許可されたローカルログのみを読み取り、ブラウザ Cookie や Web ダッシュボードは読み取りません。", ko: "Claude, Codex, Pi Agent, Trae, CodeBuddy, Gemini 등의 토큰, 모델, 프로젝트, 세션 귀속을 하나의 네이티브 화면에서 확인합니다. 데이터 폴더 승인을 통해 명시적으로 허용한 로컬 로그만 읽으며 브라우저 쿠키나 웹 대시보드는 수집하지 않습니다.", mt: "Review tokens, models, projects, and sessions from Claude, Codex, Pi Agent, Trae, CodeBuddy, Gemini, and other tools in one native view. Use Authorize Data Folder to read local logs you explicitly allow; AgentGuard does not read browser cookies or scrape web dashboards.") }
+    var tokenScopeIntro: String { t("把 Claude、Codex、Pi Agent、Trae、CodeBuddy、Gemini 等工具的 token、模型、项目和会话归因放在同一个原生视图里。通过“授权数据目录”读取用户明确授权的本机日志，不读取浏览器 Cookie，也不抓取网页。", en: "Review tokens, models, projects, and sessions from Claude, Codex, Pi Agent, Trae, CodeBuddy, Gemini, and other tools in one native view. Use Authorize Data Folder to read local logs you explicitly allow; TraceFence does not read browser cookies or scrape web dashboards.", zhHant: "把 Claude、Codex、Pi Agent、Trae、CodeBuddy、Gemini 等工具的 token、模型、專案與會話歸因放在同一個原生視圖裡。透過「授權資料目錄」讀取使用者明確授權的本機日誌，不讀取瀏覽器 Cookie，也不抓取網頁。", ja: "Claude、Codex、Pi Agent、Trae、CodeBuddy、Gemini などのトークン、モデル、プロジェクト、セッション帰属をひとつのネイティブ画面で確認できます。「データフォルダを許可」で明示的に許可されたローカルログのみを読み取り、ブラウザ Cookie や Web ダッシュボードは読み取りません。", ko: "Claude, Codex, Pi Agent, Trae, CodeBuddy, Gemini 등의 토큰, 모델, 프로젝트, 세션 귀속을 하나의 네이티브 화면에서 확인합니다. 데이터 폴더 승인을 통해 명시적으로 허용한 로컬 로그만 읽으며 브라우저 쿠키나 웹 대시보드는 수집하지 않습니다.", mt: "Review tokens, models, projects, and sessions from Claude, Codex, Pi Agent, Trae, CodeBuddy, Gemini, and other tools in one native view. Use Authorize Data Folder to read local logs you explicitly allow; TraceFence does not read browser cookies or scrape web dashboards.") }
     var tokenScopeNoData: String { t("未读取到可用的本机 AI usage 记录。请点击授权数据目录，选择 ~/.codex、$CODEX_HOME、~/.pi/agent、~/.claude/projects 或 Trae/CodeBuddy 数据目录后重新验证。", en: "No usable local AI usage records were found. Click Authorize Data Folder, then select ~/.codex, $CODEX_HOME, ~/.pi/agent, ~/.claude/projects, or a Trae/CodeBuddy data folder to verify with local files.", zhHant: "未讀取到可用的本機 AI usage 記錄。請點擊授權資料目錄，選擇 ~/.codex、$CODEX_HOME、~/.pi/agent、~/.claude/projects 或 Trae/CodeBuddy 資料目錄後重新驗證。", ja: "利用できるローカル AI usage レコードが見つかりません。「データフォルダを許可」をクリックし、~/.codex、$CODEX_HOME、~/.pi/agent、~/.claude/projects、または Trae/CodeBuddy のデータフォルダを選択して再確認してください。", ko: "사용 가능한 로컬 AI usage 기록을 찾지 못했습니다. 데이터 폴더 승인을 누른 뒤 ~/.codex, $CODEX_HOME, ~/.pi/agent, ~/.claude/projects 또는 Trae/CodeBuddy 데이터 폴더를 선택해 다시 확인하세요.", mt: "No usable local AI usage records were found. Click Authorize Data Folder, then select ~/.codex, $CODEX_HOME, ~/.pi/agent, ~/.claude/projects, or a Trae/CodeBuddy data folder to verify with local files.") }
     func tokenScopeLoadedSummary(recordCount: Int, sourceCount: Int, tokenText: String) -> String { t("已读取本机 \(recordCount) 条授权日志记录，来自 \(sourceCount) 个数据源。Token 合计 \(tokenText)，成本为本地估算值；数据不会上传。", en: "Loaded \(recordCount) authorized local log records from \(sourceCount) sources. Total tokens: \(tokenText). Cost is a local estimate; this data is not uploaded.", zhHant: "已讀取本機 \(recordCount) 條授權日誌記錄，來自 \(sourceCount) 個資料源。Token 合計 \(tokenText)，成本為本地估算值；資料不會上傳。", ja: "\(sourceCount) 個のソースから \(recordCount) 件の許可済みローカルログを読み込みました。合計トークン: \(tokenText)。コストはローカル推定で、このデータはアップロードされません。", ko: "\(sourceCount)개 소스에서 승인된 로컬 로그 \(recordCount)개를 읽었습니다. 총 토큰: \(tokenText). 비용은 로컬 추정값이며 이 데이터는 업로드되지 않습니다.", mt: "Loaded \(recordCount) authorized local log records from \(sourceCount) sources. Total tokens: \(tokenText). Cost is a local estimate; this data is not uploaded.") }
     var tokenScopeProjects: String { t("项目", en: "Projects", zhHant: "專案", ja: "プロジェクト", ko: "프로젝트", mt: "Projects") }
@@ -1381,7 +1381,7 @@ extension Localizer {
 
     var cmdDeleteFiles: String { t("删除文件", en: "Delete files", zhHant: "刪除檔案", ja: "ファイルを削除", ko: "파일 삭제", mt: "Delete files") }
     var cmdRecursiveDelete: String { t("递归强制删除", en: "Recursive force delete", zhHant: "遞迴強制刪除", ja: "再帰的強制削除", ko: "재귀 강제 삭제", mt: "Recursive force delete") }
-    var cmdDeleteFilesCon: String { t("文件可能被删除；AgentGuard 会提示你先复核", en: "Files may be removed; AgentGuard asks you to review first", zhHant: "檔案可能被刪除；AgentGuard 會提示你先複核", ja: "ファイルが削除される可能性があります。AgentGuardは先に確認を促します", ko: "파일이 제거될 수 있으며 AgentGuard가 먼저 검토를 요청합니다", mt: "Files may be removed; AgentGuard asks you to review first") }
+    var cmdDeleteFilesCon: String { t("文件可能被删除；TraceFence 会提示你先复核", en: "Files may be removed; TraceFence asks you to review first", zhHant: "檔案可能被刪除；TraceFence 會提示你先複核", ja: "ファイルが削除される可能性があります。TraceFenceは先に確認を促します", ko: "파일이 제거될 수 있으며 TraceFence가 먼저 검토를 요청합니다", mt: "Files may be removed; TraceFence asks you to review first") }
     var cmdRecursiveDeleteCon: String { t("整个目录树将被无条件删除", en: "Entire directory trees will be deleted without confirmation", zhHant: "整個目錄樹將被無條件刪除", ja: "ディレクトリツリー全体が確認なしで削除されます", ko: "전체 디렉토리 트리가 확인 없이 삭제됩니다", mt: "Entire directory trees will be deleted without confirmation") }
     var cmdCreateDir: String { t("创建目录", en: "Create directory", zhHant: "建立目錄", ja: "ディレクトリ作成", ko: "디렉토리 생성", mt: "Create directory") }
     var cmdCreateDirCon: String { t("将创建新的目录", en: "New directory will be created", zhHant: "將建立新的目錄", ja: "新しいディレクトリが作成されます", ko: "새 디렉토리가 생성됩니다", mt: "New directory will be created") }

@@ -1769,6 +1769,16 @@ class OperationMonitor: ObservableObject {
     }
 
     private func restoreAccessFromBookmarks() {
+        if SandboxPaths.isDirectDistribution && !SandboxPaths.isSandboxed {
+            stateLock.lock()
+            authorizedWatchPaths = Set(Self.defaultWatchPaths())
+            stalePaths = []
+            stateLock.unlock()
+            hasRestoredBookmarks = true
+            needsReauthorization = false
+            return
+        }
+
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: bookmarksPath)),
               let bookmarks = try? JSONDecoder().decode([String: Data].self, from: data) else {
             hasRestoredBookmarks = true
@@ -1854,8 +1864,8 @@ class OperationMonitor: ObservableObject {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
         panel.directoryURL = URL(fileURLWithPath: home)
-        panel.prompt = localizer?.reauthorize ?? "重新授权"
-        panel.message = localizer?.selectMonitorDirs ?? "请选择需要监控的目录（可按住 ⌘ 多选：Desktop, Documents, Downloads 等）"
+        panel.prompt = localizer?.reauthorize ?? "Re-authorize"
+        panel.message = localizer?.selectMonitorDirs ?? "Choose directories to monitor. Hold ⌘ to select multiple folders such as Desktop, Documents, or Downloads."
 
         guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
 

@@ -111,7 +111,7 @@ final class AgentRegistry: ObservableObject {
     func installHooks(for agentId: String) {
         guard !installingAgentIds.contains(agentId) else { return }
         guard canInstallHooks(for: agentId) else {
-            lastActionMessage = "This agent does not support AgentGuard hooks yet."
+            lastActionMessage = "This agent does not support TraceFence hooks yet."
             return
         }
         installingAgentIds.insert(agentId)
@@ -137,7 +137,7 @@ final class AgentRegistry: ObservableObject {
     func uninstallHooks(for agentId: String) {
         guard !installingAgentIds.contains(agentId) else { return }
         guard canInstallHooks(for: agentId) else {
-            lastActionMessage = "This agent does not support AgentGuard hooks yet."
+            lastActionMessage = "This agent does not support TraceFence hooks yet."
             return
         }
         installingAgentIds.insert(agentId)

@@ -3,6 +3,7 @@
 /dist/
 build/
 *.dmg
+social/
 
 # macOS
 .DS_Store

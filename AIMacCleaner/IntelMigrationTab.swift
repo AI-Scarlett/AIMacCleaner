@@ -356,7 +356,7 @@ struct IntelAppRow: View {
                 HStack(spacing: Theme.Spacing.xs) {
                     Text(item.displayName)
                         .font(Theme.Font.bodyMedium)
-                    PillBadge(text: item.architecture.badge, color: archBadgeColor)
+                    PillBadge(text: item.architecture.localizedBadge(localizer), color: archBadgeColor)
                     PillBadge(text: item.appType.localizedLabel(localizer), color: item.appType.color)
                     if item.architecture.isIntel {
                         PillBadge(text: localizer.needAdapt, color: Theme.Colors.danger)

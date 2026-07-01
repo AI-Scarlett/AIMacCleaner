@@ -10,12 +10,17 @@ struct AIMacCleanerApp: App {
     @StateObject private var sessionsViewModel = SessionsViewModel()
     @StateObject private var conversationWatcher = ConversationWatcher()
     @StateObject private var overviewStore = AgentMonitorOverviewStore()
+    @StateObject private var licenseService = DirectLicenseService.shared
+    @StateObject private var updateService = DirectUpdateService.shared
+    @StateObject private var providerQuotaService = ProviderQuotaService()
+    @StateObject private var menuBarController = MenuBarStatusController()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @AppStorage("monitorEnabled") private var monitorEnabled = false
     @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = false
     @AppStorage("sensorMonitorEnabled") private var sensorMonitorEnabled = false
     @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
     @AppStorage("quitBehavior") private var quitBehavior: String = "quitAll"
+    @AppStorage("networkMode") private var networkMode = "internet"
 
     init() {
         let defaults = UserDefaults.standard
@@ -33,6 +38,8 @@ struct AIMacCleanerApp: App {
                 .environmentObject(agentRegistry)
                 .environmentObject(sessionsViewModel)
                 .environmentObject(conversationWatcher)
+                .environmentObject(licenseService)
+                .environmentObject(updateService)
                 .frame(minWidth: 960, minHeight: 640)
                 .onAppear {
                     appDelegate.service = service
@@ -45,40 +52,33 @@ struct AIMacCleanerApp: App {
                         localizer: localizer
                     )
                     overviewStore.startBackgroundRefresh()
+                    providerQuotaService.start()
                     NSApp.setActivationPolicy(.regular)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [service] in
-                        if monitorEnabled { service.startMonitoring() }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [service, licenseService] in
+                        licenseService.refreshTrialState()
+                        Task { await licenseService.refreshStoredLicenseIfPresent() }
+                        if monitorEnabled, licenseService.canUseProFeatures {
+                            service.startMonitoring()
+                        }
                     }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [updateService] in
+                        guard networkMode == "internet" else { return }
+                        Task { await updateService.checkForUpdates() }
+                    }
+                    menuBarController.configure(
+                        service: service,
+                        quotaService: providerQuotaService,
+                        localizer: localizer,
+                        isEnabled: menuBarMonitorEnabled
+                    )
+                }
+                .onChange(of: menuBarMonitorEnabled) { newValue in
+                    menuBarController.setEnabled(newValue)
                 }
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))
         .defaultSize(width: 1100, height: 700)
-
-        MenuBarExtra {
-            if menuBarMonitorEnabled {
-                MenuBarMonitor(service: service)
-                    .environmentObject(localizer)
-            } else {
-                Text(localizer.menuBarMonitorClosed)
-                    .padding()
-            }
-        } label: {
-            menuBarLabel
-        }
-        .menuBarExtraStyle(.window)
-    }
-
-    @ViewBuilder
-    private var menuBarLabel: some View {
-        if let disk = service.diskInfo {
-            HStack(spacing: 3) {
-                MenuBarShieldEyeIcon()
-                Text(String(format: "%.0f%%", 100.0 - disk.usedPct))
-            }
-        } else {
-            MenuBarShieldEyeIcon()
-        }
     }
 }
 
@@ -201,7 +201,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.unhide(nil)
-        terminateDuplicateAgentGuardInstances()
+        terminateDuplicateTraceFenceInstances()
         DispatchQueue.main.async { [weak self] in
             self?.setupWindowDelegate()
             self?.ensureLaunchSurfaceVisible(reason: "launch")
@@ -214,15 +214,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func terminateDuplicateAgentGuardInstances() {
+    private func terminateDuplicateTraceFenceInstances() {
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
         let currentPID = ProcessInfo.processInfo.processIdentifier
         for app in NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier) where app.processIdentifier != currentPID {
-            print("[AgentGuard] Terminating duplicate AgentGuard instance pid=\(app.processIdentifier)")
+            print("[TraceFence] Terminating duplicate TraceFence instance pid=\(app.processIdentifier)")
             app.terminate()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 if !app.isTerminated {
-                    print("[AgentGuard] Force terminating duplicate AgentGuard instance pid=\(app.processIdentifier)")
+                    print("[TraceFence] Force terminating duplicate TraceFence instance pid=\(app.processIdentifier)")
                     app.forceTerminate()
                 }
             }
@@ -241,7 +241,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupWindowDelegate() {
         for window in NSApp.windows {
-            if window.title.contains("AgentWatch") || window.title.contains("AgentGuard") || window.className.contains("Window") {
+            if window.title.contains("AgentWatch") || window.title.contains("AgentGuard") || window.title.contains("TraceFence") || window.className.contains("Window") {
                 mainWindow = window
             }
             window.delegate = WindowDelegate.shared
@@ -299,7 +299,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        print("[AgentGuard] Launch surface visible via \(reason)")
+        print("[TraceFence] Launch surface visible via \(reason)")
     }
 
     @MainActor
@@ -341,6 +341,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .environmentObject(agentRegistry)
             .environmentObject(sessionsViewModel)
             .environmentObject(conversationWatcher)
+            .environmentObject(DirectLicenseService.shared)
+            .environmentObject(DirectUpdateService.shared)
             .frame(minWidth: 960, minHeight: 640)
 
         let window = NSWindow(
@@ -349,10 +351,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "AgentGuard"
+        window.title = "TraceFence"
         window.contentView = NSHostingView(rootView: rootView)
         window.delegate = WindowDelegate.shared
-        window.setFrameAutosaveName("AgentGuardMainWindow")
+        window.setFrameAutosaveName("TraceFenceMainWindow")
 
         fallbackWindow = window
         mainWindow = window
@@ -482,9 +484,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     conversationWatcher.startWatching(directories: conversationDirs)
                 }
 
-                print("[AgentGuard] Agent Center services initialized")
+                print("[TraceFence] Agent Center services initialized")
             } catch {
-                print("[AgentGuard] Failed to start HookServer: \(error)")
+                print("[TraceFence] Failed to start HookServer: \(error)")
             }
         }
 
@@ -524,7 +526,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task {
             await monitor.startMonitoring { event in
-                print("[AgentGuard] Network event: \(event)")
+                print("[TraceFence] Network event: \(event)")
             }
         }
     }

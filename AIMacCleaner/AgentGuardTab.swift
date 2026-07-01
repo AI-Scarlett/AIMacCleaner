@@ -50,6 +50,7 @@ struct AgentGuardTab: View {
                 case 2: alertRulesView
                 case 3: commandRulesView
                 case 4: protectedDirsView
+                case 5: AgentToolkitView()
                 default: dashboardView
                 }
             }
@@ -95,6 +96,13 @@ struct AgentGuardTab: View {
                 SegmentButton(title: localizer.alertRules, icon: "slider.horizontal.3", index: 2, tint: Theme.Colors.accent, selected: $selectedSegment)
                 SegmentButton(title: localizer.commandRules, icon: "terminal", index: 3, tint: Theme.Colors.accent, selected: $selectedSegment)
                 SegmentButton(title: localizer.protectedDirs, icon: "folder.badge.eye", index: 4, tint: Theme.Colors.accent, selected: $selectedSegment)
+                SegmentButton(
+                    title: localizer.t("Agent 工具箱", en: "Agent Toolkit", zhHant: "Agent 工具箱", ja: "Agent ツールキット", ko: "Agent 도구 상자", mt: "Agent Toolkit"),
+                    icon: "cross.case.fill",
+                    index: 5,
+                    tint: Theme.Colors.accent,
+                    selected: $selectedSegment
+                )
             }
         }
         .padding(.horizontal, Theme.Spacing.xl)
@@ -773,8 +781,8 @@ struct AgentGuardTab: View {
                     .font(Theme.Font.subheadlineMedium)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Text(localizer.t(
-                    "AgentGuard 内部清理守护目录项目时需要系统身份验证；项目移入废纸篓后会持续提醒。出于 App Store 沙盒边界，Finder 或终端中的手动清空不会被强制拦截。",
-                    en: "Cleanup of guarded directory items inside AgentGuard requires system authentication. Once moved to Trash, AgentGuard keeps reminding you. To stay within App Store sandbox boundaries, manual emptying from Finder or Terminal is not forcibly blocked."
+                    "TraceFence 内部清理守护目录项目时需要系统身份验证；项目移入废纸篓后会持续提醒。Finder 或终端中的手动清空不会被强制拦截。",
+                    en: "Cleanup of guarded directory items inside TraceFence requires system authentication. Once moved to Trash, TraceFence keeps reminding you. Manual emptying from Finder or Terminal is not forcibly blocked."
                 ))
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)

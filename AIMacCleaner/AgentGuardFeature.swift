@@ -926,7 +926,7 @@ class AgentGuardFeature: ObservableObject {
                     "\(missing.count) 个受保护项已不在废纸篓中，可能已被清空。请确认是否仍需要恢复：\(names)",
                     en: "\(missing.count) protected item(s) are no longer in Trash and may have been emptied. Confirm whether recovery is still needed: \(names)"
                 ) ?? "\(missing.count) protected item(s) are no longer in Trash.",
-                agentName: "AgentGuard",
+                agentName: "TraceFence",
                 targetPath: missing.first?.trashPath ?? "",
                 detail: missing.map(\.originalPath).joined(separator: "\n")
             )
@@ -1001,7 +1001,7 @@ class AgentGuardFeature: ObservableObject {
                 "\(items.count) 个守护目录项目已在废纸篓中。清空废纸篓前请确认是否需要恢复：\(names)",
                 en: "\(items.count) guarded item(s) are in Trash. Review before emptying Trash: \(names)"
             ) ?? "\(items.count) guarded item(s) are in Trash. Review before emptying Trash.",
-            agentName: "AgentGuard",
+            agentName: "TraceFence",
             targetPath: items.first?.trashPath ?? "",
             detail: items.map { "\($0.originalPath) -> \($0.trashPath)" }.joined(separator: "\n")
         )
@@ -1376,7 +1376,7 @@ class AgentGuardFeature: ObservableObject {
 
     private func guessCommandDescription(_ cmd: String) -> (function: String, consequence: String) {
         let map: [(patterns: [String], function: String, consequence: String)] = [
-            (["rm "], "Delete files", "Files may be removed; AgentGuard asks you to review first"),
+            (["rm "], "Delete files", "Files may be removed; TraceFence asks you to review first"),
             (["rm -rf", "rm -r"], "Recursive force delete", "Entire directory trees will be deleted without confirmation"),
             (["mkdir "], "Create directory", "New directory will be created"),
             (["cp ", "copy "], "Copy files", "Files will be duplicated to target location"),
@@ -1438,7 +1438,7 @@ class AgentGuardFeature: ObservableObject {
         let map: [String: String] = [
             "Delete files": localizer.cmdDeleteFiles,
             "Recursive force delete": localizer.cmdRecursiveDelete,
-            "Files may be removed; AgentGuard asks you to review first": localizer.cmdDeleteFilesCon,
+            "Files may be removed; TraceFence asks you to review first": localizer.cmdDeleteFilesCon,
             "Entire directory trees will be deleted without confirmation": localizer.cmdRecursiveDeleteCon,
             "Create directory": localizer.cmdCreateDir,
             "New directory will be created": localizer.cmdCreateDirCon,

@@ -6,9 +6,9 @@ actor RemoteManager {
     private var config: RemoteConfig = RemoteConfig()
     private var alerts: [AgentGuardAlert] = []
 
-    private let hostsPath = NSHomeDirectory() + "/.aimaccleaner_remote_hosts.json"
-    private let configPath = NSHomeDirectory() + "/.aimaccleaner_remote_config.json"
-    private let alertsPath = NSHomeDirectory() + "/.aimaccleaner_remote_alerts.json"
+    private let hostsPath = NSHomeDirectory() + "/.tracefence_remote_hosts.json"
+    private let configPath = NSHomeDirectory() + "/.tracefence_remote_config.json"
+    private let alertsPath = NSHomeDirectory() + "/.tracefence_remote_alerts.json"
 
     weak var hookServer: HookServer?
 

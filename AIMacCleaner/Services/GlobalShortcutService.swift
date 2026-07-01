@@ -102,7 +102,7 @@ actor GlobalShortcutService {
     private var eventHandlers: [EventHotKeyRef] = []
     private var actionHandlers: [GlobalShortcut.ShortcutAction: @MainActor () -> Void] = [:]
 
-    private let shortcutsPath = NSHomeDirectory() + "/.aimaccleaner_shortcuts.json"
+    private let shortcutsPath = NSHomeDirectory() + "/.tracefence_shortcuts.json"
 
     static let defaultShortcuts: [GlobalShortcut] = [
         GlobalShortcut(

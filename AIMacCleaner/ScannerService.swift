@@ -28,6 +28,10 @@ class ScannerService: ObservableObject {
     private var authorizedScanRoots: Set<String> = []
     private var hasRestoredScanBookmarks = false
     private var lastCachedSurfaceRefreshTime: Date = .distantPast
+    private let scannerCacheWriteQueue = DispatchQueue(
+        label: "com.tracefence.scanner-cache",
+        qos: .utility
+    )
 
     private struct ScannerCache: Codable {
         var version: Int = 1
@@ -89,8 +93,11 @@ class ScannerService: ObservableObject {
             installedApps: installedApps,
             operationRecords: Array(operationRecords.prefix(10000))
         )
-        guard let data = try? JSONEncoder().encode(cache) else { return }
-        try? data.write(to: URL(fileURLWithPath: scannerCachePath), options: .atomic)
+        let cacheURL = URL(fileURLWithPath: scannerCachePath)
+        scannerCacheWriteQueue.async {
+            guard let data = try? JSONEncoder().encode(cache) else { return }
+            try? data.write(to: cacheURL, options: .atomic)
+        }
     }
 
     // MARK: - Disk Info
@@ -145,11 +152,28 @@ class ScannerService: ObservableObject {
     }
 
     func refreshHardwareInfo() {
-        hardwareInfo = safeGetHardwareInfo()
-        saveScannerCache()
+        guard !isHardwareRefreshInFlight else { return }
+        isHardwareRefreshInFlight = true
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var info = Self.collectHardwareInfo()
+            let networkCounters = Self.readNetworkCounters()
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.applyNetworkCounters(networkCounters, to: &info)
+                self.hardwareInfo = info
+                self.isHardwareRefreshInFlight = false
+            }
+        }
     }
 
     private func safeGetHardwareInfo() -> HardwareInfo {
+        var info = Self.collectHardwareInfo()
+        applyNetworkCounters(Self.readNetworkCounters(), to: &info)
+        return info
+    }
+
+    private nonisolated static func collectHardwareInfo() -> HardwareInfo {
         var info = HardwareInfo(
             cpuUsage: 0, cpuCoreCount: 0, cpuTemperature: nil,
             memoryTotal: 0, memoryUsed: 0, memoryFree: 0, memoryPressure: 0, swapUsed: 0,
@@ -163,49 +187,17 @@ class ScannerService: ObservableObject {
         getMemoryInfo(&info)
         getBatteryInfo(&info)
         getSystemStats(&info)
-        safeGetNetworkInfo(&info)
         return info
     }
 
-    private func getHardwareInfo() -> HardwareInfo {
-        var info = HardwareInfo(
-            cpuUsage: 0,
-            cpuCoreCount: 0,
-            cpuTemperature: nil,
-            memoryTotal: 0,
-            memoryUsed: 0,
-            memoryFree: 0,
-            memoryPressure: 0,
-            swapUsed: 0,
-            batteryPercent: nil,
-            batteryCharging: false,
-            batteryTimeRemaining: nil,
-            processCount: 0,
-            threadCount: 0,
-            uptimeSeconds: 0,
-            networkInRate: 0,
-            networkOutRate: 0
-        )
-
-        info.cpuCoreCount = getCPUCoreCount()
-        info.cpuUsage = getCPUUsage()
-        info.cpuTemperature = getCPUTemperature()
-        getMemoryInfo(&info)
-        getBatteryInfo(&info)
-        getSystemStats(&info)
-        safeGetNetworkInfo(&info)
-
-        return info
-    }
-
-    private func getCPUCoreCount() -> Int {
+    private nonisolated static func getCPUCoreCount() -> Int {
         var count: Int32 = 0
         var size = MemoryLayout<Int32>.size
         sysctlbyname("hw.ncpu", &count, &size, nil, 0)
         return Int(count)
     }
 
-    private func getCPUUsage() -> Double {
+    private nonisolated static func getCPUUsage() -> Double {
         var numCPU: natural_t = 0
         var cpuInfo: processor_info_array_t?
         var numCPUInfo: mach_msg_type_number_t = 0
@@ -235,7 +227,7 @@ class ScannerService: ObservableObject {
         return 0
     }
 
-    private func getCPUTemperature() -> Double? {
+    private nonisolated static func getCPUTemperature() -> Double? {
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
         defer { IOObjectRelease(service) }
         guard service != 0 else { return nil }
@@ -259,7 +251,7 @@ class ScannerService: ObservableObject {
         return readTemperatureFromAppleARMIO()
     }
 
-    private func readTemperatureFromAppleARMIO() -> Double? {
+    private nonisolated static func readTemperatureFromAppleARMIO() -> Double? {
         let matching = IOServiceMatching("AppleARMIODevice")
         var iterator: io_iterator_t = 0
         let result = IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator)
@@ -301,7 +293,7 @@ class ScannerService: ObservableObject {
         return nil
     }
 
-    private func getMemoryInfo(_ info: inout HardwareInfo) {
+    private nonisolated static func getMemoryInfo(_ info: inout HardwareInfo) {
         var total: Int64 = 0
         var size = MemoryLayout<Int64>.size
         sysctlbyname("hw.memsize", &total, &size, nil, 0)
@@ -333,7 +325,7 @@ class ScannerService: ObservableObject {
         }
     }
 
-    private func getBatteryInfo(_ info: inout HardwareInfo) {
+    private nonisolated static func getBatteryInfo(_ info: inout HardwareInfo) {
         guard let powerSourcesInfo = IOPSCopyPowerSourcesInfo() else { return }
         let powerSources = powerSourcesInfo.takeRetainedValue()
         guard let powerSourcesList = IOPSCopyPowerSourcesList(powerSources) else { return }
@@ -357,7 +349,7 @@ class ScannerService: ObservableObject {
         }
     }
 
-    private func getSystemStats(_ info: inout HardwareInfo) {
+    private nonisolated static func getSystemStats(_ info: inout HardwareInfo) {
         var procCount: Int32 = 0
         var size = MemoryLayout<Int32>.size
         sysctlbyname("kern.num_processes", &procCount, &size, nil, 0)
@@ -381,10 +373,13 @@ class ScannerService: ObservableObject {
     private var lastNetInBytes: Int64 = 0
     private var lastNetOutBytes: Int64 = 0
     private var lastNetTime: Date = .distantPast
+    private var isHardwareRefreshInFlight = false
 
-    private func safeGetNetworkInfo(_ info: inout HardwareInfo) {
+    private nonisolated static func readNetworkCounters() -> (input: Int64, output: Int64) {
         var interfaceAddresses: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&interfaceAddresses) == 0, let firstAddr = interfaceAddresses else { return }
+        guard getifaddrs(&interfaceAddresses) == 0, let firstAddr = interfaceAddresses else {
+            return (0, 0)
+        }
 
         var totalIn: Int64 = 0
         var totalOut: Int64 = 0
@@ -411,19 +406,25 @@ class ScannerService: ObservableObject {
         }
 
         freeifaddrs(interfaceAddresses)
+        return (totalIn, totalOut)
+    }
 
+    private func applyNetworkCounters(
+        _ counters: (input: Int64, output: Int64),
+        to info: inout HardwareInfo
+    ) {
         let now = Date()
         let elapsed = now.timeIntervalSince(lastNetTime)
 
         if elapsed > 0.5 && lastNetTime != .distantPast {
-            let inDiff = Double(max(totalIn - lastNetInBytes, 0))
-            let outDiff = Double(max(totalOut - lastNetOutBytes, 0))
+            let inDiff = Double(max(counters.input - lastNetInBytes, 0))
+            let outDiff = Double(max(counters.output - lastNetOutBytes, 0))
             info.networkInRate = inDiff / elapsed
             info.networkOutRate = outDiff / elapsed
         }
 
-        lastNetInBytes = totalIn
-        lastNetOutBytes = totalOut
+        lastNetInBytes = counters.input
+        lastNetOutBytes = counters.output
         lastNetTime = now
     }
 
@@ -692,9 +693,6 @@ class ScannerService: ObservableObject {
             if !isScanning {
                 await scanLocal(promptForAccess: false)
             }
-            if !isScanningApps {
-                await scanInstalledApps()
-            }
         }
     }
 
@@ -719,6 +717,11 @@ class ScannerService: ObservableObject {
     private func restoreScanAccessFromBookmarks() {
         guard !hasRestoredScanBookmarks else { return }
         defer { hasRestoredScanBookmarks = true }
+
+        if SandboxPaths.isDirectDistribution && !SandboxPaths.isSandboxed {
+            authorizedScanRoots = [SandboxPaths.realHomeDirectory]
+            return
+        }
 
         var bookmarks = readBookmarkFile(scanBookmarksPath)
         let monitorBookmarks = readBookmarkFile(SandboxPaths.shared.bookmarksPath)
@@ -951,21 +954,46 @@ class ScannerService: ObservableObject {
     // MARK: - AI Config
 
     func loadAIConfigFromDisk() {
-        let config = localAIConfig()
-        saveAIConfigMetadata(config)
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: aiConfigFilePath)),
+              let config = try? JSONDecoder().decode(AIConfig.self, from: data) else {
+            aiConfig = defaultAIConfig()
+            return
+        }
         aiConfig = config
     }
 
     func saveLocalAIConfig() {
-        let config = localAIConfig()
+        let existing = aiConfig ?? defaultAIConfig()
+        let config = AIConfig(
+            apiBase: existing.apiBase,
+            apiKey: existing.apiKey,
+            model: AIConfig.appleIntelligenceModel,
+            hasKey: existing.apiKey?.isEmpty == false
+        )
         saveAIConfigMetadata(config)
         aiConfig = config
     }
 
-    private func localAIConfig() -> AIConfig {
+    func saveAIConfig(apiBase: String, apiKey: String, model: String) {
+        let trimmedBase = apiBase.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let config = AIConfig(
+            apiBase: trimmedBase.isEmpty ? nil : trimmedBase,
+            apiKey: trimmedKey.isEmpty ? nil : trimmedKey,
+            model: trimmedModel.isEmpty ? AIConfig.appleIntelligenceModel : trimmedModel,
+            hasKey: !trimmedKey.isEmpty
+        )
+        saveAIConfigMetadata(config)
+        aiConfig = config
+    }
+
+    private func defaultAIConfig() -> AIConfig {
         AIConfig(
-            model: AIConfig.appReviewDemoModel,
-            hasKey: true
+            apiBase: nil,
+            apiKey: nil,
+            model: AIConfig.appleIntelligenceModel,
+            hasKey: false
         )
     }
 
@@ -977,7 +1005,31 @@ class ScannerService: ObservableObject {
     // MARK: - AI Scan
 
     func startAiScan() async {
-        await runAppReviewDemoAiScan()
+        isAiScanning = true
+        errorMessage = nil
+        aiStatusMessage = localizer?.t(
+            "正在使用 Apple Intelligence 分析本地目录...",
+            en: "Analyzing local directories with Apple Intelligence..."
+        ) ?? "Analyzing local directories with Apple Intelligence..."
+
+        let config = aiConfig ?? defaultAIConfig()
+        let dirInfo = collectDirInfo()
+        let result = await callLLM(config: config, dirInfo: dirInfo)
+        guard result.success, let analyzedItems = result.items else {
+            isAiScanning = false
+            errorMessage = result.error ?? (localizer?.aiResponseFormatError ?? "AI response format error")
+            aiStatusMessage = ""
+            return
+        }
+
+        let existingIds = Set(scanItems.map(\.id))
+        let newItems = analyzedItems.filter { !existingIds.contains($0.id) }
+        scanItems.append(contentsOf: newItems)
+        scanItems.sort { $0.size > $1.size }
+        isAiScanning = false
+        refreshDiskInfo()
+        aiStatusMessage = "\(localizer?.aiScanComplete ?? "AI scan complete, found") \(newItems.count) \(localizer?.itemsLabel ?? "items")"
+        saveScannerCache()
     }
 
     private func runAppReviewDemoAiScan() async {
@@ -1005,7 +1057,7 @@ class ScannerService: ObservableObject {
                 id: "app-review-demo-download-installers",
                 name: "Demo: Downloaded installer archives",
                 category: "Downloads",
-                app: "AgentGuard Demo",
+                app: "TraceFence Demo",
                 risk: "safe",
                 riskDesc: "Sample AI result for App Review. These downloaded installer archives can usually be removed after installation.",
                 path: "~/Downloads",
@@ -1020,11 +1072,11 @@ class ScannerService: ObservableObject {
                 id: "app-review-demo-agent-cache",
                 name: "Demo: AI agent cache",
                 category: "AI Agent",
-                app: "AgentGuard Demo",
+                app: "TraceFence Demo",
                 risk: "caution",
                 riskDesc: "Sample AI result for App Review. Cache files are generally safe to review, but active sessions may need to regenerate data.",
-                path: "~/Library/Caches/AgentGuardDemo",
-                realPath: "\(home)/Library/Caches/AgentGuardDemo",
+                path: "~/Library/Caches/TraceFenceDemo",
+                realPath: "\(home)/Library/Caches/TraceFenceDemo",
                 size: 640_000_000,
                 fileCount: 84,
                 ignored: false,
@@ -1035,11 +1087,11 @@ class ScannerService: ObservableObject {
                 id: "app-review-demo-agent-logs",
                 name: "Demo: AI agent diagnostic logs",
                 category: "AI Agent",
-                app: "AgentGuard Demo",
+                app: "TraceFence Demo",
                 risk: "safe",
                 riskDesc: "Sample AI result for App Review. Rotated diagnostic logs can be removed when they are no longer needed for debugging.",
-                path: "~/Library/Logs/AgentGuardDemo",
-                realPath: "\(home)/Library/Logs/AgentGuardDemo",
+                path: "~/Library/Logs/TraceFenceDemo",
+                realPath: "\(home)/Library/Logs/TraceFenceDemo",
                 size: 210_000_000,
                 fileCount: 37,
                 ignored: false,
@@ -1065,8 +1117,7 @@ class ScannerService: ObservableObject {
         guard !isScanningApps else { return }
         isScanningApps = true
         restoreScanAccessFromBookmarks()
-        let maintenanceRoots = authorizedScanRoots
-        let apps = await Task.detached(priority: .userInitiated) {
+        let apps = await Task.detached(priority: .utility) {
             var results: [AppInfo] = []
             let fm = FileManager.default
             var seenIds = Set<String>()
@@ -1091,7 +1142,6 @@ class ScannerService: ObservableObject {
 
             self.scanCLIAndAgents(fm: fm, results: &results, seen: &seenIds)
             self.scanDynamicCLITools(fm: fm, results: &results, seen: &seenIds)
-            self.appendMaintenanceInventory(roots: maintenanceRoots, results: &results, seen: &seenIds)
 
             let home = SandboxPaths.realHomeDirectory
             for i in results.indices where results[i].appType == .other && results[i].appPath.hasSuffix(".app") {
@@ -1784,6 +1834,10 @@ class ScannerService: ObservableObject {
     }
 
     func startOperationMonitor() {
+        if operationMonitor.isMonitoring {
+            startOperationPolling()
+            return
+        }
         operationMonitor.start()
         operationRecords = operationMonitor.records
         processedOperationRecordIDs = Set(operationRecords.map(\.id))
@@ -1912,21 +1966,24 @@ class ScannerService: ObservableObject {
     private var lastAutoSaveTime: Date = .distantPast
 
     private func startOperationPolling() {
-        stopOperationPolling()
+        guard operationPollTimer == nil else { return }
         operationPollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
                 let currentRecords = self.operationMonitor.records
                 let newRecords = currentRecords.filter { !self.processedOperationRecordIDs.contains($0.id) }
-                self.operationRecords = currentRecords
-                self.processedOperationRecordIDs = Set(currentRecords.map(\.id))
                 if !newRecords.isEmpty {
+                    self.operationRecords = currentRecords
+                    self.processedOperationRecordIDs.formUnion(newRecords.map(\.id))
                     for record in newRecords {
                         self.guardFeature.checkBatchOperation(record: record)
                         self.guardFeature.checkSensitiveFile(record: record)
                         self.guardFeature.checkProtectedDir(record: record)
                         self.guardFeature.recordStats(record)
                     }
+                } else if currentRecords.count != self.operationRecords.count {
+                    self.operationRecords = currentRecords
+                    self.processedOperationRecordIDs = Set(currentRecords.map(\.id))
                 }
                 self.guardFeature.checkProcessLifecycle(
                     currentPids: Set(self.operationMonitor.allPidCommMap.keys),
@@ -1957,10 +2014,14 @@ class ScannerService: ObservableObject {
     private var aiLearningTimer: Timer?
 
     func startAISelfLearning() {
-        operationMonitor.aiSelfLearningEnabled = false
+        operationMonitor.aiSelfLearningEnabled = true
         aiLearningTimer?.invalidate()
-        aiLearningTimer = nil
-        operationMonitor.curationMessage = localizer?.localAnalysisNoExternalAI ?? "Local analysis mode does not use external AI services."
+        aiLearningTimer = Timer.scheduledTimer(withTimeInterval: 120.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                await self?.analyzeUnknownAgentsWithAI()
+            }
+        }
+        aiLearningTimer?.fire()
     }
 
     func stopAISelfLearning() {
@@ -1993,12 +2054,108 @@ class ScannerService: ObservableObject {
     func curateWithAI() async {
         operationMonitor.curationMessage = ""
         operationMonitor.isCurating = true
+        operationMonitor.curationMessage = localizer?.collectingRawData ?? "Collecting raw data..."
         operationMonitor.discoverAgentSelfDirs()
-        let (events, _) = operationMonitor.getRawDataForCuration()
-        operationMonitor.isCurating = false
-        operationMonitor.curationMessage = events.isEmpty
-            ? (localizer?.noMonitorData ?? "No monitoring data, please enable Agent monitoring and wait for file operations")
-            : "\(localizer?.curationComplete ?? "Curation complete: ")\(localizer?.localMonitorReviewed(records: events.count) ?? "Local monitor reviewed \(events.count) records without external AI services.")"
+        let (events, snapshots) = operationMonitor.getRawDataForCuration()
+
+        guard events.count >= 3 else {
+            operationMonitor.isCurating = false
+            operationMonitor.curationMessage = events.isEmpty
+                ? (localizer?.noMonitorData ?? "No monitoring data, please enable Agent monitoring and wait for file operations")
+                : "\(localizer?.insufficientDataPrefix ?? "Insufficient data (only") \(events.count) \(localizer?.continueMonitorRetry ?? "records), continue monitoring and retry")"
+            return
+        }
+
+        operationMonitor.curationMessage = localizer?.callingAIAnalysis ?? "Calling AI for analysis..."
+
+        let recentSnaps = snapshots.filter { snap in
+            if let first = events.first?.timestamp, let last = events.last?.timestamp {
+                let range = first.timeIntervalSince1970 ... last.timeIntervalSince1970 + 60
+                return range.contains(snap.timestamp.timeIntervalSince1970)
+            }
+            return false
+        }
+
+        let selfDirs = operationMonitor.agentSelfDirs
+        let knownAgentParentDirs = Set(selfDirs.map { ($0 as NSString).deletingLastPathComponent }).union(selfDirs)
+        var eventSummary = ""
+        for event in events.suffix(120) {
+            let path = event.targetPath
+            if path.contains("/node_modules/") || path.contains("/.vite/") || path.contains("/.turbo/") { continue }
+            if path.contains("/Library/Caches/") || path.contains("/Library/Containers/") || path.contains("/tmp/") { continue }
+            if path.contains("/dist/") || path.contains("/build/") || path.contains("/.next/") { continue }
+            if knownAgentParentDirs.contains(where: { path.hasPrefix($0) }) { continue }
+            eventSummary += "\(formattedTime(event.timestamp)) | \(event.operationType.rawValue) | \(path)\n"
+        }
+        eventSummary = eventSummary.components(separatedBy: "\n").filter { !$0.isEmpty }.suffix(60).joined(separator: "\n")
+
+        guard !eventSummary.isEmpty else {
+            operationMonitor.isCurating = false
+            operationMonitor.curationMessage = "\(localizer?.curationComplete ?? "Curation complete: ")\(events.count) \(localizer?.allInternalOps ?? "events are all within the agent's own project directory, no external file operations")"
+            return
+        }
+
+        let systemComms: Set<String> = ["kernel_task", "launchd", "WindowServer", "Dock", "Finder", "SystemUIServer",
+            "cfprefsd", "distnoted", "logd", "syslogd", "securityd", "trustd", "sysmond", "mds", "mdworker",
+            "corespeechd", "coreaudiod", "WiFi", "bluetoothd", "airportd", "iconservicesagent", "coreduetd",
+            "locationd", "timed", "chronod", "powerd", "configd", "diskarbitrationd", "fseventsd", "sandboxd"]
+        let nonSystemProcs = recentSnaps.filter { snap in
+            let name = snap.comm.lowercased()
+            if systemComms.contains(snap.comm) { return false }
+            if name.hasPrefix("com.apple.") || name.hasPrefix("com.apple") { return false }
+            return true
+        }
+        var procSummary = ""
+        if nonSystemProcs.isEmpty {
+            procSummary = "(\(localizer?.noProcessSnapshot ?? "No process snapshots—ensure Agent monitoring is enabled, or re-enable and wait 30 seconds"))"
+        } else {
+            let grouped = Dictionary(grouping: nonSystemProcs.prefix(200), by: { $0.comm })
+            for (comm, procs) in grouped.sorted(by: { $0.1.count > $1.1.count }) {
+                let pids = Set(procs.map { String($0.pid) }).sorted().joined(separator: ",")
+                let ppids = Set(procs.filter { $0.ppid != 0 }.map { String($0.ppid) }).sorted().joined(separator: ",")
+                let ppidStr = ppids.isEmpty ? "" : " PPIDs[\(ppids)]"
+                procSummary += "\(comm)(x\(procs.count)) PIDs[\(pids)]\(ppidStr)\n"
+            }
+        }
+
+        let instructions = """
+        You analyze local macOS file operation records for a privacy-first App Store utility.
+        Attribute operations to AI agents only when evidence is strong.
+        Return only a JSON array, no markdown, no commentary.
+        Each item must be:
+        {"path":"/full/path","op":"modify|create|delete|read|execute","agent":"Agent name","confidence":0.8,"evidence":"short evidence"}
+        Do not include system processes, IDE internal cache noise, package build caches, or agent self-directory events.
+        """
+        let prompt = """
+        File operation events:
+        \(eventSummary)
+
+        Process snapshots:
+        \(procSummary)
+        """
+
+        do {
+            let response = try await AppleIntelligenceService.generate(
+                instructions: instructions,
+                prompt: prompt,
+                maximumResponseTokens: 3000
+            )
+            operationMonitor.curationRawResponse = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            let curated = parseCurationResponse(raw: operationMonitor.curationRawResponse, events: events)
+            operationMonitor.isCurating = false
+            guard let curated else { return }
+            if curated.isEmpty {
+                operationMonitor.curationMessage = "\(localizer?.curationComplete ?? "Curation complete: ")\(localizer?.allSystemOps ?? "All are internal system operations, no external file changes detected")"
+                operationMonitor.saveCuratedRecords([])
+            } else {
+                operationMonitor.saveCuratedRecords(curated)
+                operationMonitor.curationMessage = "\(localizer?.curationComplete ?? "Curation complete: ")\(localizer?.identifiedAgentOps ?? "Identified") \(curated.count) \(localizer?.agentOpsRecords ?? "Agent operations")"
+                operationMonitor.curationRawResponse = ""
+            }
+        } catch {
+            operationMonitor.isCurating = false
+            operationMonitor.curationMessage = "\(AppleIntelligenceService.displayName): \(error.localizedDescription)"
+        }
     }
 
     private func parseCurationResponse(raw: String, events: [OperationRecord]) -> [CuratedRecord]? {
@@ -2130,7 +2287,7 @@ class ScannerService: ObservableObject {
         content.sound = .default
 
         let request = UNNotificationRequest(
-            identifier: "aimaccleaner.storage.alert",
+            identifier: "tracefence.storage.alert",
             content: content,
             trigger: nil
         )
@@ -2215,9 +2372,9 @@ class ScannerService: ObservableObject {
         guardFeature.auditProtectedTrashItems()
         if !guardFeature.protectedTrashItems.isEmpty {
             errorMessage = localizer?.t(
-                "废纸篓中有守护目录项目。AgentGuard 不会自动清空废纸篓，请先在守护目录中确认是否需要恢复。",
-                en: "Trash contains guarded items. AgentGuard will not empty Trash automatically; review recovery needs in Guarded Directories first."
-            ) ?? "Trash contains guarded items. AgentGuard will not empty Trash automatically."
+                "废纸篓中有守护目录项目。TraceFence 不会自动清空废纸篓，请先在守护目录中确认是否需要恢复。",
+                en: "Trash contains guarded items. TraceFence will not empty Trash automatically; review recovery needs in Guarded Directories first."
+            ) ?? "Trash contains guarded items. TraceFence will not empty Trash automatically."
         }
     }
 
@@ -2407,8 +2564,153 @@ class ScannerService: ObservableObject {
     }
 
     private func callLLM(config: AIConfig, dirInfo: String) async -> (success: Bool, items: [ScanItem]?, error: String?) {
-        let items = makeAppReviewDemoScanItems()
-        return (success: true, items: items, error: nil)
+        let systemPrompt = """
+        You are a macOS storage cleanup expert inside a sandboxed App Store app.
+        Analyze only the directory names and sizes provided by the user.
+        Return only items that are reasonable cleanup candidates.
+
+        Reply strictly as a JSON array. Do not include markdown fences or extra commentary.
+        Each item must use this schema:
+        {
+          "name": "cleanup item name",
+          "category": "Browser/Office/AI Agent/Developer/System/Social/Other",
+          "app": "related app or tool",
+          "risk": "safe or caution or dangerous",
+          "risk_desc": "short impact after deletion",
+          "path": "directory path, using ~ for the home directory",
+          "reason": "why this can be reviewed for cleanup"
+        }
+
+        Risk rules:
+        safe = cache, logs, generated temporary files.
+        caution = files that may require re-login, re-download, or reindex.
+        dangerous = user data or project data; avoid returning these unless there is a clear reason to warn the user.
+        """
+
+        let userPrompt = "Analyze these local Mac directories and sizes for cleanup candidates:\n\(dirInfo)"
+
+        let wantsExternalProvider = (config.hasKey == true)
+            && !(config.apiKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (config.model ?? AIConfig.appleIntelligenceModel) != AIConfig.appleIntelligenceModel
+
+        if !wantsExternalProvider {
+            do {
+                let response = try await AppleIntelligenceService.generate(
+                    instructions: systemPrompt,
+                    prompt: userPrompt,
+                    maximumResponseTokens: 4096
+                )
+                return parseAIResult(rawContent: response.content)
+            } catch {
+                let externalConfigAvailable = (config.hasKey == true)
+                    && !(config.apiKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                guard externalConfigAvailable else {
+                    return (
+                        success: false,
+                        items: nil,
+                        error: "\(AppleIntelligenceService.displayName): \(error.localizedDescription)"
+                    )
+                }
+            }
+        }
+
+        return await callExternalLLM(config: config, systemPrompt: systemPrompt, userPrompt: userPrompt)
+    }
+
+    private func callExternalLLM(config: AIConfig, systemPrompt: String, userPrompt: String) async -> (success: Bool, items: [ScanItem]?, error: String?) {
+        guard let apiKey = config.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines), !apiKey.isEmpty else {
+            return (success: false, items: nil, error: localizer?.configureAPIKeyFirst ?? "Please configure LLM API Key first")
+        }
+
+        let apiBase = (config.apiBase ?? "https://api.deepseek.com").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let urlString = "\(apiBase)/v1/chat/completions"
+
+        guard let url = URL(string: urlString) else {
+            return (success: false, items: nil, error: localizer?.invalidAPIUrl ?? "Invalid API URL")
+        }
+
+        let body: [String: Any] = [
+            "model": config.model ?? "deepseek-chat",
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userPrompt],
+            ],
+            "temperature": 0.1,
+            "max_tokens": 8192,
+        ]
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 120
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let http = response as? HTTPURLResponse else {
+                return (success: false, items: nil, error: localizer?.invalidHttpResponse ?? "Invalid HTTP response")
+            }
+
+            guard http.statusCode == 200 else {
+                if let body = String(data: data, encoding: .utf8) {
+                    return (success: false, items: nil, error: "HTTP \(http.statusCode): \(body.prefix(200))")
+                }
+                return (success: false, items: nil, error: "HTTP \(http.statusCode)")
+            }
+
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let message = choices.first?["message"] as? [String: Any] else {
+                return (success: false, items: nil, error: localizer?.aiModelFormatError ?? "AI model response format error")
+            }
+
+            let content = message["content"] as? String ?? ""
+            guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return (success: false, items: nil, error: localizer?.aiResponseFormatError ?? "AI response format error")
+            }
+
+            return parseAIResult(rawContent: content)
+        } catch {
+            return (success: false, items: nil, error: "\(localizer?.networkError ?? "Network error"): \(error.localizedDescription)")
+        }
+    }
+
+    private func parseAIResult(rawContent: String) -> (success: Bool, items: [ScanItem]?, error: String?) {
+        let jsonStr = extractJSON(from: rawContent)
+
+        if let jsonData = jsonStr.data(using: .utf8),
+           let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
+            return buildScanItems(from: items)
+        }
+
+        if let fixed = tryFixJSON(jsonStr),
+           let jsonData = fixed.data(using: .utf8),
+           let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
+            return buildScanItems(from: items)
+        }
+
+        if let fixed = tryFixTruncatedJSON(jsonStr),
+           let jsonData = fixed.data(using: .utf8),
+           let items = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
+            return buildScanItems(from: items)
+        }
+
+        if let fixed = tryFixJSON(jsonStr),
+           let jsonData = fixed.data(using: .utf8),
+           let wrapper = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+            for key in ["items", "data", "results", "list"] {
+                if let items = wrapper[key] as? [[String: Any]] {
+                    return buildScanItems(from: items)
+                }
+            }
+        }
+
+        let logPath = SandboxPaths.shared.lastResponsePath
+        try? rawContent.write(toFile: logPath, atomically: true, encoding: .utf8)
+        let preview = String(rawContent.prefix(300))
+        return (success: false, items: nil, error: "Unable to parse AI JSON response. Preview: \(preview)")
     }
 
     private func extractJSON(from content: String) -> String {

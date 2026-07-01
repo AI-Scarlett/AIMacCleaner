@@ -3,8 +3,9 @@ import Darwin
 
 struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
+    @ObservedObject var quotaService: ProviderQuotaService
     @EnvironmentObject var localizer: Localizer
-    @State private var selectedTab: MonitorTab = .operations
+    @State private var selectedTab: MonitorTab = .quotas
     @AppStorage("networkMode") private var networkMode = "internet"
     @State private var alertThreshold: Double = 10.0
     @State private var monitoringEnabled: Bool = true
@@ -13,13 +14,23 @@ struct MenuBarMonitor: View {
     @State private var preventAutoEmptyTrash: Bool = true
 
     enum MonitorTab: String, CaseIterable {
+        case quotas = "quotas"
         case operations = "operations"
         case overview = "overview"
 
         func label(_ localizer: Localizer) -> String {
             switch self {
+            case .quotas: return localizer.t("额度", en: "Quota", zhHant: "額度", ja: "クォータ", ko: "할당량", mt: "Quota")
             case .operations: return localizer.agentMonitorTitle
             case .overview: return localizer.systemMonitorTitle
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .quotas: return "gauge.with.dots.needle.67percent"
+            case .operations: return "chart.bar"
+            case .overview: return "gauge.open.with.lines.needle.84percent"
             }
         }
     }
@@ -29,24 +40,28 @@ struct MenuBarMonitor: View {
             tabBar
             Divider()
 
-            switch selectedTab {
-            case .overview:
-                overviewContent
-            case .operations:
-                operationsContent
+            Group {
+                switch selectedTab {
+                case .quotas:
+                    quotaContent
+                case .overview:
+                    overviewContent
+                case .operations:
+                    operationsContent
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
             Divider()
             popoverFooter
         }
-        .frame(width: 360)
+        .frame(width: 520, height: 640)
         .onAppear {
             loadSettings()
-            if monitoringEnabled {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    service.startMonitoring()
-                }
-            }
+            startDeferredMonitorForSelectedTab()
+        }
+        .onChange(of: selectedTab) { _ in
+            startDeferredMonitorForSelectedTab()
         }
     }
 
@@ -58,7 +73,7 @@ struct MenuBarMonitor: View {
                     selectedTab = tab
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: tab == .operations ? "chart.bar" : "gauge.open.with.lines.needle.84percent")
+                        Image(systemName: tab.icon)
                             .font(Theme.Font.caption)
                         Text(tab.label(localizer))
                             .font(Theme.Font.captionMedium)
@@ -99,7 +114,7 @@ struct MenuBarMonitor: View {
                     dismissMenuBarPopoverSoon()
                     NSApp.setActivationPolicy(.regular)
                     NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("AgentGuard") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
+                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("TraceFence") || $0.title.contains("AgentGuard") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
                         window.makeKeyAndOrderFront(nil)
                     }
                 } label: {
@@ -185,7 +200,7 @@ struct MenuBarMonitor: View {
                 safetySettings
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var operationsContent: some View {
@@ -202,7 +217,568 @@ struct MenuBarMonitor: View {
                 operationControlBar
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var quotaContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(localizer.t("Provider 额度监控", en: "Provider Quota Monitor", zhHant: "Provider 額度監控", ja: "Provider クォータ監視", ko: "Provider 할당량 모니터", mt: "Provider Quota Monitor"), systemImage: "speedometer")
+                            .font(Theme.Font.subheadlineMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text(localizer.t("使用官方 provider API 读取 5 小时、周/月窗口和重置时间。", en: "Reads 5-hour, weekly/monthly windows and reset times through provider APIs.", zhHant: "使用官方 provider API 讀取 5 小時、週/月窗口與重置時間。", ja: "Provider API で 5 時間、週/月ウィンドウとリセット時刻を読み取ります。", ko: "Provider API로 5시간, 주간/월간 창과 재설정 시간을 읽습니다.", mt: "Reads 5-hour, weekly/monthly windows and reset times through provider APIs."))
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        quotaService.refresh()
+                    } label: {
+                        Label(quotaService.isRefreshing ? localizer.tokenScopeScanning : localizer.refresh, systemImage: "arrow.clockwise")
+                            .font(Theme.Font.captionMedium)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(quotaService.isRefreshing)
+                }
+
+                if quotaService.snapshots.isEmpty {
+                    quotaEmptyStateCard
+                } else {
+                    ForEach(quotaService.snapshots) { snapshot in
+                        quotaProviderCard(snapshot)
+                    }
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.md)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            quotaService.start()
+        }
+    }
+
+    private var quotaEmptyStateCard: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(Theme.Colors.accent.opacity(0.12))
+                        .frame(width: 44, height: 44)
+                    if quotaService.isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.accent)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    Text(quotaService.isRefreshing
+                        ? localizer.t("正在读取额度数据", en: "Reading quota data", zhHant: "正在讀取額度資料", ja: "クォータデータを読み取り中", ko: "할당량 데이터를 읽는 중", mt: "Reading quota data")
+                        : localizer.t("准备检查 provider 状态", en: "Ready to check provider status", zhHant: "準備檢查 provider 狀態", ja: "Provider 状態を確認できます", ko: "Provider 상태 확인 준비됨", mt: "Ready to check provider status"))
+                        .font(Theme.Font.subheadlineMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+
+                    Text(localizer.t(
+                        "TraceFence 正在通过本机的 Codex、Claude、Cursor 等 provider 读取 5 小时、周/月额度和重置时间。首次读取可能需要几秒；如果缺少登录、API Key 或完全磁盘访问权限，结果会在这里给出处理建议。",
+                        en: "TraceFence is reading 5-hour, weekly/monthly quota windows and reset times from local providers such as Codex, Claude, and Cursor. The first read can take a few seconds; missing login, API key, or Full Disk Access issues will appear here with next steps.",
+                        zhHant: "TraceFence 正在透過本機的 Codex、Claude、Cursor 等 provider 讀取 5 小時、週/月額度與重置時間。首次讀取可能需要幾秒；如果缺少登入、API Key 或完整磁碟存取權限，結果會在這裡給出處理建議。",
+                        ja: "TraceFence は Codex、Claude、Cursor などのローカル provider から 5 時間、週/月クォータとリセット時刻を読み取っています。初回読み取りには数秒かかる場合があります。ログイン、API キー、フルディスクアクセスが不足している場合は、ここに対処方法が表示されます。",
+                        ko: "TraceFence는 Codex, Claude, Cursor 같은 로컬 provider에서 5시간, 주간/월간 할당량과 재설정 시간을 읽고 있습니다. 첫 읽기에는 몇 초가 걸릴 수 있으며 로그인, API Key, 전체 디스크 접근 권한 문제가 있으면 여기에서 처리 방법을 안내합니다.",
+                        mt: "TraceFence is reading 5-hour, weekly/monthly quota windows and reset times from local providers such as Codex, Claude, and Cursor. The first read can take a few seconds; missing login, API key, or Full Disk Access issues will appear here with next steps."))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if !quotaService.isRefreshing {
+                Button {
+                    quotaService.refresh()
+                } label: {
+                    Label(localizer.t("立即检查", en: "Check now", zhHant: "立即檢查", ja: "今すぐ確認", ko: "지금 확인", mt: "Check now"), systemImage: "arrow.clockwise")
+                        .font(Theme.Font.captionMedium)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle(padding: Theme.Spacing.lg)
+    }
+
+    private func quotaProviderCard(_ snapshot: ProviderQuotaSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: snapshot.isSetupNotice ? "slider.horizontal.3" : "terminal.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(snapshot.isSetupNotice ? Theme.Colors.warning : .white)
+                    .frame(width: 30, height: 30)
+                    .background(snapshot.isSetupNotice ? Theme.Colors.warning.opacity(0.12) : Theme.Colors.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Text(localizedQuotaText(snapshot.providerName))
+                            .font(Theme.Font.subheadlineMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        if let plan = snapshot.planName, !plan.isEmpty {
+                            Text(plan.uppercased())
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.accent)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Theme.Colors.accent.opacity(0.1))
+                                .clipShape(Capsule())
+                        }
+                    }
+                    Text(localizedQuotaText(snapshot.accountLabel ?? sourceLabel(snapshot.source)))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(relativeRefreshText(snapshot.updatedAt))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    if let credits = snapshot.credits {
+                        Text(localizer.t("Credits \(String(format: "%.0f", credits))", en: "Credits \(String(format: "%.0f", credits))", zhHant: "Credits \(String(format: "%.0f", credits))", ja: "Credits \(String(format: "%.0f", credits))", ko: "Credits \(String(format: "%.0f", credits))", mt: "Credits \(String(format: "%.0f", credits))"))
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.warning)
+                    }
+                }
+            }
+
+            if let error = snapshot.errorMessage {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(localizedQuotaText(error), systemImage: snapshot.isSetupNotice ? "info.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(snapshot.isSetupNotice ? Theme.Colors.textSecondary : Theme.Colors.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let hint = snapshot.setupHint, !hint.isEmpty {
+                        Text(localizedQuotaText(hint))
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(Theme.Spacing.sm)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background((snapshot.isSetupNotice ? Theme.Colors.textSecondary : Theme.Colors.warning).opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            } else {
+                VStack(spacing: Theme.Spacing.sm) {
+                    ForEach(snapshot.windows) { window in
+                        quotaWindowRow(window)
+                    }
+                    if let resetCredits = snapshot.resetCredits {
+                        quotaResetCreditsSection(resetCredits)
+                    }
+                }
+            }
+        }
+        .cardStyle(padding: Theme.Spacing.md)
+    }
+
+    private func sourceLabel(_ source: String) -> String {
+        switch source {
+        case "oauth": return "OAuth"
+        case "api": return "API"
+        case "web": return localizer.t("网页会话", en: "Web session", zhHant: "網頁會話", ja: "Web セッション", ko: "웹 세션", mt: "Web session")
+        case "cli": return "CLI"
+        case "setup": return localizer.t("可选配置", en: "Optional setup", zhHant: "可選配置", ja: "任意設定", ko: "선택 설정", mt: "Optional setup")
+        default: return source
+        }
+    }
+
+    private func quotaWindowTitle(_ window: ProviderQuotaWindow) -> String {
+        switch window.kind {
+        case .fiveHour:
+            return localizer.t("5 小时额度", en: "5-hour quota", zhHant: "5 小時額度", ja: "5時間クォータ", ko: "5시간 할당량", mt: "5-hour quota")
+        case .weekly:
+            return localizer.t("每周额度", en: "Weekly quota", zhHant: "每週額度", ja: "週間クォータ", ko: "주간 할당량", mt: "Weekly quota")
+        case .monthly:
+            return localizer.t("每月额度", en: "Monthly quota", zhHant: "每月額度", ja: "月間クォータ", ko: "월간 할당량", mt: "Monthly quota")
+        case .extra:
+            return localizedQuotaText(window.title)
+        }
+    }
+
+    private func localizedResetType(_ raw: String) -> String {
+        let normalized = raw
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = normalized.lowercased()
+        if lower.contains("manual") || lower.contains("rate limit") || lower.contains("reset") || raw.contains("重置") {
+            return localizer.t("速率重置", en: "Rate-limit reset", zhHant: "速率重置", ja: "レート制限リセット", ko: "속도 제한 재설정", mt: "Rate-limit reset")
+        }
+        return localizedQuotaText(normalized)
+    }
+
+    private func localizedQuotaText(_ raw: String) -> String {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.isEmpty { return text }
+
+        switch text {
+        case "Other Providers", "其它 Provider":
+            return localizer.t("其它 Provider", en: "Other Providers", zhHant: "其它 Provider", ja: "その他の Provider", ko: "기타 Provider", mt: "Other Providers")
+        case "Optional setup", "可选配置":
+            return localizer.t("可选配置", en: "Optional setup", zhHant: "可選配置", ja: "任意設定", ko: "선택 설정", mt: "Optional setup")
+        case "Manual reset credits", "Manual reset credit", "manual_reset", "manual reset", "手动重置次数":
+            return localizer.t("手动重置", en: "Manual reset", zhHant: "手動重置", ja: "手動リセット", ko: "수동 재설정", mt: "Manual reset")
+        case "Rate-limit reset", "Rate limit reset", "rate_limit_reset", "rate limit reset", "速率重置":
+            return localizer.t("速率重置", en: "Rate-limit reset", zhHant: "速率重置", ja: "レート制限リセット", ko: "속도 제한 재설정", mt: "Rate-limit reset")
+        case "Quota monitor engine was not found. Please reinstall TraceFence.", "未找到额度监控引擎，请重新安装 TraceFence。":
+            return localizer.t("未找到额度监控引擎，请重新安装 TraceFence。", en: "Quota monitor engine was not found. Please reinstall TraceFence.", zhHant: "找不到額度監控引擎，請重新安裝 TraceFence。", ja: "クォータ監視エンジンが見つかりません。TraceFence を再インストールしてください。", ko: "할당량 모니터 엔진을 찾을 수 없습니다. TraceFence를 다시 설치하세요.", mt: "Quota monitor engine was not found. Please reinstall TraceFence.")
+        case "No quota data is available yet. Log in or enable the Agent you want to monitor.", "暂时没有可显示的额度数据。请先登录或启用需要监控的 Agent。":
+            return localizer.t("暂时没有可显示的额度数据。请先登录或启用需要监控的 Agent。", en: "No quota data is available yet. Log in or enable the Agent you want to monitor.", zhHant: "暫時沒有可顯示的額度資料。請先登入或啟用需要監控的 Agent。", ja: "表示できるクォータデータはまだありません。監視したい Agent にログインするか有効にしてください。", ko: "아직 표시할 할당량 데이터가 없습니다. 모니터링할 Agent에 로그인하거나 활성화하세요.", mt: "No quota data is available yet. Log in or enable the Agent you want to monitor.")
+        case "Installed Agents such as Codex, Claude, and Cursor will show actionable diagnostics here.", "已安装的 Codex、Claude、Cursor 等 Agent 会在这里显示可操作诊断。":
+            return localizer.t("已安装的 Codex、Claude、Cursor 等 Agent 会在这里显示可操作诊断。", en: "Installed Agents such as Codex, Claude, and Cursor will show actionable diagnostics here.", zhHant: "已安裝的 Codex、Claude、Cursor 等 Agent 會在這裡顯示可操作診斷。", ja: "Codex、Claude、Cursor などインストール済みの Agent は、ここに対処可能な診断を表示します。", ko: "설치된 Codex, Claude, Cursor 같은 Agent의 실행 가능한 진단이 여기에 표시됩니다.", mt: "Installed Agents such as Codex, Claude, and Cursor will show actionable diagnostics here.")
+        case "Install or log in to the matching Agent, or enable its provider to show detailed diagnostics.", "安装/登录对应 Agent，或启用 provider 后，TraceFence 会显示具体诊断。":
+            return localizer.t("安装/登录对应 Agent，或启用 provider 后，TraceFence 会显示具体诊断。", en: "Install or log in to the matching Agent, or enable its provider to show detailed diagnostics.", zhHant: "安裝/登入對應 Agent，或啟用 provider 後，TraceFence 會顯示具體診斷。", ja: "該当 Agent をインストールまたはログインするか、Provider を有効にすると詳細な診断が表示されます。", ko: "해당 Agent를 설치/로그인하거나 provider를 활성화하면 자세한 진단이 표시됩니다.", mt: "Install or log in to the matching Agent, or enable its provider to show detailed diagnostics.")
+        case "Quota monitor engine timed out. TraceFence stopped this read automatically.", "额度监控引擎响应超时，TraceFence 已自动结束本次读取。":
+            return localizer.t("额度监控引擎响应超时，TraceFence 已自动结束本次读取。", en: "Quota monitor engine timed out. TraceFence stopped this read automatically.", zhHant: "額度監控引擎回應逾時，TraceFence 已自動結束本次讀取。", ja: "クォータ監視エンジンがタイムアウトしました。TraceFence は今回の読み取りを自動停止しました。", ko: "할당량 모니터 엔진 응답 시간이 초과되어 TraceFence가 이번 읽기를 자동으로 중지했습니다.", mt: "Quota monitor engine timed out. TraceFence stopped this read automatically.")
+        case "Quota monitor engine produced no output.", "额度监控引擎没有输出。":
+            return localizer.t("额度监控引擎没有输出。", en: "Quota monitor engine produced no output.", zhHant: "額度監控引擎沒有輸出。", ja: "クォータ監視エンジンから出力がありません。", ko: "할당량 모니터 엔진 출력이 없습니다.", mt: "Quota monitor engine produced no output.")
+        case "No Cursor login session found", "未发现 Cursor 登录会话", "No Cursor session found":
+            return localizer.t("未发现 Cursor 登录会话", en: "No Cursor login session found", zhHant: "未發現 Cursor 登入會話", ja: "Cursor のログインセッションが見つかりません", ko: "Cursor 로그인 세션을 찾을 수 없습니다", mt: "No Cursor login session found")
+        case "Command line tool is not installed or not on PATH", "命令行工具未安装或不在 PATH 中":
+            return localizer.t("命令行工具未安装或不在 PATH 中", en: "Command line tool is not installed or not on PATH", zhHant: "命令列工具未安裝或不在 PATH 中", ja: "コマンドラインツールが未インストール、または PATH にありません", ko: "명령줄 도구가 설치되지 않았거나 PATH에 없습니다", mt: "Command line tool is not installed or not on PATH")
+        default:
+            break
+        }
+
+        if let count = collapsedProviderCount(in: text) {
+            return localizer.t("还有 \(count) 个未安装或未启用的 provider 已收起。", en: "\(count) inactive providers are collapsed.", zhHant: "還有 \(count) 個未安裝或未啟用的 provider 已收起。", ja: "\(count) 個の未インストールまたは未有効化の Provider を折りたたみました。", ko: "\(count)개의 설치되지 않았거나 비활성화된 provider를 접었습니다.", mt: "\(count) inactive providers are collapsed.")
+        }
+        if let resetCreditTitle = localizedResetCreditQuotaTitle(text) {
+            return resetCreditTitle
+        }
+
+        if let provider = providerName(from: text, suffix: " API Key 未配置") {
+            return providerApiKeyMissing(provider)
+        }
+        if let provider = providerName(from: text, suffix: " API key is not configured") {
+            return providerApiKeyMissing(provider)
+        }
+        if let provider = providerName(from: text, suffix: " CLI 暂时无法调用") {
+            return providerCliUnavailable(provider)
+        }
+        if let provider = providerName(from: text, suffix: " CLI is temporarily unavailable") {
+            return providerCliUnavailable(provider)
+        }
+        if let provider = providerName(from: text, suffix: " CLI 未安装") {
+            return providerCliMissing(provider)
+        }
+        if let provider = providerName(from: text, suffix: " CLI is not installed") {
+            return providerCliMissing(provider)
+        }
+        if let provider = providerName(from: text, prefix: "No usable ", suffix: " login session found") {
+            return providerSessionMissing(provider)
+        }
+        if let provider = providerName(from: text, suffix: " 未发现可用登录会话") {
+            return providerSessionMissing(provider)
+        }
+        if let provider = providerName(from: text, prefix: "No available fetch strategy for ", suffix: "") {
+            return providerNoFetchStrategy(provider)
+        }
+        if let provider = providerName(from: text, suffix: " 暂无可用读取方式") {
+            return providerNoFetchStrategy(provider)
+        }
+        if let provider = providerName(from: text, prefix: "需要配置 ", suffix: " 的 API Key。") {
+            return localizer.t("需要配置 \(provider) 的 API Key。可先在终端运行：codexbar config set-api-key --provider \(provider.lowercased()) --stdin", en: "Configure the \(provider) API key. You can run in Terminal: codexbar config set-api-key --provider \(provider.lowercased()) --stdin", zhHant: "需要配置 \(provider) 的 API Key。可先在終端機執行：codexbar config set-api-key --provider \(provider.lowercased()) --stdin", ja: "\(provider) API キーを設定してください。Terminal で codexbar config set-api-key --provider \(provider.lowercased()) --stdin を実行できます。", ko: "\(provider) API Key를 설정하세요. 터미널에서 codexbar config set-api-key --provider \(provider.lowercased()) --stdin 을 실행할 수 있습니다.", mt: "Configure the \(provider) API key. You can run in Terminal: codexbar config set-api-key --provider \(provider.lowercased()) --stdin")
+        }
+        if let provider = providerName(from: text, prefix: "Configure the ", suffix: " API key.") {
+            return localizer.t("需要配置 \(provider) 的 API Key。可先在终端运行：codexbar config set-api-key --provider \(provider.lowercased()) --stdin", en: text, zhHant: "需要配置 \(provider) 的 API Key。可先在終端機執行：codexbar config set-api-key --provider \(provider.lowercased()) --stdin", ja: text, ko: text, mt: text)
+        }
+        if let provider = providerName(from: text, prefix: "本机已检测到 ", suffix: "，但额度读取器无法调用它的命令行工具。") {
+            return localizer.t("本机已检测到 \(provider)，但额度读取器无法调用它的命令行工具。请重新安装或修复 \(provider) CLI，确保终端中可直接运行。", en: "\(provider) appears to be installed, but the quota reader cannot run its CLI. Reinstall or repair the \(provider) CLI so it works directly in Terminal.", zhHant: "本機已偵測到 \(provider)，但額度讀取器無法呼叫它的命令列工具。請重新安裝或修復 \(provider) CLI，確保終端機中可直接執行。", ja: "\(provider) はインストール済みのようですが、クォータリーダーが CLI を実行できません。\(provider) CLI を再インストールまたは修復し、Terminal で直接実行できるようにしてください。", ko: "\(provider)이 설치된 것으로 보이지만 할당량 리더가 CLI를 실행할 수 없습니다. \(provider) CLI를 다시 설치하거나 복구해 터미널에서 직접 실행되도록 하세요.", mt: "\(provider) appears to be installed, but the quota reader cannot run its CLI. Reinstall or repair the \(provider) CLI so it works directly in Terminal.")
+        }
+        if text.contains("This provider is enabled, but its CLI was not found.") || text.contains("已启用该 provider，但本机未检测到命令行工具。") {
+            return localizer.t("已启用该 provider，但本机未检测到命令行工具。安装对应 CLI 并确保命令在 PATH 中后即可监控。", en: text, zhHant: "已啟用該 provider，但本機未偵測到命令列工具。安裝對應 CLI 並確保命令在 PATH 中後即可監控。", ja: text, ko: text, mt: text)
+        }
+        if text.contains("The related Agent was detected") || text.contains("本机检测到相关 Agent") {
+            return localizer.t("本机检测到相关 Agent，但没有可读取的登录会话。请先登录对应 Provider，必要时给 TraceFence 完全磁盘访问权限。", en: text, zhHant: "本機偵測到相關 Agent，但沒有可讀取的登入會話。請先登入對應 Provider，必要時給 TraceFence 完整磁碟存取權限。", ja: text, ko: text, mt: text)
+        }
+        if text.contains("Cursor was detected") || text.contains("检测到 Cursor") {
+            return localizer.t("检测到 Cursor，但未读到可用会话。请登录 Cursor；若仍失败，在系统设置 > 隐私与安全中给 TraceFence 完全磁盘访问权限。", en: "Cursor was detected, but no usable session was found. Log in to Cursor; if it still fails, grant TraceFence Full Disk Access in System Settings > Privacy & Security.", zhHant: "偵測到 Cursor，但未讀到可用會話。請登入 Cursor；若仍失敗，請在系統設定 > 隱私與安全中給 TraceFence 完整磁碟存取權限。", ja: "Cursor は検出されましたが、利用可能なセッションがありません。Cursor にログインしてください。それでも失敗する場合は、System Settings > Privacy & Security で TraceFence にフルディスクアクセスを許可してください。", ko: "Cursor가 감지되었지만 사용 가능한 세션을 찾지 못했습니다. Cursor에 로그인하고, 계속 실패하면 시스템 설정 > 개인정보 보호 및 보안에서 TraceFence에 전체 디스크 접근 권한을 부여하세요.", mt: "Cursor was detected, but no usable session was found. Log in to Cursor; if it still fails, grant TraceFence Full Disk Access in System Settings > Privacy & Security.")
+        }
+        if text.contains("Claude was detected") || text.contains("检测到 Claude") {
+            return localizer.t("检测到 Claude。请确认 Claude CLI 可运行，并在 Claude 中完成登录。", en: "Claude was detected. Make sure the Claude CLI runs, then finish signing in to Claude.", zhHant: "偵測到 Claude。請確認 Claude CLI 可執行，並在 Claude 中完成登入。", ja: "Claude が検出されました。Claude CLI が実行できることを確認し、Claude へのサインインを完了してください。", ko: "Claude가 감지되었습니다. Claude CLI가 실행되는지 확인한 뒤 Claude 로그인을 완료하세요.", mt: "Claude was detected. Make sure the Claude CLI runs, then finish signing in to Claude.")
+        }
+
+        return text
+    }
+
+    private func localizedResetCreditQuotaTitle(_ text: String) -> String? {
+        let lower = text
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .lowercased()
+        let providerPrefix: String
+        if lower.contains("codex spark") {
+            providerPrefix = "Codex Spark"
+        } else if lower.contains("codex") {
+            providerPrefix = "Codex"
+        } else {
+            providerPrefix = ""
+        }
+
+        let zhPrefix = providerPrefix.isEmpty ? "" : "\(providerPrefix) "
+        if lower.contains("5 hour") || lower.contains("5h") || lower.contains("five hour") || text.contains("5 小时") || text.contains("5 小時") {
+            return localizer.t("\(zhPrefix)5 小时", en: providerPrefix.isEmpty ? "5-hour" : "\(providerPrefix) 5-hour", zhHant: "\(zhPrefix)5 小時", ja: providerPrefix.isEmpty ? "5時間" : "\(providerPrefix) 5時間", ko: providerPrefix.isEmpty ? "5시간" : "\(providerPrefix) 5시간", mt: providerPrefix.isEmpty ? "5-hour" : "\(providerPrefix) 5-hour")
+        }
+        if lower.contains("weekly") || lower.contains("week") || text.contains("每周") || text.contains("每週") {
+            return localizer.t("\(zhPrefix)每周", en: providerPrefix.isEmpty ? "Weekly" : "\(providerPrefix) weekly", zhHant: "\(zhPrefix)每週", ja: providerPrefix.isEmpty ? "週間" : "\(providerPrefix) 週間", ko: providerPrefix.isEmpty ? "주간" : "\(providerPrefix) 주간", mt: providerPrefix.isEmpty ? "Weekly" : "\(providerPrefix) weekly")
+        }
+        if lower.contains("monthly") || lower.contains("month") || text.contains("每月") {
+            return localizer.t("\(zhPrefix)每月", en: providerPrefix.isEmpty ? "Monthly" : "\(providerPrefix) monthly", zhHant: "\(zhPrefix)每月", ja: providerPrefix.isEmpty ? "月間" : "\(providerPrefix) 月間", ko: providerPrefix.isEmpty ? "월간" : "\(providerPrefix) 월간", mt: providerPrefix.isEmpty ? "Monthly" : "\(providerPrefix) monthly")
+        }
+        return nil
+    }
+
+    private func collapsedProviderCount(in text: String) -> Int? {
+        guard text.contains("inactive providers are collapsed") || text.contains("未安装或未启用") else { return nil }
+        let digits = text.unicodeScalars.filter { CharacterSet.decimalDigits.contains($0) }
+        return Int(String(String.UnicodeScalarView(digits)))
+    }
+
+    private func providerName(from text: String, prefix: String = "", suffix: String) -> String? {
+        guard text.hasPrefix(prefix), suffix.isEmpty || text.hasSuffix(suffix) || text.contains(suffix) else { return nil }
+        let start = text.index(text.startIndex, offsetBy: prefix.count)
+        let end: String.Index
+        if suffix.isEmpty {
+            end = text.endIndex
+        } else if let suffixRange = text.range(of: suffix, range: start..<text.endIndex) {
+            end = suffixRange.lowerBound
+        } else {
+            return nil
+        }
+        let value = String(text[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    private func providerApiKeyMissing(_ provider: String) -> String {
+        localizer.t("\(provider) API Key 未配置", en: "\(provider) API key is not configured", zhHant: "\(provider) API Key 未配置", ja: "\(provider) API キーが未設定です", ko: "\(provider) API Key가 설정되지 않았습니다", mt: "\(provider) API key is not configured")
+    }
+
+    private func providerCliUnavailable(_ provider: String) -> String {
+        localizer.t("\(provider) CLI 暂时无法调用", en: "\(provider) CLI is temporarily unavailable", zhHant: "\(provider) CLI 暫時無法呼叫", ja: "\(provider) CLI は一時的に利用できません", ko: "\(provider) CLI를 일시적으로 호출할 수 없습니다", mt: "\(provider) CLI is temporarily unavailable")
+    }
+
+    private func providerCliMissing(_ provider: String) -> String {
+        localizer.t("\(provider) CLI 未安装", en: "\(provider) CLI is not installed", zhHant: "\(provider) CLI 未安裝", ja: "\(provider) CLI がインストールされていません", ko: "\(provider) CLI가 설치되지 않았습니다", mt: "\(provider) CLI is not installed")
+    }
+
+    private func providerSessionMissing(_ provider: String) -> String {
+        localizer.t("\(provider) 未发现可用登录会话", en: "No usable \(provider) login session found", zhHant: "\(provider) 未發現可用登入會話", ja: "\(provider) の利用可能なログインセッションが見つかりません", ko: "사용 가능한 \(provider) 로그인 세션을 찾을 수 없습니다", mt: "No usable \(provider) login session found")
+    }
+
+    private func providerNoFetchStrategy(_ provider: String) -> String {
+        localizer.t("\(provider) 暂无可用读取方式", en: "No available fetch strategy for \(provider)", zhHant: "\(provider) 暫無可用讀取方式", ja: "\(provider) で利用可能な読み取り方式がありません", ko: "\(provider)에 사용할 수 있는 읽기 방식이 없습니다", mt: "No available fetch strategy for \(provider)")
+    }
+
+    private func quotaWindowRow(_ window: ProviderQuotaWindow) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            HStack(spacing: Theme.Spacing.sm) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(quotaWindowTitle(window))
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(resetText(window.resetsAt))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
+                Spacer()
+                Text("\(Int(window.remainingPercent.rounded()))%")
+                    .font(Theme.Font.headline)
+                    .monospacedDigit()
+                    .foregroundStyle(quotaColor(window.remainingPercent))
+            }
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Theme.Colors.textTertiary.opacity(0.14))
+                    Capsule()
+                        .fill(quotaColor(window.remainingPercent))
+                        .frame(width: max(8, proxy.size.width * window.remainingPercent / 100))
+                }
+            }
+            .frame(height: 8)
+        }
+        .padding(Theme.Spacing.sm)
+        .background(Theme.Colors.background.opacity(0.65))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    private func quotaResetCreditsSection(_ resetCredits: ProviderQuotaResetCredits) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+                Label(localizer.t("手动重置次数", en: "Manual reset credits", zhHant: "手動重置次數", ja: "手動リセット回数", ko: "수동 재설정 횟수", mt: "Manual reset credits"), systemImage: "arrow.counterclockwise.circle.fill")
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+
+                Spacer()
+
+                Text(localizer.t("剩余 \(resetCredits.availableCount) 次", en: "\(resetCredits.availableCount) available", zhHant: "剩餘 \(resetCredits.availableCount) 次", ja: "\(resetCredits.availableCount) 回利用可能", ko: "\(resetCredits.availableCount)회 남음", mt: "\(resetCredits.availableCount) available"))
+                    .font(Theme.Font.captionMedium)
+                    .monospacedDigit()
+                    .foregroundStyle(resetCredits.availableCount > 0 ? Theme.Colors.success : Theme.Colors.textTertiary)
+            }
+
+            if let next = resetCredits.nextExpiringAvailableCredit, let expiresAt = next.expiresAt {
+                Text(localizer.t("最近到期：\(dateTimeText(expiresAt))", en: "Next expires: \(dateTimeText(expiresAt))", zhHant: "最近到期：\(dateTimeText(expiresAt))", ja: "次の期限: \(dateTimeText(expiresAt))", ko: "다음 만료: \(dateTimeText(expiresAt))", mt: "Next expires: \(dateTimeText(expiresAt))"))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(1)
+            }
+
+            let rows = resetCreditRows(resetCredits)
+            VStack(spacing: Theme.Spacing.xs) {
+                ForEach((0..<rows.count).map { $0 }, id: \.self) { index in
+                    resetCreditRow(rows[index])
+                }
+            }
+        }
+        .padding(Theme.Spacing.sm)
+        .background(Theme.Colors.accent.opacity(0.07))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    private func resetCreditRow(_ credit: ProviderQuotaResetCredit) -> some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            Image(systemName: resetCreditIcon(credit.status))
+                .font(Theme.Font.caption)
+                .foregroundStyle(resetCreditColor(credit.status))
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(resetCreditTitle(credit))
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .lineLimit(1)
+                Text(resetCreditDetail(credit))
+                    .font(.caption2)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: Theme.Spacing.sm)
+
+            Text(resetCreditStatusText(credit.status))
+                .font(.caption2)
+                .foregroundStyle(resetCreditColor(credit.status))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(resetCreditColor(credit.status).opacity(0.1))
+                .clipShape(Capsule())
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func resetCreditRows(_ resetCredits: ProviderQuotaResetCredits) -> [ProviderQuotaResetCredit] {
+        resetCredits.credits.sorted { lhs, rhs in
+            if lhs.status == .available, rhs.status != .available { return true }
+            if lhs.status != .available, rhs.status == .available { return false }
+            let lhsDate = lhs.expiresAt ?? lhs.redeemedAt ?? lhs.grantedAt ?? .distantFuture
+            let rhsDate = rhs.expiresAt ?? rhs.redeemedAt ?? rhs.grantedAt ?? .distantFuture
+            return lhsDate < rhsDate
+        }
+    }
+
+    private func resetCreditTitle(_ credit: ProviderQuotaResetCredit) -> String {
+        if let title = credit.title, !title.isEmpty { return localizedQuotaText(title) }
+        if !credit.resetType.isEmpty { return localizedResetType(credit.resetType) }
+        return localizer.t("速率重置", en: "Rate-limit reset", zhHant: "速率重置", ja: "レート制限リセット", ko: "속도 제한 재설정", mt: "Rate-limit reset")
+    }
+
+    private func resetCreditDetail(_ credit: ProviderQuotaResetCredit) -> String {
+        if let expiresAt = credit.expiresAt {
+            return localizer.t("到期 \(dateTimeText(expiresAt))", en: "Expires \(dateTimeText(expiresAt))", zhHant: "到期 \(dateTimeText(expiresAt))", ja: "期限 \(dateTimeText(expiresAt))", ko: "\(dateTimeText(expiresAt)) 만료", mt: "Expires \(dateTimeText(expiresAt))")
+        }
+        if let redeemedAt = credit.redeemedAt {
+            return localizer.t("已使用 \(dateTimeText(redeemedAt))", en: "Used \(dateTimeText(redeemedAt))", zhHant: "已使用 \(dateTimeText(redeemedAt))", ja: "使用済み \(dateTimeText(redeemedAt))", ko: "\(dateTimeText(redeemedAt)) 사용됨", mt: "Used \(dateTimeText(redeemedAt))")
+        }
+        return localizer.t("到期时间未知", en: "Expiry unknown", zhHant: "到期時間未知", ja: "期限不明", ko: "만료 시간 알 수 없음", mt: "Expiry unknown")
+    }
+
+    private func resetCreditStatusText(_ status: ProviderQuotaResetCredit.Status) -> String {
+        switch status {
+        case .available:
+            return localizer.t("可用", en: "Available", zhHant: "可用", ja: "利用可能", ko: "사용 가능", mt: "Available")
+        case .redeeming:
+            return localizer.t("使用中", en: "Redeeming", zhHant: "使用中", ja: "使用中", ko: "사용 중", mt: "Redeeming")
+        case .redeemed:
+            return localizer.t("已使用", en: "Used", zhHant: "已使用", ja: "使用済み", ko: "사용됨", mt: "Used")
+        case .expired:
+            return localizer.t("已过期", en: "Expired", zhHant: "已過期", ja: "期限切れ", ko: "만료됨", mt: "Expired")
+        case .unknown:
+            return localizer.t("未知", en: "Unknown", zhHant: "未知", ja: "不明", ko: "알 수 없음", mt: "Unknown")
+        }
+    }
+
+    private func resetCreditIcon(_ status: ProviderQuotaResetCredit.Status) -> String {
+        switch status {
+        case .available: return "checkmark.circle.fill"
+        case .redeeming: return "clock.arrow.circlepath"
+        case .redeemed: return "checkmark.seal.fill"
+        case .expired: return "xmark.circle.fill"
+        case .unknown: return "questionmark.circle.fill"
+        }
+    }
+
+    private func resetCreditColor(_ status: ProviderQuotaResetCredit.Status) -> Color {
+        switch status {
+        case .available: return Theme.Colors.success
+        case .redeeming: return Theme.Colors.info
+        case .redeemed: return Theme.Colors.textSecondary
+        case .expired: return Theme.Colors.danger
+        case .unknown: return Theme.Colors.textTertiary
+        }
+    }
+
+    private func quotaColor(_ remaining: Double) -> Color {
+        if remaining <= 15 { return Theme.Colors.danger }
+        if remaining <= 35 { return Theme.Colors.warning }
+        return Theme.Colors.success
+    }
+
+    private func resetText(_ date: Date?) -> String {
+        guard let date else {
+            return localizer.t("重置时间未知", en: "Reset time unknown", zhHant: "重置時間未知", ja: "リセット時刻不明", ko: "재설정 시간 알 수 없음", mt: "Reset time unknown")
+        }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        let relative = formatter.localizedString(for: date, relativeTo: Date())
+        let time = DateFormatter.localizedString(from: date, dateStyle: .none, timeStyle: .short)
+        return localizer.t("重置 \(relative) · \(time)", en: "Resets \(relative) · \(time)", zhHant: "重置 \(relative) · \(time)", ja: "\(relative) にリセット · \(time)", ko: "\(relative) 재설정 · \(time)", mt: "Resets \(relative) · \(time)")
+    }
+
+    private func dateTimeText(_ date: Date) -> String {
+        let relative = RelativeDateTimeFormatter()
+        relative.unitsStyle = .short
+        let relativeText = relative.localizedString(for: date, relativeTo: Date())
+        let absolute = DateFormatter.localizedString(from: date, dateStyle: .short, timeStyle: .short)
+        return "\(relativeText) · \(absolute)"
+    }
+
+    private func relativeRefreshText(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     private var hardwareOverview: some View {
@@ -892,6 +1468,21 @@ struct MenuBarMonitor: View {
         }
     }
 
+    private func startDeferredMonitorForSelectedTab() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            switch selectedTab {
+            case .overview:
+                guard monitoringEnabled else { return }
+                service.startMonitoring()
+            case .operations:
+                guard operationMonitorEnabled else { return }
+                service.startOperationMonitor()
+            case .quotas:
+                break
+            }
+        }
+    }
+
     private func settingsPath() -> String {
         SandboxPaths.shared.monitorPath
     }
@@ -907,9 +1498,6 @@ struct MenuBarMonitor: View {
         service.alertThreshold = alertThreshold
         service.trashInsteadOfDelete = trashInsteadOfDelete
         service.preventAutoEmptyTrash = preventAutoEmptyTrash
-        if operationMonitorEnabled {
-            service.startOperationMonitor()
-        }
     }
 
     private func saveSettings() {
