@@ -379,7 +379,7 @@ struct MenuBarMonitor: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             } else {
                 VStack(spacing: Theme.Spacing.sm) {
-                    ForEach(snapshot.windows) { window in
+                    ForEach(snapshot.windows.filter { !isAuxiliaryQuotaWindow($0) }) { window in
                         quotaWindowRow(window)
                     }
                     if let resetCredits = snapshot.resetCredits {
@@ -404,6 +404,19 @@ struct MenuBarMonitor: View {
     }
 
     private func quotaWindowTitle(_ window: ProviderQuotaWindow) -> String {
+        if isCodexSparkQuotaWindow(window) {
+            switch window.kind {
+            case .fiveHour:
+                return localizer.t("Codex Spark 5 小时额度", en: "Codex Spark 5-hour quota", zhHant: "Codex Spark 5 小時額度", ja: "Codex Spark 5時間クォータ", ko: "Codex Spark 5시간 할당량", mt: "Codex Spark 5-hour quota")
+            case .weekly:
+                return localizer.t("Codex Spark 每周额度", en: "Codex Spark weekly quota", zhHant: "Codex Spark 每週額度", ja: "Codex Spark 週間クォータ", ko: "Codex Spark 주간 할당량", mt: "Codex Spark weekly quota")
+            case .monthly:
+                return localizer.t("Codex Spark 每月额度", en: "Codex Spark monthly quota", zhHant: "Codex Spark 每月額度", ja: "Codex Spark 月間クォータ", ko: "Codex Spark 월간 할당량", mt: "Codex Spark monthly quota")
+            case .extra:
+                return localizedQuotaText(window.title)
+            }
+        }
+
         switch window.kind {
         case .fiveHour:
             return localizer.t("5 小时额度", en: "5-hour quota", zhHant: "5 小時額度", ja: "5時間クォータ", ko: "5시간 할당량", mt: "5-hour quota")
@@ -414,6 +427,24 @@ struct MenuBarMonitor: View {
         case .extra:
             return localizedQuotaText(window.title)
         }
+    }
+
+    private func isAuxiliaryQuotaWindow(_ window: ProviderQuotaWindow) -> Bool {
+        if window.id == "primary" || window.id == "secondary" || window.id == "tertiary" {
+            return false
+        }
+        if isCodexSparkQuotaWindow(window) {
+            return false
+        }
+        return true
+    }
+
+    private func isCodexSparkQuotaWindow(_ window: ProviderQuotaWindow) -> Bool {
+        let normalized = "\(window.id) \(window.title)"
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .lowercased()
+        return normalized.contains("codex spark")
     }
 
     private func localizedResetType(_ raw: String) -> String {

@@ -526,7 +526,7 @@ private struct TokenScopeModelsPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            TokenScopeTableCard(title: localizer.tokenScopeModels, subtitle: localizer.tokenScopeTokenBreakdown, icon: "cpu.fill", headers: [localizer.tokenScopeInputTokens, localizer.tokenScopeOutputTokens, localizer.tokenScopeCacheTokens, localizer.tokenScopeEstimatedSpend]) {
+            TokenScopeTableCard(title: localizer.tokenScopeModels, subtitle: localizer.tokenScopeTokenBreakdown, icon: "cpu.fill", headers: [localizer.tokenScopeInputTokens, localizer.tokenScopeOutputTokens, localizer.tokenScopeCacheTokens, localizer.t("调用任务", en: "Invoking Task", zhHant: "呼叫任務", ja: "呼び出し元", ko: "호출 작업", mt: "Invoking Task"), localizer.tokenScopeEstimatedSpend]) {
                 if models.isEmpty {
                     TokenScopeEmptyInline(text: localizer.tokenScopeEmptyRecords)
                 } else {
@@ -535,11 +535,12 @@ private struct TokenScopeModelsPanel: View {
                             icon: "cpu",
                             color: model.color,
                             title: model.displayName,
-                            subtitle: model.provider,
+                            subtitle: "\(model.provider) · \(model.taskKind)",
                             columns: [
                                 TokenScopeFormat.tokens(model.totals.input),
                                 TokenScopeFormat.tokens(model.totals.output),
                                 TokenScopeFormat.tokens(model.totals.cacheTotal),
+                                model.topTask,
                                 TokenScopeFormat.currency(model.cost)
                             ]
                         )
@@ -555,12 +556,12 @@ private struct TokenScopeSessionsPanel: View {
     let localizer: Localizer
 
     var body: some View {
-        TokenScopeTableCard(title: localizer.tokenScopeSessions, subtitle: localizer.tokenScopeSessionDetail, icon: "list.bullet.rectangle.fill", headers: [localizer.tokenScopeTotalTokens, localizer.tokenScopeEstimatedSpend, localizer.tokenScopeModels]) {
+        TokenScopeTableCard(title: localizer.tokenScopeSessions, subtitle: localizer.tokenScopeSessionDetail, icon: "list.bullet.rectangle.fill", headers: [localizer.t("调用任务", en: "Invoking Task", zhHant: "呼叫任務", ja: "呼び出し元", ko: "호출 작업", mt: "Invoking Task"), localizer.tokenScopeTotalTokens, localizer.tokenScopeEstimatedSpend, localizer.tokenScopeModels]) {
             if sessions.isEmpty {
                 TokenScopeEmptyInline(text: localizer.tokenScopeEmptyRecords)
             } else {
                 ForEach(sessions) { session in
-                    TokenScopeDataRow(icon: "bubble.left.and.text.bubble.right", color: session.color, title: session.title, subtitle: session.project, columns: [TokenScopeFormat.tokens(session.totals.total), TokenScopeFormat.currency(session.totals.cost), session.model])
+                    TokenScopeDataRow(icon: "bubble.left.and.text.bubble.right", color: session.color, title: session.title, subtitle: "\(session.project) · \(session.taskKind)", columns: [session.task, TokenScopeFormat.tokens(session.totals.total), TokenScopeFormat.currency(session.totals.cost), session.model])
                 }
             }
         }
@@ -1178,6 +1179,50 @@ private struct TokenScopeUsageRecord: Identifiable, Codable, Hashable {
     let reasoningTokens: Int
     let costUSD: Double?
     let sourcePath: String
+    let taskKind: String?
+    let taskName: String?
+    let taskDetail: String?
+    let taskSource: String?
+
+    init(
+        id: String,
+        source: TokenScopeSource,
+        timestamp: Date,
+        sessionID: String,
+        projectPath: String,
+        model: String,
+        title: String,
+        inputTokens: Int,
+        outputTokens: Int,
+        cacheCreationTokens: Int,
+        cacheReadTokens: Int,
+        reasoningTokens: Int,
+        costUSD: Double?,
+        sourcePath: String,
+        taskKind: String? = nil,
+        taskName: String? = nil,
+        taskDetail: String? = nil,
+        taskSource: String? = nil
+    ) {
+        self.id = id
+        self.source = source
+        self.timestamp = timestamp
+        self.sessionID = sessionID
+        self.projectPath = projectPath
+        self.model = model
+        self.title = title
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
+        self.cacheCreationTokens = cacheCreationTokens
+        self.cacheReadTokens = cacheReadTokens
+        self.reasoningTokens = reasoningTokens
+        self.costUSD = costUSD
+        self.sourcePath = sourcePath
+        self.taskKind = taskKind
+        self.taskName = taskName
+        self.taskDetail = taskDetail
+        self.taskSource = taskSource
+    }
 
     var totalTokens: Int {
         inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens + reasoningTokens
@@ -1197,6 +1242,18 @@ private struct TokenScopeUsageRecord: Identifiable, Codable, Hashable {
         let expanded = (projectPath as NSString).expandingTildeInPath
         let name = URL(fileURLWithPath: expanded).lastPathComponent
         return name.isEmpty ? "Unknown" : name
+    }
+
+    var taskDisplayName: String {
+        [taskName, taskDetail, title, sessionID]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? "Unknown task"
+    }
+
+    var taskKindLabel: String {
+        [taskKind, taskSource, source.name]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? source.name
     }
 }
 
@@ -1256,6 +1313,8 @@ private struct TokenScopeModelSummary: Identifiable {
     let model: String
     let totals: TokenScopeTokenTotals
     let color: Color
+    let topTask: String
+    let taskKind: String
 
     var cost: Double { totals.cost }
     var displayName: String {
@@ -1271,6 +1330,8 @@ private struct TokenScopeSessionSummary: Identifiable {
     let title: String
     let project: String
     let model: String
+    let task: String
+    let taskKind: String
     let totals: TokenScopeTokenTotals
     let color: Color
 }
@@ -1353,12 +1414,15 @@ private struct TokenScopeSummary {
                 var modelTotals = TokenScopeTokenTotals()
                 modelRecords.forEach { modelTotals.add($0) }
                 let provider = modelRecords.first?.source.name ?? "Unknown"
+                let topTask = Self.topTask(in: modelRecords)
                 return TokenScopeModelSummary(
                     id: model,
                     provider: provider,
                     model: model,
                     totals: modelTotals,
-                    color: palette[abs(model.hashValue) % palette.count]
+                    color: palette[abs(model.hashValue) % palette.count],
+                    topTask: topTask.name,
+                    taskKind: topTask.kind
                 )
             }
             .sorted { $0.totals.total == $1.totals.total ? $0.cost > $1.cost : $0.totals.total > $1.totals.total }
@@ -1368,11 +1432,14 @@ private struct TokenScopeSummary {
                 var sessionTotals = TokenScopeTokenTotals()
                 sessionRecords.forEach { sessionTotals.add($0) }
                 let latest = sessionRecords.max { $0.timestamp < $1.timestamp }
+                let topTask = Self.topTask(in: sessionRecords)
                 return TokenScopeSessionSummary(
                     id: sessionID,
                     title: latest?.title ?? sessionID,
                     project: latest?.projectName ?? "Unknown",
                     model: latest?.model ?? "Unknown",
+                    task: topTask.name,
+                    taskKind: topTask.kind,
                     totals: sessionTotals,
                     color: palette[abs(sessionID.hashValue) % palette.count]
                 )
@@ -1395,6 +1462,27 @@ private struct TokenScopeSummary {
         self.models = models
         self.sessions = sessions
         self.totals = totals
+    }
+
+    private static func topTask(in records: [TokenScopeUsageRecord]) -> (name: String, kind: String) {
+        var grouped: [String: (name: String, kind: String, tokens: Int, count: Int)] = [:]
+        for record in records {
+            let name = record.taskDisplayName
+            let kind = record.taskKindLabel
+            let key = "\(kind)\t\(name)"
+            let existing = grouped[key] ?? (name: name, kind: kind, tokens: 0, count: 0)
+            grouped[key] = (
+                name: existing.name,
+                kind: existing.kind,
+                tokens: existing.tokens + record.totalTokens,
+                count: existing.count + 1
+            )
+        }
+        let top = grouped.values.max {
+            if $0.tokens == $1.tokens { return $0.count < $1.count }
+            return $0.tokens < $1.tokens
+        }
+        return (top?.name ?? "Unknown task", top?.kind ?? "Unknown")
     }
 }
 
@@ -1951,14 +2039,32 @@ private enum TokenScopeClaudeAdapter {
 }
 
 private enum TokenScopeCodexAdapter {
+    private struct CodexAutomationConfig {
+        let name: String
+        let status: String
+        let model: String
+        let cwds: [String]
+    }
+
+    private struct CodexInitialContext {
+        var model: String?
+        var cwd: String?
+        var threadSource: String?
+        var originator: String?
+    }
+
     static func parse(file: URL, sessionsRoot: URL, source: TokenScopeSource) -> [TokenScopeUsageRecord] {
         let modified = TokenScopeJSON.fileModifiedDate(file)
+        let initialContext = firstKnownContext(in: file)
         var sessionID = sessionID(for: file, root: sessionsRoot)
         var records: [TokenScopeUsageRecord] = []
-        var currentModel = firstKnownModel(in: file)
-        var currentProject = inferProject(from: file, root: sessionsRoot)
+        var currentModel = initialContext.model
+        var currentProject = initialContext.cwd ?? inferProject(from: file, root: sessionsRoot)
         var previousTotals: TokenScopeUsage?
         var currentTurnID: String?
+        var currentThreadSource = initialContext.threadSource
+        var currentOriginator = initialContext.originator
+        var currentTaskName: String?
 
         scanJSONLLines(file: file) { object in
             guard let type = TokenScopeJSON.string(object, keys: ["type"]) else { return }
@@ -1971,19 +2077,47 @@ private enum TokenScopeCodexAdapter {
                     ?? sessionID
                 currentProject = TokenScopeJSON.string(object, path: ["payload", "cwd"]) ?? currentProject
                 currentModel = TokenScopeModelName.best(in: object) ?? currentModel
+                currentThreadSource = TokenScopeJSON.firstString(object, paths: [
+                    ["payload", "thread_source"],
+                    ["payload", "threadSource"],
+                    ["payload", "source"],
+                    ["thread_source"],
+                    ["threadSource"]
+                ]) ?? currentThreadSource
+                currentOriginator = TokenScopeJSON.firstString(object, paths: [
+                    ["payload", "originator"],
+                    ["payload", "origin"],
+                    ["payload", "automation_id"],
+                    ["payload", "automationId"],
+                    ["originator"],
+                    ["automation_id"]
+                ]) ?? currentOriginator
                 return
             }
 
             if type == "turn_context" {
                 currentModel = TokenScopeModelName.normalize(TokenScopeJSON.string(object, path: ["payload", "model"])) ?? currentModel
                 currentProject = TokenScopeJSON.string(object, path: ["payload", "cwd"]) ?? currentProject
+                currentThreadSource = TokenScopeJSON.firstString(object, paths: [
+                    ["payload", "thread_source"],
+                    ["payload", "threadSource"],
+                    ["payload", "source"]
+                ]) ?? currentThreadSource
+                currentOriginator = TokenScopeJSON.firstString(object, paths: [
+                    ["payload", "originator"],
+                    ["payload", "origin"],
+                    ["payload", "automation_id"],
+                    ["payload", "automationId"]
+                ]) ?? currentOriginator
                 return
             }
 
             guard type == "event_msg" else { return }
             let payloadType = TokenScopeJSON.string(object, path: ["payload", "type"])
             if payloadType == "task_started" {
-                currentTurnID = codexTurnID(from: TokenScopeJSON.value(object, path: ["payload"]))
+                let payload = TokenScopeJSON.value(object, path: ["payload"])
+                currentTurnID = codexTurnID(from: payload)
+                currentTaskName = taskTitle(from: payload) ?? currentTaskName
                 return
             }
 
@@ -1998,6 +2132,14 @@ private enum TokenScopeCodexAdapter {
                     ?? TokenScopeModelName.unknown
                 currentModel = model
                 let turnID = codexTurnID(from: TokenScopeJSON.value(object, path: ["payload"])) ?? currentTurnID
+                let task = taskAttribution(
+                    threadSource: currentThreadSource,
+                    originator: currentOriginator,
+                    taskName: currentTaskName,
+                    project: currentProject,
+                    model: model,
+                    sessionTitle: file.deletingPathExtension().lastPathComponent
+                )
                 records.append(record(
                     file: file,
                     source: source,
@@ -2007,7 +2149,11 @@ private enum TokenScopeCodexAdapter {
                     timestamp: timestamp,
                     model: model,
                     usage: usage,
-                    title: file.deletingPathExtension().lastPathComponent))
+                    title: file.deletingPathExtension().lastPathComponent,
+                    taskKind: task.kind,
+                    taskName: task.name,
+                    taskDetail: task.detail,
+                    taskSource: task.source))
                 return
             }
 
@@ -2019,6 +2165,14 @@ private enum TokenScopeCodexAdapter {
                     ?? TokenScopeModelName.unknown
                 currentModel = model
                 let eventProject = TokenScopeJSON.firstString(object, paths: [["cwd"], ["workdir"], ["workspace"], ["project_path"], ["data", "cwd"], ["result", "cwd"], ["response", "cwd"]]) ?? currentProject
+                let task = taskAttribution(
+                    threadSource: currentThreadSource,
+                    originator: currentOriginator,
+                    taskName: currentTaskName,
+                    project: eventProject,
+                    model: model,
+                    sessionTitle: file.deletingPathExtension().lastPathComponent
+                )
                 records.append(record(
                     file: file,
                     source: source,
@@ -2028,7 +2182,11 @@ private enum TokenScopeCodexAdapter {
                     timestamp: timestamp,
                     model: model,
                     usage: usage,
-                    title: file.deletingPathExtension().lastPathComponent))
+                    title: file.deletingPathExtension().lastPathComponent,
+                    taskKind: task.kind,
+                    taskName: task.name,
+                    taskDetail: task.detail,
+                    taskSource: task.source))
             }
         }
 
@@ -2036,7 +2194,11 @@ private enum TokenScopeCodexAdapter {
     }
 
     private static func firstKnownModel(in file: URL) -> String? {
-        guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+        firstKnownContext(in: file).model
+    }
+
+    private static func firstKnownContext(in file: URL) -> CodexInitialContext {
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return CodexInitialContext() }
         defer { try? handle.close() }
 
         let maxScanBytes = 2 * 1024 * 1024
@@ -2044,21 +2206,40 @@ private enum TokenScopeCodexAdapter {
         var remainingBytes = min((try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0, maxScanBytes)
         var buffer = Data()
         buffer.reserveCapacity(64 * 1024)
+        var context = CodexInitialContext()
 
-        func model(from line: Data) -> String? {
-            guard !line.isEmpty else { return nil }
+        func mergeContext(from line: Data) -> Bool {
+            guard !line.isEmpty else { return false }
             let prefix = line.prefix(4096)
             guard let prefixText = String(data: prefix, encoding: .utf8),
                   prefixText.contains("\"type\":\"session_meta\"") || prefixText.contains("\"type\":\"turn_context\"") else {
-                return nil
+                return false
             }
-            if line.count <= 256 * 1024,
-               let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-               let model = TokenScopeModelName.best(in: object) {
-                return model
+            let object: [String: Any]?
+            if line.count <= 256 * 1024 {
+                object = try? JSONSerialization.jsonObject(with: line) as? [String: Any]
+            } else {
+                object = lightweightContextObject(from: line)
             }
-            guard let context = lightweightContextObject(from: line) else { return nil }
-            return TokenScopeModelName.best(in: context)
+            guard let object else { return false }
+            context.model = context.model ?? TokenScopeModelName.best(in: object)
+            context.cwd = context.cwd ?? TokenScopeJSON.string(object, path: ["payload", "cwd"])
+            context.threadSource = context.threadSource ?? TokenScopeJSON.firstString(object, paths: [
+                ["payload", "thread_source"],
+                ["payload", "threadSource"],
+                ["payload", "source"],
+                ["thread_source"],
+                ["threadSource"]
+            ])
+            context.originator = context.originator ?? TokenScopeJSON.firstString(object, paths: [
+                ["payload", "originator"],
+                ["payload", "origin"],
+                ["payload", "automation_id"],
+                ["payload", "automationId"],
+                ["originator"],
+                ["automation_id"]
+            ])
+            return context.model != nil && context.cwd != nil && context.threadSource != nil
         }
 
         while remainingBytes > 0 {
@@ -2069,8 +2250,8 @@ private enum TokenScopeCodexAdapter {
             var start = chunk.startIndex
             for index in chunk.indices where chunk[index] == newline {
                 buffer.append(chunk[start..<index])
-                if let model = model(from: buffer) {
-                    return model
+                if mergeContext(from: buffer) {
+                    return context
                 }
                 buffer.removeAll(keepingCapacity: true)
                 start = chunk.index(after: index)
@@ -2080,7 +2261,8 @@ private enum TokenScopeCodexAdapter {
             }
         }
 
-        return model(from: buffer)
+        _ = mergeContext(from: buffer)
+        return context
     }
 
     private static func usageDelta(info: Any?, previousTotals: inout TokenScopeUsage?) -> TokenScopeUsage? {
@@ -2104,7 +2286,7 @@ private enum TokenScopeCodexAdapter {
         return last
     }
 
-    private static func record(file: URL, source: TokenScopeSource, sessionID: String, turnID: String?, project: String, timestamp: Date, model: String, usage: TokenScopeUsage, title: String) -> TokenScopeUsageRecord {
+    private static func record(file: URL, source: TokenScopeSource, sessionID: String, turnID: String?, project: String, timestamp: Date, model: String, usage: TokenScopeUsage, title: String, taskKind: String? = nil, taskName: String? = nil, taskDetail: String? = nil, taskSource: String? = nil) -> TokenScopeUsageRecord {
         let scopedTurnID = turnID ?? String(Int(timestamp.timeIntervalSince1970 * 1000))
         return TokenScopeUsageRecord(
             id: "\(source.rawValue):\(sessionID):\(scopedTurnID):\(model):\(usage.hashValue)",
@@ -2120,7 +2302,11 @@ private enum TokenScopeCodexAdapter {
             cacheReadTokens: usage.cacheRead,
             reasoningTokens: usage.reasoning,
             costUSD: nil,
-            sourcePath: TokenScopeFormat.path(file.path)
+            sourcePath: TokenScopeFormat.path(file.path),
+            taskKind: taskKind,
+            taskName: taskName,
+            taskDetail: taskDetail,
+            taskSource: taskSource
         )
     }
 
@@ -2138,6 +2324,46 @@ private enum TokenScopeCodexAdapter {
             ?? TokenScopeJSON.string(object, path: ["turn", "id"])
             ?? TokenScopeJSON.string(object, path: ["payload", "turn_id"])
             ?? TokenScopeJSON.string(object, path: ["payload", "turn", "id"])
+    }
+
+    private static func taskTitle(from object: Any?) -> String? {
+        guard let object else { return nil }
+        return TokenScopeJSON.firstString(object, paths: [
+            ["description"],
+            ["objective"],
+            ["title"],
+            ["task"],
+            ["prompt"],
+            ["payload", "description"],
+            ["payload", "objective"],
+            ["payload", "title"],
+            ["payload", "task"]
+        ])
+        .map { String($0.prefix(160)) }
+    }
+
+    private static func taskAttribution(threadSource: String?, originator: String?, taskName: String?, project: String, model: String, sessionTitle: String) -> (kind: String?, name: String?, detail: String?, source: String?) {
+        let source = threadSource?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let origin = originator?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let task = taskName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = TokenScopeFormat.path(project)
+
+        if source?.lowercased() == "automation" {
+            let name = task?.isEmpty == false
+                ? task
+                : matchedAutomationName(cwd: project, model: model) ?? "Codex automation"
+            return ("Codex automation", name, detail, origin?.isEmpty == false ? origin : source)
+        }
+
+        if let task, !task.isEmpty {
+            return ("Codex task", task, detail, origin?.isEmpty == false ? origin : source)
+        }
+
+        if let source, !source.isEmpty, source.lowercased() != "user" {
+            return ("Codex \(source)", sessionTitle, detail, origin?.isEmpty == false ? origin : source)
+        }
+
+        return ("Codex session", sessionTitle, detail, origin?.isEmpty == false ? origin : "Codex")
     }
 
     private static func scanJSONLLines(file: URL, onObject: ([String: Any]) -> Void) {
@@ -2170,7 +2396,7 @@ private enum TokenScopeCodexAdapter {
             guard let prefixText = String(data: prefix, encoding: .utf8) else { return }
 
             if prefixText.contains("\"type\":\"event_msg\""),
-               prefixText.contains("\"payload\":{\"type\":\"token_count\""),
+               (prefixText.contains("\"type\":\"token_count\"") || prefixText.contains("\"type\":\"task_started\"")),
                let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any] {
                 onObject(object)
                 return
@@ -2224,6 +2450,15 @@ private enum TokenScopeCodexAdapter {
             if let model = firstJSONStringValue(for: "model", in: text) {
                 payload["model"] = model
             }
+            if let threadSource = firstJSONStringValue(for: "thread_source", in: text) {
+                payload["thread_source"] = threadSource
+            }
+            if let originator = firstJSONStringValue(for: "originator", in: text) {
+                payload["originator"] = originator
+            }
+            if let automationID = firstJSONStringValue(for: "automation_id", in: text) {
+                payload["automation_id"] = automationID
+            }
             return ["type": "session_meta", "payload": payload]
         }
 
@@ -2238,10 +2473,104 @@ private enum TokenScopeCodexAdapter {
             if let model = firstJSONStringValue(for: "model", in: text) {
                 payload["model"] = model
             }
+            if let threadSource = firstJSONStringValue(for: "thread_source", in: text) {
+                payload["thread_source"] = threadSource
+            }
+            if let originator = firstJSONStringValue(for: "originator", in: text) {
+                payload["originator"] = originator
+            }
             return ["type": "turn_context", "payload": payload]
         }
 
         return nil
+    }
+
+    private static func matchedAutomationName(cwd: String, model: String) -> String? {
+        let normalizedCwd = normalizedPath(cwd)
+        let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let matches = automationConfigs().filter { config in
+            let cwdMatches = config.cwds.isEmpty || config.cwds.contains { normalizedPath($0) == normalizedCwd }
+            let modelMatches = config.model.isEmpty || config.model.lowercased() == normalizedModel
+            return cwdMatches && modelMatches
+        }
+        return matches.sorted {
+            let leftActive = $0.status.uppercased() == "ACTIVE"
+            let rightActive = $1.status.uppercased() == "ACTIVE"
+            if leftActive != rightActive { return leftActive }
+            return $0.name < $1.name
+        }.first?.name
+    }
+
+    private static func automationConfigs() -> [CodexAutomationConfig] {
+        let root = URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true)
+            .appendingPathComponent(".codex/automations", isDirectory: true)
+        guard let directories = try? FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        return directories.compactMap { directory -> CodexAutomationConfig? in
+            let file = directory.appendingPathComponent("automation.toml")
+            guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+            var name = ""
+            var status = ""
+            var model = ""
+            var cwds: [String] = []
+            for rawLine in text.components(separatedBy: .newlines) {
+                let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let value = tomlStringValue(line, key: "name") {
+                    name = value
+                } else if let value = tomlStringValue(line, key: "status") {
+                    status = value
+                } else if let value = tomlStringValue(line, key: "model") {
+                    model = value
+                } else if let values = tomlArrayValue(line, key: "cwds") {
+                    cwds = values
+                }
+            }
+            guard !name.isEmpty else { return nil }
+            return CodexAutomationConfig(name: name, status: status, model: model, cwds: cwds)
+        }
+    }
+
+    private static func tomlStringValue(_ line: String, key: String) -> String? {
+        guard line.hasPrefix("\(key) =") || line.hasPrefix("\(key)="),
+              let first = line.firstIndex(of: "\""),
+              let last = line.lastIndex(of: "\""),
+              first < last else {
+            return nil
+        }
+        return String(line[line.index(after: first)..<last])
+    }
+
+    private static func tomlArrayValue(_ line: String, key: String) -> [String]? {
+        guard line.hasPrefix("\(key) =") || line.hasPrefix("\(key)="),
+              let open = line.firstIndex(of: "["),
+              let close = line.lastIndex(of: "]"),
+              open < close else {
+            return nil
+        }
+        let rawValues = line[line.index(after: open)..<close]
+        return rawValues
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " \"")) }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func normalizedPath(_ path: String) -> String {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        let expanded: String
+        if trimmed == "~" {
+            expanded = SandboxPaths.realHomeDirectory
+        } else if trimmed.hasPrefix("~/") {
+            expanded = SandboxPaths.realHomeDirectory + String(trimmed.dropFirst())
+        } else {
+            expanded = trimmed
+        }
+        return (expanded as NSString).standardizingPath
     }
 
     private static func firstJSONStringValue(for key: String, in text: String) -> String? {

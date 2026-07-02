@@ -11,7 +11,7 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.29")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.30")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
@@ -102,6 +102,7 @@ def find_or_create_release(token):
             "name": RELEASE_NAME,
             "body": (
                 "TraceFence direct-download release.\n\n"
+                "- Shows Codex Spark 5-hour and weekly quota windows as standalone provider limits with localized labels.\n"
                 "- Localizes provider quota reset-credit labels in Chinese mode, including manual resets and Codex Spark reset windows.\n"
                 "- Keeps provider quota service messages language-neutral so menu-bar diagnostics follow the selected app language.\n"
                 "- Fixes remaining menu-bar quota window titles that could stay Chinese in English mode.\n"

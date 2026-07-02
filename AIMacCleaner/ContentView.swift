@@ -1025,6 +1025,23 @@ struct AgentMonitorSessionSnapshot: Identifiable, Codable {
     let sourcePath: String
 }
 
+struct AgentNetworkConnection: Identifiable, Codable, Hashable {
+    let id: String
+    let agentName: String
+    let pid: Int
+    let processName: String
+    let localEndpoint: String
+    let remoteEndpoint: String
+    let remoteHost: String
+    let remotePort: Int?
+    let state: String
+    let route: String
+    let riskLevel: String
+    let safetyStatus: String?
+    let safetyReason: String?
+    let observedAt: Date
+}
+
 struct AgentMonitorUsageSnapshot: Identifiable, Codable {
     let id: String
     let agentName: String
@@ -1042,6 +1059,7 @@ struct AgentMonitorUsageSnapshot: Identifiable, Codable {
 final class AgentMonitorOverviewStore: ObservableObject {
     @Published var snapshots: [AgentMonitorUsageSnapshot] = []
     @Published var sessions: [AgentMonitorSessionSnapshot] = []
+    @Published var networkConnections: [AgentNetworkConnection] = []
     @Published var isScanning = false
     @Published var authorizedRoots: [String] = []
     @Published var scannedRoots: [String] = []
@@ -1062,6 +1080,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
         var updatedAt: Date = Date()
         var snapshots: [AgentMonitorUsageSnapshot] = []
         var sessions: [AgentMonitorSessionSnapshot] = []
+        var networkConnections: [AgentNetworkConnection]? = nil
         var authorizedRoots: [String] = []
         var scannedRoots: [String] = []
         var lastScanDate: Date?
@@ -1117,6 +1136,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
                         activeRetentionWindow: self.activeRetentionWindow
                     )
                 }
+                self.networkConnections = result.networkConnections
                 self.authorizedRoots = result.authorizedRoots
                 self.scannedRoots = result.scannedRoots
                 UserDefaults.standard.set(result.scannedRoots, forKey: self.cachedRootsKey)
@@ -1159,6 +1179,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
                 if !result.authorizedRoots.isEmpty {
                     self.authorizedRoots = result.authorizedRoots
                 }
+                self.networkConnections = result.networkConnections
                 if self.scannedRoots.isEmpty, !result.scannedRoots.isEmpty {
                     self.scannedRoots = result.scannedRoots
                 }
@@ -1435,6 +1456,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
               let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
         snapshots = cache.snapshots
         sessions = Self.sanitizedSessions(cache.sessions)
+        networkConnections = cache.networkConnections ?? []
         authorizedRoots = cache.authorizedRoots
         if !cache.scannedRoots.isEmpty {
             scannedRoots = cache.scannedRoots
@@ -1448,6 +1470,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
             updatedAt: Date(),
             snapshots: snapshots,
             sessions: Array(Self.sanitizedSessions(sessions).prefix(240)),
+            networkConnections: networkConnections,
             authorizedRoots: authorizedRoots,
             scannedRoots: scannedRoots,
             lastScanDate: lastScanDate,
@@ -1462,6 +1485,7 @@ private final class AgentMonitorOverviewScanner {
     fileprivate struct ScanResult {
         let snapshots: [AgentMonitorUsageSnapshot]
         let sessions: [AgentMonitorSessionSnapshot]
+        let networkConnections: [AgentNetworkConnection]
         let authorizedRoots: [String]
         let scannedRoots: [String]
     }
@@ -1587,6 +1611,7 @@ private final class AgentMonitorOverviewScanner {
     fileprivate func scan() -> ScanResult {
         let processInfo = scanProcessInfo()
         let children = childrenMap(processInfo)
+        let networkConnections = scanOutboundConnections(processInfo: processInfo)
         let pidToSessionFiles = scanOpenSessionFiles()
         let portsByPid: [Int: [Int]] = [:]
         let processStats = countAgentProcesses(processInfo)
@@ -1738,6 +1763,7 @@ private final class AgentMonitorOverviewScanner {
         return ScanResult(
             snapshots: snapshots,
             sessions: Array(activeLiveSessions.prefix(240)),
+            networkConnections: networkConnections,
             authorizedRoots: authorizedRoots,
             scannedRoots: scannedRoots
         )
@@ -1746,6 +1772,7 @@ private final class AgentMonitorOverviewScanner {
     fileprivate func realtimeScan(cachedRoots: [String], retainedActiveSources: [String]) -> ScanResult {
         let processInfo = scanProcessInfo()
         let children = childrenMap(processInfo)
+        let networkConnections = scanOutboundConnections(processInfo: processInfo)
         let pidToSessionFiles = scanOpenSessionFiles()
         let authorizedRoots = authorizedBookmarkRoots()
         let fixedRoots = Array(Set(cachedRoots + authorizedRoots + specs.flatMap { spec in
@@ -1814,6 +1841,7 @@ private final class AgentMonitorOverviewScanner {
         return ScanResult(
             snapshots: [],
             sessions: Array(selectedSessions.prefix(120)),
+            networkConnections: networkConnections,
             authorizedRoots: authorizedRoots,
             scannedRoots: fixedRoots.sorted { $0.count < $1.count }
         )
@@ -3896,6 +3924,268 @@ private final class AgentMonitorOverviewScanner {
         return result
     }
 
+    private func scanOutboundConnections(processInfo: [Int: ProcessInfo]) -> [AgentNetworkConnection] {
+        let output = run("/usr/sbin/lsof", ["-nP", "-iTCP", "-sTCP:ESTABLISHED", "-FpcnT"])
+        let observedAt = Date()
+        let proxyGuardActive = isProxyGuardActive()
+        var rows: [AgentNetworkConnection] = []
+        var currentPID: Int?
+        var currentProcessName = ""
+        var currentEndpoint = ""
+        var currentState = ""
+
+        func flush() {
+            guard let pid = currentPID,
+                  !currentEndpoint.isEmpty,
+                  let agentName = networkAgentName(forPID: pid, processName: currentProcessName, processInfo: processInfo),
+                  let endpoints = splitConnectionEndpoint(currentEndpoint) else {
+                return
+            }
+            let remote = remoteHostAndPort(from: endpoints.remote)
+            let route = networkRoute(host: remote.host, port: remote.port)
+            let risk = networkRiskLevel(host: remote.host, port: remote.port, route: route)
+            let safety = networkSafetyStatus(
+                host: remote.host,
+                port: remote.port,
+                route: route,
+                proxyGuardActive: proxyGuardActive
+            )
+            rows.append(AgentNetworkConnection(
+                id: "\(pid)|\(endpoints.remote)|\(currentState)",
+                agentName: agentName,
+                pid: pid,
+                processName: currentProcessName.isEmpty ? processInfo[pid]?.command ?? "process" : currentProcessName,
+                localEndpoint: endpoints.local,
+                remoteEndpoint: endpoints.remote,
+                remoteHost: remote.host,
+                remotePort: remote.port,
+                state: currentState.isEmpty ? "ESTABLISHED" : currentState,
+                route: route,
+                riskLevel: risk,
+                safetyStatus: safety.status,
+                safetyReason: safety.reason,
+                observedAt: observedAt
+            ))
+        }
+
+        for line in output.components(separatedBy: .newlines) {
+            guard !line.isEmpty else { continue }
+            let prefix = line[line.startIndex]
+            let value = String(line.dropFirst())
+            switch prefix {
+            case "p":
+                flush()
+                currentPID = Int(value)
+                currentProcessName = ""
+                currentEndpoint = ""
+                currentState = ""
+            case "c":
+                currentProcessName = value
+            case "n":
+                if !currentEndpoint.isEmpty {
+                    flush()
+                    currentState = ""
+                }
+                currentEndpoint = value
+            case "T":
+                if value.hasPrefix("ST=") {
+                    currentState = String(value.dropFirst(3))
+                }
+            default:
+                continue
+            }
+        }
+        flush()
+
+        var seen = Set<String>()
+        return rows
+            .filter { seen.insert($0.id).inserted }
+            .sorted {
+                if networkSafetyRank($0.safetyStatus) == networkSafetyRank($1.safetyStatus) {
+                    if networkRiskRank($0.riskLevel) != networkRiskRank($1.riskLevel) {
+                        return networkRiskRank($0.riskLevel) > networkRiskRank($1.riskLevel)
+                    }
+                    if $0.agentName == $1.agentName { return $0.remoteEndpoint < $1.remoteEndpoint }
+                    return $0.agentName < $1.agentName
+                }
+                return networkSafetyRank($0.safetyStatus) > networkSafetyRank($1.safetyStatus)
+            }
+            .prefix(80)
+            .map { $0 }
+    }
+
+    private func networkAgentName(forPID pid: Int, processName: String, processInfo: [Int: ProcessInfo]) -> String? {
+        if let process = processInfo[pid],
+           let name = matchingSpecName(process.command) {
+            return name
+        }
+        if let name = matchingSpecName(processName) {
+            return name
+        }
+        var current = processInfo[pid]?.ppid
+        var visited = Set<Int>()
+        for _ in 0..<10 {
+            guard let candidate = current,
+                  candidate > 0,
+                  visited.insert(candidate).inserted,
+                  let process = processInfo[candidate] else {
+                break
+            }
+            if let name = matchingSpecName(process.command) {
+                return name
+            }
+            current = process.ppid
+        }
+        return nil
+    }
+
+    private func splitConnectionEndpoint(_ value: String) -> (local: String, remote: String)? {
+        let cleaned = value
+            .replacingOccurrences(of: " (ESTABLISHED)", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let arrow = cleaned.range(of: "->") else { return nil }
+        let local = String(cleaned[..<arrow.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let remote = String(cleaned[arrow.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !remote.isEmpty else { return nil }
+        return (local, remote)
+    }
+
+    private func remoteHostAndPort(from endpoint: String) -> (host: String, port: Int?) {
+        let cleaned = endpoint.trimmingCharacters(in: CharacterSet(charactersIn: " []"))
+        if endpoint.hasPrefix("["),
+           let close = endpoint.firstIndex(of: "]") {
+            let host = String(endpoint[endpoint.index(after: endpoint.startIndex)..<close])
+            let suffix = endpoint[endpoint.index(after: close)...]
+            let port = suffix.first == ":" ? Int(suffix.dropFirst()) : nil
+            return (host, port)
+        }
+        if let colon = cleaned.lastIndex(of: ":") {
+            let suffix = cleaned[cleaned.index(after: colon)...]
+            if let port = Int(suffix) {
+                return (String(cleaned[..<colon]), port)
+            }
+        }
+        if let dot = cleaned.lastIndex(of: ".") {
+            let suffix = cleaned[cleaned.index(after: dot)...]
+            if let port = Int(suffix) {
+                return (String(cleaned[..<dot]), port)
+            }
+        }
+        return (cleaned, nil)
+    }
+
+    private func networkRoute(host: String, port: Int?) -> String {
+        let lowerHost = host.lowercased()
+        let proxyPorts: Set<Int> = [1080, 1086, 1087, 6152, 7890, 7891, 7897, 8080, 9090, 20171, 20172]
+        if ["127.0.0.1", "::1", "localhost"].contains(lowerHost) || port.map(proxyPorts.contains) == true {
+            return "Local proxy"
+        }
+        switch port {
+        case 443: return "HTTPS"
+        case 80: return "HTTP"
+        case 22: return "SSH"
+        default: return "TCP"
+        }
+    }
+
+    private func networkRiskLevel(host: String, port: Int?, route: String) -> String {
+        if route == "Local proxy" { return "proxy" }
+        if port == 80 { return "cleartext" }
+        if host.isEmpty || port == nil { return "unknown" }
+        return "normal"
+    }
+
+    private func networkSafetyStatus(host: String, port: Int?, route: String, proxyGuardActive: Bool) -> (status: String, reason: String) {
+        if route == "Local proxy" {
+            return ("proxied", "Agent is using a local proxy endpoint.")
+        }
+        if port == 80 {
+            return ("unsafe", "Plain HTTP egress can expose request metadata.")
+        }
+        guard !host.isEmpty else {
+            return ("unknown", "Remote endpoint is empty.")
+        }
+        if isLocalOrPrivateHost(host) {
+            return ("safe", "Remote endpoint is local or private network.")
+        }
+        if proxyGuardActive {
+            return ("proxyBypass", "A proxy is active, but this agent opened a direct public-network socket.")
+        }
+        return ("publicDirect", "Direct public-network socket; review if this agent should use a proxy.")
+    }
+
+    private func isProxyGuardActive() -> Bool {
+        let proxyText = run("/usr/sbin/scutil", ["--proxy"])
+        if proxyText.range(of: #"(HTTPEnable|HTTPSEnable|SOCKSEnable)\s*:\s*1"#, options: .regularExpression) != nil {
+            return true
+        }
+
+        let proxyPorts: Set<Int> = [1080, 1086, 1087, 6152, 7890, 7891, 7897, 8080, 9090, 20171, 20172]
+        let listeners = run("/usr/sbin/lsof", ["-nP", "-iTCP", "-sTCP:LISTEN"])
+        for line in listeners.components(separatedBy: .newlines) {
+            guard let port = portFromEndpointLikeText(line),
+                  proxyPorts.contains(port) else {
+                continue
+            }
+            let lower = line.lowercased()
+            if lower.contains("127.0.0.1") || lower.contains("localhost") || lower.contains("*:") || lower.contains("[::1]") {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func isLocalOrPrivateHost(_ host: String) -> Bool {
+        let trimmed = host.trimmingCharacters(in: CharacterSet(charactersIn: " []")).lowercased()
+        if trimmed.isEmpty { return true }
+        if ["localhost", "127.0.0.1", "::1", "0.0.0.0"].contains(trimmed) { return true }
+        if trimmed.hasPrefix("fc") || trimmed.hasPrefix("fd") || trimmed.hasPrefix("fe80:") { return true }
+        let parts = trimmed.split(separator: ".").compactMap { Int($0) }
+        guard parts.count == 4 else { return false }
+        let first = parts[0]
+        let second = parts[1]
+        if first == 10 || first == 127 || first == 169 && second == 254 { return true }
+        if first == 172 && (16...31).contains(second) { return true }
+        if first == 192 && second == 168 { return true }
+        if first == 100 && (64...127).contains(second) { return true }
+        if first == 198 && (18...19).contains(second) { return true }
+        return false
+    }
+
+    private func portFromEndpointLikeText(_ text: String) -> Int? {
+        if let colon = text.lastIndex(of: ":") {
+            let suffix = text[text.index(after: colon)...]
+            let digits = suffix.prefix { $0.isNumber }
+            if let port = Int(digits) { return port }
+        }
+        if let dot = text.lastIndex(of: ".") {
+            let suffix = text[text.index(after: dot)...]
+            let digits = suffix.prefix { $0.isNumber }
+            if let port = Int(digits) { return port }
+        }
+        return nil
+    }
+
+    private func networkRiskRank(_ risk: String) -> Int {
+        switch risk {
+        case "cleartext": return 3
+        case "unknown": return 2
+        case "proxy": return 1
+        default: return 0
+        }
+    }
+
+    private func networkSafetyRank(_ status: String?) -> Int {
+        switch status {
+        case "proxyBypass": return 5
+        case "unsafe": return 4
+        case "publicDirect": return 3
+        case "unknown": return 2
+        case "proxied": return 1
+        default: return 0
+        }
+    }
+
     private func countAgentProcesses(_ processInfo: [Int: ProcessInfo]) -> [String: Int] {
         var result: [String: Int] = [:]
         for process in processInfo.values {
@@ -5603,6 +5893,7 @@ private struct AgentCommandDashboardData {
     let selectedSession: AgentMonitorSessionSnapshot?
     let selectedActiveSession: AgentMonitorSessionSnapshot?
     let displayedSessions: [AgentMonitorSessionSnapshot]
+    let networkConnections: [AgentNetworkConnection]
     let totalTokens: Int
     let projectRows: [AgentCommandProjectRow]
     let sessionChartValues: [Double]
@@ -5643,6 +5934,21 @@ private struct AgentCommandDashboardView: View {
         }
 
         let activeSessions = allSessions.filter(isActiveSession)
+        let networkConnections: [AgentNetworkConnection]
+        if query.isEmpty {
+            networkConnections = store.networkConnections
+        } else {
+            networkConnections = store.networkConnections.filter {
+                $0.agentName.lowercased().contains(query) ||
+                $0.processName.lowercased().contains(query) ||
+                $0.remoteEndpoint.lowercased().contains(query) ||
+                $0.remoteHost.lowercased().contains(query) ||
+                $0.route.lowercased().contains(query) ||
+                $0.riskLevel.lowercased().contains(query) ||
+                ($0.safetyStatus ?? "").lowercased().contains(query) ||
+                ($0.safetyReason ?? "").lowercased().contains(query)
+            }
+        }
         let selectedSession = selectedSessionID.flatMap { id in
             allSessions.first { $0.id == id }
         } ?? allSessions.first
@@ -5680,6 +5986,7 @@ private struct AgentCommandDashboardView: View {
             selectedSession: selectedSession,
             selectedActiveSession: selectedActiveSession,
             displayedSessions: Array(allSessions.prefix(visibleSessionCount)),
+            networkConnections: networkConnections,
             totalTokens: totalTokens,
             projectRows: projectRows,
             sessionChartValues: Dictionary(grouping: allSessions, by: \.agentName)
@@ -5708,7 +6015,9 @@ private struct AgentCommandDashboardView: View {
                 store.sessions.first?.id ?? "",
                 store.sessions.last?.id ?? "",
                 "\(Int(store.sessions.first?.latestActivity?.timeIntervalSince1970 ?? 0))",
-                "\(Int(store.sessions.last?.latestActivity?.timeIntervalSince1970 ?? 0))"
+                "\(Int(store.sessions.last?.latestActivity?.timeIntervalSince1970 ?? 0))",
+                "\(store.networkConnections.count)",
+                store.networkConnections.first?.id ?? ""
             ].joined(separator: "|")
         )
     }
@@ -5828,15 +6137,15 @@ private struct AgentCommandDashboardView: View {
     private func localizedAggregationSummary(_ data: AgentCommandDashboardData) -> String {
         switch localizer.language {
         case .simplifiedChinese:
-            return "已聚合 \(data.allSessions.count) 个会话，其中 \(data.activeSessions.count) 个活跃，会话覆盖 \(data.projectRows.count) 个项目和 \(compactCount(data.totalTokens)) Token。"
+            return "已聚合 \(data.allSessions.count) 个会话，其中 \(data.activeSessions.count) 个活跃，覆盖 \(data.projectRows.count) 个项目、\(compactCount(data.totalTokens)) Token 和 \(data.networkConnections.count) 条出站连接。"
         case .traditionalChinese:
-            return "已彙總 \(data.allSessions.count) 個會話，其中 \(data.activeSessions.count) 個活躍，覆蓋 \(data.projectRows.count) 個專案和 \(compactCount(data.totalTokens)) Token。"
+            return "已彙總 \(data.allSessions.count) 個會話，其中 \(data.activeSessions.count) 個活躍，覆蓋 \(data.projectRows.count) 個專案、\(compactCount(data.totalTokens)) Token 和 \(data.networkConnections.count) 條出站連線。"
         case .japanese:
-            return "\(data.allSessions.count) 件のセッション、うち \(data.activeSessions.count) 件がアクティブ、\(data.projectRows.count) 件のプロジェクト、\(compactCount(data.totalTokens)) トークンを集計しました。"
+            return "\(data.allSessions.count) 件のセッション、うち \(data.activeSessions.count) 件がアクティブ、\(data.projectRows.count) 件のプロジェクト、\(compactCount(data.totalTokens)) トークン、\(data.networkConnections.count) 件の送信接続を集計しました。"
         case .korean:
-            return "\(data.allSessions.count)개 세션 중 \(data.activeSessions.count)개 활성, \(data.projectRows.count)개 프로젝트, \(compactCount(data.totalTokens)) 토큰을 집계했습니다."
+            return "\(data.allSessions.count)개 세션 중 \(data.activeSessions.count)개 활성, \(data.projectRows.count)개 프로젝트, \(compactCount(data.totalTokens)) 토큰, \(data.networkConnections.count)개 아웃바운드 연결을 집계했습니다."
         case .english, .maltese:
-            return "Grouped \(data.allSessions.count) sessions, \(data.activeSessions.count) active, \(data.projectRows.count) projects, and \(compactCount(data.totalTokens)) tokens."
+            return "Grouped \(data.allSessions.count) sessions, \(data.activeSessions.count) active, \(data.projectRows.count) projects, \(compactCount(data.totalTokens)) tokens, and \(data.networkConnections.count) egress connections."
         }
     }
     private var localizedCommandCenterIntro: String {
@@ -5922,6 +6231,7 @@ private struct AgentCommandDashboardView: View {
                     commandCenterHero(data)
 
                     currentSessionUsageCard(data)
+                    networkAuditCard(data)
                     sessionListCard(data)
 
                     VStack(spacing: Theme.Spacing.md) {
@@ -6532,6 +6842,90 @@ private struct AgentCommandDashboardView: View {
         .frame(maxWidth: .infinity, minHeight: 220, alignment: .top)
     }
 
+    private func networkAuditCard(_ data: AgentCommandDashboardData) -> some View {
+        let warningCount = data.networkConnections.filter { connection in
+            ["proxyBypass", "unsafe", "publicDirect", "unknown"].contains(connection.safetyStatus ?? "")
+        }.count
+        let hasProxyBypass = data.networkConnections.contains { $0.safetyStatus == "proxyBypass" }
+        let badgeColor = hasProxyBypass ? Theme.Colors.danger : (warningCount > 0 ? Theme.Colors.warning : Theme.Colors.cyan)
+
+        return dashboardCard(title: localizer.t("Agent 出站网络", en: "Agent Network Egress", zhHant: "Agent 出站網路", ja: "Agent 送信ネットワーク", ko: "Agent 아웃바운드 네트워크", mt: "Agent Network Egress"), icon: "network", color: Theme.Colors.cyan) {
+            Text(warningCount > 0 ? "\(warningCount) / \(data.networkConnections.count)" : "\(data.networkConnections.count)")
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(badgeColor)
+                .padding(.horizontal, Theme.Spacing.sm)
+                .padding(.vertical, 4)
+                .background(badgeColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        } content: {
+            if data.networkConnections.isEmpty {
+                emptyState(
+                    icon: "network",
+                    title: localizer.t("暂无出站连接", en: "No egress connections", zhHant: "暫無出站連線", ja: "送信接続なし", ko: "아웃바운드 연결 없음", mt: "No egress connections"),
+                    detail: localizer.t("活跃 Agent 的 TCP 出站元数据会显示在这里。", en: "Active agent TCP egress metadata appears here.", zhHant: "活躍 Agent 的 TCP 出站中繼資料會顯示在這裡。", ja: "稼働中 Agent の TCP 送信メタデータがここに表示されます。", ko: "활성 Agent의 TCP 아웃바운드 메타데이터가 여기에 표시됩니다.", mt: "Active agent TCP egress metadata appears here.")
+                )
+            } else {
+                VStack(spacing: Theme.Spacing.xs) {
+                    ForEach(Array(data.networkConnections.prefix(12))) { connection in
+                        networkConnectionRow(connection)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 190, alignment: .top)
+    }
+
+    private func networkConnectionRow(_ connection: AgentNetworkConnection) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Text(agentCode(connection.agentName))
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(agentColor(connection.agentName))
+                .frame(width: 38, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(connection.remoteEndpoint)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("\(connection.processName) · pid \(connection.pid) · \(connection.localEndpoint)")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(networkSafetyText(connection.safetyStatus))
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(networkSafetyColor(connection.safetyStatus))
+                .padding(.horizontal, Theme.Spacing.sm)
+                .padding(.vertical, 4)
+                .background(networkSafetyColor(connection.safetyStatus).opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                .frame(width: 108, alignment: .trailing)
+
+            Text(connection.route)
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .frame(width: 78, alignment: .leading)
+
+            Text(networkRiskText(connection.riskLevel))
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(networkRiskColor(connection.riskLevel))
+                .padding(.horizontal, Theme.Spacing.sm)
+                .padding(.vertical, 4)
+                .background(networkRiskColor(connection.riskLevel).opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                .frame(width: 78, alignment: .trailing)
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(Theme.Colors.sidebarBg.opacity(0.38))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .help("\(connection.agentName)\n\(connection.localEndpoint) -> \(connection.remoteEndpoint)\n\(connection.state)\n\(connection.safetyReason ?? "")")
+    }
+
     private var activeSessionEmptyState: some View {
         VStack(spacing: Theme.Spacing.md) {
             HStack(spacing: Theme.Spacing.sm) {
@@ -7050,6 +7444,54 @@ private struct AgentCommandDashboardView: View {
         if name.localizedCaseInsensitiveContains("claude") { return Theme.Colors.purple }
         if name.localizedCaseInsensitiveContains("opencode") { return Theme.Colors.success }
         return Theme.Colors.info
+    }
+
+    private func networkRiskColor(_ risk: String) -> Color {
+        switch risk {
+        case "cleartext": return Theme.Colors.danger
+        case "unknown": return Theme.Colors.warning
+        case "proxy": return Theme.Colors.info
+        default: return Theme.Colors.success
+        }
+    }
+
+    private func networkSafetyColor(_ status: String?) -> Color {
+        switch status {
+        case "proxyBypass", "unsafe": return Theme.Colors.danger
+        case "publicDirect", "unknown": return Theme.Colors.warning
+        case "proxied": return Theme.Colors.info
+        default: return Theme.Colors.success
+        }
+    }
+
+    private func networkSafetyText(_ status: String?) -> String {
+        switch status {
+        case "proxyBypass":
+            return localizer.t("疑似绕过代理", en: "Proxy bypass", zhHant: "疑似繞過代理", ja: "プロキシ迂回", ko: "프록시 우회", mt: "Proxy bypass")
+        case "unsafe":
+            return localizer.t("不安全", en: "Unsafe", zhHant: "不安全", ja: "安全でない", ko: "안전하지 않음", mt: "Unsafe")
+        case "publicDirect":
+            return localizer.t("公网直连", en: "Public direct", zhHant: "公網直連", ja: "公開網直結", ko: "공용망 직접", mt: "Public direct")
+        case "unknown":
+            return localizer.t("待确认", en: "Review", zhHant: "待確認", ja: "要確認", ko: "확인 필요", mt: "Review")
+        case "proxied":
+            return localizer.t("经代理", en: "Proxied", zhHant: "經代理", ja: "プロキシ経由", ko: "프록시 경유", mt: "Proxied")
+        default:
+            return localizer.t("安全", en: "Safe", zhHant: "安全", ja: "安全", ko: "안전", mt: "Safe")
+        }
+    }
+
+    private func networkRiskText(_ risk: String) -> String {
+        switch risk {
+        case "cleartext":
+            return localizer.t("明文", en: "Clear", zhHant: "明文", ja: "平文", ko: "평문", mt: "Clear")
+        case "unknown":
+            return localizer.t("未知", en: "Unknown", zhHant: "未知", ja: "不明", ko: "알 수 없음", mt: "Unknown")
+        case "proxy":
+            return localizer.t("代理", en: "Proxy", zhHant: "代理", ja: "プロキシ", ko: "프록시", mt: "Proxy")
+        default:
+            return localizer.t("正常", en: "Normal", zhHant: "正常", ja: "通常", ko: "정상", mt: "Normal")
+        }
     }
 
     private func configRoot(for session: AgentMonitorSessionSnapshot) -> String {

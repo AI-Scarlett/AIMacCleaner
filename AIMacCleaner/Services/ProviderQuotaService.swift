@@ -108,6 +108,7 @@ final class ProviderQuotaService: ObservableObject {
     var menuBarSummary: String? {
         snapshots
             .flatMap(\.windows)
+            .filter(\.isPrimaryAllowanceWindow)
             .min { lhs, rhs in lhs.remainingPercent < rhs.remainingPercent }
             .map { window in
                 "\(window.shortTitle) \(Int(window.remainingPercent.rounded()))%"
@@ -146,6 +147,10 @@ final class ProviderQuotaService: ObservableObject {
 }
 
 private extension ProviderQuotaWindow {
+    var isPrimaryAllowanceWindow: Bool {
+        id == "primary" || id == "secondary" || id == "tertiary"
+    }
+
     var shortTitle: String {
         switch kind {
         case .fiveHour: return "5h"
