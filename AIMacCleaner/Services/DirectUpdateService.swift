@@ -23,6 +23,7 @@ final class DirectUpdateService: ObservableObject {
     @Published private(set) var latestUpdate: DirectUpdateInfo?
     @Published private(set) var downloadedFileURL: URL?
     @Published private(set) var message: String?
+    private let updateSession: URLSession
 
     var currentVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
@@ -35,7 +36,21 @@ final class DirectUpdateService: ObservableObject {
         return URL(string: rawValue?.isEmpty == false ? rawValue! : "https://api.github.com/repos/AI-Scarlett/TraceFence/releases/latest")!
     }
 
-    private init() {}
+    private var releaseManifestURL: URL {
+        URL(string: "https://github.com/AI-Scarlett/TraceFence/releases/latest/download/tracefence-update.json")!
+    }
+
+    private init() {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        configuration.timeoutIntervalForRequest = 20
+        configuration.timeoutIntervalForResource = 300
+        configuration.waitsForConnectivity = true
+        if #available(macOS 10.15, *) {
+            configuration.tlsMinimumSupportedProtocolVersion = .TLSv12
+        }
+        updateSession = URLSession(configuration: configuration)
+    }
 
     func checkForUpdates() async {
         guard !isInstalling else { return }
@@ -45,43 +60,15 @@ final class DirectUpdateService: ObservableObject {
         defer { isChecking = false }
 
         do {
-            var request = URLRequest(url: releaseAPIURL)
-            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-            request.setValue("TraceFence/\(currentVersion)", forHTTPHeaderField: "User-Agent")
-            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-            request.setValue("no-cache", forHTTPHeaderField: "Pragma")
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200..<300).contains(httpResponse.statusCode) else {
-                throw DirectUpdateError.invalidResponse
-            }
-
-            let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
-            guard let asset = release.assets.first(where: { $0.name.lowercased().hasSuffix(".dmg") }) else {
-                throw DirectUpdateError.noDMGAsset
-            }
-
-            let latestVersion = release.normalizedVersion
+            let update = try await loadLatestUpdateInfo()
+            let latestVersion = update.version
             guard isVersion(latestVersion, newerThan: currentVersion) else {
                 latestUpdate = nil
                 message = "TraceFence 已是最新版本。"
                 return
             }
 
-            let checksumAsset = release.assets.first {
-                $0.name == asset.name + ".sha256" || $0.name.lowercased().hasSuffix(".dmg.sha256")
-            }
-            latestUpdate = DirectUpdateInfo(
-                version: latestVersion,
-                releaseName: release.name ?? release.tagName,
-                notes: release.body ?? "",
-                downloadURL: asset.browserDownloadUrl,
-                checksumURL: checksumAsset?.browserDownloadUrl,
-                fileName: asset.name,
-                size: asset.size
-            )
+            latestUpdate = update
             message = "发现 TraceFence \(latestVersion)，点击更新后将自动安装并重新启动。"
         } catch {
             latestUpdate = nil
@@ -147,7 +134,7 @@ final class DirectUpdateService: ObservableObject {
         request.setValue("TraceFence/\(currentVersion)", forHTTPHeaderField: "User-Agent")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         request.setValue("no-cache", forHTTPHeaderField: "Pragma")
-        let (temporaryURL, response) = try await URLSession.shared.download(for: request)
+        let (temporaryURL, response) = try await download(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               (200..<300).contains(httpResponse.statusCode) else {
             throw DirectUpdateError.invalidResponse
@@ -160,7 +147,7 @@ final class DirectUpdateService: ObservableObject {
             checksumRequest.setValue("TraceFence/\(currentVersion)", forHTTPHeaderField: "User-Agent")
             checksumRequest.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
             checksumRequest.setValue("no-cache", forHTTPHeaderField: "Pragma")
-            let (checksumData, checksumResponse) = try await URLSession.shared.data(for: checksumRequest)
+            let (checksumData, checksumResponse) = try await data(for: checksumRequest)
             guard let httpResponse = checksumResponse as? HTTPURLResponse,
                   (200..<300).contains(httpResponse.statusCode),
                   let checksumText = String(data: checksumData, encoding: .utf8),
@@ -180,6 +167,157 @@ final class DirectUpdateService: ObservableObject {
         }
 
         return destination
+    }
+
+    private func loadLatestUpdateInfo() async throws -> DirectUpdateInfo {
+        do {
+            return try await loadGitHubUpdateInfo()
+        } catch {
+            do {
+                return try await loadManifestUpdateInfo()
+            } catch let fallbackError {
+                throw DirectUpdateError.networkFailed(Self.localizedNetworkFailure(primary: error, fallback: fallbackError))
+            }
+        }
+    }
+
+    private func loadGitHubUpdateInfo() async throws -> DirectUpdateInfo {
+        var request = URLRequest(url: releaseAPIURL)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("TraceFence/\(currentVersion)", forHTTPHeaderField: "User-Agent")
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+
+        let (data, response) = try await data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw DirectUpdateError.invalidResponse
+        }
+
+        let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
+        guard let asset = release.assets.first(where: { $0.name.lowercased().hasSuffix(".dmg") }) else {
+            throw DirectUpdateError.noDMGAsset
+        }
+        let checksumAsset = release.assets.first {
+            $0.name == asset.name + ".sha256" || $0.name.lowercased().hasSuffix(".dmg.sha256")
+        }
+        return DirectUpdateInfo(
+            version: release.normalizedVersion,
+            releaseName: release.name ?? release.tagName,
+            notes: release.body ?? "",
+            downloadURL: asset.browserDownloadUrl,
+            checksumURL: checksumAsset?.browserDownloadUrl,
+            fileName: asset.name,
+            size: asset.size
+        )
+    }
+
+    private func loadManifestUpdateInfo() async throws -> DirectUpdateInfo {
+        var request = URLRequest(url: releaseManifestURL)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("TraceFence/\(currentVersion)", forHTTPHeaderField: "User-Agent")
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+
+        let (data, response) = try await data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw DirectUpdateError.invalidResponse
+        }
+        let manifest = try JSONDecoder().decode(DirectUpdateManifest.self, from: data)
+        return manifest.updateInfo
+    }
+
+    private func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        var lastError: Error?
+        for attempt in 0..<3 {
+            do {
+                return try await updateSession.data(for: request)
+            } catch {
+                lastError = error
+                guard attempt < 2, Self.isRetryableNetworkError(error) else { throw error }
+                try await Task.sleep(nanoseconds: UInt64(attempt + 1) * 500_000_000)
+            }
+        }
+        throw lastError ?? DirectUpdateError.invalidResponse
+    }
+
+    private func download(for request: URLRequest) async throws -> (URL, URLResponse) {
+        var lastError: Error?
+        for attempt in 0..<3 {
+            do {
+                return try await updateSession.download(for: request)
+            } catch {
+                lastError = error
+                guard attempt < 2, Self.isRetryableNetworkError(error) else { throw error }
+                try await Task.sleep(nanoseconds: UInt64(attempt + 1) * 750_000_000)
+            }
+        }
+        throw lastError ?? DirectUpdateError.invalidResponse
+    }
+
+    private nonisolated static func isRetryableNetworkError(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .timedOut,
+             .cannotFindHost,
+             .cannotConnectToHost,
+             .networkConnectionLost,
+             .notConnectedToInternet,
+             .dnsLookupFailed,
+             .secureConnectionFailed,
+             .serverCertificateUntrusted,
+             .serverCertificateHasBadDate,
+             .serverCertificateHasUnknownRoot,
+             .serverCertificateNotYetValid,
+             .cannotLoadFromNetwork:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private nonisolated static func localizedNetworkFailure(primary: Error, fallback: Error) -> String {
+        let reason = readableNetworkReason(primary) ?? readableNetworkReason(fallback)
+        let suffix = reason.map {
+            localized("（\($0)）", en: " (\($0))", zhHant: "（\($0)）", ja: "（\($0)）", ko: " (\($0))", mt: " (\($0))")
+        } ?? ""
+        return localized(
+            "无法连接更新服务器\(suffix)。TraceFence 已自动重试并尝试备用更新源；请确认网络、VPN 或代理可以访问 GitHub，然后再点一次检查更新。",
+            en: "Could not connect to the update server\(suffix). TraceFence retried and tried the fallback update source; check that your network, VPN, or proxy can reach GitHub, then try Check for Updates again.",
+            zhHant: "無法連接更新伺服器\(suffix)。TraceFence 已自動重試並嘗試備用更新源；請確認網路、VPN 或代理可以存取 GitHub，然後再點一次檢查更新。",
+            ja: "更新サーバーに接続できません\(suffix)。TraceFence は自動で再試行し、代替更新ソースも試しました。ネットワーク、VPN、またはプロキシが GitHub に接続できることを確認してから、もう一度アップデートを確認してください。",
+            ko: "업데이트 서버에 연결할 수 없습니다\(suffix). TraceFence가 자동 재시도와 예비 업데이트 소스를 시도했습니다. 네트워크, VPN 또는 프록시가 GitHub에 연결되는지 확인한 뒤 다시 업데이트 확인을 눌러주세요.",
+            mt: "Could not connect to the update server\(suffix). TraceFence retried and tried the fallback update source; check that your network, VPN, or proxy can reach GitHub, then try Check for Updates again."
+        )
+    }
+
+    private nonisolated static func readableNetworkReason(_ error: Error) -> String? {
+        guard let urlError = error as? URLError else { return nil }
+        switch urlError.code {
+        case .secureConnectionFailed:
+            return localized("TLS 安全连接失败", en: "TLS secure connection failed", zhHant: "TLS 安全連線失敗", ja: "TLS セキュア接続に失敗", ko: "TLS 보안 연결 실패", mt: "TLS secure connection failed")
+        case .timedOut:
+            return localized("连接超时", en: "connection timed out", zhHant: "連線逾時", ja: "接続がタイムアウトしました", ko: "연결 시간 초과", mt: "connection timed out")
+        case .notConnectedToInternet:
+            return localized("网络不可用", en: "network is unavailable", zhHant: "網路不可用", ja: "ネットワークを利用できません", ko: "네트워크를 사용할 수 없음", mt: "network is unavailable")
+        default:
+            return urlError.localizedDescription
+        }
+    }
+
+    private nonisolated static func localized(_ zh: String, en: String, zhHant: String? = nil, ja: String? = nil, ko: String? = nil, mt: String? = nil) -> String {
+        let raw = UserDefaults.standard.string(forKey: "appLanguage") ?? "en"
+        switch AppLanguage(rawValue: raw) ?? .english {
+        case .simplifiedChinese: return zh
+        case .traditionalChinese: return zhHant ?? zh
+        case .japanese: return ja ?? en
+        case .korean: return ko ?? en
+        case .maltese: return mt ?? en
+        case .english: return en
+        }
     }
 
     private func isVersion(_ lhs: String, newerThan rhs: String) -> Bool {
@@ -486,6 +624,28 @@ private struct GitHubReleaseAsset: Decodable {
     }
 }
 
+private struct DirectUpdateManifest: Decodable {
+    var version: String
+    var releaseName: String?
+    var notes: String?
+    var downloadURL: URL
+    var checksumURL: URL?
+    var fileName: String
+    var size: Int?
+
+    var updateInfo: DirectUpdateInfo {
+        DirectUpdateInfo(
+            version: version,
+            releaseName: releaseName ?? "TraceFence v\(version)",
+            notes: notes ?? "",
+            downloadURL: downloadURL,
+            checksumURL: checksumURL,
+            fileName: fileName,
+            size: size
+        )
+    }
+}
+
 private enum DirectUpdateError: LocalizedError {
     case invalidResponse
     case noDMGAsset
@@ -496,6 +656,7 @@ private enum DirectUpdateError: LocalizedError {
     case invalidApplicationIdentity
     case installLocationNotWritable
     case commandFailed(String)
+    case networkFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -517,6 +678,8 @@ private enum DirectUpdateError: LocalizedError {
             return "当前 TraceFence 安装位置不可写。请先将应用移动到“应用程序”或用户应用程序目录。"
         case .commandFailed(let detail):
             return "自动安装失败：\(detail)"
+        case .networkFailed(let detail):
+            return detail
         }
     }
 }

@@ -15,6 +15,46 @@ VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.30")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
+MANIFEST_NAME = "tracefence-update.json"
+RELEASE_BODY = (
+    "TraceFence direct-download release.\n\n"
+    "- Makes direct updates more resilient with retry logic and a fallback release manifest for GitHub API/TLS failures.\n"
+    "- Shows Codex Spark 5-hour and weekly quota windows as standalone provider limits with localized labels.\n"
+    "- Localizes provider quota reset-credit labels in Chinese mode, including manual resets and Codex Spark reset windows.\n"
+    "- Keeps provider quota service messages language-neutral so menu-bar diagnostics follow the selected app language.\n"
+    "- Fixes remaining menu-bar quota window titles that could stay Chinese in English mode.\n"
+    "- Replaces the SwiftUI MenuBarExtra entry with a resilient AppKit status item and popover controller.\n"
+    "- Rebuilds stale menu bar popovers on click and repairs the status item periodically during long runs.\n"
+    "- Adds hard timeouts around provider quota subprocess calls so background quota reads cannot hang indefinitely.\n"
+    "- Optimizes Codex rollout discovery to read lightweight metadata instead of loading multi-GB session logs into memory.\n"
+    "- Avoids full-text scans of Codex logs_2.sqlite during menu bar agent discovery.\n"
+    "- Caches overview dashboard aggregates per render so long-running main windows no longer starve menu bar clicks.\n"
+    "- Lowers high-frequency focused-session refresh work to utility priority and a calmer polling cadence.\n"
+    "- Opens the status popover on mouse-down for a faster, more native menu bar response.\n"
+    "- Limits Codex operation import to recent session files and bounded log tails to avoid long-running CPU spikes.\n"
+    "- Replaces expensive full-session UI fingerprints with lightweight count/latest markers.\n"
+    "- Stops full historical audit import from running automatically on app launch; audit history now loads from Agent Guard actions.\n"
+    "- Caches file modification dates before sorting session logs to avoid repeated filesystem metadata reads.\n"
+    "- Fixes direct-update installation hanging when the old app process refuses to quit.\n"
+    "- Lets the updater helper terminate the old process and continue installation safely.\n"
+    "- Fixes direct-update download validation when GitHub asset metadata is temporarily stale.\n"
+    "- Uses SHA256 checksums as the authoritative installer validation when available.\n"
+    "- Adds no-cache update checks to avoid stale release metadata after a package replacement.\n"
+    "- Bundles the provider quota engine inside TraceFence so releases no longer depend on an external CodexBar checkout.\n"
+    "- Closes the menu bar popover when users click outside the panel or press Escape.\n"
+    "- Refreshes saved Lemon Squeezy license state from the server so activation usage and device limits stay current.\n"
+    "- Restores the default release build path to signed and Apple-notarized output.\n"
+)
+
+
+def release_payload():
+    return {
+        "tag_name": TAG,
+        "name": RELEASE_NAME,
+        "body": RELEASE_BODY,
+        "draft": False,
+        "prerelease": False,
+    }
 
 
 def github_token():
@@ -90,55 +130,17 @@ def find_or_create_release(token):
     try:
         release = request("GET", f"/releases/tags/{TAG}", token)
         print(f"Found release {TAG}: {release['html_url']}")
-        return release
+        return request("PATCH", f"/releases/{release['id']}", token, release_payload())
     except RuntimeError:
         print(f"Creating release {TAG}...")
-    return request(
-        "POST",
-        "/releases",
-        token,
-        {
-            "tag_name": TAG,
-            "name": RELEASE_NAME,
-            "body": (
-                "TraceFence direct-download release.\n\n"
-                "- Shows Codex Spark 5-hour and weekly quota windows as standalone provider limits with localized labels.\n"
-                "- Localizes provider quota reset-credit labels in Chinese mode, including manual resets and Codex Spark reset windows.\n"
-                "- Keeps provider quota service messages language-neutral so menu-bar diagnostics follow the selected app language.\n"
-                "- Fixes remaining menu-bar quota window titles that could stay Chinese in English mode.\n"
-                "- Replaces the SwiftUI MenuBarExtra entry with a resilient AppKit status item and popover controller.\n"
-                "- Rebuilds stale menu bar popovers on click and repairs the status item periodically during long runs.\n"
-                "- Adds hard timeouts around provider quota subprocess calls so background quota reads cannot hang indefinitely.\n"
-                "- Optimizes Codex rollout discovery to read lightweight metadata instead of loading multi-GB session logs into memory.\n"
-                "- Avoids full-text scans of Codex logs_2.sqlite during menu bar agent discovery.\n"
-                "- Caches overview dashboard aggregates per render so long-running main windows no longer starve menu bar clicks.\n"
-                "- Lowers high-frequency focused-session refresh work to utility priority and a calmer polling cadence.\n"
-                "- Opens the status popover on mouse-down for a faster, more native menu bar response.\n"
-                "- Limits Codex operation import to recent session files and bounded log tails to avoid long-running CPU spikes.\n"
-                "- Replaces expensive full-session UI fingerprints with lightweight count/latest markers.\n"
-                "- Stops full historical audit import from running automatically on app launch; audit history now loads from Agent Guard actions.\n"
-                "- Caches file modification dates before sorting session logs to avoid repeated filesystem metadata reads.\n"
-                "- Fixes direct-update installation hanging when the old app process refuses to quit.\n"
-                "- Lets the updater helper terminate the old process and continue installation safely.\n"
-                "- Fixes direct-update download validation when GitHub asset metadata is temporarily stale.\n"
-                "- Uses SHA256 checksums as the authoritative installer validation when available.\n"
-                "- Adds no-cache update checks to avoid stale release metadata after a package replacement.\n"
-                "- Bundles the provider quota engine inside TraceFence so releases no longer depend on an external CodexBar checkout.\n"
-                "- Closes the menu bar popover when users click outside the panel or press Escape.\n"
-                "- Refreshes saved Lemon Squeezy license state from the server so activation usage and device limits stay current.\n"
-                "- Restores the default release build path to signed and Apple-notarized output.\n"
-            ),
-            "draft": False,
-            "prerelease": False,
-        },
-    )
+    return request("POST", "/releases", token, release_payload())
 
 
 def clean_release_assets(token, release):
     assets = request("GET", f"/releases/{release['id']}/assets", token) or []
     for asset in assets:
         name = asset["name"].lower()
-        if name.endswith(".dmg") or "source" in name or name.endswith(".zip") or name.endswith(".sha256"):
+        if name.endswith(".dmg") or "source" in name or name.endswith(".zip") or name.endswith(".sha256") or name == MANIFEST_NAME:
             print(f"Deleting old asset: {asset['name']}")
             request("DELETE", f"/releases/assets/{asset['id']}", token)
 
@@ -182,10 +184,28 @@ def main():
 
     upload_url = release["upload_url"]
     dmg_name = os.path.basename(args.dmg)
+    checksum_name = os.path.basename(sha_path)
+    manifest_path = f"{args.dmg}.json"
+    manifest = {
+        "version": VERSION,
+        "releaseName": RELEASE_NAME,
+        "notes": RELEASE_BODY,
+        "downloadURL": f"https://github.com/{REPO}/releases/download/{TAG}/{dmg_name}",
+        "checksumURL": f"https://github.com/{REPO}/releases/download/{TAG}/{checksum_name}",
+        "fileName": dmg_name,
+        "size": os.path.getsize(args.dmg),
+        "sha256": digest,
+    }
+    with open(manifest_path, "w") as file:
+        json.dump(manifest, file, ensure_ascii=False, indent=2)
+        file.write("\n")
+
     print(f"Uploading {dmg_name}...")
     upload_asset(upload_url, token, args.dmg, dmg_name, "application/octet-stream")
-    print(f"Uploading {os.path.basename(sha_path)}...")
-    upload_asset(upload_url, token, sha_path, os.path.basename(sha_path), "text/plain")
+    print(f"Uploading {checksum_name}...")
+    upload_asset(upload_url, token, sha_path, checksum_name, "text/plain")
+    print(f"Uploading {MANIFEST_NAME}...")
+    upload_asset(upload_url, token, manifest_path, MANIFEST_NAME, "application/json")
 
     print(f"Release URL: {release['html_url']}")
     print(f"SHA256: {digest}")
