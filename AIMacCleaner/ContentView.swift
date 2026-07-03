@@ -761,12 +761,10 @@ struct PageHeader: View {
 struct ScanningStatusPill: View {
     let title: String
     let color: Color
-    @State private var rotation: Double = 0
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.xs + 2) {
-            Image(systemName: "dot.radiowaves.left.and.right")
-                .font(.system(size: 12, weight: .bold))
+        HStack(spacing: Theme.Spacing.sm) {
+            RadarScanGlyph(color: color)
             Text(title)
                 .font(Theme.Font.subheadlineMedium)
                 .lineLimit(1)
@@ -782,28 +780,67 @@ struct ScanningStatusPill: View {
             RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .stroke(color.opacity(0.20), lineWidth: 1)
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .trim(from: 0.02, to: 0.30)
+        .shadow(color: color.opacity(0.16), radius: 10, x: 0, y: 0)
+    }
+}
+
+struct RadarScanGlyph: View {
+    let color: Color
+    @State private var sweep: Double = 0
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(color.opacity(0.12))
+
+            ForEach(0..<2, id: \.self) { index in
+                Circle()
+                    .stroke(color.opacity(0.42 - Double(index) * 0.12), lineWidth: 1.1)
+                    .scaleEffect(pulse ? 1.08 + CGFloat(index) * 0.26 : 0.50 + CGFloat(index) * 0.12)
+                    .opacity(pulse ? 0 : 0.72 - Double(index) * 0.20)
+                    .animation(
+                        .easeOut(duration: 1.55)
+                            .repeatForever(autoreverses: false)
+                            .delay(Double(index) * 0.34),
+                        value: pulse
+                    )
+            }
+
+            Circle()
+                .stroke(color.opacity(0.24), lineWidth: 1)
+                .scaleEffect(0.74)
+
+            Circle()
+                .trim(from: 0, to: 0.27)
                 .stroke(
-                    LinearGradient(
+                    AngularGradient(
                         colors: [
                             color.opacity(0),
-                            color.opacity(0.90),
-                            Color.white.opacity(0.92)
+                            color.opacity(0.34),
+                            color.opacity(0.95)
                         ],
-                        startPoint: .leading,
-                        endPoint: .trailing
+                        center: .center
                     ),
-                    style: StrokeStyle(lineWidth: 2.2, lineCap: .round)
+                    style: StrokeStyle(lineWidth: 8, lineCap: .round)
                 )
-                .rotationEffect(.degrees(rotation))
-                .padding(1)
+                .rotationEffect(.degrees(sweep))
+                .scaleEffect(0.62)
+                .blur(radius: 0.2)
+
+            Circle()
+                .fill(color)
+                .frame(width: 5, height: 5)
+                .shadow(color: color.opacity(0.7), radius: 6)
         }
-        .shadow(color: color.opacity(0.16), radius: 10, x: 0, y: 0)
+        .frame(width: 26, height: 26)
+        .drawingGroup()
         .onAppear {
             withAnimation(.linear(duration: 1.35).repeatForever(autoreverses: false)) {
-                rotation = 360
+                sweep = 360
+            }
+            withAnimation(.easeOut(duration: 1.55).repeatForever(autoreverses: false)) {
+                pulse = true
             }
         }
     }

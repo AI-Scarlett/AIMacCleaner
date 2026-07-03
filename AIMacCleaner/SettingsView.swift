@@ -339,50 +339,64 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             SectionHeader(title: localizer.featureToggles, icon: "switch.2")
 
-            VStack(spacing: Theme.Spacing.sm) {
+            VStack(spacing: 0) {
                 ToggleSetting(
                     icon: "menubar.rectangle",
                     title: localizer.menuBarMonitor,
                     desc: localizer.menuBarMonitorDesc,
                     isOn: $menuBarMonitorEnabled
                 )
+                SettingsRowDivider()
                 ToggleSetting(
                     icon: "video.fill",
                     title: localizer.sensorMonitor,
                     desc: localizer.sensorMonitorDesc,
                     isOn: $sensorMonitorEnabled
                 )
+                SettingsRowDivider()
                 ToggleSetting(
                     icon: "clock.arrow.circlepath",
                     title: localizer.operationMonitor,
                     desc: localizer.operationMonitorDesc,
                     isOn: $operationMonitorEnabled
                 )
-
-            }
-            .cardStyle()
-
-            VStack(spacing: Theme.Spacing.sm) {
-                HStack(spacing: Theme.Spacing.sm) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .foregroundStyle(Theme.Colors.purple)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(localizer.quitBehaviorTitle)
-                            .font(Theme.Font.subheadlineMedium)
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                        Text(localizer.quitBehaviorDesc)
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                    }
-                }
-                Picker("", selection: $quitBehavior) {
-                    Text(localizer.quitAppAndMenu).tag("quitAll")
-                    Text(localizer.quitAppKeepMenu).tag("quitAppOnly")
-                }
-                .pickerStyle(.segmented)
+                SettingsRowDivider()
+                quitBehaviorSetting
             }
             .cardStyle()
         }
+    }
+
+    private var quitBehaviorSetting: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .font(Theme.Font.subheadline)
+                    .foregroundStyle(Theme.Colors.purple)
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localizer.quitBehaviorTitle)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(localizer.quitBehaviorDesc)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: Theme.Spacing.sm)
+            }
+
+            Picker("", selection: $quitBehavior) {
+                Text(localizer.quitAppAndMenu).tag("quitAll")
+                Text(localizer.quitAppKeepMenu).tag("quitAppOnly")
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Theme.Spacing.sm)
     }
 
     private var monitorSection: some View {
@@ -754,6 +768,17 @@ struct ToggleSetting: View {
             .buttonStyle(.plain)
         }
         .padding(.vertical, Theme.Spacing.xs)
+        .frame(minHeight: 54)
+    }
+}
+
+struct SettingsRowDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Theme.Colors.separator.opacity(0.62))
+            .frame(height: 1)
+            .padding(.leading, 36)
+            .padding(.vertical, Theme.Spacing.xs)
     }
 }
 
