@@ -8,6 +8,7 @@ TraceFence 3.1.4 adds sandbox-safe AI quota monitoring for user-authorized local
 
 - Build: 37
 - Architecture: arm64 Mac App Store package, aligned with the bundled quota helper signed as a sandboxed inherited helper.
+- Quota helper: `AIMacCleaner/Resources/codexbar` is vendored in the source tree and verified against `AIMacCleaner/Resources/codexbar.sha256` during archive.
 - Release metadata: `BuildMachineOSBuild` is overridden to `25F70` before export so the package does not leak the beta macOS host build.
 
 ## What's New

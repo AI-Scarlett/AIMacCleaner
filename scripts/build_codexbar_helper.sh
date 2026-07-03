@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SOURCE="${SRCROOT}/AIMacCleaner/Resources/codexbar"
+SOURCE_CHECKSUM="${SRCROOT}/AIMacCleaner/Resources/codexbar.sha256"
 HELPER_APP="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers/CodexBarHelper.app"
 HELPER_CONTENTS="${HELPER_APP}/Contents"
 HELPER_EXE="${HELPER_CONTENTS}/MacOS/codexbar"
@@ -11,6 +12,21 @@ HELPER_ENTITLEMENTS="${SRCROOT}/AIMacCleaner/CodexBarHelper.entitlements"
 
 if [ ! -x "${SOURCE}" ]; then
   echo "error: bundled quota helper is missing or not executable: ${SOURCE}" >&2
+  exit 1
+fi
+
+if [ ! -f "${SOURCE_CHECKSUM}" ]; then
+  echo "error: bundled quota helper checksum is missing: ${SOURCE_CHECKSUM}" >&2
+  exit 1
+fi
+
+EXPECTED_HASH="$(awk '{print $1}' "${SOURCE_CHECKSUM}")"
+ACTUAL_HASH="$(/usr/bin/shasum -a 256 "${SOURCE}" | awk '{print $1}')"
+if [ -z "${EXPECTED_HASH}" ] || [ "${ACTUAL_HASH}" != "${EXPECTED_HASH}" ]; then
+  echo "error: bundled quota helper checksum mismatch." >&2
+  echo "  expected: ${EXPECTED_HASH}" >&2
+  echo "  actual:   ${ACTUAL_HASH}" >&2
+  echo "  update ${SOURCE_CHECKSUM} only when intentionally replacing the vendored helper." >&2
   exit 1
 fi
 

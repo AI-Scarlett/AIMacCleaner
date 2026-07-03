@@ -265,6 +265,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 			);
 			inputPaths = (
 				"$(SRCROOT)/AIMacCleaner/Resources/codexbar",
+				"$(SRCROOT)/AIMacCleaner/Resources/codexbar.sha256",
 				"$(SRCROOT)/AIMacCleaner/CodexBarHelper.entitlements",
 				"$(SRCROOT)/scripts/build_codexbar_helper.sh",
 			);
