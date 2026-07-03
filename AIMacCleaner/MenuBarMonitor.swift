@@ -379,7 +379,7 @@ struct MenuBarMonitor: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             } else {
                 VStack(spacing: Theme.Spacing.sm) {
-                    ForEach(snapshot.windows.filter { !isAuxiliaryQuotaWindow($0) }) { window in
+                    ForEach(snapshot.windows) { window in
                         quotaWindowRow(window)
                     }
                     if let resetCredits = snapshot.resetCredits {
@@ -414,10 +414,6 @@ struct MenuBarMonitor: View {
         case .extra:
             return localizedQuotaText(window.title)
         }
-    }
-
-    private func isAuxiliaryQuotaWindow(_ window: ProviderQuotaWindow) -> Bool {
-        window.id != "primary" && window.id != "secondary" && window.id != "tertiary"
     }
 
     private func localizedResetType(_ raw: String) -> String {

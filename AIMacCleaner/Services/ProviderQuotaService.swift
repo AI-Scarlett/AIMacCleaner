@@ -189,7 +189,11 @@ private struct CodexBarQuotaProvider {
             let data = try runCodexBar(at: executable)
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .custom(Self.decodeDate)
-            let payloads = try decoder.decode([CodexBarProviderPayload].self, from: data)
+            let autoPayloads = try decoder.decode([CodexBarProviderPayload].self, from: data)
+            let payloads = payloadsByReplacingCodexAuto(
+                autoPayloads,
+                with: readCodexOAuthPayloads(from: executable, decoder: decoder)
+            )
             var hiddenCount = 0
             let snapshots = payloads.compactMap { payload -> ProviderQuotaSnapshot? in
                 if let snapshot = makeSnapshot(from: payload, configs: configs) {
@@ -301,6 +305,46 @@ private struct CodexBarQuotaProvider {
         )
     }
 
+    private func readCodexOAuthPayloads(
+        from executable: URL,
+        decoder: JSONDecoder
+    ) -> [CodexBarProviderPayload] {
+        do {
+            let data = try runCodexBarCommand(
+                at: executable,
+                arguments: [
+                    "usage",
+                    "--provider", "codex",
+                    "--format", "json",
+                    "--source", "oauth"
+                ],
+                timeout: 20
+            )
+            return try decoder.decode([CodexBarProviderPayload].self, from: data)
+        } catch {
+            return []
+        }
+    }
+
+    private func payloadsByReplacingCodexAuto(
+        _ autoPayloads: [CodexBarProviderPayload],
+        with oauthPayloads: [CodexBarProviderPayload]
+    ) -> [CodexBarProviderPayload] {
+        guard let codexOAuth = oauthPayloads.first(where: { payload in
+            payload.provider == "codex" && (payload.usage != nil || payload.credits != nil)
+        }) else {
+            return autoPayloads
+        }
+
+        var replaced = false
+        let merged = autoPayloads.map { payload -> CodexBarProviderPayload in
+            guard payload.provider == "codex" else { return payload }
+            replaced = true
+            return codexOAuth
+        }
+        return replaced ? merged : [codexOAuth] + merged
+    }
+
     private func readProviderConfigs(from executable: URL) -> [String: CodexBarProviderConfigPayload] {
         do {
             let data = try runCodexBarCommand(
@@ -377,7 +421,7 @@ private struct CodexBarQuotaProvider {
         let now = Date()
         let usage = payload.usage
         let windows = makeWindows(from: usage)
-        let resetCredits = usage?.codexResetCredits
+        let resetCredits = usage?.codexResetCredits ?? emptyCodexResetCredits(for: payload, usage: usage)
         let errorMessage = displayErrorMessage(for: payload)
         let config = configs[payload.provider]
 
@@ -398,6 +442,14 @@ private struct CodexBarQuotaProvider {
             errorMessage: windows.isEmpty && resetCredits == nil ? errorMessage : nil,
             setupHint: windows.isEmpty && resetCredits == nil ? setupHint(for: payload) : nil,
             isSetupNotice: false)
+    }
+
+    private func emptyCodexResetCredits(
+        for payload: CodexBarProviderPayload,
+        usage: CodexBarUsagePayload?
+    ) -> ProviderQuotaResetCredits? {
+        guard payload.provider.lowercased() == "codex", let usage else { return nil }
+        return ProviderQuotaResetCredits(availableCount: 0, credits: [], updatedAt: usage.updatedAt)
     }
 
     private func setupNotice(count: Int) -> ProviderQuotaSnapshot {

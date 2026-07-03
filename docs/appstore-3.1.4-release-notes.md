@@ -6,14 +6,14 @@ TraceFence 3.1.4 adds sandbox-safe AI quota monitoring for user-authorized local
 
 ## Build Notes
 
-- Build: 37
+- Build: 39
 - Architecture: arm64 Mac App Store package, aligned with the bundled quota helper signed as a sandboxed inherited helper.
 - Quota helper: `AIMacCleaner/Resources/codexbar` is vendored in the source tree and verified against `AIMacCleaner/Resources/codexbar.sha256` during archive.
 - Release metadata: `BuildMachineOSBuild` is overridden to `25F70` before export so the package does not leak the beta macOS host build.
 
 ## What's New
 
-Adds AI provider quota monitoring for 5-hour, weekly, Spark, and monthly quota windows, plus manual reset credit counts. TokenScope now makes model attribution clearer by showing which task/session used each reported model. The Mac App Store build reads only user-authorized local agent data.
+Adds AI provider quota monitoring for 5-hour, weekly, Spark, and monthly quota windows, plus manual reset credit counts. Codex quota reads now prefer the local OAuth usage path to avoid sandboxed RPC fallback timeouts, and the menu bar quota card now shows Spark windows plus zero remaining manual reset credits instead of hiding them. TokenScope now makes model attribution clearer by showing which task/session used each reported model. The Mac App Store build reads only user-authorized local agent data.
 
 ## Promotional Text
 
