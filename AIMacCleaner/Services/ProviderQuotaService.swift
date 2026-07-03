@@ -240,6 +240,8 @@ private struct CodexBarQuotaProvider {
     private func findExecutable() -> URL? {
         let fileManager = FileManager.default
         let candidates = [
+            Bundle.main.bundleURL
+                .appendingPathComponent("Contents/Helpers/CodexBarHelper.app/Contents/MacOS/codexbar"),
             Bundle.main.url(forResource: "codexbar", withExtension: nil),
             Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("codexbar")
         ].compactMap(\.self)
@@ -348,17 +350,24 @@ private struct CodexBarQuotaProvider {
         process.waitUntilExit()
 
         let data = output.fileHandleForReading.readDataToEndOfFile()
-        if !data.isEmpty {
-            return data
-        }
-
         let errorData = error.fileHandleForReading.readDataToEndOfFile()
+        let message = String(data: errorData, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
         if didTimeOut {
             throw CodexBarQuotaError.commandFailed("Quota monitor engine timed out. TraceFence stopped this read automatically.")
         }
-        let message = String(data: errorData, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        throw CodexBarQuotaError.commandFailed(sanitizedMessage(message ?? "Quota monitor engine produced no output."))
+        if !data.isEmpty {
+            return data
+        }
+        if process.terminationReason != .exit || process.terminationStatus != 0 {
+            let fallback = "Quota monitor engine stopped before returning data. Please update or reinstall TraceFence."
+            let value = (message?.isEmpty == false) ? message! : fallback
+            throw CodexBarQuotaError.commandFailed(sanitizedMessage(value))
+        }
+
+        let value = (message?.isEmpty == false) ? message! : "Quota monitor engine produced no output."
+        throw CodexBarQuotaError.commandFailed(sanitizedMessage(value))
     }
 
     private func makeSnapshot(

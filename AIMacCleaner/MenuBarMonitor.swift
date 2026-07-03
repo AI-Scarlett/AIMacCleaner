@@ -360,7 +360,7 @@ struct MenuBarMonitor: View {
                 }
             }
 
-            if let error = snapshot.errorMessage {
+            if let error = quotaErrorText(snapshot.errorMessage) {
                 VStack(alignment: .leading, spacing: 6) {
                     Label(localizedQuotaText(error), systemImage: snapshot.isSetupNotice ? "info.circle.fill" : "exclamationmark.triangle.fill")
                         .font(Theme.Font.captionMedium)
@@ -432,6 +432,15 @@ struct MenuBarMonitor: View {
         return localizedQuotaText(normalized)
     }
 
+    private func quotaErrorText(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty {
+            return "Quota monitor engine stopped before returning data. Please update or reinstall TraceFence."
+        }
+        return value
+    }
+
     private func localizedQuotaText(_ raw: String) -> String {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty { return text }
@@ -459,6 +468,8 @@ struct MenuBarMonitor: View {
             return localizer.t("额度监控引擎响应超时，TraceFence 已自动结束本次读取。", en: "Quota monitor engine timed out. TraceFence stopped this read automatically.", zhHant: "額度監控引擎回應逾時，TraceFence 已自動結束本次讀取。", ja: "クォータ監視エンジンがタイムアウトしました。TraceFence は今回の読み取りを自動停止しました。", ko: "할당량 모니터 엔진 응답 시간이 초과되어 TraceFence가 이번 읽기를 자동으로 중지했습니다.", mt: "Quota monitor engine timed out. TraceFence stopped this read automatically.")
         case "Quota monitor engine produced no output.", "额度监控引擎没有输出。":
             return localizer.t("额度监控引擎没有输出。", en: "Quota monitor engine produced no output.", zhHant: "額度監控引擎沒有輸出。", ja: "クォータ監視エンジンから出力がありません。", ko: "할당량 모니터 엔진 출력이 없습니다.", mt: "Quota monitor engine produced no output.")
+        case "Quota monitor engine stopped before returning data. Please update or reinstall TraceFence.", "额度监控引擎启动失败，请更新或重新安装 TraceFence。":
+            return localizer.t("额度监控引擎启动失败，请更新或重新安装 TraceFence。", en: "Quota monitor engine stopped before returning data. Please update or reinstall TraceFence.", zhHant: "額度監控引擎啟動失敗，請更新或重新安裝 TraceFence。", ja: "クォータ監視エンジンを起動できませんでした。TraceFence を更新または再インストールしてください。", ko: "할당량 모니터 엔진을 시작하지 못했습니다. TraceFence를 업데이트하거나 다시 설치하세요.", mt: "Quota monitor engine stopped before returning data. Please update or reinstall TraceFence.")
         case "No Cursor login session found", "未发现 Cursor 登录会话", "No Cursor session found":
             return localizer.t("未发现 Cursor 登录会话", en: "No Cursor login session found", zhHant: "未發現 Cursor 登入會話", ja: "Cursor のログインセッションが見つかりません", ko: "Cursor 로그인 세션을 찾을 수 없습니다", mt: "No Cursor login session found")
         case "Command line tool is not installed or not on PATH", "命令行工具未安装或不在 PATH 中":
