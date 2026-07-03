@@ -11,15 +11,19 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.30")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.31")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Shows Codex Spark 5-hour and weekly quota windows from the bundled provider quota engine.\n"
+    "- Uses Codex OAuth quota data when available so Spark and reset-credit rows match the direct-download build.\n"
+    "- Keeps Codex manual reset credits visible even when the remaining count is 0.\n"
+    "- Adds a radar-style scanning indicator to the overview dashboard.\n"
+    "- Tidies the Settings feature-toggle layout into one consistent grouped section.\n"
     "- Makes direct updates more resilient with retry logic and a fallback release manifest for GitHub API/TLS failures.\n"
-    "- Shows Codex Spark 5-hour and weekly quota windows as standalone provider limits with localized labels.\n"
     "- Localizes provider quota reset-credit labels in Chinese mode, including manual resets and Codex Spark reset windows.\n"
     "- Keeps provider quota service messages language-neutral so menu-bar diagnostics follow the selected app language.\n"
     "- Fixes remaining menu-bar quota window titles that could stay Chinese in English mode.\n"
