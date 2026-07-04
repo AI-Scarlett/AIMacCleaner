@@ -54,6 +54,7 @@
 		B116459B8B7913107AAE0C86 /* ConversationWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */; };
 		B11900112233445566778899 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11900112233445566778899 /* AppleIntelligenceService.swift */; };
 		D1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */; };
+		D1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift */; };
 		CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */; };
 /* End PBXBuildFile section */
 
@@ -108,6 +109,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ConversationWatcher.swift; sourceTree = "<group>"; };
 		F11900112233445566778899 /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AppleIntelligenceService.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ProviderQuotaService.swift; sourceTree = "<group>"; };
+		E1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/CaptureShelfService.swift; sourceTree = "<group>"; };
 		TF11CODEXBARRESOURCE0002 /* codexbar */ = {isa = PBXFileReference; lastKnownFileType = file; path = Resources/codexbar; sourceTree = "<group>"; };
 		CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenScopeLabView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -182,6 +184,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */,
 				F11900112233445566778899 /* AppleIntelligenceService.swift */,
 				E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */,
+				E1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift */,
 				TF11CODEXBARRESOURCE0002 /* codexbar */,
 			);
 			path = AIMacCleaner;
@@ -331,6 +334,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				B116459B8B7913107AAE0C86 /* ConversationWatcher.swift in Sources */,
 				B11900112233445566778899 /* AppleIntelligenceService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift in Sources */,
+				D1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift in Sources */,
 				CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */,
 			2A3B4C5D6E7F8A9B0C1D2E3F /* Theme.swift in Sources */,
 			);

@@ -64,6 +64,7 @@ class SandboxPaths {
     var cmdRulesPath: String { dataDirectory + "/cmd_rules.json" }
     var customAgentSourcesPath: String { dataDirectory + "/custom_agents.json" }
     var snapshotsPath: String { dataDirectory + "/snapshots.json" }
+    var captureShelfHistoryPath: String { dataDirectory + "/capture_shelf_history.json" }
 
     static func migrateFromLegacyPaths() {
         let fm = FileManager.default

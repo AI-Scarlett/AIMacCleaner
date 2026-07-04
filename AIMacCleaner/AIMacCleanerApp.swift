@@ -11,6 +11,7 @@ struct AIMacCleanerApp: App {
     @StateObject private var conversationWatcher = ConversationWatcher()
     @StateObject private var overviewStore = AgentMonitorOverviewStore()
     @StateObject private var providerQuotaService = ProviderQuotaService()
+    @StateObject private var captureShelfService = CaptureShelfService.shared
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @AppStorage("monitorEnabled") private var monitorEnabled = false
     @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = false
@@ -34,6 +35,7 @@ struct AIMacCleanerApp: App {
                 .environmentObject(agentRegistry)
                 .environmentObject(sessionsViewModel)
                 .environmentObject(conversationWatcher)
+                .environmentObject(captureShelfService)
                 .frame(minWidth: 960, minHeight: 640)
                 .onAppear {
                     appDelegate.service = service
@@ -46,6 +48,7 @@ struct AIMacCleanerApp: App {
                         localizer: localizer
                     )
                     overviewStore.startBackgroundRefresh()
+                    captureShelfService.start()
                     NSApp.setActivationPolicy(.regular)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [service] in
                         if monitorEnabled { service.startMonitoring() }
@@ -58,7 +61,7 @@ struct AIMacCleanerApp: App {
 
         MenuBarExtra {
             if menuBarMonitorEnabled {
-                MenuBarMonitor(service: service, quotaService: providerQuotaService)
+                MenuBarMonitor(service: service, quotaService: providerQuotaService, captureService: captureShelfService)
                     .environmentObject(localizer)
             } else {
                 Text(localizer.menuBarMonitorClosed)
