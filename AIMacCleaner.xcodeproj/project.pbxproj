@@ -55,6 +55,7 @@
 		B11900112233445566778899 /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11900112233445566778899 /* AppleIntelligenceService.swift */; };
 		D1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */; };
 		D1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift */; };
+		D1A2B3C4D5E6F708192A3B51 /* CaptureSelectionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B51 /* CaptureSelectionOverlay.swift */; };
 		CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */; };
 /* End PBXBuildFile section */
 
@@ -110,6 +111,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		F11900112233445566778899 /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AppleIntelligenceService.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ProviderQuotaService.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/CaptureShelfService.swift; sourceTree = "<group>"; };
+		E1A2B3C4D5E6F708192A3B51 /* CaptureSelectionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/CaptureSelectionOverlay.swift; sourceTree = "<group>"; };
 		TF11CODEXBARRESOURCE0002 /* codexbar */ = {isa = PBXFileReference; lastKnownFileType = file; path = Resources/codexbar; sourceTree = "<group>"; };
 		CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenScopeLabView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -185,6 +187,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				F11900112233445566778899 /* AppleIntelligenceService.swift */,
 				E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */,
 				E1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift */,
+				E1A2B3C4D5E6F708192A3B51 /* CaptureSelectionOverlay.swift */,
 				TF11CODEXBARRESOURCE0002 /* codexbar */,
 			);
 			path = AIMacCleaner;
@@ -335,6 +338,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				B11900112233445566778899 /* AppleIntelligenceService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift in Sources */,
+				D1A2B3C4D5E6F708192A3B51 /* CaptureSelectionOverlay.swift in Sources */,
 				CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */,
 			2A3B4C5D6E7F8A9B0C1D2E3F /* Theme.swift in Sources */,
 			);
@@ -351,7 +355,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 						CODE_SIGN_STYLE = Automatic;
 						COMBINE_HIDPI_IMAGES = YES;
 						CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-						CURRENT_PROJECT_VERSION = 42;
+						CURRENT_PROJECT_VERSION = 43;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
@@ -497,7 +501,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-						CURRENT_PROJECT_VERSION = 42;
+						CURRENT_PROJECT_VERSION = 43;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
