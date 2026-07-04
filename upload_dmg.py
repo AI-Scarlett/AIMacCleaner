@@ -11,13 +11,18 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.31")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.32")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Adds a local capture shelf in the menu bar for screenshots and clipboard history.\n"
+    "- Adds native area screenshot capture and full-screen screenshot copy without third-party runtime tools.\n"
+    "- Makes clipboard history retention user-configurable from 20 to 500 items instead of a fixed 100-item cap.\n"
+    "- Keeps clipboard monitoring off by default and stores captured text, images, and file references only on this Mac.\n"
+    "- Separates the capture overlay implementation from the capture history service for cleaner maintenance.\n"
     "- Shows Codex Spark 5-hour and weekly quota windows from the bundled provider quota engine.\n"
     "- Uses Codex OAuth quota data when available so Spark and reset-credit rows match the direct-download build.\n"
     "- Keeps Codex manual reset credits visible even when the remaining count is 0.\n"
