@@ -37,6 +37,11 @@ mkdir -p "${HELPER_CONTENTS}/MacOS"
 cp "${SOURCE}" "${HELPER_EXE}"
 chmod 755 "${HELPER_EXE}"
 
+if [ -n "${DWARF_DSYM_FOLDER_PATH:-}" ]; then
+  mkdir -p "${DWARF_DSYM_FOLDER_PATH}"
+  /usr/bin/dsymutil "${HELPER_EXE}" -o "${DWARF_DSYM_FOLDER_PATH}/CodexBarHelper.app.dSYM"
+fi
+
 cat > "${INFO_PLIST}" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

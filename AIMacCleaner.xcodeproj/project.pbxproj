@@ -359,7 +359,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 						CODE_SIGN_STYLE = Automatic;
 						COMBINE_HIDPI_IMAGES = YES;
 						CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-						CURRENT_PROJECT_VERSION = 45;
+						CURRENT_PROJECT_VERSION = 46;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
@@ -505,7 +505,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-						CURRENT_PROJECT_VERSION = 45;
+						CURRENT_PROJECT_VERSION = 46;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
