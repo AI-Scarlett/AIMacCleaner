@@ -36,9 +36,22 @@ struct GlobalShortcut: Identifiable, Codable {
 
     enum ShortcutAction: String, Codable, CaseIterable {
         case showSessions = "show_sessions"
-        case showAgentCenter = "show_agent_center"
-        case startStopServer = "start_stop_server"
-        case toggleMonitoring = "toggle_monitoring"
+        case captureSelectedRegion = "capture_selected_region"
+        case captureFullScreen = "capture_full_screen"
+        case toggleScreenRecording = "toggle_screen_recording"
+
+        func localizedName(_ localizer: Localizer) -> String {
+            switch self {
+            case .showSessions:
+                return localizer.t("打开 TraceFence", en: "Open TraceFence", zhHant: "開啟 TraceFence", ja: "TraceFence を開く", ko: "TraceFence 열기", mt: "Open TraceFence")
+            case .captureSelectedRegion:
+                return localizer.t("区域截屏", en: "Area Screenshot", zhHant: "區域截圖", ja: "範囲スクリーンショット", ko: "영역 스크린샷", mt: "Area Screenshot")
+            case .captureFullScreen:
+                return localizer.t("全屏截屏", en: "Full Screen Screenshot", zhHant: "全螢幕截圖", ja: "全画面スクリーンショット", ko: "전체 화면 스크린샷", mt: "Full Screen Screenshot")
+            case .toggleScreenRecording:
+                return localizer.t("开始/停止录屏", en: "Start/Stop Recording", zhHant: "開始/停止錄屏", ja: "録画の開始/停止", ko: "녹화 시작/중지", mt: "Start/Stop Recording")
+            }
+        }
     }
 
     var displayString: String {
@@ -97,12 +110,26 @@ struct GlobalShortcut: Identifiable, Codable {
     }
 }
 
+extension GlobalShortcut.ModifierFlags {
+    init(eventModifiers: NSEvent.ModifierFlags) {
+        var value: GlobalShortcut.ModifierFlags = []
+        if eventModifiers.contains(.command) { value.insert(.command) }
+        if eventModifiers.contains(.option) { value.insert(.option) }
+        if eventModifiers.contains(.control) { value.insert(.control) }
+        if eventModifiers.contains(.shift) { value.insert(.shift) }
+        self = value
+    }
+
+    var hasPrimaryModifier: Bool {
+        contains(.command) || contains(.option) || contains(.control)
+    }
+}
+
 actor GlobalShortcutService {
     private var registeredShortcuts: [GlobalShortcut] = []
     private var eventHandlers: [EventHotKeyRef] = []
+    private var eventHandlerRef: EventHandlerRef?
     private var actionHandlers: [GlobalShortcut.ShortcutAction: @MainActor () -> Void] = [:]
-
-    private let shortcutsPath = NSHomeDirectory() + "/.tracefence_shortcuts.json"
 
     static let defaultShortcuts: [GlobalShortcut] = [
         GlobalShortcut(
@@ -112,10 +139,31 @@ actor GlobalShortcutService {
             modifiers: [.command, .option],
             action: .showSessions
         ),
+        GlobalShortcut(
+            id: "capture_selected_region",
+            name: "Area Screenshot",
+            keyCode: 21,
+            modifiers: [.command, .option, .control],
+            action: .captureSelectedRegion
+        ),
+        GlobalShortcut(
+            id: "capture_full_screen",
+            name: "Full Screen Screenshot",
+            keyCode: 20,
+            modifiers: [.command, .option, .control],
+            action: .captureFullScreen
+        ),
+        GlobalShortcut(
+            id: "toggle_screen_recording",
+            name: "Start/Stop Recording",
+            keyCode: 23,
+            modifiers: [.command, .option, .control],
+            action: .toggleScreenRecording
+        ),
     ]
 
     init() {
-        Task { await loadShortcuts() }
+        registeredShortcuts = Self.loadPersistedShortcuts()
     }
 
     func register(action: GlobalShortcut.ShortcutAction, handler: @MainActor @escaping () -> Void) {
@@ -124,6 +172,7 @@ actor GlobalShortcutService {
 
     func registerAll() {
         unregisterAll()
+        installEventHandlerIfNeeded()
 
         for shortcut in registeredShortcuts {
             registerHotKey(shortcut)
@@ -144,9 +193,25 @@ actor GlobalShortcutService {
     func updateShortcut(_ shortcut: GlobalShortcut) {
         if let idx = registeredShortcuts.firstIndex(where: { $0.id == shortcut.id }) {
             registeredShortcuts[idx] = shortcut
+        } else {
+            registeredShortcuts.append(shortcut)
         }
         saveShortcuts()
         registerAll()
+    }
+
+    func reloadShortcutsAndRegister() {
+        registeredShortcuts = Self.loadPersistedShortcuts()
+        registerAll()
+    }
+
+    func handleHotKeyPressed(id: Int) {
+        guard registeredShortcuts.indices.contains(id) else { return }
+        let action = registeredShortcuts[id].action
+        guard let handler = actionHandlers[action] else { return }
+        Task { @MainActor in
+            handler()
+        }
     }
 
     func resetToDefaults() {
@@ -158,13 +223,8 @@ actor GlobalShortcutService {
     private func registerHotKey(_ shortcut: GlobalShortcut) {
         var hotKeyRef: EventHotKeyRef?
 
-        var eventSpec = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: OSType(kEventHotKeyPressed)
-        )
-
         var gMyHotKeyID = EventHotKeyID()
-        gMyHotKeyID.signature = OSType(("AGRD" as NSString).utf8String?.pointee ?? 0)
+        gMyHotKeyID.signature = Self.hotKeySignature
 
         let idBase = registeredShortcuts.firstIndex(where: { $0.id == shortcut.id }) ?? 0
         gMyHotKeyID.id = UInt32(idBase)
@@ -180,35 +240,66 @@ actor GlobalShortcutService {
 
         if status == noErr, let ref = hotKeyRef {
             eventHandlers.append(ref)
-
-            InstallEventHandler(GetApplicationEventTarget(), { (_, event, _) -> OSStatus in
-                var hotKeyID = EventHotKeyID()
-                let err = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
-                guard err == noErr else { return err }
-
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(name: .agentGuardHotKeyPressed, object: Int(hotKeyID.id))
-                }
-                return noErr
-            }, 1, &eventSpec, nil, nil)
         }
     }
 
-    private func loadShortcuts() {
-        if let data = try? Data(contentsOf: URL(fileURLWithPath: shortcutsPath)),
-           let decoded = try? JSONDecoder().decode([GlobalShortcut].self, from: data) {
-            registeredShortcuts = decoded
-        } else {
-            registeredShortcuts = Self.defaultShortcuts
-        }
+    private func installEventHandlerIfNeeded() {
+        guard eventHandlerRef == nil else { return }
+        var eventSpec = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: OSType(kEventHotKeyPressed)
+        )
+        InstallEventHandler(GetApplicationEventTarget(), { (_, event, _) -> OSStatus in
+            var hotKeyID = EventHotKeyID()
+            let err = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
+            guard err == noErr else { return err }
+
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .traceFenceHotKeyPressed, object: Int(hotKeyID.id))
+            }
+            return noErr
+        }, 1, &eventSpec, nil, &eventHandlerRef)
     }
 
     private func saveShortcuts() {
-        guard let data = try? JSONEncoder().encode(registeredShortcuts) else { return }
-        try? data.write(to: URL(fileURLWithPath: shortcutsPath))
+        Self.savePersistedShortcuts(registeredShortcuts)
     }
+
+    static func loadPersistedShortcuts() -> [GlobalShortcut] {
+        let url = URL(fileURLWithPath: SandboxPaths.shared.shortcutsPath)
+        let saved: [GlobalShortcut]
+        if let data = try? Data(contentsOf: url),
+           let decoded = try? JSONDecoder().decode([GlobalShortcut].self, from: data) {
+            saved = decoded
+        } else {
+            saved = defaultShortcuts
+        }
+        return mergedWithDefaults(saved)
+    }
+
+    static func savePersistedShortcuts(_ shortcuts: [GlobalShortcut]) {
+        let merged = mergedWithDefaults(shortcuts)
+        guard let data = try? JSONEncoder().encode(merged) else { return }
+        try? data.write(to: URL(fileURLWithPath: SandboxPaths.shared.shortcutsPath), options: .atomic)
+    }
+
+    private static func mergedWithDefaults(_ shortcuts: [GlobalShortcut]) -> [GlobalShortcut] {
+        var byAction = Dictionary(uniqueKeysWithValues: shortcuts.map { ($0.action, $0) })
+        for shortcut in defaultShortcuts where byAction[shortcut.action] == nil {
+            byAction[shortcut.action] = shortcut
+        }
+        return defaultShortcuts.compactMap { byAction[$0.action] }
+    }
+
+    private static let hotKeySignature: OSType = 0x54464B59
 }
 
 extension Notification.Name {
+    static let traceFenceHotKeyPressed = Notification.Name("traceFenceHotKeyPressed")
+    static let traceFenceShortcutsChanged = Notification.Name("traceFenceShortcutsChanged")
+}
+
+extension Notification.Name {
+    @available(*, deprecated, message: "Use traceFenceHotKeyPressed.")
     static let agentGuardHotKeyPressed = Notification.Name("agentGuardHotKeyPressed")
 }

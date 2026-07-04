@@ -331,6 +331,21 @@ struct MenuBarMonitor: View {
                 .buttonStyle(.bordered)
                 .disabled(captureService.isCapturingScreen)
 
+                Button {
+                    captureService.toggleScreenRecording()
+                } label: {
+                    Label(
+                        captureService.isRecordingScreen
+                            ? localizer.t("停止录屏", en: "Stop Recording", zhHant: "停止錄屏", ja: "録画停止", ko: "녹화 중지", mt: "Stop Recording")
+                            : localizer.t("录屏", en: "Record", zhHant: "錄屏", ja: "録画", ko: "녹화", mt: "Record"),
+                        systemImage: captureService.isRecordingScreen ? "stop.circle.fill" : "record.circle"
+                    )
+                    .font(Theme.Font.captionMedium)
+                }
+                .buttonStyle(.bordered)
+                .tint(captureService.isRecordingScreen ? Theme.Colors.danger : Theme.Colors.accent)
+                .disabled(captureService.isCapturingScreen)
+
                 if !captureService.screenCaptureAccessGranted {
                     Button {
                         captureService.openScreenCaptureSettings()
@@ -634,6 +649,12 @@ struct MenuBarMonitor: View {
             return localizer.t("需要开启屏幕录制权限后再截屏。", en: "Screen Recording permission is required before capture.", zhHant: "需要開啟螢幕錄製權限後再截圖。", ja: "取得するには画面収録の権限が必要です。", ko: "캡처하려면 화면 기록 권한이 필요합니다.", mt: "Screen Recording permission is required before capture.")
         case .captureFailed:
             return localizer.t("截屏失败，请确认屏幕录制权限。", en: "Capture failed. Check Screen Recording permission.", zhHant: "截圖失敗，請確認螢幕錄製權限。", ja: "取得に失敗しました。画面収録の権限を確認してください。", ko: "캡처에 실패했습니다. 화면 기록 권한을 확인하세요.", mt: "Capture failed. Check Screen Recording permission.")
+        case .recordingStarted:
+            return localizer.t("正在录屏。", en: "Recording started.", zhHant: "正在錄屏。", ja: "録画を開始しました。", ko: "녹화를 시작했습니다.", mt: "Recording started.")
+        case .recordingStopped:
+            return localizer.t("录屏已保存到本地采集历史。", en: "Recording saved to local capture history.", zhHant: "錄屏已儲存到本機採集歷史。", ja: "録画をローカル収集履歴に保存しました。", ko: "녹화가 로컬 캡처 기록에 저장되었습니다.", mt: "Recording saved to local capture history.")
+        case .recordingFailed:
+            return status.detail ?? localizer.t("录屏失败，请确认屏幕录制权限。", en: "Recording failed. Check Screen Recording permission.", zhHant: "錄屏失敗，請確認螢幕錄製權限。", ja: "録画に失敗しました。画面収録の権限を確認してください。", ko: "녹화에 실패했습니다. 화면 기록 권한을 확인하세요.", mt: "Recording failed. Check Screen Recording permission.")
         case .itemCopied:
             return localizer.t("已复制到剪贴板。", en: "Copied to clipboard.", zhHant: "已複製到剪貼簿。", ja: "クリップボードにコピーしました。", ko: "클립보드에 복사했습니다.", mt: "Copied to clipboard.")
         case .historyCleared:

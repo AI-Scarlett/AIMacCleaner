@@ -11,7 +11,7 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.32")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.33")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
@@ -51,6 +51,9 @@ RELEASE_BODY = (
     "- Adds no-cache update checks to avoid stale release metadata after a package replacement.\n"
     "- Bundles the provider quota engine inside TraceFence so releases no longer depend on an external CodexBar checkout.\n"
     "- Closes the menu bar popover when users click outside the panel or press Escape.\n"
+    "- Adds configurable shortcuts for opening TraceFence, region screenshots, full screenshots, and screen recording.\n"
+    "- Adds a double-click and right-click menu bar emergency menu with refresh, quit, and force-quit actions.\n"
+    "- Delays heavier quota and capture startup work until after the popover appears to reduce menu bar stalls.\n"
     "- Refreshes saved Lemon Squeezy license state from the server so activation usage and device limits stay current.\n"
     "- Restores the default release build path to signed and Apple-notarized output.\n"
 )

@@ -74,6 +74,7 @@ struct AIMacCleanerApp: App {
                         localizer: localizer,
                         isEnabled: menuBarMonitorEnabled
                     )
+                    appDelegate.setupGlobalShortcutsIfNeeded()
                 }
                 .onChange(of: menuBarMonitorEnabled) { newValue in
                     menuBarController.setEnabled(newValue)
@@ -196,6 +197,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var globalShortcutService: GlobalShortcutService?
     var networkMonitor: NetworkMonitor?
     var bridgeBinary: BridgeBinary?
+    private var shortcutPressObserver: NSObjectProtocol?
+    private var shortcutChangeObserver: NSObjectProtocol?
     private var sessionsVM: SessionsViewModel?
     private weak var agentRegistryContext: AgentRegistry?
     private weak var conversationWatcherContext: ConversationWatcher?
@@ -233,6 +236,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let shortcutPressObserver {
+            NotificationCenter.default.removeObserver(shortcutPressObserver)
+            self.shortcutPressObserver = nil
+        }
+        if let shortcutChangeObserver {
+            NotificationCenter.default.removeObserver(shortcutChangeObserver)
+            self.shortcutChangeObserver = nil
+        }
         Task { @MainActor in
             cleanupAgentCenterServices()
         }
@@ -493,7 +504,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        setupGlobalShortcuts()
+        setupGlobalShortcutsIfNeeded()
         setupNetworkMonitoring()
     }
 
@@ -503,14 +514,48 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         agentRegistry.refreshAllStatuses()
     }
 
-    private func setupGlobalShortcuts() {
+    @MainActor
+    func setupGlobalShortcutsIfNeeded() {
+        guard globalShortcutService == nil else { return }
         let shortcutService = GlobalShortcutService()
         globalShortcutService = shortcutService
 
+        shortcutPressObserver = NotificationCenter.default.addObserver(
+            forName: .traceFenceHotKeyPressed,
+            object: nil,
+            queue: .main
+        ) { [weak shortcutService] notification in
+            guard let id = notification.object as? Int else { return }
+            Task {
+                await shortcutService?.handleHotKeyPressed(id: id)
+            }
+        }
+
+        shortcutChangeObserver = NotificationCenter.default.addObserver(
+            forName: .traceFenceShortcutsChanged,
+            object: nil,
+            queue: .main
+        ) { [weak shortcutService] _ in
+            Task {
+                await shortcutService?.reloadShortcutsAndRegister()
+            }
+        }
+
         Task {
             await shortcutService.register(action: .showSessions) { [weak self] in
-                self?.mainWindow?.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
+                self?.ensureLaunchSurfaceVisible(reason: "shortcut")
+            }
+
+            await shortcutService.register(action: .captureSelectedRegion) {
+                CaptureShelfService.shared.captureSelectedRegionToClipboard()
+            }
+
+            await shortcutService.register(action: .captureFullScreen) {
+                CaptureShelfService.shared.captureVisibleScreenToClipboard()
+            }
+
+            await shortcutService.register(action: .toggleScreenRecording) {
+                CaptureShelfService.shared.toggleScreenRecording()
             }
 
             await shortcutService.registerAll()

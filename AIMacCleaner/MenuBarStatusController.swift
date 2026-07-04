@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Darwin
 import SwiftUI
 
 @MainActor
@@ -12,6 +13,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
     private var popover: NSPopover?
     private var cancellables: Set<AnyCancellable> = []
     private var labelRefreshWorkItem: DispatchWorkItem?
+    private var singleClickWorkItem: DispatchWorkItem?
     private var heartbeatTimer: Timer?
     private var globalDismissMonitor: Any?
     private var localDismissMonitor: Any?
@@ -46,23 +48,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
     private func bindPublishersIfNeeded() {
         guard cancellables.isEmpty else { return }
 
-        service?.objectWillChange
-            .sink { [weak self] _ in
-                Task { @MainActor in
-                    self?.scheduleButtonLabelRefresh()
-                }
-            }
-            .store(in: &cancellables)
-
         quotaService?.objectWillChange
-            .sink { [weak self] _ in
-                Task { @MainActor in
-                    self?.scheduleButtonLabelRefresh()
-                }
-            }
-            .store(in: &cancellables)
-
-        captureService?.objectWillChange
             .sink { [weak self] _ in
                 Task { @MainActor in
                     self?.scheduleButtonLabelRefresh()
@@ -122,7 +108,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
 
     private func startHeartbeat() {
         guard heartbeatTimer == nil else { return }
-        let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 20, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.repairStatusItemIfNeeded()
             }
@@ -150,7 +136,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
             self?.updateButtonLabel()
         }
         labelRefreshWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: workItem)
     }
 
     private func updateButtonLabel() {
@@ -181,11 +167,24 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
     @objc private func statusItemClicked(_ sender: Any?) {
         guard isEnabled else { return }
         repairStatusItemIfNeeded()
-        if popover?.isShown == true {
-            closePopover()
-        } else {
-            showPopover()
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseDown || (event?.clickCount ?? 1) >= 2 {
+            singleClickWorkItem?.cancel()
+            showEmergencyMenu()
+            return
         }
+
+        singleClickWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if self.popover?.isShown == true {
+                self.closePopover()
+            } else {
+                self.showPopover()
+            }
+        }
+        singleClickWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: workItem)
     }
 
     private func showPopover() {
@@ -196,8 +195,6 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
         }
 
         closePopover()
-        quotaService.start()
-        captureService.start()
 
         let popover = NSPopover()
         popover.behavior = .transient
@@ -211,9 +208,14 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
         self.popover = popover
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         installDismissMonitors(anchor: button)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            quotaService.start()
+            captureService.start()
+        }
     }
 
     private func closePopover() {
+        singleClickWorkItem?.cancel()
         removeDismissMonitors()
         popover?.close()
         popover?.contentViewController = nil
@@ -277,5 +279,62 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
         guard let anchor, event.window === anchor.window else { return false }
         let point = anchor.convert(event.locationInWindow, from: nil)
         return anchor.bounds.contains(point)
+    }
+
+    private func showEmergencyMenu() {
+        closePopover()
+        guard let button = statusItem?.button else { return }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let openItem = NSMenuItem(title: localized("打开 TraceFence", en: "Open TraceFence"), action: #selector(openMainWindowFromMenu), keyEquivalent: "")
+        openItem.target = self
+        menu.addItem(openItem)
+
+        let repairItem = NSMenuItem(title: localized("刷新菜单栏", en: "Refresh Menu Bar"), action: #selector(repairMenuBarFromMenu), keyEquivalent: "")
+        repairItem.target = self
+        menu.addItem(repairItem)
+
+        menu.addItem(.separator())
+
+        let quitItem = NSMenuItem(title: localized("退出 TraceFence", en: "Quit TraceFence"), action: #selector(quitFromMenu), keyEquivalent: "")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        let forceQuitItem = NSMenuItem(title: localized("强制退出", en: "Force Quit"), action: #selector(forceQuitFromMenu), keyEquivalent: "")
+        forceQuitItem.target = self
+        menu.addItem(forceQuitItem)
+
+        menu.popUp(positioning: nil, at: NSPoint(x: button.bounds.midX, y: button.bounds.minY), in: button)
+    }
+
+    @objc private func openMainWindowFromMenu() {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = NSApp.windows.first(where: { $0.title.contains("TraceFence") || $0.title.contains("AgentGuard") || (!$0.title.isEmpty && $0.canBecomeMain) }) {
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    @objc private func repairMenuBarFromMenu() {
+        closePopover()
+        rebuildStatusItem()
+    }
+
+    @objc private func quitFromMenu() {
+        closePopover()
+        if let appDelegate = NSApp.delegate as? AppDelegate {
+            appDelegate.requestMenuBarQuit()
+        } else {
+            NSApp.terminate(nil)
+        }
+    }
+
+    @objc private func forceQuitFromMenu() {
+        Darwin.exit(0)
+    }
+
+    private func localized(_ zh: String, en: String) -> String {
+        localizer?.t(zh, en: en, zhHant: zh, ja: en, ko: en, mt: en) ?? zh
     }
 }

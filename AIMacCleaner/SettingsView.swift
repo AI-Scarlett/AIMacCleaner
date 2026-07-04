@@ -10,6 +10,10 @@ struct SettingsView: View {
     @StateObject private var updateService = DirectUpdateService.shared
     @ObservedObject private var captureService = CaptureShelfService.shared
     @State private var licenseKeyInput = ""
+    @State private var shortcutSettings: [GlobalShortcut] = GlobalShortcutService.defaultShortcuts
+    @State private var recordingShortcutAction: GlobalShortcut.ShortcutAction?
+    @State private var shortcutRecorderMonitor: Any?
+    @State private var shortcutMessage: String?
 
     @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
     @AppStorage("sensorMonitorEnabled") private var sensorMonitorEnabled = false
@@ -189,6 +193,10 @@ struct SettingsView: View {
         .appCanvas()
         .task {
             licenseService.refreshTrialState()
+            loadShortcutSettings()
+        }
+        .onDisappear {
+            stopShortcutRecording()
         }
     }
 
@@ -364,6 +372,8 @@ struct SettingsView: View {
                 SettingsRowDivider()
                 localCaptureSetting
                 SettingsRowDivider()
+                shortcutSetting
+                SettingsRowDivider()
                 quitBehaviorSetting
             }
             .cardStyle()
@@ -422,6 +432,67 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, Theme.Spacing.sm)
+    }
+
+    private var shortcutSetting: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                Image(systemName: "keyboard")
+                    .font(Theme.Font.subheadline)
+                    .foregroundStyle(Theme.Colors.accent)
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localizer.t("快捷键", en: "Shortcuts", zhHant: "快捷鍵", ja: "ショートカット", ko: "단축키", mt: "Shortcuts"))
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                }
+
+                Spacer()
+            }
+
+            VStack(spacing: Theme.Spacing.xs) {
+                ForEach(shortcutSettings, id: \.id) { shortcut in
+                    shortcutRow(shortcut)
+                }
+            }
+            .padding(.leading, 36)
+
+            if let shortcutMessage {
+                Text(shortcutMessage)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.warning)
+                    .padding(.leading, 36)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Theme.Spacing.sm)
+    }
+
+    private func shortcutRow(_ shortcut: GlobalShortcut) -> some View {
+        let isRecording = recordingShortcutAction == shortcut.action
+        return HStack(spacing: Theme.Spacing.sm) {
+            Text(shortcut.action.localizedName(localizer))
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(isRecording ? localizer.t("按下组合键…", en: "Press keys…", zhHant: "按下組合鍵…", ja: "キーを押す…", ko: "키를 누르세요…", mt: "Press keys…") : shortcut.displayString)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(isRecording ? Theme.Colors.warning : Theme.Colors.textSecondary)
+                .lineLimit(1)
+                .frame(minWidth: 96, alignment: .trailing)
+
+            Button {
+                beginShortcutRecording(for: shortcut.action)
+            } label: {
+                Image(systemName: isRecording ? "xmark.circle" : "record.circle")
+                    .font(Theme.Font.captionMedium)
+            }
+            .buttonStyle(.plain)
+            .help(isRecording ? localizer.cancel : localizer.t("录制快捷键", en: "Record shortcut", zhHant: "錄製快捷鍵", ja: "ショートカットを記録", ko: "단축키 기록", mt: "Record shortcut"))
+        }
+        .padding(.vertical, 3)
     }
 
     private var quitBehaviorSetting: some View {
@@ -1075,6 +1146,61 @@ struct SettingsView: View {
             get: { captureService.historyLimit },
             set: { captureService.setHistoryLimit($0) }
         )
+    }
+
+    private func loadShortcutSettings() {
+        shortcutSettings = GlobalShortcutService.loadPersistedShortcuts()
+    }
+
+    private func beginShortcutRecording(for action: GlobalShortcut.ShortcutAction) {
+        if recordingShortcutAction == action {
+            stopShortcutRecording()
+            return
+        }
+        stopShortcutRecording()
+        shortcutMessage = localizer.t("请按下包含 ⌘、⌥ 或 ⌃ 的组合键。", en: "Press a key combo that includes Command, Option, or Control.", zhHant: "請按下包含 ⌘、⌥ 或 ⌃ 的組合鍵。", ja: "Command、Option、Control のいずれかを含むキー組み合わせを押してください。", ko: "Command, Option 또는 Control이 포함된 키 조합을 누르세요.", mt: "Press a key combo that includes Command, Option, or Control.")
+        recordingShortcutAction = action
+        shortcutRecorderMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            handleShortcutRecordingEvent(event)
+            return nil
+        }
+    }
+
+    private func handleShortcutRecordingEvent(_ event: NSEvent) {
+        guard let action = recordingShortcutAction else { return }
+        if event.keyCode == 53 {
+            stopShortcutRecording()
+            return
+        }
+
+        let modifiers = GlobalShortcut.ModifierFlags(eventModifiers: event.modifierFlags)
+        guard modifiers.hasPrimaryModifier else {
+            shortcutMessage = localizer.t("至少需要包含 ⌘、⌥ 或 ⌃，避免误触单个按键。", en: "Include Command, Option, or Control to avoid single-key triggers.", zhHant: "至少需要包含 ⌘、⌥ 或 ⌃，避免誤觸單個按鍵。", ja: "単独キーの誤動作を避けるため、Command、Option、Control のいずれかを含めてください。", ko: "단일 키 오작동을 피하려면 Command, Option 또는 Control을 포함하세요.", mt: "Include Command, Option, or Control to avoid single-key triggers.")
+            return
+        }
+
+        guard let index = shortcutSettings.firstIndex(where: { $0.action == action }) else {
+            stopShortcutRecording()
+            return
+        }
+
+        shortcutSettings[index].keyCode = Int(event.keyCode)
+        shortcutSettings[index].modifiers = modifiers
+        GlobalShortcutService.savePersistedShortcuts(shortcutSettings)
+        NotificationCenter.default.post(name: .traceFenceShortcutsChanged, object: nil)
+        shortcutMessage = localizer.t("快捷键已保存。", en: "Shortcut saved.", zhHant: "快捷鍵已儲存。", ja: "ショートカットを保存しました。", ko: "단축키가 저장되었습니다.", mt: "Shortcut saved.")
+        stopShortcutRecording(keepMessage: true)
+    }
+
+    private func stopShortcutRecording(keepMessage: Bool = false) {
+        if let shortcutRecorderMonitor {
+            NSEvent.removeMonitor(shortcutRecorderMonitor)
+            self.shortcutRecorderMonitor = nil
+        }
+        recordingShortcutAction = nil
+        if !keepMessage {
+            shortcutMessage = nil
+        }
     }
 
     private func saveSettings() {

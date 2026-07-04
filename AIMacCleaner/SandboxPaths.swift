@@ -76,6 +76,14 @@ class SandboxPaths {
     var customAgentSourcesPath: String { dataDirectory + "/custom_agents.json" }
     var snapshotsPath: String { dataDirectory + "/snapshots.json" }
     var captureShelfHistoryPath: String { dataDirectory + "/capture_shelf_history.json" }
+    var shortcutsPath: String { dataDirectory + "/shortcuts.json" }
+    var screenRecordingsDirectory: String {
+        let path = dataDirectory + "/Recordings"
+        if !FileManager.default.fileExists(atPath: path) {
+            try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        }
+        return path
+    }
 
     static func migrateFromLegacyPaths() {
         let fm = FileManager.default
@@ -124,6 +132,7 @@ class SandboxPaths {
             (home + "/.tracefence_cmd_rules.json", shared.cmdRulesPath),
             (home + "/.tracefence_custom_agents.json", shared.customAgentSourcesPath),
             (home + "/.tracefence_snapshots.json", shared.snapshotsPath),
+            (home + "/.tracefence_shortcuts.json", shared.shortcutsPath),
         ]
 
         for (legacyPath, newPath) in migrations {
@@ -158,7 +167,8 @@ class SandboxPaths {
         "cmd_rules.json",
         "custom_agents.json",
         "snapshots.json",
-        "capture_shelf_history.json"
+        "capture_shelf_history.json",
+        "shortcuts.json"
     ]
 
     private static let bookmarkFileNames: Set<String> = [
