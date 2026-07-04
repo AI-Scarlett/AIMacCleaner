@@ -76,6 +76,7 @@ final class CaptureShelfService: ObservableObject {
     private var pollTimer: Timer?
     private var lastPasteboardChangeCount: Int
     private var saveWorkItem: DispatchWorkItem?
+    private var selectionOverlayController: CaptureSelectionOverlayController?
 
     private init() {
         lastPasteboardChangeCount = NSPasteboard.general.changeCount
@@ -135,22 +136,48 @@ final class CaptureShelfService: ObservableObject {
     }
 
     func captureVisibleScreenToClipboard() {
+        guard prepareScreenCapture() else { return }
+        isCapturingScreen = true
+        captureScreen(rect: .infinite, sourceTitle: "screen")
+        isCapturingScreen = false
+    }
+
+    func captureSelectedRegionToClipboard() {
+        guard prepareScreenCapture() else { return }
+        guard selectionOverlayController == nil else { return }
+
+        isCapturingScreen = true
+        let controller = CaptureSelectionOverlayController { [weak self] rect in
+            Task { @MainActor in
+                guard let self else { return }
+                self.selectionOverlayController = nil
+                if let rect, rect.width >= 6, rect.height >= 6 {
+                    self.captureScreen(rect: rect.integral, sourceTitle: "selection")
+                }
+                self.isCapturingScreen = false
+            }
+        }
+        selectionOverlayController = controller
+        controller.begin()
+    }
+
+    private func prepareScreenCapture() -> Bool {
         refreshScreenCaptureAccess()
         guard CGPreflightScreenCaptureAccess() else {
             _ = CGRequestScreenCaptureAccess()
             refreshScreenCaptureAccess()
             if !screenCaptureAccessGranted {
                 setStatus(.init(level: .warning, code: .capturePermissionNeeded, detail: nil, createdAt: Date()))
-                return
+                return false
             }
-            return
+            return false
         }
+        return true
+    }
 
-        isCapturingScreen = true
-        defer { isCapturingScreen = false }
-
+    private func captureScreen(rect: CGRect, sourceTitle: String) {
         let imageOptions: CGWindowImageOption = [.bestResolution, .boundsIgnoreFraming]
-        guard let cgImage = CGWindowListCreateImage(.infinite, .optionOnScreenOnly, kCGNullWindowID, imageOptions) else {
+        guard let cgImage = CGWindowListCreateImage(rect, .optionOnScreenOnly, kCGNullWindowID, imageOptions) else {
             setStatus(.init(level: .error, code: .captureFailed, detail: nil, createdAt: Date()))
             return
         }
@@ -160,7 +187,7 @@ final class CaptureShelfService: ObservableObject {
         pasteboard.writeObjects([image])
         lastPasteboardChangeCount = pasteboard.changeCount
 
-        if let item = makeImageItem(from: image, sourceTitle: "screen") {
+        if let item = makeImageItem(from: image, sourceTitle: sourceTitle) {
             insert(item)
         }
         setStatus(.init(level: .success, code: .captureCopied, detail: nil, createdAt: Date()))
@@ -421,5 +448,142 @@ private extension NSImage {
              fraction: 1.0)
         targetImage.unlockFocus()
         return targetImage
+    }
+}
+
+@MainActor
+private final class CaptureSelectionOverlayController {
+    private let completion: (CGRect?) -> Void
+    private var windows: [NSWindow] = []
+    private var didComplete = false
+
+    init(completion: @escaping (CGRect?) -> Void) {
+        self.completion = completion
+    }
+
+    func begin() {
+        for screen in NSScreen.screens {
+            let window = CaptureSelectionWindow(
+                contentRect: screen.frame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            window.level = .screenSaver
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.hasShadow = false
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            window.ignoresMouseEvents = false
+
+            let view = CaptureSelectionView(frame: NSRect(origin: .zero, size: screen.frame.size))
+            view.onComplete = { [weak self, weak window] localRect in
+                guard let window else {
+                    self?.finish(nil)
+                    return
+                }
+                self?.finish(window.convertToScreen(localRect))
+            }
+            view.onCancel = { [weak self] in
+                self?.finish(nil)
+            }
+            window.contentView = view
+            window.makeKeyAndOrderFront(nil)
+            window.makeFirstResponder(view)
+            windows.append(window)
+        }
+        NSCursor.crosshair.set()
+    }
+
+    private func finish(_ rect: CGRect?) {
+        guard !didComplete else { return }
+        didComplete = true
+        NSCursor.arrow.set()
+        for window in windows {
+            window.orderOut(nil)
+            window.contentView = nil
+        }
+        windows.removeAll()
+        completion(rect)
+    }
+}
+
+private final class CaptureSelectionWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
+private final class CaptureSelectionView: NSView {
+    var onComplete: ((NSRect) -> Void)?
+    var onCancel: (() -> Void)?
+
+    private var startPoint: NSPoint?
+    private var currentPoint: NSPoint?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.black.withAlphaComponent(0.22).setFill()
+        bounds.fill()
+
+        guard let selectionRect else { return }
+
+        NSGraphicsContext.current?.saveGraphicsState()
+        NSGraphicsContext.current?.compositingOperation = .clear
+        selectionRect.fill()
+        NSGraphicsContext.current?.restoreGraphicsState()
+
+        NSColor.white.withAlphaComponent(0.95).setStroke()
+        let path = NSBezierPath(roundedRect: selectionRect, xRadius: 3, yRadius: 3)
+        path.lineWidth = 2
+        path.stroke()
+
+        NSColor.systemBlue.withAlphaComponent(0.95).setStroke()
+        let inner = NSBezierPath(roundedRect: selectionRect.insetBy(dx: 2, dy: 2), xRadius: 2, yRadius: 2)
+        inner.lineWidth = 1
+        inner.stroke()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        startPoint = point
+        currentPoint = point
+        needsDisplay = true
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        currentPoint = convert(event.locationInWindow, from: nil)
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        currentPoint = convert(event.locationInWindow, from: nil)
+        guard let rect = selectionRect, rect.width >= 6, rect.height >= 6 else {
+            onCancel?()
+            return
+        }
+        onComplete?(rect)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        onCancel?()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {
+            onCancel?()
+        } else {
+            super.keyDown(with: event)
+        }
+    }
+
+    private var selectionRect: NSRect? {
+        guard let startPoint, let currentPoint else { return nil }
+        return NSRect(
+            x: min(startPoint.x, currentPoint.x),
+            y: min(startPoint.y, currentPoint.y),
+            width: abs(currentPoint.x - startPoint.x),
+            height: abs(currentPoint.y - startPoint.y)
+        )
     }
 }

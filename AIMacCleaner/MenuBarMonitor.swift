@@ -314,12 +314,21 @@ struct MenuBarMonitor: View {
 
             HStack(spacing: Theme.Spacing.sm) {
                 Button {
-                    captureService.captureVisibleScreenToClipboard()
+                    captureService.captureSelectedRegionToClipboard()
                 } label: {
-                    Label(captureService.isCapturingScreen ? localizer.t("正在截屏", en: "Capturing", zhHant: "正在截圖", ja: "取得中", ko: "캡처 중", mt: "Capturing") : localizer.t("截屏到剪贴板", en: "Copy Screenshot", zhHant: "截圖到剪貼簿", ja: "スクリーンショットをコピー", ko: "스크린샷 복사", mt: "Copy Screenshot"), systemImage: "camera.viewfinder")
+                    Label(captureService.isCapturingScreen ? localizer.t("正在截屏", en: "Capturing", zhHant: "正在截圖", ja: "取得中", ko: "캡처 중", mt: "Capturing") : localizer.t("区域截屏", en: "Area", zhHant: "區域截圖", ja: "範囲", ko: "영역", mt: "Area"), systemImage: "selection.pin.in.out")
                         .font(Theme.Font.captionMedium)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(captureService.isCapturingScreen)
+
+                Button {
+                    captureService.captureVisibleScreenToClipboard()
+                } label: {
+                    Label(localizer.t("全屏", en: "Full Screen", zhHant: "全螢幕", ja: "全画面", ko: "전체 화면", mt: "Full Screen"), systemImage: "rectangle.dashed")
+                        .font(Theme.Font.captionMedium)
+                }
+                .buttonStyle(.bordered)
                 .disabled(captureService.isCapturingScreen)
 
                 if !captureService.screenCaptureAccessGranted {
@@ -577,9 +586,13 @@ struct MenuBarMonitor: View {
         case .text:
             return item.title.isEmpty ? localizer.t("文本", en: "Text", zhHant: "文字", ja: "テキスト", ko: "텍스트", mt: "Text") : item.title
         case .image:
-            return item.title == "screen"
-                ? localizer.t("屏幕截图", en: "Screenshot", zhHant: "螢幕截圖", ja: "スクリーンショット", ko: "스크린샷", mt: "Screenshot")
-                : localizer.t("图片", en: "Image", zhHant: "圖片", ja: "画像", ko: "이미지", mt: "Image")
+            if item.title == "selection" {
+                return localizer.t("区域截图", en: "Area Screenshot", zhHant: "區域截圖", ja: "範囲スクリーンショット", ko: "영역 스크린샷", mt: "Area Screenshot")
+            }
+            if item.title == "screen" {
+                return localizer.t("屏幕截图", en: "Screenshot", zhHant: "螢幕截圖", ja: "スクリーンショット", ko: "스크린샷", mt: "Screenshot")
+            }
+            return localizer.t("图片", en: "Image", zhHant: "圖片", ja: "画像", ko: "이미지", mt: "Image")
         case .files:
             return item.title.isEmpty ? localizer.t("文件", en: "Files", zhHant: "檔案", ja: "ファイル", ko: "파일", mt: "Files") : item.title
         }
