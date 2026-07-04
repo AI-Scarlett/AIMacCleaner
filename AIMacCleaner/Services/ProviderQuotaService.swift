@@ -316,7 +316,8 @@ private struct CodexBarQuotaProvider {
                     "usage",
                     "--provider", "codex",
                     "--format", "json",
-                    "--source", "oauth"
+                    "--source", "oauth",
+                    "--all-accounts"
                 ],
                 timeout: 20
             )
@@ -330,19 +331,15 @@ private struct CodexBarQuotaProvider {
         _ autoPayloads: [CodexBarProviderPayload],
         with oauthPayloads: [CodexBarProviderPayload]
     ) -> [CodexBarProviderPayload] {
-        guard let codexOAuth = oauthPayloads.first(where: { payload in
-            payload.provider == "codex" && (payload.usage != nil || payload.credits != nil)
-        }) else {
+        let codexOAuthPayloads = oauthPayloads.filter { payload in
+            payload.provider.lowercased() == "codex"
+                && (payload.usage != nil || payload.credits != nil || payload.error != nil)
+        }
+        guard codexOAuthPayloads.contains(where: { $0.usage != nil || $0.credits != nil }) else {
             return autoPayloads
         }
 
-        var replaced = false
-        let merged = autoPayloads.map { payload -> CodexBarProviderPayload in
-            guard payload.provider == "codex" else { return payload }
-            replaced = true
-            return codexOAuth
-        }
-        return replaced ? merged : [codexOAuth] + merged
+        return codexOAuthPayloads + autoPayloads.filter { $0.provider.lowercased() != "codex" }
     }
 
     private func readProviderConfigs(from executable: URL) -> [String: CodexBarProviderConfigPayload] {
@@ -421,7 +418,7 @@ private struct CodexBarQuotaProvider {
         let now = Date()
         let usage = payload.usage
         let windows = makeWindows(from: usage)
-        let resetCredits = usage?.codexResetCredits ?? emptyCodexResetCredits(for: payload, usage: usage)
+        let resetCredits = usage?.codexResetCredits
         let errorMessage = displayErrorMessage(for: payload)
         let config = configs[payload.provider]
 
@@ -430,7 +427,7 @@ private struct CodexBarQuotaProvider {
         }
 
         return ProviderQuotaSnapshot(
-            id: payload.provider,
+            id: snapshotID(from: payload),
             providerName: displayName(for: payload.provider),
             planName: planName(from: payload),
             accountLabel: accountLabel(from: payload),
@@ -442,14 +439,6 @@ private struct CodexBarQuotaProvider {
             errorMessage: windows.isEmpty && resetCredits == nil ? errorMessage : nil,
             setupHint: windows.isEmpty && resetCredits == nil ? setupHint(for: payload) : nil,
             isSetupNotice: false)
-    }
-
-    private func emptyCodexResetCredits(
-        for payload: CodexBarProviderPayload,
-        usage: CodexBarUsagePayload?
-    ) -> ProviderQuotaResetCredits? {
-        guard payload.provider.lowercased() == "codex", let usage else { return nil }
-        return ProviderQuotaResetCredits(availableCount: 0, credits: [], updatedAt: usage.updatedAt)
     }
 
     private func setupNotice(count: Int) -> ProviderQuotaSnapshot {
@@ -674,6 +663,30 @@ private struct CodexBarQuotaProvider {
             ?? payload.usage?.accountEmail
             ?? payload.account
             ?? payload.source
+    }
+
+    private func snapshotID(from payload: CodexBarProviderPayload) -> String {
+        let account = accountLabel(from: payload) ?? "unknown-account"
+        let plan = planName(from: payload) ?? "unknown-plan"
+        return [
+            payload.provider,
+            payload.source,
+            account,
+            plan
+        ]
+        .map(normalizedSnapshotIDPart)
+        .filter { !$0.isEmpty }
+        .joined(separator: "-")
+    }
+
+    private func normalizedSnapshotIDPart(_ value: String) -> String {
+        let allowed = CharacterSet.alphanumerics
+        return value.unicodeScalars.map { scalar in
+            allowed.contains(scalar) ? Character(scalar).lowercased() : "-"
+        }
+        .joined()
+        .split(separator: "-")
+        .joined(separator: "-")
     }
 
     private static func decodeDate(from decoder: Decoder) throws -> Date {
