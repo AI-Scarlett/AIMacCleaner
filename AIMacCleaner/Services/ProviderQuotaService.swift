@@ -418,7 +418,7 @@ private struct CodexBarQuotaProvider {
         let now = Date()
         let usage = payload.usage
         let windows = makeWindows(from: usage)
-        let resetCredits = usage?.codexResetCredits
+        let resetCredits = usage?.codexResetCredits ?? emptyCodexResetCredits(for: payload, usage: usage)
         let errorMessage = displayErrorMessage(for: payload)
         let config = configs[payload.provider]
 
@@ -439,6 +439,14 @@ private struct CodexBarQuotaProvider {
             errorMessage: windows.isEmpty && resetCredits == nil ? errorMessage : nil,
             setupHint: windows.isEmpty && resetCredits == nil ? setupHint(for: payload) : nil,
             isSetupNotice: false)
+    }
+
+    private func emptyCodexResetCredits(
+        for payload: CodexBarProviderPayload,
+        usage: CodexBarUsagePayload?
+    ) -> ProviderQuotaResetCredits? {
+        guard payload.provider.lowercased() == "codex", let usage else { return nil }
+        return ProviderQuotaResetCredits(availableCount: 0, credits: [], updatedAt: usage.updatedAt)
     }
 
     private func setupNotice(count: Int) -> ProviderQuotaSnapshot {
