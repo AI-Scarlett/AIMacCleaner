@@ -12,6 +12,7 @@ struct AIMacCleanerApp: App {
     @StateObject private var overviewStore = AgentMonitorOverviewStore()
     @StateObject private var providerQuotaService = ProviderQuotaService()
     @StateObject private var captureShelfService = CaptureShelfService.shared
+    @StateObject private var menuBarController = MenuBarStatusController()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @AppStorage("monitorEnabled") private var monitorEnabled = false
     @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = false
@@ -53,41 +54,22 @@ struct AIMacCleanerApp: App {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [service] in
                         if monitorEnabled { service.startMonitoring() }
                     }
+                    menuBarController.configure(
+                        service: service,
+                        quotaService: providerQuotaService,
+                        captureService: captureShelfService,
+                        localizer: localizer,
+                        isEnabled: menuBarMonitorEnabled
+                    )
+                    appDelegate.setupGlobalShortcutsIfNeeded()
+                }
+                .onChange(of: menuBarMonitorEnabled) { newValue in
+                    menuBarController.setEnabled(newValue)
                 }
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))
         .defaultSize(width: 1100, height: 700)
-
-        MenuBarExtra {
-            if menuBarMonitorEnabled {
-                MenuBarMonitor(service: service, quotaService: providerQuotaService, captureService: captureShelfService)
-                    .environmentObject(localizer)
-            } else {
-                Text(localizer.menuBarMonitorClosed)
-                    .padding()
-            }
-        } label: {
-            menuBarLabel
-        }
-        .menuBarExtraStyle(.window)
-    }
-
-    @ViewBuilder
-    private var menuBarLabel: some View {
-        if let quota = providerQuotaService.menuBarSummary, !quota.isEmpty {
-            HStack(spacing: 3) {
-                MenuBarShieldEyeIcon()
-                Text(quota)
-            }
-        } else if let disk = service.diskInfo {
-            HStack(spacing: 3) {
-                MenuBarShieldEyeIcon()
-                Text(String(format: "%.0f%%", 100.0 - disk.usedPct))
-            }
-        } else {
-            MenuBarShieldEyeIcon()
-        }
     }
 }
 
@@ -202,6 +184,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var globalShortcutService: GlobalShortcutService?
     var networkMonitor: NetworkMonitor?
     var bridgeBinary: BridgeBinary?
+    private var shortcutPressObserver: NSObjectProtocol?
+    private var shortcutChangeObserver: NSObjectProtocol?
     private var sessionsVM: SessionsViewModel?
     private weak var agentRegistryContext: AgentRegistry?
     private weak var conversationWatcherContext: ConversationWatcher?
@@ -239,6 +223,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let shortcutPressObserver {
+            NotificationCenter.default.removeObserver(shortcutPressObserver)
+            self.shortcutPressObserver = nil
+        }
+        if let shortcutChangeObserver {
+            NotificationCenter.default.removeObserver(shortcutChangeObserver)
+            self.shortcutChangeObserver = nil
+        }
         Task { @MainActor in
             cleanupAgentCenterServices()
         }
@@ -497,7 +489,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        setupGlobalShortcuts()
+        setupGlobalShortcutsIfNeeded()
         setupNetworkMonitoring()
     }
 
@@ -507,14 +499,48 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         agentRegistry.refreshAllStatuses()
     }
 
-    private func setupGlobalShortcuts() {
+    @MainActor
+    func setupGlobalShortcutsIfNeeded() {
+        guard globalShortcutService == nil else { return }
         let shortcutService = GlobalShortcutService()
         globalShortcutService = shortcutService
 
+        shortcutPressObserver = NotificationCenter.default.addObserver(
+            forName: .traceFenceHotKeyPressed,
+            object: nil,
+            queue: .main
+        ) { [weak shortcutService] notification in
+            guard let id = notification.object as? Int else { return }
+            Task {
+                await shortcutService?.handleHotKeyPressed(id: id)
+            }
+        }
+
+        shortcutChangeObserver = NotificationCenter.default.addObserver(
+            forName: .traceFenceShortcutsChanged,
+            object: nil,
+            queue: .main
+        ) { [weak shortcutService] _ in
+            Task {
+                await shortcutService?.reloadShortcutsAndRegister()
+            }
+        }
+
         Task {
             await shortcutService.register(action: .showSessions) { [weak self] in
-                self?.mainWindow?.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
+                self?.ensureLaunchSurfaceVisible(reason: "shortcut")
+            }
+
+            await shortcutService.register(action: .captureSelectedRegion) {
+                CaptureShelfService.shared.captureSelectedRegionToClipboard()
+            }
+
+            await shortcutService.register(action: .captureFullScreen) {
+                CaptureShelfService.shared.captureVisibleScreenToClipboard()
+            }
+
+            await shortcutService.register(action: .toggleScreenRecording) {
+                CaptureShelfService.shared.toggleScreenRecording()
             }
 
             await shortcutService.registerAll()

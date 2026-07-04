@@ -10,6 +10,7 @@
 		2A3B4C5D6E7F8A9B0C1D2E3F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7A8B9C0D1E2F /* Theme.swift */; };
 		4FCB5CD83382DA42D96D7965 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0B9B53C5E13BA699005761 /* ContentView.swift */; };
 		5A4D9E1F2B3C4D5E6F7A8B9C /* MenuBarMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B5E0F2A3C4D5E6F7A8B9C0D /* MenuBarMonitor.swift */; };
+		5B4D9E1F2B3C4D5E6F7A8B9C /* MenuBarStatusController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C5E0F2A3C4D5E6F7A8B9C0D /* MenuBarStatusController.swift */; };
 		8C7E0F3A4B5C6D7E8F9A0B1C /* OperationMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D8F1A2B3C4D5E6F7A8B9C0E /* OperationMonitor.swift */; };
 		AA11BB22CC33DD44EE55FF66 /* AgentSessionScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF11EE22DD33CC44BB55AA66 /* AgentSessionScanner.swift */; };
 		7A3B8C9D0E1F2A3B4C5D6E7F /* ScanRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B4C9D0E1F2A3B4C5D6E7F8A /* ScanRules.swift */; };
@@ -63,6 +64,7 @@
 		1A2B3C4D5E6F7A8B9C0D1E2F /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		4F0B9B53C5E13BA699005761 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		6B5E0F2A3C4D5E6F7A8B9C0D /* MenuBarMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarMonitor.swift; sourceTree = "<group>"; };
+		6C5E0F2A3C4D5E6F7A8B9C0D /* MenuBarStatusController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarStatusController.swift; sourceTree = "<group>"; };
 		9D8F1A2B3C4D5E6F7A8B9C0E /* OperationMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperationMonitor.swift; sourceTree = "<group>"; };
 		FF11EE22DD33CC44BB55AA66 /* AgentSessionScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessionScanner.swift; sourceTree = "<group>"; };
 		6E3B64BE60289E69F30C340F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -142,6 +144,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				6E3B64BE60289E69F30C340F /* Assets.xcassets */,
 				4F0B9B53C5E13BA699005761 /* ContentView.swift */,
 				6B5E0F2A3C4D5E6F7A8B9C0D /* MenuBarMonitor.swift */,
+				6C5E0F2A3C4D5E6F7A8B9C0D /* MenuBarStatusController.swift */,
 				9D8F1A2B3C4D5E6F7A8B9C0E /* OperationMonitor.swift */,
 				FF11EE22DD33CC44BB55AA66 /* AgentSessionScanner.swift */,
 				CC22DD33EE44FF55AA66BB77 /* IntelMigrationScanner.swift */,
@@ -301,6 +304,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 			848104EB233AA4D62CD15403 /* AIMacCleanerApp.swift in Sources */,
 				4FCB5CD83382DA42D96D7965 /* ContentView.swift in Sources */,
 				5A4D9E1F2B3C4D5E6F7A8B9C /* MenuBarMonitor.swift in Sources */,
+				5B4D9E1F2B3C4D5E6F7A8B9C /* MenuBarStatusController.swift in Sources */,
 				8C7E0F3A4B5C6D7E8F9A0B1C /* OperationMonitor.swift in Sources */,
 				AA11BB22CC33DD44EE55FF66 /* AgentSessionScanner.swift in Sources */,
 				BB11CC22DD33EE44FF55AA66 /* IntelMigrationScanner.swift in Sources */,
@@ -355,7 +359,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 						CODE_SIGN_STYLE = Automatic;
 						COMBINE_HIDPI_IMAGES = YES;
 						CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-						CURRENT_PROJECT_VERSION = 43;
+						CURRENT_PROJECT_VERSION = 45;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
@@ -501,7 +505,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-						CURRENT_PROJECT_VERSION = 43;
+						CURRENT_PROJECT_VERSION = 45;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;

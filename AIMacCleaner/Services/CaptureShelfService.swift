@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Combine
 import CoreGraphics
 import CryptoKit
@@ -34,6 +35,9 @@ struct CaptureShelfStatus: Identifiable, Equatable {
         case captureCopied
         case capturePermissionNeeded
         case captureFailed
+        case recordingStarted
+        case recordingStopped
+        case recordingFailed
         case itemCopied
         case historyCleared
         case historyPaused
@@ -56,6 +60,7 @@ final class CaptureShelfService: ObservableObject {
     @Published private(set) var items: [CaptureShelfItem] = []
     @Published private(set) var status: CaptureShelfStatus?
     @Published private(set) var isCapturingScreen = false
+    @Published private(set) var isRecordingScreen = false
     @Published private(set) var screenCaptureAccessGranted = CGPreflightScreenCaptureAccess()
     @Published private(set) var isClipboardHistoryEnabled: Bool
     @Published private(set) var includeImages: Bool
@@ -77,6 +82,10 @@ final class CaptureShelfService: ObservableObject {
     private var lastPasteboardChangeCount: Int
     private var saveWorkItem: DispatchWorkItem?
     private var selectionOverlayController: CaptureSelectionOverlayController?
+    private var recordingSession: AVCaptureSession?
+    private var recordingOutput: AVCaptureMovieFileOutput?
+    private var recordingDelegate: ScreenRecordingDelegate?
+    private var activeRecordingURL: URL?
 
     private init() {
         lastPasteboardChangeCount = NSPasteboard.general.changeCount
@@ -161,6 +170,71 @@ final class CaptureShelfService: ObservableObject {
         controller.begin()
     }
 
+    func toggleScreenRecording() {
+        if isRecordingScreen {
+            stopScreenRecording()
+        } else {
+            startScreenRecording()
+        }
+    }
+
+    func startScreenRecording() {
+        guard !isRecordingScreen else { return }
+        guard prepareScreenCapture() else { return }
+        guard let displayID = NSScreen.main?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+            setStatus(.init(level: .error, code: .recordingFailed, detail: nil, createdAt: Date()))
+            return
+        }
+
+        let session = AVCaptureSession()
+        session.sessionPreset = .high
+
+        guard let input = AVCaptureScreenInput(displayID: displayID) else {
+            setStatus(.init(level: .error, code: .recordingFailed, detail: nil, createdAt: Date()))
+            return
+        }
+        input.minFrameDuration = CMTime(value: 1, timescale: 30)
+        input.capturesCursor = true
+        input.capturesMouseClicks = true
+
+        let output = AVCaptureMovieFileOutput()
+        guard session.canAddInput(input), session.canAddOutput(output) else {
+            setStatus(.init(level: .error, code: .recordingFailed, detail: nil, createdAt: Date()))
+            return
+        }
+
+        session.addInput(input)
+        session.addOutput(output)
+
+        let url = nextRecordingURL()
+        let delegate = ScreenRecordingDelegate { [weak self] outputURL, error in
+            Task { @MainActor in
+                self?.finishScreenRecording(outputURL: outputURL, error: error)
+            }
+        }
+
+        recordingSession = session
+        recordingOutput = output
+        recordingDelegate = delegate
+        activeRecordingURL = url
+        isRecordingScreen = true
+
+        session.startRunning()
+        output.startRecording(to: url, recordingDelegate: delegate)
+        setStatus(.init(level: .info, code: .recordingStarted, detail: url.lastPathComponent, createdAt: Date()))
+    }
+
+    func stopScreenRecording() {
+        guard isRecordingScreen else { return }
+        if recordingOutput?.isRecording == true {
+            recordingOutput?.stopRecording()
+        } else if let activeRecordingURL {
+            finishScreenRecording(outputURL: activeRecordingURL, error: nil)
+        } else {
+            finishScreenRecording(outputURL: nil, error: nil)
+        }
+    }
+
     private func prepareScreenCapture() -> Bool {
         refreshScreenCaptureAccess()
         guard CGPreflightScreenCaptureAccess() else {
@@ -193,6 +267,26 @@ final class CaptureShelfService: ObservableObject {
         setStatus(.init(level: .success, code: .captureCopied, detail: nil, createdAt: Date()))
     }
 
+    private func finishScreenRecording(outputURL: URL?, error: Error?) {
+        recordingOutput = nil
+        recordingSession?.stopRunning()
+        recordingSession = nil
+        recordingDelegate = nil
+        activeRecordingURL = nil
+        isRecordingScreen = false
+
+        if let error {
+            setStatus(.init(level: .error, code: .recordingFailed, detail: error.localizedDescription, createdAt: Date()))
+            return
+        }
+        guard let outputURL else {
+            setStatus(.init(level: .error, code: .recordingFailed, detail: nil, createdAt: Date()))
+            return
+        }
+        addFileReferences([outputURL])
+        setStatus(.init(level: .success, code: .recordingStopped, detail: outputURL.lastPathComponent, createdAt: Date()))
+    }
+
     func copy(_ item: CaptureShelfItem) {
         pasteboard.clearContents()
         switch item.kind {
@@ -222,6 +316,11 @@ final class CaptureShelfService: ObservableObject {
         setStatus(.init(level: .info, code: .historyCleared, detail: nil, createdAt: Date()))
     }
 
+    func addFileReferences(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        insert(makeFileItem(urls))
+    }
+
     func openScreenCaptureSettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") else {
             return
@@ -231,6 +330,14 @@ final class CaptureShelfService: ObservableObject {
 
     func refreshScreenCaptureAccess() {
         screenCaptureAccessGranted = CGPreflightScreenCaptureAccess()
+    }
+
+    private func nextRecordingURL() -> URL {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let fileName = "TraceFence-Recording-\(formatter.string(from: Date())).mov"
+        return URL(fileURLWithPath: SandboxPaths.shared.screenRecordingsDirectory)
+            .appendingPathComponent(fileName)
     }
 
     private func startPolling() {
@@ -448,5 +555,22 @@ private extension NSImage {
              fraction: 1.0)
         targetImage.unlockFocus()
         return targetImage
+    }
+}
+
+private final class ScreenRecordingDelegate: NSObject, AVCaptureFileOutputRecordingDelegate {
+    private let completion: (URL?, Error?) -> Void
+
+    init(completion: @escaping (URL?, Error?) -> Void) {
+        self.completion = completion
+    }
+
+    func fileOutput(
+        _ output: AVCaptureFileOutput,
+        didFinishRecordingTo outputFileURL: URL,
+        from connections: [AVCaptureConnection],
+        error: Error?
+    ) {
+        completion(outputFileURL, error)
     }
 }
