@@ -4,6 +4,7 @@ import Darwin
 struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
     @ObservedObject var quotaService: ProviderQuotaService
+    @ObservedObject var captureService: CaptureShelfService
     @EnvironmentObject var localizer: Localizer
     @State private var selectedTab: MonitorTab = .quotas
     @AppStorage("networkMode") private var networkMode = "internet"
@@ -15,12 +16,14 @@ struct MenuBarMonitor: View {
 
     enum MonitorTab: String, CaseIterable {
         case quotas = "quotas"
+        case capture = "capture"
         case operations = "operations"
         case overview = "overview"
 
         func label(_ localizer: Localizer) -> String {
             switch self {
             case .quotas: return localizer.t("额度", en: "Quota", zhHant: "額度", ja: "クォータ", ko: "할당량", mt: "Quota")
+            case .capture: return localizer.t("采集", en: "Capture", zhHant: "採集", ja: "収集", ko: "캡처", mt: "Capture")
             case .operations: return localizer.agentMonitorTitle
             case .overview: return localizer.systemMonitorTitle
             }
@@ -29,6 +32,7 @@ struct MenuBarMonitor: View {
         var icon: String {
             switch self {
             case .quotas: return "gauge.with.dots.needle.67percent"
+            case .capture: return "viewfinder"
             case .operations: return "chart.bar"
             case .overview: return "gauge.open.with.lines.needle.84percent"
             }
@@ -44,6 +48,8 @@ struct MenuBarMonitor: View {
                 switch selectedTab {
                 case .quotas:
                     quotaContent
+                case .capture:
+                    captureContent
                 case .overview:
                     overviewContent
                 case .operations:
@@ -77,6 +83,8 @@ struct MenuBarMonitor: View {
                             .font(Theme.Font.caption)
                         Text(tab.label(localizer))
                             .font(Theme.Font.captionMedium)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
                     }
                     .foregroundStyle(isSelected ? .white : Theme.Colors.textSecondary)
                     .padding(.horizontal, Theme.Spacing.md)
@@ -260,6 +268,383 @@ struct MenuBarMonitor: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             quotaService.start()
+        }
+    }
+
+    private var captureContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                captureActionPanel
+                captureHistorySettingsPanel
+                captureHistoryPanel
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.md)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            captureService.start()
+            captureService.refreshScreenCaptureAccess()
+        }
+    }
+
+    private var captureActionPanel: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(localizer.t("本地采集", en: "Local Capture", zhHant: "本機採集", ja: "ローカル収集", ko: "로컬 캡처", mt: "Local Capture"), systemImage: "viewfinder")
+                        .font(Theme.Font.subheadlineMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(localizer.t("截屏和剪贴板历史仅保存在本机，不上传到云端。", en: "Screenshots and clipboard history stay on this Mac.", zhHant: "截圖與剪貼簿歷史只保存在本機。", ja: "スクリーンショットとクリップボード履歴はこのMac内に保存されます。", ko: "스크린샷과 클립보드 기록은 이 Mac에만 저장됩니다.", mt: "Screenshots and clipboard history stay on this Mac."))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+
+                Spacer()
+
+                Button {
+                    captureService.refreshScreenCaptureAccess()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(Theme.Font.captionMedium)
+                }
+                .buttonStyle(.bordered)
+                .help(localizer.refresh)
+            }
+
+            HStack(spacing: Theme.Spacing.sm) {
+                Button {
+                    captureService.captureVisibleScreenToClipboard()
+                } label: {
+                    Label(captureService.isCapturingScreen ? localizer.t("正在截屏", en: "Capturing", zhHant: "正在截圖", ja: "取得中", ko: "캡처 중", mt: "Capturing") : localizer.t("截屏到剪贴板", en: "Copy Screenshot", zhHant: "截圖到剪貼簿", ja: "スクリーンショットをコピー", ko: "스크린샷 복사", mt: "Copy Screenshot"), systemImage: "camera.viewfinder")
+                        .font(Theme.Font.captionMedium)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(captureService.isCapturingScreen)
+
+                if !captureService.screenCaptureAccessGranted {
+                    Button {
+                        captureService.openScreenCaptureSettings()
+                    } label: {
+                        Label(localizer.t("屏幕录制权限", en: "Screen Access", zhHant: "螢幕錄製權限", ja: "画面収録の権限", ko: "화면 기록 권한", mt: "Screen Access"), systemImage: "lock.open")
+                            .font(Theme.Font.captionMedium)
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Spacer()
+            }
+
+            if let status = captureService.status {
+                captureStatusBanner(status)
+            }
+        }
+        .cardStyle(padding: Theme.Spacing.md)
+    }
+
+    private var captureHistorySettingsPanel: some View {
+        VStack(spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.md) {
+                Image(systemName: "doc.on.clipboard")
+                    .font(Theme.Font.subheadline)
+                    .foregroundStyle(captureService.isClipboardHistoryEnabled ? Theme.Colors.accent : Theme.Colors.textTertiary)
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localizer.t("剪贴板历史", en: "Clipboard History", zhHant: "剪貼簿歷史", ja: "クリップボード履歴", ko: "클립보드 기록", mt: "Clipboard History"))
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(localizer.t("保留条数可配置，默认 100 条。", en: "Configurable retention, default 100 items.", zhHant: "保留筆數可設定，預設 100 筆。", ja: "保存件数は変更可能、既定は100件です。", ko: "보관 개수를 설정할 수 있으며 기본값은 100개입니다.", mt: "Configurable retention, default 100 items."))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: captureHistoryEnabledBinding)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+            }
+
+            if captureService.isClipboardHistoryEnabled {
+                Divider().overlay(Theme.Colors.separator.opacity(0.6))
+
+                HStack {
+                    Text(localizer.t("保留 \(captureService.historyLimit) 条", en: "Keep \(captureService.historyLimit) items", zhHant: "保留 \(captureService.historyLimit) 筆", ja: "\(captureService.historyLimit)件保存", ko: "\(captureService.historyLimit)개 보관", mt: "Keep \(captureService.historyLimit) items"))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    Spacer()
+                    Stepper("", value: captureHistoryLimitBinding, in: CaptureShelfService.minHistoryLimit...CaptureShelfService.maxHistoryLimit, step: 20)
+                        .labelsHidden()
+                        .controlSize(.small)
+                }
+
+                HStack(spacing: Theme.Spacing.md) {
+                    Toggle(localizer.t("图片", en: "Images", zhHant: "圖片", ja: "画像", ko: "이미지", mt: "Images"), isOn: captureImagesBinding)
+                        .toggleStyle(.checkbox)
+                    Toggle(localizer.t("文件", en: "Files", zhHant: "檔案", ja: "ファイル", ko: "파일", mt: "Files"), isOn: captureFilesBinding)
+                        .toggleStyle(.checkbox)
+                    Spacer()
+                }
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+            }
+        }
+        .cardStyle(padding: Theme.Spacing.md)
+    }
+
+    private var captureHistoryPanel: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack {
+                SectionHeader(title: localizer.t("最近历史", en: "Recent History", zhHant: "最近歷史", ja: "最近の履歴", ko: "최근 기록", mt: "Recent History"), icon: "clock.arrow.circlepath")
+                Spacer()
+                if !captureService.items.isEmpty {
+                    Button {
+                        captureService.clearHistory()
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(Theme.Font.captionMedium)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help(localizer.t("清空历史", en: "Clear history", zhHant: "清空歷史", ja: "履歴を消去", ko: "기록 지우기", mt: "Clear history"))
+                }
+            }
+
+            if !captureService.isClipboardHistoryEnabled {
+                captureEmptyCard(
+                    icon: "pause.circle",
+                    title: localizer.t("剪贴板历史已暂停", en: "Clipboard history is paused", zhHant: "剪貼簿歷史已暫停", ja: "クリップボード履歴は一時停止中", ko: "클립보드 기록이 일시 중지됨", mt: "Clipboard history is paused"),
+                    detail: localizer.t("开启后记录后续复制内容。", en: "Enable it to keep future copied items.", zhHant: "開啟後會記錄後續複製內容。", ja: "有効にすると以降のコピー内容を保存します。", ko: "켜면 이후 복사한 항목을 보관합니다.", mt: "Enable it to keep future copied items.")
+                )
+            } else if captureService.items.isEmpty {
+                captureEmptyCard(
+                    icon: "tray",
+                    title: localizer.t("还没有历史", en: "No history yet", zhHant: "尚無歷史", ja: "履歴はまだありません", ko: "기록이 아직 없습니다", mt: "No history yet"),
+                    detail: localizer.t("复制文本、图片或文件后会显示在这里。", en: "Copied text, images, and files appear here.", zhHant: "複製文字、圖片或檔案後會顯示在這裡。", ja: "コピーしたテキスト、画像、ファイルがここに表示されます。", ko: "복사한 텍스트, 이미지, 파일이 여기에 표시됩니다.", mt: "Copied text, images, and files appear here.")
+                )
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(captureService.items.prefix(8))) { item in
+                        captureHistoryRow(item)
+                        if item.id != captureService.items.prefix(8).last?.id {
+                            Divider().overlay(Theme.Colors.separator.opacity(0.5))
+                        }
+                    }
+                }
+                .background(Theme.Colors.cardBg.opacity(0.7))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+                if captureService.items.count > 8 {
+                    Text(localizer.t("还有 \(captureService.items.count - 8) 条保存在本机历史。", en: "\(captureService.items.count - 8) more items are kept locally.", zhHant: "還有 \(captureService.items.count - 8) 筆保存在本機歷史。", ja: "ほかに\(captureService.items.count - 8)件がローカル履歴に保存されています。", ko: "\(captureService.items.count - 8)개 항목이 로컬 기록에 더 있습니다.", mt: "\(captureService.items.count - 8) more items are kept locally."))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
+            }
+        }
+        .cardStyle(padding: Theme.Spacing.md)
+    }
+
+    private func captureStatusBanner(_ status: CaptureShelfStatus) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: captureStatusIcon(status))
+                .font(Theme.Font.captionMedium)
+            Text(captureStatusText(status))
+                .font(Theme.Font.caption)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(captureStatusColor(status))
+        .padding(Theme.Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(captureStatusColor(status).opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    private func captureEmptyCard(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+            Image(systemName: icon)
+                .font(Theme.Font.subheadline)
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(detail)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            }
+            Spacer()
+        }
+        .padding(Theme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.cardBg.opacity(0.7))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    private func captureHistoryRow(_ item: CaptureShelfItem) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            captureHistoryIcon(item)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(captureItemTitle(item))
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .lineLimit(1)
+                Text(captureItemDetail(item))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: Theme.Spacing.sm)
+
+            Button {
+                captureService.copy(item)
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(Theme.Font.captionMedium)
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.plain)
+            .help(localizer.t("复制", en: "Copy", zhHant: "複製", ja: "コピー", ko: "복사", mt: "Copy"))
+
+            Button {
+                captureService.delete(item)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(Theme.Font.captionMedium)
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.Colors.textTertiary)
+            .help(localizer.t("删除", en: "Delete", zhHant: "刪除", ja: "削除", ko: "삭제", mt: "Delete"))
+        }
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.vertical, Theme.Spacing.xs)
+        .frame(minHeight: 48)
+    }
+
+    @ViewBuilder
+    private func captureHistoryIcon(_ item: CaptureShelfItem) -> some View {
+        if item.kind == .image, let data = item.imagePNGData, let image = NSImage(data: data) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 32, height: 32)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        } else {
+            Image(systemName: captureItemIcon(item))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(captureItemColor(item))
+                .frame(width: 32, height: 32)
+                .background(captureItemColor(item).opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        }
+    }
+
+    private var captureHistoryEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { captureService.isClipboardHistoryEnabled },
+            set: { captureService.setClipboardHistoryEnabled($0) }
+        )
+    }
+
+    private var captureImagesBinding: Binding<Bool> {
+        Binding(
+            get: { captureService.includeImages },
+            set: { captureService.setIncludeImages($0) }
+        )
+    }
+
+    private var captureFilesBinding: Binding<Bool> {
+        Binding(
+            get: { captureService.includeFiles },
+            set: { captureService.setIncludeFiles($0) }
+        )
+    }
+
+    private var captureHistoryLimitBinding: Binding<Int> {
+        Binding(
+            get: { captureService.historyLimit },
+            set: { captureService.setHistoryLimit($0) }
+        )
+    }
+
+    private func captureItemTitle(_ item: CaptureShelfItem) -> String {
+        switch item.kind {
+        case .text:
+            return item.title.isEmpty ? localizer.t("文本", en: "Text", zhHant: "文字", ja: "テキスト", ko: "텍스트", mt: "Text") : item.title
+        case .image:
+            return item.title == "screen"
+                ? localizer.t("屏幕截图", en: "Screenshot", zhHant: "螢幕截圖", ja: "スクリーンショット", ko: "스크린샷", mt: "Screenshot")
+                : localizer.t("图片", en: "Image", zhHant: "圖片", ja: "画像", ko: "이미지", mt: "Image")
+        case .files:
+            return item.title.isEmpty ? localizer.t("文件", en: "Files", zhHant: "檔案", ja: "ファイル", ko: "파일", mt: "Files") : item.title
+        }
+    }
+
+    private func captureItemDetail(_ item: CaptureShelfItem) -> String {
+        let time = relativeTimeText(for: item.createdAt)
+        switch item.kind {
+        case .text:
+            return "\(item.detail) · \(time)"
+        case .image:
+            return "\(item.detail) · \(time)"
+        case .files:
+            return item.filePaths.count <= 1 ? "\(item.detail) · \(time)" : "\(item.filePaths.count) · \(time)"
+        }
+    }
+
+    private func captureItemIcon(_ item: CaptureShelfItem) -> String {
+        switch item.kind {
+        case .text: return "text.alignleft"
+        case .image: return "photo"
+        case .files: return "doc.fill"
+        }
+    }
+
+    private func captureItemColor(_ item: CaptureShelfItem) -> Color {
+        switch item.kind {
+        case .text: return Theme.Colors.accent
+        case .image: return Theme.Colors.info
+        case .files: return Theme.Colors.warning
+        }
+    }
+
+    private func captureStatusText(_ status: CaptureShelfStatus) -> String {
+        switch status.code {
+        case .captureCopied:
+            return localizer.t("截图已复制到剪贴板。", en: "Screenshot copied to clipboard.", zhHant: "截圖已複製到剪貼簿。", ja: "スクリーンショットをクリップボードにコピーしました。", ko: "스크린샷을 클립보드에 복사했습니다.", mt: "Screenshot copied to clipboard.")
+        case .capturePermissionNeeded:
+            return localizer.t("需要开启屏幕录制权限后再截屏。", en: "Screen Recording permission is required before capture.", zhHant: "需要開啟螢幕錄製權限後再截圖。", ja: "取得するには画面収録の権限が必要です。", ko: "캡처하려면 화면 기록 권한이 필요합니다.", mt: "Screen Recording permission is required before capture.")
+        case .captureFailed:
+            return localizer.t("截屏失败，请确认屏幕录制权限。", en: "Capture failed. Check Screen Recording permission.", zhHant: "截圖失敗，請確認螢幕錄製權限。", ja: "取得に失敗しました。画面収録の権限を確認してください。", ko: "캡처에 실패했습니다. 화면 기록 권한을 확인하세요.", mt: "Capture failed. Check Screen Recording permission.")
+        case .itemCopied:
+            return localizer.t("已复制到剪贴板。", en: "Copied to clipboard.", zhHant: "已複製到剪貼簿。", ja: "クリップボードにコピーしました。", ko: "클립보드에 복사했습니다.", mt: "Copied to clipboard.")
+        case .historyCleared:
+            return localizer.t("历史已清空。", en: "History cleared.", zhHant: "歷史已清空。", ja: "履歴を消去しました。", ko: "기록을 지웠습니다.", mt: "History cleared.")
+        case .historyPaused:
+            return localizer.t("剪贴板历史已暂停。", en: "Clipboard history paused.", zhHant: "剪貼簿歷史已暫停。", ja: "クリップボード履歴を一時停止しました。", ko: "클립보드 기록을 일시 중지했습니다.", mt: "Clipboard history paused.")
+        }
+    }
+
+    private func captureStatusIcon(_ status: CaptureShelfStatus) -> String {
+        switch status.level {
+        case .success: return "checkmark.circle.fill"
+        case .info: return "info.circle.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .error: return "xmark.circle.fill"
+        }
+    }
+
+    private func captureStatusColor(_ status: CaptureShelfStatus) -> Color {
+        switch status.level {
+        case .success: return Theme.Colors.success
+        case .info: return Theme.Colors.info
+        case .warning: return Theme.Colors.warning
+        case .error: return Theme.Colors.danger
         }
     }
 
@@ -1565,6 +1950,8 @@ struct MenuBarMonitor: View {
                 service.startOperationMonitor()
             case .quotas:
                 break
+            case .capture:
+                captureService.start()
             }
         }
     }

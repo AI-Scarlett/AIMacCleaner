@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab = .features
     @StateObject private var licenseService = DirectLicenseService.shared
     @StateObject private var updateService = DirectUpdateService.shared
+    @ObservedObject private var captureService = CaptureShelfService.shared
     @State private var licenseKeyInput = ""
 
     @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
@@ -361,10 +362,66 @@ struct SettingsView: View {
                     isOn: $operationMonitorEnabled
                 )
                 SettingsRowDivider()
+                localCaptureSetting
+                SettingsRowDivider()
                 quitBehaviorSetting
             }
             .cardStyle()
         }
+    }
+
+    private var localCaptureSetting: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                Image(systemName: "viewfinder")
+                    .font(Theme.Font.subheadline)
+                    .foregroundStyle(captureService.isClipboardHistoryEnabled ? Theme.Colors.accent : Theme.Colors.textTertiary)
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localizer.t("本地采集", en: "Local Capture", zhHant: "本機採集", ja: "ローカル収集", ko: "로컬 캡처", mt: "Local Capture"))
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(localizer.t("截屏入口和剪贴板历史，数据仅保存在本机。", en: "Screenshot entry and clipboard history, stored only on this Mac.", zhHant: "截圖入口與剪貼簿歷史，資料只保存在本機。", ja: "スクリーンショット入口とクリップボード履歴は、このMac内にのみ保存されます。", ko: "스크린샷 진입점과 클립보드 기록은 이 Mac에만 저장됩니다.", mt: "Screenshot entry and clipboard history, stored only on this Mac."))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: captureHistoryEnabledBinding)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+            }
+
+            if captureService.isClipboardHistoryEnabled {
+                VStack(spacing: Theme.Spacing.sm) {
+                    HStack {
+                        Text(localizer.t("剪贴板保留 \(captureService.historyLimit) 条", en: "Keep \(captureService.historyLimit) clipboard items", zhHant: "剪貼簿保留 \(captureService.historyLimit) 筆", ja: "クリップボードを\(captureService.historyLimit)件保存", ko: "클립보드 \(captureService.historyLimit)개 보관", mt: "Keep \(captureService.historyLimit) clipboard items"))
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                        Spacer()
+                        Stepper("", value: captureHistoryLimitBinding, in: CaptureShelfService.minHistoryLimit...CaptureShelfService.maxHistoryLimit, step: 20)
+                            .labelsHidden()
+                            .controlSize(.small)
+                    }
+
+                    HStack(spacing: Theme.Spacing.lg) {
+                        Toggle(localizer.t("记录图片", en: "Save images", zhHant: "記錄圖片", ja: "画像を保存", ko: "이미지 저장", mt: "Save images"), isOn: captureImagesBinding)
+                            .toggleStyle(.checkbox)
+                        Toggle(localizer.t("记录文件", en: "Save files", zhHant: "記錄檔案", ja: "ファイルを保存", ko: "파일 저장", mt: "Save files"), isOn: captureFilesBinding)
+                            .toggleStyle(.checkbox)
+                        Spacer()
+                    }
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                }
+                .padding(.leading, 36)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Theme.Spacing.sm)
     }
 
     private var quitBehaviorSetting: some View {
@@ -990,6 +1047,34 @@ struct SettingsView: View {
             return localizer.t("\(hours) 小时 \(minutes) 分钟", en: "\(hours)h \(minutes)m", zhHant: "\(hours) 小時 \(minutes) 分鐘", ja: "\(hours)時間\(minutes)分", ko: "\(hours)시간 \(minutes)분", mt: "\(hours)h \(minutes)m")
         }
         return localizer.t("\(minutes) 分钟", en: "\(minutes)m", zhHant: "\(minutes) 分鐘", ja: "\(minutes)分", ko: "\(minutes)분", mt: "\(minutes)m")
+    }
+
+    private var captureHistoryEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { captureService.isClipboardHistoryEnabled },
+            set: { captureService.setClipboardHistoryEnabled($0) }
+        )
+    }
+
+    private var captureImagesBinding: Binding<Bool> {
+        Binding(
+            get: { captureService.includeImages },
+            set: { captureService.setIncludeImages($0) }
+        )
+    }
+
+    private var captureFilesBinding: Binding<Bool> {
+        Binding(
+            get: { captureService.includeFiles },
+            set: { captureService.setIncludeFiles($0) }
+        )
+    }
+
+    private var captureHistoryLimitBinding: Binding<Int> {
+        Binding(
+            get: { captureService.historyLimit },
+            set: { captureService.setHistoryLimit($0) }
+        )
     }
 
     private func saveSettings() {

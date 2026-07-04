@@ -57,6 +57,7 @@
 		D1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift */; };
 		D1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift */; };
 		D1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */; };
+		D1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift */; };
 		TF10CODEXBARRESOURCE0001 /* codexbar in Resources */ = {isa = PBXBuildFile; fileRef = TF11CODEXBARRESOURCE0002 /* codexbar */; };
 		CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */; };
 /* End PBXBuildFile section */
@@ -115,6 +116,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		E1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/DirectUpdateService.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AppleIntelligenceService.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ProviderQuotaService.swift; sourceTree = "<group>"; };
+		E1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/CaptureShelfService.swift; sourceTree = "<group>"; };
 		TF11CODEXBARRESOURCE0002 /* codexbar */ = {isa = PBXFileReference; lastKnownFileType = file; path = Resources/codexbar; sourceTree = "<group>"; };
 		CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenScopeLabView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -192,6 +194,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				E1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift */,
 				E1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift */,
 				E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */,
+				E1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift */,
 				TF11CODEXBARRESOURCE0002 /* codexbar */,
 			);
 			path = AIMacCleaner;
@@ -316,6 +319,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				D1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift in Sources */,
+				D1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift in Sources */,
 				CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */,
 			2A3B4C5D6E7F8A9B0C1D2E3F /* Theme.swift in Sources */,
 			);

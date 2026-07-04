@@ -13,6 +13,7 @@ struct AIMacCleanerApp: App {
     @StateObject private var licenseService = DirectLicenseService.shared
     @StateObject private var updateService = DirectUpdateService.shared
     @StateObject private var providerQuotaService = ProviderQuotaService()
+    @StateObject private var captureShelfService = CaptureShelfService.shared
     @StateObject private var menuBarController = MenuBarStatusController()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @AppStorage("monitorEnabled") private var monitorEnabled = false
@@ -40,6 +41,7 @@ struct AIMacCleanerApp: App {
                 .environmentObject(conversationWatcher)
                 .environmentObject(licenseService)
                 .environmentObject(updateService)
+                .environmentObject(captureShelfService)
                 .frame(minWidth: 960, minHeight: 640)
                 .onAppear {
                     appDelegate.service = service
@@ -53,6 +55,7 @@ struct AIMacCleanerApp: App {
                     )
                     overviewStore.startBackgroundRefresh()
                     providerQuotaService.start()
+                    captureShelfService.start()
                     NSApp.setActivationPolicy(.regular)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [service, licenseService] in
                         licenseService.refreshTrialState()
@@ -67,6 +70,7 @@ struct AIMacCleanerApp: App {
                     menuBarController.configure(
                         service: service,
                         quotaService: providerQuotaService,
+                        captureService: captureShelfService,
                         localizer: localizer,
                         isEnabled: menuBarMonitorEnabled
                     )

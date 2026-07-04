@@ -6,6 +6,7 @@ import SwiftUI
 final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelegate {
     private weak var service: ScannerService?
     private weak var quotaService: ProviderQuotaService?
+    private weak var captureService: CaptureShelfService?
     private weak var localizer: Localizer?
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
@@ -19,11 +20,13 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
     func configure(
         service: ScannerService,
         quotaService: ProviderQuotaService,
+        captureService: CaptureShelfService,
         localizer: Localizer,
         isEnabled: Bool
     ) {
         self.service = service
         self.quotaService = quotaService
+        self.captureService = captureService
         self.localizer = localizer
         bindPublishersIfNeeded()
         setEnabled(isEnabled)
@@ -52,6 +55,14 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
             .store(in: &cancellables)
 
         quotaService?.objectWillChange
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.scheduleButtonLabelRefresh()
+                }
+            }
+            .store(in: &cancellables)
+
+        captureService?.objectWillChange
             .sink { [weak self] _ in
                 Task { @MainActor in
                     self?.scheduleButtonLabelRefresh()
@@ -178,7 +189,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
     }
 
     private func showPopover() {
-        guard let service, let quotaService, let localizer else { return }
+        guard let service, let quotaService, let captureService, let localizer else { return }
         guard let button = statusItem?.button else {
             rebuildStatusItem()
             return
@@ -186,6 +197,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
 
         closePopover()
         quotaService.start()
+        captureService.start()
 
         let popover = NSPopover()
         popover.behavior = .transient
@@ -193,7 +205,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
         popover.contentSize = NSSize(width: 520, height: 640)
         popover.delegate = self
         popover.contentViewController = NSHostingController(
-            rootView: MenuBarMonitor(service: service, quotaService: quotaService)
+            rootView: MenuBarMonitor(service: service, quotaService: quotaService, captureService: captureService)
                 .environmentObject(localizer)
         )
         self.popover = popover
