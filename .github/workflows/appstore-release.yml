@@ -1,0 +1,101 @@
+name: TraceFence App Store Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: Git ref to build
+        required: true
+        default: codex/appstore-tracefence-brand
+      build_number:
+        description: App Store build number
+        required: true
+        default: "52"
+
+jobs:
+  build-upload:
+    name: Build and Upload Mac App Store Package
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+
+    steps:
+      - name: Checkout release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref }}
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Prepare App Store Connect key
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/appstoreconnect"
+          printf '%s' "$ASC_PRIVATE_KEY" > "$RUNNER_TEMP/appstoreconnect/AuthKey_${ASC_KEY_ID}.p8"
+          chmod 600 "$RUNNER_TEMP/appstoreconnect/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: Set build number
+        run: |
+          set -euo pipefail
+          /usr/bin/sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9][0-9]*;/CURRENT_PROJECT_VERSION = ${{ inputs.build_number }};/g" AIMacCleaner.xcodeproj/project.pbxproj
+          /usr/bin/grep -n "CURRENT_PROJECT_VERSION" AIMacCleaner.xcodeproj/project.pbxproj
+
+      - name: Archive
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project AIMacCleaner.xcodeproj \
+            -scheme AIMacCleaner \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath "$RUNNER_TEMP/TraceFence-AppStore-${{ inputs.build_number }}.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/appstoreconnect/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            archive
+
+      - name: Inspect archive metadata
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/TraceFence-AppStore-${{ inputs.build_number }}.xcarchive/Products/Applications/TraceFence.app"
+          /usr/bin/plutil -p "$APP/Contents/Info.plist" | /usr/bin/egrep 'BuildMachineOSBuild|DTXcode|DTXcodeBuild|DTSDKName|CFBundleShortVersionString|CFBundleVersion|LSMinimumSystemVersion'
+          /usr/bin/codesign --verify --deep --strict --verbose=4 "$APP"
+
+      - name: Export package
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$RUNNER_TEMP/TraceFence-AppStore-${{ inputs.build_number }}.xcarchive" \
+            -exportPath "$RUNNER_TEMP/TraceFence-AppStore-${{ inputs.build_number }}-export" \
+            -exportOptionsPlist AppStoreExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/appstoreconnect/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Validate and upload
+        run: |
+          set -euo pipefail
+          PKG="$RUNNER_TEMP/TraceFence-AppStore-${{ inputs.build_number }}-export/TraceFence.pkg"
+          /usr/sbin/pkgutil --check-signature "$PKG"
+          xcrun altool --validate-app --type macos -f "$PKG" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+          xcrun altool --upload-app --type macos -f "$PKG" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --wait
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: TraceFence-AppStore-${{ inputs.build_number }}
+          path: |
+            ${{ runner.temp }}/TraceFence-AppStore-${{ inputs.build_number }}-export/*.pkg
+            ${{ runner.temp }}/TraceFence-AppStore-${{ inputs.build_number }}.xcarchive/Products/Applications/TraceFence.app/Contents/Info.plist
