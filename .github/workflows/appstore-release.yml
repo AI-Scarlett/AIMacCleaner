@@ -33,8 +33,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/appstoreconnect"
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
           printf '%s' "$ASC_PRIVATE_KEY" > "$RUNNER_TEMP/appstoreconnect/AuthKey_${ASC_KEY_ID}.p8"
+          cp "$RUNNER_TEMP/appstoreconnect/AuthKey_${ASC_KEY_ID}.p8" "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
           chmod 600 "$RUNNER_TEMP/appstoreconnect/AuthKey_${ASC_KEY_ID}.p8"
+          chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
 
       - name: Set build number
         run: |
