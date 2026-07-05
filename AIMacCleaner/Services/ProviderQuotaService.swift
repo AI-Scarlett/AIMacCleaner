@@ -190,10 +190,16 @@ private struct CodexBarQuotaProvider {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .custom(Self.decodeDate)
             let autoPayloads = try decoder.decode([CodexBarProviderPayload].self, from: data)
-            let payloads = payloadsByReplacingCodexAuto(
+            var payloads = payloadsByMergingCodexSources(
                 autoPayloads,
                 with: readCodexOAuthPayloads(from: executable, decoder: decoder)
             )
+            if !codexPayloadsHaveExtraWindows(payloads) {
+                payloads = payloadsByMergingCodexSources(
+                    payloads,
+                    with: readCodexWebPayloads(from: executable, decoder: decoder)
+                )
+            }
             var hiddenCount = 0
             let snapshots = payloads.compactMap { payload -> ProviderQuotaSnapshot? in
                 if let snapshot = makeSnapshot(from: payload, configs: configs) {
@@ -327,19 +333,142 @@ private struct CodexBarQuotaProvider {
         }
     }
 
-    private func payloadsByReplacingCodexAuto(
-        _ autoPayloads: [CodexBarProviderPayload],
-        with oauthPayloads: [CodexBarProviderPayload]
+    private func readCodexWebPayloads(
+        from executable: URL,
+        decoder: JSONDecoder
     ) -> [CodexBarProviderPayload] {
-        let codexOAuthPayloads = oauthPayloads.filter { payload in
+        do {
+            let data = try runCodexBarCommand(
+                at: executable,
+                arguments: [
+                    "usage",
+                    "--provider", "codex",
+                    "--format", "json",
+                    "--source", "web",
+                    "--all-accounts"
+                ],
+                timeout: 20
+            )
+            return try decoder.decode([CodexBarProviderPayload].self, from: data)
+        } catch {
+            return []
+        }
+    }
+
+    private func payloadsByMergingCodexSources(
+        _ basePayloads: [CodexBarProviderPayload],
+        with supplementalPayloads: [CodexBarProviderPayload]
+    ) -> [CodexBarProviderPayload] {
+        let codexSupplementalPayloads = supplementalPayloads.filter { payload in
             payload.provider.lowercased() == "codex"
                 && (payload.usage != nil || payload.credits != nil || payload.error != nil)
         }
-        guard codexOAuthPayloads.contains(where: { $0.usage != nil || $0.credits != nil }) else {
-            return autoPayloads
+        guard codexSupplementalPayloads.contains(where: { $0.usage != nil || $0.credits != nil }) else {
+            return basePayloads
         }
 
-        return codexOAuthPayloads + autoPayloads.filter { $0.provider.lowercased() != "codex" }
+        var merged = basePayloads
+        for supplemental in codexSupplementalPayloads {
+            if let index = matchingCodexPayloadIndex(for: supplemental, in: merged) {
+                merged[index] = mergedCodexPayload(merged[index], supplemental)
+            } else {
+                merged.append(supplemental)
+            }
+        }
+        return merged
+    }
+
+    private func matchingCodexPayloadIndex(
+        for supplemental: CodexBarProviderPayload,
+        in payloads: [CodexBarProviderPayload]
+    ) -> Int? {
+        let codexIndexes = payloads.indices.filter { payloads[$0].provider.lowercased() == "codex" }
+        let key = codexMergeKey(for: supplemental)
+        if let index = codexIndexes.first(where: { codexMergeKey(for: payloads[$0]) == key }) {
+            return index
+        }
+        return codexIndexes.count == 1 ? codexIndexes.first : nil
+    }
+
+    private func codexMergeKey(for payload: CodexBarProviderPayload) -> String {
+        normalizedSnapshotIDPart(accountLabel(from: payload) ?? "codex")
+    }
+
+    private func mergedCodexPayload(
+        _ base: CodexBarProviderPayload,
+        _ supplemental: CodexBarProviderPayload
+    ) -> CodexBarProviderPayload {
+        let usage = mergedCodexUsage(base.usage, supplemental.usage)
+        let credits = base.credits ?? supplemental.credits
+        return CodexBarProviderPayload(
+            provider: base.provider,
+            account: base.account ?? supplemental.account,
+            version: base.version ?? supplemental.version,
+            source: base.source,
+            usage: usage,
+            credits: credits,
+            error: usage == nil && credits == nil ? (base.error ?? supplemental.error) : nil
+        )
+    }
+
+    private func mergedCodexUsage(
+        _ base: CodexBarUsagePayload?,
+        _ supplemental: CodexBarUsagePayload?
+    ) -> CodexBarUsagePayload? {
+        guard let base else { return supplemental }
+        guard let supplemental else { return base }
+
+        return CodexBarUsagePayload(
+            primary: base.primary ?? supplemental.primary,
+            secondary: base.secondary ?? supplemental.secondary,
+            tertiary: base.tertiary ?? supplemental.tertiary,
+            extraRateWindows: mergedExtraRateWindows(base.extraRateWindows, supplemental.extraRateWindows),
+            codexResetCredits: richerResetCredits(base.codexResetCredits, supplemental.codexResetCredits),
+            updatedAt: max(base.updatedAt, supplemental.updatedAt),
+            identity: base.identity ?? supplemental.identity,
+            accountEmail: base.accountEmail ?? supplemental.accountEmail,
+            loginMethod: base.loginMethod ?? supplemental.loginMethod
+        )
+    }
+
+    private func mergedExtraRateWindows(
+        _ base: [CodexBarNamedRateWindowPayload]?,
+        _ supplemental: [CodexBarNamedRateWindowPayload]?
+    ) -> [CodexBarNamedRateWindowPayload]? {
+        var windows = base ?? []
+        for candidate in supplemental ?? [] {
+            if let index = windows.firstIndex(where: { normalizedExtraWindowKey($0) == normalizedExtraWindowKey(candidate) }) {
+                if !windows[index].usageKnown && candidate.usageKnown {
+                    windows[index] = candidate
+                }
+            } else {
+                windows.append(candidate)
+            }
+        }
+        return windows.isEmpty ? nil : windows
+    }
+
+    private func normalizedExtraWindowKey(_ window: CodexBarNamedRateWindowPayload) -> String {
+        let raw = window.id.isEmpty ? window.title : window.id
+        return raw.lowercased().replacingOccurrences(of: " ", with: "-")
+    }
+
+    private func richerResetCredits(
+        _ base: ProviderQuotaResetCredits?,
+        _ supplemental: ProviderQuotaResetCredits?
+    ) -> ProviderQuotaResetCredits? {
+        guard let base else { return supplemental }
+        guard let supplemental else { return base }
+        if supplemental.availableCount > base.availableCount { return supplemental }
+        if supplemental.credits.count > base.credits.count { return supplemental }
+        return base.updatedAt >= supplemental.updatedAt ? base : supplemental
+    }
+
+    private func codexPayloadsHaveExtraWindows(_ payloads: [CodexBarProviderPayload]) -> Bool {
+        payloads.contains { payload in
+            payload.provider.lowercased() == "codex"
+                && !(payload.usage?.extraRateWindows ?? []).isEmpty
+        }
     }
 
     private func readProviderConfigs(from executable: URL) -> [String: CodexBarProviderConfigPayload] {
