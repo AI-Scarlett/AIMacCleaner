@@ -3,6 +3,10 @@ import Foundation
 class SandboxPaths {
     static let shared = SandboxPaths()
 
+    static var isSandboxed: Bool {
+        ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+    }
+
     static let realHomeDirectory: String = {
         let directPath = FileManager.default.homeDirectoryForCurrentUser.path
         if directPath.hasPrefix("/Users/") && !directPath.contains("/Library/Containers/") {

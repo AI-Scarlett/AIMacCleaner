@@ -38,7 +38,13 @@ struct ContentView: View {
     }
 
     private var isToolboxSubItemSelected: Bool {
-        [.tokenScope, .cleaner, .app, .dependency, .other, .migration].contains(selectedTab)
+        Self.toolboxSubItems.contains(selectedTab)
+    }
+
+    private static var toolboxSubItems: [NavItem] {
+        var items: [NavItem] = [.tokenScope, .diskAdvisor]
+        items.append(contentsOf: [.cleaner, .app, .dependency, .other, .migration])
+        return items
     }
 
     enum NavItem: String, CaseIterable {
@@ -47,6 +53,7 @@ struct ContentView: View {
         case operations = "operations"
         case toolbox = "toolbox"
         case tokenScope = "tokenScope"
+        case diskAdvisor = "diskAdvisor"
         case cleaner = "cleaner"
         case app = "app"
         case dependency = "dependency"
@@ -55,7 +62,7 @@ struct ContentView: View {
 
         var isSubItem: Bool {
             switch self {
-            case .tokenScope, .cleaner, .app, .dependency, .other, .migration: return true
+            case .tokenScope, .diskAdvisor, .cleaner, .app, .dependency, .other, .migration: return true
             default: return false
             }
         }
@@ -71,6 +78,7 @@ struct ContentView: View {
             case .agentGuard: "shield.fill"
             case .toolbox: "wrench.and.screwdriver.fill"
             case .tokenScope: "chart.xyaxis.line"
+            case .diskAdvisor: "sparkles"
             case .migration: "arrow.triangle.2.circlepath"
             }
         }
@@ -86,6 +94,7 @@ struct ContentView: View {
             case .agentGuard: Theme.Colors.accent
             case .toolbox: Theme.Colors.info
             case .tokenScope: Theme.Colors.accent
+            case .diskAdvisor: Theme.Colors.purple
             case .migration: Theme.Colors.purple
             }
         }
@@ -101,6 +110,7 @@ struct ContentView: View {
             case .agentGuard: localizer.navAgentGuard
             case .toolbox: localizer.navToolbox
             case .tokenScope: localizer.tokenScopeTitle
+            case .diskAdvisor: localizer.t("AI 磁盘顾问", en: "AI Disk Advisor", zhHant: "AI 磁碟顧問", ja: "AI ディスクアドバイザー", ko: "AI 디스크 어드바이저", mt: "AI Disk Advisor")
             case .migration: localizer.navMigration
             }
         }
@@ -116,6 +126,7 @@ struct ContentView: View {
             case .agentGuard: localizer.subAgentGuard
             case .toolbox: localizer.subToolbox
             case .tokenScope: localizer.tokenScopeSubtitle
+            case .diskAdvisor: localizer.t("Apple Intelligence 磁盘清理建议", en: "Apple Intelligence cleanup advice", zhHant: "Apple Intelligence 磁碟清理建議", ja: "Apple Intelligence のクリーンアップ提案", ko: "Apple Intelligence 정리 제안", mt: "Apple Intelligence cleanup advice")
             case .migration: localizer.subMigration
             }
         }
@@ -159,9 +170,13 @@ struct ContentView: View {
                 .frame(height: 0.5)
                 .padding(.horizontal, Theme.Spacing.md)
 
-            sidebarNavItems
-
-            Spacer()
+            ScrollView {
+                sidebarNavItems
+                    .frame(maxWidth: .infinity, alignment: sidebarCollapsed ? .center : .leading)
+            }
+            .scrollIndicators(.hidden)
+            .frame(maxWidth: .infinity)
+            .frame(maxHeight: .infinity, alignment: .top)
 
             Rectangle()
                 .fill(Theme.Colors.separator.opacity(0.5))
@@ -320,7 +335,7 @@ struct ContentView: View {
 
             if toolboxExpanded {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach([NavItem.tokenScope, .cleaner, .app, .dependency, .other, .migration], id: \.self) { item in
+                    ForEach(Self.toolboxSubItems, id: \.self) { item in
                         Button {
                             selectedTab = item
                         } label: {
@@ -408,6 +423,7 @@ struct ContentView: View {
         case .operations: return service.operationRecords.isEmpty ? localizer.t("审计", en: "Audit", zhHant: "稽核", ja: "監査", ko: "감사", mt: "Audit") : "\(service.operationRecords.count)"
         case .toolbox: return localizer.t("工具", en: "Tools", zhHant: "工具", ja: "ツール", ko: "도구", mt: "Tools")
         case .tokenScope: return localizer.t("测试", en: "Beta", zhHant: "測試", ja: "ベータ", ko: "베타", mt: "Beta")
+        case .diskAdvisor: return localizer.t("实验", en: "Lab", zhHant: "實驗", ja: "ラボ", ko: "실험", mt: "Lab")
         case .cleaner:
             let total = service.scanItems.reduce(Int64(0)) { $0 + $1.size }
             return total > 0 ? service.formatSize(total) : localizer.t("清理", en: "Clean", zhHant: "清理", ja: "クリーン", ko: "정리", mt: "Clean")
@@ -696,6 +712,9 @@ struct ContentView: View {
         case .tokenScope:
             TokenScopeLabView()
                 .environmentObject(localizer)
+        case .diskAdvisor:
+            DiskAdvisorLabView()
+                .environmentObject(localizer)
         case .migration:
             IntelMigrationTab()
                 .environmentObject(localizer)
@@ -891,14 +910,18 @@ struct ToolboxTab: View {
     @EnvironmentObject var service: ScannerService
     @State private var selectedTool = 0
 
-    private let tools: [(icon: String, title: (Localizer) -> String, subtitle: (Localizer) -> String, color: Color)] = [
-        ("chart.xyaxis.line", { $0.tokenScopeTitle }, { $0.tokenScopeSubtitle }, Theme.Colors.accent),
-        ("arrow.down.doc.fill", { $0.navCleaner }, { $0.subCleaner }, Theme.Colors.info),
-        ("app.badge", { $0.navApp }, { $0.subApp }, Theme.Colors.accent),
-        ("cube.box", { $0.navDependency }, { $0.subDependency }, Theme.Colors.warning),
-        ("terminal", { $0.navOther }, { $0.subOther }, Theme.Colors.textSecondary),
-        ("arrow.triangle.2.circlepath", { $0.navMigration }, { $0.subMigration }, Theme.Colors.purple),
-    ]
+    private var tools: [(icon: String, title: (Localizer) -> String, subtitle: (Localizer) -> String, color: Color)] {
+        var items: [(icon: String, title: (Localizer) -> String, subtitle: (Localizer) -> String, color: Color)] = [
+            ("chart.xyaxis.line", { $0.tokenScopeTitle }, { $0.tokenScopeSubtitle }, Theme.Colors.accent)
+        ]
+        items.append((icon: "sparkles", title: { $0.t("AI 磁盘顾问", en: "AI Disk Advisor", zhHant: "AI 磁碟顧問", ja: "AI ディスクアドバイザー", ko: "AI 디스크 어드바이저", mt: "AI Disk Advisor") }, subtitle: { $0.t("Apple Intelligence 磁盘清理建议", en: "Apple Intelligence cleanup advice", zhHant: "Apple Intelligence 磁碟清理建議", ja: "Apple Intelligence のクリーンアップ提案", ko: "Apple Intelligence 정리 제안", mt: "Apple Intelligence cleanup advice") }, color: Theme.Colors.purple))
+        items.append((icon: "arrow.down.doc.fill", title: { $0.navCleaner }, subtitle: { $0.subCleaner }, color: Theme.Colors.info))
+        items.append((icon: "app.badge", title: { $0.navApp }, subtitle: { $0.subApp }, color: Theme.Colors.accent))
+        items.append((icon: "cube.box", title: { $0.navDependency }, subtitle: { $0.subDependency }, color: Theme.Colors.warning))
+        items.append((icon: "terminal", title: { $0.navOther }, subtitle: { $0.subOther }, color: Theme.Colors.textSecondary))
+        items.append((icon: "arrow.triangle.2.circlepath", title: { $0.navMigration }, subtitle: { $0.subMigration }, color: Theme.Colors.purple))
+        return items
+    }
 
     var body: some View {
         VStack(spacing: 0) {

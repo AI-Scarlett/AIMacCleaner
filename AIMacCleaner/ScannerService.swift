@@ -794,6 +794,14 @@ class ScannerService: ObservableObject {
         return !authorizedScanRoots.isEmpty
     }
 
+    func authorizedLocalScanRoots(promptForAccess: Bool = true) -> Set<String> {
+        restoreScanAccessFromBookmarks()
+        if authorizedScanRoots.isEmpty && promptForAccess {
+            _ = requestLocalScanAccess()
+        }
+        return authorizedScanRoots
+    }
+
     nonisolated private static func calculateDirectorySizeStatic(at path: String) -> (Int64, Int) {
         let fm = FileManager.default
         var totalSize: Int64 = 0
@@ -867,6 +875,51 @@ class ScannerService: ObservableObject {
         }
 
         return DeleteResult(success: true, results: deleteResults, deleted: successCount, failed: failCount)
+    }
+
+    func deleteAdvisedPaths(_ targets: [(id: String, path: String, size: Int64, fileCount: Int)]) async -> DeleteResult {
+        let targetPaths = targets.map(\.path)
+        guard await authorizeProtectedDeletionIfNeeded(paths: targetPaths) else {
+            let failures = targetPaths.filter { guardFeature.isPathProtected($0) }.map {
+                DeleteItemResult(
+                    id: nil,
+                    path: $0,
+                    success: false,
+                    message: localizer?.t("系统身份验证未通过，已取消守护目录清理。", en: "System authentication was not completed, so protected cleanup was cancelled.") ?? "System authentication was not completed."
+                )
+            }
+            return DeleteResult(success: false, results: failures, deleted: 0, failed: failures.count)
+        }
+
+        var deleteResults: [DeleteItemResult] = []
+        var successCount = 0
+        var failCount = 0
+
+        for target in targets {
+            do {
+                if FileManager.default.fileExists(atPath: target.path) {
+                    let trashPath = try moveToTrash(atPath: target.path)
+                    if let trashPath, guardFeature.isPathProtected(target.path) {
+                        guardFeature.recordProtectedTrashItem(
+                            originalPath: target.path,
+                            trashPath: trashPath,
+                            size: target.size,
+                            fileCount: target.fileCount
+                        )
+                    }
+                    successCount += 1
+                    deleteResults.append(DeleteItemResult(id: target.id, path: target.path, success: true, message: localizer?.movedToTrash ?? "Moved to Trash"))
+                } else {
+                    failCount += 1
+                    deleteResults.append(DeleteItemResult(id: target.id, path: target.path, success: false, message: localizer?.t("文件不存在", en: "File does not exist") ?? "File does not exist"))
+                }
+            } catch {
+                failCount += 1
+                deleteResults.append(DeleteItemResult(id: target.id, path: target.path, success: false, message: error.localizedDescription))
+            }
+        }
+
+        return DeleteResult(success: failCount == 0, results: deleteResults, deleted: successCount, failed: failCount)
     }
 
     private func pathsToDelete(for item: ScanItem) -> [String] {
@@ -968,10 +1021,28 @@ class ScannerService: ObservableObject {
         aiConfig = config
     }
 
+    func saveAIConfig(apiBase: String, apiKey: String, model: String, mode: AIProviderMode = .automatic) {
+        let trimmedBase = apiBase.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let config = AIConfig(
+            apiBase: trimmedBase.isEmpty ? nil : trimmedBase,
+            apiKey: trimmedKey.isEmpty ? nil : trimmedKey,
+            model: trimmedModel.isEmpty ? AIConfig.appleIntelligenceModel : trimmedModel,
+            hasKey: !trimmedKey.isEmpty,
+            mode: mode.rawValue
+        )
+        saveAIConfigMetadata(config)
+        aiConfig = config
+    }
+
     private func defaultAIConfig() -> AIConfig {
         AIConfig(
+            apiBase: nil,
+            apiKey: nil,
             model: AIConfig.appleIntelligenceModel,
-            hasKey: false
+            hasKey: false,
+            mode: AIProviderMode.automatic.rawValue
         )
     }
 
@@ -986,9 +1057,9 @@ class ScannerService: ObservableObject {
         isAiScanning = true
         errorMessage = nil
         aiStatusMessage = localizer?.t(
-            "正在使用 Apple Intelligence 分析本机目录...",
-            en: "Analyzing local directories with Apple Intelligence..."
-        ) ?? "Analyzing local directories with Apple Intelligence..."
+            "正在准备 AI 分析本机目录...",
+            en: "Preparing AI analysis for local directories..."
+        ) ?? "Preparing AI analysis for local directories..."
 
         let config = aiConfig ?? defaultAIConfig()
         let dirInfo = await Task.detached(priority: .userInitiated) { Self.collectDirInfoStatic() }.value
@@ -2477,13 +2548,83 @@ class ScannerService: ObservableObject {
 
         \(dirInfo)
         """
+        switch config.providerMode {
+        case .apple:
+            do {
+                let response = try await AppleIntelligenceService.generate(
+                    instructions: systemPrompt,
+                    prompt: userPrompt,
+                    maximumResponseTokens: 4096
+                )
+                return parseAIResult(response.content)
+            } catch {
+                return (success: false, items: nil, error: "\(AppleIntelligenceService.displayName): \(error.localizedDescription)")
+            }
+        case .external:
+            return await callExternalLLM(config: config, systemPrompt: systemPrompt, userPrompt: userPrompt)
+        case .automatic:
+            do {
+                let response = try await AppleIntelligenceService.generate(
+                    instructions: systemPrompt,
+                    prompt: userPrompt,
+                    maximumResponseTokens: 4096
+                )
+                return parseAIResult(response.content)
+            } catch {
+                guard config.usesExternalProvider else {
+                    return (success: false, items: nil, error: "\(AppleIntelligenceService.displayName): \(error.localizedDescription)")
+                }
+                return await callExternalLLM(config: config, systemPrompt: systemPrompt, userPrompt: userPrompt)
+            }
+        }
+    }
+
+    private func callExternalLLM(config: AIConfig, systemPrompt: String, userPrompt: String) async -> (success: Bool, items: [ScanItem]?, error: String?) {
+        guard config.usesExternalProvider,
+              let apiKey = config.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !apiKey.isEmpty else {
+            return (success: false, items: nil, error: localizer?.t("请在 AI 设置里选择第三方模型，并填写 API Key 与模型名。", en: "Choose External in AI Settings and enter an API key and model name.") ?? "Please configure external model settings first.")
+        }
+
+        guard let url = config.chatCompletionsURL else {
+            return (success: false, items: nil, error: localizer?.invalidAPIUrl ?? "Invalid API URL")
+        }
+
+        let body: [String: Any] = [
+            "model": config.model ?? "deepseek-chat",
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userPrompt]
+            ],
+            "temperature": 0.1,
+            "max_tokens": 4096
+        ]
+
         do {
-            let response = try await AppleIntelligenceService.generate(
-                instructions: systemPrompt,
-                prompt: userPrompt,
-                maximumResponseTokens: 4096
-            )
-            return parseAIResult(response.content)
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.timeoutInterval = 90
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                return (success: false, items: nil, error: "Invalid HTTP response")
+            }
+            guard http.statusCode == 200 else {
+                if let body = String(data: data, encoding: .utf8) {
+                    return (success: false, items: nil, error: "HTTP \(http.statusCode) @ \(url.absoluteString): \(body.prefix(200))")
+                }
+                return (success: false, items: nil, error: "HTTP \(http.statusCode) @ \(url.absoluteString)")
+            }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let message = choices.first?["message"] as? [String: Any],
+                  let content = message["content"] as? String else {
+                return (success: false, items: nil, error: "Invalid AI response format")
+            }
+            return parseAIResult(content)
         } catch {
             return (success: false, items: nil, error: error.localizedDescription)
         }
