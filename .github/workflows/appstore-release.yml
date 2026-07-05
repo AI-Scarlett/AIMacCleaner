@@ -10,7 +10,7 @@ on:
       build_number:
         description: App Store build number
         required: true
-        default: "52"
+        default: "53"
 
 jobs:
   build-upload:
