@@ -6,12 +6,12 @@ on:
       build_number:
         description: App Store build number
         required: true
-        default: "53"
+        default: "54"
 
 jobs:
   build-upload:
     name: Build and Upload Mac App Store Package
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 90
 
     env:
@@ -22,6 +22,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        run: |
+          set -euo pipefail
+          if [ -d "/Applications/Xcode_26.5.app" ]; then
+            sudo xcode-select -s "/Applications/Xcode_26.5.app/Contents/Developer"
+          elif [ -d "/Applications/Xcode.app" ]; then
+            sudo xcode-select -s "/Applications/Xcode.app/Contents/Developer"
+          fi
+          VERSION="$(xcodebuild -version | awk 'NR == 1 { print $2 }')"
+          case "$VERSION" in
+            26.*) ;;
+            *) echo "::error::Expected Xcode 26.x for App Store release, got $VERSION"; exit 1 ;;
+          esac
 
       - name: Show toolchain
         run: |
