@@ -71,16 +71,51 @@ struct DiskInfo: Codable {
     let usedPct: Double
 }
 
+enum AIProviderMode: String, Codable, CaseIterable {
+    case automatic
+    case apple
+    case external
+}
+
 struct AIConfig: Codable {
     let apiBase: String?
     let apiKey: String?
     let model: String?
     let hasKey: Bool?
+    let mode: String?
 
     static let appleIntelligenceModel = "apple-intelligence"
 
     enum CodingKeys: String, CodingKey {
-        case apiBase = "api_base", apiKey = "api_key", model, hasKey = "has_key"
+        case apiBase = "api_base", apiKey = "api_key", model, hasKey = "has_key", mode
+    }
+
+    var providerMode: AIProviderMode {
+        AIProviderMode(rawValue: mode ?? "") ?? .automatic
+    }
+
+    var usesExternalProvider: Bool {
+        let key = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let modelName = model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !key.isEmpty && !modelName.isEmpty && modelName != Self.appleIntelligenceModel
+    }
+
+    var chatCompletionsURL: URL? {
+        Self.chatCompletionsURL(from: apiBase)
+    }
+
+    static func chatCompletionsURL(from apiBase: String?) -> URL? {
+        let raw = (apiBase ?? "https://api.deepseek.com")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !raw.isEmpty else { return nil }
+        if raw.hasSuffix("/chat/completions") {
+            return URL(string: raw)
+        }
+        if raw.hasSuffix("/v1") {
+            return URL(string: raw + "/chat/completions")
+        }
+        return URL(string: raw + "/v1/chat/completions")
     }
 }
 

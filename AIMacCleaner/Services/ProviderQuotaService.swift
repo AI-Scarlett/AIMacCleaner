@@ -179,16 +179,30 @@ private struct CodexBarQuotaProvider {
                 isSetupNotice: false)]
         }
 
+        let scopedAccess = ProviderQuotaSecurityScopedAccess()
+        scopedAccess.start()
+        defer { scopedAccess.stop() }
+
         do {
             let configs = readProviderConfigs(from: executable)
             let data = try runCodexBar(at: executable)
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .custom(Self.decodeDate)
             let autoPayloads = try decoder.decode([CodexBarProviderPayload].self, from: data)
-            let payloads = payloadsByReplacingCodexAuto(
+            var payloads = payloadsByMergingCodexSources(
                 autoPayloads,
+                with: readCodexAutoPayloads(from: executable, decoder: decoder)
+            )
+            payloads = payloadsByMergingCodexSources(
+                payloads,
                 with: readCodexOAuthPayloads(from: executable, decoder: decoder)
             )
+            if !codexPayloadsHaveExtraWindows(payloads) {
+                payloads = payloadsByMergingCodexSources(
+                    payloads,
+                    with: readCodexWebPayloads(from: executable, decoder: decoder)
+                )
+            }
             var hiddenCount = 0
             let snapshots = payloads.compactMap { payload -> ProviderQuotaSnapshot? in
                 if let snapshot = makeSnapshot(from: payload, configs: configs) {
@@ -238,13 +252,36 @@ private struct CodexBarQuotaProvider {
 
     private func findExecutable() -> URL? {
         let fileManager = FileManager.default
-        let candidates = [
+        let bundleURL = Bundle.main.bundleURL
+        let helperExecutable = bundleURL
+            .appendingPathComponent("Contents/Helpers/CodexBarHelper.app/Contents/MacOS/codexbar")
+        let bundledCandidates = [
             Bundle.main.url(forResource: "codexbar", withExtension: nil),
-            Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("codexbar")
+            Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("codexbar"),
+            helperExecutable
         ].compactMap(\.self)
+        let candidates = (SandboxPaths.isSandboxed ? directDistributionCodexBarCandidates() : [])
+            + bundledCandidates
 
         return candidates.first { url in
             fileManager.isExecutableFile(atPath: url.path)
+        }
+    }
+
+    private func directDistributionCodexBarCandidates() -> [URL] {
+        let homeApplications = URL(fileURLWithPath: SandboxPaths.realHomeDirectory)
+            .appendingPathComponent("Applications/TraceFence.app")
+        let appCandidates = [
+            URL(fileURLWithPath: "/Applications/TraceFence.app"),
+            homeApplications
+        ]
+
+        return appCandidates.compactMap { appURL in
+            guard let bundle = Bundle(url: appURL),
+                  bundle.bundleIdentifier == SandboxPaths.directDistributionBundleID else {
+                return nil
+            }
+            return appURL.appendingPathComponent("Contents/Resources/codexbar")
         }
     }
 
@@ -283,19 +320,164 @@ private struct CodexBarQuotaProvider {
         }
     }
 
-    private func payloadsByReplacingCodexAuto(
-        _ autoPayloads: [CodexBarProviderPayload],
-        with oauthPayloads: [CodexBarProviderPayload]
+    private func readCodexAutoPayloads(
+        from executable: URL,
+        decoder: JSONDecoder
     ) -> [CodexBarProviderPayload] {
-        let codexOAuthPayloads = oauthPayloads.filter { payload in
+        do {
+            let data = try runCodexBarCommand(
+                at: executable,
+                arguments: [
+                    "usage",
+                    "--provider", "codex",
+                    "--format", "json",
+                    "--source", "auto",
+                    "--all-accounts"
+                ],
+                timeout: 20
+            )
+            return try decoder.decode([CodexBarProviderPayload].self, from: data)
+        } catch {
+            return []
+        }
+    }
+
+    private func readCodexWebPayloads(
+        from executable: URL,
+        decoder: JSONDecoder
+    ) -> [CodexBarProviderPayload] {
+        do {
+            let data = try runCodexBarCommand(
+                at: executable,
+                arguments: [
+                    "usage",
+                    "--provider", "codex",
+                    "--format", "json",
+                    "--source", "web",
+                    "--all-accounts"
+                ],
+                timeout: 20
+            )
+            return try decoder.decode([CodexBarProviderPayload].self, from: data)
+        } catch {
+            return []
+        }
+    }
+
+    private func payloadsByMergingCodexSources(
+        _ basePayloads: [CodexBarProviderPayload],
+        with supplementalPayloads: [CodexBarProviderPayload]
+    ) -> [CodexBarProviderPayload] {
+        let codexSupplementalPayloads = supplementalPayloads.filter { payload in
             payload.provider.lowercased() == "codex"
                 && (payload.usage != nil || payload.credits != nil || payload.error != nil)
         }
-        guard codexOAuthPayloads.contains(where: { $0.usage != nil || $0.credits != nil }) else {
-            return autoPayloads
+        guard codexSupplementalPayloads.contains(where: { $0.usage != nil || $0.credits != nil }) else {
+            return basePayloads
         }
 
-        return codexOAuthPayloads + autoPayloads.filter { $0.provider.lowercased() != "codex" }
+        var merged = basePayloads
+        for supplemental in codexSupplementalPayloads {
+            if let index = matchingCodexPayloadIndex(for: supplemental, in: merged) {
+                merged[index] = mergedCodexPayload(merged[index], supplemental)
+            } else {
+                merged.append(supplemental)
+            }
+        }
+        return merged
+    }
+
+    private func matchingCodexPayloadIndex(
+        for supplemental: CodexBarProviderPayload,
+        in payloads: [CodexBarProviderPayload]
+    ) -> Int? {
+        let codexIndexes = payloads.indices.filter { payloads[$0].provider.lowercased() == "codex" }
+        let key = codexMergeKey(for: supplemental)
+        if let index = codexIndexes.first(where: { codexMergeKey(for: payloads[$0]) == key }) {
+            return index
+        }
+        return codexIndexes.count == 1 ? codexIndexes.first : nil
+    }
+
+    private func codexMergeKey(for payload: CodexBarProviderPayload) -> String {
+        normalizedSnapshotIDPart(accountLabel(from: payload) ?? "codex")
+    }
+
+    private func mergedCodexPayload(
+        _ base: CodexBarProviderPayload,
+        _ supplemental: CodexBarProviderPayload
+    ) -> CodexBarProviderPayload {
+        let usage = mergedCodexUsage(base.usage, supplemental.usage)
+        let credits = base.credits ?? supplemental.credits
+        return CodexBarProviderPayload(
+            provider: base.provider,
+            account: base.account ?? supplemental.account,
+            version: base.version ?? supplemental.version,
+            source: base.source,
+            usage: usage,
+            credits: credits,
+            error: usage == nil && credits == nil ? (base.error ?? supplemental.error) : nil
+        )
+    }
+
+    private func mergedCodexUsage(
+        _ base: CodexBarUsagePayload?,
+        _ supplemental: CodexBarUsagePayload?
+    ) -> CodexBarUsagePayload? {
+        guard let base else { return supplemental }
+        guard let supplemental else { return base }
+
+        return CodexBarUsagePayload(
+            primary: base.primary ?? supplemental.primary,
+            secondary: base.secondary ?? supplemental.secondary,
+            tertiary: base.tertiary ?? supplemental.tertiary,
+            extraRateWindows: mergedExtraRateWindows(base.extraRateWindows, supplemental.extraRateWindows),
+            codexResetCredits: richerResetCredits(base.codexResetCredits, supplemental.codexResetCredits),
+            updatedAt: max(base.updatedAt, supplemental.updatedAt),
+            identity: base.identity ?? supplemental.identity,
+            accountEmail: base.accountEmail ?? supplemental.accountEmail,
+            loginMethod: base.loginMethod ?? supplemental.loginMethod
+        )
+    }
+
+    private func mergedExtraRateWindows(
+        _ base: [CodexBarNamedRateWindowPayload]?,
+        _ supplemental: [CodexBarNamedRateWindowPayload]?
+    ) -> [CodexBarNamedRateWindowPayload]? {
+        var windows = base ?? []
+        for candidate in supplemental ?? [] {
+            if let index = windows.firstIndex(where: { normalizedExtraWindowKey($0) == normalizedExtraWindowKey(candidate) }) {
+                if !windows[index].usageKnown && candidate.usageKnown {
+                    windows[index] = candidate
+                }
+            } else {
+                windows.append(candidate)
+            }
+        }
+        return windows.isEmpty ? nil : windows
+    }
+
+    private func normalizedExtraWindowKey(_ window: CodexBarNamedRateWindowPayload) -> String {
+        let raw = window.id.isEmpty ? window.title : window.id
+        return raw.lowercased().replacingOccurrences(of: " ", with: "-")
+    }
+
+    private func richerResetCredits(
+        _ base: ProviderQuotaResetCredits?,
+        _ supplemental: ProviderQuotaResetCredits?
+    ) -> ProviderQuotaResetCredits? {
+        guard let base else { return supplemental }
+        guard let supplemental else { return base }
+        if supplemental.availableCount > base.availableCount { return supplemental }
+        if supplemental.credits.count > base.credits.count { return supplemental }
+        return base.updatedAt >= supplemental.updatedAt ? base : supplemental
+    }
+
+    private func codexPayloadsHaveExtraWindows(_ payloads: [CodexBarProviderPayload]) -> Bool {
+        payloads.contains { payload in
+            payload.provider.lowercased() == "codex"
+                && !(payload.usage?.extraRateWindows ?? []).isEmpty
+        }
     }
 
     private func readProviderConfigs(from executable: URL) -> [String: CodexBarProviderConfigPayload] {
@@ -325,7 +507,7 @@ private struct CodexBarQuotaProvider {
         process.arguments = arguments
         process.standardOutput = output
         process.standardError = error
-        process.environment = processEnvironment()
+        process.environment = processEnvironment(for: executable)
 
         try process.run()
         let deadline = Date().addingTimeInterval(timeout)
@@ -347,17 +529,24 @@ private struct CodexBarQuotaProvider {
         process.waitUntilExit()
 
         let data = output.fileHandleForReading.readDataToEndOfFile()
-        if !data.isEmpty {
-            return data
-        }
-
         let errorData = error.fileHandleForReading.readDataToEndOfFile()
+        let message = String(data: errorData, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
         if didTimeOut {
             throw CodexBarQuotaError.commandFailed("Quota monitor engine timed out. TraceFence stopped this read automatically.")
         }
-        let message = String(data: errorData, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        throw CodexBarQuotaError.commandFailed(sanitizedMessage(message ?? "Quota monitor engine produced no output."))
+        if !data.isEmpty {
+            return data
+        }
+        if process.terminationReason != .exit || process.terminationStatus != 0 {
+            let fallback = "Quota monitor engine stopped before returning data. Please update or reinstall TraceFence."
+            let value = (message?.isEmpty == false) ? message! : fallback
+            throw CodexBarQuotaError.commandFailed(sanitizedMessage(value))
+        }
+
+        let value = (message?.isEmpty == false) ? message! : "Quota monitor engine produced no output."
+        throw CodexBarQuotaError.commandFailed(sanitizedMessage(value))
     }
 
     private func makeSnapshot(
@@ -436,10 +625,10 @@ private struct CodexBarQuotaProvider {
             return "This provider is enabled, but its CLI was not found. Install the \(displayName(for: provider)) CLI and make sure it is on PATH."
         }
         if message.contains("session") || message.contains("log in") || message.contains("cookies") {
-            return "The related Agent was detected, but no readable login session was found. Log in to \(displayName(for: provider)); if needed, grant TraceFence Full Disk Access."
+            return "The related Agent was detected, but no readable login session was found. Log in to \(displayName(for: provider)), authorize its data folder in TraceFence, then refresh the quota monitor."
         }
         if provider == "cursor" {
-            return "Cursor was detected, but no usable session was found. Log in to Cursor; if it still fails, grant TraceFence Full Disk Access in System Settings > Privacy & Security."
+            return "Cursor was detected, but no usable session was found. Log in to Cursor, authorize the matching data folder in TraceFence, then refresh the quota monitor."
         }
         if provider == "claude" {
             return "Claude was detected. Make sure the Claude CLI runs, then finish signing in to Claude."
@@ -510,11 +699,21 @@ private struct CodexBarQuotaProvider {
     }
 
     private func pathExists(_ rawPath: String) -> Bool {
-        let expanded = NSString(string: rawPath).expandingTildeInPath
+        let expanded = expandedPath(rawPath)
         return FileManager.default.fileExists(atPath: expanded)
     }
 
-    private func processEnvironment() -> [String: String] {
+    private func expandedPath(_ rawPath: String) -> String {
+        if rawPath == "~" {
+            return SandboxPaths.realHomeDirectory
+        }
+        if rawPath.hasPrefix("~/") {
+            return SandboxPaths.realHomeDirectory + String(rawPath.dropFirst())
+        }
+        return NSString(string: rawPath).expandingTildeInPath
+    }
+
+    private func processEnvironment(for executable: URL) -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
         let fallbackPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         if let path = environment["PATH"], !path.isEmpty {
@@ -522,7 +721,19 @@ private struct CodexBarQuotaProvider {
         } else {
             environment["PATH"] = fallbackPath
         }
+        environment["HOME"] = SandboxPaths.realHomeDirectory
+        environment["USER"] = NSUserName()
+        environment["LOGNAME"] = NSUserName()
+        if isDirectDistributionCodexBar(executable) {
+            environment.removeValue(forKey: "APP_SANDBOX_CONTAINER_ID")
+            environment["TRACEFENCE_PROVIDER_ENGINE"] = "direct-distribution"
+        }
         return environment
+    }
+
+    private func isDirectDistributionCodexBar(_ executable: URL) -> Bool {
+        directDistributionCodexBarCandidates()
+            .contains { $0.standardizedFileURL.path == executable.standardizedFileURL.path }
     }
 
     private func makeWindows(from usage: CodexBarUsagePayload?) -> [ProviderQuotaWindow] {
@@ -666,6 +877,48 @@ private enum CodexBarQuotaError: LocalizedError {
         case .commandFailed(let message):
             return message
         }
+    }
+}
+
+private final class ProviderQuotaSecurityScopedAccess {
+    private var activeURLs: [URL] = []
+
+    func start() {
+        let bookmarkFiles = [
+            SandboxPaths.shared.bookmarksPath,
+            SandboxPaths.shared.scanBookmarksPath,
+            SandboxPaths.shared.tokenScopeBookmarksPath
+        ]
+        var seen = Set<String>()
+
+        for bookmarkFile in bookmarkFiles {
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: bookmarkFile)),
+                  let bookmarks = try? JSONDecoder().decode([String: Data].self, from: data) else {
+                continue
+            }
+
+            for (_, bookmark) in bookmarks {
+                var stale = false
+                guard let url = try? URL(
+                    resolvingBookmarkData: bookmark,
+                    options: .withSecurityScope,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &stale
+                ) else {
+                    continue
+                }
+                let path = url.standardizedFileURL.path
+                guard seen.insert(path).inserted else { continue }
+                if url.startAccessingSecurityScopedResource() {
+                    activeURLs.append(url)
+                }
+            }
+        }
+    }
+
+    func stop() {
+        activeURLs.forEach { $0.stopAccessingSecurityScopedResource() }
+        activeURLs.removeAll()
     }
 }
 

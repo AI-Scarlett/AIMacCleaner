@@ -61,6 +61,8 @@
 		D1A2B3C4D5E6F708192A3B51 /* CaptureSelectionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B51 /* CaptureSelectionOverlay.swift */; };
 		TF10CODEXBARRESOURCE0001 /* codexbar in Resources */ = {isa = PBXBuildFile; fileRef = TF11CODEXBARRESOURCE0002 /* codexbar */; };
 		CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */; };
+		AD10AD10AD10AD10AD10AD10 /* DiskAdvisorLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD20AD20AD20AD20AD20AD20 /* DiskAdvisorLabView.swift */; };
+		LD10LOCALDIAGNOSTIC001 /* LocalSystemDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = LD20LOCALDIAGNOSTIC002 /* LocalSystemDiagnosticsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -121,6 +123,8 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		E1A2B3C4D5E6F708192A3B51 /* CaptureSelectionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/CaptureSelectionOverlay.swift; sourceTree = "<group>"; };
 		TF11CODEXBARRESOURCE0002 /* codexbar */ = {isa = PBXFileReference; lastKnownFileType = file; path = Resources/codexbar; sourceTree = "<group>"; };
 		CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenScopeLabView.swift; sourceTree = "<group>"; };
+		AD20AD20AD20AD20AD20AD20 /* DiskAdvisorLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskAdvisorLabView.swift; sourceTree = "<group>"; };
+		LD20LOCALDIAGNOSTIC002 /* LocalSystemDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSystemDiagnosticsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -158,6 +162,8 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				D4E5F6A7B8C9D0E1F2A3B4C5 /* StorageAnalyzer.swift */,
 				F6A7B8C9D0E1F2A3B4C5D6E7 /* SettingsView.swift */,
 				CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */,
+				AD20AD20AD20AD20AD20AD20 /* DiskAdvisorLabView.swift */,
+				LD20LOCALDIAGNOSTIC002 /* LocalSystemDiagnosticsView.swift */,
 			1A2B3C4D5E6F7A8B9C0D1E2F /* Theme.swift */,
 			F7A8B9C0D1E2F3A4B5C6D7E8 /* Localizer.swift */,
 			C3109E2D93F7928BE4CFFF2F /* Models.swift */,
@@ -325,6 +331,8 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				D1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B51 /* CaptureSelectionOverlay.swift in Sources */,
 				CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */,
+				AD10AD10AD10AD10AD10AD10 /* DiskAdvisorLabView.swift in Sources */,
+				LD10LOCALDIAGNOSTIC001 /* LocalSystemDiagnosticsView.swift in Sources */,
 			2A3B4C5D6E7F8A9B0C1D2E3F /* Theme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -339,7 +347,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-					CURRENT_PROJECT_VERSION = 34;
+					CURRENT_PROJECT_VERSION = 42;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
@@ -350,7 +358,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 1.0.34;
+			MARKETING_VERSION = 1.0.42;
 			OPTIMIZATION_LEVEL = "-O";
 				PRODUCT_BUNDLE_IDENTIFIER = com.tracefence.app;
 				PRODUCT_NAME = TraceFence;
@@ -485,7 +493,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-					CURRENT_PROJECT_VERSION = 34;
+					CURRENT_PROJECT_VERSION = 42;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
@@ -496,7 +504,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 1.0.34;
+			MARKETING_VERSION = 1.0.42;
 			OPTIMIZATION_LEVEL = "-Onone";
 				PRODUCT_BUNDLE_IDENTIFIER = com.tracefence.app;
 				PRODUCT_NAME = TraceFence;

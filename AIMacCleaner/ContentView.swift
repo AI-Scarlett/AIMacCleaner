@@ -39,7 +39,13 @@ struct ContentView: View {
     }
 
     private var isToolboxSubItemSelected: Bool {
-        [.tokenScope, .cleaner, .app, .dependency, .other, .migration].contains(selectedTab)
+        Self.toolboxSubItems.contains(selectedTab)
+    }
+
+    private static var toolboxSubItems: [NavItem] {
+        var items: [NavItem] = [.tokenScope, .diskAdvisor, .localDiagnostics]
+        items.append(contentsOf: [.cleaner, .app, .dependency, .other, .migration])
+        return items
     }
 
     enum NavItem: String, CaseIterable {
@@ -48,6 +54,8 @@ struct ContentView: View {
         case operations = "operations"
         case toolbox = "toolbox"
         case tokenScope = "tokenScope"
+        case diskAdvisor = "diskAdvisor"
+        case localDiagnostics = "localDiagnostics"
         case cleaner = "cleaner"
         case app = "app"
         case dependency = "dependency"
@@ -56,7 +64,7 @@ struct ContentView: View {
 
         var isSubItem: Bool {
             switch self {
-            case .tokenScope, .cleaner, .app, .dependency, .other, .migration: return true
+            case .tokenScope, .diskAdvisor, .localDiagnostics, .cleaner, .app, .dependency, .other, .migration: return true
             default: return false
             }
         }
@@ -72,6 +80,8 @@ struct ContentView: View {
             case .agentGuard: "shield.fill"
             case .toolbox: "wrench.and.screwdriver.fill"
             case .tokenScope: "chart.xyaxis.line"
+            case .diskAdvisor: "sparkles"
+            case .localDiagnostics: "network"
             case .migration: "arrow.triangle.2.circlepath"
             }
         }
@@ -87,6 +97,8 @@ struct ContentView: View {
             case .agentGuard: Theme.Colors.accent
             case .toolbox: Theme.Colors.info
             case .tokenScope: Theme.Colors.accent
+            case .diskAdvisor: Theme.Colors.purple
+            case .localDiagnostics: Theme.Colors.teal
             case .migration: Theme.Colors.purple
             }
         }
@@ -102,6 +114,8 @@ struct ContentView: View {
             case .agentGuard: localizer.navAgentGuard
             case .toolbox: localizer.navToolbox
             case .tokenScope: localizer.tokenScopeTitle
+            case .diskAdvisor: localizer.t("AI 磁盘顾问", en: "AI Disk Advisor", zhHant: "AI 磁碟顧問", ja: "AI ディスクアドバイザー", ko: "AI 디스크 어드바이저", mt: "AI Disk Advisor")
+            case .localDiagnostics: localizer.t("本机诊断", en: "Local Diagnostics", zhHant: "本機診斷", ja: "ローカル診断", ko: "로컬 진단", mt: "Local Diagnostics")
             case .migration: localizer.navMigration
             }
         }
@@ -117,6 +131,8 @@ struct ContentView: View {
             case .agentGuard: localizer.subAgentGuard
             case .toolbox: localizer.subToolbox
             case .tokenScope: localizer.tokenScopeSubtitle
+            case .diskAdvisor: localizer.t("Apple Intelligence 磁盘清理建议", en: "Apple Intelligence cleanup advice", zhHant: "Apple Intelligence 磁碟清理建議", ja: "Apple Intelligence のクリーンアップ提案", ko: "Apple Intelligence 정리 제안", mt: "Apple Intelligence cleanup advice")
+            case .localDiagnostics: localizer.t("出口网络与启动项只读巡检", en: "Egress and launch item audit", zhHant: "出口網路與啟動項唯讀巡檢", ja: "出口ネットワークと起動項目監査", ko: "송신 네트워크 및 시작 항목 점검", mt: "Egress and launch item audit")
             case .migration: localizer.subMigration
             }
         }
@@ -159,9 +175,13 @@ struct ContentView: View {
                 .frame(height: 0.5)
                 .padding(.horizontal, Theme.Spacing.md)
 
-            sidebarNavItems
-
-            Spacer()
+            ScrollView {
+                sidebarNavItems
+                    .frame(maxWidth: .infinity, alignment: sidebarCollapsed ? .center : .leading)
+            }
+            .scrollIndicators(.hidden)
+            .frame(maxWidth: .infinity)
+            .frame(maxHeight: .infinity, alignment: .top)
 
             Rectangle()
                 .fill(Theme.Colors.separator.opacity(0.5))
@@ -320,7 +340,7 @@ struct ContentView: View {
 
             if toolboxExpanded {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach([NavItem.tokenScope, .cleaner, .app, .dependency, .other, .migration], id: \.self) { item in
+                    ForEach(Self.toolboxSubItems, id: \.self) { item in
                         Button {
                             selectedTab = item
                         } label: {
@@ -408,6 +428,8 @@ struct ContentView: View {
         case .operations: return service.operationRecords.isEmpty ? localizer.t("审计", en: "Audit", zhHant: "稽核", ja: "監査", ko: "감사", mt: "Audit") : "\(service.operationRecords.count)"
         case .toolbox: return localizer.t("工具", en: "Tools", zhHant: "工具", ja: "ツール", ko: "도구", mt: "Tools")
         case .tokenScope: return localizer.t("测试", en: "Beta", zhHant: "測試", ja: "ベータ", ko: "베타", mt: "Beta")
+        case .diskAdvisor: return localizer.t("实验", en: "Lab", zhHant: "實驗", ja: "ラボ", ko: "실험", mt: "Lab")
+        case .localDiagnostics: return localizer.t("诊断", en: "Diag", zhHant: "診斷", ja: "診断", ko: "진단", mt: "Diag")
         case .cleaner:
             let total = service.scanItems.reduce(Int64(0)) { $0 + $1.size }
             return total > 0 ? service.formatSize(total) : localizer.t("清理", en: "Clean", zhHant: "清理", ja: "クリーン", ko: "정리", mt: "Clean")
@@ -696,6 +718,12 @@ struct ContentView: View {
         case .tokenScope:
             TokenScopeLabView()
                 .environmentObject(localizer)
+        case .diskAdvisor:
+            DiskAdvisorLabView()
+                .environmentObject(localizer)
+        case .localDiagnostics:
+            LocalSystemDiagnosticsView()
+                .environmentObject(localizer)
         case .migration:
             IntelMigrationTab()
                 .environmentObject(localizer)
@@ -891,14 +919,18 @@ struct ToolboxTab: View {
     @EnvironmentObject var service: ScannerService
     @State private var selectedTool = 0
 
-    private let tools: [(icon: String, title: (Localizer) -> String, subtitle: (Localizer) -> String, color: Color)] = [
-        ("chart.xyaxis.line", { $0.tokenScopeTitle }, { $0.tokenScopeSubtitle }, Theme.Colors.accent),
-        ("arrow.down.doc.fill", { $0.navCleaner }, { $0.subCleaner }, Theme.Colors.info),
-        ("app.badge", { $0.navApp }, { $0.subApp }, Theme.Colors.accent),
-        ("cube.box", { $0.navDependency }, { $0.subDependency }, Theme.Colors.warning),
-        ("terminal", { $0.navOther }, { $0.subOther }, Theme.Colors.textSecondary),
-        ("arrow.triangle.2.circlepath", { $0.navMigration }, { $0.subMigration }, Theme.Colors.purple),
-    ]
+    private var tools: [(icon: String, title: (Localizer) -> String, subtitle: (Localizer) -> String, color: Color)] {
+        var items: [(icon: String, title: (Localizer) -> String, subtitle: (Localizer) -> String, color: Color)] = [
+            ("chart.xyaxis.line", { $0.tokenScopeTitle }, { $0.tokenScopeSubtitle }, Theme.Colors.accent)
+        ]
+        items.append((icon: "sparkles", title: { $0.t("AI 磁盘顾问", en: "AI Disk Advisor", zhHant: "AI 磁碟顧問", ja: "AI ディスクアドバイザー", ko: "AI 디스크 어드바이저", mt: "AI Disk Advisor") }, subtitle: { $0.t("Apple Intelligence 磁盘清理建议", en: "Apple Intelligence cleanup advice", zhHant: "Apple Intelligence 磁碟清理建議", ja: "Apple Intelligence のクリーンアップ提案", ko: "Apple Intelligence 정리 제안", mt: "Apple Intelligence cleanup advice") }, color: Theme.Colors.purple))
+        items.append((icon: "arrow.down.doc.fill", title: { $0.navCleaner }, subtitle: { $0.subCleaner }, color: Theme.Colors.info))
+        items.append((icon: "app.badge", title: { $0.navApp }, subtitle: { $0.subApp }, color: Theme.Colors.accent))
+        items.append((icon: "cube.box", title: { $0.navDependency }, subtitle: { $0.subDependency }, color: Theme.Colors.warning))
+        items.append((icon: "terminal", title: { $0.navOther }, subtitle: { $0.subOther }, color: Theme.Colors.textSecondary))
+        items.append((icon: "arrow.triangle.2.circlepath", title: { $0.navMigration }, subtitle: { $0.subMigration }, color: Theme.Colors.purple))
+        return items
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -7893,6 +7925,7 @@ struct OperationLogTab: View {
     @ObservedObject var monitor: OperationMonitor
     @EnvironmentObject var localizer: Localizer
     @EnvironmentObject var service: ScannerService
+    @EnvironmentObject var sessionsViewModel: SessionsViewModel
     @State private var searchText = ""
     @State private var filterAgent = ""
     @State private var filterOpType: OperationRecord.OperationType?
@@ -7900,7 +7933,17 @@ struct OperationLogTab: View {
     @State private var autoRefreshSeconds = 5
     @State private var lastAutoRefresh = Date.distantPast
     @State private var viewMode = 0
+    @State private var selectedProjectId: String?
+    @State private var automationProjectSnapshots: [MonitorProjectSnapshot] = []
+    @State private var cachedProjectSnapshots: [MonitorProjectSnapshot] = []
+    @State private var cachedDisplayableRecords: [OperationRecord] = []
+    @State private var cachedAgentNames: [String] = []
+    @State private var projectSnapshotSignature = ""
+    @State private var lastHeavyRefresh = Date.distantPast
     @Namespace private var segmentNS
+
+    private static let projectRecordWindowLimit = 2_000
+    private static let heavyRefreshInterval: TimeInterval = 60
 
     enum TimeRange: String, CaseIterable {
         case all = "all"
@@ -7922,12 +7965,86 @@ struct OperationLogTab: View {
         }
     }
 
+    private enum MonitorProjectLane: String, CaseIterable {
+        case live
+        case scheduled
+        case blocked
+        case completed
+
+        func title(_ localizer: Localizer) -> String {
+            switch self {
+            case .live:
+                return localizer.t("实时项目", en: "Live Projects", zhHant: "即時專案", ja: "ライブプロジェクト", ko: "실시간 프로젝트", mt: "Live Projects")
+            case .scheduled:
+                return localizer.t("定时项目", en: "Scheduled", zhHant: "排程專案", ja: "予定タスク", ko: "예약 작업", mt: "Scheduled")
+            case .blocked:
+                return localizer.t("阻塞关注", en: "Blocked", zhHant: "阻塞關注", ja: "ブロック中", ko: "차단됨", mt: "Blocked")
+            case .completed:
+                return localizer.t("最近完成", en: "Recently Done", zhHant: "最近完成", ja: "最近完了", ko: "최근 완료", mt: "Recently Done")
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .live: return "dot.radiowaves.left.and.right"
+            case .scheduled: return "calendar.badge.clock"
+            case .blocked: return "exclamationmark.triangle.fill"
+            case .completed: return "checkmark.seal.fill"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .live: return Theme.Colors.success
+            case .scheduled: return Theme.Colors.info
+            case .blocked: return Theme.Colors.warning
+            case .completed: return Theme.Colors.purple
+            }
+        }
+    }
+
+    private struct MonitorProjectSnapshot: Identifiable {
+        let id: String
+        let title: String
+        let path: String
+        let lane: MonitorProjectLane
+        let agents: [String]
+        let sessions: [SessionState]
+        let records: [OperationRecord]
+        let progress: Double
+        let summary: String
+        let blocker: String?
+        let scheduledHint: String?
+        let lastActivity: Date
+        let activeTools: [String]
+        let completedTasks: Int
+        let totalTasks: Int
+
+        var recordCount: Int { records.count }
+        var sessionCount: Int { sessions.count }
+    }
+
+    private struct MonitorAutomationConfig {
+        let id: String
+        let name: String
+        let status: String
+        let model: String
+        let kind: String
+        let schedule: String
+        let description: String
+        let cwds: [String]
+        let directoryPath: String
+        let updatedAt: Date
+    }
+
     var agentNames: [String] {
-        Array(Set(allOperationRecords.filter(isDisplayableAgentRecord).map(\.agentName))).sorted()
+        if !projectSnapshotSignature.isEmpty { return cachedAgentNames }
+        return Array(Set(displayableOperationRecords.map(\.agentName))).sorted()
     }
 
     var filteredRecords: [OperationRecord] {
-        var result = allOperationRecords.filter(isDisplayableAgentRecord)
+        var result = displayableOperationRecords
+        let now = Date()
         if !filterAgent.isEmpty {
             result = result.filter { $0.agentName == filterAgent }
         }
@@ -7939,13 +8056,13 @@ struct OperationLogTab: View {
             let start = Calendar.current.startOfDay(for: Date())
             result = result.filter { $0.timestamp >= start }
         case .hour1:
-            result = result.filter { Date().timeIntervalSince($0.timestamp) < 3600 }
+            result = result.filter { now.timeIntervalSince($0.timestamp) < 3600 }
         case .hour6:
-            result = result.filter { Date().timeIntervalSince($0.timestamp) < 21600 }
+            result = result.filter { now.timeIntervalSince($0.timestamp) < 21600 }
         case .day1:
-            result = result.filter { Date().timeIntervalSince($0.timestamp) < 86400 }
+            result = result.filter { now.timeIntervalSince($0.timestamp) < 86400 }
         case .day7:
-            result = result.filter { Date().timeIntervalSince($0.timestamp) < 604800 }
+            result = result.filter { now.timeIntervalSince($0.timestamp) < 604800 }
         case .all:
             break
         }
@@ -7960,8 +8077,90 @@ struct OperationLogTab: View {
         return deduplicatedRecords(result)
     }
 
-    private var displayedRecords: [OperationRecord] {
-        Array(filteredRecords.prefix(1000))
+    private var filteredProjectSnapshots: [MonitorProjectSnapshot] {
+        let snapshots = projectSnapshots
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return snapshots }
+        return snapshots.filter { project in
+            project.title.lowercased().contains(query) ||
+            project.path.lowercased().contains(query) ||
+            project.summary.lowercased().contains(query) ||
+            project.agents.contains { $0.lowercased().contains(query) } ||
+            project.activeTools.contains { $0.lowercased().contains(query) }
+        }
+    }
+
+    private var selectedProject: MonitorProjectSnapshot? {
+        if let selectedProjectId,
+           let match = filteredProjectSnapshots.first(where: { $0.id == selectedProjectId }) {
+            return match
+        }
+        return filteredProjectSnapshots.first
+    }
+
+    private var projectSnapshots: [MonitorProjectSnapshot] {
+        cachedProjectSnapshots
+    }
+
+    private func rebuildProjectSnapshotCache(force: Bool = false) {
+        let records = Array(allOperationRecords.prefix(Self.projectRecordWindowLimit))
+        let signature = projectDataSignature(records: records)
+        guard force || signature != projectSnapshotSignature else { return }
+
+        let displayableRecords = records.filter(isDisplayableAgentRecord)
+        let recentCutoff = Date().addingTimeInterval(-24 * 60 * 60)
+        let recentRecords = displayableRecords.filter { $0.timestamp >= recentCutoff }
+        let recordsByProject = Dictionary(grouping: recentRecords) { operationProjectKey($0) }
+        let sessionGroups = Dictionary(grouping: sessionsViewModel.sessions) { sessionProjectKey($0) }
+
+        var snapshots = sessionGroups.compactMap { key, sessions in
+            makeSessionProject(key: key, sessions: sessions, recordsByProject: recordsByProject)
+        }
+        let knownKeys = Set(snapshots.map(\.id))
+        snapshots.append(contentsOf: operationProjectSnapshots(excluding: knownKeys, groupedRecords: recordsByProject))
+        snapshots.append(contentsOf: automationProjectSnapshots)
+        snapshots.sort {
+            if lanePriority($0.lane) != lanePriority($1.lane) {
+                return lanePriority($0.lane) < lanePriority($1.lane)
+            }
+            return $0.lastActivity > $1.lastActivity
+        }
+
+        cachedDisplayableRecords = displayableRecords
+        cachedAgentNames = Array(Set(displayableRecords.map(\.agentName))).sorted()
+        cachedProjectSnapshots = snapshots
+        projectSnapshotSignature = signature
+        if let selectedProjectId, !snapshots.contains(where: { $0.id == selectedProjectId }) {
+            self.selectedProjectId = nil
+        }
+    }
+
+    private func projectDataSignature(records: [OperationRecord]) -> String {
+        let recordKey = records.prefix(4)
+            .map { "\($0.id):\(Int($0.timestamp.timeIntervalSince1970))" }
+            .joined(separator: ",")
+        let sessionKey = sessionsViewModel.sessions
+            .map { session in
+                "\(session.id):\(session.phase.rawValue):\(Int(sessionLastActivity(session).timeIntervalSince1970)):\(session.tasks.count):\(session.activeTools.count)"
+            }
+            .sorted()
+            .joined(separator: ",")
+        let automationKey = automationProjectSnapshots
+            .map { "\($0.id):\(Int($0.lastActivity.timeIntervalSince1970)):\($0.lane.rawValue)" }
+            .joined(separator: ",")
+        return "\(records.count)|\(recordKey)|\(sessionKey)|\(automationKey)"
+    }
+
+    private var liveProjectCount: Int {
+        projectSnapshots.filter { $0.lane == .live }.count
+    }
+
+    private var scheduledProjectCount: Int {
+        projectSnapshots.filter { $0.lane == .scheduled }.count
+    }
+
+    private var blockedProjectCount: Int {
+        projectSnapshots.filter { $0.lane == .blocked }.count
     }
 
     private func timeWithSeconds(_ date: Date) -> String {
@@ -7990,23 +8189,34 @@ struct OperationLogTab: View {
 
     private var agentActivityProgress: Double {
         guard !agentNames.isEmpty else { return 0 }
-        let recentAgents = Set(allOperationRecords.filter { isDisplayableAgentRecord($0) && Date().timeIntervalSince($0.timestamp) < 3600 }.map(\.agentName)).count
+        let now = Date()
+        let recentAgents = Set(displayableOperationRecords.filter { now.timeIntervalSince($0.timestamp) < 3600 }.map(\.agentName)).count
         return Double(recentAgents) / Double(agentNames.count)
     }
 
     private var todayRecordCount: Int {
         let start = Calendar.current.startOfDay(for: Date())
-        return allOperationRecords.filter { isDisplayableAgentRecord($0) && $0.timestamp >= start }.count
+        return displayableOperationRecords.filter { $0.timestamp >= start }.count
     }
 
     private var hourRecordCount: Int {
-        allOperationRecords.filter { isDisplayableAgentRecord($0) && Date().timeIntervalSince($0.timestamp) < 3600 }.count
+        let now = Date()
+        return displayableOperationRecords.filter { now.timeIntervalSince($0.timestamp) < 3600 }.count
     }
 
     private var allOperationRecords: [OperationRecord] {
-        let records = service.operationRecords.isEmpty ? monitor.records : service.operationRecords
-        // `OperationMonitor` keeps records in newest-first order already.
-        return records
+        let serviceRecords = service.operationRecords
+        let liveRecords = monitor.records
+        if serviceRecords.isEmpty { return liveRecords }
+        if liveRecords.count > serviceRecords.count { return liveRecords }
+        return serviceRecords
+    }
+
+    private var displayableOperationRecords: [OperationRecord] {
+        if !projectSnapshotSignature.isEmpty || allOperationRecords.isEmpty {
+            return cachedDisplayableRecords
+        }
+        return allOperationRecords.filter(isDisplayableAgentRecord)
     }
 
     private func isDisplayableAgentRecord(_ record: OperationRecord) -> Bool {
@@ -8022,6 +8232,478 @@ struct OperationLogTab: View {
         return !nonAgentToolNames.contains(name)
     }
 
+    private func makeSessionProject(
+        key: String,
+        sessions: [SessionState],
+        recordsByProject: [String: [OperationRecord]]? = nil
+    ) -> MonitorProjectSnapshot? {
+        guard !sessions.isEmpty else { return nil }
+        let sortedSessions = sessions.sorted { sessionLastActivity($0) > sessionLastActivity($1) }
+        let records = recordsForProject(key: key, sessions: sortedSessions, recordsByProject: recordsByProject)
+        let pending = sortedSessions.filter(hasPendingAttention)
+        let tasks = sortedSessions.flatMap(\.tasks)
+        let completedTasks = tasks.filter { taskIsDone($0) }.count
+        let totalTasks = tasks.count
+        let hasScheduledSignal = sortedSessions.contains(where: isScheduledSession)
+        let lane: MonitorProjectLane
+
+        if !pending.isEmpty {
+            lane = .blocked
+        } else if sortedSessions.contains(where: { $0.phase.isActive }) {
+            lane = .live
+        } else if hasScheduledSignal {
+            lane = .scheduled
+        } else {
+            lane = .completed
+        }
+
+        return MonitorProjectSnapshot(
+            id: key,
+            title: projectTitle(for: sortedSessions, fallback: key),
+            path: key,
+            lane: lane,
+            agents: uniqueStrings(sortedSessions.map(\.agentType) + records.map(\.agentName)),
+            sessions: sortedSessions,
+            records: records,
+            progress: progressForProject(sessions: sortedSessions, completedTasks: completedTasks, totalTasks: totalTasks),
+            summary: projectSummary(sessions: sortedSessions, records: records),
+            blocker: blockerText(for: pending.first),
+            scheduledHint: hasScheduledSignal ? scheduleHint(for: sortedSessions) : nil,
+            lastActivity: max(records.map(\.timestamp).max() ?? .distantPast, sortedSessions.map(sessionLastActivity).max() ?? .distantPast),
+            activeTools: uniqueStrings(sortedSessions.flatMap { $0.activeTools.map(\.toolName) + [ $0.lastToolName ].compactMap { $0 } } + records.compactMap(\.toolInfo)),
+            completedTasks: completedTasks,
+            totalTasks: totalTasks
+        )
+    }
+
+    private func operationProjectSnapshots(
+        excluding knownKeys: Set<String>,
+        groupedRecords: [String: [OperationRecord]]? = nil
+    ) -> [MonitorProjectSnapshot] {
+        let groups: [String: [OperationRecord]]
+        if let groupedRecords {
+            groups = groupedRecords
+        } else {
+            let cutoff = Date().addingTimeInterval(-24 * 60 * 60)
+            let recentRecords = allOperationRecords
+                .filter(isDisplayableAgentRecord)
+                .filter { $0.timestamp >= cutoff }
+            groups = Dictionary(grouping: recentRecords) { operationProjectKey($0) }
+        }
+
+        return groups.compactMap { key, records in
+            guard !key.isEmpty, !knownKeys.contains(key) else { return nil }
+            let sorted = records.sorted { $0.timestamp > $1.timestamp }
+            guard let latest = sorted.first else { return nil }
+            let isRecent = Date().timeIntervalSince(latest.timestamp) < 3600
+            let hasScheduled = sorted.contains { recordHasScheduledSignal($0) }
+            let lane: MonitorProjectLane = hasScheduled ? .scheduled : (isRecent ? .live : .completed)
+            let title = projectDisplayName(for: key, fallback: latest.agentName)
+
+            return MonitorProjectSnapshot(
+                id: key,
+                title: title,
+                path: key,
+                lane: lane,
+                agents: uniqueStrings(sorted.map(\.agentName)),
+                sessions: [],
+                records: Array(sorted.prefix(20)),
+                progress: lane == .live ? 0.55 : lane == .scheduled ? 0.2 : 0.95,
+                summary: shortText(latest.detail.isEmpty ? latest.targetPath : latest.detail, limit: 150),
+                blocker: nil,
+                scheduledHint: hasScheduled ? localizer.t("检测到定时/自动化活动", en: "Scheduled or automation activity detected", zhHant: "偵測到排程/自動化活動", ja: "予定/自動化アクティビティを検出", ko: "예약/자동화 활동 감지", mt: "Scheduled or automation activity detected") : nil,
+                lastActivity: latest.timestamp,
+                activeTools: uniqueStrings(sorted.compactMap(\.toolInfo)),
+                completedTasks: 0,
+                totalTasks: 0
+            )
+        }
+        .sorted { $0.lastActivity > $1.lastActivity }
+    }
+
+    private func readAutomationProjectSnapshots() -> [MonitorProjectSnapshot] {
+        let root = URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true)
+            .appendingPathComponent(".codex/automations", isDirectory: true)
+        guard let directories = try? FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        return directories.compactMap { directory -> MonitorProjectSnapshot? in
+            let file = directory.appendingPathComponent("automation.toml")
+            guard let config = parseAutomationConfig(file: file, directory: directory) else { return nil }
+
+            let status = config.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let isPaused = ["disabled", "paused", "inactive", "stopped", "off"].contains(status)
+            let path = config.cwds.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? config.directoryPath
+            let scheduleText = [config.kind, config.schedule]
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: " · ")
+            let hint = scheduleText.isEmpty
+                ? localizer.t("等待下一次触发", en: "Waiting for next trigger", zhHant: "等待下一次觸發", ja: "次回トリガー待ち", ko: "다음 트리거 대기 중", mt: "Waiting for next trigger")
+                : scheduleText
+            let description = config.description.trimmingCharacters(in: .whitespacesAndNewlines)
+            let summary = description.isEmpty
+                ? localizer.t("Codex 定时项目会在触发后进入实时项目。", en: "This Codex automation will move into live projects after it starts.", zhHant: "Codex 排程專案觸發後會進入即時專案。", ja: "このCodex自動化は開始後にライブプロジェクトへ移動します。", ko: "이 Codex 자동화는 시작 후 실시간 프로젝트로 이동합니다.", mt: "This Codex automation will move into live projects after it starts.")
+                : shortText(description, limit: 150)
+
+            return MonitorProjectSnapshot(
+                id: "codex-automation:\(config.id)",
+                title: config.name,
+                path: path,
+                lane: isPaused ? .blocked : .scheduled,
+                agents: uniqueStrings(["Codex", config.model]),
+                sessions: [],
+                records: [],
+                progress: isPaused ? 0.08 : 0.18,
+                summary: summary,
+                blocker: isPaused ? localizer.t("定时项目当前处于暂停或禁用状态", en: "This scheduled project is paused or disabled.", zhHant: "此排程專案目前暫停或停用", ja: "この予定プロジェクトは一時停止または無効です。", ko: "이 예약 프로젝트는 일시 중지되었거나 비활성화되었습니다.", mt: "This scheduled project is paused or disabled.") : nil,
+                scheduledHint: hint,
+                lastActivity: config.updatedAt,
+                activeTools: [],
+                completedTasks: 0,
+                totalTasks: 1
+            )
+        }
+        .sorted { $0.lastActivity > $1.lastActivity }
+    }
+
+    private func parseAutomationConfig(file: URL, directory: URL) -> MonitorAutomationConfig? {
+        guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+
+        var name = directory.lastPathComponent
+        var status = "active"
+        var model = ""
+        var kind = ""
+        var schedule = ""
+        var description = ""
+        var cwds: [String] = []
+
+        for rawLine in text.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty, !line.hasPrefix("#") else { continue }
+
+            if let value = tomlStringValue(line, key: "name") {
+                name = value
+            } else if let value = tomlStringValue(line, key: "status") {
+                status = value
+            } else if let value = tomlStringValue(line, key: "model") {
+                model = value
+            } else if let value = tomlStringValue(line, key: "kind") {
+                kind = value
+            } else if let value = tomlStringValue(line, key: "rrule") {
+                schedule = value
+            } else if let value = tomlStringValue(line, key: "cron") {
+                schedule = value
+            } else if let value = tomlStringValue(line, key: "schedule") {
+                schedule = value
+            } else if let value = tomlStringValue(line, key: "description") {
+                description = value
+            } else if let value = tomlStringValue(line, key: "objective") {
+                description = description.isEmpty ? value : description
+            } else if let value = tomlStringValue(line, key: "prompt") {
+                description = description.isEmpty ? value : description
+            } else if let value = tomlStringValue(line, key: "cwd") {
+                cwds.append(value)
+            } else if let values = tomlArrayValue(line, key: "cwds") {
+                cwds.append(contentsOf: values)
+            }
+        }
+
+        let attrs = try? FileManager.default.attributesOfItem(atPath: file.path)
+        let modified = attrs?[.modificationDate] as? Date ?? Date.distantPast
+        return MonitorAutomationConfig(
+            id: directory.lastPathComponent,
+            name: name,
+            status: status,
+            model: model,
+            kind: kind,
+            schedule: schedule,
+            description: description,
+            cwds: uniqueStrings(cwds),
+            directoryPath: directory.path,
+            updatedAt: modified
+        )
+    }
+
+    private func tomlStringValue(_ line: String, key: String) -> String? {
+        guard line.hasPrefix("\(key) =") || line.hasPrefix("\(key)="),
+              let first = line.firstIndex(of: "\""),
+              let last = line.lastIndex(of: "\""),
+              first < last else {
+            return nil
+        }
+        return String(line[line.index(after: first)..<last])
+    }
+
+    private func tomlArrayValue(_ line: String, key: String) -> [String]? {
+        guard line.hasPrefix("\(key) =") || line.hasPrefix("\(key)="),
+              let open = line.firstIndex(of: "["),
+              let close = line.lastIndex(of: "]"),
+              open < close else {
+            return nil
+        }
+        let body = line[line.index(after: open)..<close]
+        return body
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " \t\"")) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func recordsForProject(
+        key: String,
+        sessions: [SessionState],
+        recordsByProject: [String: [OperationRecord]]? = nil
+    ) -> [OperationRecord] {
+        let sessionKeys = Set(sessions.map { sessionProjectKey($0) })
+        if let recordsByProject {
+            var lookupKeys = sessionKeys
+            lookupKeys.insert(key)
+            var collected: [OperationRecord] = []
+            for lookupKey in lookupKeys {
+                if let records = recordsByProject[lookupKey] {
+                    collected.append(contentsOf: records)
+                }
+            }
+            return Array(collected.sorted { $0.timestamp > $1.timestamp }.prefix(20))
+        }
+        return allOperationRecords
+            .filter(isDisplayableAgentRecord)
+            .filter { record in
+                let recordKey = operationProjectKey(record)
+                return recordKey == key || sessionKeys.contains(recordKey)
+            }
+            .prefix(20)
+            .map { $0 }
+    }
+
+    private func hasPendingAttention(_ session: SessionState) -> Bool {
+        session.pendingPermission != nil ||
+            session.pendingQuestion != nil ||
+            session.pendingPlan != nil ||
+            session.phase == .waitingApproval ||
+            session.phase == .waitingInput ||
+            session.phase == .error ||
+            session.phase == .interrupted
+    }
+
+    private func isScheduledSession(_ session: SessionState) -> Bool {
+        if (session.phase == .ready || session.phase == .idle) && session.hasUnfinishedTasks {
+            return true
+        }
+        let text = [
+            session.sessionTitle,
+            session.description,
+            session.statusLineText,
+            session.lastUserMessage,
+            session.lastResponse
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
+        .lowercased()
+        return scheduledKeywords.contains { text.contains($0) }
+    }
+
+    private func recordHasScheduledSignal(_ record: OperationRecord) -> Bool {
+        let text = "\(record.targetPath) \(record.detail) \(record.toolInfo ?? "")".lowercased()
+        return scheduledKeywords.contains { text.contains($0) }
+    }
+
+    private var scheduledKeywords: [String] {
+        ["定时", "排程", "计划任务", "scheduled", "recurring", "cron", "automation", "monitor", "定期"]
+    }
+
+    private func blockerText(for session: SessionState?) -> String? {
+        guard let session else { return nil }
+        if let permission = session.pendingPermission {
+            return localizer.t("等待权限审批: \(permission.toolName)", en: "Waiting for permission: \(permission.toolName)", zhHant: "等待權限審批: \(permission.toolName)", ja: "権限承認待ち: \(permission.toolName)", ko: "권한 승인 대기: \(permission.toolName)", mt: "Waiting for permission: \(permission.toolName)")
+        }
+        if let question = session.pendingQuestion {
+            return localizer.t("等待回复: \(shortText(question.question, limit: 80))", en: "Waiting for reply: \(shortText(question.question, limit: 80))", zhHant: "等待回覆: \(shortText(question.question, limit: 80))", ja: "返信待ち: \(shortText(question.question, limit: 80))", ko: "응답 대기: \(shortText(question.question, limit: 80))", mt: "Waiting for reply: \(shortText(question.question, limit: 80))")
+        }
+        if let plan = session.pendingPlan {
+            return localizer.t("等待计划确认: \(plan.title)", en: "Waiting for plan approval: \(plan.title)", zhHant: "等待計劃確認: \(plan.title)", ja: "計画承認待ち: \(plan.title)", ko: "계획 승인 대기: \(plan.title)", mt: "Waiting for plan approval: \(plan.title)")
+        }
+        if session.phase == .error { return localizer.agentCenterPhaseError }
+        if session.phase == .interrupted { return localizer.agentCenterPhaseInterrupted }
+        return nil
+    }
+
+    private func scheduleHint(for sessions: [SessionState]) -> String? {
+        if let task = sessions.flatMap(\.tasks).first(where: { !taskIsDone($0) }) {
+            return task.name
+        }
+        if let title = sessions.compactMap(\.sessionTitle).first(where: { !$0.isEmpty }) {
+            return title
+        }
+        return localizer.t("等待下一次触发", en: "Waiting for next trigger", zhHant: "等待下一次觸發", ja: "次回トリガー待ち", ko: "다음 트리거 대기 중", mt: "Waiting for next trigger")
+    }
+
+    private func projectSummary(sessions: [SessionState], records: [OperationRecord]) -> String {
+        let candidates = sessions.sorted { sessionLastActivity($0) > sessionLastActivity($1) }.flatMap { session in
+            [
+                session.statusLineText,
+                session.description,
+                session.lastResponse,
+                session.lastThought,
+                session.lastUserMessage,
+                session.lastToolName
+            ]
+        }
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        if let text = candidates.first(where: { !$0.isEmpty }) {
+            return shortText(text, limit: 150)
+        }
+        if let record = records.first {
+            return shortText(record.detail.isEmpty ? record.targetPath : record.detail, limit: 150)
+        }
+        return localizer.t("等待更多实时事件", en: "Waiting for more live events", zhHant: "等待更多即時事件", ja: "ライブイベント待ち", ko: "추가 실시간 이벤트 대기 중", mt: "Waiting for more live events")
+    }
+
+    private func progressForProject(sessions: [SessionState], completedTasks: Int, totalTasks: Int) -> Double {
+        if totalTasks > 0 {
+            return min(max(Double(completedTasks) / Double(totalTasks), 0.05), 1.0)
+        }
+        let values = sessions.map { phaseProgress($0.phase) }
+        guard !values.isEmpty else { return 0.55 }
+        return values.reduce(0, +) / Double(values.count)
+    }
+
+    private func phaseProgress(_ phase: SessionPhase) -> Double {
+        switch phase {
+        case .ready: return 0.12
+        case .idle: return 0.18
+        case .processing: return 0.55
+        case .waitingApproval, .waitingInput: return 0.48
+        case .compacting: return 0.72
+        case .done: return 1.0
+        case .error: return 0.35
+        case .interrupted: return 0.25
+        }
+    }
+
+    private func taskIsDone(_ task: TaskInfo) -> Bool {
+        let status = task.status.lowercased()
+        return status == "completed" || status == "done" || status == "success" || status == "finished"
+    }
+
+    private func sessionLastActivity(_ session: SessionState) -> Date {
+        if let lastMainAgentAt = session.lastMainAgentAt, lastMainAgentAt > 0 {
+            let value = Double(lastMainAgentAt)
+            return Date(timeIntervalSince1970: value > 10_000_000_000 ? value / 1000 : value)
+        }
+        return session.endedAt ?? session.startedAt
+    }
+
+    private func sessionProjectKey(_ session: SessionState) -> String {
+        let cwdRoot = projectRoot(from: session.cwd)
+        if !cwdRoot.isEmpty { return cwdRoot }
+        let projectRootValue = projectRoot(from: session.project)
+        if !projectRootValue.isEmpty { return projectRootValue }
+        let project = session.project.trimmingCharacters(in: .whitespacesAndNewlines)
+        return project.isEmpty ? session.id : project
+    }
+
+    private func operationProjectKey(_ record: OperationRecord) -> String {
+        let targetRoot = projectRoot(from: record.targetPath)
+        if !targetRoot.isEmpty { return targetRoot }
+        let detailRoot = projectRoot(from: record.detail)
+        if !detailRoot.isEmpty { return detailRoot }
+        return "\(localizer.agentCol): \(record.agentName)"
+    }
+
+    private func projectRoot(from rawText: String) -> String {
+        guard let candidate = firstPathCandidate(in: rawText) else { return "" }
+        let expanded = NSString(string: candidate).expandingTildeInPath
+        let lower = expanded.lowercased()
+        if lower.contains("/library/") || lower.contains("/.codex/sessions/") || lower.contains("/.trash/") {
+            return ""
+        }
+        let components = URL(fileURLWithPath: expanded).pathComponents
+        let anchors = ["Downloads", "Documents", "Desktop", "Developer", "Projects", "Code", "Workspace", "Work"]
+        if let index = components.firstIndex(where: { anchors.contains($0) }),
+           components.count > index + 1 {
+            return NSString.path(withComponents: Array(components.prefix(index + 2)))
+        }
+        if URL(fileURLWithPath: expanded).pathExtension.isEmpty {
+            return expanded
+        }
+        return URL(fileURLWithPath: expanded).deletingLastPathComponent().path
+    }
+
+    private func firstPathCandidate(in text: String) -> String? {
+        let ns = text as NSString
+        let markers = ["/Users/", "/Volumes/", "~/"]
+        let delimiters = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'，,;；)］]}>"))
+        for marker in markers {
+            let range = ns.range(of: marker)
+            guard range.location != NSNotFound else { continue }
+            var end = range.location
+            while end < ns.length {
+                let scalarValue = ns.character(at: end)
+                if let scalar = UnicodeScalar(scalarValue), delimiters.contains(scalar) {
+                    break
+                }
+                end += 1
+            }
+            guard end > range.location else { continue }
+            return ns.substring(with: NSRange(location: range.location, length: end - range.location))
+        }
+        return nil
+    }
+
+    private func projectTitle(for sessions: [SessionState], fallback: String) -> String {
+        if let title = sessions.compactMap(\.sessionTitle).first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            return shortText(title, limit: 42)
+        }
+        if let project = sessions.map(\.project).first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            return projectDisplayName(for: project, fallback: fallback)
+        }
+        return projectDisplayName(for: fallback, fallback: fallback)
+    }
+
+    private func projectDisplayName(for path: String, fallback: String) -> String {
+        if path.hasPrefix(localizer.agentCol + ":") { return path }
+        let expanded = NSString(string: path).expandingTildeInPath
+        let last = URL(fileURLWithPath: expanded).lastPathComponent
+        return last.isEmpty ? fallback : shortText(last, limit: 42)
+    }
+
+    private func uniqueStrings(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for value in values {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !seen.contains(trimmed.lowercased()) else { continue }
+            seen.insert(trimmed.lowercased())
+            result.append(trimmed)
+        }
+        return result
+    }
+
+    private func shortText(_ text: String, limit: Int) -> String {
+        let normalized = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\t", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.count > limit else { return normalized }
+        return String(normalized.prefix(limit - 1)) + "…"
+    }
+
+    private func lanePriority(_ lane: MonitorProjectLane) -> Int {
+        switch lane {
+        case .blocked: return 0
+        case .live: return 1
+        case .scheduled: return 2
+        case .completed: return 3
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             PageHeader(
@@ -8031,7 +8713,7 @@ struct OperationLogTab: View {
                 color: Theme.Colors.accent
             ) {
                 HStack(spacing: 8) {
-                    Button { refreshAgentMonitor() } label: {
+                    Button { refreshAgentMonitor(forceHeavy: true) } label: {
                         Label(localizer.refresh, systemImage: "arrow.clockwise")
                     }
                     .buttonStyle(.bordered)
@@ -8066,34 +8748,38 @@ struct OperationLogTab: View {
                 }
             }
 
-            HStack(spacing: Theme.Spacing.sm) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 150), spacing: Theme.Spacing.sm)],
+                alignment: .leading,
+                spacing: Theme.Spacing.sm
+            ) {
                 StatCardView(
-                    icon: "list.bullet.clipboard",
+                    icon: "rectangle.3.group.fill",
                     iconColor: Theme.Colors.info,
-                    title: localizer.totalOps,
-                    value: "\(allOperationRecords.count)",
-                    subtitle: nil
+                    title: localizer.t("项目", en: "Projects", zhHant: "專案", ja: "プロジェクト", ko: "프로젝트", mt: "Projects"),
+                    value: "\(projectSnapshots.count)",
+                    subtitle: localizer.t("看板", en: "board", zhHant: "看板", ja: "ボード", ko: "보드", mt: "board")
                 )
                 StatCardView(
-                    icon: "sun.max",
-                    iconColor: Theme.Colors.warning,
-                    title: localizer.timeToday,
-                    value: "\(todayRecordCount)",
-                    subtitle: nil
-                )
-                StatCardView(
-                    icon: "clock",
+                    icon: "dot.radiowaves.left.and.right",
                     iconColor: Theme.Colors.success,
-                    title: localizer.time1h,
-                    value: "\(hourRecordCount)",
-                    subtitle: nil
+                    title: localizer.t("实时项目", en: "Live", zhHant: "即時專案", ja: "ライブ", ko: "실시간", mt: "Live"),
+                    value: "\(liveProjectCount)",
+                    subtitle: localizer.t("正在推进", en: "in progress", zhHant: "正在推進", ja: "進行中", ko: "진행 중", mt: "in progress")
                 )
                 StatCardView(
-                    icon: "cpu",
-                    iconColor: Theme.Colors.purple,
-                    title: localizer.unitAgent,
-                    value: "\(agentNames.count)",
-                    subtitle: nil
+                    icon: "calendar.badge.clock",
+                    iconColor: Theme.Colors.teal,
+                    title: localizer.t("定时项目", en: "Scheduled", zhHant: "排程專案", ja: "予定", ko: "예약", mt: "Scheduled"),
+                    value: "\(scheduledProjectCount)",
+                    subtitle: localizer.t("等待触发", en: "queued", zhHant: "等待觸發", ja: "待機中", ko: "대기 중", mt: "queued")
+                )
+                StatCardView(
+                    icon: "exclamationmark.triangle.fill",
+                    iconColor: blockedProjectCount > 0 ? Theme.Colors.warning : Theme.Colors.success,
+                    title: localizer.t("阻塞事项", en: "Blockers", zhHant: "阻塞事項", ja: "ブロッカー", ko: "차단 항목", mt: "Blockers"),
+                    value: "\(blockedProjectCount)",
+                    subtitle: localizer.t("需要处理", en: "need attention", zhHant: "需要處理", ja: "要対応", ko: "처리 필요", mt: "need attention")
                 )
             }
             .padding(.horizontal, Theme.Spacing.xl)
@@ -8125,7 +8811,7 @@ struct OperationLogTab: View {
 
                 Spacer()
 
-                if viewMode == 1 {
+                if viewMode == 2 {
                     if !sessionScanner.opRecords.isEmpty {
                         Button {
                             sessionScanner.opRecords = []
@@ -8150,6 +8836,8 @@ struct OperationLogTab: View {
 
             switch viewMode {
             case 0:
+                projectBoardView
+            case 1:
                 liveView
             default:
                 targetedView
@@ -8159,29 +8847,45 @@ struct OperationLogTab: View {
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 service.ensureAgentGuardDataPipeline()
-                refreshAgentMonitor()
+                refreshAgentMonitor(forceHeavy: true)
             }
-            monitor.loadCurated()
             if monitor.autoCurationInterval > 0 { service.startAutoCuration() }
         }
+        .onChange(of: service.operationRecords.count) { _ in
+            rebuildProjectSnapshotCache()
+        }
+        .onChange(of: monitor.records.count) { _ in
+            rebuildProjectSnapshotCache()
+        }
+        .onChange(of: sessionsViewModel.sessions.count) { _ in
+            rebuildProjectSnapshotCache()
+        }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
-            guard viewMode == 0, autoRefreshSeconds > 0 else { return }
+            guard viewMode != 2, autoRefreshSeconds > 0 else { return }
             guard now.timeIntervalSince(lastAutoRefresh) >= Double(autoRefreshSeconds) else { return }
             lastAutoRefresh = now
             refreshAgentMonitor()
         }
     }
 
-    private func refreshAgentMonitor() {
-        service.refreshOperationRecordsSnapshot()
-        service.importKnownAgentHistory()
-        monitor.loadCurated()
+    private func refreshAgentMonitor(forceHeavy: Bool = false) {
+        let now = Date()
+        let shouldHeavyRefresh = forceHeavy || now.timeIntervalSince(lastHeavyRefresh) >= Self.heavyRefreshInterval
+        if shouldHeavyRefresh {
+            service.refreshOperationRecordsSnapshot()
+            service.importKnownAgentHistory()
+            monitor.loadCurated()
+            lastHeavyRefresh = now
+        }
+        automationProjectSnapshots = readAutomationProjectSnapshots()
+        rebuildProjectSnapshotCache(force: forceHeavy || shouldHeavyRefresh)
     }
 
     private var modeSelector: some View {
         HStack(spacing: 0) {
-            modeButton(title: localizer.liveMonitor, mode: 0)
-            modeButton(title: localizer.audit, mode: 1)
+            modeButton(title: localizer.t("项目看板", en: "Project Board", zhHant: "專案看板", ja: "プロジェクトボード", ko: "프로젝트 보드", mt: "Project Board"), mode: 0)
+            modeButton(title: localizer.t("实时明细", en: "Live Details", zhHant: "即時明細", ja: "ライブ詳細", ko: "실시간 상세", mt: "Live Details"), mode: 1)
+            modeButton(title: localizer.audit, mode: 2)
         }
         .padding(3)
         .background(
@@ -8250,8 +8954,619 @@ struct OperationLogTab: View {
         .background(Theme.Colors.warning.opacity(0.08))
     }
 
-    private var liveView: some View {
+    private var projectBoardView: some View {
+        let visibleProjects = filteredProjectSnapshots
+        let activeProject = selectedProject
+        let activeProjectId = activeProject?.id
+
+        return VStack(spacing: 0) {
+            if visibleProjects.isEmpty {
+                VStack(spacing: 12) {
+                    Spacer()
+                    Image(systemName: "rectangle.3.group")
+                        .font(.system(size: 38, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.info.opacity(0.78))
+                    Text(localizer.t("暂无可展示项目", en: "No projects to show", zhHant: "暫無可展示專案", ja: "表示できるプロジェクトはありません", ko: "표시할 프로젝트가 없습니다", mt: "No projects to show"))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(localizer.t("接入 Agent Hook 或授权 Agent 数据目录后，这里会按项目展示实时进度、定时任务和阻塞事项。", en: "Connect agent hooks or authorize agent data folders to see live progress, scheduled work, and blockers by project.", zhHant: "接入 Agent Hook 或授權 Agent 資料目錄後，這裡會按專案展示即時進度、排程任務和阻塞事項。", ja: "Agent Hookを接続するかデータフォルダを許可すると、プロジェクト別の進捗、予定タスク、ブロッカーが表示されます。", ko: "Agent Hook을 연결하거나 데이터 폴더를 승인하면 프로젝트별 실시간 진행률, 예약 작업, 차단 항목이 표시됩니다.", mt: "Connect agent hooks or authorize agent data folders to see live progress, scheduled work, and blockers by project."))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 560)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                            ForEach(MonitorProjectLane.allCases, id: \.self) { lane in
+                                let laneProjects = visibleProjects.filter { $0.lane == lane }
+                                projectLaneView(lane: lane, projects: laneProjects, activeProjectId: activeProjectId)
+                            }
+                        }
+
+                        projectDetailPanel(activeProject)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .padding(Theme.Spacing.lg)
+                }
+            }
+        }
+        .frame(minHeight: 260)
+    }
+
+    private func projectLaneView(
+        lane: MonitorProjectLane,
+        projects: [MonitorProjectSnapshot],
+        activeProjectId: String?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: lane.icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(lane.color)
+                    .frame(width: 26, height: 26)
+                    .background(lane.color.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(lane.title(localizer))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(1)
+                    Text(laneSubtitle(lane, count: projects.count))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Text("\(projects.count)")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(lane.color)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(lane.color.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            }
+            .padding(.horizontal, Theme.Spacing.sm)
+
+            if projects.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "tray")
+                        .font(.system(size: 22))
+                        .foregroundStyle(Theme.Colors.textTertiary.opacity(0.7))
+                    Text(localizer.t("暂无项目", en: "No projects", zhHant: "暫無專案", ja: "プロジェクトなし", ko: "프로젝트 없음", mt: "No projects"))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 118)
+                .background(Theme.Colors.cardBg.opacity(0.55))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+                )
+            } else {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 238, maximum: 340), spacing: Theme.Spacing.md, alignment: .top)],
+                    alignment: .leading,
+                    spacing: Theme.Spacing.md
+                ) {
+                    ForEach(projects) { project in
+                        projectCard(project, activeProjectId: activeProjectId)
+                    }
+                }
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                .stroke(Color.primary.opacity(0.055), lineWidth: 1)
+        )
+    }
+
+    private func projectCard(_ project: MonitorProjectSnapshot, activeProjectId: String?) -> some View {
+        Button {
+            selectedProjectId = project.id
+        } label: {
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+                    Image(systemName: project.lane.icon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(project.lane.color)
+                        .frame(width: 30, height: 30)
+                        .background(project.lane.color.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(project.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .lineLimit(2)
+                            .help(project.title)
+                        Text(project.path)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(project.path)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack {
+                        Text(localizer.t("进度", en: "Progress", zhHant: "進度", ja: "進捗", ko: "진행률", mt: "Progress"))
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                        Spacer()
+                        Text("\(Int((project.progress * 100).rounded()))%")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(project.lane.color)
+                    }
+                    ProgressView(value: min(max(project.progress, 0), 1))
+                        .progressViewStyle(.linear)
+                        .tint(project.lane.color)
+                }
+
+                if let blocker = project.blocker, !blocker.isEmpty {
+                    projectCallout(icon: "exclamationmark.triangle.fill", text: blocker, color: Theme.Colors.warning, lineLimit: 2)
+                } else if let scheduleHint = project.scheduledHint, !scheduleHint.isEmpty {
+                    projectCallout(icon: "clock", text: scheduleHint, color: Theme.Colors.info, lineLimit: 1)
+                }
+
+                HStack(spacing: 5) {
+                    ForEach(Array(project.agents.prefix(3)), id: \.self) { agent in
+                        projectTinyBadge(text: agent, color: Theme.Colors.accent)
+                    }
+                    if project.agents.count > 3 {
+                        projectTinyBadge(text: "+\(project.agents.count - 3)", color: Theme.Colors.textSecondary)
+                    }
+                }
+
+                Text(project.summary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(2)
+                    .frame(minHeight: 30, alignment: .topLeading)
+
+                HStack(spacing: Theme.Spacing.sm) {
+                    projectMetricPill(icon: "terminal", value: "\(project.sessionCount)", color: Theme.Colors.info, help: localizer.t("会话", en: "Sessions", zhHant: "會話", ja: "セッション", ko: "세션", mt: "Sessions"))
+                    projectMetricPill(icon: "doc.text.magnifyingglass", value: "\(project.recordCount)", color: Theme.Colors.purple, help: localizer.audit)
+                    if project.totalTasks > 0 {
+                        projectMetricPill(icon: "checklist", value: "\(project.completedTasks)/\(project.totalTasks)", color: Theme.Colors.success, help: localizer.t("任务", en: "Tasks", zhHant: "任務", ja: "タスク", ko: "작업", mt: "Tasks"))
+                    }
+                    Spacer()
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 190, alignment: .topLeading)
+            .background(activeProjectId == project.id ? project.lane.color.opacity(0.11) : Theme.Colors.cardBg)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                    .stroke(activeProjectId == project.id ? project.lane.color.opacity(0.38) : Color.primary.opacity(0.06), lineWidth: activeProjectId == project.id ? 1.2 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func projectDetailPanel(_ project: MonitorProjectSnapshot?) -> some View {
         VStack(spacing: 0) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "rectangle.bottomthird.inset.filled")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.accent)
+                Text(localizer.t("项目详情", en: "Project Detail", zhHant: "專案詳情", ja: "プロジェクト詳細", ko: "프로젝트 상세", mt: "Project Detail"))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Spacer()
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm)
+            .background(Theme.Colors.sidebarBg.opacity(0.32))
+
+            Divider()
+
+            if let project {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+                                Image(systemName: project.lane.icon)
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(project.lane.color)
+                                    .frame(width: 34, height: 34)
+                                    .background(project.lane.color.opacity(0.12))
+                                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(project.title)
+                                        .font(.system(size: 15, weight: .bold))
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                        .lineLimit(3)
+                                    Text(project.lane.title(localizer))
+                                        .font(Theme.Font.captionMedium)
+                                        .foregroundStyle(project.lane.color)
+                                }
+                                Spacer()
+                            }
+
+                            HStack(spacing: 6) {
+                                Text(project.path)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .help(project.path)
+                                Button {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(project.path, forType: .string)
+                                } label: {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.system(size: 10))
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(Theme.Colors.accent)
+                                .help(localizer.copyPath)
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(localizer.t("整体进度", en: "Overall Progress", zhHant: "整體進度", ja: "全体進捗", ko: "전체 진행률", mt: "Overall Progress"))
+                                    .font(Theme.Font.captionMedium)
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                Spacer()
+                                Text("\(Int((project.progress * 100).rounded()))%")
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .monospacedDigit()
+                                    .foregroundStyle(project.lane.color)
+                            }
+                            ProgressView(value: min(max(project.progress, 0), 1))
+                                .progressViewStyle(.linear)
+                                .tint(project.lane.color)
+                        }
+
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 132), spacing: Theme.Spacing.sm, alignment: .top)],
+                            alignment: .leading,
+                            spacing: Theme.Spacing.sm
+                        ) {
+                            projectDetailStat(title: localizer.t("会话", en: "Sessions", zhHant: "會話", ja: "セッション", ko: "세션", mt: "Sessions"), value: "\(project.sessionCount)", icon: "terminal", color: Theme.Colors.info)
+                            projectDetailStat(title: localizer.audit, value: "\(project.recordCount)", icon: "doc.text.magnifyingglass", color: Theme.Colors.purple)
+                            projectDetailStat(title: localizer.t("子 Agent", en: "Subagents", zhHant: "子 Agent", ja: "サブAgent", ko: "하위 Agent", mt: "Subagents"), value: "\(project.sessions.reduce(0) { $0 + $1.subagents.count })", icon: "person.2.fill", color: Theme.Colors.teal)
+                            projectDetailStat(title: localizer.t("待处理", en: "Pending", zhHant: "待處理", ja: "保留中", ko: "대기", mt: "Pending"), value: "\(project.sessions.filter(hasPendingAttention).count)", icon: "hand.raised.fill", color: project.sessions.contains(where: hasPendingAttention) ? Theme.Colors.warning : Theme.Colors.success)
+                        }
+
+                        if let blocker = project.blocker {
+                            projectDetailSection(title: localizer.t("当前阻塞", en: "Current Blocker", zhHant: "目前阻塞", ja: "現在のブロッカー", ko: "현재 차단 항목", mt: "Current Blocker"), icon: "exclamationmark.triangle.fill", color: Theme.Colors.warning) {
+                                Text(blocker)
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                    .lineLimit(4)
+                            }
+                        }
+
+                        if !project.activeTools.isEmpty {
+                            projectDetailSection(title: localizer.t("当前工具", en: "Active Tools", zhHant: "目前工具", ja: "アクティブツール", ko: "활성 도구", mt: "Active Tools"), icon: "hammer.fill", color: Theme.Colors.info) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    ForEach(project.activeTools.prefix(6), id: \.self) { tool in
+                                        projectToolRow(tool)
+                                    }
+                                }
+                            }
+                        }
+
+                        projectDetailSection(title: localizer.t("项目摘要", en: "Project Summary", zhHant: "專案摘要", ja: "プロジェクト概要", ko: "프로젝트 요약", mt: "Project Summary"), icon: "text.alignleft", color: Theme.Colors.accent) {
+                            Text(project.summary)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .lineLimit(6)
+                        }
+
+                        if !project.sessions.isEmpty {
+                            projectDetailSection(title: localizer.t("会话流", en: "Session Flow", zhHant: "會話流", ja: "セッションフロー", ko: "세션 흐름", mt: "Session Flow"), icon: "point.3.connected.trianglepath.dotted", color: Theme.Colors.teal) {
+                                VStack(spacing: 8) {
+                                    ForEach(project.sessions.prefix(5)) { session in
+                                        projectSessionRow(session)
+                                    }
+                                }
+                            }
+                        }
+
+                        if !project.records.isEmpty {
+                            projectDetailSection(title: localizer.t("最近审计", en: "Recent Audit", zhHant: "最近審計", ja: "最近の監査", ko: "최근 감사", mt: "Recent Audit"), icon: "clock.arrow.circlepath", color: Theme.Colors.purple) {
+                                VStack(spacing: 8) {
+                                    ForEach(project.records.prefix(6)) { operation in
+                                        projectOperationRow(operation)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(Theme.Spacing.md)
+            } else {
+                VStack(spacing: 10) {
+                    Spacer()
+                    Image(systemName: "rectangle.dashed")
+                        .font(.system(size: 30))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Text(localizer.t("选择一个项目查看详情", en: "Select a project", zhHant: "選擇一個專案", ja: "プロジェクトを選択", ko: "프로젝트 선택", mt: "Select a project"))
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                .stroke(Color.primary.opacity(0.055), lineWidth: 1)
+        )
+    }
+
+    private func projectCallout(icon: String, text: String, color: Color, lineLimit: Int) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+            Text(text)
+                .font(Theme.Font.caption)
+                .lineLimit(lineLimit)
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(color.opacity(0.09))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    private func projectTinyBadge(text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .semibold))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    private func projectMetricPill(icon: String, value: String, color: Color, help: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .semibold))
+            Text(value)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.09))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        .help(help)
+    }
+
+    private func projectDetailStat(title: String, value: String, icon: String, color: Color) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 22, height: 22)
+                .background(color.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .lineLimit(1)
+                Text(title)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(8)
+        .background(Theme.Colors.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+        )
+    }
+
+    private func projectToolRow(_ name: String) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: "hammer")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.Colors.info)
+                .frame(width: 20, height: 20)
+                .background(Theme.Colors.info.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            Text(name)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func projectSessionRow(_ session: SessionState) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(phaseColor(session.phase))
+                .frame(width: 8, height: 8)
+                .padding(.top, 5)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(session.agentType)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(1)
+                    Text(phaseLabel(session.phase))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(phaseColor(session.phase))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(phaseColor(session.phase).opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    Spacer(minLength: 0)
+                }
+
+                Text(session.lastToolName ?? session.description ?? session.cwd)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+
+                Text(relativeTimeText(sessionLastActivity(session)))
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+        }
+    }
+
+    private func projectOperationRow(_ operation: OperationRecord) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: operation.operationType.icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(operationRecordColor(operation.operationType))
+                .frame(width: 22, height: 22)
+                .background(operationRecordColor(operation.operationType).opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    Text(operation.operationType.localizedLabel(localizer))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text("·")
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Text(operation.agentName)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+
+                Text(operation.targetPath)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(operation.targetPath)
+
+                Text(relativeTimeText(operation.timestamp))
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func projectDetailSection<Content: View>(title: String, icon: String, color: Color, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Spacer()
+            }
+            content()
+        }
+        .padding(Theme.Spacing.sm)
+        .background(Theme.Colors.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+    }
+
+    private func laneSubtitle(_ lane: MonitorProjectLane, count: Int) -> String {
+        switch lane {
+        case .live:
+            return localizer.t("\(count) 个正在推进", en: "\(count) in progress", zhHant: "\(count) 個正在推進", ja: "\(count) 件進行中", ko: "\(count)개 진행 중", mt: "\(count) in progress")
+        case .scheduled:
+            return localizer.t("\(count) 个等待触发", en: "\(count) queued or scheduled", zhHant: "\(count) 個等待觸發", ja: "\(count) 件待機中", ko: "\(count)개 대기 중", mt: "\(count) queued or scheduled")
+        case .blocked:
+            return localizer.t("\(count) 个需要处理", en: "\(count) need attention", zhHant: "\(count) 個需要處理", ja: "\(count) 件要対応", ko: "\(count)개 처리 필요", mt: "\(count) need attention")
+        case .completed:
+            return localizer.t("\(count) 个可回看", en: "\(count) for review", zhHant: "\(count) 個可回看", ja: "\(count) 件確認可能", ko: "\(count)개 검토 가능", mt: "\(count) for review")
+        }
+    }
+
+    private func phaseLabel(_ phase: SessionPhase) -> String {
+        switch phase {
+        case .ready: return localizer.agentCenterPhaseReady
+        case .idle: return localizer.agentCenterPhaseIdle
+        case .processing: return localizer.agentCenterPhaseRunning
+        case .waitingApproval: return localizer.agentCenterPending
+        case .waitingInput: return localizer.agentCenterQuestion
+        case .compacting: return localizer.agentCenterPhaseCompacting
+        case .done: return localizer.agentCenterPhaseDone
+        case .error: return localizer.agentCenterPhaseError
+        case .interrupted: return localizer.agentCenterPhaseInterrupted
+        }
+    }
+
+    private func phaseColor(_ phase: SessionPhase) -> Color {
+        switch phase {
+        case .processing, .compacting: return Theme.Colors.info
+        case .waitingApproval, .waitingInput: return Theme.Colors.warning
+        case .done, .idle, .ready: return Theme.Colors.success
+        case .error, .interrupted: return Theme.Colors.danger
+        }
+    }
+
+    private func operationRecordColor(_ type: OperationRecord.OperationType) -> Color {
+        switch type {
+        case .create: return Theme.Colors.success
+        case .modify: return Theme.Colors.info
+        case .delete: return Theme.Colors.danger
+        case .move: return Theme.Colors.warning
+        case .rename: return Theme.Colors.purple
+        case .read: return Theme.Colors.teal
+        case .execute: return Theme.Colors.purple
+        }
+    }
+
+    private func relativeTimeText(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    private var liveView: some View {
+        let records = filteredRecords
+        let visibleRecords = Array(records.prefix(1000))
+
+        return VStack(spacing: 0) {
             HStack(spacing: Theme.Spacing.md) {
                 Picker(localizer.agentLabel, selection: $filterAgent) {
                     Text(localizer.allAgents).tag("")
@@ -8278,7 +9593,7 @@ struct OperationLogTab: View {
                 Spacer()
 
                 Button {
-                    let content = service.guardFeature.exportRecordsAsCSV(records: filteredRecords)
+                    let content = service.guardFeature.exportRecordsAsCSV(records: records)
                     _ = service.guardFeature.saveExport(content: content, filename: "agent-monitor-records.csv")
                 } label: {
                     Label(localizer.exportCSV, systemImage: "square.and.arrow.up")
@@ -8286,10 +9601,10 @@ struct OperationLogTab: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(filteredRecords.isEmpty)
+                .disabled(records.isEmpty)
 
                 Button {
-                    let content = service.guardFeature.exportRecordsAsJSON(records: filteredRecords)
+                    let content = service.guardFeature.exportRecordsAsJSON(records: records)
                     _ = service.guardFeature.saveExport(content: content, filename: "agent-monitor-records.json")
                 } label: {
                     Label(localizer.exportJSON, systemImage: "doc.text")
@@ -8297,9 +9612,9 @@ struct OperationLogTab: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(filteredRecords.isEmpty)
+                .disabled(records.isEmpty)
 
-                Text("\(displayedRecords.count)/\(filteredRecords.count) \(localizer.recordsCount)")
+                Text("\(visibleRecords.count)/\(records.count) \(localizer.recordsCount)")
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
@@ -8309,7 +9624,7 @@ struct OperationLogTab: View {
 
             Divider()
 
-            if displayedRecords.isEmpty {
+            if visibleRecords.isEmpty {
                 VStack(spacing: Theme.Spacing.lg) {
                     Spacer()
                     Image(systemName: "cpu")
@@ -8342,7 +9657,7 @@ struct OperationLogTab: View {
                 operationListHeader
                 ScrollView {
                     LazyVStack(spacing: Theme.Spacing.sm) {
-                        ForEach(displayedRecords) { record in
+                        ForEach(visibleRecords) { record in
                             HStack(spacing: Theme.Spacing.md) {
                                 Text(timeWithSeconds(record.timestamp))
                                     .font(Theme.Font.caption)

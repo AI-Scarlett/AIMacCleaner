@@ -44,6 +44,10 @@ class OperationMonitor: ObservableObject {
     private var authorizedWatchPaths: Set<String> = []
     private var lastCleanupTime: Date = .distantPast
     private var recordFingerprints: Set<String> = []
+    private let processInfoPollInterval: TimeInterval = 15
+    private let fsHealthPollInterval: TimeInterval = 30
+    private let snapshotFallbackPollInterval: TimeInterval = 45
+    private let lsofRefreshInterval: TimeInterval = 30
 
     private var allPidOpenFiles: [pid_t: Set<String>] = [:]
     private(set) var allPidCommMap: [pid_t: String] = [:]
@@ -51,6 +55,9 @@ class OperationMonitor: ObservableObject {
     private(set) var ppidMap: [pid_t: pid_t] = [:]
     private var agentComms: Set<String> = []
     private var lastLsofRefresh: Date = .distantPast
+    private var lastProcessInfoPoll: Date = .distantPast
+    private var lastFSHealthPoll: Date = .distantPast
+    private var lastSnapshotFallbackPoll: Date = .distantPast
     private var fileAgentCache: [String: (agentName: String, processName: String, toolInfo: String?, cachedAt: Date, pid: pid_t)] = [:]
     private let cacheMaxSize = 5000
     private let cacheTTL: TimeInterval = 120.0
@@ -570,14 +577,19 @@ class OperationMonitor: ObservableObject {
             self.activeAgentNames = newActiveAgents
         }
 
+        let now = Date()
         recordNewCommandExecutions(
             currentPidCommMap: newPidCommMap,
             currentPidArgsMap: newPidArgsMap,
             currentPpidMap: newPpidMap
         )
-        refreshLsofData(pidCommMap: newPidCommMap, pidArgsMap: newPidArgsMap, ppidMap: newPpidMap)
+        stateLock.lock()
+        let lastLsofRefreshSnapshot = lastLsofRefresh
+        stateLock.unlock()
+        if agentsChanged || now.timeIntervalSince(lastLsofRefreshSnapshot) >= lsofRefreshInterval {
+            refreshLsofData(pidCommMap: newPidCommMap, pidArgsMap: newPidArgsMap, ppidMap: newPpidMap)
+        }
 
-        let now = Date()
         let snapshot = newPidCommMap.map { (pid, comm) in
             ProcessSnapshot(timestamp: now, pid: pid, ppid: newPpidMap[pid] ?? 0, comm: comm, args: newPidArgsMap[pid] ?? "")
         }
@@ -1195,15 +1207,30 @@ class OperationMonitor: ObservableObject {
 
     private func startProcessPoller() {
         processPoller?.invalidate()
+        let now = Date()
+        lastProcessInfoPoll = now
+        lastFSHealthPoll = now
+        lastSnapshotFallbackPoll = now
         processPoller = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            DispatchQueue.global(qos: .utility).async { [weak self] in
-                self?.refreshAllProcessInfo()
+            guard let self = self else { return }
+            let now = Date()
+            if now.timeIntervalSince(self.lastProcessInfoPoll) >= self.processInfoPollInterval {
+                self.lastProcessInfoPoll = now
+                DispatchQueue.global(qos: .utility).async { [weak self] in
+                    self?.refreshAllProcessInfo()
+                }
             }
-            DispatchQueue.global(qos: .utility).async { [weak self] in
-                self?.checkFSEventStreamHealth()
+            if now.timeIntervalSince(self.lastFSHealthPoll) >= self.fsHealthPollInterval {
+                self.lastFSHealthPoll = now
+                DispatchQueue.global(qos: .utility).async { [weak self] in
+                    self?.checkFSEventStreamHealth()
+                }
             }
-            DispatchQueue.global(qos: .utility).async { [weak self] in
-                self?.pollSnapshotChanges()
+            if now.timeIntervalSince(self.lastSnapshotFallbackPoll) >= self.snapshotFallbackPollInterval {
+                self.lastSnapshotFallbackPoll = now
+                DispatchQueue.global(qos: .utility).async { [weak self] in
+                    self?.pollSnapshotChanges()
+                }
             }
         }
     }

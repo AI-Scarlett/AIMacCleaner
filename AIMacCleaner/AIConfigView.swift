@@ -8,6 +8,7 @@ struct AIConfigView: View {
     @State private var apiBase = ""
     @State private var apiKey = ""
     @State private var model = AIConfig.appleIntelligenceModel
+    @State private var providerMode: AIProviderMode = .automatic
 
     let presets: [(name: String, base: String, model: String)] = [
         ("Apple Intelligence", "", AIConfig.appleIntelligenceModel),
@@ -46,17 +47,34 @@ struct AIConfigView: View {
                 .background(Color.accentColor.opacity(0.06))
                 .cornerRadius(8)
 
+                formRow(localizer.t("模型策略", en: "Model Mode")) {
+                    Picker("", selection: $providerMode) {
+                        Text(localizer.t("自动", en: "Auto")).tag(AIProviderMode.automatic)
+                        Text("Apple").tag(AIProviderMode.apple)
+                        Text(localizer.t("第三方", en: "External")).tag(AIProviderMode.external)
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Text(modeDescription)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 132)
+
                 formRow(localizer.t("API 地址", en: "API Base URL")) {
-                    TextField("Optional for external providers", text: $apiBase)
+                    TextField("https://api.example.com, .../v1, or .../v1/chat/completions", text: $apiBase)
                         .textFieldStyle(.roundedBorder)
+                        .disabled(providerMode == .apple)
                 }
                 formRow(localizer.t("API Key", en: "API Key")) {
                     SecureField("Optional", text: $apiKey)
                         .textFieldStyle(.roundedBorder)
+                        .disabled(providerMode == .apple)
                 }
                 formRow(localizer.t("模型", en: "Model")) {
                     TextField(AIConfig.appleIntelligenceModel, text: $model)
                         .textFieldStyle(.roundedBorder)
+                        .disabled(providerMode == .apple)
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -69,6 +87,9 @@ struct AIConfigView: View {
                             model = preset.model
                             if preset.model == AIConfig.appleIntelligenceModel {
                                 apiKey = ""
+                                providerMode = .apple
+                            } else {
+                                providerMode = .external
                             }
                         } label: {
                             HStack {
@@ -115,16 +136,29 @@ struct AIConfigView: View {
         }
     }
 
+    private var modeDescription: String {
+        switch providerMode {
+        case .automatic:
+            return localizer.t("默认先使用 Apple Intelligence；不可用时才尝试你填写的第三方模型。", en: "Uses Apple Intelligence first, then falls back to your external provider if Apple is unavailable.")
+        case .apple:
+            return localizer.t("只使用 Apple Intelligence，不会调用第三方模型。", en: "Only uses Apple Intelligence. External providers are not called.")
+        case .external:
+            return localizer.t("直接使用第三方模型；请填写 API 地址、API Key 和模型名。", en: "Uses the external provider directly. Enter API base URL, API key, and model name.")
+        }
+    }
+
     private func loadConfig() {
         if let config = service.aiConfig {
             apiBase = config.apiBase ?? ""
             apiKey = config.apiKey ?? ""
             model = config.model ?? AIConfig.appleIntelligenceModel
+            providerMode = config.providerMode
         }
     }
 
     private func saveConfig() {
-        service.saveAIConfig(apiBase: apiBase, apiKey: apiKey, model: model)
+        let savedModel = providerMode == .apple ? AIConfig.appleIntelligenceModel : model
+        service.saveAIConfig(apiBase: apiBase, apiKey: apiKey, model: savedModel, mode: providerMode)
         dismiss()
     }
 }

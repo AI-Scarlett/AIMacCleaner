@@ -797,6 +797,14 @@ class ScannerService: ObservableObject {
         return !authorizedScanRoots.isEmpty
     }
 
+    func authorizedLocalScanRoots(promptForAccess: Bool = true) -> Set<String> {
+        restoreScanAccessFromBookmarks()
+        if authorizedScanRoots.isEmpty && promptForAccess {
+            _ = requestLocalScanAccess()
+        }
+        return authorizedScanRoots
+    }
+
     nonisolated private static func calculateDirectorySizeStatic(at path: String) -> (Int64, Int) {
         let fm = FileManager.default
         var totalSize: Int64 = 0
@@ -870,6 +878,51 @@ class ScannerService: ObservableObject {
         }
 
         return DeleteResult(success: true, results: deleteResults, deleted: successCount, failed: failCount)
+    }
+
+    func deleteAdvisedPaths(_ targets: [(id: String, path: String, size: Int64, fileCount: Int)]) async -> DeleteResult {
+        let targetPaths = targets.map(\.path)
+        guard await authorizeProtectedDeletionIfNeeded(paths: targetPaths) else {
+            let failures = targetPaths.filter { guardFeature.isPathProtected($0) }.map {
+                DeleteItemResult(
+                    id: nil,
+                    path: $0,
+                    success: false,
+                    message: localizer?.t("系统身份验证未通过，已取消守护目录清理。", en: "System authentication was not completed, so protected cleanup was cancelled.") ?? "System authentication was not completed."
+                )
+            }
+            return DeleteResult(success: false, results: failures, deleted: 0, failed: failures.count)
+        }
+
+        var deleteResults: [DeleteItemResult] = []
+        var successCount = 0
+        var failCount = 0
+
+        for target in targets {
+            do {
+                if FileManager.default.fileExists(atPath: target.path) {
+                    let trashPath = try moveToTrash(atPath: target.path)
+                    if let trashPath, guardFeature.isPathProtected(target.path) {
+                        guardFeature.recordProtectedTrashItem(
+                            originalPath: target.path,
+                            trashPath: trashPath,
+                            size: target.size,
+                            fileCount: target.fileCount
+                        )
+                    }
+                    successCount += 1
+                    deleteResults.append(DeleteItemResult(id: target.id, path: target.path, success: true, message: localizer?.movedToTrash ?? "Moved to Trash"))
+                } else {
+                    failCount += 1
+                    deleteResults.append(DeleteItemResult(id: target.id, path: target.path, success: false, message: localizer?.t("文件不存在", en: "File does not exist") ?? "File does not exist"))
+                }
+            } catch {
+                failCount += 1
+                deleteResults.append(DeleteItemResult(id: target.id, path: target.path, success: false, message: error.localizedDescription))
+            }
+        }
+
+        return DeleteResult(success: failCount == 0, results: deleteResults, deleted: successCount, failed: failCount)
     }
 
     private func pathsToDelete(for item: ScanItem) -> [String] {
@@ -968,13 +1021,14 @@ class ScannerService: ObservableObject {
             apiBase: existing.apiBase,
             apiKey: existing.apiKey,
             model: AIConfig.appleIntelligenceModel,
-            hasKey: existing.apiKey?.isEmpty == false
+            hasKey: existing.apiKey?.isEmpty == false,
+            mode: AIProviderMode.apple.rawValue
         )
         saveAIConfigMetadata(config)
         aiConfig = config
     }
 
-    func saveAIConfig(apiBase: String, apiKey: String, model: String) {
+    func saveAIConfig(apiBase: String, apiKey: String, model: String, mode: AIProviderMode = .automatic) {
         let trimmedBase = apiBase.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -982,7 +1036,8 @@ class ScannerService: ObservableObject {
             apiBase: trimmedBase.isEmpty ? nil : trimmedBase,
             apiKey: trimmedKey.isEmpty ? nil : trimmedKey,
             model: trimmedModel.isEmpty ? AIConfig.appleIntelligenceModel : trimmedModel,
-            hasKey: !trimmedKey.isEmpty
+            hasKey: !trimmedKey.isEmpty,
+            mode: mode.rawValue
         )
         saveAIConfigMetadata(config)
         aiConfig = config
@@ -993,7 +1048,8 @@ class ScannerService: ObservableObject {
             apiBase: nil,
             apiKey: nil,
             model: AIConfig.appleIntelligenceModel,
-            hasKey: false
+            hasKey: false,
+            mode: AIProviderMode.automatic.rawValue
         )
     }
 
@@ -1828,6 +1884,7 @@ class ScannerService: ObservableObject {
     @Published var operationRecords: [OperationRecord] = []
     private var processedOperationRecordIDs: Set<String> = []
     private var lastAgentHistoryImportTime: Date = .distantPast
+    private var operationRecordsSnapshotSignature = ""
     private var recordsClearCutoff: Date {
         if let d = UserDefaults.standard.object(forKey: "operationRecordsClearedAt") as? Date { return d }
         return .distantPast
@@ -1841,6 +1898,7 @@ class ScannerService: ObservableObject {
         operationMonitor.start()
         operationRecords = operationMonitor.records
         processedOperationRecordIDs = Set(operationRecords.map(\.id))
+        operationRecordsSnapshotSignature = operationSnapshotSignature(operationRecords)
         guardFeature.rebuildAnalytics(from: operationRecords)
         startOperationPolling()
     }
@@ -1850,8 +1908,14 @@ class ScannerService: ObservableObject {
             startOperationMonitor()
             UserDefaults.standard.set(true, forKey: "operationMonitorEnabled")
         } else {
-            operationRecords = operationMonitor.records
-            guardFeature.rebuildAnalytics(from: operationRecords)
+            let currentRecords = operationMonitor.records
+            let signature = operationSnapshotSignature(currentRecords)
+            operationRecords = currentRecords
+            if signature != operationRecordsSnapshotSignature {
+                processedOperationRecordIDs = Set(currentRecords.map(\.id))
+                operationRecordsSnapshotSignature = signature
+                guardFeature.rebuildAnalytics(from: currentRecords)
+            }
             startOperationPolling()
         }
         importKnownAgentHistory()
@@ -1869,6 +1933,7 @@ class ScannerService: ObservableObject {
         operationMonitor.clearRecords()
         operationRecords = []
         processedOperationRecordIDs.removeAll()
+        operationRecordsSnapshotSignature = ""
         lastAgentHistoryImportTime = Date()
         guardFeature.rebuildAnalytics(from: [])
         saveScannerCache()
@@ -1883,6 +1948,7 @@ class ScannerService: ObservableObject {
         operationMonitor.mergeHistoricalRecords(converted)
         operationRecords = operationMonitor.records
         processedOperationRecordIDs = Set(operationRecords.map(\.id))
+        operationRecordsSnapshotSignature = operationSnapshotSignature(operationRecords)
         guardFeature.rebuildAnalytics(from: operationRecords)
         saveScannerCache()
     }
@@ -1894,10 +1960,21 @@ class ScannerService: ObservableObject {
     }
 
     func refreshOperationRecordsSnapshot() {
-        operationRecords = operationMonitor.records
-        processedOperationRecordIDs = Set(operationRecords.map(\.id))
-        guardFeature.rebuildAnalytics(from: operationRecords)
+        let currentRecords = operationMonitor.records
+        let signature = operationSnapshotSignature(currentRecords)
+        operationRecords = currentRecords
+        processedOperationRecordIDs = Set(currentRecords.map(\.id))
+        guard signature != operationRecordsSnapshotSignature else { return }
+        operationRecordsSnapshotSignature = signature
+        guardFeature.rebuildAnalytics(from: currentRecords)
         saveScannerCache()
+    }
+
+    private func operationSnapshotSignature(_ records: [OperationRecord]) -> String {
+        let head = records.prefix(4)
+            .map { "\($0.id):\(Int($0.timestamp.timeIntervalSince1970))" }
+            .joined(separator: ",")
+        return "\(records.count)|\(head)"
     }
 
     func importKnownAgentHistory() {
@@ -1964,10 +2041,13 @@ class ScannerService: ObservableObject {
 
     private var operationPollTimer: Timer?
     private var lastAutoSaveTime: Date = .distantPast
+    private var lastProcessLifecycleCheckTime: Date = .distantPast
+    private let operationPollInterval: TimeInterval = 5
+    private let processLifecycleCheckInterval: TimeInterval = 15
 
     private func startOperationPolling() {
         guard operationPollTimer == nil else { return }
-        operationPollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+        operationPollTimer = Timer.scheduledTimer(withTimeInterval: operationPollInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
                 let currentRecords = self.operationMonitor.records
@@ -1975,6 +2055,7 @@ class ScannerService: ObservableObject {
                 if !newRecords.isEmpty {
                     self.operationRecords = currentRecords
                     self.processedOperationRecordIDs.formUnion(newRecords.map(\.id))
+                    self.operationRecordsSnapshotSignature = self.operationSnapshotSignature(currentRecords)
                     for record in newRecords {
                         self.guardFeature.checkBatchOperation(record: record)
                         self.guardFeature.checkSensitiveFile(record: record)
@@ -1984,21 +2065,26 @@ class ScannerService: ObservableObject {
                 } else if currentRecords.count != self.operationRecords.count {
                     self.operationRecords = currentRecords
                     self.processedOperationRecordIDs = Set(currentRecords.map(\.id))
+                    self.operationRecordsSnapshotSignature = self.operationSnapshotSignature(currentRecords)
                 }
-                self.guardFeature.checkProcessLifecycle(
-                    currentPids: Set(self.operationMonitor.allPidCommMap.keys),
-                    pidCommMap: self.operationMonitor.allPidCommMap,
-                    pidArgsMap: self.operationMonitor.allPidArgsMap,
-                    ppidMap: self.operationMonitor.ppidMap,
-                    agentKeywords: self.operationMonitor.agentKeywords
-                )
+                let now = Date()
+                if now.timeIntervalSince(self.lastProcessLifecycleCheckTime) >= self.processLifecycleCheckInterval {
+                    self.guardFeature.checkProcessLifecycle(
+                        currentPids: Set(self.operationMonitor.allPidCommMap.keys),
+                        pidCommMap: self.operationMonitor.allPidCommMap,
+                        pidArgsMap: self.operationMonitor.allPidArgsMap,
+                        ppidMap: self.operationMonitor.ppidMap,
+                        agentKeywords: self.operationMonitor.agentKeywords
+                    )
+                    self.lastProcessLifecycleCheckTime = now
+                }
 
-                if Date().timeIntervalSince(self.lastAutoSaveTime) > 30 {
+                if now.timeIntervalSince(self.lastAutoSaveTime) > 30 {
                     self.saveScannerCache()
                     self.guardFeature.saveHourlyStats()
                     self.guardFeature.saveAlerts()
                     self.guardFeature.saveCommandRules()
-                    self.lastAutoSaveTime = Date()
+                    self.lastAutoSaveTime = now
                 }
             }
         }
@@ -2589,11 +2675,8 @@ class ScannerService: ObservableObject {
 
         let userPrompt = "Analyze these local Mac directories and sizes for cleanup candidates:\n\(dirInfo)"
 
-        let wantsExternalProvider = (config.hasKey == true)
-            && !(config.apiKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && (config.model ?? AIConfig.appleIntelligenceModel) != AIConfig.appleIntelligenceModel
-
-        if !wantsExternalProvider {
+        switch config.providerMode {
+        case .apple:
             do {
                 let response = try await AppleIntelligenceService.generate(
                     instructions: systemPrompt,
@@ -2602,19 +2685,25 @@ class ScannerService: ObservableObject {
                 )
                 return parseAIResult(rawContent: response.content)
             } catch {
-                let externalConfigAvailable = (config.hasKey == true)
-                    && !(config.apiKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                guard externalConfigAvailable else {
-                    return (
-                        success: false,
-                        items: nil,
-                        error: "\(AppleIntelligenceService.displayName): \(error.localizedDescription)"
-                    )
+                return (success: false, items: nil, error: "\(AppleIntelligenceService.displayName): \(error.localizedDescription)")
+            }
+        case .external:
+            return await callExternalLLM(config: config, systemPrompt: systemPrompt, userPrompt: userPrompt)
+        case .automatic:
+            do {
+                let response = try await AppleIntelligenceService.generate(
+                    instructions: systemPrompt,
+                    prompt: userPrompt,
+                    maximumResponseTokens: 4096
+                )
+                return parseAIResult(rawContent: response.content)
+            } catch {
+                guard config.usesExternalProvider else {
+                    return (success: false, items: nil, error: "\(AppleIntelligenceService.displayName): \(error.localizedDescription)")
                 }
+                return await callExternalLLM(config: config, systemPrompt: systemPrompt, userPrompt: userPrompt)
             }
         }
-
-        return await callExternalLLM(config: config, systemPrompt: systemPrompt, userPrompt: userPrompt)
     }
 
     private func callExternalLLM(config: AIConfig, systemPrompt: String, userPrompt: String) async -> (success: Bool, items: [ScanItem]?, error: String?) {
@@ -2622,10 +2711,7 @@ class ScannerService: ObservableObject {
             return (success: false, items: nil, error: localizer?.configureAPIKeyFirst ?? "Please configure LLM API Key first")
         }
 
-        let apiBase = (config.apiBase ?? "https://api.deepseek.com").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let urlString = "\(apiBase)/v1/chat/completions"
-
-        guard let url = URL(string: urlString) else {
+        guard let url = config.chatCompletionsURL else {
             return (success: false, items: nil, error: localizer?.invalidAPIUrl ?? "Invalid API URL")
         }
 
@@ -2655,9 +2741,9 @@ class ScannerService: ObservableObject {
 
             guard http.statusCode == 200 else {
                 if let body = String(data: data, encoding: .utf8) {
-                    return (success: false, items: nil, error: "HTTP \(http.statusCode): \(body.prefix(200))")
+                    return (success: false, items: nil, error: "HTTP \(http.statusCode) @ \(url.absoluteString): \(body.prefix(200))")
                 }
-                return (success: false, items: nil, error: "HTTP \(http.statusCode)")
+                return (success: false, items: nil, error: "HTTP \(http.statusCode) @ \(url.absoluteString)")
             }
 
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

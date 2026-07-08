@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
 
     @State private var selectedTab: SettingsTab = .features
+    @State private var showAIConfig = false
     @StateObject private var licenseService = DirectLicenseService.shared
     @StateObject private var updateService = DirectUpdateService.shared
     @ObservedObject private var captureService = CaptureShelfService.shared
@@ -34,7 +35,7 @@ struct SettingsView: View {
         case version = "Version"
 
         static var visibleTabs: [SettingsTab] {
-            allCases.filter { $0 != .ai }
+            allCases
         }
 
         var icon: String {
@@ -191,6 +192,11 @@ struct SettingsView: View {
         }
         .frame(width: 680, height: 520)
         .appCanvas()
+        .sheet(isPresented: $showAIConfig) {
+            AIConfigView()
+                .environmentObject(service)
+                .environmentObject(localizer)
+        }
         .task {
             licenseService.refreshTrialState()
             loadShortcutSettings()
@@ -330,15 +336,20 @@ struct SettingsView: View {
                     .frame(width: 28)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(localizer.appReviewDemoMode)
+                    Text(localizer.t("AI 模型策略", en: "AI Model Strategy", zhHant: "AI 模型策略", ja: "AI モデル方針", ko: "AI 모델 전략", mt: "AI Model Strategy"))
                         .font(Theme.Font.captionMedium)
                         .foregroundStyle(Theme.Colors.textPrimary)
-                    Text(localizer.appReviewDemoModeDesc)
+                    Text(localizer.t("默认先使用 Apple Intelligence；不可用时可按你的设置回退到第三方模型。", en: "Uses Apple Intelligence first by default; if unavailable, it can fall back to your configured external model.", zhHant: "預設先使用 Apple Intelligence；不可用時可依你的設定回退到第三方模型。", ja: "既定では Apple Intelligence を優先し、利用できない場合は設定済みの外部モデルへフォールバックできます。", ko: "기본적으로 Apple Intelligence를 먼저 사용하고, 사용할 수 없으면 설정한 외부 모델로 전환할 수 있습니다.", mt: "Uses Apple Intelligence first by default; if unavailable, it can fall back to your configured external model."))
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
                 }
 
                 Spacer()
+
+                Button(localizer.t("模型设置", en: "Model Settings")) {
+                    showAIConfig = true
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .ghost, minHeight: 32))
             }
             .cardStyle()
         }
@@ -734,6 +745,12 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.Colors.textSecondary)
 
                 VStack(spacing: Theme.Spacing.sm) {
+                    LabFeatureRow(
+                        icon: "sparkles",
+                        color: Theme.Colors.purple,
+                        title: localizer.t("AI 磁盘顾问", en: "AI Disk Advisor", zhHant: "AI 磁碟顧問", ja: "AI ディスクアドバイザー", ko: "AI 디스크 어드바이저", mt: "AI Disk Advisor"),
+                        desc: localizer.t("扫描用户授权的大文件、缓存和构建产物，并用 AI 解释作用、风险和清理建议。", en: "Scans user-authorized large files, caches, and build artifacts, then uses AI to explain purpose, risk, and cleanup advice.", zhHant: "掃描使用者授權的大型檔案、快取與建置產物，並用 AI 解釋用途、風險與清理建議。", ja: "ユーザーが許可した大きなファイル、キャッシュ、ビルド成果物をスキャンし、AI が用途、リスク、整理提案を説明します。", ko: "사용자가 승인한 대용량 파일, 캐시, 빌드 산출물을 스캔하고 AI가 용도, 위험, 정리 제안을 설명합니다.", mt: "Scans user-authorized large files, caches, and build artifacts, then uses AI to explain purpose, risk, and cleanup advice.")
+                    )
                     LabFeatureRow(
                         icon: "arrow.down.doc.fill",
                         color: Theme.Colors.accent,
