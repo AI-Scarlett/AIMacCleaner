@@ -2,6 +2,7 @@ import AppKit
 import CryptoKit
 import Darwin
 import Foundation
+@preconcurrency import UserNotifications
 
 struct DirectUpdateInfo: Equatable {
     var version: String
@@ -13,9 +14,49 @@ struct DirectUpdateInfo: Equatable {
     var size: Int?
 }
 
+enum CLIUpdateStatus: Equatable, Sendable {
+    case upToDate
+    case updateAvailable
+    case notInstalled
+    case checkFailed(String)
+}
+
+struct CLIUpdateCheckResult: Identifiable, Equatable, Sendable {
+    var id: String
+    var displayName: String
+    var commandName: String
+    var packageName: String
+    var packageURL: URL
+    var updateCommand: String
+    var installedVersion: String?
+    var latestVersion: String?
+    var installedPath: String?
+    var status: CLIUpdateStatus
+
+    var needsUpdate: Bool {
+        status == .updateAvailable
+    }
+
+    var needsStrongReminder: Bool {
+        if status == .updateAvailable { return true }
+        if case .checkFailed = status {
+            return installedPath != nil && installedVersion == nil
+        }
+        return false
+    }
+}
+
+struct CLIUpdateAlert: Identifiable, Equatable, Sendable {
+    var id: String
+    var title: String
+    var message: String
+    var dismissTitle: String
+}
+
 @MainActor
 final class DirectUpdateService: ObservableObject {
     static let shared = DirectUpdateService()
+    static let cliUpdateStrongReminderEnabledKey = "cliUpdateStrongReminderEnabled"
 
     @Published private(set) var isChecking = false
     @Published private(set) var isDownloading = false
@@ -23,6 +64,8 @@ final class DirectUpdateService: ObservableObject {
     @Published private(set) var latestUpdate: DirectUpdateInfo?
     @Published private(set) var downloadedFileURL: URL?
     @Published private(set) var message: String?
+    @Published private(set) var cliToolUpdates: [CLIUpdateCheckResult] = []
+    @Published var cliUpdateAlert: CLIUpdateAlert?
     private let updateSession: URLSession
 
     var currentVersion: String {
@@ -40,6 +83,13 @@ final class DirectUpdateService: ObservableObject {
         URL(string: "https://github.com/AI-Scarlett/TraceFence/releases/latest/download/tracefence-update.json")!
     }
 
+    private var cliUpdateStrongReminderEnabled: Bool {
+        guard UserDefaults.standard.object(forKey: Self.cliUpdateStrongReminderEnabledKey) != nil else {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: Self.cliUpdateStrongReminderEnabledKey)
+    }
+
     private init() {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
@@ -52,28 +102,31 @@ final class DirectUpdateService: ObservableObject {
         updateSession = URLSession(configuration: configuration)
     }
 
-    func checkForUpdates() async {
+    func checkForUpdates(userInitiated: Bool = false) async {
         guard !isInstalling else { return }
         isChecking = true
         message = nil
         downloadedFileURL = nil
         defer { isChecking = false }
 
+        var updateMessage: String?
         do {
             let update = try await loadLatestUpdateInfo()
             let latestVersion = update.version
-            guard isVersion(latestVersion, newerThan: currentVersion) else {
+            guard Self.isVersion(latestVersion, newerThan: currentVersion) else {
                 latestUpdate = nil
-                message = "TraceFence 已是最新版本。"
+                updateMessage = "TraceFence 已是最新版本。"
+                await refreshCLIToolUpdates(userInitiated: userInitiated, appUpdateMessage: updateMessage)
                 return
             }
 
             latestUpdate = update
-            message = "发现 TraceFence \(latestVersion)，点击更新后将自动安装并重新启动。"
+            updateMessage = "发现 TraceFence \(latestVersion)，点击更新后将自动安装并重新启动。"
         } catch {
             latestUpdate = nil
-            message = error.localizedDescription
+            updateMessage = error.localizedDescription
         }
+        await refreshCLIToolUpdates(userInitiated: userInitiated, appUpdateMessage: updateMessage)
     }
 
     func downloadLatestUpdate() async {
@@ -320,9 +373,411 @@ final class DirectUpdateService: ObservableObject {
         }
     }
 
-    private func isVersion(_ lhs: String, newerThan rhs: String) -> Bool {
-        let left = lhs.split(separator: ".").map { Int($0) ?? 0 }
-        let right = rhs.split(separator: ".").map { Int($0) ?? 0 }
+    func dismissCLIUpdateAlert() {
+        cliUpdateAlert = nil
+    }
+
+    private func refreshCLIToolUpdates(userInitiated: Bool, appUpdateMessage: String?) async {
+        let results = await Task.detached(priority: .utility) {
+            await Self.loadCLIToolResults()
+        }.value
+        cliToolUpdates = results
+
+        let cliMessage = Self.cliUpdateSummary(for: results)
+        message = [appUpdateMessage, cliMessage]
+            .compactMap { value in
+                let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed?.isEmpty == false ? trimmed : nil
+            }
+            .joined(separator: "\n")
+
+        let attention = results.filter(\.needsStrongReminder)
+        guard cliUpdateStrongReminderEnabled else { return }
+        guard !attention.isEmpty,
+              userInitiated || shouldShowCLIUpdateReminder(for: attention) else {
+            return
+        }
+        let alert = Self.makeCLIUpdateAlert(for: attention)
+        cliUpdateAlert = alert
+        postCLIUpdateNotification(alert: alert, outdated: attention)
+    }
+
+    private nonisolated static func cliUpdateSummary(for results: [CLIUpdateCheckResult]) -> String? {
+        guard !results.isEmpty else { return nil }
+        let outdated = results.filter(\.needsUpdate)
+        if !outdated.isEmpty {
+            let names = outdated.map { $0.displayName }.joined(separator: "、")
+            return localized(
+                "发现 \(names) CLI 有新版本，建议立即升级。",
+                en: "\(names) CLI update available. Upgrade as soon as possible.",
+                zhHant: "發現 \(names) CLI 有新版本，建議立即升級。",
+                ja: "\(names) CLI の新しいバージョンがあります。できるだけ早く更新してください。",
+                ko: "\(names) CLI 업데이트가 있습니다. 가능한 한 빨리 업그레이드하세요.",
+                mt: "\(names) CLI update available. Upgrade as soon as possible."
+            )
+        }
+
+        let installed = results.filter { result in
+            switch result.status {
+            case .upToDate:
+                return true
+            default:
+                return false
+            }
+        }
+        if installed.count == results.count {
+            return localized(
+                "Codex / Claude CLI 已是最新版本。",
+                en: "Codex / Claude CLI are up to date.",
+                zhHant: "Codex / Claude CLI 已是最新版本。",
+                ja: "Codex / Claude CLI は最新です。",
+                ko: "Codex / Claude CLI가 최신 상태입니다.",
+                mt: "Codex / Claude CLI are up to date."
+            )
+        }
+
+        let failures = results.compactMap { result -> String? in
+            if case .checkFailed = result.status { return result.displayName }
+            return nil
+        }
+        if !failures.isEmpty {
+            return localized(
+                "部分 CLI 更新状态暂时无法确认：\(failures.joined(separator: "、"))。",
+                en: "Some CLI update states could not be confirmed: \(failures.joined(separator: ", ")).",
+                zhHant: "部分 CLI 更新狀態暫時無法確認：\(failures.joined(separator: "、"))。",
+                ja: "一部 CLI の更新状態を確認できませんでした: \(failures.joined(separator: ", "))。",
+                ko: "일부 CLI 업데이트 상태를 확인할 수 없습니다: \(failures.joined(separator: ", ")).",
+                mt: "Some CLI update states could not be confirmed: \(failures.joined(separator: ", "))."
+            )
+        }
+        return nil
+    }
+
+    private func shouldShowCLIUpdateReminder(for outdated: [CLIUpdateCheckResult]) -> Bool {
+        let signature = outdated
+            .map { "\($0.id):\($0.latestVersion ?? "unknown")" }
+            .sorted()
+            .joined(separator: "|")
+        let key = "traceFence.cliUpdateReminder.lastShown.\(signature)"
+        let now = Date().timeIntervalSince1970
+        let lastShown = UserDefaults.standard.double(forKey: key)
+        guard now - lastShown > 12 * 60 * 60 else { return false }
+        UserDefaults.standard.set(now, forKey: key)
+        return true
+    }
+
+    private nonisolated static func makeCLIUpdateAlert(for outdated: [CLIUpdateCheckResult]) -> CLIUpdateAlert {
+        let body = outdated.map { result -> String in
+            let installed = result.installedVersion ?? localized("未知", en: "unknown", zhHant: "未知", ja: "不明", ko: "알 수 없음", mt: "unknown")
+            let latest = result.latestVersion ?? localized("未知", en: "unknown", zhHant: "未知", ja: "不明", ko: "알 수 없음", mt: "unknown")
+            return "\(result.displayName): \(installed) → \(latest)\n\(result.updateCommand)"
+        }.joined(separator: "\n\n")
+        let signature = outdated
+            .map { "\($0.id):\($0.latestVersion ?? "unknown")" }
+            .sorted()
+            .joined(separator: "|")
+        return CLIUpdateAlert(
+            id: "cli-update-\(signature)-\(Int(Date().timeIntervalSince1970))",
+            title: localized(
+                "AI CLI 安全更新提醒",
+                en: "AI CLI Security Update",
+                zhHant: "AI CLI 安全更新提醒",
+                ja: "AI CLI セキュリティ更新",
+                ko: "AI CLI 보안 업데이트",
+                mt: "AI CLI Security Update"
+            ),
+            message: localized(
+                "检测到 Codex / Claude 相关 CLI 不是最新版本。为了降低已知安全风险，请尽快升级：\n\n\(body)",
+                en: "TraceFence found Codex / Claude related CLI tools that are not up to date. To reduce known security risk, upgrade soon:\n\n\(body)",
+                zhHant: "偵測到 Codex / Claude 相關 CLI 不是最新版本。為了降低已知安全風險，請盡快升級：\n\n\(body)",
+                ja: "Codex / Claude 関連 CLI が最新ではありません。既知のセキュリティリスクを下げるため、早めに更新してください:\n\n\(body)",
+                ko: "Codex / Claude 관련 CLI가 최신 버전이 아닙니다. 알려진 보안 위험을 줄이려면 가능한 한 빨리 업그레이드하세요:\n\n\(body)",
+                mt: "TraceFence found Codex / Claude related CLI tools that are not up to date. To reduce known security risk, upgrade soon:\n\n\(body)"
+            ),
+            dismissTitle: localized(
+                "我知道了",
+                en: "Got it",
+                zhHant: "我知道了",
+                ja: "了解",
+                ko: "확인",
+                mt: "Got it"
+            )
+        )
+    }
+
+    private func postCLIUpdateNotification(alert: CLIUpdateAlert, outdated: [CLIUpdateCheckResult]) {
+        let content = UNMutableNotificationContent()
+        content.title = alert.title
+        content.body = outdated
+            .map { "\($0.displayName) \($0.installedVersion ?? "?") → \($0.latestVersion ?? "?")" }
+            .joined(separator: "；")
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "tracefence.cli.update.\(alert.id)",
+            content: content,
+            trigger: nil
+        )
+
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                center.add(request)
+            case .notDetermined:
+                center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                    guard granted else { return }
+                    center.add(request)
+                }
+            default:
+                break
+            }
+        }
+    }
+
+    private nonisolated static func loadCLIToolResults() async -> [CLIUpdateCheckResult] {
+        let descriptors = cliToolDescriptors
+        return await withTaskGroup(of: (String, CLIUpdateCheckResult).self) { group in
+            for descriptor in descriptors {
+                group.addTask {
+                    let result = await checkCLITool(descriptor)
+                    return (descriptor.id, result)
+                }
+            }
+
+            var resultsByID: [String: CLIUpdateCheckResult] = [:]
+            for await (id, result) in group {
+                resultsByID[id] = result
+            }
+            return descriptors.compactMap { resultsByID[$0.id] }
+        }
+    }
+
+    private nonisolated static var cliToolDescriptors: [CLIToolDescriptor] {
+        [
+            CLIToolDescriptor(
+                id: "codex",
+                displayName: "Codex",
+                commandName: "codex",
+                packageName: "@openai/codex",
+                latestURL: URL(string: "https://registry.npmjs.org/@openai%2Fcodex/latest")!,
+                packageURL: URL(string: "https://www.npmjs.com/package/%40openai/codex")!,
+                updateCommand: "npm install -g @openai/codex@latest"
+            ),
+            CLIToolDescriptor(
+                id: "claude",
+                displayName: "Claude Code",
+                commandName: "claude",
+                packageName: "@anthropic-ai/claude-code",
+                latestURL: URL(string: "https://registry.npmjs.org/@anthropic-ai%2Fclaude-code/latest")!,
+                packageURL: URL(string: "https://www.npmjs.com/package/%40anthropic-ai/claude-code")!,
+                updateCommand: "npm install -g @anthropic-ai/claude-code@latest"
+            )
+        ]
+    }
+
+    private nonisolated static func checkCLITool(_ descriptor: CLIToolDescriptor) async -> CLIUpdateCheckResult {
+        let installation = detectInstalledCLI(descriptor)
+        guard installation.isInstalled else {
+            return result(
+                for: descriptor,
+                installedVersion: nil,
+                latestVersion: nil,
+                installedPath: nil,
+                status: .notInstalled
+            )
+        }
+
+        guard let installedVersion = installation.version else {
+            let latestVersion = try? await fetchLatestNPMVersion(descriptor)
+            return result(
+                for: descriptor,
+                installedVersion: nil,
+                latestVersion: latestVersion,
+                installedPath: installation.path,
+                status: .checkFailed(localized(
+                    "已找到 CLI，但无法读取版本。建议重装或升级到最新版本。",
+                    en: "CLI was found, but its version could not be read. Reinstall or upgrade to the latest version.",
+                    zhHant: "已找到 CLI，但無法讀取版本。建議重裝或升級到最新版本。",
+                    ja: "CLI は見つかりましたが、バージョンを読み取れませんでした。再インストールまたは最新版への更新をおすすめします。",
+                    ko: "CLI를 찾았지만 버전을 읽을 수 없습니다. 재설치하거나 최신 버전으로 업그레이드하세요.",
+                    mt: "CLI was found, but its version could not be read. Reinstall or upgrade to the latest version."
+                ))
+            )
+        }
+
+        do {
+            let latestVersion = try await fetchLatestNPMVersion(descriptor)
+            let status: CLIUpdateStatus = isVersion(latestVersion, newerThan: installedVersion)
+                ? .updateAvailable
+                : .upToDate
+            return result(
+                for: descriptor,
+                installedVersion: installedVersion,
+                latestVersion: latestVersion,
+                installedPath: installation.path,
+                status: status
+            )
+        } catch {
+            return result(
+                for: descriptor,
+                installedVersion: installedVersion,
+                latestVersion: nil,
+                installedPath: installation.path,
+                status: .checkFailed(readableCLIUpdateError(error))
+            )
+        }
+    }
+
+    private nonisolated static func result(
+        for descriptor: CLIToolDescriptor,
+        installedVersion: String?,
+        latestVersion: String?,
+        installedPath: String?,
+        status: CLIUpdateStatus
+    ) -> CLIUpdateCheckResult {
+        CLIUpdateCheckResult(
+            id: descriptor.id,
+            displayName: descriptor.displayName,
+            commandName: descriptor.commandName,
+            packageName: descriptor.packageName,
+            packageURL: descriptor.packageURL,
+            updateCommand: descriptor.updateCommand,
+            installedVersion: installedVersion,
+            latestVersion: latestVersion,
+            installedPath: installedPath,
+            status: status
+        )
+    }
+
+    private nonisolated static func detectInstalledCLI(_ descriptor: CLIToolDescriptor) -> CLIInstallation {
+        let command = descriptor.commandName
+        let home = ProcessInfo.processInfo.environment["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path
+        let preferredPATH = [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "\(home)/.local/bin",
+            "\(home)/.npm-global/bin",
+            "\(home)/.bun/bin",
+            "\(home)/.deno/bin",
+            "\(home)/.cargo/bin",
+            "\(home)/.volta/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin"
+        ].joined(separator: ":")
+        let script = """
+        export PATH="\(preferredPATH):$PATH"
+        if command -v \(command) >/dev/null 2>&1; then
+          cli_path="$(command -v \(command))"
+          cli_version="$({ \(command) --version || \(command) -v; } 2>&1 | /usr/bin/head -n 3)"
+          printf '__TRACEFENCE_PATH__=%s\\n' "$cli_path"
+          printf '__TRACEFENCE_VERSION__=%s\\n' "$cli_version"
+        else
+          exit 127
+        fi
+        """
+        let shellResult = runShell(script, timeout: 8)
+        guard shellResult.status == 0 else {
+            return CLIInstallation(version: nil, path: nil)
+        }
+        let path = extractShellValue("__TRACEFENCE_PATH__", from: shellResult.output)
+        let versionText = extractShellValue("__TRACEFENCE_VERSION__", from: shellResult.output) ?? shellResult.output
+        return CLIInstallation(
+            version: parseVersion(from: versionText),
+            path: path
+        )
+    }
+
+    private nonisolated static func fetchLatestNPMVersion(_ descriptor: CLIToolDescriptor) async throws -> String {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        configuration.timeoutIntervalForRequest = 12
+        configuration.timeoutIntervalForResource = 20
+        let session = URLSession(configuration: configuration)
+        var request = URLRequest(url: descriptor.latestURL)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("TraceFence CLI Update Check", forHTTPHeaderField: "User-Agent")
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw DirectUpdateError.invalidResponse
+        }
+        let latest = try JSONDecoder().decode(NPMRegistryLatest.self, from: data)
+        return latest.version
+    }
+
+    private nonisolated static func readableCLIUpdateError(_ error: Error) -> String {
+        if let reason = readableNetworkReason(error) {
+            return localized(
+                "无法连接 npm registry：\(reason)",
+                en: "Could not reach npm registry: \(reason)",
+                zhHant: "無法連接 npm registry：\(reason)",
+                ja: "npm registry に接続できません: \(reason)",
+                ko: "npm registry에 연결할 수 없습니다: \(reason)",
+                mt: "Could not reach npm registry: \(reason)"
+            )
+        }
+        return error.localizedDescription
+    }
+
+    private nonisolated static func parseVersion(from text: String) -> String? {
+        let pattern = #"v?(\d+(?:\.\d+){1,4}(?:[-+][0-9A-Za-z.-]+)?)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              match.numberOfRanges > 1,
+              let range = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return String(text[range])
+    }
+
+    private nonisolated static func extractShellValue(_ key: String, from output: String) -> String? {
+        let prefix = "\(key)="
+        return output
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .first { $0.hasPrefix(prefix) }
+            .map { String($0.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private nonisolated static func runShell(_ script: String, timeout: TimeInterval) -> ShellResult {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-lc", script]
+        process.standardOutput = output
+        process.standardError = output
+
+        do {
+            try process.run()
+        } catch {
+            return ShellResult(status: -1, output: error.localizedDescription, timedOut: false)
+        }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+
+        var timedOut = false
+        if process.isRunning {
+            timedOut = true
+            Darwin.kill(process.processIdentifier, SIGKILL)
+        }
+        process.waitUntilExit()
+
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        let text = String(data: data, encoding: .utf8) ?? ""
+        return ShellResult(status: process.terminationStatus, output: text, timedOut: timedOut)
+    }
+
+    private nonisolated static func isVersion(_ lhs: String, newerThan rhs: String) -> Bool {
+        let left = normalizedVersionNumbers(lhs)
+        let right = normalizedVersionNumbers(rhs)
         let count = max(left.count, right.count)
         for index in 0..<count {
             let l = index < left.count ? left[index] : 0
@@ -330,6 +785,16 @@ final class DirectUpdateService: ObservableObject {
             if l != r { return l > r }
         }
         return false
+    }
+
+    private nonisolated static func normalizedVersionNumbers(_ version: String) -> [Int] {
+        version
+            .trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+            .split(separator: ".")
+            .map { component in
+                let digits = component.prefix { $0.isNumber }
+                return Int(digits) ?? 0
+            }
     }
 
     private nonisolated static func prepareInstallation(
@@ -592,6 +1057,35 @@ private struct PreparedInstallation {
     let destinationApp: URL
     let parentPID: Int32
     let supportDirectory: URL
+}
+
+private struct CLIToolDescriptor: Sendable {
+    var id: String
+    var displayName: String
+    var commandName: String
+    var packageName: String
+    var latestURL: URL
+    var packageURL: URL
+    var updateCommand: String
+}
+
+private struct CLIInstallation: Sendable {
+    var version: String?
+    var path: String?
+
+    var isInstalled: Bool {
+        path != nil || version != nil
+    }
+}
+
+private struct ShellResult: Sendable {
+    var status: Int32
+    var output: String
+    var timedOut: Bool
+}
+
+private struct NPMRegistryLatest: Decodable {
+    var version: String
 }
 
 private struct GitHubRelease: Decodable {

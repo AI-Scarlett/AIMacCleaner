@@ -22,6 +22,7 @@ struct SettingsView: View {
     @AppStorage("networkMode") private var networkMode = "internet"
     @AppStorage("quitBehavior") private var quitBehavior: String = "quitAll"
     @AppStorage("colorPalette") private var colorPalette = AppColorPalette.porcelain.rawValue
+    @AppStorage(DirectUpdateService.cliUpdateStrongReminderEnabledKey) private var cliUpdateStrongReminderEnabled = true
 
     enum SettingsTab: String, CaseIterable {
         case ai = "AI"
@@ -986,9 +987,80 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                Divider()
+                    .overlay(Theme.Colors.separator.opacity(0.6))
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    HStack(alignment: .center, spacing: Theme.Spacing.sm) {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Image(systemName: "terminal.fill")
+                                .foregroundStyle(Theme.Colors.warning)
+                            Text(localizer.t(
+                                "AI CLI 安全更新",
+                                en: "AI CLI Security Updates",
+                                zhHant: "AI CLI 安全更新",
+                                ja: "AI CLI セキュリティ更新",
+                                ko: "AI CLI 보안 업데이트",
+                                mt: "AI CLI Security Updates"
+                            ))
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        }
+
+                        Spacer()
+
+                        Toggle(isOn: $cliUpdateStrongReminderEnabled) {
+                            Text(localizer.t("强提醒", en: "Strong reminder", zhHant: "強提醒", ja: "強い通知", ko: "강한 알림", mt: "Strong reminder"))
+                                .font(Theme.Font.captionMedium)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .tint(Theme.Colors.warning)
+                    }
+
+                    Text(cliUpdateStrongReminderEnabled
+                         ? localizer.t(
+                            "自动检查 Codex / Claude Code CLI；发现落后或损坏版本会弹窗并发送系统通知。",
+                            en: "TraceFence checks Codex / Claude Code CLI automatically. Outdated or broken installs trigger an alert and macOS notification.",
+                            zhHant: "自動檢查 Codex / Claude Code CLI；發現落後或損壞版本會彈窗並傳送系統通知。",
+                            ja: "Codex / Claude Code CLI を自動確認し、古いまたは壊れたインストールが見つかるとアラートと macOS 通知を表示します。",
+                            ko: "Codex / Claude Code CLI를 자동 확인합니다. 오래되었거나 손상된 설치는 알림창과 macOS 알림으로 알려줍니다.",
+                            mt: "TraceFence checks Codex / Claude Code CLI automatically. Outdated or broken installs trigger an alert and macOS notification."
+                         )
+                         : localizer.t(
+                            "强提醒已关闭。TraceFence 仍会检查 CLI 状态，但只在这里显示结果。",
+                            en: "Strong reminders are off. TraceFence still checks CLI status, but only shows results here.",
+                            zhHant: "強提醒已關閉。TraceFence 仍會檢查 CLI 狀態，但只在這裡顯示結果。",
+                            ja: "強い通知はオフです。TraceFence は CLI 状態を確認しますが、結果はここにのみ表示します。",
+                            ko: "강한 알림이 꺼져 있습니다. TraceFence는 CLI 상태를 계속 확인하지만 결과는 여기에서만 표시합니다.",
+                            mt: "Strong reminders are off. TraceFence still checks CLI status, but only shows results here."
+                         ))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    if updateService.cliToolUpdates.isEmpty {
+                        Text(localizer.t(
+                            "点击“检查更新”后会显示 Codex / Claude CLI 的本机版本和最新版本。",
+                            en: "Click Check for Updates to show local and latest Codex / Claude CLI versions.",
+                            zhHant: "點擊「檢查更新」後會顯示 Codex / Claude CLI 的本機版本和最新版本。",
+                            ja: "「アップデートを確認」を押すと、Codex / Claude CLI のローカル版と最新版を表示します。",
+                            ko: "업데이트 확인을 누르면 Codex / Claude CLI의 로컬 버전과 최신 버전을 표시합니다.",
+                            mt: "Click Check for Updates to show local and latest Codex / Claude CLI versions."
+                        ))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    } else {
+                        ForEach(updateService.cliToolUpdates) { result in
+                            cliUpdateRow(result)
+                        }
+                    }
+                }
+
                 HStack(spacing: Theme.Spacing.sm) {
                     Button {
-                        Task { await updateService.checkForUpdates() }
+                        Task { await updateService.checkForUpdates(userInitiated: true) }
                     } label: {
                         Label(updateService.isChecking ? localizer.downloadingUpdate : localizer.checkUpdate, systemImage: "arrow.clockwise")
                     }
@@ -1015,6 +1087,143 @@ struct SettingsView: View {
             }
             .cardStyle()
         }
+    }
+
+    private func cliUpdateRow(_ result: CLIUpdateCheckResult) -> some View {
+        let color = cliStatusColor(result.status)
+        return VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            HStack(alignment: .center, spacing: Theme.Spacing.sm) {
+                Image(systemName: cliStatusIcon(result.status))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(color)
+                    .frame(width: 18)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(result.displayName)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(cliVersionLine(result))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Text(cliStatusText(result.status))
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(color)
+            }
+
+            if result.needsStrongReminder {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Text(result.updateCommand)
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .padding(.horizontal, Theme.Spacing.sm)
+                        .padding(.vertical, Theme.Spacing.xs)
+                        .background(Theme.Colors.sidebarBg.opacity(0.7))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+                    Button {
+                        copyToPasteboard(result.updateCommand)
+                    } label: {
+                        Label(localizer.t("复制", en: "Copy", zhHant: "複製", ja: "コピー", ko: "복사", mt: "Copy"), systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .ghost, minHeight: 28))
+
+                    Button {
+                        NSWorkspace.shared.open(result.packageURL)
+                    } label: {
+                        Label(localizer.t("包页", en: "Package", zhHant: "套件頁", ja: "パッケージ", ko: "패키지", mt: "Package"), systemImage: "arrow.up.right.square")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .ghost, minHeight: 28))
+                }
+            } else if case .checkFailed(let reason) = result.status {
+                Text(reason)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(Theme.Spacing.sm)
+        .background(color.opacity(0.08))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(color.opacity(0.18), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    private func cliVersionLine(_ result: CLIUpdateCheckResult) -> String {
+        switch result.status {
+        case .notInstalled:
+            return localizer.t(
+                "未检测到 \(result.commandName) 命令",
+                en: "\(result.commandName) command not found",
+                zhHant: "未偵測到 \(result.commandName) 命令",
+                ja: "\(result.commandName) コマンドが見つかりません",
+                ko: "\(result.commandName) 명령을 찾을 수 없습니다",
+                mt: "\(result.commandName) command not found"
+            )
+        default:
+            let installed = result.installedVersion ?? localizer.t("未知", en: "unknown", zhHant: "未知", ja: "不明", ko: "알 수 없음", mt: "unknown")
+            let latest = result.latestVersion ?? localizer.t("未知", en: "unknown", zhHant: "未知", ja: "不明", ko: "알 수 없음", mt: "unknown")
+            return localizer.t(
+                "本机 \(installed) · 最新 \(latest)",
+                en: "Local \(installed) · Latest \(latest)",
+                zhHant: "本機 \(installed) · 最新 \(latest)",
+                ja: "ローカル \(installed) · 最新 \(latest)",
+                ko: "로컬 \(installed) · 최신 \(latest)",
+                mt: "Local \(installed) · Latest \(latest)"
+            )
+        }
+    }
+
+    private func cliStatusText(_ status: CLIUpdateStatus) -> String {
+        switch status {
+        case .upToDate:
+            return localizer.t("最新", en: "Current", zhHant: "最新", ja: "最新", ko: "최신", mt: "Current")
+        case .updateAvailable:
+            return localizer.t("需要升级", en: "Update now", zhHant: "需要升級", ja: "更新が必要", ko: "업데이트 필요", mt: "Update now")
+        case .notInstalled:
+            return localizer.t("未安装", en: "Not installed", zhHant: "未安裝", ja: "未インストール", ko: "미설치", mt: "Not installed")
+        case .checkFailed:
+            return localizer.t("检查失败", en: "Check failed", zhHant: "檢查失敗", ja: "確認失敗", ko: "확인 실패", mt: "Check failed")
+        }
+    }
+
+    private func cliStatusIcon(_ status: CLIUpdateStatus) -> String {
+        switch status {
+        case .upToDate:
+            return "checkmark.circle.fill"
+        case .updateAvailable:
+            return "exclamationmark.triangle.fill"
+        case .notInstalled:
+            return "minus.circle.fill"
+        case .checkFailed:
+            return "xmark.circle.fill"
+        }
+    }
+
+    private func cliStatusColor(_ status: CLIUpdateStatus) -> Color {
+        switch status {
+        case .upToDate:
+            return Theme.Colors.success
+        case .updateAvailable:
+            return Theme.Colors.warning
+        case .notInstalled:
+            return Theme.Colors.textTertiary
+        case .checkFailed:
+            return Theme.Colors.danger
+        }
+    }
+
+    private func copyToPasteboard(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
     }
 
     private var appStoreURL: URL? {

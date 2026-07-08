@@ -80,6 +80,15 @@ struct AIMacCleanerApp: App {
                 .onChange(of: menuBarMonitorEnabled) { newValue in
                     menuBarController.setEnabled(newValue)
                 }
+                .alert(item: $updateService.cliUpdateAlert) { alert in
+                    Alert(
+                        title: Text(alert.title),
+                        message: Text(alert.message),
+                        dismissButton: .default(Text(alert.dismissTitle)) {
+                            updateService.dismissCLIUpdateAlert()
+                        }
+                    )
+                }
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))

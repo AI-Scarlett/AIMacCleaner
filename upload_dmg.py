@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -11,13 +12,17 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.49")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.50")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Adds strong Codex / Claude Code CLI update reminders to the existing Check for Updates flow, including startup auto-checks, in-app alerts, and macOS notifications.\n"
+    "- Adds a default-on Strong Reminder switch in Settings so users can disable CLI update popups while keeping passive status checks visible.\n"
+    "- Checks local `codex` and `claude` commands against npm registry latest versions and surfaces broken CLI installs whose version cannot be read.\n"
+    "- Adds an AI CLI Security Updates panel in Settings with local/latest versions, package links, and one-click copyable upgrade commands.\n"
     "- Fixes Codex Desktop reconnect loops when Agent Environment Profile is enabled by clearing HTTP_PROXY, HTTPS_PROXY, and ALL_PROXY for desktop launchers while keeping language, timezone, and local probe overrides active.\n"
     "- Keeps desktop Agent launch and restart buttons available after Agent Environment Profile is turned off, so they can still be used as normal app launch controls.\n"
     "- Makes Restart Codex and other restart actions wait for the existing app to quit, then force-terminate remaining processes before launching the app again automatically.\n"
@@ -195,17 +200,35 @@ def clean_release_assets(token, release):
             request("DELETE", f"/releases/assets/{asset['id']}", token)
 
 
-def clean_historical_release_assets(token, keep_release_id):
+def release_version_key(release):
+    tag = release.get("tag_name", "")
+    match = re.search(r"v?(\d+)\.(\d+)\.(\d+)", tag)
+    if not match:
+        return (-1, -1, -1)
+    return tuple(int(part) for part in match.groups())
+
+
+def clean_historical_release_assets(token, keep_release_id, keep_count=3):
+    all_releases = []
     page = 1
     while True:
         releases = request("GET", f"/releases?per_page=100&page={page}", token) or []
         if not releases:
-            return
-        for release in releases:
-            if release["id"] == keep_release_id:
-                continue
-            clean_release_assets(token, release)
+            break
+        all_releases.extend(releases)
         page += 1
+
+    latest_release_ids = {keep_release_id}
+    for release in sorted(all_releases, key=release_version_key, reverse=True):
+        if len(latest_release_ids) >= keep_count:
+            break
+        latest_release_ids.add(release["id"])
+
+    for release in all_releases:
+        if release["id"] in latest_release_ids:
+            print(f"Keeping release assets: {release.get('tag_name', release['id'])}")
+            continue
+        clean_release_assets(token, release)
 
 
 def main():
