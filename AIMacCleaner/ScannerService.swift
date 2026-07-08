@@ -28,13 +28,14 @@ class ScannerService: ObservableObject {
     private var authorizedScanRoots: Set<String> = []
     private var hasRestoredScanBookmarks = false
     private var lastCachedSurfaceRefreshTime: Date = .distantPast
+    private let scannerFootprintCacheVersion = 2
     private let scannerCacheWriteQueue = DispatchQueue(
         label: "com.tracefence.scanner-cache",
         qos: .utility
     )
 
     private struct ScannerCache: Codable {
-        var version: Int = 1
+        var version: Int = 2
         var updatedAt: Date = Date()
         var scanItems: [ScanItem] = []
         var diskInfo: DiskInfo?
@@ -72,10 +73,11 @@ class ScannerService: ObservableObject {
     private func loadScannerCache() {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: scannerCachePath)),
               let cache = try? JSONDecoder().decode(ScannerCache.self, from: data) else { return }
-        scanItems = cache.scanItems
+        let canReuseFootprintCache = cache.version >= scannerFootprintCacheVersion
+        scanItems = canReuseFootprintCache ? cache.scanItems : []
         diskInfo = cache.diskInfo
         hardwareInfo = cache.hardwareInfo
-        installedApps = cache.installedApps
+        installedApps = canReuseFootprintCache ? cache.installedApps : []
         operationRecords = cache.operationRecords
         processedOperationRecordIDs = Set(cache.operationRecords.map(\.id))
         if !cache.operationRecords.isEmpty {
@@ -86,6 +88,7 @@ class ScannerService: ObservableObject {
 
     private func saveScannerCache() {
         let cache = ScannerCache(
+            version: scannerFootprintCacheVersion,
             updatedAt: Date(),
             scanItems: scanItems,
             diskInfo: diskInfo,
@@ -811,7 +814,7 @@ class ScannerService: ObservableObject {
         var fileCount = 0
 
         guard let enumerator = fm.enumerator(at: URL(fileURLWithPath: path),
-                                              includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+                                              includingPropertiesForKeys: [.fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .isRegularFileKey],
                                               options: [.skipsHiddenFiles],
                                               errorHandler: nil) else {
             return (0, 0)
@@ -819,9 +822,9 @@ class ScannerService: ObservableObject {
 
         for case let url as URL in enumerator {
             do {
-                let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-                if values.isRegularFile == true, let size = values.fileSize {
-                    totalSize += Int64(size)
+                let values = try url.resourceValues(forKeys: [.fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .isRegularFileKey])
+                if values.isRegularFile == true {
+                    totalSize += Self.diskAllocatedSize(from: values)
                     fileCount += 1
                 }
             } catch {
@@ -830,6 +833,12 @@ class ScannerService: ObservableObject {
         }
 
         return (totalSize, fileCount)
+    }
+
+    nonisolated private static func diskAllocatedSize(from values: URLResourceValues) -> Int64 {
+        if let size = values.totalFileAllocatedSize { return Int64(size) }
+        if let size = values.fileAllocatedSize { return Int64(size) }
+        return Int64(values.fileSize ?? 0)
     }
 
     // MARK: - Delete

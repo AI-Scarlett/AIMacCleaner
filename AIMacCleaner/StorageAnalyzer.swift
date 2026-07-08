@@ -169,14 +169,21 @@ class StorageAnalyzer: ObservableObject {
                 let fullPath = (path as NSString).appendingPathComponent(file)
                 var isDir: ObjCBool = false
                 if fm.fileExists(atPath: fullPath, isDirectory: &isDir), !isDir.boolValue {
-                    if let attrs = try? fm.attributesOfItem(atPath: fullPath),
-                       let size = attrs[.size] as? Int64 {
-                        totalSize += size
+                    let url = URL(fileURLWithPath: fullPath)
+                    let values = try? url.resourceValues(forKeys: [.fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey])
+                    if let values {
+                        totalSize += diskAllocatedSize(from: values)
                     }
                 }
             }
         }
         return totalSize
+    }
+
+    private static func diskAllocatedSize(from values: URLResourceValues) -> Int64 {
+        if let size = values.totalFileAllocatedSize { return Int64(size) }
+        if let size = values.fileAllocatedSize { return Int64(size) }
+        return Int64(values.fileSize ?? 0)
     }
 
     func analyzeFileWithAI(file: StorageFile, config: AIConfig) async -> String? {
