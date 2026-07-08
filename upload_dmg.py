@@ -11,13 +11,15 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.44")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.45")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Fixes Docker image/container storage reporting by counting sparse disk images such as Docker.raw by actual allocated disk blocks instead of virtual logical size.\n"
+    "- Refreshes scan cache compatibility so old oversized Docker cleanup results are discarded after update.\n"
     "- Moves Agent Environment Profile out of Lab into its own Settings tab so the long configuration page has room to breathe.\n"
     "- Changes Agent Environment Profile into a beginner-friendly start switch: turning it on automatically generates and enables the local profile, while turning it off writes a disabled profile state.\n"
     "- Adds the same Agent Environment Profile switch to the menu-bar System Monitor popover for quick start/stop without opening full Settings.\n"
