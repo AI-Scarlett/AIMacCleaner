@@ -12,13 +12,14 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.50")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.51")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Makes AI Disk Advisor scan/analyze activity much more visible with the same radar-style status indicator used by Overview.\n"
     "- Adds strong Codex / Claude Code CLI update reminders to the existing Check for Updates flow, including startup auto-checks, in-app alerts, and macOS notifications.\n"
     "- Adds a default-on Strong Reminder switch in Settings so users can disable CLI update popups while keeping passive status checks visible.\n"
     "- Checks local `codex` and `claude` commands against npm registry latest versions and surfaces broken CLI installs whose version cannot be read.\n"
