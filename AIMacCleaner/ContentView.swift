@@ -431,7 +431,8 @@ struct ContentView: View {
         case .diskAdvisor: return localizer.t("实验", en: "Lab", zhHant: "實驗", ja: "ラボ", ko: "실험", mt: "Lab")
         case .localDiagnostics: return localizer.t("诊断", en: "Diag", zhHant: "診斷", ja: "診断", ko: "진단", mt: "Diag")
         case .cleaner:
-            let total = service.scanItems.reduce(Int64(0)) { $0 + $1.size }
+            let rawTotal = service.scanItems.reduce(Int64(0)) { $0 + $1.size }
+            let total = service.diskInfo.map { min(rawTotal, $0.used) } ?? rawTotal
             return total > 0 ? service.formatSize(total) : localizer.t("清理", en: "Clean", zhHant: "清理", ja: "クリーン", ko: "정리", mt: "Clean")
         case .app: return service.installedApps.isEmpty ? localizer.t("应用", en: "Apps", zhHant: "應用", ja: "アプリ", ko: "앱", mt: "Apps") : "\(service.installedApps.count)"
         case .dependency: return localizer.t("依赖", en: "Deps", zhHant: "依賴", ja: "依存", ko: "의존성", mt: "Deps")
@@ -4502,7 +4503,7 @@ struct AppOverviewTab: View {
     private var totalPorts: Int { rows.reduce(0) { $0 + $1.portCount } }
     private var totalOperations: Int { rows.reduce(0) { $0 + $1.operationCount } }
     private var totalTokens: Int { rows.reduce(0) { $0 + $1.totalTokens } }
-    private var cleanupTotalSize: Int64 { service.scanItems.reduce(0) { $0 + $1.size } }
+    private var cleanupTotalSize: Int64 { cappedCleanupSize(service.scanItems.reduce(0) { $0 + $1.size }) }
     private var appTotalSize: Int64 { service.installedApps.reduce(0) { $0 + $1.totalSize } }
 
     private var cleanupRiskSlices: [OverviewSlice] {
@@ -4535,6 +4536,11 @@ struct AppOverviewTab: View {
             let size = grouped[type]?.reduce(Int64(0)) { $0 + $1.totalSize } ?? 0
             return OverviewSlice(label: type.localizedLabel(localizer), value: Double(size), color: type.tabColor)
         }.filter { $0.value > 0 }
+    }
+
+    private func cappedCleanupSize(_ size: Int64) -> Int64 {
+        guard let used = service.diskInfo?.used, used > 0 else { return size }
+        return min(size, used)
     }
 
     private var appCountSlices: [OverviewSlice] {
@@ -9129,8 +9135,13 @@ struct MacCleanerTab: View {
 
     var categories: [String] { Array(Set(service.scanItems.map(\.category))).sorted() }
     var apps: [String] { Array(Set(service.scanItems.map(\.app))).sorted() }
-    var totalCleanable: Int64 { filteredItems.reduce(0) { $0 + $1.size } }
-    var selectedSize: Int64 { filteredItems.filter { selectedIds.contains($0.id) }.reduce(0) { $0 + $1.size } }
+    var totalCleanable: Int64 { cappedCleanupSize(filteredItems.reduce(0) { $0 + $1.size }) }
+    var selectedSize: Int64 { cappedCleanupSize(filteredItems.filter { selectedIds.contains($0.id) }.reduce(0) { $0 + $1.size }) }
+
+    private func cappedCleanupSize(_ size: Int64) -> Int64 {
+        guard let used = service.diskInfo?.used, used > 0 else { return size }
+        return min(size, used)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
