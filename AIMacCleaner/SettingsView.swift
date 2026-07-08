@@ -1110,12 +1110,19 @@ struct SettingsView: View {
 
                 Spacer()
 
-                Text(cliStatusText(result.status))
+                Text(cliStatusText(result))
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(color)
             }
 
             if result.needsStrongReminder {
+                if case .checkFailed(let reason) = result.status {
+                    Text(cliFailureDetail(result, reason: reason))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 HStack(spacing: Theme.Spacing.sm) {
                     Text(result.updateCommand)
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -1182,8 +1189,8 @@ struct SettingsView: View {
         }
     }
 
-    private func cliStatusText(_ status: CLIUpdateStatus) -> String {
-        switch status {
+    private func cliStatusText(_ result: CLIUpdateCheckResult) -> String {
+        switch result.status {
         case .upToDate:
             return localizer.t("最新", en: "Current", zhHant: "最新", ja: "最新", ko: "최신", mt: "Current")
         case .updateAvailable:
@@ -1191,6 +1198,9 @@ struct SettingsView: View {
         case .notInstalled:
             return localizer.t("未安装", en: "Not installed", zhHant: "未安裝", ja: "未インストール", ko: "미설치", mt: "Not installed")
         case .checkFailed:
+            if result.installedPath != nil, result.installedVersion == nil {
+                return localizer.t("需重装", en: "Reinstall", zhHant: "需重裝", ja: "再インストール", ko: "재설치 필요", mt: "Reinstall")
+            }
             return localizer.t("检查失败", en: "Check failed", zhHant: "檢查失敗", ja: "確認失敗", ko: "확인 실패", mt: "Check failed")
         }
     }
@@ -1204,7 +1214,7 @@ struct SettingsView: View {
         case .notInstalled:
             return "minus.circle.fill"
         case .checkFailed:
-            return "xmark.circle.fill"
+            return "wrench.and.screwdriver.fill"
         }
     }
 
@@ -1217,8 +1227,22 @@ struct SettingsView: View {
         case .notInstalled:
             return Theme.Colors.textTertiary
         case .checkFailed:
-            return Theme.Colors.danger
+            return Theme.Colors.warning
         }
+    }
+
+    private func cliFailureDetail(_ result: CLIUpdateCheckResult, reason: String) -> String {
+        if let path = result.installedPath, result.installedVersion == nil {
+            return localizer.t(
+                "已找到 \(result.commandName)，但无法读取版本，通常是 CLI 安装不完整或 native binary 缺失。路径：\(path)",
+                en: "\(result.commandName) was found, but its version could not be read. The install is likely incomplete or missing its native binary. Path: \(path)",
+                zhHant: "已找到 \(result.commandName)，但無法讀取版本，通常是 CLI 安裝不完整或 native binary 缺失。路徑：\(path)",
+                ja: "\(result.commandName) は見つかりましたが、バージョンを読み取れません。CLI のインストールが不完全、または native binary が欠落している可能性があります。パス: \(path)",
+                ko: "\(result.commandName)을 찾았지만 버전을 읽을 수 없습니다. CLI 설치가 불완전하거나 native binary가 누락되었을 수 있습니다. 경로: \(path)",
+                mt: "\(result.commandName) was found, but its version could not be read. The install is likely incomplete or missing its native binary. Path: \(path)"
+            )
+        }
+        return reason
     }
 
     private func copyToPasteboard(_ value: String) {
