@@ -92,6 +92,7 @@ enum AgentGeoMirrorServiceError: LocalizedError {
 final class AgentGeoMirrorService {
     static let shared = AgentGeoMirrorService()
 
+    private let coreOverridesMigrationKey = "agentGeoMirrorCoreOverridesMigrated20260708"
     private let fileManager = FileManager.default
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -105,6 +106,11 @@ final class AgentGeoMirrorService {
     func profileFromDefaults(enabledOverride: Bool? = nil) -> AgentGeoMirrorProfile {
         let defaults = UserDefaults.standard
         let fallback = AgentGeoMirrorProfile.defaultProfile
+        let effectiveEnabled = enabledOverride ?? defaultsBool("agentGeoMirrorEnabled", fallback: fallback.enabled)
+        if effectiveEnabled && defaults.object(forKey: coreOverridesMigrationKey) == nil {
+            forceCoreOverridesInDefaults(defaults)
+            defaults.set(true, forKey: coreOverridesMigrationKey)
+        }
         let languages = defaults.string(forKey: "agentGeoMirrorLanguages")?
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -112,7 +118,7 @@ final class AgentGeoMirrorService {
 
         return AgentGeoMirrorProfile(
             name: defaults.string(forKey: "agentGeoMirrorProfileName") ?? fallback.name,
-            enabled: enabledOverride ?? defaultsBool("agentGeoMirrorEnabled", fallback: fallback.enabled),
+            enabled: effectiveEnabled,
             proxyURL: defaults.string(forKey: "agentGeoMirrorProxyURL") ?? fallback.proxyURL,
             noProxy: defaults.string(forKey: "agentGeoMirrorNoProxy") ?? fallback.noProxy,
             countryCode: defaults.string(forKey: "agentGeoMirrorCountryCode") ?? fallback.countryCode,
@@ -137,8 +143,29 @@ final class AgentGeoMirrorService {
     }
 
     func setEnabledFromDefaults(_ isEnabled: Bool) throws -> AgentGeoMirrorGeneratedAssets {
-        UserDefaults.standard.set(isEnabled, forKey: "agentGeoMirrorEnabled")
+        let defaults = UserDefaults.standard
+        defaults.set(isEnabled, forKey: "agentGeoMirrorEnabled")
+        if isEnabled {
+            forceCoreOverridesInDefaults(defaults)
+            defaults.set(true, forKey: coreOverridesMigrationKey)
+        }
         return try generateAssets(for: profileFromDefaults(enabledOverride: isEnabled))
+    }
+
+    func refreshEnabledProfileInBackground() {
+        guard SandboxPaths.isDirectDistribution,
+              UserDefaults.standard.bool(forKey: "agentGeoMirrorEnabled") else {
+            return
+        }
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try self.setEnabledFromDefaults(true)
+            } catch {
+                print("[TraceFence] Failed to refresh Agent Geo Mirror profile: \(error)")
+            }
+        }
     }
 
     func generatedAssets(forProfileName profileName: String) -> AgentGeoMirrorGeneratedAssets {
@@ -165,16 +192,20 @@ final class AgentGeoMirrorService {
         let binURL = assets.binURL
         let launchersURL = assets.launchersURL
         let extensionURL = assets.browserExtensionURL
+        let shellURL = rootURL.appendingPathComponent("ShellProfile", isDirectory: true)
 
         try createDirectory(rootURL)
         try createDirectory(binURL)
         try createDirectory(launchersURL)
         try createDirectory(extensionURL)
+        try createDirectory(shellURL)
 
         let refreshedProfile = profile.withUpdatedTimestamp()
         try writeProfileJSON(refreshedProfile, to: rootURL.appendingPathComponent("profile.json"))
 
-        try writeExecutable(envScript(for: refreshedProfile), to: assets.envScriptURL)
+        try writeExecutable(envScript(for: refreshedProfile, rootURL: rootURL, binURL: binURL, shellURL: shellURL), to: assets.envScriptURL)
+        try writeLocalProbeShims(to: binURL)
+        try writeShellStartupFiles(rootURL: rootURL, shellURL: shellURL)
 
         if refreshedProfile.cliWrappersEnabled {
             try writeCLIWrappers(for: refreshedProfile, rootURL: rootURL, binURL: binURL)
@@ -324,6 +355,13 @@ final class AgentGeoMirrorService {
         return UserDefaults.standard.double(forKey: key)
     }
 
+    private func forceCoreOverridesInDefaults(_ defaults: UserDefaults) {
+        defaults.set(true, forKey: "agentGeoMirrorLocationOverride")
+        defaults.set(true, forKey: "agentGeoMirrorTimezoneOverride")
+        defaults.set(true, forKey: "agentGeoMirrorLanguageOverride")
+        defaults.set(true, forKey: "agentGeoMirrorAcceptLanguageOverride")
+    }
+
     private func writeCLIWrappers(for profile: AgentGeoMirrorProfile, rootURL: URL, binURL: URL) throws {
         let tools: [(wrapper: String, command: String)] = [
             ("tf-claude", "claude"),
@@ -420,18 +458,172 @@ final class AgentGeoMirrorService {
         try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
     }
 
-    private func envScript(for profile: AgentGeoMirrorProfile) -> String {
+    private func writeLocalProbeShims(to binURL: URL) throws {
+        let rewriteCommands: [(name: String, path: String)] = [
+            ("readlink", "/usr/bin/readlink"),
+            ("realpath", "/usr/bin/realpath"),
+            ("ls", "/bin/ls"),
+            ("stat", "/usr/bin/stat"),
+            ("cat", "/bin/cat"),
+            ("file", "/usr/bin/file"),
+            ("strings", "/usr/bin/strings"),
+            ("md5", "/sbin/md5"),
+            ("shasum", "/usr/bin/shasum"),
+            ("cksum", "/usr/bin/cksum"),
+            ("zdump", "/usr/sbin/zdump")
+        ]
+
+        for command in rewriteCommands {
+            try writeExecutable(
+                localtimeRewriteExecShim(commandName: command.name, realPath: command.path),
+                to: binURL.appendingPathComponent(command.name)
+            )
+        }
+
+        try writeExecutable(systemsetupShim(), to: binURL.appendingPathComponent("systemsetup"))
+        try writeExecutable(localeShim(), to: binURL.appendingPathComponent("locale"))
+        try writeExecutable(defaultsShim(), to: binURL.appendingPathComponent("defaults"))
+    }
+
+    private func writeShellStartupFiles(rootURL: URL, shellURL: URL) throws {
+        let envPath = rootURL.appendingPathComponent("agent-env.sh").path
+        let zshSource = """
+        # TraceFence generated shell profile.
+        if [[ -f \(shellQuote(envPath)) ]]; then
+          source \(shellQuote(envPath))
+        fi
+        """
+        let shSource = """
+        # TraceFence generated shell profile.
+        if [ -f \(shellQuote(envPath)) ]; then
+          . \(shellQuote(envPath))
+        fi
+        """
+
+        try writeExecutable(zshSource, to: shellURL.appendingPathComponent(".zshenv"))
+        try writeExecutable(zshSource, to: shellURL.appendingPathComponent(".zprofile"))
+        try writeExecutable(zshSource, to: shellURL.appendingPathComponent(".zshrc"))
+        try writeExecutable(shSource, to: shellURL.appendingPathComponent("bash_env"))
+        try writeExecutable(shSource, to: shellURL.appendingPathComponent("sh_env"))
+    }
+
+    private func localtimeRewriteExecShim(commandName: String, realPath: String) -> String {
+        """
+        #!/bin/zsh
+        REAL_COMMAND=\(shellQuote(realPath))
+        if [[ ! -x "$REAL_COMMAND" ]]; then
+          REAL_COMMAND="$(PATH=/usr/bin:/bin:/usr/sbin:/sbin command -v \(commandName) || true)"
+        fi
+        if [[ -z "$REAL_COMMAND" || ! -x "$REAL_COMMAND" ]]; then
+          echo "TraceFence: unable to find real \(commandName)." >&2
+          exit 127
+        fi
+        TRACEFENCE_LOCALTIME_FILE="${TRACEFENCE_LOCALTIME_FILE:-/var/db/timezone/zoneinfo/${TRACEFENCE_TIMEZONE:-UTC}}"
+        if [[ "\(commandName)" == "readlink" && $# -eq 1 && "${1:-}" == "/etc/localtime" ]]; then
+          echo "$TRACEFENCE_LOCALTIME_FILE"
+          exit 0
+        fi
+        ARGS=()
+        for arg in "$@"; do
+          if [[ "$arg" == "/etc/localtime" ]]; then
+            ARGS+=("$TRACEFENCE_LOCALTIME_FILE")
+          else
+            ARGS+=("$arg")
+          fi
+        done
+        exec "$REAL_COMMAND" "${ARGS[@]}"
+        """
+    }
+
+    private func systemsetupShim() -> String {
+        """
+        #!/bin/zsh
+        if [[ "${1:-}" == "-gettimezone" || "${1:-}" == "-getTimeZone" ]]; then
+          echo "Time Zone: ${TRACEFENCE_TIMEZONE:-UTC}"
+          exit 0
+        fi
+        exec /usr/sbin/systemsetup "$@"
+        """
+    }
+
+    private func localeShim() -> String {
+        """
+        #!/bin/zsh
+        POSIX_LOCALE="${TRACEFENCE_POSIX_LOCALE:-en_US.UTF-8}"
+        if [[ $# -eq 0 ]]; then
+          echo "LANG=\\"$POSIX_LOCALE\\""
+          echo "LC_COLLATE=\\"$POSIX_LOCALE\\""
+          echo "LC_CTYPE=\\"$POSIX_LOCALE\\""
+          echo "LC_MESSAGES=\\"$POSIX_LOCALE\\""
+          echo "LC_MONETARY=\\"$POSIX_LOCALE\\""
+          echo "LC_NUMERIC=\\"$POSIX_LOCALE\\""
+          echo "LC_TIME=\\"$POSIX_LOCALE\\""
+          echo "LC_ALL=\\"$POSIX_LOCALE\\""
+          exit 0
+        fi
+        if [[ $# -eq 1 && ( "$1" == "LANG" || "$1" == LC_* ) ]]; then
+          echo "$POSIX_LOCALE"
+          exit 0
+        fi
+        exec /usr/bin/locale "$@"
+        """
+    }
+
+    private func defaultsShim() -> String {
+        """
+        #!/bin/zsh
+        joined=" $* "
+        if [[ "$joined" == *"AppleLanguages"* ]]; then
+          langs=("${(@s:,:)TRACEFENCE_LANGUAGES}")
+          if [[ ${#langs[@]} -eq 0 ]]; then
+            langs=("${TRACEFENCE_LOCALE:-en-US}")
+          fi
+          echo "("
+          for lang in "${langs[@]}"; do
+            echo "    \\"$lang\\""
+          done
+          echo ")"
+          exit 0
+        fi
+        if [[ "$joined" == *"AppleLocale"* ]]; then
+          echo "${TRACEFENCE_LOCALE_UNDERSCORE:-en_US}"
+          exit 0
+        fi
+        exec /usr/bin/defaults "$@"
+        """
+    }
+
+    private func envScript(for profile: AgentGeoMirrorProfile, rootURL: URL, binURL: URL, shellURL: URL) -> String {
+        let normalizedLanguages = profile.languages.isEmpty ? [profile.localeIdentifier] : profile.languages
+        let localeIdentifier = profile.localeIdentifier.isEmpty ? "en-US" : profile.localeIdentifier
+        let localeUnderscore = localeIdentifier.replacingOccurrences(of: "-", with: "_")
+        let posixLocale = localeUnderscore + ".UTF-8"
+        let localtimeFile = "/var/db/timezone/zoneinfo/\(profile.timezoneIdentifier)"
         var lines = [
             "#!/bin/zsh",
             "# Generated by TraceFence Agent Geo Mirror. Edit from TraceFence settings instead of hand editing this file.",
             "export TRACEFENCE_GEO_PROFILE_ENABLED=\(shellQuote(profile.enabled ? "1" : "0"))",
             "export TRACEFENCE_GEO_PROFILE_NAME=\(shellQuote(profile.name))",
+            "export TRACEFENCE_GEO_PROFILE_DIR=\(shellQuote(rootURL.path))",
+            "export TRACEFENCE_GEO_BIN_DIR=\(shellQuote(binURL.path))",
+            "export TRACEFENCE_GEO_SHELL_DIR=\(shellQuote(shellURL.path))",
             "export TRACEFENCE_COUNTRY=\(shellQuote(profile.countryCode.uppercased()))",
             "export TRACEFENCE_REGION=\(shellQuote(profile.region))",
-            "export TRACEFENCE_CITY=\(shellQuote(profile.city))"
+            "export TRACEFENCE_CITY=\(shellQuote(profile.city))",
+            "export TRACEFENCE_TIMEZONE=\(shellQuote(profile.timezoneIdentifier))",
+            "export TRACEFENCE_LOCALTIME_FILE=\(shellQuote(localtimeFile))",
+            "export TRACEFENCE_LOCALE=\(shellQuote(localeIdentifier))",
+            "export TRACEFENCE_LOCALE_UNDERSCORE=\(shellQuote(localeUnderscore))",
+            "export TRACEFENCE_POSIX_LOCALE=\(shellQuote(posixLocale))",
+            "export TRACEFENCE_LANGUAGES=\(shellQuote(normalizedLanguages.joined(separator: ",")))",
+            "export TRACEFENCE_LANGUAGES_COLON=\(shellQuote(normalizedLanguages.joined(separator: ":")))"
         ]
 
         if profile.enabled {
+            lines.append("export PATH=\"$TRACEFENCE_GEO_BIN_DIR:$PATH\"")
+            lines.append("export ZDOTDIR=\"$TRACEFENCE_GEO_SHELL_DIR\"")
+            lines.append("export BASH_ENV=\"$TRACEFENCE_GEO_SHELL_DIR/bash_env\"")
+            lines.append("export ENV=\"$TRACEFENCE_GEO_SHELL_DIR/sh_env\"")
             if !profile.proxyURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 lines.append("export HTTP_PROXY=\(shellQuote(profile.proxyURL))")
                 lines.append("export HTTPS_PROXY=\(shellQuote(profile.proxyURL))")
@@ -448,12 +640,13 @@ final class AgentGeoMirrorService {
                 lines.append("export TZ=\(shellQuote(profile.timezoneIdentifier))")
             }
             if profile.languageOverrideEnabled {
-                let posixLocale = profile.localeIdentifier.replacingOccurrences(of: "-", with: "_") + ".UTF-8"
                 lines.append("export LANG=\(shellQuote(posixLocale))")
                 lines.append("export LC_ALL=\(shellQuote(posixLocale))")
-                lines.append("export LANGUAGE=\(shellQuote(profile.languages.joined(separator: ":")))")
-                lines.append("export TRACEFENCE_LOCALE=\(shellQuote(profile.localeIdentifier))")
-                lines.append("export TRACEFENCE_LANGUAGES=\(shellQuote(profile.languages.joined(separator: ",")))")
+                lines.append("export LC_CTYPE=\(shellQuote(posixLocale))")
+                lines.append("export LC_MESSAGES=\(shellQuote(posixLocale))")
+                lines.append("export LANGUAGE=\"$TRACEFENCE_LANGUAGES_COLON\"")
+                lines.append("export AppleLocale=\"$TRACEFENCE_LOCALE_UNDERSCORE\"")
+                lines.append("export AppleLanguages=\"$TRACEFENCE_LANGUAGES\"")
             }
             if profile.acceptLanguageOverrideEnabled {
                 lines.append("export ACCEPT_LANGUAGE=\(shellQuote(profile.acceptLanguage))")
@@ -475,18 +668,22 @@ final class AgentGeoMirrorService {
         set -e
         PROFILE_DIR=\(shellQuote(rootURL.path))
         source "$PROFILE_DIR/agent-env.sh"
+        APP_LOCALE_ARGS=()
+        if [[ -n "${TRACEFENCE_LOCALE_UNDERSCORE:-}" ]]; then
+          APP_LOCALE_ARGS=(-AppleLocale "$TRACEFENCE_LOCALE_UNDERSCORE" -AppleLanguages "($TRACEFENCE_LANGUAGES)")
+        fi
         CANDIDATES=(
           "/Applications/\(appName).app/Contents/MacOS/\(executable)"
           "$HOME/Applications/\(appName).app/Contents/MacOS/\(executable)"
         )
         for candidate in "${CANDIDATES[@]}"; do
           if [[ -x "$candidate" ]]; then
-            exec "$candidate" "$@"
+            exec "$candidate" "${APP_LOCALE_ARGS[@]}" "$@"
           fi
         done
         echo "TraceFence: \(appName).app was not found in /Applications or ~/Applications." >&2
         echo "TraceFence: falling back to macOS open; some environment variables may not be inherited by the app." >&2
-        exec open -na \(shellQuote(appName)) --args "$@"
+        exec open -na \(shellQuote(appName)) --args "${APP_LOCALE_ARGS[@]}" "$@"
         """
     }
 
@@ -499,13 +696,20 @@ final class AgentGeoMirrorService {
         EXTENSION_DIR="$PROFILE_DIR/BrowserExtension"
         USER_DATA_DIR="$PROFILE_DIR/\(safeFileName(browserAppName))-Profile"
         mkdir -p "$USER_DATA_DIR"
+        BROWSER_LANG_ARGS=()
+        if [[ -n "${TRACEFENCE_LOCALE:-}" ]]; then
+          BROWSER_LANG_ARGS=(--lang="$TRACEFENCE_LOCALE")
+        fi
+        if [[ -n "${TRACEFENCE_ACCEPT_LANGUAGE:-}" ]]; then
+          BROWSER_LANG_ARGS+=("--accept-lang=$TRACEFENCE_ACCEPT_LANGUAGE")
+        fi
         CANDIDATES=(
           "/Applications/\(browserAppName).app/Contents/MacOS/\(executable)"
           "$HOME/Applications/\(browserAppName).app/Contents/MacOS/\(executable)"
         )
         for candidate in "${CANDIDATES[@]}"; do
           if [[ -x "$candidate" ]]; then
-            exec "$candidate" --user-data-dir="$USER_DATA_DIR" --load-extension="$EXTENSION_DIR" "$@"
+            exec "$candidate" --user-data-dir="$USER_DATA_DIR" --load-extension="$EXTENSION_DIR" "${BROWSER_LANG_ARGS[@]}" "$@"
           fi
         done
         echo "TraceFence: \(browserAppName).app was not found in /Applications or ~/Applications." >&2
@@ -814,6 +1018,8 @@ final class AgentGeoMirrorService {
 
         - `agent-env.sh`: sourceable environment profile for proxy, timezone, locale, and coarse location metadata.
         - `bin/tf-*`: CLI wrappers such as `tf-claude`, `tf-codex`, and `tf-agent`.
+        - `bin/systemsetup`, `bin/locale`, `bin/defaults`, and localtime file shims: common local probes are answered from this profile when the generated `bin` directory is first in `PATH`.
+        - `ShellProfile`: generated zsh/bash/sh startup files that keep the profile active when an agent opens a nested login shell.
         - `Launchers/*.command`: desktop launchers for Claude, Cursor, Windsurf, Trae, VS Code, ChatGPT, Chrome, and Edge.
         - `BrowserExtension`: unpacked Chromium extension that mirrors geolocation, timezone, locale, and Accept-Language in browser-visible APIs.
 
@@ -840,9 +1046,11 @@ final class AgentGeoMirrorService {
 
         ## Limits
 
-        - CLI coverage depends on each tool respecting `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `TZ`, `LANG`, and `LC_ALL`.
+        - CLI coverage depends on launching the tool through `tf-*`, `tf-agent`, or a shell that has sourced `agent-env.sh`. The generated shell startup files keep the profile active for common nested `zsh -lc`, `bash -lc`, and `sh` command execution.
+        - Common local probes such as `systemsetup -gettimezone`, `locale`, `defaults read AppleLocale`, `defaults read AppleLanguages`, and `readlink /etc/localtime` are covered only when the command is resolved through the generated `PATH` shim. A tool that calls absolute system paths such as `/usr/bin/defaults` or reads system files with custom code can still bypass this profile.
         - Electron/AppKit desktop coverage is strongest when the generated launcher starts the real app binary. The fallback `open` path may not propagate all environment variables.
         - Browser API coverage applies to pages where the unpacked extension is enabled. Native apps do not use the browser extension.
+        - Existing running agents are not changed retroactively. Quit and relaunch them through the generated wrapper or launcher after changing this profile.
 
         ## Current profile
 

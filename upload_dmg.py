@@ -11,13 +11,16 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.45")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.46")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Hardens Agent Environment Profile for Codex/Claude-style local probes: generated wrappers now mirror timezone and language through `systemsetup`, `defaults`, `locale`, `/etc/localtime`, nested `zsh -lc`, nested `bash -lc`, and related local shell checks.\n"
+    "- Refreshes already-enabled Agent Environment Profiles automatically on app launch so existing users receive the new shell/profile shims after updating without manually regenerating the profile.\n"
+    "- Keeps the menu-bar monitor on a dedicated AppKit panel instead of an `NSPopover`, avoiding the AppKit popover crash seen in direct builds.\n"
     "- Fixes Docker image/container storage reporting by counting sparse disk images such as Docker.raw by actual allocated disk blocks instead of virtual logical size.\n"
     "- Refreshes scan cache compatibility so old oversized Docker cleanup results are discarded after update.\n"
     "- Moves Agent Environment Profile out of Lab into its own Settings tab so the long configuration page has room to breathe.\n"

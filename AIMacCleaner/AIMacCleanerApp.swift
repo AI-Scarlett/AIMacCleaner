@@ -56,6 +56,7 @@ struct AIMacCleanerApp: App {
                     overviewStore.startBackgroundRefresh()
                     providerQuotaService.start()
                     captureShelfService.start()
+                    AgentGeoMirrorService.shared.refreshEnabledProfileInBackground()
                     NSApp.setActivationPolicy(.regular)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [service, licenseService] in
                         licenseService.refreshTrialState()

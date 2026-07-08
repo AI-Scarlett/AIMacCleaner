@@ -4,13 +4,13 @@ import Darwin
 import SwiftUI
 
 @MainActor
-final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelegate {
+final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegate {
     private weak var service: ScannerService?
     private weak var quotaService: ProviderQuotaService?
     private weak var captureService: CaptureShelfService?
     private weak var localizer: Localizer?
     private var statusItem: NSStatusItem?
-    private var popover: NSPopover?
+    private var popoverPanel: NSPanel?
     private var cancellables: Set<AnyCancellable> = []
     private var labelRefreshWorkItem: DispatchWorkItem?
     private var singleClickWorkItem: DispatchWorkItem?
@@ -177,7 +177,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
         singleClickWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            if self.popover?.isShown == true {
+            if self.popoverPanel?.isVisible == true {
                 self.closePopover()
             } else {
                 self.showPopover()
@@ -196,17 +196,32 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
 
         closePopover()
 
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.animates = false
-        popover.contentSize = NSSize(width: 520, height: 640)
-        popover.delegate = self
-        popover.contentViewController = NSHostingController(
+        let panelSize = NSSize(width: 520, height: 640)
+        let hostingView = NSHostingView(
             rootView: MenuBarMonitor(service: service, quotaService: quotaService, captureService: captureService)
                 .environmentObject(localizer)
         )
-        self.popover = popover
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        hostingView.frame = NSRect(origin: .zero, size: panelSize)
+
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: panelSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.delegate = self
+        panel.contentView = hostingView
+        panel.backgroundColor = .windowBackgroundColor
+        panel.hasShadow = true
+        panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = false
+        panel.isFloatingPanel = true
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        panel.setFrameOrigin(panelOrigin(for: button, panelSize: panelSize))
+
+        self.popoverPanel = panel
+        panel.orderFrontRegardless()
         installDismissMonitors(anchor: button)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             quotaService.start()
@@ -217,15 +232,17 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
     private func closePopover() {
         singleClickWorkItem?.cancel()
         removeDismissMonitors()
-        popover?.close()
-        popover?.contentViewController = nil
-        popover = nil
+        popoverPanel?.orderOut(nil)
+        popoverPanel?.delegate = nil
+        popoverPanel?.contentView = nil
+        popoverPanel = nil
     }
 
-    func popoverDidClose(_ notification: Notification) {
+    func windowWillClose(_ notification: Notification) {
         removeDismissMonitors()
-        popover?.contentViewController = nil
-        popover = nil
+        popoverPanel?.delegate = nil
+        popoverPanel?.contentView = nil
+        popoverPanel = nil
     }
 
     private func installDismissMonitors(anchor: NSStatusBarButton) {
@@ -271,14 +288,40 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSPopoverDelega
     }
 
     private func eventIsInsidePopover(_ event: NSEvent) -> Bool {
-        guard let popoverWindow = popover?.contentViewController?.view.window else { return false }
-        return event.window === popoverWindow
+        guard let popoverPanel else { return false }
+        return event.window === popoverPanel
     }
 
     private func eventIsInsideStatusButton(_ event: NSEvent, anchor: NSStatusBarButton?) -> Bool {
         guard let anchor, event.window === anchor.window else { return false }
         let point = anchor.convert(event.locationInWindow, from: nil)
         return anchor.bounds.contains(point)
+    }
+
+    private func panelOrigin(for button: NSStatusBarButton, panelSize: NSSize) -> NSPoint {
+        guard let buttonWindow = button.window else {
+            return NSScreen.main.map { screen in
+                NSPoint(
+                    x: screen.visibleFrame.midX - panelSize.width / 2,
+                    y: screen.visibleFrame.maxY - panelSize.height - 8
+                )
+            } ?? .zero
+        }
+
+        let buttonFrameInWindow = button.convert(button.bounds, to: nil)
+        let buttonFrameOnScreen = buttonWindow.convertToScreen(buttonFrameInWindow)
+        let screenFrame = (buttonWindow.screen ?? NSScreen.main)?.visibleFrame ?? .zero
+        let horizontalPadding: CGFloat = 8
+        let verticalPadding: CGFloat = 6
+        let proposedX = buttonFrameOnScreen.midX - panelSize.width / 2
+        let x = min(
+            max(proposedX, screenFrame.minX + horizontalPadding),
+            screenFrame.maxX - panelSize.width - horizontalPadding
+        )
+        let proposedY = buttonFrameOnScreen.minY - panelSize.height - verticalPadding
+        let fallbackY = buttonFrameOnScreen.maxY + verticalPadding
+        let y = proposedY >= screenFrame.minY + verticalPadding ? proposedY : min(fallbackY, screenFrame.maxY - panelSize.height - verticalPadding)
+        return NSPoint(x: x, y: y)
     }
 
     private func showEmergencyMenu() {

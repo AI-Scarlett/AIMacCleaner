@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="TraceFence"
-VERSION="${TRACEFENCE_VERSION:-1.0.45}"
+VERSION="${TRACEFENCE_VERSION:-1.0.46}"
 TAG="v${VERSION}"
 SCHEME="AIMacCleaner"
 CONFIGURATION="Release"

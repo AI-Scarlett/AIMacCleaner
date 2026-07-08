@@ -22,6 +22,7 @@ struct AgentGeoMirrorSettingsView: View {
     @AppStorage("agentGeoMirrorTimezoneOverride") private var timezoneOverrideEnabled = true
     @AppStorage("agentGeoMirrorLanguageOverride") private var languageOverrideEnabled = true
     @AppStorage("agentGeoMirrorAcceptLanguageOverride") private var acceptLanguageOverrideEnabled = true
+    @AppStorage("agentGeoMirrorCoreOverridesMigrated20260708") private var coreOverridesMigrated = false
     @AppStorage("agentGeoMirrorBrowserExtension") private var browserExtensionEnabled = true
     @AppStorage("agentGeoMirrorCLIWrappers") private var cliWrappersEnabled = true
     @AppStorage("agentGeoMirrorDesktopLaunchers") private var desktopLaunchersEnabled = true
@@ -446,6 +447,10 @@ struct AgentGeoMirrorSettingsView: View {
     private func setProfileEnabled(_ newValue: Bool) {
         guard SandboxPaths.isDirectDistribution else { return }
         enabled = newValue
+        if newValue {
+            enableCoreOverrides()
+            coreOverridesMigrated = true
+        }
         generateAssets(successMessage: newValue
             ? localizer.t("已启动。TraceFence 已自动生成本地 Profile。", en: "Started. TraceFence generated the local profile automatically.")
             : localizer.t("已停止。TraceFence 已写入停用状态。", en: "Stopped. TraceFence wrote the disabled profile state."))
@@ -458,13 +463,21 @@ struct AgentGeoMirrorSettingsView: View {
         }
         guard SandboxPaths.isDirectDistribution else { return }
         if enabled {
-            if lastGeneratedAssets == nil {
-                generateAssets(successMessage: localizer.t("已启动。TraceFence 已自动生成本地 Profile。", en: "Started. TraceFence generated the local profile automatically."))
-            } else {
-                statusMessage = localizer.t("已启动。新打开的 Agent 会使用这套 Profile。", en: "Running. Newly launched agents will use this profile.")
-                statusIsError = false
+            if !coreOverridesMigrated {
+                enableCoreOverrides()
+                coreOverridesMigrated = true
             }
+            generateAssets(successMessage: lastGeneratedAssets == nil
+                ? localizer.t("已启动。TraceFence 已自动生成本地 Profile。", en: "Started. TraceFence generated the local profile automatically.")
+                : localizer.t("已启动。TraceFence 已刷新本地 Profile。", en: "Running. TraceFence refreshed the local profile."))
         }
+    }
+
+    private func enableCoreOverrides() {
+        locationOverrideEnabled = true
+        timezoneOverrideEnabled = true
+        languageOverrideEnabled = true
+        acceptLanguageOverrideEnabled = true
     }
 
     private func trimmed(_ value: String, fallback: String) -> String {
