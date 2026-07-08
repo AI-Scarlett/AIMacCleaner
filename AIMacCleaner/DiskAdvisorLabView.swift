@@ -318,13 +318,18 @@ struct DiskAdvisorLabView: View {
         CardView(padding: Theme.Spacing.lg, cornerRadius: Theme.Radius.lg) {
             HStack(spacing: Theme.Spacing.md) {
                 ZStack {
-                    Circle()
-                        .fill(Theme.Colors.purple.opacity(0.12))
-                    Image(systemName: "brain.head.profile")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.purple)
+                    if diskAdvisorIsBusy {
+                        RadarScanGlyph(color: diskAdvisorActivityColor)
+                            .scaleEffect(1.35)
+                    } else {
+                        Circle()
+                            .fill(Theme.Colors.purple.opacity(0.12))
+                        Image(systemName: "brain.head.profile")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.purple)
+                    }
                 }
-                .frame(width: 40, height: 40)
+                .frame(width: 46, height: 46)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(activeModelText)
@@ -338,12 +343,37 @@ struct DiskAdvisorLabView: View {
 
                 Spacer()
 
-                if store.isScanning || store.isAnalyzing {
-                    ProgressView()
-                        .controlSize(.small)
+                if diskAdvisorIsBusy {
+                    VStack(alignment: .trailing, spacing: Theme.Spacing.xs) {
+                        ScanningStatusPill(title: diskAdvisorActivityTitle, color: diskAdvisorActivityColor)
+                        ScanningProgressCaption(detail: diskAdvisorActivityDetail, color: diskAdvisorActivityColor)
+                    }
+                    .frame(minWidth: 220, maxWidth: 340, alignment: .trailing)
                 }
             }
         }
+    }
+
+    private var diskAdvisorIsBusy: Bool {
+        store.isScanning || store.isAnalyzing
+    }
+
+    private var diskAdvisorActivityColor: Color {
+        store.isAnalyzing ? Theme.Colors.purple : Theme.Colors.info
+    }
+
+    private var diskAdvisorActivityTitle: String {
+        store.isAnalyzing ? localizer.t("分析中", en: "Analyzing") : localizer.t("扫描中", en: "Scanning")
+    }
+
+    private var diskAdvisorActivityDetail: String {
+        if !store.statusMessage.isEmpty {
+            return store.statusMessage
+        }
+        if store.isAnalyzing {
+            return localizer.t("正在把候选项交给 AI 判断清理风险…", en: "Asking AI to review cleanup risk…")
+        }
+        return localizer.t("正在扫描常见大文件、缓存和构建产物…", en: "Scanning large files, caches, and build artifacts…")
     }
 
     private var summaryGrid: some View {
