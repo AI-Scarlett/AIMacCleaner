@@ -11,13 +11,16 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.48")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.49")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Fixes Codex Desktop reconnect loops when Agent Environment Profile is enabled by clearing HTTP_PROXY, HTTPS_PROXY, and ALL_PROXY for desktop launchers while keeping language, timezone, and local probe overrides active.\n"
+    "- Keeps desktop Agent launch and restart buttons available after Agent Environment Profile is turned off, so they can still be used as normal app launch controls.\n"
+    "- Makes Restart Codex and other restart actions wait for the existing app to quit, then force-terminate remaining processes before launching the app again automatically.\n"
     "- Adds one-click Open Codex and Restart Codex actions in Agent Environment Profile settings so users do not have to find generated .command launchers manually.\n"
     "- Adds a More Agents launcher menu for Claude, Cursor, Windsurf, VS Code, ChatGPT, Trae, and Codex desktop apps.\n"
     "- Adds a clear TRACEFENCE=1 environment marker to generated profiles while keeping timezone and language overrides active for local shell probes.\n"

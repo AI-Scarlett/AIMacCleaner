@@ -190,8 +190,8 @@ struct AgentGeoMirrorSettingsView: View {
                 infoBanner(
                     icon: "info.circle.fill",
                     text: localizer.t(
-                        "浏览器网页安装扩展即可；Codex/Claude/Cursor 桌面端和 CLI 不会读取浏览器扩展，必须退出后从 TraceFence 启动器或 tf-* wrapper 重新打开。",
-                        en: "Browser pages only need the extension. Codex/Claude/Cursor desktop apps and CLIs do not read browser extensions; quit and relaunch them from TraceFence launchers or tf-* wrappers."
+                        "浏览器网页安装扩展；桌面 Agent 用启动器注入语言/时区并清理代理变量；CLI 用 tf-* wrapper 注入完整代理环境。",
+                        en: "Browser pages use the extension. Desktop agents use launchers for language/timezone while proxy variables are cleared. CLIs use tf-* wrappers for the full proxy environment."
                     ),
                     color: Theme.Colors.info
                 )
@@ -251,7 +251,7 @@ struct AgentGeoMirrorSettingsView: View {
             miniHeader(
                 icon: "slider.horizontal.3",
                 title: localizer.t("覆盖范围", en: "Coverage"),
-                subtitle: localizer.t("浏览器网页用扩展；桌面端 Agent 用启动器；CLI 用 tf-* wrapper。", en: "Browser pages use the extension; desktop agents use launchers; CLIs use tf-* wrappers.")
+                subtitle: localizer.t("桌面 Agent 避免注入代理变量，防止 Codex 这类 Electron App 重连。", en: "Desktop agents avoid proxy-variable injection to prevent reconnect loops in Electron apps such as Codex.")
             )
 
             compactToggle(title: localizer.t("浏览器扩展", en: "Browser extension"), icon: "safari", isOn: $browserExtensionEnabled)
@@ -362,7 +362,7 @@ struct AgentGeoMirrorSettingsView: View {
                     Label(localizer.t("更多 Agent", en: "More Agents"), systemImage: "macwindow")
                 }
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 34))
-                .disabled(lastGeneratedAssets == nil || !enabled)
+                .disabled(lastGeneratedAssets == nil)
             }
 
             if let statusMessage {
@@ -601,7 +601,7 @@ struct AgentGeoMirrorSettingsView: View {
     }
 
     private func canLaunchDesktopAgent(_ target: DesktopAgentLaunchTarget) -> Bool {
-        enabled && launcherURL(for: target) != nil
+        launcherURL(for: target) != nil && !isGenerating
     }
 
     private func launcherURL(for target: DesktopAgentLaunchTarget) -> URL? {
@@ -622,17 +622,31 @@ struct AgentGeoMirrorSettingsView: View {
             return
         }
 
-        if terminateExisting {
-            let runningApps = NSWorkspace.shared.runningApplications.filter { app in
-                app.localizedName == target.appName || app.bundleURL?.lastPathComponent == "\(target.appName).app"
-            }
-            runningApps.forEach { app in
-                _ = app.terminate()
-            }
-        }
+        statusMessage = terminateExisting
+            ? localizer.t("正在重启 \(target.displayName)...", en: "Restarting \(target.displayName)...")
+            : localizer.t("正在打开 \(target.displayName)...", en: "Opening \(target.displayName)...")
+        statusIsError = false
 
-        let delay: TimeInterval = terminateExisting ? 1.2 : 0
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            var terminatedCount = 0
+            var forceTerminatedCount = 0
+            if terminateExisting {
+                let runningApps = runningApplications(for: target)
+                terminatedCount = runningApps.count
+                runningApps.forEach { app in
+                    _ = app.terminate()
+                }
+
+                if !waitUntilApplicationsExit(for: target, timeout: 2.5) {
+                    let remainingApps = runningApplications(for: target)
+                    forceTerminatedCount = remainingApps.count
+                    remainingApps.forEach { app in
+                        _ = app.forceTerminate()
+                    }
+                    _ = waitUntilApplicationsExit(for: target, timeout: 2.5)
+                }
+            }
+
             do {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/bin/zsh")
@@ -642,7 +656,7 @@ struct AgentGeoMirrorSettingsView: View {
 
                 DispatchQueue.main.async {
                     statusMessage = terminateExisting
-                        ? localizer.t("已通过 TraceFence 重启 \(target.displayName)。", en: "Restarted \(target.displayName) through TraceFence.")
+                        ? localizer.t("已关闭 \(terminatedCount) 个 \(target.displayName) 进程并重新打开。强制关闭 \(forceTerminatedCount) 个。", en: "Closed \(terminatedCount) \(target.displayName) processes and reopened it. Force-closed \(forceTerminatedCount).")
                         : localizer.t("已通过 TraceFence 打开 \(target.displayName)。", en: "Opened \(target.displayName) through TraceFence.")
                     statusIsError = false
                 }
@@ -653,6 +667,30 @@ struct AgentGeoMirrorSettingsView: View {
                 }
             }
         }
+    }
+
+    private func runningApplications(for target: DesktopAgentLaunchTarget) -> [NSRunningApplication] {
+        NSWorkspace.shared.runningApplications.filter { app in
+            let localizedName = app.localizedName ?? ""
+            let bundleName = app.bundleURL?.lastPathComponent ?? ""
+            return localizedName == target.appName
+                || localizedName == target.displayName
+                || localizedName.hasPrefix("\(target.appName) ")
+                || localizedName.hasPrefix("\(target.appName)(")
+                || bundleName == "\(target.appName).app"
+                || bundleName.hasPrefix("\(target.appName) ")
+        }
+    }
+
+    private func waitUntilApplicationsExit(for target: DesktopAgentLaunchTarget, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if runningApplications(for: target).isEmpty {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        return runningApplications(for: target).isEmpty
     }
 
     private func browserApplicationURL(for target: BrowserExtensionTarget) -> URL? {
@@ -685,6 +723,10 @@ struct AgentGeoMirrorSettingsView: View {
             lastGeneratedAssets = assets
         }
         guard SandboxPaths.isDirectDistribution else { return }
+        if !enabled, lastGeneratedAssets != nil {
+            generateAssets(successMessage: localizer.t("已刷新启动器。Agent 环境画像当前关闭，按钮会按普通方式启动 App。", en: "Launchers refreshed. Agent Environment Profile is off, so buttons launch apps normally."))
+            return
+        }
         if enabled {
             if !coreOverridesMigrated {
                 enableCoreOverrides()
