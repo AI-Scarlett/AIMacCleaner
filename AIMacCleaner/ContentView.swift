@@ -42,7 +42,7 @@ struct ContentView: View {
     }
 
     private static var toolboxSubItems: [NavItem] {
-        var items: [NavItem] = [.tokenScope, .diskAdvisor]
+        var items: [NavItem] = [.tokenScope, .diskAdvisor, .localDiagnostics]
         items.append(contentsOf: [.cleaner, .app, .dependency, .other, .migration])
         return items
     }
@@ -54,6 +54,7 @@ struct ContentView: View {
         case toolbox = "toolbox"
         case tokenScope = "tokenScope"
         case diskAdvisor = "diskAdvisor"
+        case localDiagnostics = "localDiagnostics"
         case cleaner = "cleaner"
         case app = "app"
         case dependency = "dependency"
@@ -62,7 +63,7 @@ struct ContentView: View {
 
         var isSubItem: Bool {
             switch self {
-            case .tokenScope, .diskAdvisor, .cleaner, .app, .dependency, .other, .migration: return true
+            case .tokenScope, .diskAdvisor, .localDiagnostics, .cleaner, .app, .dependency, .other, .migration: return true
             default: return false
             }
         }
@@ -79,6 +80,7 @@ struct ContentView: View {
             case .toolbox: "wrench.and.screwdriver.fill"
             case .tokenScope: "chart.xyaxis.line"
             case .diskAdvisor: "sparkles"
+            case .localDiagnostics: "network"
             case .migration: "arrow.triangle.2.circlepath"
             }
         }
@@ -95,6 +97,7 @@ struct ContentView: View {
             case .toolbox: Theme.Colors.info
             case .tokenScope: Theme.Colors.accent
             case .diskAdvisor: Theme.Colors.purple
+            case .localDiagnostics: Theme.Colors.teal
             case .migration: Theme.Colors.purple
             }
         }
@@ -111,6 +114,7 @@ struct ContentView: View {
             case .toolbox: localizer.navToolbox
             case .tokenScope: localizer.tokenScopeTitle
             case .diskAdvisor: localizer.t("AI 磁盘顾问", en: "AI Disk Advisor", zhHant: "AI 磁碟顧問", ja: "AI ディスクアドバイザー", ko: "AI 디스크 어드바이저", mt: "AI Disk Advisor")
+            case .localDiagnostics: localizer.t("本机诊断", en: "Local Diagnostics", zhHant: "本機診斷", ja: "ローカル診断", ko: "로컬 진단", mt: "Local Diagnostics")
             case .migration: localizer.navMigration
             }
         }
@@ -127,6 +131,7 @@ struct ContentView: View {
             case .toolbox: localizer.subToolbox
             case .tokenScope: localizer.tokenScopeSubtitle
             case .diskAdvisor: localizer.t("Apple Intelligence 磁盘清理建议", en: "Apple Intelligence cleanup advice", zhHant: "Apple Intelligence 磁碟清理建議", ja: "Apple Intelligence のクリーンアップ提案", ko: "Apple Intelligence 정리 제안", mt: "Apple Intelligence cleanup advice")
+            case .localDiagnostics: localizer.t("出口网络与启动项只读巡检", en: "Egress and launch item audit", zhHant: "出口網路與啟動項唯讀巡檢", ja: "出口ネットワークと起動項目監査", ko: "송신 네트워크 및 시작 항목 점검", mt: "Egress and launch item audit")
             case .migration: localizer.subMigration
             }
         }
@@ -424,6 +429,7 @@ struct ContentView: View {
         case .toolbox: return localizer.t("工具", en: "Tools", zhHant: "工具", ja: "ツール", ko: "도구", mt: "Tools")
         case .tokenScope: return localizer.t("测试", en: "Beta", zhHant: "測試", ja: "ベータ", ko: "베타", mt: "Beta")
         case .diskAdvisor: return localizer.t("实验", en: "Lab", zhHant: "實驗", ja: "ラボ", ko: "실험", mt: "Lab")
+        case .localDiagnostics: return localizer.t("诊断", en: "Diag", zhHant: "診斷", ja: "診断", ko: "진단", mt: "Diag")
         case .cleaner:
             let total = service.scanItems.reduce(Int64(0)) { $0 + $1.size }
             return total > 0 ? service.formatSize(total) : localizer.t("清理", en: "Clean", zhHant: "清理", ja: "クリーン", ko: "정리", mt: "Clean")
@@ -714,6 +720,9 @@ struct ContentView: View {
                 .environmentObject(localizer)
         case .diskAdvisor:
             DiskAdvisorLabView()
+                .environmentObject(localizer)
+        case .localDiagnostics:
+            LocalSystemDiagnosticsView()
                 .environmentObject(localizer)
         case .migration:
             IntelMigrationTab()
