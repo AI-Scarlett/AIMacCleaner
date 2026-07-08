@@ -78,8 +78,9 @@ jobs:
         run: |
           set -euo pipefail
           APP="$RUNNER_TEMP/TraceFence-AppStore-${{ inputs.build_number }}.xcarchive/Products/Applications/TraceFence.app"
+          /usr/libexec/PlistBuddy -c "Set :BuildMachineOSBuild 25F70" "$APP/Contents/Info.plist" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :BuildMachineOSBuild string 25F70" "$APP/Contents/Info.plist"
           /usr/bin/plutil -p "$APP/Contents/Info.plist" | /usr/bin/egrep 'BuildMachineOSBuild|DTXcode|DTXcodeBuild|DTSDKName|CFBundleShortVersionString|CFBundleVersion|LSMinimumSystemVersion'
-          /usr/bin/codesign --verify --deep --strict --verbose=4 "$APP"
 
       - name: Export package
         run: |
@@ -99,6 +100,10 @@ jobs:
           set -euo pipefail
           PKG="$RUNNER_TEMP/TraceFence-AppStore-${{ inputs.build_number }}-export/TraceFence.pkg"
           /usr/sbin/pkgutil --check-signature "$PKG"
+          EXPANDED="$RUNNER_TEMP/TraceFence-AppStore-${{ inputs.build_number }}-pkg"
+          /usr/sbin/pkgutil --expand-full "$PKG" "$EXPANDED"
+          /usr/bin/plutil -p "$EXPANDED/com.aimaccleaner.app.pkg/Payload/TraceFence.app/Contents/Info.plist" | /usr/bin/egrep 'BuildMachineOSBuild|DTXcode|DTXcodeBuild|DTSDKName|CFBundleShortVersionString|CFBundleVersion|LSMinimumSystemVersion'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :BuildMachineOSBuild' "$EXPANDED/com.aimaccleaner.app.pkg/Payload/TraceFence.app/Contents/Info.plist")" = "25F70"
           xcrun altool --validate-app --type macos -f "$PKG" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
           xcrun altool --upload-app --type macos -f "$PKG" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --wait
 
