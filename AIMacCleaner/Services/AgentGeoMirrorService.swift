@@ -102,17 +102,69 @@ final class AgentGeoMirrorService {
 
     private init() {}
 
+    func profileFromDefaults(enabledOverride: Bool? = nil) -> AgentGeoMirrorProfile {
+        let defaults = UserDefaults.standard
+        let fallback = AgentGeoMirrorProfile.defaultProfile
+        let languages = defaults.string(forKey: "agentGeoMirrorLanguages")?
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty } ?? fallback.languages
+
+        return AgentGeoMirrorProfile(
+            name: defaults.string(forKey: "agentGeoMirrorProfileName") ?? fallback.name,
+            enabled: enabledOverride ?? defaultsBool("agentGeoMirrorEnabled", fallback: fallback.enabled),
+            proxyURL: defaults.string(forKey: "agentGeoMirrorProxyURL") ?? fallback.proxyURL,
+            noProxy: defaults.string(forKey: "agentGeoMirrorNoProxy") ?? fallback.noProxy,
+            countryCode: defaults.string(forKey: "agentGeoMirrorCountryCode") ?? fallback.countryCode,
+            region: defaults.string(forKey: "agentGeoMirrorRegion") ?? fallback.region,
+            city: defaults.string(forKey: "agentGeoMirrorCity") ?? fallback.city,
+            timezoneIdentifier: defaults.string(forKey: "agentGeoMirrorTimezone") ?? fallback.timezoneIdentifier,
+            localeIdentifier: defaults.string(forKey: "agentGeoMirrorLocale") ?? fallback.localeIdentifier,
+            languages: languages.isEmpty ? fallback.languages : languages,
+            acceptLanguage: defaults.string(forKey: "agentGeoMirrorAcceptLanguage") ?? fallback.acceptLanguage,
+            latitude: defaultsDouble("agentGeoMirrorLatitude", fallback: fallback.latitude),
+            longitude: defaultsDouble("agentGeoMirrorLongitude", fallback: fallback.longitude),
+            accuracyMeters: defaultsDouble("agentGeoMirrorAccuracy", fallback: fallback.accuracyMeters),
+            locationOverrideEnabled: defaultsBool("agentGeoMirrorLocationOverride", fallback: fallback.locationOverrideEnabled),
+            timezoneOverrideEnabled: defaultsBool("agentGeoMirrorTimezoneOverride", fallback: fallback.timezoneOverrideEnabled),
+            languageOverrideEnabled: defaultsBool("agentGeoMirrorLanguageOverride", fallback: fallback.languageOverrideEnabled),
+            acceptLanguageOverrideEnabled: defaultsBool("agentGeoMirrorAcceptLanguageOverride", fallback: fallback.acceptLanguageOverrideEnabled),
+            browserExtensionEnabled: defaultsBool("agentGeoMirrorBrowserExtension", fallback: fallback.browserExtensionEnabled),
+            cliWrappersEnabled: defaultsBool("agentGeoMirrorCLIWrappers", fallback: fallback.cliWrappersEnabled),
+            desktopLaunchersEnabled: defaultsBool("agentGeoMirrorDesktopLaunchers", fallback: fallback.desktopLaunchersEnabled),
+            updatedAt: Date()
+        )
+    }
+
+    func setEnabledFromDefaults(_ isEnabled: Bool) throws -> AgentGeoMirrorGeneratedAssets {
+        UserDefaults.standard.set(isEnabled, forKey: "agentGeoMirrorEnabled")
+        return try generateAssets(for: profileFromDefaults(enabledOverride: isEnabled))
+    }
+
+    func generatedAssets(forProfileName profileName: String) -> AgentGeoMirrorGeneratedAssets {
+        let rootURL = URL(fileURLWithPath: SandboxPaths.shared.dataDirectory)
+            .appendingPathComponent("AgentGeoMirror", isDirectory: true)
+            .appendingPathComponent(safeFileName(profileName), isDirectory: true)
+        return AgentGeoMirrorGeneratedAssets(
+            rootURL: rootURL,
+            envScriptURL: rootURL.appendingPathComponent("agent-env.sh"),
+            binURL: rootURL.appendingPathComponent("bin", isDirectory: true),
+            launchersURL: rootURL.appendingPathComponent("Launchers", isDirectory: true),
+            browserExtensionURL: rootURL.appendingPathComponent("BrowserExtension", isDirectory: true),
+            readmeURL: rootURL.appendingPathComponent("README.md")
+        )
+    }
+
     func generateAssets(for profile: AgentGeoMirrorProfile) throws -> AgentGeoMirrorGeneratedAssets {
         guard SandboxPaths.isDirectDistribution else {
             throw AgentGeoMirrorServiceError.directOnly
         }
 
-        let rootURL = URL(fileURLWithPath: SandboxPaths.shared.dataDirectory)
-            .appendingPathComponent("AgentGeoMirror", isDirectory: true)
-            .appendingPathComponent(safeFileName(profile.name), isDirectory: true)
-        let binURL = rootURL.appendingPathComponent("bin", isDirectory: true)
-        let launchersURL = rootURL.appendingPathComponent("Launchers", isDirectory: true)
-        let extensionURL = rootURL.appendingPathComponent("BrowserExtension", isDirectory: true)
+        let assets = generatedAssets(forProfileName: profile.name)
+        let rootURL = assets.rootURL
+        let binURL = assets.binURL
+        let launchersURL = assets.launchersURL
+        let extensionURL = assets.browserExtensionURL
 
         try createDirectory(rootURL)
         try createDirectory(binURL)
@@ -122,8 +174,7 @@ final class AgentGeoMirrorService {
         let refreshedProfile = profile.withUpdatedTimestamp()
         try writeProfileJSON(refreshedProfile, to: rootURL.appendingPathComponent("profile.json"))
 
-        let envScriptURL = rootURL.appendingPathComponent("agent-env.sh")
-        try writeExecutable(envScript(for: refreshedProfile), to: envScriptURL)
+        try writeExecutable(envScript(for: refreshedProfile), to: assets.envScriptURL)
 
         if refreshedProfile.cliWrappersEnabled {
             try writeCLIWrappers(for: refreshedProfile, rootURL: rootURL, binURL: binURL)
@@ -135,16 +186,15 @@ final class AgentGeoMirrorService {
             try writeBrowserExtension(for: refreshedProfile, extensionURL: extensionURL)
         }
 
-        let readmeURL = rootURL.appendingPathComponent("README.md")
-        try readme(for: refreshedProfile).write(to: readmeURL, atomically: true, encoding: .utf8)
+        try readme(for: refreshedProfile).write(to: assets.readmeURL, atomically: true, encoding: .utf8)
 
         return AgentGeoMirrorGeneratedAssets(
             rootURL: rootURL,
-            envScriptURL: envScriptURL,
+            envScriptURL: assets.envScriptURL,
             binURL: binURL,
             launchersURL: launchersURL,
             browserExtensionURL: extensionURL,
-            readmeURL: readmeURL
+            readmeURL: assets.readmeURL
         )
     }
 
@@ -262,6 +312,16 @@ final class AgentGeoMirrorService {
     private func writeProfileJSON(_ profile: AgentGeoMirrorProfile, to url: URL) throws {
         let data = try encoder.encode(profile)
         try data.write(to: url, options: .atomic)
+    }
+
+    private func defaultsBool(_ key: String, fallback: Bool) -> Bool {
+        guard UserDefaults.standard.object(forKey: key) != nil else { return fallback }
+        return UserDefaults.standard.bool(forKey: key)
+    }
+
+    private func defaultsDouble(_ key: String, fallback: Double) -> Double {
+        guard UserDefaults.standard.object(forKey: key) != nil else { return fallback }
+        return UserDefaults.standard.double(forKey: key)
     }
 
     private func writeCLIWrappers(for profile: AgentGeoMirrorProfile, rootURL: URL, binURL: URL) throws {

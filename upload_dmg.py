@@ -11,13 +11,16 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.43")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.44")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Moves Agent Environment Profile out of Lab into its own Settings tab so the long configuration page has room to breathe.\n"
+    "- Changes Agent Environment Profile into a beginner-friendly start switch: turning it on automatically generates and enables the local profile, while turning it off writes a disabled profile state.\n"
+    "- Adds the same Agent Environment Profile switch to the menu-bar System Monitor popover for quick start/stop without opening full Settings.\n"
     "- Adds direct-build Agent Environment Profile: generate proxy-aligned browser extension, CLI wrappers, and desktop launchers for Claude, Cursor, Windsurf, VS Code, ChatGPT, Codex, Gemini, and other agents.\n"
     "- Lets users configure proxy URL, country/city, IANA timezone, locale, languages, Accept-Language, and coarse geolocation without changing macOS global language or timezone.\n"
     "- Optimizes Agent Monitor performance: project-board snapshots are cached, live detail filtering is reused per render, and expensive audit/analytics refresh work is throttled so the page stays responsive during long monitoring sessions.\n"

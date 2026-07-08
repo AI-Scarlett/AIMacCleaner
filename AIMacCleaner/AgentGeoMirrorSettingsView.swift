@@ -80,6 +80,9 @@ struct AgentGeoMirrorSettingsView: View {
             actionSection
         }
         .cardStyle()
+        .onAppear {
+            restoreGeneratedState()
+        }
     }
 
     private var header: some View {
@@ -109,28 +112,25 @@ struct AgentGeoMirrorSettingsView: View {
 
                 Spacer()
 
-                Button {
-                    withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
-                        enabled.toggle()
-                    }
-                } label: {
-                    ZStack(alignment: enabled ? .trailing : .leading) {
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(enabled ? Theme.Colors.info.opacity(0.92) : Theme.Colors.sidebarBg.opacity(0.8))
-                        Circle()
-                            .fill(.white)
-                            .frame(width: 20, height: 20)
-                            .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
-                            .padding(3)
-                    }
-                    .frame(width: 48, height: 26)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(enabled ? Color.white.opacity(0.28) : Theme.Colors.separator.opacity(0.6), lineWidth: 1)
-                    )
+                HStack(spacing: Theme.Spacing.sm) {
+                    Text(enabled ? localizer.t("已启动", en: "Running") : localizer.t("未启动", en: "Off"))
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(enabled ? Theme.Colors.success : Theme.Colors.textSecondary)
+                        .padding(.horizontal, Theme.Spacing.sm)
+                        .padding(.vertical, 5)
+                        .background((enabled ? Theme.Colors.success : Theme.Colors.textTertiary).opacity(0.12))
+                        .clipShape(Capsule())
+
+                    Toggle("", isOn: Binding(
+                        get: { enabled },
+                        set: { setProfileEnabled($0) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .disabled(isGenerating || !SandboxPaths.isDirectDistribution)
                 }
-                .buttonStyle(.plain)
-                .help(localizer.t("开启后生成的 wrapper 和启动器会导出这套环境变量。", en: "When enabled, generated wrappers and launchers export this environment profile."))
+                .help(localizer.t("打开就是启动：TraceFence 会自动生成本地 Profile。", en: "Turn it on to start: TraceFence generates the local profile automatically."))
             }
 
             if !SandboxPaths.isDirectDistribution {
@@ -146,8 +146,8 @@ struct AgentGeoMirrorSettingsView: View {
                 infoBanner(
                     icon: "info.circle.fill",
                     text: localizer.t(
-                        "不会修改系统全局语言或时区；桌面 App 需要通过生成的 .command 启动，CLI 需要使用 tf-* wrapper 或 source agent-env.sh。",
-                        en: "System language and timezone stay untouched. Desktop apps need generated .command launchers; CLIs need tf-* wrappers or source agent-env.sh."
+                        "打开开关后会自动生成并启用 Profile。已运行的 App 需要重新从启动器打开；CLI 使用 tf-* wrapper。",
+                        en: "Turning this on automatically generates and enables the profile. Already-running apps need to be relaunched from launchers; CLIs use tf-* wrappers."
                     ),
                     color: Theme.Colors.info
                 )
@@ -227,7 +227,7 @@ struct AgentGeoMirrorSettingsView: View {
                     generateAssets()
                 } label: {
                     Label(
-                        isGenerating ? localizer.t("生成中...", en: "Generating...") : localizer.t("生成本地 Profile", en: "Generate Local Profile"),
+                        isGenerating ? localizer.t("处理中...", en: "Working...") : localizer.t("重新生成配置", en: "Regenerate Profile"),
                         systemImage: "wand.and.stars"
                     )
                 }
@@ -362,7 +362,7 @@ struct AgentGeoMirrorSettingsView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
 
-    private func generateAssets() {
+    private func generateAssets(successMessage: String? = nil) {
         guard SandboxPaths.isDirectDistribution else { return }
         isGenerating = true
         statusMessage = nil
@@ -374,7 +374,9 @@ struct AgentGeoMirrorSettingsView: View {
                 let assets = try AgentGeoMirrorService.shared.generateAssets(for: currentProfile)
                 DispatchQueue.main.async {
                     lastGeneratedAssets = assets
-                    statusMessage = localizer.t("Profile 已生成。请通过生成的 wrapper 或启动器启动对应 Agent。", en: "Profile generated. Launch agents through the generated wrappers or launchers.")
+                    statusMessage = successMessage ?? (currentProfile.enabled
+                        ? localizer.t("Agent 环境画像已启动。新打开的桌面 Agent 和 CLI 会使用这套 Profile。", en: "Agent Environment Profile is running. Newly launched desktop agents and CLIs will use this profile.")
+                        : localizer.t("Agent 环境画像已停止。后续从启动器或 wrapper 打开的 Agent 不再注入画像。", en: "Agent Environment Profile is off. Future launches from launchers or wrappers will not inject the profile."))
                     statusIsError = false
                     isGenerating = false
                 }
@@ -403,6 +405,9 @@ struct AgentGeoMirrorSettingsView: View {
                     statusMessage = localizer.t("已按代理出口刷新画像。", en: "Profile refreshed from proxy egress.")
                     statusIsError = false
                     isRefreshing = false
+                    if enabled {
+                        generateAssets(successMessage: localizer.t("已按代理出口刷新并重新启动 Profile。", en: "Profile refreshed from proxy egress and restarted."))
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -435,6 +440,30 @@ struct AgentGeoMirrorSettingsView: View {
     private func openChromeExtensions() {
         if let url = URL(string: "chrome://extensions/") {
             NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func setProfileEnabled(_ newValue: Bool) {
+        guard SandboxPaths.isDirectDistribution else { return }
+        enabled = newValue
+        generateAssets(successMessage: newValue
+            ? localizer.t("已启动。TraceFence 已自动生成本地 Profile。", en: "Started. TraceFence generated the local profile automatically.")
+            : localizer.t("已停止。TraceFence 已写入停用状态。", en: "Stopped. TraceFence wrote the disabled profile state."))
+    }
+
+    private func restoreGeneratedState() {
+        let assets = AgentGeoMirrorService.shared.generatedAssets(forProfileName: trimmed(profileName, fallback: "default"))
+        if FileManager.default.fileExists(atPath: assets.rootURL.path) {
+            lastGeneratedAssets = assets
+        }
+        guard SandboxPaths.isDirectDistribution else { return }
+        if enabled {
+            if lastGeneratedAssets == nil {
+                generateAssets(successMessage: localizer.t("已启动。TraceFence 已自动生成本地 Profile。", en: "Started. TraceFence generated the local profile automatically."))
+            } else {
+                statusMessage = localizer.t("已启动。新打开的 Agent 会使用这套 Profile。", en: "Running. Newly launched agents will use this profile.")
+                statusIsError = false
+            }
         }
     }
 

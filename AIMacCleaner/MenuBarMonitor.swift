@@ -13,6 +13,9 @@ struct MenuBarMonitor: View {
     @State private var operationMonitorEnabled: Bool = false
     @State private var trashInsteadOfDelete: Bool = true
     @State private var preventAutoEmptyTrash: Bool = true
+    @AppStorage("agentGeoMirrorEnabled") private var agentGeoMirrorEnabled = false
+    @State private var agentGeoMirrorBusy = false
+    @State private var agentGeoMirrorMessage: String?
 
     enum MonitorTab: String, CaseIterable {
         case quotas = "quotas"
@@ -204,6 +207,10 @@ struct MenuBarMonitor: View {
                 diskOverview
                 Divider()
                 monitoringSettings
+                if SandboxPaths.isDirectDistribution {
+                    Divider()
+                    agentGeoMirrorQuickSwitch
+                }
                 Divider()
                 safetySettings
             }
@@ -1513,6 +1520,54 @@ struct MenuBarMonitor: View {
         .padding(.horizontal, Theme.Spacing.lg)
     }
 
+    private var agentGeoMirrorQuickSwitch: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(alignment: .center, spacing: Theme.Spacing.sm) {
+                Image(systemName: "globe.badge.chevron.backward")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(agentGeoMirrorEnabled ? Theme.Colors.success : Theme.Colors.info)
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localizer.t("Agent 环境画像", en: "Agent Environment Profile", zhHant: "Agent 環境畫像", ja: "Agent 環境プロファイル", ko: "Agent 환경 프로필", mt: "Agent Environment Profile"))
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(agentGeoMirrorEnabled
+                        ? localizer.t("已启动，新打开的 Agent 会使用代理画像。", en: "Running. Newly launched agents use the proxy profile.", zhHant: "已啟動，新開啟的 Agent 會使用代理畫像。", ja: "実行中。新しく起動した Agent はプロキシプロファイルを使用します。", ko: "실행 중입니다. 새로 실행한 Agent가 프록시 프로필을 사용합니다.", mt: "Running. Newly launched agents use the proxy profile.")
+                        : localizer.t("打开后自动生成本地 Profile。", en: "Turn on to generate the local profile automatically.", zhHant: "開啟後會自動產生本機 Profile。", ja: "オンにするとローカルプロファイルを自動生成します。", ko: "켜면 로컬 프로필을 자동 생성합니다.", mt: "Turn on to generate the local profile automatically."))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { agentGeoMirrorEnabled },
+                    set: { setAgentGeoMirrorEnabled($0) }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .disabled(agentGeoMirrorBusy)
+            }
+
+            if agentGeoMirrorBusy || agentGeoMirrorMessage != nil {
+                HStack(spacing: Theme.Spacing.xs) {
+                    Image(systemName: agentGeoMirrorBusy ? "arrow.clockwise" : "checkmark.circle.fill")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(agentGeoMirrorBusy ? Theme.Colors.info : Theme.Colors.success)
+                    Text(agentGeoMirrorBusy
+                        ? localizer.t("正在处理...", en: "Working...", zhHant: "正在處理...", ja: "処理中...", ko: "처리 중...", mt: "Working...")
+                        : (agentGeoMirrorMessage ?? ""))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(2)
+                    Spacer()
+                }
+                .padding(.top, 2)
+            }
+        }
+        .cardStyle(padding: Theme.Spacing.md)
+        .padding(.horizontal, Theme.Spacing.lg)
+    }
+
     private var safetySettings: some View {
         VStack(spacing: Theme.Spacing.sm) {
             HStack {
@@ -2028,5 +2083,29 @@ struct MenuBarMonitor: View {
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: obj, options: .prettyPrinted) else { return }
         try? data.write(to: URL(fileURLWithPath: settingsPath()))
+    }
+
+    private func setAgentGeoMirrorEnabled(_ isEnabled: Bool) {
+        guard SandboxPaths.isDirectDistribution else { return }
+        agentGeoMirrorEnabled = isEnabled
+        agentGeoMirrorBusy = true
+        agentGeoMirrorMessage = nil
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                _ = try AgentGeoMirrorService.shared.setEnabledFromDefaults(isEnabled)
+                DispatchQueue.main.async {
+                    agentGeoMirrorBusy = false
+                    agentGeoMirrorMessage = isEnabled
+                        ? localizer.t("已启动。新打开的 Agent 会使用这套 Profile。", en: "Started. Newly launched agents will use this profile.", zhHant: "已啟動。新開啟的 Agent 會使用這套 Profile。", ja: "開始しました。新しく起動した Agent はこのプロファイルを使用します。", ko: "시작되었습니다. 새로 실행한 Agent가 이 프로필을 사용합니다.", mt: "Started. Newly launched agents will use this profile.")
+                        : localizer.t("已停止。后续启动不会注入画像。", en: "Stopped. Future launches will not inject the profile.", zhHant: "已停止。後續啟動不會注入畫像。", ja: "停止しました。以後の起動ではプロファイルを注入しません。", ko: "중지되었습니다. 이후 실행에는 프로필을 주입하지 않습니다.", mt: "Stopped. Future launches will not inject the profile.")
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    agentGeoMirrorEnabled = !isEnabled
+                    agentGeoMirrorBusy = false
+                    agentGeoMirrorMessage = error.localizedDescription
+                }
+            }
+        }
     }
 }
