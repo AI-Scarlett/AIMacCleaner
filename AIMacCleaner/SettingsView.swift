@@ -739,12 +739,25 @@ struct SettingsView: View {
             }
             .cardStyle()
 
+            if SandboxPaths.isDirectDistribution {
+                AgentGeoMirrorSettingsView()
+                    .environmentObject(localizer)
+            }
+
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 Text(localizer.labFeaturesOverview)
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(Theme.Colors.textSecondary)
 
                 VStack(spacing: Theme.Spacing.sm) {
+                    if SandboxPaths.isDirectDistribution {
+                        LabFeatureRow(
+                            icon: "globe.badge.chevron.backward",
+                            color: Theme.Colors.info,
+                            title: localizer.t("Agent 环境画像", en: "Agent Environment Profile", zhHant: "Agent 環境畫像", ja: "Agent 環境プロファイル", ko: "Agent 환경 프로필", mt: "Agent Environment Profile"),
+                            desc: localizer.t("按代理出口生成浏览器扩展、CLI wrapper 和 Claude/Cursor 等桌面端启动器，覆盖语言、时区、定位与代理环境。", en: "Generates browser extension, CLI wrappers, and desktop launchers for Claude/Cursor-style apps, aligned to proxy egress language, timezone, location, and proxy settings.", zhHant: "依代理出口產生瀏覽器擴充、CLI wrapper 與 Claude/Cursor 等桌面端啟動器，覆蓋語言、時區、定位與代理環境。", ja: "プロキシ出口に合わせて、ブラウザー拡張、CLI ラッパー、Claude/Cursor などのデスクトップランチャーを生成します。", ko: "프록시 출구에 맞춰 브라우저 확장, CLI 래퍼, Claude/Cursor류 데스크톱 런처를 생성합니다.", mt: "Generates browser extension, CLI wrappers, and desktop launchers for Claude/Cursor-style apps, aligned to proxy egress language, timezone, location, and proxy settings.")
+                        )
+                    }
                     LabFeatureRow(
                         icon: "sparkles",
                         color: Theme.Colors.purple,
