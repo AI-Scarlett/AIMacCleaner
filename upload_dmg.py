@@ -11,13 +11,19 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.46")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.48")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Adds one-click Open Codex and Restart Codex actions in Agent Environment Profile settings so users do not have to find generated .command launchers manually.\n"
+    "- Adds a More Agents launcher menu for Claude, Cursor, Windsurf, VS Code, ChatGPT, Trae, and Codex desktop apps.\n"
+    "- Adds a clear TRACEFENCE=1 environment marker to generated profiles while keeping timezone and language overrides active for local shell probes.\n"
+    "- Adds a generated Codex desktop launcher so Codex.app can be relaunched through the Agent Environment Profile instead of leaking the normal Dock/Finder-launched macOS language and timezone.\n"
+    "- Replaces the browser extension button with a browser picker for Chrome, Edge, Brave, Arc, and Vivaldi, and opens the generated BrowserExtension folder for loading in Developer Mode.\n"
+    "- Clarifies that browser pages use the extension, while Codex/Claude/Cursor desktop apps need generated launchers and CLI agents need tf-* wrappers.\n"
     "- Hardens Agent Environment Profile for Codex/Claude-style local probes: generated wrappers now mirror timezone and language through `systemsetup`, `defaults`, `locale`, `/etc/localtime`, nested `zsh -lc`, nested `bash -lc`, and related local shell checks.\n"
     "- Refreshes already-enabled Agent Environment Profiles automatically on app launch so existing users receive the new shell/profile shims after updating without manually regenerating the profile.\n"
     "- Keeps the menu-bar monitor on a dedicated AppKit panel instead of an `NSPopover`, avoiding the AppKit popover crash seen in direct builds.\n"

@@ -1,6 +1,49 @@
 import AppKit
 import SwiftUI
 
+private struct BrowserExtensionTarget: Identifiable {
+    let id: String
+    let displayName: String
+    let appName: String
+    let executableName: String
+    let extensionPage: String
+    let icon: String
+
+    static let supported: [BrowserExtensionTarget] = [
+        BrowserExtensionTarget(id: "chrome", displayName: "Google Chrome", appName: "Google Chrome", executableName: "Google Chrome", extensionPage: "chrome://extensions/", icon: "globe"),
+        BrowserExtensionTarget(id: "edge", displayName: "Microsoft Edge", appName: "Microsoft Edge", executableName: "Microsoft Edge", extensionPage: "edge://extensions/", icon: "globe"),
+        BrowserExtensionTarget(id: "brave", displayName: "Brave", appName: "Brave Browser", executableName: "Brave Browser", extensionPage: "brave://extensions/", icon: "globe"),
+        BrowserExtensionTarget(id: "arc", displayName: "Arc", appName: "Arc", executableName: "Arc", extensionPage: "arc://extensions/", icon: "globe"),
+        BrowserExtensionTarget(id: "vivaldi", displayName: "Vivaldi", appName: "Vivaldi", executableName: "Vivaldi", extensionPage: "vivaldi://extensions/", icon: "globe")
+    ]
+}
+
+private struct DesktopAgentLaunchTarget: Identifiable {
+    let id: String
+    let displayName: String
+    let appName: String
+    let launcherFileName: String
+    let icon: String
+
+    static let codex = DesktopAgentLaunchTarget(
+        id: "codex",
+        displayName: "Codex",
+        appName: "Codex",
+        launcherFileName: "Launch Codex.command",
+        icon: "terminal"
+    )
+
+    static let supported: [DesktopAgentLaunchTarget] = [
+        codex,
+        DesktopAgentLaunchTarget(id: "claude", displayName: "Claude", appName: "Claude", launcherFileName: "Launch Claude.command", icon: "bubble.left.and.text.bubble.right"),
+        DesktopAgentLaunchTarget(id: "cursor", displayName: "Cursor", appName: "Cursor", launcherFileName: "Launch Cursor.command", icon: "cursorarrow"),
+        DesktopAgentLaunchTarget(id: "windsurf", displayName: "Windsurf", appName: "Windsurf", launcherFileName: "Launch Windsurf.command", icon: "wind"),
+        DesktopAgentLaunchTarget(id: "vscode", displayName: "Visual Studio Code", appName: "Visual Studio Code", launcherFileName: "Launch Visual Studio Code.command", icon: "chevron.left.forwardslash.chevron.right"),
+        DesktopAgentLaunchTarget(id: "chatgpt", displayName: "ChatGPT", appName: "ChatGPT", launcherFileName: "Launch ChatGPT.command", icon: "sparkles"),
+        DesktopAgentLaunchTarget(id: "trae", displayName: "Trae", appName: "Trae", launcherFileName: "Launch Trae.command", icon: "terminal")
+    ]
+}
+
 struct AgentGeoMirrorSettingsView: View {
     @EnvironmentObject private var localizer: Localizer
 
@@ -147,8 +190,8 @@ struct AgentGeoMirrorSettingsView: View {
                 infoBanner(
                     icon: "info.circle.fill",
                     text: localizer.t(
-                        "打开开关后会自动生成并启用 Profile。已运行的 App 需要重新从启动器打开；CLI 使用 tf-* wrapper。",
-                        en: "Turning this on automatically generates and enables the profile. Already-running apps need to be relaunched from launchers; CLIs use tf-* wrappers."
+                        "浏览器网页安装扩展即可；Codex/Claude/Cursor 桌面端和 CLI 不会读取浏览器扩展，必须退出后从 TraceFence 启动器或 tf-* wrapper 重新打开。",
+                        en: "Browser pages only need the extension. Codex/Claude/Cursor desktop apps and CLIs do not read browser extensions; quit and relaunch them from TraceFence launchers or tf-* wrappers."
                     ),
                     color: Theme.Colors.info
                 )
@@ -208,7 +251,7 @@ struct AgentGeoMirrorSettingsView: View {
             miniHeader(
                 icon: "slider.horizontal.3",
                 title: localizer.t("覆盖范围", en: "Coverage"),
-                subtitle: localizer.t("浏览器、桌面端和 CLI 分开生成，可按需要关闭。", en: "Browser, desktop, and CLI assets are generated separately.")
+                subtitle: localizer.t("浏览器网页用扩展；桌面端 Agent 用启动器；CLI 用 tf-* wrapper。", en: "Browser pages use the extension; desktop agents use launchers; CLIs use tf-* wrappers.")
             )
 
             compactToggle(title: localizer.t("浏览器扩展", en: "Browser extension"), icon: "safari", isOn: $browserExtensionEnabled)
@@ -243,12 +286,83 @@ struct AgentGeoMirrorSettingsView: View {
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .secondary, minHeight: 34))
                 .disabled(lastGeneratedAssets == nil)
 
-                Button {
-                    openChromeExtensions()
+                Menu {
+                    ForEach(BrowserExtensionTarget.supported) { target in
+                        Button {
+                            openExtensionPage(for: target)
+                        } label: {
+                            Label(
+                                localizer.t("打开 \(target.displayName) 扩展页", en: "Open \(target.displayName) Extensions"),
+                                systemImage: target.icon
+                            )
+                        }
+                        .disabled(browserApplicationURL(for: target) == nil)
+                    }
+
+                    Divider()
+
+                    Button {
+                        openBrowserExtensionFolder()
+                    } label: {
+                        Label(localizer.t("显示扩展目录", en: "Show Extension Folder"), systemImage: "folder")
+                    }
                 } label: {
-                    Label(localizer.t("扩展页", en: "Extensions"), systemImage: "puzzlepiece.extension")
+                    Label(localizer.t("安装浏览器扩展", en: "Install Browser Extension"), systemImage: "puzzlepiece.extension")
                 }
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .ghost, minHeight: 34))
+                .disabled(lastGeneratedAssets == nil)
+            }
+
+            HStack(spacing: Theme.Spacing.sm) {
+                Button {
+                    launchDesktopAgent(.codex, terminateExisting: false)
+                } label: {
+                    Label(localizer.t("打开 Codex", en: "Open Codex"), systemImage: "play.fill")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.success, variant: .secondary, minHeight: 34))
+                .disabled(!canLaunchDesktopAgent(.codex))
+
+                Button {
+                    launchDesktopAgent(.codex, terminateExisting: true)
+                } label: {
+                    Label(localizer.t("重启 Codex", en: "Restart Codex"), systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .secondary, minHeight: 34))
+                .disabled(!canLaunchDesktopAgent(.codex))
+
+                Menu {
+                    Section(localizer.t("启动", en: "Launch")) {
+                        ForEach(DesktopAgentLaunchTarget.supported) { target in
+                            Button {
+                                launchDesktopAgent(target, terminateExisting: false)
+                            } label: {
+                                Label(
+                                    localizer.t("打开 \(target.displayName)", en: "Open \(target.displayName)"),
+                                    systemImage: target.icon
+                                )
+                            }
+                            .disabled(!canLaunchDesktopAgent(target))
+                        }
+                    }
+
+                    Section(localizer.t("重启", en: "Restart")) {
+                        ForEach(DesktopAgentLaunchTarget.supported) { target in
+                            Button {
+                                launchDesktopAgent(target, terminateExisting: true)
+                            } label: {
+                                Label(
+                                    localizer.t("重启 \(target.displayName)", en: "Restart \(target.displayName)"),
+                                    systemImage: "arrow.clockwise"
+                                )
+                            }
+                            .disabled(!canLaunchDesktopAgent(target))
+                        }
+                    }
+                } label: {
+                    Label(localizer.t("更多 Agent", en: "More Agents"), systemImage: "macwindow")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 34))
+                .disabled(lastGeneratedAssets == nil || !enabled)
             }
 
             if let statusMessage {
@@ -438,10 +552,119 @@ struct AgentGeoMirrorSettingsView: View {
         NSWorkspace.shared.activateFileViewerSelecting([assets.rootURL])
     }
 
-    private func openChromeExtensions() {
-        if let url = URL(string: "chrome://extensions/") {
-            NSWorkspace.shared.open(url)
+    private func openBrowserExtensionFolder() {
+        guard let assets = lastGeneratedAssets else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([assets.browserExtensionURL])
+        statusMessage = localizer.t(
+            "已显示 BrowserExtension 文件夹。打开浏览器扩展页后，开启开发者模式并加载这个文件夹。",
+            en: "Showing the BrowserExtension folder. Open the browser extensions page, enable Developer Mode, and load this folder."
+        )
+        statusIsError = false
+    }
+
+    private func openExtensionPage(for target: BrowserExtensionTarget) {
+        guard lastGeneratedAssets != nil else { return }
+        guard let appURL = browserApplicationURL(for: target) else {
+            statusMessage = localizer.t(
+                "没有找到 \(target.displayName)。请先安装浏览器，或手动打开扩展目录。",
+                en: "\(target.displayName) was not found. Install the browser first, or open the extension folder manually."
+            )
+            statusIsError = true
+            return
         }
+
+        let executableURL = appURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("MacOS", isDirectory: true)
+            .appendingPathComponent(target.executableName)
+
+        do {
+            let process = Process()
+            process.executableURL = executableURL
+            process.arguments = [target.extensionPage]
+            try process.run()
+            openBrowserExtensionFolder()
+            statusMessage = localizer.t(
+                "已打开 \(target.displayName) 扩展页，并显示扩展目录。开启开发者模式后加载 BrowserExtension 文件夹。",
+                en: "Opened \(target.displayName) Extensions and showed the extension folder. Enable Developer Mode, then load the BrowserExtension folder."
+            )
+            statusIsError = false
+        } catch {
+            NSWorkspace.shared.open(appURL)
+            openBrowserExtensionFolder()
+            statusMessage = localizer.t(
+                "已打开 \(target.displayName)。如果扩展页没有自动出现，请在浏览器地址栏输入 \(target.extensionPage)，然后加载 BrowserExtension 文件夹。",
+                en: "Opened \(target.displayName). If the extensions page did not appear, enter \(target.extensionPage) in the browser address bar, then load the BrowserExtension folder."
+            )
+            statusIsError = false
+        }
+    }
+
+    private func canLaunchDesktopAgent(_ target: DesktopAgentLaunchTarget) -> Bool {
+        enabled && launcherURL(for: target) != nil
+    }
+
+    private func launcherURL(for target: DesktopAgentLaunchTarget) -> URL? {
+        guard let assets = lastGeneratedAssets else { return nil }
+        let url = assets.rootURL
+            .appendingPathComponent("Launchers", isDirectory: true)
+            .appendingPathComponent(target.launcherFileName)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    private func launchDesktopAgent(_ target: DesktopAgentLaunchTarget, terminateExisting: Bool) {
+        guard let launcherURL = launcherURL(for: target) else {
+            statusMessage = localizer.t(
+                "没有找到 \(target.displayName) 启动器。请先打开开关或重新生成配置。",
+                en: "\(target.displayName) launcher was not found. Turn on the switch or regenerate the profile first."
+            )
+            statusIsError = true
+            return
+        }
+
+        if terminateExisting {
+            let runningApps = NSWorkspace.shared.runningApplications.filter { app in
+                app.localizedName == target.appName || app.bundleURL?.lastPathComponent == "\(target.appName).app"
+            }
+            runningApps.forEach { app in
+                _ = app.terminate()
+            }
+        }
+
+        let delay: TimeInterval = terminateExisting ? 1.2 : 0
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) {
+            do {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+                process.arguments = [launcherURL.path]
+                process.currentDirectoryURL = launcherURL.deletingLastPathComponent()
+                try process.run()
+
+                DispatchQueue.main.async {
+                    statusMessage = terminateExisting
+                        ? localizer.t("已通过 TraceFence 重启 \(target.displayName)。", en: "Restarted \(target.displayName) through TraceFence.")
+                        : localizer.t("已通过 TraceFence 打开 \(target.displayName)。", en: "Opened \(target.displayName) through TraceFence.")
+                    statusIsError = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    statusMessage = error.localizedDescription
+                    statusIsError = true
+                }
+            }
+        }
+    }
+
+    private func browserApplicationURL(for target: BrowserExtensionTarget) -> URL? {
+        let fileManager = FileManager.default
+        let candidates = [
+            URL(fileURLWithPath: "/Applications").appendingPathComponent("\(target.appName).app"),
+            URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Applications/\(target.appName).app")
+        ]
+        for candidate in candidates where fileManager.fileExists(atPath: candidate.path) {
+            return candidate
+        }
+        return nil
     }
 
     private func setProfileEnabled(_ newValue: Bool) {
