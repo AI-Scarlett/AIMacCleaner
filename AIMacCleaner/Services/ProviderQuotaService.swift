@@ -138,11 +138,43 @@ final class ProviderQuotaService: ObservableObject {
         DispatchQueue.global(qos: .utility).async { [provider] in
             let result = provider.fetch()
             DispatchQueue.main.async {
-                self.snapshots = result
+                self.snapshots = result.sortedByQuotaReadiness()
                 self.lastRefreshDate = Date()
                 self.isRefreshing = false
             }
         }
+    }
+}
+
+private extension Array where Element == ProviderQuotaSnapshot {
+    func sortedByQuotaReadiness() -> [ProviderQuotaSnapshot] {
+        enumerated()
+            .sorted { lhs, rhs in
+                let lhsRank = lhs.element.quotaReadinessRank
+                let rhsRank = rhs.element.quotaReadinessRank
+                if lhsRank != rhsRank {
+                    return lhsRank < rhsRank
+                }
+                return lhs.offset < rhs.offset
+            }
+            .map(\.element)
+    }
+}
+
+private extension ProviderQuotaSnapshot {
+    var quotaReadinessRank: Int {
+        if hasReadableQuotaData { return 0 }
+        if isProviderEngineNotice { return 1 }
+        if isSetupNotice { return 3 }
+        return 2
+    }
+
+    var hasReadableQuotaData: Bool {
+        !windows.isEmpty || resetCredits != nil || credits != nil
+    }
+
+    var isProviderEngineNotice: Bool {
+        id.hasPrefix("provider-engine-")
     }
 }
 

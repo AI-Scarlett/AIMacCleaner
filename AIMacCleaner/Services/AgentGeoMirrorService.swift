@@ -72,6 +72,12 @@ struct AgentGeoMirrorGeneratedAssets {
     let readmeURL: URL
 }
 
+private struct AgentGeoMirrorCLITool {
+    let wrapperName: String
+    let commandName: String
+    let displayName: String
+}
+
 enum AgentGeoMirrorServiceError: LocalizedError {
     case directOnly
     case invalidProxyURL
@@ -215,7 +221,7 @@ final class AgentGeoMirrorService {
         try writeShellStartupFiles(rootURL: rootURL, shellURL: shellURL)
 
         if refreshedProfile.cliWrappersEnabled {
-            try writeCLIWrappers(for: refreshedProfile, rootURL: rootURL, binURL: binURL)
+            try writeCLIWrappers(rootURL: rootURL, binURL: binURL, launchersURL: launchersURL)
         }
         if refreshedProfile.desktopLaunchersEnabled {
             try writeDesktopLaunchers(for: refreshedProfile, rootURL: rootURL, launchersURL: launchersURL)
@@ -369,31 +375,23 @@ final class AgentGeoMirrorService {
         defaults.set(true, forKey: "agentGeoMirrorAcceptLanguageOverride")
     }
 
-    private func writeCLIWrappers(for profile: AgentGeoMirrorProfile, rootURL: URL, binURL: URL) throws {
-        let tools: [(wrapper: String, command: String)] = [
-            ("tf-claude", "claude"),
-            ("tf-codex", "codex"),
-            ("tf-gemini", "gemini"),
-            ("tf-cursor-agent", "cursor-agent"),
-            ("tf-opencode", "opencode"),
-            ("tf-aider", "aider"),
-            ("tf-qwen", "qwen"),
-            ("tf-goose", "goose")
+    private func writeCLIWrappers(rootURL: URL, binURL: URL, launchersURL: URL) throws {
+        let tools: [AgentGeoMirrorCLITool] = [
+            AgentGeoMirrorCLITool(wrapperName: "tf-claude", commandName: "claude", displayName: "Claude Code"),
+            AgentGeoMirrorCLITool(wrapperName: "tf-codex", commandName: "codex", displayName: "Codex"),
+            AgentGeoMirrorCLITool(wrapperName: "tf-grok", commandName: "grok", displayName: "Grok"),
+            AgentGeoMirrorCLITool(wrapperName: "tf-gemini", commandName: "gemini", displayName: "Gemini"),
+            AgentGeoMirrorCLITool(wrapperName: "tf-cursor-agent", commandName: "cursor-agent", displayName: "Cursor Agent"),
+            AgentGeoMirrorCLITool(wrapperName: "tf-opencode", commandName: "opencode", displayName: "OpenCode"),
+            AgentGeoMirrorCLITool(wrapperName: "tf-aider", commandName: "aider", displayName: "Aider"),
+            AgentGeoMirrorCLITool(wrapperName: "tf-qwen", commandName: "qwen", displayName: "Qwen"),
+            AgentGeoMirrorCLITool(wrapperName: "tf-goose", commandName: "goose", displayName: "Goose")
         ]
 
         for tool in tools {
-            let script = """
-            #!/bin/zsh
-            set -e
-            PROFILE_DIR=\(shellQuote(rootURL.path))
-            source "$PROFILE_DIR/agent-env.sh"
-            if ! command -v \(tool.command) >/dev/null 2>&1; then
-              echo "TraceFence: command '\(tool.command)' was not found in PATH." >&2
-              exit 127
-            fi
-            exec \(tool.command) "$@"
-            """
-            try writeExecutable(script, to: binURL.appendingPathComponent(tool.wrapper))
+            let script = cliWrapperScript(rootURL: rootURL, commandName: tool.commandName)
+            try writeExecutable(script, to: binURL.appendingPathComponent(tool.wrapperName))
+            try writeExecutable(script, to: binURL.appendingPathComponent(tool.commandName))
         }
 
         let genericScript = """
@@ -408,6 +406,65 @@ final class AgentGeoMirrorService {
         exec "$@"
         """
         try writeExecutable(genericScript, to: binURL.appendingPathComponent("tf-agent"))
+        try writeExecutable(profileShellLauncher(rootURL: rootURL), to: launchersURL.appendingPathComponent("Open TraceFence CLI Shell.command"))
+        if let grok = tools.first(where: { $0.commandName == "grok" }) {
+            try writeExecutable(cliLauncherScript(rootURL: rootURL, tool: grok), to: launchersURL.appendingPathComponent("Launch Grok CLI.command"))
+        }
+    }
+
+    private func cliWrapperScript(rootURL: URL, commandName: String) -> String {
+        """
+        #!/bin/zsh
+        set -e
+        PROFILE_DIR=\(shellQuote(rootURL.path))
+        source "$PROFILE_DIR/agent-env.sh"
+        WRAPPER_DIR="${TRACEFENCE_GEO_BIN_DIR:-$PROFILE_DIR/bin}"
+        path_parts=("${(@s/:/)PATH}")
+        clean_parts=()
+        for entry in "${path_parts[@]}"; do
+          if [[ -n "$entry" && "$entry" != "$WRAPPER_DIR" ]]; then
+            clean_parts+=("$entry")
+          fi
+        done
+        SEARCH_PATH="${(j/:/)clean_parts}"
+        REAL_COMMAND="$(PATH="$SEARCH_PATH" command -v \(commandName) || true)"
+        if [[ -z "$REAL_COMMAND" || "$REAL_COMMAND" == "$WRAPPER_DIR/\(commandName)" ]]; then
+          echo "TraceFence: command '\(commandName)' was not found outside the generated Profile bin directory." >&2
+          exit 127
+        fi
+        exec "$REAL_COMMAND" "$@"
+        """
+    }
+
+    private func cliLauncherScript(rootURL: URL, tool: AgentGeoMirrorCLITool) -> String {
+        """
+        #!/bin/zsh
+        set -e
+        PROFILE_DIR=\(shellQuote(rootURL.path))
+        source "$PROFILE_DIR/agent-env.sh"
+        clear
+        echo "TraceFence Agent Environment Profile is active."
+        echo "Launching \(tool.displayName) with timezone $TRACEFENCE_TIMEZONE and locale $TRACEFENCE_LOCALE."
+        echo ""
+        exec \(tool.commandName) "$@"
+        """
+    }
+
+    private func profileShellLauncher(rootURL: URL) -> String {
+        """
+        #!/bin/zsh
+        set -e
+        PROFILE_DIR=\(shellQuote(rootURL.path))
+        source "$PROFILE_DIR/agent-env.sh"
+        cd "$HOME"
+        clear
+        echo "TraceFence Agent Environment Profile is active."
+        echo "Timezone: $TRACEFENCE_TIMEZONE"
+        echo "Locale:   $TRACEFENCE_LOCALE"
+        echo "Use normal commands such as grok, codex, or claude in this shell."
+        echo ""
+        exec /bin/zsh -l
+        """
     }
 
     private func writeDesktopLaunchers(for profile: AgentGeoMirrorProfile, rootURL: URL, launchersURL: URL) throws {
@@ -1054,7 +1111,8 @@ final class AgentGeoMirrorService {
         ## What is generated
 
         - `agent-env.sh`: sourceable environment profile for proxy, timezone, locale, and coarse location metadata.
-        - `bin/tf-*`: CLI wrappers such as `tf-claude`, `tf-codex`, and `tf-agent`.
+        - `bin/tf-*`: CLI wrappers such as `tf-grok`, `tf-claude`, `tf-codex`, and `tf-agent`.
+        - `bin/grok`, `bin/claude`, `bin/codex`, and other command-name shims: when this profile's `bin` directory is first in `PATH`, normal CLI commands are routed through TraceFence automatically.
         - `bin/systemsetup`, `bin/locale`, `bin/defaults`, and localtime file shims: common local probes are answered from this profile when the generated `bin` directory is first in `PATH`.
         - `ShellProfile`: generated zsh/bash/sh startup files that keep the profile active when an agent opens a nested login shell.
         - `Launchers/*.command`: desktop launchers for Codex, Claude, Cursor, Windsurf, Trae, VS Code, ChatGPT, Chrome, Edge, Brave, Arc, and Vivaldi.
@@ -1072,10 +1130,13 @@ final class AgentGeoMirrorService {
 
         ```sh
         export PATH=\(shellQuote("bin")):$PATH
+        tf-grok
         tf-claude
         tf-codex
         tf-agent your-command --with --args
         ```
+
+        The generated `Launch Grok CLI.command` starts Grok in a new Terminal window with this profile already active. `Open TraceFence CLI Shell.command` opens a general shell where normal commands such as `grok`, `codex`, and `claude` are routed through the generated shims.
 
         For desktop apps, launch them through the generated `.command` files so the app process inherits the language, timezone, and local-probe profile. Desktop launchers intentionally clear `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` because Electron-style apps such as Codex can enter reconnect loops when those proxy variables are injected into the whole app process. CLI wrappers keep the proxy environment.
 

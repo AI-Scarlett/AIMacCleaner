@@ -44,6 +44,27 @@ private struct DesktopAgentLaunchTarget: Identifiable {
     ]
 }
 
+private struct CLIAgentLaunchTarget: Identifiable {
+    let id: String
+    let displayName: String
+    let launcherFileName: String
+    let icon: String
+
+    static let grok = CLIAgentLaunchTarget(
+        id: "grok",
+        displayName: "Grok CLI",
+        launcherFileName: "Launch Grok CLI.command",
+        icon: "terminal"
+    )
+
+    static let shell = CLIAgentLaunchTarget(
+        id: "shell",
+        displayName: "CLI Shell",
+        launcherFileName: "Open TraceFence CLI Shell.command",
+        icon: "chevron.left.forwardslash.chevron.right"
+    )
+}
+
 struct AgentGeoMirrorSettingsView: View {
     @EnvironmentObject private var localizer: Localizer
 
@@ -190,8 +211,8 @@ struct AgentGeoMirrorSettingsView: View {
                 infoBanner(
                     icon: "info.circle.fill",
                     text: localizer.t(
-                        "浏览器网页安装扩展；桌面 Agent 用启动器注入语言/时区并清理代理变量；CLI 用 tf-* wrapper 注入完整代理环境。",
-                        en: "Browser pages use the extension. Desktop agents use launchers for language/timezone while proxy variables are cleared. CLIs use tf-* wrappers for the full proxy environment."
+                        "浏览器网页安装扩展；桌面 Agent 用启动器；CLI 可点“打开 Grok CLI/CLI Shell”，或用 tf-grok、tf-codex 等 wrapper。",
+                        en: "Browser pages use the extension. Desktop agents use launchers. CLIs can use Open Grok CLI/CLI Shell, or wrappers such as tf-grok and tf-codex."
                     ),
                     color: Theme.Colors.info
                 )
@@ -363,6 +384,24 @@ struct AgentGeoMirrorSettingsView: View {
                 }
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 34))
                 .disabled(lastGeneratedAssets == nil)
+            }
+
+            HStack(spacing: Theme.Spacing.sm) {
+                Button {
+                    launchCLIAgent(.grok)
+                } label: {
+                    Label(localizer.t("打开 Grok CLI", en: "Open Grok CLI"), systemImage: "terminal")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 34))
+                .disabled(!canLaunchCLIAgent(.grok))
+
+                Button {
+                    launchCLIAgent(.shell)
+                } label: {
+                    Label(localizer.t("打开 CLI Shell", en: "Open CLI Shell"), systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 34))
+                .disabled(!canLaunchCLIAgent(.shell))
             }
 
             if let statusMessage {
@@ -604,12 +643,42 @@ struct AgentGeoMirrorSettingsView: View {
         launcherURL(for: target) != nil && !isGenerating
     }
 
+    private func canLaunchCLIAgent(_ target: CLIAgentLaunchTarget) -> Bool {
+        cliLauncherURL(for: target) != nil && !isGenerating
+    }
+
     private func launcherURL(for target: DesktopAgentLaunchTarget) -> URL? {
         guard let assets = lastGeneratedAssets else { return nil }
         let url = assets.rootURL
             .appendingPathComponent("Launchers", isDirectory: true)
             .appendingPathComponent(target.launcherFileName)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    private func cliLauncherURL(for target: CLIAgentLaunchTarget) -> URL? {
+        guard let assets = lastGeneratedAssets else { return nil }
+        let url = assets.rootURL
+            .appendingPathComponent("Launchers", isDirectory: true)
+            .appendingPathComponent(target.launcherFileName)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    private func launchCLIAgent(_ target: CLIAgentLaunchTarget) {
+        guard let launcherURL = cliLauncherURL(for: target) else {
+            statusMessage = localizer.t(
+                "没有找到 \(target.displayName) 启动器。请先打开开关或重新生成配置。",
+                en: "\(target.displayName) launcher was not found. Turn on the switch or regenerate the profile first."
+            )
+            statusIsError = true
+            return
+        }
+
+        NSWorkspace.shared.open(launcherURL)
+        statusMessage = localizer.t(
+            "已打开 \(target.displayName)。这个终端会自动注入 TraceFence 语言、时区和本地探测覆盖。",
+            en: "Opened \(target.displayName). This terminal injects TraceFence language, timezone, and local-probe overrides automatically."
+        )
+        statusIsError = false
     }
 
     private func launchDesktopAgent(_ target: DesktopAgentLaunchTarget, terminateExisting: Bool) {
