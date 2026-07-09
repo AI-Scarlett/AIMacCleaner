@@ -132,6 +132,14 @@ struct AgentGeoMirrorSettingsView: View {
         return parsed.isEmpty ? ["en-US", "en"] : parsed
     }
 
+    private var universalProfileURL: String {
+        AgentGeoMirrorProfileAccess.profileURL(profileName: trimmed(profileName, fallback: "default"))
+    }
+
+    private var universalProfileContextURL: String {
+        AgentGeoMirrorProfileAccess.contextURL(profileName: trimmed(profileName, fallback: "default"))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             header
@@ -141,6 +149,8 @@ struct AgentGeoMirrorSettingsView: View {
             identitySection
             verticalDivider
             overrideSection
+            verticalDivider
+            universalProfileSection
             verticalDivider
             actionSection
         }
@@ -282,6 +292,79 @@ struct AgentGeoMirrorSettingsView: View {
             compactToggle(title: localizer.t("时区", en: "Timezone"), icon: "clock.fill", isOn: $timezoneOverrideEnabled)
             compactToggle(title: localizer.t("语言/Locale", en: "Language/Locale"), icon: "textformat", isOn: $languageOverrideEnabled)
             compactToggle(title: "Accept-Language", icon: "character.bubble.fill", isOn: $acceptLanguageOverrideEnabled)
+        }
+    }
+
+    private var universalProfileSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            miniHeader(
+                icon: "link.badge.plus",
+                title: localizer.t("通用画像入口", en: "Universal Profile Endpoint"),
+                subtitle: localizer.t(
+                    "开关打开后，TraceFence 会自动启动本机只读 Profile 服务；新 CLI/Agent 可直接读取这份画像。",
+                    en: "When enabled, TraceFence starts a local read-only Profile service that new CLIs and agents can read directly."
+                )
+            )
+
+            HStack(alignment: .center, spacing: Theme.Spacing.sm) {
+                Image(systemName: enabled ? "checkmark.seal.fill" : "pause.circle.fill")
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(enabled ? Theme.Colors.success : Theme.Colors.textTertiary)
+                    .frame(width: 26)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(enabled
+                        ? localizer.t("已启动，本地画像服务正在提供 Profile。", en: "Running. The local Profile service is serving this profile.")
+                        : localizer.t("未启动。打开顶部开关后自动启动，不需要运行命令。", en: "Off. Turn on the switch above to start automatically; no command is required."))
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+
+                    Text(universalProfileURL)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer()
+            }
+            .padding(Theme.Spacing.sm)
+            .background((enabled ? Theme.Colors.success : Theme.Colors.textTertiary).opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+
+            HStack(spacing: Theme.Spacing.sm) {
+                Button {
+                    openUniversalProfile()
+                } label: {
+                    Label(localizer.t("打开画像", en: "Open Profile"), systemImage: "safari")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 34))
+                .disabled(!enabled || isGenerating || !SandboxPaths.isDirectDistribution)
+
+                Button {
+                    copyUniversalProfileURL()
+                } label: {
+                    Label(localizer.t("复制链接", en: "Copy Link"), systemImage: "doc.on.doc")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 34))
+                .disabled(!SandboxPaths.isDirectDistribution)
+
+                Button {
+                    openProfileContext()
+                } label: {
+                    Label(localizer.t("打开说明", en: "Open Context"), systemImage: "doc.text")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 34))
+                .disabled(!enabled || isGenerating || !SandboxPaths.isDirectDistribution)
+            }
+
+            Text(localizer.t(
+                "常规情况下，新 Agent 会从 TraceFence 启动器或 CLI Shell 继承 TRACEFENCE_PROFILE_URL；只有排查问题时才需要复制链接或查看生成目录。",
+                en: "Normally, new agents inherit TRACEFENCE_PROFILE_URL from TraceFence launchers or the CLI Shell. Copy the link or inspect the generated folder only for troubleshooting."
+            ))
+            .font(Theme.Font.caption)
+            .foregroundStyle(Theme.Colors.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -599,6 +682,43 @@ struct AgentGeoMirrorSettingsView: View {
             en: "Showing the BrowserExtension folder. Open the browser extensions page, enable Developer Mode, and load this folder."
         )
         statusIsError = false
+    }
+
+    private func openUniversalProfile() {
+        ensureProfileServerSynced()
+        guard let url = URL(string: universalProfileURL) else { return }
+        NSWorkspace.shared.open(url)
+        statusMessage = localizer.t(
+            "已打开本地画像 JSON。这个链接只在本机可访问。",
+            en: "Opened the local profile JSON. This link is available only on this Mac."
+        )
+        statusIsError = false
+    }
+
+    private func openProfileContext() {
+        ensureProfileServerSynced()
+        guard let url = URL(string: universalProfileContextURL) else { return }
+        NSWorkspace.shared.open(url)
+        statusMessage = localizer.t(
+            "已打开本地画像说明。新 Agent 可读取这份上下文。",
+            en: "Opened the local profile context. New agents can read this context."
+        )
+        statusIsError = false
+    }
+
+    private func copyUniversalProfileURL() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(universalProfileURL, forType: .string)
+        statusMessage = localizer.t(
+            "已复制画像链接。一般用户无需使用；排查新 Agent 接入时再粘贴给对应工具。",
+            en: "Copied the profile link. Most users do not need it; use it only when troubleshooting a new agent integration."
+        )
+        statusIsError = false
+    }
+
+    private func ensureProfileServerSynced() {
+        guard enabled else { return }
+        AgentGeoMirrorProfileServer.shared.syncWithDefaults()
     }
 
     private func openExtensionPage(for target: BrowserExtensionTarget) {

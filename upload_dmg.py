@@ -12,13 +12,16 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.52")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.53")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Adds a universal local Agent Profile endpoint for new CLIs and desktop agents: TraceFence now serves the generated profile from a read-only 127.0.0.1 URL while the Agent Environment Profile switch is on.\n"
+    "- Generates stable `agent-profile.json`, `agent-profile.md`, and `profile-url.txt` files and injects `TRACEFENCE_PROFILE_URL`, `TRACEFENCE_PROFILE_CONTEXT_URL`, `TRACEFENCE_PROFILE_PATH`, and `AGENT_PROFILE_URL` into TraceFence-launched agent environments.\n"
+    "- Adds a beginner-friendly Universal Profile section in Settings with running status plus Open Profile, Open Context, and Copy Link actions for troubleshooting.\n"
     "- Adds Grok CLI coverage to Agent Environment Profile with `tf-grok`, a direct `grok` command shim, and one-click Grok/Profile Shell terminal launchers.\n"
     "- Routes normal CLI agent commands such as `grok`, `codex`, and `claude` through generated Profile shims when the TraceFence CLI shell is active.\n"
     "- Sorts Provider quota cards so Agents with readable quota data appear before unused or unconfigured provider diagnostics.\n"

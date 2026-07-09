@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 struct AgentGeoMirrorProfile: Codable {
     var name: String
@@ -65,6 +66,10 @@ struct AgentGeoMirrorDetectedProfile {
 
 struct AgentGeoMirrorGeneratedAssets {
     let rootURL: URL
+    let rawProfileURL: URL
+    let portableProfileURL: URL
+    let profileContextURL: URL
+    let profileLinksURL: URL
     let envScriptURL: URL
     let binURL: URL
     let launchersURL: URL
@@ -72,10 +77,68 @@ struct AgentGeoMirrorGeneratedAssets {
     let readmeURL: URL
 }
 
+enum AgentGeoMirrorProfileAccess {
+    static let host = "127.0.0.1"
+    static let port: UInt16 = 17777
+    static var origin: String { "http://\(host):\(port)" }
+
+    static func profileID(_ rawName: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let scalars = rawName.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
+        let name = String(scalars).trimmingCharacters(in: CharacterSet(charactersIn: "-_"))
+        return name.isEmpty ? "default" : name
+    }
+
+    static func profileURL(profileName: String) -> String {
+        "\(origin)/profiles/\(profileID(profileName))/agent-profile.json"
+    }
+
+    static func contextURL(profileName: String) -> String {
+        "\(origin)/profiles/\(profileID(profileName))/agent-profile.md"
+    }
+
+    static func rawProfileURL(profileName: String) -> String {
+        "\(origin)/profiles/\(profileID(profileName))/raw-profile.json"
+    }
+}
+
 private struct AgentGeoMirrorCLITool {
     let wrapperName: String
     let commandName: String
     let displayName: String
+}
+
+private struct AgentGeoMirrorPortableProfile: Codable {
+    struct Location: Codable {
+        let countryCode: String
+        let region: String
+        let city: String
+        let latitude: Double
+        let longitude: Double
+        let accuracyMeters: Double
+    }
+
+    struct Proxy: Codable {
+        let url: String
+        let noProxy: String
+    }
+
+    let schema: String
+    let generatedAt: Date
+    let enabled: Bool
+    let profileName: String
+    let profileURL: String
+    let contextURL: String
+    let rawProfileURL: String
+    let timezoneIdentifier: String
+    let localeIdentifier: String
+    let posixLocale: String
+    let languages: [String]
+    let acceptLanguage: String
+    let location: Location
+    let proxy: Proxy
+    let environment: [String: String]
+    let instructions: [String]
 }
 
 enum AgentGeoMirrorServiceError: LocalizedError {
@@ -187,6 +250,10 @@ final class AgentGeoMirrorService {
             .appendingPathComponent(safeFileName(profileName), isDirectory: true)
         return AgentGeoMirrorGeneratedAssets(
             rootURL: rootURL,
+            rawProfileURL: rootURL.appendingPathComponent("profile.json"),
+            portableProfileURL: rootURL.appendingPathComponent("agent-profile.json"),
+            profileContextURL: rootURL.appendingPathComponent("agent-profile.md"),
+            profileLinksURL: rootURL.appendingPathComponent("profile-url.txt"),
             envScriptURL: rootURL.appendingPathComponent("agent-env.sh"),
             binURL: rootURL.appendingPathComponent("bin", isDirectory: true),
             launchersURL: rootURL.appendingPathComponent("Launchers", isDirectory: true),
@@ -214,7 +281,8 @@ final class AgentGeoMirrorService {
         try createDirectory(shellURL)
 
         let refreshedProfile = profile.withUpdatedTimestamp()
-        try writeProfileJSON(refreshedProfile, to: rootURL.appendingPathComponent("profile.json"))
+        try writeProfileJSON(refreshedProfile, to: assets.rawProfileURL)
+        try writePortableProfileFiles(refreshedProfile, rootURL: rootURL, assets: assets)
 
         try writeExecutable(envScript(for: refreshedProfile, rootURL: rootURL, binURL: binURL, shellURL: shellURL), to: assets.envScriptURL)
         try writeLocalProbeShims(to: binURL)
@@ -231,9 +299,14 @@ final class AgentGeoMirrorService {
         }
 
         try readme(for: refreshedProfile).write(to: assets.readmeURL, atomically: true, encoding: .utf8)
+        AgentGeoMirrorProfileServer.shared.setProfile(profileName: refreshedProfile.name, enabled: refreshedProfile.enabled)
 
         return AgentGeoMirrorGeneratedAssets(
             rootURL: rootURL,
+            rawProfileURL: assets.rawProfileURL,
+            portableProfileURL: assets.portableProfileURL,
+            profileContextURL: assets.profileContextURL,
+            profileLinksURL: assets.profileLinksURL,
             envScriptURL: assets.envScriptURL,
             binURL: binURL,
             launchersURL: launchersURL,
@@ -358,6 +431,119 @@ final class AgentGeoMirrorService {
         try data.write(to: url, options: .atomic)
     }
 
+    private func writePortableProfileFiles(_ profile: AgentGeoMirrorProfile, rootURL: URL, assets: AgentGeoMirrorGeneratedAssets) throws {
+        let profileURL = AgentGeoMirrorProfileAccess.profileURL(profileName: profile.name)
+        let contextURL = AgentGeoMirrorProfileAccess.contextURL(profileName: profile.name)
+        let rawProfileURL = AgentGeoMirrorProfileAccess.rawProfileURL(profileName: profile.name)
+        let portable = portableProfile(for: profile, rootURL: rootURL, profileURL: profileURL, contextURL: contextURL, rawProfileURL: rawProfileURL)
+        let portableData = try encoder.encode(portable)
+        try portableData.write(to: assets.portableProfileURL, options: .atomic)
+        try profileContextMarkdown(for: profile, profileURL: profileURL, contextURL: contextURL)
+            .write(to: assets.profileContextURL, atomically: true, encoding: .utf8)
+        try """
+        TRACEFENCE_PROFILE_URL=\(profileURL)
+        TRACEFENCE_PROFILE_CONTEXT_URL=\(contextURL)
+        TRACEFENCE_RAW_PROFILE_URL=\(rawProfileURL)
+        TRACEFENCE_PROFILE_PATH=\(assets.portableProfileURL.path)
+        TRACEFENCE_PROFILE_CONTEXT_PATH=\(assets.profileContextURL.path)
+        TRACEFENCE_RAW_PROFILE_PATH=\(assets.rawProfileURL.path)
+        """.write(to: assets.profileLinksURL, atomically: true, encoding: .utf8)
+    }
+
+    private func portableProfile(
+        for profile: AgentGeoMirrorProfile,
+        rootURL: URL,
+        profileURL: String,
+        contextURL: String,
+        rawProfileURL: String
+    ) -> AgentGeoMirrorPortableProfile {
+        let localeIdentifier = profile.localeIdentifier.isEmpty ? "en-US" : profile.localeIdentifier
+        let localeUnderscore = localeIdentifier.replacingOccurrences(of: "-", with: "_")
+        let posixLocale = localeUnderscore + ".UTF-8"
+        let normalizedLanguages = profile.languages.isEmpty ? [localeIdentifier] : profile.languages
+        let noProxy = normalizedNoProxy(profile.noProxy)
+
+        return AgentGeoMirrorPortableProfile(
+            schema: "tracefence.agent-profile.v1",
+            generatedAt: profile.updatedAt,
+            enabled: profile.enabled,
+            profileName: profile.name,
+            profileURL: profileURL,
+            contextURL: contextURL,
+            rawProfileURL: rawProfileURL,
+            timezoneIdentifier: profile.timezoneIdentifier,
+            localeIdentifier: localeIdentifier,
+            posixLocale: posixLocale,
+            languages: normalizedLanguages,
+            acceptLanguage: profile.acceptLanguage,
+            location: AgentGeoMirrorPortableProfile.Location(
+                countryCode: profile.countryCode.uppercased(),
+                region: profile.region,
+                city: profile.city,
+                latitude: profile.latitude,
+                longitude: profile.longitude,
+                accuracyMeters: profile.accuracyMeters
+            ),
+            proxy: AgentGeoMirrorPortableProfile.Proxy(
+                url: profile.proxyURL,
+                noProxy: noProxy
+            ),
+            environment: [
+                "TRACEFENCE": profile.enabled ? "1" : "0",
+                "TRACEFENCE_PROFILE_URL": profileURL,
+                "TRACEFENCE_PROFILE_CONTEXT_URL": contextURL,
+                "TRACEFENCE_PROFILE_PATH": rootURL.appendingPathComponent("agent-profile.json").path,
+                "TRACEFENCE_PROFILE_CONTEXT_PATH": rootURL.appendingPathComponent("agent-profile.md").path,
+                "TRACEFENCE_TIMEZONE": profile.timezoneIdentifier,
+                "TRACEFENCE_LOCALE": localeIdentifier,
+                "TRACEFENCE_POSIX_LOCALE": posixLocale,
+                "TRACEFENCE_LANGUAGES": normalizedLanguages.joined(separator: ","),
+                "TRACEFENCE_ACCEPT_LANGUAGE": profile.acceptLanguage
+            ],
+            instructions: [
+                "This profile is generated by TraceFence on the local Mac.",
+                "When TRACEFENCE=1, prefer these timezone, locale, language, Accept-Language, location, and proxy values over macOS global settings for agent-facing behavior.",
+                "Use TRACEFENCE_PROFILE_URL or TRACEFENCE_PROFILE_CONTEXT_URL when a new agent supports reading a profile from a local URL.",
+                "Use TRACEFENCE_PROFILE_PATH or TRACEFENCE_PROFILE_CONTEXT_PATH when a new agent supports reading a local profile file.",
+                "Do not treat this profile as proof that macOS global language, region, or timezone changed."
+            ]
+        )
+    }
+
+    private func profileContextMarkdown(for profile: AgentGeoMirrorProfile, profileURL: String, contextURL: String) -> String {
+        let localeIdentifier = profile.localeIdentifier.isEmpty ? "en-US" : profile.localeIdentifier
+        let normalizedLanguages = profile.languages.isEmpty ? [localeIdentifier] : profile.languages
+        let state = profile.enabled ? "enabled" : "disabled"
+        return """
+        # TraceFence Agent Profile
+
+        TraceFence generated this local profile for agent-facing environment alignment. The current profile is **\(state)**.
+
+        ## Active values
+
+        - Profile name: \(profile.name)
+        - Timezone: \(profile.timezoneIdentifier)
+        - Locale: \(localeIdentifier)
+        - Languages: \(normalizedLanguages.joined(separator: ", "))
+        - Accept-Language: \(profile.acceptLanguage)
+        - Country: \(profile.countryCode.uppercased())
+        - Region: \(profile.region)
+        - City: \(profile.city)
+        - Location: \(profile.latitude), \(profile.longitude) (+/- \(profile.accuracyMeters)m)
+        - Proxy: \(profile.proxyURL)
+        - NO_PROXY: \(normalizedNoProxy(profile.noProxy))
+
+        ## How agents should use this
+
+        When `TRACEFENCE=1`, prefer the values in this file for agent-facing language, timezone, region, coarse location, Accept-Language, and proxy behavior. This is a local app profile, not a macOS global settings change.
+
+        Local profile JSON: \(profileURL)
+        Local context file: \(contextURL)
+
+        If an agent cannot read the local URL, read `TRACEFENCE_PROFILE_PATH` or `TRACEFENCE_PROFILE_CONTEXT_PATH` from the environment instead.
+        """
+    }
+
     private func defaultsBool(_ key: String, fallback: Bool) -> Bool {
         guard UserDefaults.standard.object(forKey: key) != nil else { return fallback }
         return UserDefaults.standard.bool(forKey: key)
@@ -366,6 +552,17 @@ final class AgentGeoMirrorService {
     private func defaultsDouble(_ key: String, fallback: Double) -> Double {
         guard UserDefaults.standard.object(forKey: key) != nil else { return fallback }
         return UserDefaults.standard.double(forKey: key)
+    }
+
+    private func normalizedNoProxy(_ rawValue: String) -> String {
+        var values = rawValue
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        for required in ["localhost", "127.0.0.1", "::1"] where !values.contains(required) {
+            values.append(required)
+        }
+        return values.joined(separator: ",")
     }
 
     private func forceCoreOverridesInDefaults(_ defaults: UserDefaults) {
@@ -445,6 +642,7 @@ final class AgentGeoMirrorService {
         clear
         echo "TraceFence Agent Environment Profile is active."
         echo "Launching \(tool.displayName) with timezone $TRACEFENCE_TIMEZONE and locale $TRACEFENCE_LOCALE."
+        echo "Profile: $TRACEFENCE_PROFILE_URL"
         echo ""
         exec \(tool.commandName) "$@"
         """
@@ -461,6 +659,7 @@ final class AgentGeoMirrorService {
         echo "TraceFence Agent Environment Profile is active."
         echo "Timezone: $TRACEFENCE_TIMEZONE"
         echo "Locale:   $TRACEFENCE_LOCALE"
+        echo "Profile:  $TRACEFENCE_PROFILE_URL"
         echo "Use normal commands such as grok, codex, or claude in this shell."
         echo ""
         exec /bin/zsh -l
@@ -685,6 +884,13 @@ final class AgentGeoMirrorService {
         let localeUnderscore = localeIdentifier.replacingOccurrences(of: "-", with: "_")
         let posixLocale = localeUnderscore + ".UTF-8"
         let localtimeFile = "/var/db/timezone/zoneinfo/\(profile.timezoneIdentifier)"
+        let profileURL = AgentGeoMirrorProfileAccess.profileURL(profileName: profile.name)
+        let contextURL = AgentGeoMirrorProfileAccess.contextURL(profileName: profile.name)
+        let rawProfileURL = AgentGeoMirrorProfileAccess.rawProfileURL(profileName: profile.name)
+        let portableProfilePath = rootURL.appendingPathComponent("agent-profile.json").path
+        let profileContextPath = rootURL.appendingPathComponent("agent-profile.md").path
+        let rawProfilePath = rootURL.appendingPathComponent("profile.json").path
+        let noProxy = normalizedNoProxy(profile.noProxy)
         var lines = [
             "#!/bin/zsh",
             "# Generated by TraceFence Agent Geo Mirror. Edit from TraceFence settings instead of hand editing this file.",
@@ -694,6 +900,18 @@ final class AgentGeoMirrorService {
             "export TRACEFENCE_GEO_PROFILE_DIR=\(shellQuote(rootURL.path))",
             "export TRACEFENCE_GEO_BIN_DIR=\(shellQuote(binURL.path))",
             "export TRACEFENCE_GEO_SHELL_DIR=\(shellQuote(shellURL.path))",
+            "export TRACEFENCE_PROFILE_SERVICE_ORIGIN=\(shellQuote(AgentGeoMirrorProfileAccess.origin))",
+            "export TRACEFENCE_PROFILE_URL=\(shellQuote(profileURL))",
+            "export TRACEFENCE_PROFILE_CONTEXT_URL=\(shellQuote(contextURL))",
+            "export TRACEFENCE_RAW_PROFILE_URL=\(shellQuote(rawProfileURL))",
+            "export TRACEFENCE_PROFILE_PATH=\(shellQuote(portableProfilePath))",
+            "export TRACEFENCE_PROFILE_CONTEXT_PATH=\(shellQuote(profileContextPath))",
+            "export TRACEFENCE_RAW_PROFILE_PATH=\(shellQuote(rawProfilePath))",
+            "export AGENT_PROFILE_URL=\"$TRACEFENCE_PROFILE_URL\"",
+            "export AGENT_PROFILE_CONTEXT_URL=\"$TRACEFENCE_PROFILE_CONTEXT_URL\"",
+            "export AGENT_PROFILE_PATH=\"$TRACEFENCE_PROFILE_PATH\"",
+            "export AGENT_PROFILE_CONTEXT_PATH=\"$TRACEFENCE_PROFILE_CONTEXT_PATH\"",
+            "export TRACEFENCE_PROFILE_HINT=\(shellQuote("Read TRACEFENCE_PROFILE_URL or TRACEFENCE_PROFILE_CONTEXT_URL for the local TraceFence agent profile."))",
             "export TRACEFENCE_COUNTRY=\(shellQuote(profile.countryCode.uppercased()))",
             "export TRACEFENCE_REGION=\(shellQuote(profile.region))",
             "export TRACEFENCE_CITY=\(shellQuote(profile.city))",
@@ -721,8 +939,8 @@ final class AgentGeoMirrorService {
                 lines.append("export all_proxy=\"$ALL_PROXY\"")
                 lines.append("fi")
             }
-            if !profile.noProxy.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                lines.append("export NO_PROXY=\(shellQuote(profile.noProxy))")
+            if !noProxy.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                lines.append("export NO_PROXY=\(shellQuote(noProxy))")
                 lines.append("export no_proxy=\"$NO_PROXY\"")
             }
             if profile.timezoneOverrideEnabled {
@@ -1111,6 +1329,9 @@ final class AgentGeoMirrorService {
         ## What is generated
 
         - `agent-env.sh`: sourceable environment profile for proxy, timezone, locale, and coarse location metadata.
+        - `agent-profile.json`: stable agent-facing profile for new CLIs or desktop agents that can read a local profile file.
+        - `agent-profile.md`: compact human and agent readable context for tools that accept a profile/context document.
+        - `profile-url.txt`: local URL and file path shortcuts for support and troubleshooting.
         - `bin/tf-*`: CLI wrappers such as `tf-grok`, `tf-claude`, `tf-codex`, and `tf-agent`.
         - `bin/grok`, `bin/claude`, `bin/codex`, and other command-name shims: when this profile's `bin` directory is first in `PATH`, normal CLI commands are routed through TraceFence automatically.
         - `bin/systemsetup`, `bin/locale`, `bin/defaults`, and localtime file shims: common local probes are answered from this profile when the generated `bin` directory is first in `PATH`.
@@ -1138,6 +1359,13 @@ final class AgentGeoMirrorService {
 
         The generated `Launch Grok CLI.command` starts Grok in a new Terminal window with this profile already active. `Open TraceFence CLI Shell.command` opens a general shell where normal commands such as `grok`, `codex`, and `claude` are routed through the generated shims.
 
+        TraceFence also starts a local read-only profile service while the switch is on:
+
+        - JSON profile: \(AgentGeoMirrorProfileAccess.profileURL(profileName: profile.name))
+        - Context profile: \(AgentGeoMirrorProfileAccess.contextURL(profileName: profile.name))
+
+        New agents that support profile discovery can read `TRACEFENCE_PROFILE_URL`, `TRACEFENCE_PROFILE_CONTEXT_URL`, `TRACEFENCE_PROFILE_PATH`, or `TRACEFENCE_PROFILE_CONTEXT_PATH` from the environment instead of needing a TraceFence-specific wrapper.
+
         For desktop apps, launch them through the generated `.command` files so the app process inherits the language, timezone, and local-probe profile. Desktop launchers intentionally clear `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` because Electron-style apps such as Codex can enter reconnect loops when those proxy variables are injected into the whole app process. CLI wrappers keep the proxy environment.
 
         For Chromium browsers, use the generated Chrome, Edge, Brave, Arc, or Vivaldi launcher, or load the `BrowserExtension` folder from the browser extension page with Developer Mode enabled.
@@ -1145,6 +1373,7 @@ final class AgentGeoMirrorService {
         ## Limits
 
         - CLI coverage depends on launching the tool through `tf-*`, `tf-agent`, or a shell that has sourced `agent-env.sh`. The generated shell startup files keep the profile active for common nested `zsh -lc`, `bash -lc`, and `sh` command execution.
+        - The local profile service is a convenience channel for agents that can read a local URL. It does not intercept HTTPS traffic or force third-party tools to obey the profile.
         - Common local probes such as `systemsetup -gettimezone`, `locale`, `defaults read AppleLocale`, `defaults read AppleLanguages`, and `readlink /etc/localtime` are covered only when the command is resolved through the generated `PATH` shim. A tool that calls absolute system paths such as `/usr/bin/defaults` or reads system files with custom code can still bypass this profile.
         - Electron/AppKit desktop coverage is strongest when the generated launcher starts the real app binary. The fallback `open` path may not propagate all environment variables.
         - Browser API coverage applies to pages where the unpacked extension is enabled. Native apps do not use the browser extension.
@@ -1234,6 +1463,217 @@ final class AgentGeoMirrorService {
             index == 0 ? item : "\(item);q=\(String(format: "%.1f", max(0.1, 1.0 - Double(index) * 0.1)))"
         }.joined(separator: ",")
         return (locale, languages, acceptLanguage)
+    }
+}
+
+final class AgentGeoMirrorProfileServer {
+    static let shared = AgentGeoMirrorProfileServer()
+
+    private let queue = DispatchQueue(label: "com.tracefence.agent-profile-server", qos: .utility)
+    private let fileManager = FileManager.default
+    private var listener: NWListener?
+    private var activeProfileName = AgentGeoMirrorProfile.defaultProfile.name
+
+    private init() {}
+
+    func syncWithDefaults() {
+        guard SandboxPaths.isDirectDistribution else {
+            stop()
+            return
+        }
+
+        let defaults = UserDefaults.standard
+        let enabled: Bool
+        if defaults.object(forKey: "agentGeoMirrorEnabled") == nil {
+            enabled = AgentGeoMirrorProfile.defaultProfile.enabled
+        } else {
+            enabled = defaults.bool(forKey: "agentGeoMirrorEnabled")
+        }
+        let profileName = defaults.string(forKey: "agentGeoMirrorProfileName") ?? AgentGeoMirrorProfile.defaultProfile.name
+        setProfile(profileName: profileName, enabled: enabled)
+    }
+
+    func setProfile(profileName: String, enabled: Bool) {
+        queue.async {
+            self.activeProfileName = profileName
+            if enabled {
+                self.startLocked()
+            } else {
+                self.stopLocked()
+            }
+        }
+    }
+
+    func stop() {
+        queue.async {
+            self.stopLocked()
+        }
+    }
+
+    private func startLocked() {
+        guard listener == nil else {
+            return
+        }
+
+        do {
+            guard let port = NWEndpoint.Port(rawValue: AgentGeoMirrorProfileAccess.port) else {
+                return
+            }
+            let parameters = NWParameters.tcp
+            parameters.requiredLocalEndpoint = .hostPort(
+                host: NWEndpoint.Host(AgentGeoMirrorProfileAccess.host),
+                port: port
+            )
+            let listener = try NWListener(using: parameters)
+            listener.stateUpdateHandler = { state in
+                if case .failed(let error) = state {
+                    print("[TraceFence] Agent profile server failed: \(error)")
+                }
+            }
+            listener.newConnectionHandler = { [weak self] connection in
+                self?.handle(connection)
+            }
+            listener.start(queue: queue)
+            self.listener = listener
+        } catch {
+            print("[TraceFence] Unable to start Agent profile server: \(error)")
+        }
+    }
+
+    private func stopLocked() {
+        listener?.cancel()
+        listener = nil
+    }
+
+    private func handle(_ connection: NWConnection) {
+        connection.stateUpdateHandler = { state in
+            if case .failed = state {
+                connection.cancel()
+            }
+        }
+        connection.start(queue: queue)
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self] data, _, _, _ in
+            guard let self else {
+                connection.cancel()
+                return
+            }
+            guard let data,
+                  let request = String(data: data, encoding: .utf8) else {
+                self.send(status: "400 Bad Request", contentType: "text/plain; charset=utf-8", body: Data("Bad Request\n".utf8), on: connection)
+                return
+            }
+            self.respond(to: request, on: connection)
+        }
+    }
+
+    private func respond(to request: String, on connection: NWConnection) {
+        guard let firstLine = request.split(separator: "\n", maxSplits: 1).first else {
+            send(status: "400 Bad Request", contentType: "text/plain; charset=utf-8", body: Data("Bad Request\n".utf8), on: connection)
+            return
+        }
+
+        let parts = firstLine.split(separator: " ")
+        guard parts.count >= 2 else {
+            send(status: "400 Bad Request", contentType: "text/plain; charset=utf-8", body: Data("Bad Request\n".utf8), on: connection)
+            return
+        }
+
+        let method = parts[0].uppercased()
+        if method == "OPTIONS" {
+            send(status: "204 No Content", contentType: "text/plain; charset=utf-8", body: Data(), on: connection)
+            return
+        }
+        guard method == "GET" || method == "HEAD" else {
+            send(status: "405 Method Not Allowed", contentType: "text/plain; charset=utf-8", body: Data("Method Not Allowed\n".utf8), on: connection)
+            return
+        }
+
+        let path = normalizedRequestPath(String(parts[1]))
+        if path == "/health" {
+            let body = Data("""
+            {"status":"ok","service":"tracefence-agent-profile","profile":"\(AgentGeoMirrorProfileAccess.profileID(activeProfileName))"}
+            """.utf8)
+            send(status: "200 OK", contentType: "application/json; charset=utf-8", body: method == "HEAD" ? Data() : body, on: connection)
+            return
+        }
+
+        guard let route = route(for: path) else {
+            send(status: "404 Not Found", contentType: "text/plain; charset=utf-8", body: Data("Not Found\n".utf8), on: connection)
+            return
+        }
+
+        guard fileManager.fileExists(atPath: route.url.path),
+              let data = try? Data(contentsOf: route.url) else {
+            send(status: "404 Not Found", contentType: "text/plain; charset=utf-8", body: Data("Profile Not Generated\n".utf8), on: connection)
+            return
+        }
+
+        send(status: "200 OK", contentType: route.contentType, body: method == "HEAD" ? Data() : data, on: connection)
+    }
+
+    private func normalizedRequestPath(_ target: String) -> String {
+        if let url = URL(string: target),
+           let scheme = url.scheme,
+           scheme.hasPrefix("http") {
+            return url.path.isEmpty ? "/" : url.path
+        }
+        guard let questionMark = target.firstIndex(of: "?") else {
+            return target.isEmpty ? "/" : target
+        }
+        let path = String(target[..<questionMark])
+        return path.isEmpty ? "/" : path
+    }
+
+    private func route(for path: String) -> (url: URL, contentType: String)? {
+        let parts = path.split(separator: "/").map(String.init)
+        var profileID = AgentGeoMirrorProfileAccess.profileID(activeProfileName)
+        var resource = parts.last ?? "agent-profile.md"
+
+        if parts.count >= 3, parts[0] == "profiles" {
+            profileID = parts[1]
+            resource = parts[2]
+        } else if parts == [".well-known", "tracefence-profile.json"] {
+            resource = "agent-profile.json"
+        } else if parts.isEmpty {
+            resource = "agent-profile.md"
+        }
+
+        let rootURL = URL(fileURLWithPath: SandboxPaths.shared.dataDirectory)
+            .appendingPathComponent("AgentGeoMirror", isDirectory: true)
+            .appendingPathComponent(profileID, isDirectory: true)
+
+        switch resource {
+        case "agent-profile.json", "profile":
+            return (rootURL.appendingPathComponent("agent-profile.json"), "application/json; charset=utf-8")
+        case "profile.json", "raw-profile.json":
+            return (rootURL.appendingPathComponent("profile.json"), "application/json; charset=utf-8")
+        case "agent-profile.md", "context.md", "context":
+            return (rootURL.appendingPathComponent("agent-profile.md"), "text/markdown; charset=utf-8")
+        case "profile-url.txt", "urls.txt":
+            return (rootURL.appendingPathComponent("profile-url.txt"), "text/plain; charset=utf-8")
+        default:
+            return nil
+        }
+    }
+
+    private func send(status: String, contentType: String, body: Data, on connection: NWConnection) {
+        let header = """
+        HTTP/1.1 \(status)\r
+        Content-Type: \(contentType)\r
+        Content-Length: \(body.count)\r
+        Cache-Control: no-store\r
+        Access-Control-Allow-Origin: *\r
+        Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r
+        Access-Control-Allow-Headers: *\r
+        Connection: close\r
+        \r
+
+        """
+        var response = Data(header.utf8)
+        response.append(body)
+        connection.send(content: response, completion: .contentProcessed { _ in
+            connection.cancel()
+        })
     }
 }
 
