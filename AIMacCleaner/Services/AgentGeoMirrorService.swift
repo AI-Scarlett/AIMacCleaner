@@ -291,6 +291,7 @@ final class AgentGeoMirrorService {
         if refreshedProfile.cliWrappersEnabled {
             try writeCLIWrappers(rootURL: rootURL, binURL: binURL, launchersURL: launchersURL)
         }
+        try syncManagedCommandShims(rootURL: rootURL, enabled: refreshedProfile.enabled && refreshedProfile.cliWrappersEnabled)
         if refreshedProfile.desktopLaunchersEnabled {
             try writeDesktopLaunchers(for: refreshedProfile, rootURL: rootURL, launchersURL: launchersURL)
         }
@@ -607,6 +608,162 @@ final class AgentGeoMirrorService {
         if let grok = tools.first(where: { $0.commandName == "grok" }) {
             try writeExecutable(cliLauncherScript(rootURL: rootURL, tool: grok), to: launchersURL.appendingPathComponent("Launch Grok CLI.command"))
         }
+    }
+
+    private func syncManagedCommandShims(rootURL: URL, enabled: Bool) throws {
+        try syncGrokUserCommandShim(rootURL: rootURL, enabled: enabled)
+    }
+
+    private func syncGrokUserCommandShim(rootURL: URL, enabled: Bool) throws {
+        let homeURL = URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true)
+        let grokBinURL = homeURL.appendingPathComponent(".grok/bin", isDirectory: true)
+        let commandURL = grokBinURL.appendingPathComponent("grok")
+        let metadataURL = grokBinURL.appendingPathComponent(".tracefence-grok-original")
+        let backupURL = grokBinURL.appendingPathComponent("grok.tracefence-original")
+        let defaultBinaryURL = homeURL.appendingPathComponent(".grok/downloads/grok-macos-aarch64")
+
+        guard enabled else {
+            try restoreManagedCommandShim(commandURL: commandURL, metadataURL: metadataURL, backupURL: backupURL)
+            return
+        }
+
+        guard fileManager.fileExists(atPath: grokBinURL.path) || fileManager.fileExists(atPath: defaultBinaryURL.path) else {
+            return
+        }
+        try createDirectory(grokBinURL)
+
+        let original = try preserveOriginalCommand(
+            commandURL: commandURL,
+            metadataURL: metadataURL,
+            backupURL: backupURL,
+            fallbackURL: defaultBinaryURL
+        )
+        guard !original.resolvedPath.isEmpty else { return }
+
+        try writeExecutable(
+            managedGrokCommandShim(rootURL: rootURL, originalPath: original.resolvedPath),
+            to: commandURL
+        )
+    }
+
+    private func preserveOriginalCommand(
+        commandURL: URL,
+        metadataURL: URL,
+        backupURL: URL,
+        fallbackURL: URL
+    ) throws -> (resolvedPath: String, metadata: String) {
+        if isTraceFenceManagedCommand(commandURL),
+           let metadata = try? String(contentsOf: metadataURL, encoding: .utf8),
+           let restored = restoredCommandPath(from: metadata, commandURL: commandURL) {
+            return (restored, metadata)
+        }
+
+        if let symlinkDestination = try? fileManager.destinationOfSymbolicLink(atPath: commandURL.path) {
+            let resolvedURL = URL(fileURLWithPath: symlinkDestination, relativeTo: commandURL.deletingLastPathComponent()).standardizedFileURL
+            let metadata = "symlink\t\(symlinkDestination)\n"
+            try metadata.write(to: metadataURL, atomically: true, encoding: .utf8)
+            try? fileManager.removeItem(at: commandURL)
+            return (resolvedURL.path, metadata)
+        }
+
+        if fileManager.fileExists(atPath: commandURL.path) {
+            if !fileManager.fileExists(atPath: backupURL.path) {
+                try fileManager.moveItem(at: commandURL, to: backupURL)
+            } else {
+                try? fileManager.removeItem(at: commandURL)
+            }
+            let metadata = "file\t\(backupURL.path)\n"
+            try metadata.write(to: metadataURL, atomically: true, encoding: .utf8)
+            return (backupURL.path, metadata)
+        }
+
+        guard fileManager.fileExists(atPath: fallbackURL.path) else {
+            return ("", "")
+        }
+        let metadata = "file\t\(fallbackURL.path)\n"
+        try metadata.write(to: metadataURL, atomically: true, encoding: .utf8)
+        return (fallbackURL.path, metadata)
+    }
+
+    private func restoreManagedCommandShim(commandURL: URL, metadataURL: URL, backupURL: URL) throws {
+        guard isTraceFenceManagedCommand(commandURL) else {
+            return
+        }
+
+        let metadata = (try? String(contentsOf: metadataURL, encoding: .utf8)) ?? ""
+        try? fileManager.removeItem(at: commandURL)
+
+        if metadata.hasPrefix("symlink\t") {
+            let destination = metadata
+                .dropFirst("symlink\t".count)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !destination.isEmpty {
+                try fileManager.createSymbolicLink(atPath: commandURL.path, withDestinationPath: destination)
+            }
+        } else if metadata.hasPrefix("file\t") {
+            let originalPath = metadata
+                .dropFirst("file\t".count)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if fileManager.fileExists(atPath: originalPath) {
+                try fileManager.moveItem(atPath: originalPath, toPath: commandURL.path)
+            }
+        } else if fileManager.fileExists(atPath: backupURL.path) {
+            try fileManager.moveItem(at: backupURL, to: commandURL)
+        }
+
+        try? fileManager.removeItem(at: metadataURL)
+    }
+
+    private func restoredCommandPath(from metadata: String, commandURL: URL) -> String? {
+        if metadata.hasPrefix("symlink\t") {
+            let destination = metadata
+                .dropFirst("symlink\t".count)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !destination.isEmpty else { return nil }
+            return URL(fileURLWithPath: destination, relativeTo: commandURL.deletingLastPathComponent()).standardizedFileURL.path
+        }
+        if metadata.hasPrefix("file\t") {
+            let path = metadata
+                .dropFirst("file\t".count)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return path.isEmpty ? nil : path
+        }
+        return nil
+    }
+
+    private func isTraceFenceManagedCommand(_ url: URL) -> Bool {
+        guard fileManager.fileExists(atPath: url.path),
+              let handle = try? FileHandle(forReadingFrom: url) else {
+            return false
+        }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 512),
+              let prefix = String(data: data, encoding: .utf8) else {
+            return false
+        }
+        return prefix.contains("TraceFence managed Grok CLI shim")
+    }
+
+    private func managedGrokCommandShim(rootURL: URL, originalPath: String) -> String {
+        """
+        #!/bin/zsh
+        # TraceFence managed Grok CLI shim. Do not edit by hand; toggle Agent Environment Profile in TraceFence.
+        set -e
+        PROFILE_DIR=\(shellQuote(rootURL.path))
+        ORIGINAL_GROK=\(shellQuote(originalPath))
+        if [[ -f "$PROFILE_DIR/agent-env.sh" ]]; then
+          source "$PROFILE_DIR/agent-env.sh"
+        fi
+        export TRACEFENCE_GROK_MANAGED_SHIM=1
+        export GROK_TRACEFENCE_PROFILE_URL="${TRACEFENCE_PROFILE_URL:-}"
+        export GROK_TRACEFENCE_PROFILE_CONTEXT_URL="${TRACEFENCE_PROFILE_CONTEXT_URL:-}"
+        if [[ ! -x "$ORIGINAL_GROK" ]]; then
+          echo "TraceFence: original Grok command was not found at $ORIGINAL_GROK." >&2
+          echo "TraceFence: turn Agent Environment Profile off and on again after reinstalling Grok." >&2
+          exit 127
+        fi
+        exec "$ORIGINAL_GROK" "$@"
+        """
     }
 
     private func cliWrapperScript(rootURL: URL, commandName: String) -> String {

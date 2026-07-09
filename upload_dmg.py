@@ -12,13 +12,15 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.53")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.54")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Fixes Grok CLI launched from a normal Terminal by automatically managing `~/.grok/bin/grok` while Agent Environment Profile is enabled, so direct `grok` commands inherit TraceFence timezone, locale, proxy, PATH shims, and profile URLs.\n"
+    "- Restores the original Grok symlink or command when Agent Environment Profile is turned off, keeping the takeover reversible and beginner-friendly.\n"
     "- Adds a universal local Agent Profile endpoint for new CLIs and desktop agents: TraceFence now serves the generated profile from a read-only 127.0.0.1 URL while the Agent Environment Profile switch is on.\n"
     "- Generates stable `agent-profile.json`, `agent-profile.md`, and `profile-url.txt` files and injects `TRACEFENCE_PROFILE_URL`, `TRACEFENCE_PROFILE_CONTEXT_URL`, `TRACEFENCE_PROFILE_PATH`, and `AGENT_PROFILE_URL` into TraceFence-launched agent environments.\n"
     "- Adds a beginner-friendly Universal Profile section in Settings with running status plus Open Profile, Open Context, and Copy Link actions for troubleshooting.\n"
