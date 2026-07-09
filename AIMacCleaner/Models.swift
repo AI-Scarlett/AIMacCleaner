@@ -77,6 +77,281 @@ enum AIProviderMode: String, Codable, CaseIterable {
     case external
 }
 
+struct BrowserExtensionTarget: Identifiable {
+    let id: String
+    let displayName: String
+    let appName: String
+    let appNames: [String]
+    let executableName: String
+    let extensionPage: String
+    let icon: String
+
+    init(
+        id: String,
+        displayName: String,
+        appName: String,
+        appNames: [String]? = nil,
+        executableName: String,
+        extensionPage: String,
+        icon: String
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.appName = appName
+        self.appNames = appNames ?? [appName]
+        self.executableName = executableName
+        self.extensionPage = extensionPage
+        self.icon = icon
+    }
+
+    static let supported: [BrowserExtensionTarget] = [
+        BrowserExtensionTarget(id: "chrome", displayName: "Google Chrome", appName: "Google Chrome", executableName: "Google Chrome", extensionPage: "chrome://extensions/", icon: "globe"),
+        BrowserExtensionTarget(id: "edge", displayName: "Microsoft Edge", appName: "Microsoft Edge", executableName: "Microsoft Edge", extensionPage: "edge://extensions/", icon: "globe"),
+        BrowserExtensionTarget(id: "brave", displayName: "Brave", appName: "Brave Browser", executableName: "Brave Browser", extensionPage: "brave://extensions/", icon: "globe"),
+        BrowserExtensionTarget(id: "arc", displayName: "Arc", appName: "Arc", executableName: "Arc", extensionPage: "arc://extensions/", icon: "globe"),
+        BrowserExtensionTarget(id: "vivaldi", displayName: "Vivaldi", appName: "Vivaldi", executableName: "Vivaldi", extensionPage: "vivaldi://extensions/", icon: "globe")
+    ]
+}
+
+struct DesktopAgentLaunchTarget: Identifiable {
+    let id: String
+    let displayName: String
+    let appName: String
+    let appNames: [String]
+    let executableName: String
+    let launcherFileName: String
+    let icon: String
+    let isPrimary: Bool
+
+    init(
+        id: String,
+        displayName: String,
+        appName: String,
+        appNames: [String]? = nil,
+        executableName: String? = nil,
+        launcherFileName: String,
+        icon: String,
+        isPrimary: Bool = false
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.appName = appName
+        self.appNames = appNames ?? [appName]
+        self.executableName = executableName ?? appName
+        self.launcherFileName = launcherFileName
+        self.icon = icon
+        self.isPrimary = isPrimary
+    }
+
+    static let codex = DesktopAgentLaunchTarget(
+        id: "codex",
+        displayName: "Codex",
+        appName: "Codex",
+        launcherFileName: "Launch Codex.command",
+        icon: "terminal",
+        isPrimary: true
+    )
+
+    static let claude = DesktopAgentLaunchTarget(
+        id: "claude",
+        displayName: "Claude",
+        appName: "Claude",
+        launcherFileName: "Launch Claude.command",
+        icon: "bubble.left.and.text.bubble.right",
+        isPrimary: true
+    )
+
+    static let supported: [DesktopAgentLaunchTarget] = [
+        codex,
+        claude,
+        DesktopAgentLaunchTarget(id: "cursor", displayName: "Cursor", appName: "Cursor", launcherFileName: "Launch Cursor.command", icon: "cursorarrow"),
+        DesktopAgentLaunchTarget(id: "windsurf", displayName: "Windsurf", appName: "Windsurf", launcherFileName: "Launch Windsurf.command", icon: "wind"),
+        DesktopAgentLaunchTarget(id: "vscode", displayName: "Visual Studio Code", appName: "Visual Studio Code", executableName: "Electron", launcherFileName: "Launch Visual Studio Code.command", icon: "chevron.left.forwardslash.chevron.right"),
+        DesktopAgentLaunchTarget(id: "chatgpt", displayName: "ChatGPT", appName: "ChatGPT", launcherFileName: "Launch ChatGPT.command", icon: "sparkles"),
+        DesktopAgentLaunchTarget(id: "warp", displayName: "Warp", appName: "Warp", launcherFileName: "Launch Warp.command", icon: "terminal"),
+        DesktopAgentLaunchTarget(id: "zed", displayName: "Zed", appName: "Zed", launcherFileName: "Launch Zed.command", icon: "chevron.left.forwardslash.chevron.right"),
+        DesktopAgentLaunchTarget(id: "antigravity", displayName: "Google Antigravity", appName: "Google Antigravity", launcherFileName: "Launch Google Antigravity.command", icon: "sparkles"),
+        DesktopAgentLaunchTarget(id: "trae", displayName: "Trae", appName: "Trae", appNames: ["Trae", "Trae CN"], launcherFileName: "Launch Trae.command", icon: "terminal")
+    ]
+}
+
+struct CLIAgentLaunchTarget: Identifiable {
+    let id: String
+    let displayName: String
+    let commandName: String
+    let launcherFileName: String
+    let icon: String
+
+    static let grok = CLIAgentLaunchTarget(
+        id: "grok",
+        displayName: "Grok CLI",
+        commandName: "grok",
+        launcherFileName: "Launch Grok CLI.command",
+        icon: "terminal"
+    )
+
+    static let shell = CLIAgentLaunchTarget(
+        id: "shell",
+        displayName: "CLI Shell",
+        commandName: "zsh",
+        launcherFileName: "Open TraceFence CLI Shell.command",
+        icon: "chevron.left.forwardslash.chevron.right"
+    )
+
+    static let supported: [CLIAgentLaunchTarget] = [
+        grok,
+        CLIAgentLaunchTarget(id: "gemini", displayName: "Gemini CLI", commandName: "gemini", launcherFileName: "Launch Gemini CLI.command", icon: "sparkles"),
+        CLIAgentLaunchTarget(id: "cursor-agent", displayName: "Cursor Agent", commandName: "cursor-agent", launcherFileName: "Launch Cursor Agent.command", icon: "cursorarrow"),
+        CLIAgentLaunchTarget(id: "opencode", displayName: "OpenCode", commandName: "opencode", launcherFileName: "Launch OpenCode.command", icon: "terminal"),
+        CLIAgentLaunchTarget(id: "aider", displayName: "Aider", commandName: "aider", launcherFileName: "Launch Aider.command", icon: "wand.and.stars"),
+        CLIAgentLaunchTarget(id: "amp", displayName: "Amp", commandName: "amp", launcherFileName: "Launch Amp.command", icon: "bolt"),
+        CLIAgentLaunchTarget(id: "goose", displayName: "Goose", commandName: "goose", launcherFileName: "Launch Goose.command", icon: "terminal"),
+        CLIAgentLaunchTarget(id: "qwen", displayName: "Qwen", commandName: "qwen", launcherFileName: "Launch Qwen.command", icon: "terminal")
+    ]
+}
+
+enum AgentIntegrationCatalog {
+    static var installedBrowserTargets: [BrowserExtensionTarget] {
+        BrowserExtensionTarget.supported.filter { applicationURL(appNames: $0.appNames) != nil }
+    }
+
+    static var primaryDesktopAgents: [DesktopAgentLaunchTarget] {
+        DesktopAgentLaunchTarget.supported.filter(\.isPrimary)
+    }
+
+    static var installedPrimaryDesktopAgents: [DesktopAgentLaunchTarget] {
+        primaryDesktopAgents.filter(isDesktopAgentInstalled)
+    }
+
+    static var installedSecondaryDesktopAgents: [DesktopAgentLaunchTarget] {
+        DesktopAgentLaunchTarget.supported
+            .filter { !$0.isPrimary }
+            .filter(isDesktopAgentInstalled)
+    }
+
+    static var installedCLIAgents: [CLIAgentLaunchTarget] {
+        CLIAgentLaunchTarget.supported.filter(isCLIAgentInstalled)
+    }
+
+    static func isDesktopAgentInstalled(_ target: DesktopAgentLaunchTarget) -> Bool {
+        applicationURL(appNames: target.appNames) != nil
+    }
+
+    static func isCLIAgentInstalled(_ target: CLIAgentLaunchTarget) -> Bool {
+        commandURL(target.commandName) != nil || knownConfigExists(for: target.id)
+    }
+
+    static func applicationURL(appNames: [String]) -> URL? {
+        let roots = [
+            URL(fileURLWithPath: "/Applications", isDirectory: true),
+            URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true).appendingPathComponent("Applications", isDirectory: true)
+        ]
+        for root in roots {
+            for name in appNames {
+                let candidate = root.appendingPathComponent("\(name).app", isDirectory: true)
+                if FileManager.default.fileExists(atPath: candidate.path) {
+                    return candidate
+                }
+            }
+        }
+        return nil
+    }
+
+    static func commandExists(_ command: String) -> Bool {
+        commandURL(command) != nil
+    }
+
+    static func commandURL(_ command: String) -> URL? {
+        commandSearchDirectories()
+            .map { $0.appendingPathComponent(command) }
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+
+    static func isProviderLikelyInstalled(_ provider: String) -> Bool {
+        switch provider.lowercased() {
+        case "codex":
+            return isDesktopAgentInstalled(.codex) || commandExists("codex") || pathExists("~/.codex")
+        case "claude":
+            return isDesktopAgentInstalled(.claude) || commandExists("claude") || pathExists("~/.claude")
+        case "cursor":
+            return hasDesktopAgent(id: "cursor") || commandExists("cursor-agent") || pathExists("~/.cursor")
+        case "grok":
+            return commandExists("grok") || pathExists("~/.grok")
+        case "opencode", "opencodego":
+            return commandExists("opencode") || pathExists("~/.config/opencode")
+        case "gemini":
+            return commandExists("gemini") || pathExists("~/.gemini")
+        case "amp":
+            return commandExists("amp") || pathExists("~/.config/amp")
+        case "warp":
+            return hasDesktopAgent(id: "warp") || commandExists("warp")
+        case "zed":
+            return hasDesktopAgent(id: "zed") || commandExists("zed")
+        case "windsurf":
+            return hasDesktopAgent(id: "windsurf") || commandExists("windsurf")
+        case "copilot":
+            return commandExists("gh") && pathExists("~/.config/gh")
+        case "factory":
+            return pathExists("/Applications/Droid.app")
+        case "antigravity":
+            return hasDesktopAgent(id: "antigravity")
+        default:
+            return false
+        }
+    }
+
+    private static func hasDesktopAgent(id: String) -> Bool {
+        DesktopAgentLaunchTarget.supported
+            .first { $0.id == id }
+            .map(isDesktopAgentInstalled) ?? false
+    }
+
+    private static func knownConfigExists(for id: String) -> Bool {
+        switch id {
+        case "grok": return pathExists("~/.grok")
+        case "gemini": return pathExists("~/.gemini")
+        case "opencode": return pathExists("~/.config/opencode")
+        case "amp": return pathExists("~/.config/amp")
+        case "goose": return pathExists("~/.config/goose")
+        case "aider": return pathExists("~/.aider.conf.yml") || pathExists("~/.aider")
+        case "qwen": return pathExists("~/.qwen")
+        default: return false
+        }
+    }
+
+    private static func commandSearchDirectories() -> [URL] {
+        let home = URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true)
+        let rawPaths = [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin",
+            home.appendingPathComponent(".local/bin").path,
+            home.appendingPathComponent(".cargo/bin").path,
+            home.appendingPathComponent(".grok/bin").path,
+            home.appendingPathComponent(".mavis/bin").path,
+            home.appendingPathComponent("bin").path
+        ]
+        return rawPaths.map { URL(fileURLWithPath: $0, isDirectory: true) }
+    }
+
+    private static func pathExists(_ rawPath: String) -> Bool {
+        FileManager.default.fileExists(atPath: expandedPath(rawPath))
+    }
+
+    private static func expandedPath(_ rawPath: String) -> String {
+        if rawPath == "~" {
+            return SandboxPaths.realHomeDirectory
+        }
+        if rawPath.hasPrefix("~/") {
+            return SandboxPaths.realHomeDirectory + String(rawPath.dropFirst())
+        }
+        return NSString(string: rawPath).expandingTildeInPath
+    }
+}
+
 struct AIConfig: Codable {
     let apiBase: String?
     let apiKey: String?

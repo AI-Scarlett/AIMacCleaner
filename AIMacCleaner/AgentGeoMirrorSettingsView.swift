@@ -1,70 +1,6 @@
 import AppKit
 import SwiftUI
 
-private struct BrowserExtensionTarget: Identifiable {
-    let id: String
-    let displayName: String
-    let appName: String
-    let executableName: String
-    let extensionPage: String
-    let icon: String
-
-    static let supported: [BrowserExtensionTarget] = [
-        BrowserExtensionTarget(id: "chrome", displayName: "Google Chrome", appName: "Google Chrome", executableName: "Google Chrome", extensionPage: "chrome://extensions/", icon: "globe"),
-        BrowserExtensionTarget(id: "edge", displayName: "Microsoft Edge", appName: "Microsoft Edge", executableName: "Microsoft Edge", extensionPage: "edge://extensions/", icon: "globe"),
-        BrowserExtensionTarget(id: "brave", displayName: "Brave", appName: "Brave Browser", executableName: "Brave Browser", extensionPage: "brave://extensions/", icon: "globe"),
-        BrowserExtensionTarget(id: "arc", displayName: "Arc", appName: "Arc", executableName: "Arc", extensionPage: "arc://extensions/", icon: "globe"),
-        BrowserExtensionTarget(id: "vivaldi", displayName: "Vivaldi", appName: "Vivaldi", executableName: "Vivaldi", extensionPage: "vivaldi://extensions/", icon: "globe")
-    ]
-}
-
-private struct DesktopAgentLaunchTarget: Identifiable {
-    let id: String
-    let displayName: String
-    let appName: String
-    let launcherFileName: String
-    let icon: String
-
-    static let codex = DesktopAgentLaunchTarget(
-        id: "codex",
-        displayName: "Codex",
-        appName: "Codex",
-        launcherFileName: "Launch Codex.command",
-        icon: "terminal"
-    )
-
-    static let supported: [DesktopAgentLaunchTarget] = [
-        codex,
-        DesktopAgentLaunchTarget(id: "claude", displayName: "Claude", appName: "Claude", launcherFileName: "Launch Claude.command", icon: "bubble.left.and.text.bubble.right"),
-        DesktopAgentLaunchTarget(id: "cursor", displayName: "Cursor", appName: "Cursor", launcherFileName: "Launch Cursor.command", icon: "cursorarrow"),
-        DesktopAgentLaunchTarget(id: "windsurf", displayName: "Windsurf", appName: "Windsurf", launcherFileName: "Launch Windsurf.command", icon: "wind"),
-        DesktopAgentLaunchTarget(id: "vscode", displayName: "Visual Studio Code", appName: "Visual Studio Code", launcherFileName: "Launch Visual Studio Code.command", icon: "chevron.left.forwardslash.chevron.right"),
-        DesktopAgentLaunchTarget(id: "chatgpt", displayName: "ChatGPT", appName: "ChatGPT", launcherFileName: "Launch ChatGPT.command", icon: "sparkles"),
-        DesktopAgentLaunchTarget(id: "trae", displayName: "Trae", appName: "Trae", launcherFileName: "Launch Trae.command", icon: "terminal")
-    ]
-}
-
-private struct CLIAgentLaunchTarget: Identifiable {
-    let id: String
-    let displayName: String
-    let launcherFileName: String
-    let icon: String
-
-    static let grok = CLIAgentLaunchTarget(
-        id: "grok",
-        displayName: "Grok CLI",
-        launcherFileName: "Launch Grok CLI.command",
-        icon: "terminal"
-    )
-
-    static let shell = CLIAgentLaunchTarget(
-        id: "shell",
-        displayName: "CLI Shell",
-        launcherFileName: "Open TraceFence CLI Shell.command",
-        icon: "chevron.left.forwardslash.chevron.right"
-    )
-}
-
 struct AgentGeoMirrorSettingsView: View {
     @EnvironmentObject private var localizer: Localizer
 
@@ -96,6 +32,7 @@ struct AgentGeoMirrorSettingsView: View {
     @State private var lastGeneratedAssets: AgentGeoMirrorGeneratedAssets?
     @State private var statusMessage: String?
     @State private var statusIsError = false
+    @State private var showRestartPrompt = false
 
     private var profile: AgentGeoMirrorProfile {
         AgentGeoMirrorProfile(
@@ -141,22 +78,185 @@ struct AgentGeoMirrorSettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            header
-            verticalDivider
-            proxySection
-            verticalDivider
-            identitySection
-            verticalDivider
-            overrideSection
-            verticalDivider
-            universalProfileSection
-            verticalDivider
-            actionSection
+        VStack(spacing: 0) {
+            PageHeader(
+                icon: "globe.badge.chevron.backward",
+                title: localizer.t("Agent 环境画像", en: "Agent Profile"),
+                subtitle: localizer.t("生成并启动 Agent 可继承的语言、时区、定位和本地探测画像", en: "Generate language, timezone, location, and local probe profiles for agents."),
+                color: Theme.Colors.info
+            ) {
+                headerToggle
+            }
+
+            toolbarSection
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                    if !SandboxPaths.isDirectDistribution {
+                        infoBanner(
+                            icon: "lock.fill",
+                            text: localizer.t("当前不是官网版 Bundle，Agent 环境画像不会启用。", en: "This is not the direct build bundle, so Agent Environment Profile is disabled."),
+                            color: Theme.Colors.warning
+                        )
+                    } else {
+                        infoBanner(
+                            icon: "info.circle.fill",
+                            text: localizer.t("开启后会自动生成配置；已经运行的 Agent/CLI 必须重启后才会读取新画像。", en: "Turning this on generates the profile automatically; already-running agents and CLIs must restart before they can read it."),
+                            color: Theme.Colors.info
+                        )
+                    }
+
+                    proxySection
+                    verticalDivider
+                    identitySection
+                    verticalDivider
+                    overrideSection
+                    verticalDivider
+                    universalProfileSection
+                }
+                .padding(Theme.Spacing.xl)
+                .frame(maxWidth: 980, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
         }
-        .cardStyle()
         .onAppear {
             restoreGeneratedState()
+        }
+        .alert(localizer.t("重启后才会生效", en: "Restart required"), isPresented: $showRestartPrompt) {
+            Button(localizer.t("强制重启", en: "Force Restart"), role: .destructive) {
+                forceRestartRunningAgents()
+            }
+            Button(localizer.t("手动重启", en: "Restart Manually"), role: .cancel) {
+                statusMessage = localizer.t("已启动画像。请手动退出并重新打开正在运行的 Agent/CLI，否则它们不会读取新配置。", en: "Profile is running. Manually quit and reopen any running agents or CLIs, otherwise they will not read the new profile.")
+                statusIsError = false
+            }
+        } message: {
+            Text(localizer.t("TraceFence 已生成本地画像，但已经运行的 Agent/CLI 不会自动继承新的语言、时区和本地探测覆盖。选择“强制重启”会关闭并重新打开检测到的 Agent；选择“手动重启”则需要你自己重启。", en: "TraceFence generated the local profile, but already-running agents and CLIs do not automatically inherit the new language, timezone, and local-probe overrides. Force Restart closes and reopens detected agents; Restart Manually leaves that to you."))
+        }
+    }
+
+    private var headerToggle: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Text(enabled ? localizer.t("已启动", en: "Running") : localizer.t("未启动", en: "Off"))
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(enabled ? Theme.Colors.success : Theme.Colors.textSecondary)
+                .padding(.horizontal, Theme.Spacing.sm)
+                .padding(.vertical, 5)
+                .background((enabled ? Theme.Colors.success : Theme.Colors.textTertiary).opacity(0.12))
+                .clipShape(Capsule())
+
+            Toggle("", isOn: Binding(
+                get: { enabled },
+                set: { setProfileEnabled($0) }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .disabled(isGenerating || !SandboxPaths.isDirectDistribution)
+        }
+        .help(localizer.t("打开就是启动：TraceFence 会自动生成本地 Profile。", en: "Turn it on to start: TraceFence generates the local profile automatically."))
+    }
+
+    private var toolbarSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Button {
+                        generateAssets()
+                    } label: {
+                        Label(isGenerating ? localizer.t("处理中...", en: "Working...") : localizer.t("生成配置", en: "Generate"), systemImage: "wand.and.stars")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
+                    .disabled(isGenerating || !SandboxPaths.isDirectDistribution)
+
+                    Button {
+                        refreshFromProxy()
+                    } label: {
+                        Label(isRefreshing ? localizer.t("检测中...", en: "Detecting...") : localizer.t("检测代理", en: "Detect Proxy"), systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 34))
+                    .disabled(isRefreshing || !SandboxPaths.isDirectDistribution)
+
+                    Button {
+                        openGeneratedFolder()
+                    } label: {
+                        Label(localizer.t("目录", en: "Folder"), systemImage: "folder")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .secondary, minHeight: 34))
+                    .disabled(lastGeneratedAssets == nil)
+
+                    browserExtensionMenu
+
+                    Button {
+                        openUniversalProfile()
+                    } label: {
+                        Label(localizer.t("画像", en: "Profile"), systemImage: "safari")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .ghost, minHeight: 34))
+                    .disabled(!enabled || isGenerating || !SandboxPaths.isDirectDistribution)
+
+                    Button {
+                        openProfileContext()
+                    } label: {
+                        Label(localizer.t("说明", en: "Context"), systemImage: "doc.text")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 34))
+                    .disabled(!enabled || isGenerating || !SandboxPaths.isDirectDistribution)
+
+                    Button {
+                        copyUniversalProfileURL()
+                    } label: {
+                        Label(localizer.t("复制链接", en: "Copy Link"), systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 34))
+                    .disabled(!SandboxPaths.isDirectDistribution)
+
+                    ForEach(AgentIntegrationCatalog.installedPrimaryDesktopAgents) { target in
+                        Button {
+                            launchDesktopAgent(target, terminateExisting: true)
+                        } label: {
+                            Label(localizer.t("重启 \(target.displayName)", en: "Restart \(target.displayName)"), systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .secondary, minHeight: 34))
+                        .disabled(!canLaunchDesktopAgent(target))
+                    }
+
+                    moreAgentsMenu
+                }
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.vertical, Theme.Spacing.sm)
+            }
+
+            if let statusMessage {
+                infoBanner(
+                    icon: statusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill",
+                    text: statusMessage,
+                    color: statusIsError ? Theme.Colors.warning : Theme.Colors.success
+                )
+                .padding(.horizontal, Theme.Spacing.xl)
+            }
+
+            if let assets = lastGeneratedAssets {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Image(systemName: "folder.badge.gearshape")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Text(assets.rootURL.path)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.bottom, Theme.Spacing.xs)
+            }
+        }
+        .background(Theme.Colors.elevatedCardBg.opacity(0.78))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.Colors.separator)
+                .frame(height: 1)
         }
     }
 
@@ -221,8 +321,8 @@ struct AgentGeoMirrorSettingsView: View {
                 infoBanner(
                     icon: "info.circle.fill",
                     text: localizer.t(
-                        "浏览器网页安装扩展；桌面 Agent 用启动器；CLI 可点“打开 Grok CLI/CLI Shell”，或用 tf-grok、tf-codex 等 wrapper。",
-                        en: "Browser pages use the extension. Desktop agents use launchers. CLIs can use Open Grok CLI/CLI Shell, or wrappers such as tf-grok and tf-codex."
+                        "浏览器网页安装扩展；Codex、Claude 可直接启动；其它已安装的桌面端和 CLI 会自动出现在“更多 Agent”。",
+                        en: "Browser pages use the extension. Codex and Claude stay one-click. Other installed desktop apps and CLIs appear automatically under More Agents."
                     ),
                     color: Theme.Colors.info
                 )
@@ -282,7 +382,7 @@ struct AgentGeoMirrorSettingsView: View {
             miniHeader(
                 icon: "slider.horizontal.3",
                 title: localizer.t("覆盖范围", en: "Coverage"),
-                subtitle: localizer.t("桌面 Agent 避免注入代理变量，防止 Codex 这类 Electron App 重连。", en: "Desktop agents avoid proxy-variable injection to prevent reconnect loops in Electron apps such as Codex.")
+                subtitle: localizer.t("Agent 启动器只注入语言、时区和本地探测覆盖；代理 URL 仅用于刷新画像，避免登录请求被不可用代理打断。", en: "Agent launchers inject language, timezone, and local-probe overrides only. The proxy URL is used for profile detection, so login requests are not broken by a stale proxy.")
             )
 
             compactToggle(title: localizer.t("浏览器扩展", en: "Browser extension"), icon: "safari", isOn: $browserExtensionEnabled)
@@ -332,32 +432,6 @@ struct AgentGeoMirrorSettingsView: View {
             .background((enabled ? Theme.Colors.success : Theme.Colors.textTertiary).opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
 
-            HStack(spacing: Theme.Spacing.sm) {
-                Button {
-                    openUniversalProfile()
-                } label: {
-                    Label(localizer.t("打开画像", en: "Open Profile"), systemImage: "safari")
-                }
-                .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 34))
-                .disabled(!enabled || isGenerating || !SandboxPaths.isDirectDistribution)
-
-                Button {
-                    copyUniversalProfileURL()
-                } label: {
-                    Label(localizer.t("复制链接", en: "Copy Link"), systemImage: "doc.on.doc")
-                }
-                .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 34))
-                .disabled(!SandboxPaths.isDirectDistribution)
-
-                Button {
-                    openProfileContext()
-                } label: {
-                    Label(localizer.t("打开说明", en: "Open Context"), systemImage: "doc.text")
-                }
-                .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 34))
-                .disabled(!enabled || isGenerating || !SandboxPaths.isDirectDistribution)
-            }
-
             Text(localizer.t(
                 "常规情况下，新 Agent 会从 TraceFence 启动器或 CLI Shell 继承 TRACEFENCE_PROFILE_URL；只有排查问题时才需要复制链接或查看生成目录。",
                 en: "Normally, new agents inherit TRACEFENCE_PROFILE_URL from TraceFence launchers or the CLI Shell. Copy the link or inspect the generated folder only for troubleshooting."
@@ -391,16 +465,20 @@ struct AgentGeoMirrorSettingsView: View {
                 .disabled(lastGeneratedAssets == nil)
 
                 Menu {
-                    ForEach(BrowserExtensionTarget.supported) { target in
-                        Button {
-                            openExtensionPage(for: target)
-                        } label: {
-                            Label(
-                                localizer.t("打开 \(target.displayName) 扩展页", en: "Open \(target.displayName) Extensions"),
-                                systemImage: target.icon
-                            )
+                    let browsers = AgentIntegrationCatalog.installedBrowserTargets
+                    if browsers.isEmpty {
+                        Text(localizer.t("未检测到支持的浏览器", en: "No supported browser detected"))
+                    } else {
+                        ForEach(browsers) { target in
+                            Button {
+                                openExtensionPage(for: target)
+                            } label: {
+                                Label(
+                                    localizer.t("打开 \(target.displayName) 扩展页", en: "Open \(target.displayName) Extensions"),
+                                    systemImage: target.icon
+                                )
+                            }
                         }
-                        .disabled(browserApplicationURL(for: target) == nil)
                     }
 
                     Divider()
@@ -417,74 +495,32 @@ struct AgentGeoMirrorSettingsView: View {
                 .disabled(lastGeneratedAssets == nil)
             }
 
-            HStack(spacing: Theme.Spacing.sm) {
-                Button {
-                    launchDesktopAgent(.codex, terminateExisting: false)
-                } label: {
-                    Label(localizer.t("打开 Codex", en: "Open Codex"), systemImage: "play.fill")
-                }
-                .buttonStyle(BrandButtonStyle(color: Theme.Colors.success, variant: .secondary, minHeight: 34))
-                .disabled(!canLaunchDesktopAgent(.codex))
-
-                Button {
-                    launchDesktopAgent(.codex, terminateExisting: true)
-                } label: {
-                    Label(localizer.t("重启 Codex", en: "Restart Codex"), systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .secondary, minHeight: 34))
-                .disabled(!canLaunchDesktopAgent(.codex))
-
-                Menu {
-                    Section(localizer.t("启动", en: "Launch")) {
-                        ForEach(DesktopAgentLaunchTarget.supported) { target in
-                            Button {
-                                launchDesktopAgent(target, terminateExisting: false)
-                            } label: {
-                                Label(
-                                    localizer.t("打开 \(target.displayName)", en: "Open \(target.displayName)"),
-                                    systemImage: target.icon
-                                )
-                            }
-                            .disabled(!canLaunchDesktopAgent(target))
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                let primaryAgents = AgentIntegrationCatalog.installedPrimaryDesktopAgents
+                ForEach(primaryAgents) { target in
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Button {
+                            launchDesktopAgent(target, terminateExisting: false)
+                        } label: {
+                            Label(localizer.t("打开 \(target.displayName)", en: "Open \(target.displayName)"), systemImage: "play.fill")
                         }
-                    }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.success, variant: .secondary, minHeight: 34))
+                        .disabled(!canLaunchDesktopAgent(target))
 
-                    Section(localizer.t("重启", en: "Restart")) {
-                        ForEach(DesktopAgentLaunchTarget.supported) { target in
-                            Button {
-                                launchDesktopAgent(target, terminateExisting: true)
-                            } label: {
-                                Label(
-                                    localizer.t("重启 \(target.displayName)", en: "Restart \(target.displayName)"),
-                                    systemImage: "arrow.clockwise"
-                                )
-                            }
-                            .disabled(!canLaunchDesktopAgent(target))
+                        Button {
+                            launchDesktopAgent(target, terminateExisting: true)
+                        } label: {
+                            Label(localizer.t("重启 \(target.displayName)", en: "Restart \(target.displayName)"), systemImage: "arrow.clockwise")
                         }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .secondary, minHeight: 34))
+                        .disabled(!canLaunchDesktopAgent(target))
                     }
-                } label: {
-                    Label(localizer.t("更多 Agent", en: "More Agents"), systemImage: "macwindow")
                 }
-                .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 34))
-                .disabled(lastGeneratedAssets == nil)
-            }
 
-            HStack(spacing: Theme.Spacing.sm) {
-                Button {
-                    launchCLIAgent(.grok)
-                } label: {
-                    Label(localizer.t("打开 Grok CLI", en: "Open Grok CLI"), systemImage: "terminal")
+                HStack(spacing: Theme.Spacing.sm) {
+                    moreAgentsMenu
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 34))
-                .disabled(!canLaunchCLIAgent(.grok))
-
-                Button {
-                    launchCLIAgent(.shell)
-                } label: {
-                    Label(localizer.t("打开 CLI Shell", en: "Open CLI Shell"), systemImage: "chevron.left.forwardslash.chevron.right")
-                }
-                .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 34))
-                .disabled(!canLaunchCLIAgent(.shell))
             }
 
             if let statusMessage {
@@ -504,6 +540,94 @@ struct AgentGeoMirrorSettingsView: View {
                 }
             }
         }
+    }
+
+    private var moreAgentsMenu: some View {
+        let desktopAgents = AgentIntegrationCatalog.installedSecondaryDesktopAgents
+        let cliAgents = AgentIntegrationCatalog.installedCLIAgents
+        return Menu {
+            if desktopAgents.isEmpty && cliAgents.isEmpty {
+                Text(localizer.t("未检测到其它已安装 Agent", en: "No other installed agents detected"))
+            }
+
+            if !desktopAgents.isEmpty {
+                Section(localizer.t("桌面端", en: "Desktop")) {
+                    ForEach(desktopAgents) { target in
+                        Button {
+                            launchDesktopAgent(target, terminateExisting: false)
+                        } label: {
+                            Label(localizer.t("打开 \(target.displayName)", en: "Open \(target.displayName)"), systemImage: target.icon)
+                        }
+                        .disabled(!canLaunchDesktopAgent(target))
+
+                        Button {
+                            launchDesktopAgent(target, terminateExisting: true)
+                        } label: {
+                            Label(localizer.t("重启 \(target.displayName)", en: "Restart \(target.displayName)"), systemImage: "arrow.clockwise")
+                        }
+                        .disabled(!canLaunchDesktopAgent(target))
+                    }
+                }
+            }
+
+            if !cliAgents.isEmpty {
+                Section("CLI") {
+                    ForEach(cliAgents) { target in
+                        Button {
+                            launchCLIAgent(target)
+                        } label: {
+                            Label(localizer.t("打开 \(target.displayName)", en: "Open \(target.displayName)"), systemImage: target.icon)
+                        }
+                        .disabled(!canLaunchCLIAgent(target))
+                    }
+                }
+            }
+
+            Section(localizer.t("工具", en: "Tools")) {
+                Button {
+                    launchCLIAgent(.shell)
+                } label: {
+                    Label(localizer.t("打开 CLI Shell", en: "Open CLI Shell"), systemImage: CLIAgentLaunchTarget.shell.icon)
+                }
+                .disabled(!canLaunchCLIAgent(.shell))
+            }
+        } label: {
+            Label(localizer.t("更多 Agent", en: "More Agents"), systemImage: "macwindow")
+        }
+        .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 34))
+        .disabled(lastGeneratedAssets == nil)
+    }
+
+    private var browserExtensionMenu: some View {
+        Menu {
+            let browsers = AgentIntegrationCatalog.installedBrowserTargets
+            if browsers.isEmpty {
+                Text(localizer.t("未检测到支持的浏览器", en: "No supported browser detected"))
+            } else {
+                ForEach(browsers) { target in
+                    Button {
+                        openExtensionPage(for: target)
+                    } label: {
+                        Label(
+                            localizer.t("打开 \(target.displayName) 扩展页", en: "Open \(target.displayName) Extensions"),
+                            systemImage: target.icon
+                        )
+                    }
+                }
+            }
+
+            Divider()
+
+            Button {
+                openBrowserExtensionFolder()
+            } label: {
+                Label(localizer.t("显示扩展目录", en: "Show Extension Folder"), systemImage: "folder")
+            }
+        } label: {
+            Label(localizer.t("浏览器扩展", en: "Browser Extension"), systemImage: "puzzlepiece.extension")
+        }
+        .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .ghost, minHeight: 34))
+        .disabled(lastGeneratedAssets == nil)
     }
 
     private var verticalDivider: some View {
@@ -599,7 +723,7 @@ struct AgentGeoMirrorSettingsView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
 
-    private func generateAssets(successMessage: String? = nil) {
+    private func generateAssets(successMessage: String? = nil, completion: (() -> Void)? = nil) {
         guard SandboxPaths.isDirectDistribution else { return }
         isGenerating = true
         statusMessage = nil
@@ -616,6 +740,7 @@ struct AgentGeoMirrorSettingsView: View {
                         : localizer.t("Agent 环境画像已停止。后续从启动器或 wrapper 打开的 Agent 不再注入画像。", en: "Agent Environment Profile is off. Future launches from launchers or wrappers will not inject the profile."))
                     statusIsError = false
                     isGenerating = false
+                    completion?()
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -760,11 +885,15 @@ struct AgentGeoMirrorSettingsView: View {
     }
 
     private func canLaunchDesktopAgent(_ target: DesktopAgentLaunchTarget) -> Bool {
-        launcherURL(for: target) != nil && !isGenerating
+        launcherURL(for: target) != nil
+            && !isGenerating
+            && AgentIntegrationCatalog.isDesktopAgentInstalled(target)
     }
 
     private func canLaunchCLIAgent(_ target: CLIAgentLaunchTarget) -> Bool {
-        cliLauncherURL(for: target) != nil && !isGenerating
+        cliLauncherURL(for: target) != nil
+            && !isGenerating
+            && (target.id == CLIAgentLaunchTarget.shell.id || AgentIntegrationCatalog.isCLIAgentInstalled(target))
     }
 
     private func launcherURL(for target: DesktopAgentLaunchTarget) -> URL? {
@@ -862,12 +991,14 @@ struct AgentGeoMirrorSettingsView: View {
         NSWorkspace.shared.runningApplications.filter { app in
             let localizedName = app.localizedName ?? ""
             let bundleName = app.bundleURL?.lastPathComponent ?? ""
-            return localizedName == target.appName
-                || localizedName == target.displayName
-                || localizedName.hasPrefix("\(target.appName) ")
-                || localizedName.hasPrefix("\(target.appName)(")
-                || bundleName == "\(target.appName).app"
-                || bundleName.hasPrefix("\(target.appName) ")
+            return target.appNames.contains { name in
+                localizedName == name
+                    || localizedName == target.displayName
+                    || localizedName.hasPrefix("\(name) ")
+                    || localizedName.hasPrefix("\(name)(")
+                    || bundleName == "\(name).app"
+                    || bundleName.hasPrefix("\(name) ")
+            }
         }
     }
 
@@ -883,15 +1014,7 @@ struct AgentGeoMirrorSettingsView: View {
     }
 
     private func browserApplicationURL(for target: BrowserExtensionTarget) -> URL? {
-        let fileManager = FileManager.default
-        let candidates = [
-            URL(fileURLWithPath: "/Applications").appendingPathComponent("\(target.appName).app"),
-            URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Applications/\(target.appName).app")
-        ]
-        for candidate in candidates where fileManager.fileExists(atPath: candidate.path) {
-            return candidate
-        }
-        return nil
+        AgentIntegrationCatalog.applicationURL(appNames: target.appNames)
     }
 
     private func setProfileEnabled(_ newValue: Bool) {
@@ -901,9 +1024,76 @@ struct AgentGeoMirrorSettingsView: View {
             enableCoreOverrides()
             coreOverridesMigrated = true
         }
-        generateAssets(successMessage: newValue
-            ? localizer.t("已启动。TraceFence 已自动生成本地 Profile。", en: "Started. TraceFence generated the local profile automatically.")
-            : localizer.t("已停止。TraceFence 已写入停用状态。", en: "Stopped. TraceFence wrote the disabled profile state."))
+        generateAssets(
+            successMessage: newValue
+                ? localizer.t("已启动。TraceFence 已自动生成本地 Profile。请重启正在运行的 Agent/CLI 才会生效。", en: "Started. TraceFence generated the local profile automatically. Restart running agents or CLIs for it to take effect.")
+                : localizer.t("已停止。TraceFence 已写入停用状态。", en: "Stopped. TraceFence wrote the disabled profile state.")
+        ) {
+            if newValue {
+                showRestartPrompt = true
+            }
+        }
+    }
+
+    private func forceRestartRunningAgents() {
+        let runningDesktopAgents = (AgentIntegrationCatalog.installedPrimaryDesktopAgents + AgentIntegrationCatalog.installedSecondaryDesktopAgents)
+            .filter { !runningApplications(for: $0).isEmpty }
+        let runningCLIAgents = AgentIntegrationCatalog.installedCLIAgents
+            .filter { isCommandRunning($0.commandName) }
+
+        guard !runningDesktopAgents.isEmpty || !runningCLIAgents.isEmpty else {
+            statusMessage = localizer.t("未发现正在运行的已支持 Agent。之后新打开的 Agent 会自动使用画像。", en: "No supported running agents were detected. Newly opened agents will use the profile.")
+            statusIsError = false
+            return
+        }
+
+        runningDesktopAgents.forEach { target in
+            launchDesktopAgent(target, terminateExisting: true)
+        }
+        runningCLIAgents.forEach { target in
+            restartCLIAgent(target)
+        }
+
+        statusMessage = localizer.t(
+            "正在强制重启 \(runningDesktopAgents.count) 个桌面端和 \(runningCLIAgents.count) 个 CLI。重启后的 Agent 会读取新画像。",
+            en: "Force restarting \(runningDesktopAgents.count) desktop agents and \(runningCLIAgents.count) CLIs. Restarted agents will read the new profile."
+        )
+        statusIsError = false
+    }
+
+    private func restartCLIAgent(_ target: CLIAgentLaunchTarget) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            terminateCommandProcesses(target.commandName)
+            Thread.sleep(forTimeInterval: 0.35)
+            DispatchQueue.main.async {
+                launchCLIAgent(target)
+            }
+        }
+    }
+
+    private func isCommandRunning(_ command: String) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        process.arguments = ["-x", command]
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
+    private func terminateCommandProcesses(_ command: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        process.arguments = ["-x", command]
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        try? process.run()
+        process.waitUntilExit()
     }
 
     private func restoreGeneratedState() {

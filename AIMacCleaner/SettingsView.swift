@@ -29,18 +29,11 @@ struct SettingsView: View {
         case features = "Features"
         case license = "License"
         case appearance = "Appearance"
-        case agentProfile = "AgentProfile"
         case lab = "Lab"
         case monitor = "Monitor"
         case network = "Network"
         case language = "Language"
         case version = "Version"
-
-        static var visibleTabs: [SettingsTab] {
-            allCases.filter { tab in
-                tab != .agentProfile || SandboxPaths.isDirectDistribution
-            }
-        }
 
         var icon: String {
             switch self {
@@ -48,7 +41,6 @@ struct SettingsView: View {
             case .features: "switch.2"
             case .license: "key.fill"
             case .appearance: "paintpalette.fill"
-            case .agentProfile: "globe.badge.chevron.backward"
             case .lab: "flask"
             case .monitor: "bell.badge"
             case .network: "network"
@@ -63,7 +55,6 @@ struct SettingsView: View {
             case .features: "Features"
             case .license: "License"
             case .appearance: "Appearance"
-            case .agentProfile: "Agent Profile"
             case .lab: "Lab"
             case .monitor: "Monitor"
             case .network: "Network"
@@ -78,7 +69,6 @@ struct SettingsView: View {
             case .features: localizer.settingsTabFeatures
             case .license: localizer.t("授权", en: "License", zhHant: "授權", ja: "ライセンス", ko: "라이선스", mt: "License")
             case .appearance: localizer.t("外观", en: "Appearance", zhHant: "外觀", ja: "外観", ko: "외관", mt: "Appearance")
-            case .agentProfile: localizer.t("Agent 画像", en: "Agent Profile", zhHant: "Agent 畫像", ja: "Agent プロファイル", ko: "Agent 프로필", mt: "Agent Profile")
             case .lab: localizer.settingsTabLab
             case .monitor: localizer.settingsTabMonitor
             case .network: localizer.networkLabel
@@ -120,7 +110,7 @@ struct SettingsView: View {
 
             HStack(spacing: 0) {
                 VStack(spacing: Theme.Spacing.xs) {
-                    ForEach(SettingsTab.visibleTabs, id: \.self) { tab in
+                    ForEach(SettingsTab.allCases, id: \.self) { tab in
                         Button {
                             selectedTab = tab
                         } label: {
@@ -168,7 +158,6 @@ struct SettingsView: View {
                         case .features: featuresSection
                         case .license: licenseSection
                         case .appearance: appearanceSection
-                        case .agentProfile: agentProfileSection
                         case .lab: labSection
                         case .monitor: monitorSection
                         case .network: networkSection
@@ -729,14 +718,6 @@ struct SettingsView: View {
                 }
             }
             .cardStyle()
-        }
-    }
-
-    private var agentProfileSection: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            SectionHeader(title: localizer.t("Agent 环境画像", en: "Agent Environment Profile"), icon: "globe.badge.chevron.backward")
-            AgentGeoMirrorSettingsView()
-                .environmentObject(localizer)
         }
     }
 

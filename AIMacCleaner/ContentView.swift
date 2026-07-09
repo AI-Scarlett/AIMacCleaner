@@ -43,7 +43,7 @@ struct ContentView: View {
     }
 
     private static var toolboxSubItems: [NavItem] {
-        var items: [NavItem] = [.tokenScope, .diskAdvisor, .localDiagnostics]
+        var items: [NavItem] = [.tokenScope, .diskAdvisor, .agentProfile, .localDiagnostics]
         items.append(contentsOf: [.cleaner, .app, .dependency, .other, .migration])
         return items
     }
@@ -55,6 +55,7 @@ struct ContentView: View {
         case toolbox = "toolbox"
         case tokenScope = "tokenScope"
         case diskAdvisor = "diskAdvisor"
+        case agentProfile = "agentProfile"
         case localDiagnostics = "localDiagnostics"
         case cleaner = "cleaner"
         case app = "app"
@@ -64,7 +65,7 @@ struct ContentView: View {
 
         var isSubItem: Bool {
             switch self {
-            case .tokenScope, .diskAdvisor, .localDiagnostics, .cleaner, .app, .dependency, .other, .migration: return true
+            case .tokenScope, .diskAdvisor, .agentProfile, .localDiagnostics, .cleaner, .app, .dependency, .other, .migration: return true
             default: return false
             }
         }
@@ -81,6 +82,7 @@ struct ContentView: View {
             case .toolbox: "wrench.and.screwdriver.fill"
             case .tokenScope: "chart.xyaxis.line"
             case .diskAdvisor: "sparkles"
+            case .agentProfile: "globe.badge.chevron.backward"
             case .localDiagnostics: "network"
             case .migration: "arrow.triangle.2.circlepath"
             }
@@ -98,6 +100,7 @@ struct ContentView: View {
             case .toolbox: Theme.Colors.info
             case .tokenScope: Theme.Colors.accent
             case .diskAdvisor: Theme.Colors.purple
+            case .agentProfile: Theme.Colors.info
             case .localDiagnostics: Theme.Colors.teal
             case .migration: Theme.Colors.purple
             }
@@ -115,6 +118,7 @@ struct ContentView: View {
             case .toolbox: localizer.navToolbox
             case .tokenScope: localizer.tokenScopeTitle
             case .diskAdvisor: localizer.t("AI 磁盘顾问", en: "AI Disk Advisor", zhHant: "AI 磁碟顧問", ja: "AI ディスクアドバイザー", ko: "AI 디스크 어드바이저", mt: "AI Disk Advisor")
+            case .agentProfile: localizer.t("Agent 画像", en: "Agent Profile", zhHant: "Agent 畫像", ja: "Agent プロファイル", ko: "Agent 프로필", mt: "Agent Profile")
             case .localDiagnostics: localizer.t("本机诊断", en: "Local Diagnostics", zhHant: "本機診斷", ja: "ローカル診断", ko: "로컬 진단", mt: "Local Diagnostics")
             case .migration: localizer.navMigration
             }
@@ -132,6 +136,7 @@ struct ContentView: View {
             case .toolbox: localizer.subToolbox
             case .tokenScope: localizer.tokenScopeSubtitle
             case .diskAdvisor: localizer.t("Apple Intelligence 磁盘清理建议", en: "Apple Intelligence cleanup advice", zhHant: "Apple Intelligence 磁碟清理建議", ja: "Apple Intelligence のクリーンアップ提案", ko: "Apple Intelligence 정리 제안", mt: "Apple Intelligence cleanup advice")
+            case .agentProfile: localizer.t("给 Agent 注入语言、时区与本地探测画像", en: "Inject language, timezone, and local probe profiles for agents", zhHant: "為 Agent 注入語言、時區與本機探測畫像", ja: "Agent に言語、タイムゾーン、ローカル診断プロファイルを注入", ko: "Agent에 언어, 시간대 및 로컬 탐지 프로필 주입", mt: "Inject language, timezone, and local probe profiles for agents")
             case .localDiagnostics: localizer.t("出口网络与启动项只读巡检", en: "Egress and launch item audit", zhHant: "出口網路與啟動項唯讀巡檢", ja: "出口ネットワークと起動項目監査", ko: "송신 네트워크 및 시작 항목 점검", mt: "Egress and launch item audit")
             case .migration: localizer.subMigration
             }
@@ -429,6 +434,7 @@ struct ContentView: View {
         case .toolbox: return localizer.t("工具", en: "Tools", zhHant: "工具", ja: "ツール", ko: "도구", mt: "Tools")
         case .tokenScope: return localizer.t("测试", en: "Beta", zhHant: "測試", ja: "ベータ", ko: "베타", mt: "Beta")
         case .diskAdvisor: return localizer.t("实验", en: "Lab", zhHant: "實驗", ja: "ラボ", ko: "실험", mt: "Lab")
+        case .agentProfile: return localizer.t("画像", en: "Profile", zhHant: "畫像", ja: "Profile", ko: "Profile", mt: "Profile")
         case .localDiagnostics: return localizer.t("诊断", en: "Diag", zhHant: "診斷", ja: "診断", ko: "진단", mt: "Diag")
         case .cleaner:
             let rawTotal = service.scanItems.reduce(Int64(0)) { $0 + $1.size }
@@ -722,6 +728,9 @@ struct ContentView: View {
         case .diskAdvisor:
             DiskAdvisorLabView()
                 .environmentObject(localizer)
+        case .agentProfile:
+            AgentGeoMirrorSettingsView()
+                .environmentObject(localizer)
         case .localDiagnostics:
             LocalSystemDiagnosticsView()
                 .environmentObject(localizer)
@@ -925,6 +934,7 @@ struct ToolboxTab: View {
             ("chart.xyaxis.line", { $0.tokenScopeTitle }, { $0.tokenScopeSubtitle }, Theme.Colors.accent)
         ]
         items.append((icon: "sparkles", title: { $0.t("AI 磁盘顾问", en: "AI Disk Advisor", zhHant: "AI 磁碟顧問", ja: "AI ディスクアドバイザー", ko: "AI 디스크 어드바이저", mt: "AI Disk Advisor") }, subtitle: { $0.t("Apple Intelligence 磁盘清理建议", en: "Apple Intelligence cleanup advice", zhHant: "Apple Intelligence 磁碟清理建議", ja: "Apple Intelligence のクリーンアップ提案", ko: "Apple Intelligence 정리 제안", mt: "Apple Intelligence cleanup advice") }, color: Theme.Colors.purple))
+        items.append((icon: "globe.badge.chevron.backward", title: { $0.t("Agent 画像", en: "Agent Profile", zhHant: "Agent 畫像", ja: "Agent プロファイル", ko: "Agent 프로필", mt: "Agent Profile") }, subtitle: { $0.t("语言、时区与本地探测画像", en: "Language, timezone, and local probe profile", zhHant: "語言、時區與本機探測畫像", ja: "言語、タイムゾーン、ローカル診断プロファイル", ko: "언어, 시간대 및 로컬 탐지 프로필", mt: "Language, timezone, and local probe profile") }, color: Theme.Colors.info))
         items.append((icon: "arrow.down.doc.fill", title: { $0.navCleaner }, subtitle: { $0.subCleaner }, color: Theme.Colors.info))
         items.append((icon: "app.badge", title: { $0.navApp }, subtitle: { $0.subApp }, color: Theme.Colors.accent))
         items.append((icon: "cube.box", title: { $0.navDependency }, subtitle: { $0.subDependency }, color: Theme.Colors.warning))

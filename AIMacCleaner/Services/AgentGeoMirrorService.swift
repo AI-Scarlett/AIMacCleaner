@@ -582,6 +582,7 @@ final class AgentGeoMirrorService {
             AgentGeoMirrorCLITool(wrapperName: "tf-cursor-agent", commandName: "cursor-agent", displayName: "Cursor Agent"),
             AgentGeoMirrorCLITool(wrapperName: "tf-opencode", commandName: "opencode", displayName: "OpenCode"),
             AgentGeoMirrorCLITool(wrapperName: "tf-aider", commandName: "aider", displayName: "Aider"),
+            AgentGeoMirrorCLITool(wrapperName: "tf-amp", commandName: "amp", displayName: "Amp"),
             AgentGeoMirrorCLITool(wrapperName: "tf-qwen", commandName: "qwen", displayName: "Qwen"),
             AgentGeoMirrorCLITool(wrapperName: "tf-goose", commandName: "goose", displayName: "Goose")
         ]
@@ -600,13 +601,19 @@ final class AgentGeoMirrorService {
           exit 64
         fi
         PROFILE_DIR=\(shellQuote(rootURL.path))
+        export TRACEFENCE_SKIP_PROXY=1
         source "$PROFILE_DIR/agent-env.sh"
         exec "$@"
         """
         try writeExecutable(genericScript, to: binURL.appendingPathComponent("tf-agent"))
         try writeExecutable(profileShellLauncher(rootURL: rootURL), to: launchersURL.appendingPathComponent("Open TraceFence CLI Shell.command"))
-        if let grok = tools.first(where: { $0.commandName == "grok" }) {
-            try writeExecutable(cliLauncherScript(rootURL: rootURL, tool: grok), to: launchersURL.appendingPathComponent("Launch Grok CLI.command"))
+        for target in CLIAgentLaunchTarget.supported {
+            let tool = AgentGeoMirrorCLITool(
+                wrapperName: "tf-\(target.commandName)",
+                commandName: target.commandName,
+                displayName: target.displayName
+            )
+            try writeExecutable(cliLauncherScript(rootURL: rootURL, tool: tool), to: launchersURL.appendingPathComponent(target.launcherFileName))
         }
     }
 
@@ -751,6 +758,7 @@ final class AgentGeoMirrorService {
         set -e
         PROFILE_DIR=\(shellQuote(rootURL.path))
         ORIGINAL_GROK=\(shellQuote(originalPath))
+        export TRACEFENCE_SKIP_PROXY=1
         if [[ -f "$PROFILE_DIR/agent-env.sh" ]]; then
           source "$PROFILE_DIR/agent-env.sh"
         fi
@@ -771,6 +779,7 @@ final class AgentGeoMirrorService {
         #!/bin/zsh
         set -e
         PROFILE_DIR=\(shellQuote(rootURL.path))
+        export TRACEFENCE_SKIP_PROXY=1
         source "$PROFILE_DIR/agent-env.sh"
         WRAPPER_DIR="${TRACEFENCE_GEO_BIN_DIR:-$PROFILE_DIR/bin}"
         path_parts=("${(@s/:/)PATH}")
@@ -795,6 +804,7 @@ final class AgentGeoMirrorService {
         #!/bin/zsh
         set -e
         PROFILE_DIR=\(shellQuote(rootURL.path))
+        export TRACEFENCE_SKIP_PROXY=1
         source "$PROFILE_DIR/agent-env.sh"
         clear
         echo "TraceFence Agent Environment Profile is active."
@@ -810,6 +820,7 @@ final class AgentGeoMirrorService {
         #!/bin/zsh
         set -e
         PROFILE_DIR=\(shellQuote(rootURL.path))
+        export TRACEFENCE_SKIP_PROXY=1
         source "$PROFILE_DIR/agent-env.sh"
         cd "$HOME"
         clear
@@ -824,23 +835,13 @@ final class AgentGeoMirrorService {
     }
 
     private func writeDesktopLaunchers(for profile: AgentGeoMirrorProfile, rootURL: URL, launchersURL: URL) throws {
-        let apps: [(file: String, appName: String, executable: String)] = [
-            ("Claude", "Claude", "Claude"),
-            ("Codex", "Codex", "Codex"),
-            ("Cursor", "Cursor", "Cursor"),
-            ("Windsurf", "Windsurf", "Windsurf"),
-            ("Trae", "Trae", "Trae"),
-            ("Visual Studio Code", "Visual Studio Code", "Electron"),
-            ("ChatGPT", "ChatGPT", "ChatGPT")
-        ]
-
-        for app in apps {
+        for app in DesktopAgentLaunchTarget.supported {
             let script = desktopLauncherScript(
                 rootURL: rootURL,
-                appName: app.appName,
-                executable: app.executable
+                appNames: app.appNames,
+                executable: app.executableName
             )
-            try writeExecutable(script, to: launchersURL.appendingPathComponent("Launch \(app.file).command"))
+            try writeExecutable(script, to: launchersURL.appendingPathComponent(app.launcherFileName))
         }
 
         let browserScript = browserLauncherScript(
@@ -1086,20 +1087,8 @@ final class AgentGeoMirrorService {
             lines.append("export ZDOTDIR=\"$TRACEFENCE_GEO_SHELL_DIR\"")
             lines.append("export BASH_ENV=\"$TRACEFENCE_GEO_SHELL_DIR/bash_env\"")
             lines.append("export ENV=\"$TRACEFENCE_GEO_SHELL_DIR/sh_env\"")
-            if !profile.proxyURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                lines.append("if [[ \"${TRACEFENCE_SKIP_PROXY:-0}\" != \"1\" ]]; then")
-                lines.append("export HTTP_PROXY=\(shellQuote(profile.proxyURL))")
-                lines.append("export HTTPS_PROXY=\(shellQuote(profile.proxyURL))")
-                lines.append("export ALL_PROXY=\(shellQuote(profile.proxyURL))")
-                lines.append("export http_proxy=\"$HTTP_PROXY\"")
-                lines.append("export https_proxy=\"$HTTPS_PROXY\"")
-                lines.append("export all_proxy=\"$ALL_PROXY\"")
-                lines.append("fi")
-            }
-            if !noProxy.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                lines.append("export NO_PROXY=\(shellQuote(noProxy))")
-                lines.append("export no_proxy=\"$NO_PROXY\"")
-            }
+            lines.append("export TRACEFENCE_PROFILE_PROXY_URL=\(shellQuote(profile.proxyURL.trimmingCharacters(in: .whitespacesAndNewlines)))")
+            lines.append("export TRACEFENCE_PROFILE_NO_PROXY=\(shellQuote(noProxy.trimmingCharacters(in: .whitespacesAndNewlines)))")
             if profile.timezoneOverrideEnabled {
                 lines.append("export TZ=\(shellQuote(profile.timezoneIdentifier))")
             }
@@ -1126,8 +1115,10 @@ final class AgentGeoMirrorService {
         return lines.joined(separator: "\n") + "\n"
     }
 
-    private func desktopLauncherScript(rootURL: URL, appName: String, executable: String) -> String {
-        """
+    private func desktopLauncherScript(rootURL: URL, appNames: [String], executable: String) -> String {
+        let appNameLines = appNames.map { "  \(shellQuote($0))" }.joined(separator: "\n")
+        let fallbackAppName = appNames.first ?? ""
+        return """
         #!/bin/zsh
         set -e
         PROFILE_DIR=\(shellQuote(rootURL.path))
@@ -1141,18 +1132,26 @@ final class AgentGeoMirrorService {
         if [[ "${TRACEFENCE_GEO_PROFILE_ENABLED:-0}" == "1" && -n "${TRACEFENCE_LOCALE:-}" ]]; then
           APP_LOCALE_ARGS+=(--lang="$TRACEFENCE_LOCALE")
         fi
-        CANDIDATES=(
-          "/Applications/\(appName).app/Contents/MacOS/\(executable)"
-          "$HOME/Applications/\(appName).app/Contents/MacOS/\(executable)"
+        APP_NAMES=(
+        \(appNameLines)
         )
-        for candidate in "${CANDIDATES[@]}"; do
-          if [[ -x "$candidate" ]]; then
-            exec "$candidate" "${APP_LOCALE_ARGS[@]}" "$@"
+        for app_name in "${APP_NAMES[@]}"; do
+          CANDIDATES=(
+            "/Applications/$app_name.app/Contents/MacOS/\(executable)"
+            "$HOME/Applications/$app_name.app/Contents/MacOS/\(executable)"
+          )
+          for candidate in "${CANDIDATES[@]}"; do
+            if [[ -x "$candidate" ]]; then
+              exec "$candidate" "${APP_LOCALE_ARGS[@]}" "$@"
+            fi
+          done
+          if [[ -d "/Applications/$app_name.app" || -d "$HOME/Applications/$app_name.app" ]]; then
+            exec open -na "$app_name" --args "${APP_LOCALE_ARGS[@]}" "$@"
           fi
         done
-        echo "TraceFence: \(appName).app was not found in /Applications or ~/Applications." >&2
+        echo "TraceFence: \(fallbackAppName).app was not found in /Applications or ~/Applications." >&2
         echo "TraceFence: falling back to macOS open; some environment variables may not be inherited by the app." >&2
-        exec open -na \(shellQuote(appName)) --args "${APP_LOCALE_ARGS[@]}" "$@"
+        exec open -na \(shellQuote(fallbackAppName)) --args "${APP_LOCALE_ARGS[@]}" "$@"
         """
     }
 
@@ -1523,7 +1522,7 @@ final class AgentGeoMirrorService {
 
         New agents that support profile discovery can read `TRACEFENCE_PROFILE_URL`, `TRACEFENCE_PROFILE_CONTEXT_URL`, `TRACEFENCE_PROFILE_PATH`, or `TRACEFENCE_PROFILE_CONTEXT_PATH` from the environment instead of needing a TraceFence-specific wrapper.
 
-        For desktop apps, launch them through the generated `.command` files so the app process inherits the language, timezone, and local-probe profile. Desktop launchers intentionally clear `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` because Electron-style apps such as Codex can enter reconnect loops when those proxy variables are injected into the whole app process. CLI wrappers keep the proxy environment.
+        For desktop apps, launch them through the generated `.command` files so the app process inherits the language, timezone, and local-probe profile. Desktop and CLI launchers intentionally avoid forcing `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` into the agent process because stale proxy variables can break login and reconnect flows. The configured proxy is still recorded as `TRACEFENCE_PROFILE_PROXY_URL` for agent-aware integrations.
 
         For Chromium browsers, use the generated Chrome, Edge, Brave, Arc, or Vivaldi launcher, or load the `BrowserExtension` folder from the browser extension page with Developer Mode enabled.
 

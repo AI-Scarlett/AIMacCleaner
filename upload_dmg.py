@@ -12,13 +12,17 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.54")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.55")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Simplifies Agent Environment Profile actions: Codex and Claude stay as primary one-click controls, while all other installed desktop and CLI agents move into More Agents.\n"
+    "- Adds a shared Agent catalog for desktop apps and CLIs so More Agents and Provider Quota only show agents that are actually installed on the Mac.\n"
+    "- Fixes Grok CLI login/network failures caused by injecting a stale proxy URL into agent processes; launchers now keep language, timezone, and local probe overrides without forcing HTTP_PROXY/HTTPS_PROXY.\n"
+    "- Keeps the configured proxy as profile metadata for detection and agent-aware integrations through TRACEFENCE_PROFILE_PROXY_URL instead of overriding process networking by default.\n"
     "- Fixes Grok CLI launched from a normal Terminal by automatically managing `~/.grok/bin/grok` while Agent Environment Profile is enabled, so direct `grok` commands inherit TraceFence timezone, locale, proxy, PATH shims, and profile URLs.\n"
     "- Restores the original Grok symlink or command when Agent Environment Profile is turned off, keeping the takeover reversible and beginner-friendly.\n"
     "- Adds a universal local Agent Profile endpoint for new CLIs and desktop agents: TraceFence now serves the generated profile from a read-only 127.0.0.1 URL while the Agent Environment Profile switch is on.\n"

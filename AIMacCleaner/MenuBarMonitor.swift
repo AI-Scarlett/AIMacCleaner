@@ -1481,9 +1481,11 @@ struct MenuBarMonitor: View {
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
+                switchStateLabel(monitoringEnabled, color: Theme.Colors.warning)
                 Toggle("", isOn: $monitoringEnabled)
                     .toggleStyle(.switch)
                     .controlSize(.mini)
+                    .tint(Theme.Colors.warning)
                     .onChange(of: monitoringEnabled) { newValue in
                         if newValue {
                             service.startMonitoring()
@@ -1532,19 +1534,21 @@ struct MenuBarMonitor: View {
                         .font(Theme.Font.captionMedium)
                         .foregroundStyle(Theme.Colors.textPrimary)
                     Text(agentGeoMirrorEnabled
-                        ? localizer.t("已启动，新打开的 Agent 会使用代理画像。", en: "Running. Newly launched agents use the proxy profile.", zhHant: "已啟動，新開啟的 Agent 會使用代理畫像。", ja: "実行中。新しく起動した Agent はプロキシプロファイルを使用します。", ko: "실행 중입니다. 새로 실행한 Agent가 프록시 프로필을 사용합니다.", mt: "Running. Newly launched agents use the proxy profile.")
+                        ? localizer.t("已启动。正在运行的 Agent 需重启才会生效。", en: "Running. Already-running agents must restart to take effect.", zhHant: "已啟動。正在執行的 Agent 需重啟才會生效。", ja: "実行中。起動済みの Agent は再起動が必要です。", ko: "실행 중입니다. 이미 실행 중인 Agent는 다시 시작해야 적용됩니다.", mt: "Running. Already-running agents must restart to take effect.")
                         : localizer.t("打开后自动生成本地 Profile。", en: "Turn on to generate the local profile automatically.", zhHant: "開啟後會自動產生本機 Profile。", ja: "オンにするとローカルプロファイルを自動生成します。", ko: "켜면 로컬 프로필을 자동 생성합니다.", mt: "Turn on to generate the local profile automatically."))
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
+                switchStateLabel(agentGeoMirrorEnabled, color: Theme.Colors.success)
                 Toggle("", isOn: Binding(
                     get: { agentGeoMirrorEnabled },
                     set: { setAgentGeoMirrorEnabled($0) }
                 ))
                 .toggleStyle(.switch)
                 .controlSize(.mini)
+                .tint(Theme.Colors.success)
                 .disabled(agentGeoMirrorBusy)
             }
 
@@ -1578,9 +1582,11 @@ struct MenuBarMonitor: View {
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
+                switchStateLabel(operationMonitorEnabled, color: Theme.Colors.purple)
                 Toggle("", isOn: $operationMonitorEnabled)
                     .toggleStyle(.switch)
                     .controlSize(.mini)
+                    .tint(Theme.Colors.purple)
                     .onChange(of: operationMonitorEnabled) { _ in saveSettings() }
             }
 
@@ -1592,9 +1598,11 @@ struct MenuBarMonitor: View {
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
+                switchStateLabel(trashInsteadOfDelete, color: Theme.Colors.info)
                 Toggle("", isOn: $trashInsteadOfDelete)
                     .toggleStyle(.switch)
                     .controlSize(.mini)
+                    .tint(Theme.Colors.info)
                     .onChange(of: trashInsteadOfDelete) { _ in
                         service.trashInsteadOfDelete = trashInsteadOfDelete
                         saveSettings()
@@ -1609,9 +1617,11 @@ struct MenuBarMonitor: View {
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
+                switchStateLabel(preventAutoEmptyTrash, color: Theme.Colors.danger)
                 Toggle("", isOn: $preventAutoEmptyTrash)
                     .toggleStyle(.switch)
                     .controlSize(.mini)
+                    .tint(Theme.Colors.danger)
                     .onChange(of: preventAutoEmptyTrash) { _ in
                         service.preventAutoEmptyTrash = preventAutoEmptyTrash
                         saveSettings()
@@ -1621,6 +1631,23 @@ struct MenuBarMonitor: View {
         .cardStyle(padding: Theme.Spacing.md)
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.bottom, Theme.Spacing.lg)
+    }
+
+    private func switchStateLabel(_ isOn: Bool, color: Color) -> some View {
+        Text(isOn
+            ? localizer.t("已开启", en: "On", zhHant: "已開啟", ja: "オン", ko: "켜짐", mt: "On")
+            : localizer.t("已关闭", en: "Off", zhHant: "已關閉", ja: "オフ", ko: "꺼짐", mt: "Off"))
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(isOn ? color : Theme.Colors.textSecondary)
+            .frame(minWidth: 54)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(isOn ? color.opacity(0.16) : Theme.Colors.surface)
+            .overlay {
+                Capsule()
+                    .stroke(isOn ? color.opacity(0.35) : Theme.Colors.separator, lineWidth: 1)
+            }
+            .clipShape(Capsule())
     }
 
     // MARK: - Operation Monitor Tab
@@ -2096,7 +2123,7 @@ struct MenuBarMonitor: View {
                 DispatchQueue.main.async {
                     agentGeoMirrorBusy = false
                     agentGeoMirrorMessage = isEnabled
-                        ? localizer.t("已启动。新打开的 Agent 会使用这套 Profile。", en: "Started. Newly launched agents will use this profile.", zhHant: "已啟動。新開啟的 Agent 會使用這套 Profile。", ja: "開始しました。新しく起動した Agent はこのプロファイルを使用します。", ko: "시작되었습니다. 새로 실행한 Agent가 이 프로필을 사용합니다.", mt: "Started. Newly launched agents will use this profile.")
+                        ? localizer.t("已启动。请重启正在运行的 Agent/CLI，否则不会读取新画像。", en: "Started. Restart running agents or CLIs, otherwise they will not read the new profile.", zhHant: "已啟動。請重啟正在執行的 Agent/CLI，否則不會讀取新畫像。", ja: "開始しました。実行中の Agent/CLI を再起動しないと新しいプロファイルは読み込まれません。", ko: "시작되었습니다. 실행 중인 Agent/CLI를 다시 시작해야 새 프로필을 읽습니다.", mt: "Started. Restart running agents or CLIs, otherwise they will not read the new profile.")
                         : localizer.t("已停止。后续启动不会注入画像。", en: "Stopped. Future launches will not inject the profile.", zhHant: "已停止。後續啟動不會注入畫像。", ja: "停止しました。以後の起動ではプロファイルを注入しません。", ko: "중지되었습니다. 이후 실행에는 프로필을 주입하지 않습니다.", mt: "Stopped. Future launches will not inject the profile.")
                 }
             } catch {

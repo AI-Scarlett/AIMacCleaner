@@ -215,59 +215,33 @@ private struct CodexBarQuotaProvider {
         scopedAccess.start()
         defer { scopedAccess.stop() }
 
-        do {
-            let configs = readProviderConfigs(from: executable)
-            let data = try runCodexBar(at: executable)
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .custom(Self.decodeDate)
-            let autoPayloads = try decoder.decode([CodexBarProviderPayload].self, from: data)
-            var payloads = payloadsByMergingCodexSources(
-                autoPayloads,
-                with: readCodexAutoPayloads(from: executable, decoder: decoder)
-            )
+        let configs = readProviderConfigs(from: executable)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = quotaDateDecodingStrategy()
+        let autoPayloads = readProviderPayloads(from: executable, configs: configs)
+        var payloads = payloadsByMergingCodexSources(
+            autoPayloads,
+            with: readCodexAutoPayloads(from: executable, decoder: decoder)
+        )
+        payloads = payloadsByMergingCodexSources(
+            payloads,
+            with: readCodexOAuthPayloads(from: executable, decoder: decoder)
+        )
+        if !codexPayloadsHaveExtraWindows(payloads) {
             payloads = payloadsByMergingCodexSources(
                 payloads,
-                with: readCodexOAuthPayloads(from: executable, decoder: decoder)
+                with: readCodexWebPayloads(from: executable, decoder: decoder)
             )
-            if !codexPayloadsHaveExtraWindows(payloads) {
-                payloads = payloadsByMergingCodexSources(
-                    payloads,
-                    with: readCodexWebPayloads(from: executable, decoder: decoder)
-                )
+        }
+        let snapshots = payloads.compactMap { payload -> ProviderQuotaSnapshot? in
+            if let snapshot = makeSnapshot(from: payload, configs: configs) {
+                return snapshot
             }
-            var hiddenCount = 0
-            let snapshots = payloads.compactMap { payload -> ProviderQuotaSnapshot? in
-                if let snapshot = makeSnapshot(from: payload, configs: configs) {
-                    return snapshot
-                }
-                if payload.error != nil {
-                    hiddenCount += 1
-                }
-                return nil
-            }
-            var visibleSnapshots = snapshots
-            if hiddenCount > 0 {
-                visibleSnapshots.append(setupNotice(count: hiddenCount))
-            }
-            if visibleSnapshots.isEmpty {
-                return [ProviderQuotaSnapshot(
-                    id: "provider-engine-empty",
-                    providerName: "TraceFence",
-                    planName: nil,
-                    accountLabel: nil,
-                    credits: nil,
-                    windows: [],
-                    resetCredits: nil,
-                    updatedAt: Date(),
-                    source: "cli",
-                    errorMessage: "No quota data is available yet. Log in or enable the Agent you want to monitor.",
-                    setupHint: "Installed Agents such as Codex, Claude, and Cursor will show actionable diagnostics here.",
-                    isSetupNotice: false)]
-            }
-            return visibleSnapshots
-        } catch {
+            return nil
+        }
+        if snapshots.isEmpty {
             return [ProviderQuotaSnapshot(
-                id: "provider-engine-error",
+                id: "provider-engine-empty",
                 providerName: "TraceFence",
                 planName: nil,
                 accountLabel: nil,
@@ -276,10 +250,11 @@ private struct CodexBarQuotaProvider {
                 resetCredits: nil,
                 updatedAt: Date(),
                 source: "cli",
-                errorMessage: sanitizedMessage(error.localizedDescription),
-                setupHint: nil,
+                errorMessage: "No quota data is available yet. Log in or enable the Agent you want to monitor.",
+                setupHint: "Installed Agents such as Codex, Claude, and Cursor will show actionable diagnostics here.",
                 isSetupNotice: false)]
         }
+        return snapshots
     }
 
     private func findExecutable() -> URL? {
@@ -317,16 +292,102 @@ private struct CodexBarQuotaProvider {
         }
     }
 
-    private func runCodexBar(at executable: URL) throws -> Data {
-        try runCodexBarCommand(
-            at: executable,
-            arguments: [
-                "usage",
-                "--provider", "all",
-                "--format", "json",
-                "--source", "auto"
-            ],
-            timeout: 35
+    private func readProviderPayloads(
+        from executable: URL,
+        configs: [String: CodexBarProviderConfigPayload]
+    ) -> [CodexBarProviderPayload] {
+        let providerIDs = quotaProviderIDs(configs: configs)
+        guard !providerIDs.isEmpty else { return [] }
+
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var indexedPayloads: [(offset: Int, payloads: [CodexBarProviderPayload])] = []
+
+        for (offset, providerID) in providerIDs.enumerated() {
+            group.enter()
+            DispatchQueue.global(qos: .utility).async {
+                let payloads = self.readSingleProviderPayload(
+                    providerID,
+                    from: executable,
+                    configs: configs
+                )
+                lock.lock()
+                indexedPayloads.append((offset, payloads))
+                lock.unlock()
+                group.leave()
+            }
+        }
+
+        group.wait()
+        return indexedPayloads
+            .sorted { $0.offset < $1.offset }
+            .flatMap(\.payloads)
+    }
+
+    private func readSingleProviderPayload(
+        _ providerID: String,
+        from executable: URL,
+        configs: [String: CodexBarProviderConfigPayload]
+    ) -> [CodexBarProviderPayload] {
+        do {
+            let data = try runCodexBarCommand(
+                at: executable,
+                arguments: [
+                    "usage",
+                    "--provider", providerID,
+                    "--format", "json",
+                    "--source", "auto"
+                ],
+                timeout: providerID == "codex" ? 12 : 4
+            )
+            let providerDecoder = JSONDecoder()
+            providerDecoder.dateDecodingStrategy = quotaDateDecodingStrategy()
+            return (try? providerDecoder.decode([CodexBarProviderPayload].self, from: data)) ?? []
+        } catch {
+            guard shouldSurfaceProviderReadFailure(providerID, config: configs[providerID]) else {
+                return []
+            }
+            return [providerReadFailurePayload(providerID, error: error)]
+        }
+    }
+
+    private func quotaProviderIDs(configs: [String: CodexBarProviderConfigPayload]) -> [String] {
+        let configured = configs.values
+            .filter { $0.enabled || $0.defaultEnabled }
+            .map(\.provider)
+        let installed = configs.keys.filter { isProviderLikelyInstalled($0) }
+        return stableUnique(["codex"] + configured + installed)
+    }
+
+    private func stableUnique(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.compactMap { value in
+            let normalized = value.lowercased()
+            guard !normalized.isEmpty, seen.insert(normalized).inserted else { return nil }
+            return normalized
+        }
+    }
+
+    private func shouldSurfaceProviderReadFailure(
+        _ providerID: String,
+        config: CodexBarProviderConfigPayload?
+    ) -> Bool {
+        providerID == "codex" || config?.enabled == true || isProviderLikelyInstalled(providerID)
+    }
+
+    private func providerReadFailurePayload(_ providerID: String, error: Error) -> CodexBarProviderPayload {
+        let raw = sanitizedMessage(error.localizedDescription)
+        let message = raw.lowercased().contains("timed out")
+            ? "\(displayName(for: providerID)) 额度读取超时，TraceFence 已跳过该 Provider，其它额度会继续显示。"
+            : raw
+        return CodexBarProviderPayload(
+            provider: providerID,
+            account: nil,
+            version: nil,
+            source: "auto",
+            usage: nil,
+            credits: nil,
+            error: CodexBarErrorPayload(message: message)
         )
     }
 
@@ -640,7 +701,7 @@ private struct CodexBarQuotaProvider {
         config: CodexBarProviderConfigPayload?
     ) -> Bool {
         guard payload.error != nil else { return false }
-        if config?.enabled == true || config?.defaultEnabled == true { return true }
+        if config?.enabled == true { return true }
         return isProviderLikelyInstalled(payload.provider)
     }
 
@@ -649,6 +710,9 @@ private struct CodexBarQuotaProvider {
         let message = payload.error?.message.lowercased() ?? ""
         if message.contains("api key") {
             return "Configure the \(displayName(for: provider)) API key or account credentials, then refresh the TraceFence provider monitor."
+        }
+        if message.contains("timed out") || message.contains("读取超时") {
+            return "\(displayName(for: provider)) 本次读取超时，TraceFence 已跳过它，不影响其它 Provider 显示。稍后可刷新，或检查该 CLI 是否能正常启动。"
         }
         if message.contains("cli is not installed") || message.contains("not on path") {
             if isProviderLikelyInstalled(provider) {
@@ -675,6 +739,9 @@ private struct CodexBarQuotaProvider {
         if message.contains("api key") {
             return "\(displayName(for: provider)) API key is not configured"
         }
+        if message.contains("timed out") || message.contains("读取超时") {
+            return "\(displayName(for: provider)) 额度读取超时"
+        }
         if message.contains("cli is not installed") || message.contains("not on path") {
             return isProviderLikelyInstalled(provider)
                 ? "\(displayName(for: provider)) CLI is temporarily unavailable"
@@ -693,69 +760,62 @@ private struct CodexBarQuotaProvider {
     }
 
     private func isProviderLikelyInstalled(_ provider: String) -> Bool {
-        switch provider.lowercased() {
-        case "codex":
-            return commandExists("codex") || pathExists("~/.codex")
-        case "claude":
-            return commandExists("claude") || pathExists("/Applications/Claude.app") || pathExists("~/.claude")
-        case "cursor":
-            return pathExists("/Applications/Cursor.app") || pathExists("~/.cursor")
-        case "opencode", "opencodego":
-            return commandExists("opencode") || pathExists("~/.config/opencode")
-        case "gemini":
-            return commandExists("gemini") || pathExists("~/.gemini")
-        case "amp":
-            return commandExists("amp") || pathExists("~/.config/amp")
-        case "warp":
-            return commandExists("warp") || pathExists("/Applications/Warp.app")
-        case "zed":
-            return commandExists("zed") || pathExists("/Applications/Zed.app")
-        case "windsurf":
-            return commandExists("windsurf") || pathExists("/Applications/Windsurf.app")
-        case "copilot":
-            return commandExists("gh") && pathExists("~/.config/gh")
-        case "factory":
-            return pathExists("/Applications/Droid.app")
-        case "antigravity":
-            return pathExists("/Applications/Google Antigravity.app")
-        default:
-            return false
-        }
-    }
-
-    private func commandExists(_ command: String) -> Bool {
-        let paths = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
-        return paths.contains { path in
-            FileManager.default.isExecutableFile(atPath: "\(path)/\(command)")
-        }
-    }
-
-    private func pathExists(_ rawPath: String) -> Bool {
-        let expanded = expandedPath(rawPath)
-        return FileManager.default.fileExists(atPath: expanded)
-    }
-
-    private func expandedPath(_ rawPath: String) -> String {
-        if rawPath == "~" {
-            return SandboxPaths.realHomeDirectory
-        }
-        if rawPath.hasPrefix("~/") {
-            return SandboxPaths.realHomeDirectory + String(rawPath.dropFirst())
-        }
-        return NSString(string: rawPath).expandingTildeInPath
+        AgentIntegrationCatalog.isProviderLikelyInstalled(provider)
     }
 
     private func processEnvironment(for executable: URL) -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
-        let fallbackPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-        if let path = environment["PATH"], !path.isEmpty {
-            environment["PATH"] = "\(fallbackPath):\(path)"
-        } else {
-            environment["PATH"] = fallbackPath
-        }
+        let homeURL = URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true)
+        let fallbackPath = [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin",
+            homeURL.appendingPathComponent(".local/bin").path,
+            homeURL.appendingPathComponent(".grok/bin").path,
+            homeURL.appendingPathComponent(".mavis/bin").path
+        ].joined(separator: ":")
+        environment["PATH"] = fallbackPath
         environment["HOME"] = SandboxPaths.realHomeDirectory
         environment["USER"] = NSUserName()
         environment["LOGNAME"] = NSUserName()
+        [
+            "TRACEFENCE",
+            "TRACEFENCE_GEO_PROFILE_ENABLED",
+            "TRACEFENCE_GEO_PROFILE_NAME",
+            "TRACEFENCE_GEO_PROFILE_DIR",
+            "TRACEFENCE_GEO_BIN_DIR",
+            "TRACEFENCE_GEO_SHELL_DIR",
+            "TRACEFENCE_PROFILE_URL",
+            "TRACEFENCE_PROFILE_CONTEXT_URL",
+            "TRACEFENCE_RAW_PROFILE_URL",
+            "TRACEFENCE_PROFILE_PATH",
+            "TRACEFENCE_PROFILE_CONTEXT_PATH",
+            "TRACEFENCE_RAW_PROFILE_PATH",
+            "TRACEFENCE_SKIP_PROXY",
+            "TRACEFENCE_GROK_MANAGED_SHIM",
+            "GROK_TRACEFENCE_PROFILE_URL",
+            "GROK_TRACEFENCE_PROFILE_CONTEXT_URL",
+            "ZDOTDIR",
+            "BASH_ENV",
+            "ENV",
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+            "TZ",
+            "LANG",
+            "LC_ALL",
+            "LC_CTYPE",
+            "LC_MESSAGES",
+            "LANGUAGE",
+            "AppleLocale",
+            "AppleLanguages"
+        ].forEach { environment.removeValue(forKey: $0) }
         if isDirectDistributionCodexBar(executable) {
             environment.removeValue(forKey: "APP_SANDBOX_CONTAINER_ID")
             environment["TRACEFENCE_PROVIDER_ENGINE"] = "direct-distribution"
@@ -876,6 +936,12 @@ private struct CodexBarQuotaProvider {
         .joined()
         .split(separator: "-")
         .joined(separator: "-")
+    }
+
+    private func quotaDateDecodingStrategy() -> JSONDecoder.DateDecodingStrategy {
+        .custom { @Sendable decoder in
+            try Self.decodeDate(from: decoder)
+        }
     }
 
     private static func decodeDate(from decoder: Decoder) throws -> Date {
