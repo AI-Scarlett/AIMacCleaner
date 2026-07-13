@@ -234,6 +234,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private weak var conversationWatcherContext: ConversationWatcher?
     private weak var localizerContext: Localizer?
     private var didPresentInitialLaunchSurface = false
+    private var didRequestLaunchReopen = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -243,18 +244,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { [weak self] in
             self?.setupWindowDelegate()
             self?.ensureLaunchSurfaceVisible(reason: "launch")
+            self?.scheduleLaunchSurfaceRetry(attempt: 1)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             self?.bootstrapRemoteGatewayContext(reason: "launch")
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
-            self?.ensureLaunchSurfaceVisible(reason: "launch-retry-1")
-        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
             self?.bootstrapRemoteGatewayContext(reason: "launch-retry")
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
-            self?.ensureLaunchSurfaceVisible(reason: "launch-retry-2")
         }
 #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--tracefence-capture-ui-test") {
@@ -344,6 +340,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
+    private func scheduleLaunchSurfaceRetry(attempt: Int) {
+        guard !didPresentInitialLaunchSurface, attempt <= 16 else { return }
+        let delay = min(0.25 + (Double(attempt) * 0.08), 0.8)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, !self.didPresentInitialLaunchSurface else { return }
+            self.ensureLaunchSurfaceVisible(reason: "launch-retry-\(attempt)")
+            if attempt == 4 {
+                self.requestApplicationReopen()
+            }
+            self.scheduleLaunchSurfaceRetry(attempt: attempt + 1)
+        }
+    }
+
+    @MainActor
+    private func requestApplicationReopen() {
+        guard !didRequestLaunchReopen, !didPresentInitialLaunchSurface else { return }
+        didRequestLaunchReopen = true
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.createsNewApplicationInstance = false
+        NSWorkspace.shared.openApplication(
+            at: Bundle.main.bundleURL,
+            configuration: configuration
+        ) { _, error in
+            if let error {
+                print("[TraceFence] Could not request main scene reopen: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    @MainActor
     private func bestMainWindow() -> NSWindow? {
         if let mainWindow, isTraceFenceMainWindow(mainWindow) {
             return mainWindow
@@ -355,7 +383,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func isTraceFenceMainWindow(_ window: NSWindow) -> Bool {
         window.contentView != nil &&
             !window.isFloatingPanel &&
-            !window.isMiniaturized &&
             window.canBecomeMain &&
             window.styleMask.contains(.titled) &&
             window.level < .screenSaver &&
@@ -378,6 +405,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         mainWindow = canonical
         canonical.delegate = WindowDelegate.shared
+        canonical.isRestorable = false
 
         for duplicate in candidates where duplicate !== canonical {
             print("[TraceFence] Closing duplicate main window number=\(duplicate.windowNumber)")
@@ -389,6 +417,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     private func show(window: NSWindow, reason: String) {
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
         if !window.isVisible {
             window.center()
         }
