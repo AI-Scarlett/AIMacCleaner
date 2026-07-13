@@ -1,0 +1,469 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		07CBDB59F020C6B340F049F7 /* TraceFenceRemoteClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83592E68CCEFB6A3E2A82041 /* TraceFenceRemoteClient.swift */; };
+		0B2C3D4E5F60718293A4B501 /* TraceFenceNotificationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B2C3D4E5F60718293A4B502 /* TraceFenceNotificationCoordinator.swift */; };
+		0A1B2C3D4E5F60718293A401 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F60718293A402 /* Localization.swift */; };
+		0A1B2C3D4E5F60718293A403 /* DeviceAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F60718293A404 /* DeviceAuthentication.swift */; };
+		0A1B2C3D4E5F60718293A405 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F60718293A406 /* Localizable.strings */; };
+		0A1B2C3D4E5F60718293A408 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F60718293A409 /* InfoPlist.strings */; };
+		0A1B2C3D4E5F60718293A414 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F60718293A415 /* PrivacyInfo.xcprivacy */; };
+		1050EC8580B9F09D7FB62AD5 /* TraceFenceIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6372F61CC71B83FB97BB9D /* TraceFenceIOSApp.swift */; };
+		1235D256A6D7270E93C65FDF /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCAEAD99FB0852267478DC8A /* Components.swift */; };
+		2F5791E7CEADFBEA35A80CAF /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0F5061E31C78571CD786947 /* PairingView.swift */; };
+		4CA43F9C79A6047F6977CA68 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B91D807E1DF7FBD9829E8F38 /* DashboardView.swift */; };
+		5DFE9EC2CFBB0ABD3F72FC80 /* ConnectionGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86E883292D8AE0D5603A7DC7 /* ConnectionGuideView.swift */; };
+		AF26B5315B78778FE15970B2 /* TraceFenceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 595ECC3A33488B57152B2587 /* TraceFenceModels.swift */; };
+		BBC2BDB1FAAEFD08B63AD4B9 /* QRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A13EF991C6320015F9B9D3C2 /* QRCodeScannerView.swift */; };
+		BD2327ED7B5F1BDC6F299F87 /* AppShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97F1EE5D2EED681CA5A49767 /* AppShellView.swift */; };
+		C216BF7A9DCB5AC113B52C52 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 218389B6C2B230B73BF7B49B /* Assets.xcassets */; };
+		F4BB5CBEC8317327288B22B6 /* ConnectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D677C39CFE99E2272C5C2142 /* ConnectionStore.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		218389B6C2B230B73BF7B49B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A402 /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localization.swift; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A404 /* DeviceAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceAuthentication.swift; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A407 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A40C /* zh-Hant */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "zh-Hant.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A40D /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Localizable.strings; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A40E /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/Localizable.strings; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A40F /* mt */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = mt; path = mt.lproj/Localizable.strings; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A40A /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A40B /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A410 /* zh-Hant */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "zh-Hant.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A411 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A412 /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A413 /* mt */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = mt; path = mt.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		0A1B2C3D4E5F60718293A415 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		0B2C3D4E5F60718293A4B502 /* TraceFenceNotificationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TraceFenceNotificationCoordinator.swift; sourceTree = "<group>"; };
+		391F252B1B12EEA09E3A5525 /* TraceFenceIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TraceFenceIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		595ECC3A33488B57152B2587 /* TraceFenceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TraceFenceModels.swift; sourceTree = "<group>"; };
+		83592E68CCEFB6A3E2A82041 /* TraceFenceRemoteClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TraceFenceRemoteClient.swift; sourceTree = "<group>"; };
+		86E883292D8AE0D5603A7DC7 /* ConnectionGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionGuideView.swift; sourceTree = "<group>"; };
+		8F6372F61CC71B83FB97BB9D /* TraceFenceIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TraceFenceIOSApp.swift; sourceTree = "<group>"; };
+		97F1EE5D2EED681CA5A49767 /* AppShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellView.swift; sourceTree = "<group>"; };
+		A0F5061E31C78571CD786947 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		A13EF991C6320015F9B9D3C2 /* QRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeScannerView.swift; sourceTree = "<group>"; };
+		B91D807E1DF7FBD9829E8F38 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		CCAEAD99FB0852267478DC8A /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		D677C39CFE99E2272C5C2142 /* ConnectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStore.swift; sourceTree = "<group>"; };
+		DD26F6298179BFBD27CF5869 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		0FBE3B1CC7C7843A5421FC86 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A13EF991C6320015F9B9D3C2 /* QRCodeScannerView.swift */,
+				83592E68CCEFB6A3E2A82041 /* TraceFenceRemoteClient.swift */,
+				0B2C3D4E5F60718293A4B502 /* TraceFenceNotificationCoordinator.swift */,
+				0A1B2C3D4E5F60718293A404 /* DeviceAuthentication.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		147C2EC448BFE613829D2EC1 /* TraceFenceIOS */ = {
+			isa = PBXGroup;
+			children = (
+				DD26F6298179BFBD27CF5869 /* Info.plist */,
+				B74A603783B140CB1A530E27 /* App */,
+				80403020B42DF28FB2206E58 /* Models */,
+				BE4D6B808C46AF9EE01568B0 /* Resources */,
+				0FBE3B1CC7C7843A5421FC86 /* Services */,
+				91E60D49AFFB831D24726273 /* Stores */,
+				A99ED4BC2802565CDA3DA98D /* Views */,
+			);
+			path = TraceFenceIOS;
+			sourceTree = "<group>";
+		};
+		2D314E13BE54D164457C5375 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				391F252B1B12EEA09E3A5525 /* TraceFenceIOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		5EBEC71B829E5E710F2D0ED0 = {
+			isa = PBXGroup;
+			children = (
+				147C2EC448BFE613829D2EC1 /* TraceFenceIOS */,
+				2D314E13BE54D164457C5375 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		80403020B42DF28FB2206E58 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				595ECC3A33488B57152B2587 /* TraceFenceModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		91E60D49AFFB831D24726273 /* Stores */ = {
+			isa = PBXGroup;
+			children = (
+				D677C39CFE99E2272C5C2142 /* ConnectionStore.swift */,
+			);
+			path = Stores;
+			sourceTree = "<group>";
+		};
+		A99ED4BC2802565CDA3DA98D /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				CCAEAD99FB0852267478DC8A /* Components.swift */,
+				86E883292D8AE0D5603A7DC7 /* ConnectionGuideView.swift */,
+				B91D807E1DF7FBD9829E8F38 /* DashboardView.swift */,
+				A0F5061E31C78571CD786947 /* PairingView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		B74A603783B140CB1A530E27 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				97F1EE5D2EED681CA5A49767 /* AppShellView.swift */,
+				0A1B2C3D4E5F60718293A402 /* Localization.swift */,
+				8F6372F61CC71B83FB97BB9D /* TraceFenceIOSApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		BE4D6B808C46AF9EE01568B0 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				218389B6C2B230B73BF7B49B /* Assets.xcassets */,
+				0A1B2C3D4E5F60718293A415 /* PrivacyInfo.xcprivacy */,
+				0A1B2C3D4E5F60718293A406 /* Localizable.strings */,
+				0A1B2C3D4E5F60718293A409 /* InfoPlist.strings */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		B87A8AF7021D41E17A804667 /* TraceFenceIOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9A1661F4CE03B9D3355EDBA5 /* Build configuration list for PBXNativeTarget "TraceFenceIOS" */;
+			buildPhases = (
+				8D539BB61A9DAA458D48C865 /* Sources */,
+				6D8DCCD3BEBD3A6EBAC743EB /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TraceFenceIOS;
+			packageProductDependencies = (
+			);
+			productName = TraceFenceIOS;
+			productReference = 391F252B1B12EEA09E3A5525 /* TraceFenceIOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		9D44065A9C93819C2F7A9F1A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					B87A8AF7021D41E17A804667 = {
+						DevelopmentTeam = UQ87N2WZ76;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 20D2739C0D5061444E520BCE /* Build configuration list for PBXProject "TraceFenceIOS" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+				"zh-Hans",
+				"zh-Hant",
+				ja,
+				ko,
+				mt,
+			);
+			mainGroup = 5EBEC71B829E5E710F2D0ED0;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 2D314E13BE54D164457C5375 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				B87A8AF7021D41E17A804667 /* TraceFenceIOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		6D8DCCD3BEBD3A6EBAC743EB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C216BF7A9DCB5AC113B52C52 /* Assets.xcassets in Resources */,
+				0A1B2C3D4E5F60718293A414 /* PrivacyInfo.xcprivacy in Resources */,
+				0A1B2C3D4E5F60718293A405 /* Localizable.strings in Resources */,
+				0A1B2C3D4E5F60718293A408 /* InfoPlist.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		8D539BB61A9DAA458D48C865 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BD2327ED7B5F1BDC6F299F87 /* AppShellView.swift in Sources */,
+				0A1B2C3D4E5F60718293A401 /* Localization.swift in Sources */,
+				1235D256A6D7270E93C65FDF /* Components.swift in Sources */,
+				5DFE9EC2CFBB0ABD3F72FC80 /* ConnectionGuideView.swift in Sources */,
+				F4BB5CBEC8317327288B22B6 /* ConnectionStore.swift in Sources */,
+				4CA43F9C79A6047F6977CA68 /* DashboardView.swift in Sources */,
+				2F5791E7CEADFBEA35A80CAF /* PairingView.swift in Sources */,
+				BBC2BDB1FAAEFD08B63AD4B9 /* QRCodeScannerView.swift in Sources */,
+				1050EC8580B9F09D7FB62AD5 /* TraceFenceIOSApp.swift in Sources */,
+				AF26B5315B78778FE15970B2 /* TraceFenceModels.swift in Sources */,
+				07CBDB59F020C6B340F049F7 /* TraceFenceRemoteClient.swift in Sources */,
+				0B2C3D4E5F60718293A4B501 /* TraceFenceNotificationCoordinator.swift in Sources */,
+				0A1B2C3D4E5F60718293A403 /* DeviceAuthentication.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		0A1B2C3D4E5F60718293A406 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				0A1B2C3D4E5F60718293A407 /* en */,
+				0A1B2C3D4E5F60718293A40C /* zh-Hant */,
+				0A1B2C3D4E5F60718293A40D /* ja */,
+				0A1B2C3D4E5F60718293A40E /* ko */,
+				0A1B2C3D4E5F60718293A40F /* mt */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+		0A1B2C3D4E5F60718293A409 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				0A1B2C3D4E5F60718293A40A /* en */,
+				0A1B2C3D4E5F60718293A40B /* zh-Hans */,
+				0A1B2C3D4E5F60718293A410 /* zh-Hant */,
+				0A1B2C3D4E5F60718293A411 /* ja */,
+				0A1B2C3D4E5F60718293A412 /* ko */,
+				0A1B2C3D4E5F60718293A413 /* mt */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		34D862E23D2D3AE6178F59A4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		8838D85D6A96C8F6F33EC730 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 21;
+				DEVELOPMENT_TEAM = UQ87N2WZ76;
+				INFOPLIST_FILE = TraceFenceIOS/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tracefence.sentinel;
+				PRODUCT_NAME = "TraceFence Sentinel";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A7B150F4F6D1078794F3EC91 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		E67D1A379C40FA1A9A19172A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 21;
+				DEVELOPMENT_TEAM = UQ87N2WZ76;
+				INFOPLIST_FILE = TraceFenceIOS/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tracefence.sentinel;
+				PRODUCT_NAME = "TraceFence Sentinel";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		20D2739C0D5061444E520BCE /* Build configuration list for PBXProject "TraceFenceIOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7B150F4F6D1078794F3EC91 /* Debug */,
+				34D862E23D2D3AE6178F59A4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9A1661F4CE03B9D3355EDBA5 /* Build configuration list for PBXNativeTarget "TraceFenceIOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8838D85D6A96C8F6F33EC730 /* Debug */,
+				E67D1A379C40FA1A9A19172A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 9D44065A9C93819C2F7A9F1A /* Project object */;
+}

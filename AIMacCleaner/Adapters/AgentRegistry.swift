@@ -9,7 +9,10 @@ final class AgentRegistry: ObservableObject {
     @Published var lastActionMessage: String?
 
     var hookInstaller = HookInstaller()
-    private let unsupportedHookAgentIds: Set<String> = ["cursor"]
+    private let unsupportedHookAgentIds: Set<String> = [
+        "cursor", "cursor-cli", "grok", "qwen", "minimax", "opencode", "kiro",
+        "openclaw", "hermes", "aider", "amp", "goose", "copilot", "droid"
+    ]
 
     var allAdapters: [any AgentAdapter] { adapters }
 
@@ -49,6 +52,11 @@ final class AgentRegistry: ObservableObject {
             CodeBuddyAdapter(),
             CodeBuddyCNAdapter(),
             QwenAdapter(),
+            CoreManagedAgentAdapter.grok,
+            CoreManagedAgentAdapter.miniMax,
+            CoreManagedAgentAdapter.aider,
+            CoreManagedAgentAdapter.amp,
+            CoreManagedAgentAdapter.goose,
             KimiAdapter(),
             DeepSeekAdapter(),
             OpenCodeAdapter(),
@@ -90,7 +98,7 @@ final class AgentRegistry: ObservableObject {
             for adapter in adapters {
                 let installed = isLocallyInstalled(adapter)
                 if installed {
-                    var hooksOk = true
+                    var hooksOk = !adapter.hookConfigPaths.isEmpty
                     for path in adapter.hookConfigPaths {
                         let health = await hookInstaller.checkHealth(at: path)
                         if health != .healthy {

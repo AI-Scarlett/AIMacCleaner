@@ -1,0 +1,3 @@
+"NSFaceIDUsageDescription" = "TraceFence juża Face ID biex jipproteġi l-pairing tal-Mac, is-sessjonijiet, l-approvazzjonijiet u l-kontrolli remoti.";
+"NSCameraUsageDescription" = "TraceFence jiskennja l-kodiċi QR tal-pairing muri mill-Mac tiegħek.";
+"NSLocalNetworkUsageDescription" = "TraceFence jikkonnettja direttament mal-Mac fuq in-network lokali għal kontroll remot privat.";

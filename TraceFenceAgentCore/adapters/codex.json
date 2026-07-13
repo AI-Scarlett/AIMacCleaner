@@ -1,0 +1,15 @@
+{
+  "id": "codex",
+  "version": "1.0.0",
+  "displayName": "Codex Desktop",
+  "executable": null,
+  "arguments": [],
+  "transport": "builtin",
+  "minimumCoreProtocol": 1,
+  "capabilities": [
+    "session_discovery",
+    "instruction",
+    "interrupt",
+    "approval"
+  ]
+}

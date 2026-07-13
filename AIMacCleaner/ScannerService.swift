@@ -41,7 +41,6 @@ class ScannerService: ObservableObject {
         var diskInfo: DiskInfo?
         var hardwareInfo: HardwareInfo?
         var installedApps: [AppInfo] = []
-        var operationRecords: [OperationRecord] = []
     }
 
     private struct MaintenanceCandidate {
@@ -64,7 +63,6 @@ class ScannerService: ObservableObject {
         loadAIConfigFromDisk()
         loadScannerCache()
         operationMonitor.guardFeature = guardFeature
-        guardFeature.auditProtectedDirectoryDeletions()
         guardFeature.auditProtectedTrashItems()
         if diskInfo == nil { diskInfo = getDiskInfoNative() }
         if hardwareInfo == nil { hardwareInfo = safeGetHardwareInfo() }
@@ -78,11 +76,9 @@ class ScannerService: ObservableObject {
         diskInfo = cache.diskInfo
         hardwareInfo = cache.hardwareInfo
         installedApps = canReuseFootprintCache ? cache.installedApps : []
-        operationRecords = cache.operationRecords
-        processedOperationRecordIDs = Set(cache.operationRecords.map(\.id))
-        if !cache.operationRecords.isEmpty {
-            operationMonitor.mergeHistoricalRecords(cache.operationRecords)
-            guardFeature.rebuildAnalytics(from: cache.operationRecords)
+        if FileManager.default.fileExists(atPath: SandboxPaths.shared.operationsPath) {
+            lastAgentHistoryImportTime = max(lastAgentHistoryImportTime, cache.updatedAt)
+            UserDefaults.standard.set(lastAgentHistoryImportTime, forKey: agentHistoryImportTimestampKey)
         }
     }
 
@@ -93,8 +89,7 @@ class ScannerService: ObservableObject {
             scanItems: scanItems,
             diskInfo: diskInfo,
             hardwareInfo: hardwareInfo,
-            installedApps: installedApps,
-            operationRecords: Array(operationRecords.prefix(10000))
+            installedApps: installedApps
         )
         let cacheURL = URL(fileURLWithPath: scannerCachePath)
         scannerCacheWriteQueue.async {
@@ -1892,7 +1887,10 @@ class ScannerService: ObservableObject {
 
     @Published var operationRecords: [OperationRecord] = []
     private var processedOperationRecordIDs: Set<String> = []
-    private var lastAgentHistoryImportTime: Date = .distantPast
+    private let agentHistoryImportTimestampKey = "agentHistory.lastAutomaticImportAt"
+    private let agentHistoryImportInterval: TimeInterval = 6 * 60 * 60
+    private var lastAgentHistoryImportTime: Date =
+        (UserDefaults.standard.object(forKey: "agentHistory.lastAutomaticImportAt") as? Date) ?? .distantPast
     private var operationRecordsSnapshotSignature = ""
     private var recordsClearCutoff: Date {
         if let d = UserDefaults.standard.object(forKey: "operationRecordsClearedAt") as? Date { return d }
@@ -1944,6 +1942,7 @@ class ScannerService: ObservableObject {
         processedOperationRecordIDs.removeAll()
         operationRecordsSnapshotSignature = ""
         lastAgentHistoryImportTime = Date()
+        UserDefaults.standard.set(lastAgentHistoryImportTime, forKey: agentHistoryImportTimestampKey)
         guardFeature.rebuildAnalytics(from: [])
         saveScannerCache()
     }
@@ -1988,15 +1987,16 @@ class ScannerService: ObservableObject {
 
     func importKnownAgentHistory() {
         guard !isImportingAgentHistory else { return }
-        guard Date().timeIntervalSince(lastAgentHistoryImportTime) > 600 else { return }
+        guard Date().timeIntervalSince(lastAgentHistoryImportTime) > agentHistoryImportInterval else { return }
         lastAgentHistoryImportTime = Date()
         isImportingAgentHistory = true
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let scanner = AgentSessionScanner()
-            let records = scanner.collectAllAgentOps(limit: 10000)
+            let records = scanner.collectAllAgentOps(limit: 1500, filesPerSourceLimit: 12)
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.ingestAgentSessionRecords(records)
+                UserDefaults.standard.set(self.lastAgentHistoryImportTime, forKey: self.agentHistoryImportTimestampKey)
                 self.isImportingAgentHistory = false
             }
         }
@@ -2353,7 +2353,7 @@ class ScannerService: ObservableObject {
                 self?.guardFeature.auditProtectedTrashItems()
             }
         }
-        hardwareTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        hardwareTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshHardwareInfo()
             }

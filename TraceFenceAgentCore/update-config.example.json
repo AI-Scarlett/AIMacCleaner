@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "automaticInstall": true,
+  "channel": "stable",
+  "manifestURL": "https://github.com/AI-Scarlett/TraceFence/releases/download/agent-core-stable/tracefence-agent-core-stable.json",
+  "trustedTeamID": "UQ87N2WZ76",
+  "checkIntervalSeconds": 21600,
+  "allowLocalPackages": false,
+  "allowAdHocForLocalTesting": false
+}

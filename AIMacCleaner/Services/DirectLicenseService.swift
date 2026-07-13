@@ -1,6 +1,349 @@
 import AppKit
 import Foundation
 import Security
+import StoreKit
+
+enum TraceFenceDistributionChannel: String, Codable {
+    case appStore
+    case direct
+
+    var title: String {
+        switch self {
+        case .appStore: return "Mac App Store"
+        case .direct: return "TraceFence Website"
+        }
+    }
+
+    var isAppStore: Bool { self == .appStore }
+    var isDirect: Bool { self == .direct }
+}
+
+enum TraceFenceSubscriptionTier: String, Codable, CaseIterable {
+    case none
+    case appStoreStandard
+    case directStandard
+    case directEnhanced
+    case legacy
+
+    var title: String {
+        switch self {
+        case .none: return "Free"
+        case .appStoreStandard: return "TraceFence Standard"
+        case .directStandard: return "TraceFence Standard"
+        case .directEnhanced: return "TraceFence Enhanced"
+        case .legacy: return "Legacy License"
+        }
+    }
+
+    var priceLine: String {
+        switch self {
+        case .none:
+            return "Limited local monitoring"
+        case .appStoreStandard, .directStandard:
+            return "$9.99/month or $79.99/year"
+        case .directEnhanced:
+            return "Higher website-only tier"
+        case .legacy:
+            return "Existing purchased features"
+        }
+    }
+
+    var featureLine: String {
+        switch self {
+        case .none:
+            return "Basic local status, limited history, no remote approvals."
+        case .appStoreStandard:
+            return "Agent timeline, AI reports, iPhone remote control, and hook-based approvals within App Store limits."
+        case .directStandard:
+            return "Same feature and price level as the App Store subscription."
+        case .directEnhanced:
+            return "Website-only advanced policies, direct update channel, broader local diagnostics, and future system-extension firewall support."
+        case .legacy:
+            return "Existing customers keep the features they already bought; subscription upgrades unlock new v2 features."
+        }
+    }
+
+    var isPaid: Bool {
+        switch self {
+        case .none: return false
+        default: return true
+        }
+    }
+
+    var includesEnhancedDirectFeatures: Bool {
+        self == .directEnhanced
+    }
+}
+
+struct TraceFenceSubscriptionPlan: Identifiable, Equatable {
+    let id: TraceFenceSubscriptionTier
+    let channel: TraceFenceDistributionChannel
+    let title: String
+    let priceLine: String
+    let featureLine: String
+    let isRecommended: Bool
+}
+
+enum TraceFenceCheckoutPlan {
+    case standard
+    case enhanced
+}
+
+enum TraceFenceRemoteAccessMode: String, CaseIterable, Identifiable {
+    case localNetwork
+    case tailnetVPN
+    case publicEndpoint
+    case reverseTunnel
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .localNetwork: return "Same Wi-Fi or LAN"
+        case .tailnetVPN: return "Private VPN / Tailnet"
+        case .publicEndpoint: return "Port forwarding + DDNS"
+        case .reverseTunnel: return "User-owned reverse tunnel"
+        }
+    }
+
+    var requirement: String {
+        switch self {
+        case .localNetwork:
+            return "Mac and iPhone must be on the same network. No router changes are needed."
+        case .tailnetVPN:
+            return "Install and sign in to a private mesh VPN such as Tailscale, ZeroTier, WireGuard, or a company VPN on both devices."
+        case .publicEndpoint:
+            return "User configures router port forwarding, firewall rules, and a stable hostname through DDNS or a static IP."
+        case .reverseTunnel:
+            return "User runs their own relay or tunnel, such as Cloudflare Tunnel, frp, SSH reverse tunnel, or a VPS they control."
+        }
+    }
+
+    var securityNote: String {
+        switch self {
+        case .localNetwork:
+            return "Best for home or office. Remote control stops working when the phone leaves that network."
+        case .tailnetVPN:
+            return "Recommended for Internet remote control without a TraceFence backend."
+        case .publicEndpoint:
+            return "Power-user option. Requires strong pairing tokens, TLS, and careful firewall rules."
+        case .reverseTunnel:
+            return "Flexible but user-operated. TraceFence should explain that the tunnel provider is outside TraceFence."
+        }
+    }
+}
+
+enum TraceFenceDistributionPolicy {
+    static var currentChannel: TraceFenceDistributionChannel {
+        if let override = UserDefaults.standard.string(forKey: "traceFenceDistributionChannel"),
+           let channel = TraceFenceDistributionChannel(rawValue: override) {
+            return channel
+        }
+        if let bundled = Bundle.main.object(forInfoDictionaryKey: "TraceFenceDistributionChannel") as? String,
+           let channel = TraceFenceDistributionChannel(rawValue: bundled) {
+            return channel
+        }
+        let bundleId = Bundle.main.bundleIdentifier ?? ""
+        if bundleId == "com.aimaccleaner.app" || bundleId.contains("appstore") {
+            return .appStore
+        }
+        return .direct
+    }
+
+    static var appStoreProductIDs: [String] {
+        let monthly = (Bundle.main.object(forInfoDictionaryKey: "TraceFenceAppStoreMonthlyProductID") as? String)
+            ?? "com.tracefence.standard.monthly"
+        let yearly = (Bundle.main.object(forInfoDictionaryKey: "TraceFenceAppStoreYearlyProductID") as? String)
+            ?? "com.tracefence.standard.yearly"
+        return [monthly, yearly].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    static var directPlans: [TraceFenceSubscriptionPlan] {
+        [
+            TraceFenceSubscriptionPlan(
+                id: .directStandard,
+                channel: .direct,
+                title: TraceFenceSubscriptionTier.directStandard.title,
+                priceLine: TraceFenceSubscriptionTier.directStandard.priceLine,
+                featureLine: TraceFenceSubscriptionTier.directStandard.featureLine,
+                isRecommended: true
+            ),
+            TraceFenceSubscriptionPlan(
+                id: .directEnhanced,
+                channel: .direct,
+                title: TraceFenceSubscriptionTier.directEnhanced.title,
+                priceLine: TraceFenceSubscriptionTier.directEnhanced.priceLine,
+                featureLine: TraceFenceSubscriptionTier.directEnhanced.featureLine,
+                isRecommended: false
+            ),
+        ]
+    }
+
+    static var appStorePlans: [TraceFenceSubscriptionPlan] {
+        [
+            TraceFenceSubscriptionPlan(
+                id: .appStoreStandard,
+                channel: .appStore,
+                title: TraceFenceSubscriptionTier.appStoreStandard.title,
+                priceLine: TraceFenceSubscriptionTier.appStoreStandard.priceLine,
+                featureLine: TraceFenceSubscriptionTier.appStoreStandard.featureLine,
+                isRecommended: true
+            )
+        ]
+    }
+
+    static func checkoutURL(for plan: TraceFenceCheckoutPlan) -> URL? {
+        let key: String
+        let defaultsKey: String
+        switch plan {
+        case .standard:
+            key = "TraceFenceCheckoutURL"
+            defaultsKey = "traceFenceCheckoutURL"
+        case .enhanced:
+            key = "TraceFenceEnhancedCheckoutURL"
+            defaultsKey = "traceFenceEnhancedCheckoutURL"
+        }
+
+        let rawValue = (Bundle.main.object(forInfoDictionaryKey: key) as? String)
+            ?? UserDefaults.standard.string(forKey: defaultsKey)
+        guard let rawValue,
+              !rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return URL(string: rawValue)
+    }
+
+    static func tier(from snapshot: DirectLicenseSnapshot) -> TraceFenceSubscriptionTier {
+        guard snapshot.status == .licensed else { return .none }
+        let product = (snapshot.productName ?? "").lowercased()
+        if product.contains("enhanced") ||
+            product.contains("advanced") ||
+            product.contains("firewall") ||
+            product.contains("system extension") {
+            return .directEnhanced
+        }
+        if product.contains("legacy") || product.contains("lifetime") {
+            return .legacy
+        }
+        return .directStandard
+    }
+}
+
+enum AppStoreSubscriptionError: LocalizedError {
+    case unverified
+
+    var errorDescription: String? {
+        switch self {
+        case .unverified:
+            return "The App Store transaction could not be verified."
+        }
+    }
+}
+
+@MainActor
+final class AppStoreSubscriptionService: ObservableObject {
+    static let shared = AppStoreSubscriptionService()
+
+    @Published private(set) var products: [Product] = []
+    @Published private(set) var isLoading = false
+    @Published private(set) var isSubscribed = false
+    @Published private(set) var activeProductID: String?
+    @Published private(set) var expiresAt: Date?
+    @Published var message: String?
+
+    var canUseCoreFeatures: Bool { isSubscribed }
+    var canUseProFeatures: Bool { isSubscribed }
+
+    private var productIDs: [String] { TraceFenceDistributionPolicy.appStoreProductIDs }
+
+    private init() {}
+
+    func refresh() async {
+        await loadProducts()
+        await refreshEntitlements()
+    }
+
+    func loadProducts() async {
+        guard !productIDs.isEmpty else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            products = try await Product.products(for: productIDs).sorted { lhs, rhs in
+                lhs.price < rhs.price
+            }
+            if products.isEmpty {
+                message = "App Store subscription products are not configured yet."
+            }
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    func purchase(_ product: Product) async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let result = try await product.purchase()
+            switch result {
+            case .success(let verification):
+                let transaction = try checkVerified(verification)
+                await transaction.finish()
+                await refreshEntitlements()
+                message = "Subscription is active."
+            case .userCancelled:
+                message = "Purchase cancelled."
+            case .pending:
+                message = "Purchase is pending approval."
+            @unknown default:
+                message = "Purchase state is unknown."
+            }
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    func restorePurchases() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            try await AppStore.sync()
+            await refreshEntitlements()
+            message = isSubscribed ? "Subscription restored." : "No active subscription found."
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    func refreshEntitlements() async {
+        var foundActive = false
+        var foundProductID: String?
+        var foundExpiration: Date?
+
+        for await result in Transaction.currentEntitlements {
+            guard let transaction = try? checkVerified(result),
+                  productIDs.contains(transaction.productID),
+                  transaction.revocationDate == nil else {
+                continue
+            }
+            foundActive = true
+            foundProductID = transaction.productID
+            foundExpiration = transaction.expirationDate
+        }
+
+        isSubscribed = foundActive
+        activeProductID = foundProductID
+        expiresAt = foundExpiration
+    }
+
+    private func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
+        switch result {
+        case .verified(let value):
+            return value
+        case .unverified:
+            throw AppStoreSubscriptionError.unverified
+        }
+    }
+}
 
 enum DirectLicenseStatus: String, Codable {
     case unlicensed
@@ -50,16 +393,13 @@ final class DirectLicenseService: ObservableObject {
     var isTrialExpired: Bool { !isLicensed && trialSnapshot.expiresAt <= Date() }
     var canUseCoreFeatures: Bool { isLicensed || isTrialActive }
     var canUseProFeatures: Bool { isLicensed }
+    var currentTier: TraceFenceSubscriptionTier { TraceFenceDistributionPolicy.tier(from: snapshot) }
+    var canUseEnhancedFeatures: Bool { currentTier.includesEnhancedDirectFeatures }
     var trialRemainingSeconds: TimeInterval {
         max(0, trialSnapshot.expiresAt.timeIntervalSinceNow)
     }
     var purchaseURL: URL? {
-        let rawValue = (Bundle.main.object(forInfoDictionaryKey: "TraceFenceCheckoutURL") as? String)
-            ?? UserDefaults.standard.string(forKey: "traceFenceCheckoutURL")
-        guard let rawValue, !rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
-        }
-        return URL(string: rawValue)
+        TraceFenceDistributionPolicy.checkoutURL(for: .standard)
     }
 
     private let licenseBaseURL = URL(string: "https://api.lemonsqueezy.com/v1/licenses")!
@@ -83,8 +423,8 @@ final class DirectLicenseService: ObservableObject {
         trialSnapshot = loadOrStartTrial()
     }
 
-    func openPurchasePage() {
-        guard let purchaseURL else {
+    func openPurchasePage(for plan: TraceFenceCheckoutPlan = .standard) {
+        guard let purchaseURL = TraceFenceDistributionPolicy.checkoutURL(for: plan) else {
             snapshot.message = "Purchase URL is not configured yet."
             persistSnapshot()
             return

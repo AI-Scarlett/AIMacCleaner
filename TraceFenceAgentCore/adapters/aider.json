@@ -1,0 +1,10 @@
+{
+  "id": "aider",
+  "version": "1.0.0",
+  "displayName": "Aider",
+  "executable": "TraceFenceUniversalAdapter",
+  "arguments": ["--adapter", "aider"],
+  "transport": "process",
+  "minimumCoreProtocol": 1,
+  "capabilities": ["instruction", "interrupt", "independent_update"]
+}

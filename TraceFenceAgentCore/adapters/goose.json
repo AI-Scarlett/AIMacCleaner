@@ -1,0 +1,10 @@
+{
+  "id": "goose",
+  "version": "1.0.0",
+  "displayName": "Goose",
+  "executable": "TraceFenceUniversalAdapter",
+  "arguments": ["--adapter", "goose"],
+  "transport": "process",
+  "minimumCoreProtocol": 1,
+  "capabilities": ["instruction", "interrupt", "independent_update"]
+}

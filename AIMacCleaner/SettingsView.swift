@@ -1,4 +1,7 @@
 import SwiftUI
+import StoreKit
+import AppKit
+import CoreImage.CIFilterBuiltins
 
 struct SettingsView: View {
     @EnvironmentObject var service: ScannerService
@@ -8,7 +11,9 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab = .features
     @State private var showAIConfig = false
     @StateObject private var licenseService = DirectLicenseService.shared
+    @StateObject private var appStoreSubscriptionService = AppStoreSubscriptionService.shared
     @StateObject private var updateService = DirectUpdateService.shared
+    @StateObject private var iOSRemoteGatewayService = IOSRemoteControlGatewayService.shared
     @ObservedObject private var captureService = CaptureShelfService.shared
     @State private var licenseKeyInput = ""
     @State private var shortcutSettings: [GlobalShortcut] = GlobalShortcutService.defaultShortcuts
@@ -22,6 +27,8 @@ struct SettingsView: View {
     @AppStorage("networkMode") private var networkMode = "internet"
     @AppStorage("quitBehavior") private var quitBehavior: String = "quitAll"
     @AppStorage("colorPalette") private var colorPalette = AppColorPalette.porcelain.rawValue
+    @AppStorage(IOSRemoteControlGatewayService.enabledKey) private var iOSRemoteGatewayEnabled = false
+    @AppStorage(IOSRemoteControlGatewayService.portKey) private var iOSRemoteGatewayPort = 17895
     @AppStorage(DirectUpdateService.cliUpdateStrongReminderEnabledKey) private var cliUpdateStrongReminderEnabled = true
 
     enum SettingsTab: String, CaseIterable {
@@ -196,6 +203,10 @@ struct SettingsView: View {
         }
         .task {
             licenseService.refreshTrialState()
+            iOSRemoteGatewayService.configure(scannerService: service)
+            if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+                await appStoreSubscriptionService.refresh()
+            }
             loadShortcutSettings()
         }
         .onDisappear {
@@ -537,102 +548,503 @@ struct SettingsView: View {
 
     private var licenseSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            SectionHeader(title: localizer.t("TraceFence 授权", en: "TraceFence License", zhHant: "TraceFence 授權", ja: "TraceFence ライセンス", ko: "TraceFence 라이선스", mt: "TraceFence License"), icon: "key.fill")
+            SectionHeader(title: localizer.t("TraceFence 订阅", en: "TraceFence Subscription", zhHant: "TraceFence 訂閱", ja: "TraceFence サブスクリプション", ko: "TraceFence 구독", mt: "TraceFence Subscription"), icon: "key.fill")
             Text(localizer.t(
-                "未购买用户可体验 48 小时；购买后由 Lemon Squeezy 处理付款、税务、发票与 License Key，TraceFence 只在本机保存授权密钥并验证状态。",
-                en: "Unlicensed users get a 48-hour local trial. After purchase, Lemon Squeezy handles checkout, tax, invoices, and license keys; TraceFence stores the key locally and validates it.",
-                zhHant: "未購買使用者可體驗 48 小時；購買後由 Lemon Squeezy 處理付款、稅務、發票與 License Key，TraceFence 只在本機保存授權密鑰並驗證狀態。",
-                ja: "未購入ユーザーは48時間のローカルトライアルを利用できます。購入後は Lemon Squeezy が決済、税務、請求書、ライセンスキーを処理し、TraceFence はキーをローカル保存して検証します。",
-                ko: "미구매 사용자는 48시간 로컬 평가판을 사용할 수 있습니다. 구매 후 Lemon Squeezy가 결제, 세금, 인보이스, 라이선스 키를 처리하고 TraceFence는 키를 로컬에 저장해 검증합니다.",
-                mt: "Unlicensed users get a 48-hour local trial. After purchase, Lemon Squeezy handles checkout, tax, invoices, and license keys; TraceFence stores the key locally and validates it."
+                "TraceFence 分为 Mac App Store 订阅版和官网订阅版。iOS 客户端保持一个版本，同时支持两条 macOS 分发线；官网增强订阅会开放上架版不能承诺的高级本机能力。",
+                en: "TraceFence now has a Mac App Store subscription line and a website subscription line. The iOS client stays unified and supports both Mac builds; the website Enhanced tier can unlock advanced local capabilities that the App Store build cannot promise.",
+                zhHant: "TraceFence 分為 Mac App Store 訂閱版和官網訂閱版。iOS 用戶端維持單一版本，同時支援兩條 macOS 分發線；官網增強訂閱會開放上架版不能承諾的進階本機能力。",
+                ja: "TraceFence は Mac App Store サブスクリプション版と公式サイト版に分かれます。iOS クライアントは1つのままで両方の Mac ビルドをサポートし、公式サイトの Enhanced では App Store 版では約束できない高度なローカル機能を解放します。",
+                ko: "TraceFence는 Mac App Store 구독 라인과 웹사이트 구독 라인으로 나뉩니다. iOS 클라이언트는 하나로 유지되며 두 Mac 빌드를 모두 지원하고, 웹사이트 Enhanced 티어는 App Store 빌드에서 약속하기 어려운 고급 로컬 기능을 제공합니다.",
+                mt: "TraceFence now has a Mac App Store subscription line and a website subscription line. The iOS client stays unified and supports both Mac builds; the website Enhanced tier can unlock advanced local capabilities that the App Store build cannot promise."
             ))
             .font(Theme.Font.caption)
             .foregroundStyle(Theme.Colors.textSecondary)
 
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                HStack(spacing: Theme.Spacing.md) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: Theme.Radius.md)
-                            .fill(licenseStatusColor.opacity(0.12))
-                        Image(systemName: licenseStatusIcon)
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(licenseStatusColor)
-                    }
-                    .frame(width: 46, height: 46)
+            subscriptionChannelCard
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(licenseStatusTitle)
-                            .font(Theme.Font.bodyMedium)
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                        Text(licenseStatusDetail)
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                            .lineLimit(2)
-                    }
-                    Spacer()
-                    if licenseService.isBusy {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
+            if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+                appStoreSubscriptionControls
+            } else {
+                directSubscriptionControls
+            }
+        }
+    }
+
+    private var subscriptionChannelCard: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                    .fill(Theme.Colors.info.opacity(0.12))
+                Image(systemName: TraceFenceDistributionPolicy.currentChannel.isAppStore ? "app.badge.fill" : "globe.badge.chevron.backward")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.info)
+            }
+            .frame(width: 46, height: 46)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(localizer.t("当前安装渠道：\(TraceFenceDistributionPolicy.currentChannel.title)", en: "Installed channel: \(TraceFenceDistributionPolicy.currentChannel.title)"))
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(channelDetailText)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .cardStyle()
+    }
+
+    private var appStoreSubscriptionControls: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            ForEach(TraceFenceDistributionPolicy.appStorePlans) { plan in
+                subscriptionPlanCard(plan)
+            }
+
+            HStack(spacing: Theme.Spacing.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(appStoreStatusColor.opacity(0.12))
+                    Image(systemName: appStoreStatusIcon)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(appStoreStatusColor)
                 }
+                .frame(width: 42, height: 42)
 
-                if let message = licenseService.snapshot.message, !message.isEmpty {
-                    Label(message, systemImage: "info.circle")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(appStoreStatusTitle)
+                        .font(Theme.Font.bodyMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(appStoreStatusDetail)
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-
-                Divider().overlay(Theme.Colors.separator)
-
-                HStack(spacing: Theme.Spacing.sm) {
-                    TextField(localizer.t("输入 License Key", en: "Enter license key", zhHant: "輸入 License Key", ja: "ライセンスキーを入力", ko: "라이선스 키 입력", mt: "Enter license key"), text: $licenseKeyInput)
-                        .textFieldStyle(.plain)
-                        .font(Theme.Font.caption)
-                        .padding(.horizontal, Theme.Spacing.md)
-                        .padding(.vertical, Theme.Spacing.sm)
-                        .background(Theme.Colors.elevatedCardBg.opacity(0.75))
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .stroke(Theme.Colors.separator.opacity(0.75), lineWidth: 1)
-                        )
-
-                    Button {
-                        Task { await licenseService.activate(licenseKey: licenseKeyInput) }
-                    } label: {
-                        Label(localizer.t("激活", en: "Activate", zhHant: "啟用", ja: "有効化", ko: "활성화", mt: "Activate"), systemImage: "checkmark.seal.fill")
-                    }
-                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
-                    .disabled(licenseService.isBusy)
-                }
-
-                HStack(spacing: Theme.Spacing.sm) {
-                    Button {
-                        licenseService.openPurchasePage()
-                    } label: {
-                        Label(localizer.t("购买 TraceFence Pro", en: "Buy TraceFence Pro", zhHant: "購買 TraceFence Pro", ja: "TraceFence Pro を購入", ko: "TraceFence Pro 구매", mt: "Buy TraceFence Pro"), systemImage: "cart.fill")
-                    }
-                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 32))
-
-                    Button {
-                        Task { await licenseService.validateCurrentLicense() }
-                    } label: {
-                        Label(localizer.t("重新验证", en: "Recheck", zhHant: "重新驗證", ja: "再確認", ko: "다시 확인", mt: "Recheck"), systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .ghost, minHeight: 32))
-                    .disabled(licenseService.isBusy)
-
-                    Button {
-                        Task { await licenseService.deactivateCurrentLicense() }
-                    } label: {
-                        Label(localizer.t("解绑本机", en: "Deactivate Mac", zhHant: "解除本機", ja: "このMacを解除", ko: "이 Mac 비활성화", mt: "Deactivate Mac"), systemImage: "xmark.circle")
-                    }
-                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.danger, variant: .ghost, minHeight: 32))
-                    .disabled(licenseService.isBusy || licenseService.snapshot.status == .unlicensed)
+                Spacer()
+                if appStoreSubscriptionService.isLoading {
+                    ProgressView()
+                        .controlSize(.small)
                 }
             }
-            .cardStyle()
+
+            if let message = appStoreSubscriptionService.message, !message.isEmpty {
+                Label(message, systemImage: "info.circle")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if appStoreSubscriptionService.products.isEmpty {
+                Button {
+                    Task { await appStoreSubscriptionService.refresh() }
+                } label: {
+                    Label(localizer.t("载入订阅方案", en: "Load Subscriptions"), systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
+                .disabled(appStoreSubscriptionService.isLoading)
+            } else {
+                HStack(spacing: Theme.Spacing.sm) {
+                    ForEach(appStoreSubscriptionService.products, id: \.id) { product in
+                        appStoreProductButton(product)
+                    }
+
+                    Button {
+                        Task { await appStoreSubscriptionService.restorePurchases() }
+                    } label: {
+                        Label(localizer.t("恢复购买", en: "Restore"), systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .ghost, minHeight: 34))
+                    .disabled(appStoreSubscriptionService.isLoading)
+                }
+            }
+
+            Text(localizer.t(
+                "App Store 版只通过 Apple 内购订阅解锁，不显示官网 License Key，也不包含系统扩展级增强能力。",
+                en: "The App Store build unlocks only through Apple in-app subscriptions. It does not show website license keys or include system-extension-level enhanced capabilities."
+            ))
+            .font(Theme.Font.caption)
+            .foregroundStyle(Theme.Colors.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .cardStyle()
+    }
+
+    private func appStoreProductButton(_ product: Product) -> some View {
+        Button {
+            Task { await appStoreSubscriptionService.purchase(product) }
+        } label: {
+            Label("\(product.displayName) \(product.displayPrice)", systemImage: "checkmark.seal.fill")
+        }
+        .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 34))
+        .disabled(appStoreSubscriptionService.isLoading)
+    }
+
+    private var directSubscriptionControls: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            ForEach(TraceFenceDistributionPolicy.directPlans) { plan in
+                subscriptionPlanCard(plan)
+            }
+
+            HStack(spacing: Theme.Spacing.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(licenseStatusColor.opacity(0.12))
+                    Image(systemName: licenseStatusIcon)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(licenseStatusColor)
+                }
+                .frame(width: 46, height: 46)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(licenseStatusTitle)
+                        .font(Theme.Font.bodyMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(licenseStatusDetail)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                if licenseService.isBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            if let message = licenseService.snapshot.message, !message.isEmpty {
+                Label(message, systemImage: "info.circle")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider().overlay(Theme.Colors.separator)
+
+            HStack(spacing: Theme.Spacing.sm) {
+                TextField(localizer.t("输入 License Key", en: "Enter license key", zhHant: "輸入 License Key", ja: "ライセンスキーを入力", ko: "라이선스 키 입력", mt: "Enter license key"), text: $licenseKeyInput)
+                    .textFieldStyle(.plain)
+                    .font(Theme.Font.caption)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(Theme.Colors.elevatedCardBg.opacity(0.75))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            .stroke(Theme.Colors.separator.opacity(0.75), lineWidth: 1)
+                    )
+
+                Button {
+                    Task { await licenseService.activate(licenseKey: licenseKeyInput) }
+                } label: {
+                    Label(localizer.t("激活", en: "Activate", zhHant: "啟用", ja: "有効化", ko: "활성화", mt: "Activate"), systemImage: "checkmark.seal.fill")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
+                .disabled(licenseService.isBusy)
+            }
+
+            HStack(spacing: Theme.Spacing.sm) {
+                Button {
+                    licenseService.openPurchasePage(for: .standard)
+                } label: {
+                    Label(localizer.t("订阅标准版", en: "Subscribe Standard"), systemImage: "cart.fill")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 32))
+                .disabled(TraceFenceDistributionPolicy.checkoutURL(for: .standard) == nil)
+
+                Button {
+                    licenseService.openPurchasePage(for: .enhanced)
+                } label: {
+                    Label(localizer.t("订阅增强版", en: "Subscribe Enhanced"), systemImage: "bolt.shield.fill")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .secondary, minHeight: 32))
+                .disabled(TraceFenceDistributionPolicy.checkoutURL(for: .enhanced) == nil)
+
+                Button {
+                    Task { await licenseService.validateCurrentLicense() }
+                } label: {
+                    Label(localizer.t("重新验证", en: "Recheck", zhHant: "重新驗證", ja: "再確認", ko: "다시 확인", mt: "Recheck"), systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .ghost, minHeight: 32))
+                .disabled(licenseService.isBusy)
+
+                Button {
+                    Task { await licenseService.deactivateCurrentLicense() }
+                } label: {
+                    Label(localizer.t("解绑本机", en: "Deactivate Mac", zhHant: "解除本機", ja: "このMacを解除", ko: "이 Mac 비활성화", mt: "Deactivate Mac"), systemImage: "xmark.circle")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.danger, variant: .ghost, minHeight: 32))
+                .disabled(licenseService.isBusy || licenseService.snapshot.status == .unlicensed)
+            }
+
+            if TraceFenceDistributionPolicy.checkoutURL(for: .enhanced) == nil {
+                Text(localizer.t(
+                    "增强版需要配置 TraceFenceEnhancedCheckoutURL 后才会打开购买页。",
+                    en: "Enhanced subscription purchase requires TraceFenceEnhancedCheckoutURL to be configured."
+                ))
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textTertiary)
+            }
+        }
+        .cardStyle()
+    }
+
+    private func subscriptionPlanCard(_ plan: TraceFenceSubscriptionPlan) -> some View {
+        let isActive = isPlanActive(plan)
+        return HStack(alignment: .top, spacing: Theme.Spacing.md) {
+            Image(systemName: isActive ? "checkmark.seal.fill" : (plan.id == .directEnhanced ? "bolt.shield.fill" : "shield.lefthalf.filled"))
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(isActive ? Theme.Colors.success : (plan.id == .directEnhanced ? Theme.Colors.warning : Theme.Colors.accent))
+                .frame(width: 26, height: 26)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: Theme.Spacing.xs) {
+                    Text(plan.title)
+                        .font(Theme.Font.bodyMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    if plan.isRecommended {
+                        Text(localizer.t("推荐", en: "Recommended"))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Theme.Colors.success)
+                            .clipShape(Capsule())
+                    }
+                    if isActive {
+                        Text(localizer.t("当前", en: "Current"))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Theme.Colors.accent)
+                            .clipShape(Capsule())
+                    }
+                }
+                Text(plan.priceLine)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                Text(plan.featureLine)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .padding(Theme.Spacing.md)
+        .background(isActive ? Theme.Colors.success.opacity(0.08) : Theme.Colors.elevatedCardBg.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(isActive ? Theme.Colors.success.opacity(0.38) : Theme.Colors.separator.opacity(0.6), lineWidth: 1)
+        )
+    }
+
+    private var remoteAccessSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            SectionHeader(title: localizer.t("iOS 远程控制连接方式", en: "iOS Remote Control Connectivity"), icon: "iphone.radiowaves.left.and.right")
+            Text(localizer.t(
+                "TraceFence 不运行云端中继，也不保存你的 Agent 数据。iPhone 远程控制需要 Mac 暴露一个用户可到达的加密本地 API；客户端会引导你选择下面任一种连接方式。",
+                en: "TraceFence does not run a cloud relay and does not store your agent data. iPhone remote control needs the Mac to expose an encrypted local API reachable by the user; the clients guide you through one of these connectivity options."
+            ))
+            .font(Theme.Font.caption)
+            .foregroundStyle(Theme.Colors.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+            remoteGatewayControlCard
+
+            ForEach(TraceFenceRemoteAccessMode.allCases) { mode in
+                remoteAccessRow(mode)
+            }
+        }
+        .cardStyle()
+    }
+
+    private var remoteGatewayControlCard: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill((iOSRemoteGatewayService.isRunning ? Theme.Colors.success : Theme.Colors.textTertiary).opacity(0.12))
+                    Image(systemName: iOSRemoteGatewayService.isRunning ? "antenna.radiowaves.left.and.right.circle.fill" : "antenna.radiowaves.left.and.right.slash")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(iOSRemoteGatewayService.isRunning ? Theme.Colors.success : Theme.Colors.textTertiary)
+                }
+                .frame(width: 42, height: 42)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(localizer.t("Mac 本地控制 API", en: "Mac Local Control API"))
+                        .font(Theme.Font.bodyMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(localizer.t(
+                        "默认关闭。开启后 iOS 客户端用配对 token 直连这台 Mac；离开同一网络时，需要你自己的 VPN、DDNS/端口转发或反向隧道。",
+                        en: "Off by default. When enabled, the iOS client connects directly to this Mac with a pairing token; away from the same network, it needs your own VPN, DDNS/port forwarding, or reverse tunnel."
+                    ))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $iOSRemoteGatewayEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .onChange(of: iOSRemoteGatewayEnabled) { enabled in
+                        iOSRemoteGatewayService.setEnabled(enabled, port: iOSRemoteGatewayPort)
+                    }
+            }
+
+            Divider().overlay(Theme.Colors.separator.opacity(0.6))
+
+            HStack(alignment: .center, spacing: Theme.Spacing.md) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(iOSRemoteGatewayService.statusMessage)
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(iOSRemoteGatewayService.isRunning ? Theme.Colors.success : Theme.Colors.textSecondary)
+                    Text(iOSRemoteGatewayService.endpoint)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer()
+
+                Stepper(value: $iOSRemoteGatewayPort, in: 1024...65535, step: 1) {
+                    Text(localizer.t("端口 \(iOSRemoteGatewayPort)", en: "Port \(iOSRemoteGatewayPort)"))
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+                .frame(width: 150)
+                .onChange(of: iOSRemoteGatewayPort) { port in
+                    iOSRemoteGatewayService.restart(port: port)
+                }
+            }
+
+            if iOSRemoteGatewayEnabled {
+                HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                    TraceFenceQRCodeView(text: iOSRemoteGatewayService.compactPairingPayloadText)
+                        .frame(width: 142, height: 142)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(localizer.t("iPhone 扫码配对", en: "Pair with iPhone"))
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text(localizer.t(
+                            "在 iOS 客户端打开“配对”，扫描这里的二维码即可导入 Mac 地址和配对密钥。",
+                            en: "Open Pairing in the iOS client and scan this code to import the Mac endpoint and pairing token."
+                        ))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                }
+                .padding(Theme.Spacing.sm)
+                .background(Theme.Colors.cardBg.opacity(0.58))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            }
+
+            HStack(spacing: Theme.Spacing.sm) {
+                Button {
+                    copyToPasteboard(iOSRemoteGatewayService.pairingPayloadText)
+                } label: {
+                    Label(localizer.t("复制 iOS 配对信息", en: "Copy iOS Pairing"), systemImage: "doc.on.doc")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 32))
+
+                Button {
+                    iOSRemoteGatewayService.rotatePairingToken()
+                    copyToPasteboard(iOSRemoteGatewayService.pairingPayloadText)
+                } label: {
+                    Label(localizer.t("重置密钥", en: "Reset Token"), systemImage: "key.horizontal.fill")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .ghost, minHeight: 32))
+
+                Spacer()
+            }
+
+            Text(localizer.t(
+                "配对信息包含控制密钥，只给自己的 iPhone。TraceFence 不提供公网中继；公网可达性、防火墙规则和域名证书由用户自己的网络方案负责。",
+                en: "Pairing includes the control token; share it only with your own iPhone. TraceFence does not provide a public relay; public reachability, firewall rules, and certificates belong to the user's own network setup."
+            ))
+            .font(.system(size: 11))
+            .foregroundStyle(Theme.Colors.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Theme.Colors.separator.opacity(0.62), lineWidth: 1)
+        )
+    }
+
+    private func remoteAccessRow(_ mode: TraceFenceRemoteAccessMode) -> some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.md) {
+            Image(systemName: remoteAccessIcon(mode))
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(remoteAccessColor(mode))
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(mode.title)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(mode.requirement)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(mode.securityNote)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .padding(Theme.Spacing.sm)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.42))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    private struct TraceFenceQRCodeView: View {
+        let text: String
+
+        var body: some View {
+            ZStack {
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .fill(Color.white)
+                if let image = TraceFenceQRCodeFactory.image(from: text) {
+                    Image(nsImage: image)
+                        .interpolation(.none)
+                        .resizable()
+                        .scaledToFit()
+                        .padding(8)
+                } else {
+                    Image(systemName: "qrcode")
+                        .font(.system(size: 42, weight: .regular))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .stroke(Theme.Colors.separator.opacity(0.7), lineWidth: 1)
+            )
+            .accessibilityLabel("TraceFence iOS pairing QR code")
+        }
+    }
+
+    private enum TraceFenceQRCodeFactory {
+        static func image(from text: String) -> NSImage? {
+            guard let data = text.data(using: .utf8) else { return nil }
+            let filter = CIFilter.qrCodeGenerator()
+            filter.message = data
+            filter.correctionLevel = "M"
+            guard let output = filter.outputImage else { return nil }
+            let scaled = output.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
+            let representation = NSCIImageRep(ciImage: scaled)
+            let image = NSImage(size: representation.size)
+            image.addRepresentation(representation)
+            return image
         }
     }
 
@@ -915,10 +1327,10 @@ struct SettingsView: View {
                 HStack(alignment: .top, spacing: Theme.Spacing.md) {
                     ZStack {
                         RoundedRectangle(cornerRadius: Theme.Radius.md)
-                            .fill(Theme.Colors.accent.opacity(0.12))
-                        Image(systemName: "arrow.down.circle.fill")
+                            .fill((TraceFenceDistributionPolicy.currentChannel.isDirect ? Theme.Colors.accent : Theme.Colors.info).opacity(0.12))
+                        Image(systemName: TraceFenceDistributionPolicy.currentChannel.isDirect ? "arrow.down.circle.fill" : "app.badge.fill")
                             .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.accent)
+                            .foregroundStyle(TraceFenceDistributionPolicy.currentChannel.isDirect ? Theme.Colors.accent : Theme.Colors.info)
                     }
                     .frame(width: 46, height: 46)
 
@@ -926,14 +1338,15 @@ struct SettingsView: View {
                         Text("TraceFence v\(updateService.currentVersion)")
                             .font(Theme.Font.bodyMedium)
                             .foregroundStyle(Theme.Colors.textPrimary)
-                        Text(localizer.t(
-                            "更新将自动下载、校验、安装并重新启动，原有文件夹授权会继续保留。",
-                            en: "Updates are downloaded, verified, installed, and relaunched automatically while preserving folder access.",
-                            zhHant: "更新會自動下載、驗證、安裝並重新啟動，原有資料夾授權會繼續保留。",
-                            ja: "アップデートは自動的にダウンロード、検証、インストール、再起動され、フォルダアクセスは保持されます。",
-                            ko: "업데이트는 자동으로 다운로드, 검증, 설치 및 재시작되며 기존 폴더 접근 권한은 유지됩니다.",
-                            mt: "Updates are downloaded, verified, installed, and relaunched automatically while preserving folder access."
-                        ))
+                        Text(TraceFenceDistributionPolicy.currentChannel.isDirect
+                             ? localizer.t(
+                                "官网版更新将自动下载、校验、安装并重新启动，原有文件夹授权会继续保留。",
+                                en: "Website build updates are downloaded, verified, installed, and relaunched automatically while preserving folder access."
+                             )
+                             : localizer.t(
+                                "上架版通过 Mac App Store 更新。TraceFence 不会在上架版里下载或安装官网 DMG。",
+                                en: "The App Store build updates through the Mac App Store. TraceFence does not download or install website DMGs in this build."
+                             ))
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -947,7 +1360,7 @@ struct SettingsView: View {
                     }
                 }
 
-                if let latest = updateService.latestUpdate {
+                if TraceFenceDistributionPolicy.currentChannel.isDirect, let latest = updateService.latestUpdate {
                     VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                         Text(localizer.t("发现新版本 v\(latest.version)", en: "New version available v\(latest.version)"))
                             .font(Theme.Font.captionMedium)
@@ -961,7 +1374,7 @@ struct SettingsView: View {
                     }
                 }
 
-                if let message = updateService.message {
+                if TraceFenceDistributionPolicy.currentChannel.isDirect, let message = updateService.message {
                     Label(message, systemImage: "info.circle")
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
@@ -1002,12 +1415,12 @@ struct SettingsView: View {
 
                     Text(cliUpdateStrongReminderEnabled
                          ? localizer.t(
-                            "自动检查 Codex / Claude Code CLI；发现落后或损坏版本会弹窗并发送系统通知。",
-                            en: "TraceFence checks Codex / Claude Code CLI automatically. Outdated or broken installs trigger an alert and macOS notification.",
-                            zhHant: "自動檢查 Codex / Claude Code CLI；發現落後或損壞版本會彈窗並傳送系統通知。",
-                            ja: "Codex / Claude Code CLI を自動確認し、古いまたは壊れたインストールが見つかるとアラートと macOS 通知を表示します。",
-                            ko: "Codex / Claude Code CLI를 자동 확인합니다. 오래되었거나 손상된 설치는 알림창과 macOS 알림으로 알려줍니다.",
-                            mt: "TraceFence checks Codex / Claude Code CLI automatically. Outdated or broken installs trigger an alert and macOS notification."
+                            "自动检查 Codex / Claude Code CLI；每个新版本只发送一次系统通知，主动检查时才显示弹窗。",
+                            en: "TraceFence checks Codex / Claude Code CLI automatically. Each new version sends one macOS notification; alerts appear only for manual checks.",
+                            zhHant: "自動檢查 Codex / Claude Code CLI；每個新版本只傳送一次系統通知，主動檢查時才顯示彈窗。",
+                            ja: "Codex / Claude Code CLI を自動確認します。新しいバージョンごとに通知は一度だけ送信され、手動確認時のみアラートを表示します。",
+                            ko: "Codex / Claude Code CLI를 자동으로 확인합니다. 새 버전마다 macOS 알림은 한 번만 보내며, 수동 확인 때만 팝업을 표시합니다.",
+                            mt: "TraceFence checks Codex / Claude Code CLI automatically. Each new version sends one macOS notification; alerts appear only for manual checks."
                          )
                          : localizer.t(
                             "强提醒已关闭。TraceFence 仍会检查 CLI 状态，但只在这里显示结果。",
@@ -1039,31 +1452,37 @@ struct SettingsView: View {
                     }
                 }
 
-                HStack(spacing: Theme.Spacing.sm) {
-                    Button {
-                        Task { await updateService.checkForUpdates(userInitiated: true) }
-                    } label: {
-                        Label(updateService.isChecking ? localizer.downloadingUpdate : localizer.checkUpdate, systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .secondary, minHeight: 32))
-                    .disabled(updateService.isChecking || updateService.isDownloading || updateService.isInstalling)
-
-                    if updateService.latestUpdate != nil {
+                if TraceFenceDistributionPolicy.currentChannel.isDirect {
+                    HStack(spacing: Theme.Spacing.sm) {
                         Button {
-                            Task { await updateService.downloadLatestUpdate() }
+                            Task { await updateService.checkForUpdates(userInitiated: true) }
                         } label: {
-                            Label(
-                                updateService.isDownloading
-                                    ? localizer.downloadingUpdateFmt
-                                    : updateService.isInstalling
-                                        ? localizer.t("正在安装…", en: "Installing…", zhHant: "正在安裝…", ja: "インストール中…", ko: "설치 중…", mt: "Installing…")
-                                        : localizer.t("更新并重启", en: "Update and Relaunch", zhHant: "更新並重新啟動", ja: "更新して再起動", ko: "업데이트 및 재시작", mt: "Update and Relaunch"),
-                                systemImage: "arrow.down.circle.fill"
-                            )
+                            Label(updateService.isChecking ? localizer.downloadingUpdate : localizer.checkUpdate, systemImage: "arrow.clockwise")
                         }
-                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.success, variant: .primary, minHeight: 32))
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .secondary, minHeight: 32))
                         .disabled(updateService.isChecking || updateService.isDownloading || updateService.isInstalling)
+
+                        if updateService.latestUpdate != nil {
+                            Button {
+                                Task { await updateService.downloadLatestUpdate() }
+                            } label: {
+                                Label(
+                                    updateService.isDownloading
+                                        ? localizer.downloadingUpdateFmt
+                                        : updateService.isInstalling
+                                            ? localizer.t("正在安装…", en: "Installing…", zhHant: "正在安裝…", ja: "インストール中…", ko: "설치 중…", mt: "Installing…")
+                                            : localizer.t("更新并重启", en: "Update and Relaunch", zhHant: "更新並重新啟動", ja: "更新して再起動", ko: "업데이트 및 재시작", mt: "Update and Relaunch"),
+                                    systemImage: "arrow.down.circle.fill"
+                                )
+                            }
+                            .buttonStyle(BrandButtonStyle(color: Theme.Colors.success, variant: .primary, minHeight: 32))
+                            .disabled(updateService.isChecking || updateService.isDownloading || updateService.isInstalling)
+                        }
                     }
+                } else {
+                    Label(localizer.t("当前安装包的应用更新由 Mac App Store 管理。", en: "App updates for this build are managed by the Mac App Store."), systemImage: "app.badge")
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                 }
             }
             .cardStyle()
@@ -1239,6 +1658,87 @@ struct SettingsView: View {
         return URL(string: "macappstore://apps.apple.com/app/id\(appStoreID)")
     }
 
+    private var channelDetailText: String {
+        switch TraceFenceDistributionPolicy.currentChannel {
+        case .appStore:
+            return localizer.t(
+                "上架版使用 Apple 订阅，价格与官网标准版保持一致。它保留 Agent 时间线、AI 报告、iOS 远程审批和 hook-based 控制，但不承诺系统扩展级拦截。",
+                en: "The App Store build uses Apple subscriptions at the same price level as the website Standard tier. It includes agent timelines, AI reports, iOS remote approvals, and hook-based control, but does not promise system-extension-level interception."
+            )
+        case .direct:
+            return localizer.t(
+                "官网版使用 Lemon Squeezy 订阅。标准版与上架版同价同能力；增强版价格更高，用于高级策略、直发更新和未来系统扩展防火墙。",
+                en: "The website build uses Lemon Squeezy subscriptions. Standard matches the App Store price and feature level; Enhanced costs more and is reserved for advanced policies, direct updates, and future system-extension firewall capabilities."
+            )
+        }
+    }
+
+    private var appStoreStatusTitle: String {
+        if appStoreSubscriptionService.isSubscribed {
+            return localizer.t("App Store 订阅已激活", en: "App Store subscription active")
+        }
+        if appStoreSubscriptionService.isLoading {
+            return localizer.t("正在同步订阅", en: "Syncing subscription")
+        }
+        return localizer.t("尚未订阅", en: "Not subscribed")
+    }
+
+    private var appStoreStatusDetail: String {
+        if let expiresAt = appStoreSubscriptionService.expiresAt {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .none
+            return localizer.t(
+                "当前方案：\(appStoreSubscriptionService.activeProductID ?? "App Store")，有效期至 \(formatter.string(from: expiresAt))。",
+                en: "Current plan: \(appStoreSubscriptionService.activeProductID ?? "App Store"), valid until \(formatter.string(from: expiresAt))."
+            )
+        }
+        if appStoreSubscriptionService.isSubscribed {
+            return localizer.t("Apple 已确认当前订阅有效。", en: "Apple confirmed the current subscription is active.")
+        }
+        return localizer.t(
+            "按月或按年订阅后可解锁标准版能力；购买、退款和续订都由 Apple 处理。",
+            en: "Subscribe monthly or yearly to unlock Standard features. Purchases, refunds, and renewals are handled by Apple."
+        )
+    }
+
+    private var appStoreStatusIcon: String {
+        appStoreSubscriptionService.isSubscribed ? "checkmark.seal.fill" : "cart.badge.plus"
+    }
+
+    private var appStoreStatusColor: Color {
+        appStoreSubscriptionService.isSubscribed ? Theme.Colors.success : Theme.Colors.accent
+    }
+
+    private func isPlanActive(_ plan: TraceFenceSubscriptionPlan) -> Bool {
+        switch plan.id {
+        case .appStoreStandard:
+            return appStoreSubscriptionService.isSubscribed
+        case .directStandard, .directEnhanced, .legacy:
+            return licenseService.currentTier == plan.id
+        case .none:
+            return false
+        }
+    }
+
+    private func remoteAccessIcon(_ mode: TraceFenceRemoteAccessMode) -> String {
+        switch mode {
+        case .localNetwork: return "wifi"
+        case .tailnetVPN: return "lock.icloud.fill"
+        case .publicEndpoint: return "network"
+        case .reverseTunnel: return "arrow.triangle.turn.up.right.diamond.fill"
+        }
+    }
+
+    private func remoteAccessColor(_ mode: TraceFenceRemoteAccessMode) -> Color {
+        switch mode {
+        case .localNetwork: return Theme.Colors.success
+        case .tailnetVPN: return Theme.Colors.info
+        case .publicEndpoint: return Theme.Colors.warning
+        case .reverseTunnel: return Theme.Colors.purple
+        }
+    }
+
     private var licenseStatusTitle: String {
         if licenseService.isTrialActive {
             return localizer.t("48 小时试用中", en: "48-hour trial active", zhHant: "48 小時試用中", ja: "48時間トライアル中", ko: "48시간 평가판 사용 중", mt: "48-hour trial active")
@@ -1248,7 +1748,16 @@ struct SettingsView: View {
         }
         switch licenseService.snapshot.status {
         case .licensed:
-            return localizer.t("授权已激活", en: "License active", zhHant: "授權已啟用", ja: "ライセンス有効", ko: "라이선스 활성", mt: "License active")
+            switch licenseService.currentTier {
+            case .directEnhanced:
+                return localizer.t("官网增强订阅已激活", en: "Website Enhanced active")
+            case .directStandard:
+                return localizer.t("官网标准订阅已激活", en: "Website Standard active")
+            case .legacy:
+                return localizer.t("历史授权已激活", en: "Legacy license active")
+            default:
+                return localizer.t("授权已激活", en: "License active", zhHant: "授權已啟用", ja: "ライセンス有効", ko: "라이선스 활성", mt: "License active")
+            }
         case .expired:
             return localizer.t("授权已过期", en: "License expired", zhHant: "授權已過期", ja: "ライセンス期限切れ", ko: "라이선스 만료", mt: "License expired")
         case .disabled:
@@ -1268,6 +1777,18 @@ struct SettingsView: View {
         let snapshot = licenseService.snapshot
         switch snapshot.status {
         case .licensed:
+            if licenseService.currentTier == .directEnhanced {
+                return localizer.t(
+                    "这台 Mac 已绑定官网增强订阅。增强能力用于高级策略、直发更新和未来系统扩展防火墙。",
+                    en: "This Mac is activated with Website Enhanced. Enhanced capabilities cover advanced policies, direct updates, and future system-extension firewall support."
+                )
+            }
+            if licenseService.currentTier == .directStandard {
+                return localizer.t(
+                    "这台 Mac 已绑定官网标准订阅，能力与上架版订阅保持一致。",
+                    en: "This Mac is activated with Website Standard, matching the App Store subscription feature level."
+                )
+            }
             if licenseService.licenseSyncedThisRun {
                 let usage = licenseUsageText(snapshot)
                 return localizer.t(
@@ -1290,25 +1811,25 @@ struct SettingsView: View {
         case .unlicensed:
             if licenseService.isTrialActive {
                 return localizer.t(
-                    "剩余 \(trialRemainingText)。试用期内可扫描、浏览和预览清理，Pro 解锁增强扫描与执行清理。",
-                    en: "\(trialRemainingText) left. Trial can scan, browse, and preview cleanup; Pro unlocks enhanced scan and cleanup actions.",
-                    zhHant: "剩餘 \(trialRemainingText)。試用期內可掃描、瀏覽和預覽清理，Pro 解鎖增強掃描與執行清理。",
-                    ja: "残り \(trialRemainingText)。トライアルではスキャン、閲覧、整理プレビューが使え、Pro で強化スキャンと整理実行が解放されます。",
-                    ko: "\(trialRemainingText) 남음. 평가판은 스캔, 탐색, 정리 미리보기를 사용할 수 있고 Pro는 강화 스캔과 정리 실행을 해제합니다.",
-                    mt: "\(trialRemainingText) left. Trial can scan, browse, and preview cleanup; Pro unlocks enhanced scan and cleanup actions."
+                    "剩余 \(trialRemainingText)。试用期内可扫描、浏览和预览；订阅后解锁持续监控、远程审批和高级操作。",
+                    en: "\(trialRemainingText) left. Trial can scan, browse, and preview; subscription unlocks ongoing monitoring, remote approvals, and advanced actions.",
+                    zhHant: "剩餘 \(trialRemainingText)。試用期內可掃描、瀏覽和預覽；訂閱後解鎖持續監控、遠端審批和高級操作。",
+                    ja: "残り \(trialRemainingText)。トライアルではスキャン、閲覧、プレビューが使え、サブスクリプションで継続監視、リモート承認、高度な操作が解放されます。",
+                    ko: "\(trialRemainingText) 남음. 평가판은 스캔, 탐색, 미리보기를 사용할 수 있고 구독하면 지속 모니터링, 원격 승인, 고급 작업을 사용할 수 있습니다.",
+                    mt: "\(trialRemainingText) left. Trial can scan, browse, and preview; subscription unlocks ongoing monitoring, remote approvals, and advanced actions."
                 )
             }
             if licenseService.isTrialExpired {
                 return localizer.t(
-                    "48 小时试用已结束。购买并激活 TraceFence Pro 后可继续使用扫描和高级操作。",
-                    en: "The 48-hour trial has ended. Buy and activate TraceFence Pro to continue scanning and using advanced actions.",
-                    zhHant: "48 小時試用已結束。購買並啟用 TraceFence Pro 後可繼續使用掃描和高級操作。",
-                    ja: "48時間トライアルは終了しました。TraceFence Pro を購入して有効化すると、スキャンと高度な操作を続けられます。",
-                    ko: "48시간 평가판이 종료되었습니다. TraceFence Pro를 구매하고 활성화하면 스캔과 고급 작업을 계속 사용할 수 있습니다.",
-                    mt: "The 48-hour trial has ended. Buy and activate TraceFence Pro to continue scanning and using advanced actions."
+                    "48 小时试用已结束。订阅官网标准版或增强版后可继续使用 TraceFence v2 能力。",
+                    en: "The 48-hour trial has ended. Subscribe to Website Standard or Enhanced to continue using TraceFence v2 capabilities.",
+                    zhHant: "48 小時試用已結束。訂閱官網標準版或增強版後可繼續使用 TraceFence v2 能力。",
+                    ja: "48時間トライアルは終了しました。Website Standard または Enhanced に登録すると TraceFence v2 機能を継続利用できます。",
+                    ko: "48시간 평가판이 종료되었습니다. Website Standard 또는 Enhanced를 구독하면 TraceFence v2 기능을 계속 사용할 수 있습니다.",
+                    mt: "The 48-hour trial has ended. Subscribe to Website Standard or Enhanced to continue using TraceFence v2 capabilities."
                 )
             }
-            return localizer.t("购买后粘贴 Lemon Squeezy 发出的 License Key 即可激活。", en: "After purchase, paste the license key from Lemon Squeezy to activate.", zhHant: "購買後貼上 Lemon Squeezy 發出的 License Key 即可啟用。", ja: "購入後、Lemon Squeezy のライセンスキーを貼り付けて有効化します。", ko: "구매 후 Lemon Squeezy에서 받은 라이선스 키를 붙여 넣어 활성화하세요.", mt: "After purchase, paste the license key from Lemon Squeezy to activate.")
+            return localizer.t("订阅后粘贴 Lemon Squeezy 发出的 License Key 即可激活。", en: "After subscribing, paste the license key from Lemon Squeezy to activate.", zhHant: "訂閱後貼上 Lemon Squeezy 發出的 License Key 即可啟用。", ja: "登録後、Lemon Squeezy のライセンスキーを貼り付けて有効化します。", ko: "구독 후 Lemon Squeezy에서 받은 라이선스 키를 붙여 넣어 활성화하세요.", mt: "After subscribing, paste the license key from Lemon Squeezy to activate.")
         default:
             return snapshot.licenseKeySuffix.map {
                 localizer.t("License Key：\($0)", en: "License key: \($0)", zhHant: "License Key：\($0)", ja: "ライセンスキー：\($0)", ko: "라이선스 키: \($0)", mt: "License key: \($0)")

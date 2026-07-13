@@ -1,0 +1,10 @@
+{
+  "id": "openclaw",
+  "version": "1.0.0",
+  "displayName": "OpenClaw",
+  "executable": "TraceFenceUniversalAdapter",
+  "arguments": ["--adapter", "openclaw"],
+  "transport": "process",
+  "minimumCoreProtocol": 1,
+  "capabilities": ["session_discovery", "session_context", "instruction", "interrupt", "independent_update"]
+}

@@ -1,0 +1,10 @@
+{
+  "id": "gemini",
+  "version": "1.0.0",
+  "displayName": "Gemini CLI",
+  "executable": "TraceFenceUniversalAdapter",
+  "arguments": ["--adapter", "gemini"],
+  "transport": "process",
+  "minimumCoreProtocol": 1,
+  "capabilities": ["session_discovery", "session_context", "instruction", "interrupt", "approval", "independent_update"]
+}

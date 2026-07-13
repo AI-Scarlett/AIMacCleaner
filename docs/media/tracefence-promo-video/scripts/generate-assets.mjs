@@ -1,0 +1,154 @@
+import fs from "node:fs";
+import path from "node:path";
+
+const root = process.cwd();
+const publicDir = path.join(root, "public");
+const dataDir = path.join(publicDir, "data");
+fs.mkdirSync(dataDir, { recursive: true });
+
+const segments = [
+  {
+    en: "Meet TraceFence, the command center for modern AI coding. Not another model. Not another chat window. A visibility layer for the work already happening on your Mac.",
+    zh: "认识 TraceFence：现代 AI Coding 的指挥中心。它不是另一个模型，也不是另一个聊天窗口，而是让你看清本机 AI 工作流的可视化层。",
+  },
+  {
+    en: "When Codex, Claude, Cursor, and other agents become part of daily production, the real question changes. What is running, what is changing, and what quota is still available?",
+    zh: "当 Codex、Claude、Cursor 等 Agent 进入日常生产，真正的问题变成：谁在运行、改了什么、还剩多少额度？",
+  },
+  {
+    en: "TraceFence turns that uncertainty into a native macOS cockpit: sessions, projects, tokens, provider quota, reset windows, alerts, cleanup, and diagnostics in one place.",
+    zh: "TraceFence 把这些不确定性变成本机 macOS 控制台：会话、项目、Token、Provider 额度、重置窗口、告警、清理和诊断集中呈现。",
+  },
+  {
+    en: "Start from the menu bar. Provider quota monitoring reads official provider signals and shows the limits that shape your day: five-hour windows, weekly windows, and reset timing.",
+    zh: "先看菜单栏。Provider 额度监控读取官方 provider 信号，展示真正影响工作节奏的 5 小时额度、每周额度和重置时间。",
+  },
+  {
+    en: "For heavy Codex users, this is the missing dashboard. You can see how much capacity remains before a coding sprint, not after the work is already blocked.",
+    zh: "对 Codex 重度用户来说，这就是缺失已久的仪表盘：开工前就知道水位，而不是被限流后才发现。",
+  },
+  {
+    en: "TraceFence also tracks Codex manual reset credits. See how many resets remain, which credit expires next, and the exact window for each reset opportunity.",
+    zh: "TraceFence 还会监控 Codex 手动重置次数：剩余几次、哪一次最近到期，以及每个重置机会的具体时间窗口。",
+  },
+  {
+    en: "That sounds small until you lose a reset you could have used. For AI operators, quota is inventory. Reset credits are time-sensitive assets.",
+    zh: "这听起来很小，直到你错过一次本该使用的重置。对 AI 操作者来说，额度是库存，重置次数是有保质期的资产。",
+  },
+  {
+    en: "The overview page gives the executive view: aggregated sessions, active agents, project coverage, token volume, live activity, and data-source status without repeating the same numbers everywhere.",
+    zh: "概览页提供总览视角：聚合会话、活跃 Agent、项目覆盖、Token 总量、实时活动和数据源状态，不再重复堆数据。",
+  },
+  {
+    en: "You can open TraceFence and understand the state of your AI workspace in seconds. Is there activity? Which projects are covered? Are the sources authorized?",
+    zh: "打开 TraceFence，几秒钟就能看懂 AI 工作台状态：是否活跃、覆盖哪些项目、数据源是否已授权。",
+  },
+  {
+    en: "Token Analytics turns usage from a feeling into a ledger. Total tokens, input tokens, output tokens, cache tokens, estimated cost, model ranking, project attribution, and session detail.",
+    zh: "Token Analytics 把用量从体感变成账本：总 Token、输入、输出、缓存、估算成本、模型排行、项目归因和会话明细。",
+  },
+  {
+    en: "You can finally answer the question every serious builder asks: which project is burning capacity, which model is expensive, and which sessions are unusually heavy?",
+    zh: "你终于能回答重度开发者真正关心的问题：哪个项目最消耗额度、哪个模型最贵、哪些会话异常偏重？",
+  },
+  {
+    en: "The model names come from local logs. If an agent records experimental names, TraceFence preserves them. The goal is observability, not a polished fiction.",
+    zh: "模型名来自本机日志。如果 Agent 写入实验模型名，TraceFence 会保留原始记录。目标是可观察，而不是编造漂亮答案。",
+  },
+  {
+    en: "Agent Guard watches the other side of AI productivity: file creation, modification, deletion, reads, command execution, search behavior, and session activity.",
+    zh: "Agent Guard 关注 AI 生产力的另一面：文件创建、修改、删除、读取、命令执行、搜索行为和会话活动。",
+  },
+  {
+    en: "High-risk changes, sensitive directory access, suspicious batch operations, and protected-folder events become visible alerts instead of silent surprises.",
+    zh: "高风险变更、敏感目录访问、可疑批量操作和保护目录事件，会变成可见告警，而不是沉默的意外。",
+  },
+  {
+    en: "This is not about distrusting agents. It is about giving powerful tools the same discipline you expect from production systems: permission, observation, evidence, and control.",
+    zh: "这不是不信任 Agent，而是给强大工具配上生产系统该有的纪律：授权、观察、证据和控制。",
+  },
+  {
+    en: "The Agent Toolkit adds practical operations. Back up selected agent sessions without credentials. Run health diagnostics. Analyze usage trends. Audit configuration without exposing secrets.",
+    zh: "Agent 工具箱提供实用运维：备份选定会话且不包含凭证，执行健康诊断，分析用量趋势，审计配置但不展示密钥。",
+  },
+  {
+    en: "On the direct-download edition, TraceFence can also help control local agent processes with clear confirmations: quit, force quit, or restart when a tool gets stuck.",
+    zh: "在官网版中，TraceFence 还可以在明确确认后控制本机 Agent 进程：关闭、强制关闭或重启卡住的工具。",
+  },
+  {
+    en: "TraceFence is also a developer-aware Mac maintenance suite. It understands cache, packages, dependencies, app data, hidden directories, and AI agent workspaces.",
+    zh: "TraceFence 也是面向开发者的 Mac 维护套件。它理解缓存、包、依赖、App 数据、隐藏目录和 AI Agent 工作区。",
+  },
+  {
+    en: "Safe items can be cleaned. Risky items are explained first. Deletions prefer Trash, because an agent workspace is not the place for blind one-click destruction.",
+    zh: "安全项可以清理，风险项先解释。删除优先移入废纸篓，因为 Agent 工作现场不适合盲目一键毁灭。",
+  },
+  {
+    en: "Privacy stays local by design. TraceFence works with authorized folders, local logs, metadata, and system state. It does not need to upload private conversations to explain your workflow.",
+    zh: "隐私默认本机优先。TraceFence 读取授权目录、本机日志、元数据和系统状态，不需要上传私密会话才能解释工作流。",
+  },
+  {
+    en: "For individuals, it is a personal AI operations room. For small teams, it is a shared language for usage, cost, risk, and recoverability.",
+    zh: "对个人，它是 AI 运维室；对小团队，它是讨论用量、成本、风险和可恢复性的共同语言。",
+  },
+  {
+    en: "The benefit is simple: before you ask the model to do more, you know the capacity, the context, and the risk boundary.",
+    zh: "它的价值很简单：在让模型继续做事之前，你先知道容量、上下文和风险边界。",
+  },
+  {
+    en: "TraceFence does not replace Codex. It makes Codex, Claude, Cursor, and other agents easier to operate for the long run.",
+    zh: "TraceFence 不替代 Codex。它让 Codex、Claude、Cursor 和其它 Agent 更适合长期运转。",
+  },
+  {
+    en: "See your quota. Track reset credits. Understand token flow. Watch agent activity. Protect your workspace. This is the dashboard AI coding has been missing.",
+    zh: "看见额度，追踪重置次数，理解 Token 流向，观察 Agent 活动，保护工作区。这就是 AI Coding 一直缺少的仪表盘。",
+  },
+  {
+    en: "TraceFence. Build faster, but keep the cockpit lit. Download the direct edition and learn more at tracefence.com.",
+    zh: "TraceFence。更快构建，也让驾驶舱保持亮起。访问 tracefence.com 下载官网版并了解更多。",
+  },
+];
+
+const words = (text) => text.split(/\s+/).filter(Boolean).length;
+const totalMs = Number(process.env.TRACEFENCE_PROMO_MS ?? 212000);
+const leadInMs = 2600;
+const leadOutMs = 5200;
+const usableMs = totalMs - leadInMs - leadOutMs;
+const weights = segments.map((segment) => words(segment.en) + 3);
+const totalWeight = weights.reduce((sum, item) => sum + item, 0);
+
+let cursor = leadInMs;
+const enCaptions = [];
+const zhCaptions = [];
+
+segments.forEach((segment, index) => {
+  const isLast = index === segments.length - 1;
+  const duration = isLast
+    ? totalMs - leadOutMs - cursor
+    : Math.round((weights[index] / totalWeight) * usableMs);
+  const startMs = cursor;
+  const endMs = Math.max(startMs + 2200, cursor + duration);
+  enCaptions.push({
+    text: segment.en,
+    startMs,
+    endMs,
+    timestampMs: null,
+    confidence: null,
+  });
+  zhCaptions.push({
+    text: segment.zh,
+    startMs,
+    endMs,
+    timestampMs: null,
+    confidence: null,
+  });
+  cursor = endMs;
+});
+
+const narration = segments.map((segment) => segment.en).join("\n\n");
+fs.writeFileSync(path.join(publicDir, "narration.txt"), `${narration}\n`, "utf8");
+fs.writeFileSync(path.join(dataDir, "captions-en.json"), JSON.stringify(enCaptions, null, 2), "utf8");
+fs.writeFileSync(path.join(dataDir, "captions-zh.json"), JSON.stringify(zhCaptions, null, 2), "utf8");
+fs.writeFileSync(path.join(dataDir, "segments.json"), JSON.stringify(segments, null, 2), "utf8");
+
+console.log(`Generated ${segments.length} caption segments for ${Math.round(totalMs / 1000)}s.`);

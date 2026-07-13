@@ -1,0 +1,10 @@
+{
+  "id": "trae",
+  "version": "1.0.0",
+  "displayName": "Trae",
+  "executable": "TraceFenceUniversalAdapter",
+  "arguments": ["--adapter", "trae"],
+  "transport": "process",
+  "minimumCoreProtocol": 1,
+  "capabilities": ["session_discovery", "session_context", "independent_update"]
+}

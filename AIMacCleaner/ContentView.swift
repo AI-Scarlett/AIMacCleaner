@@ -1,20 +1,25 @@
 import SwiftUI
 import AppKit
 import SQLite3
+import CoreImage.CIFilterBuiltins
 
 struct ContentView: View {
     @State private var selectedTab: NavItem = .overview
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
     @EnvironmentObject var licenseService: DirectLicenseService
+    @StateObject private var iOSRemoteGatewayService = IOSRemoteControlGatewayService.shared
     @ObservedObject var overviewStore: AgentMonitorOverviewStore
     @State private var showSettings = false
+    @State private var showIOSRemotePairing = false
     @State private var sidebarCollapsed = false
     @State private var toolboxExpanded = false
     @State private var hoveredItem: NavItem?
     @AppStorage("networkMode") private var networkMode = "internet"
     @AppStorage("appearanceMode") private var appearanceMode = AppearanceMode.system.rawValue
     @AppStorage("colorPalette") private var colorPalette = AppColorPalette.porcelain.rawValue
+    @AppStorage(IOSRemoteControlGatewayService.enabledKey) private var iOSRemoteGatewayEnabled = false
+    @AppStorage(IOSRemoteControlGatewayService.portKey) private var iOSRemoteGatewayPort = 17895
 
     private enum AppearanceMode: String, CaseIterable {
         case system
@@ -156,6 +161,7 @@ struct ContentView: View {
             licenseService.refreshTrialState()
             service.refreshDiskInfo()
             service.refreshHardwareInfo()
+            iOSRemoteGatewayService.configure(scannerService: service)
             overviewStore.startBackgroundRefresh()
         }
         .sheet(isPresented: $showSettings) {
@@ -163,6 +169,14 @@ struct ContentView: View {
                 .environmentObject(service)
                 .environmentObject(localizer)
                 .environmentObject(licenseService)
+        }
+        .sheet(isPresented: $showIOSRemotePairing) {
+            TraceFenceIOSPairingSheet(
+                gatewayService: iOSRemoteGatewayService,
+                isEnabled: $iOSRemoteGatewayEnabled,
+                port: $iOSRemoteGatewayPort
+            )
+            .environmentObject(localizer)
         }
         .preferredColorScheme(currentAppearanceMode.colorScheme)
     }
@@ -484,6 +498,10 @@ struct ContentView: View {
                         }
                     }
 
+                    footerIconButton(icon: iosRemoteFooterIcon, color: iosRemoteFooterColor, help: iosRemoteFooterHelp) {
+                        showIOSRemotePairing = true
+                    }
+
                     footerIconButton(icon: "gearshape", color: Theme.Colors.textSecondary, help: localizer.settings) {
                         showSettings = true
                     }
@@ -499,29 +517,40 @@ struct ContentView: View {
                 .padding(.vertical, Theme.Spacing.lg)
             } else {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
+                    HStack(alignment: .top, spacing: 8) {
                         Circle()
                             .fill(networkMode == "internet" ? Theme.Colors.success : Theme.Colors.warning)
                             .frame(width: 8, height: 8)
                             .shadow(color: (networkMode == "internet" ? Theme.Colors.success : Theme.Colors.warning).opacity(0.55), radius: 5)
-                        VStack(alignment: .leading, spacing: 2) {
+                            .padding(.top, 4)
+                        VStack(alignment: .leading, spacing: 5) {
                             Text(localizer.protectionOn)
                                 .font(.system(size: 12, weight: .black))
                                 .foregroundStyle(Theme.Colors.textPrimary)
-                            Text("\(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus) · v\(service.currentVersion)")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(Theme.Colors.textTertiary)
-                                .lineLimit(1)
+                            HStack(spacing: 6) {
+                                Text("\(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus) · v\(service.currentVersion)")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.78)
+                                Spacer(minLength: 2)
+                                footerLabeledButton(icon: iosRemoteFooterIcon, title: iosRemoteFooterTitle, color: iosRemoteFooterColor) {
+                                    showIOSRemotePairing = true
+                                }
+                                .frame(width: 98)
+                            }
                         }
-                        Spacer(minLength: 4)
                     }
 
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
+                        appearanceModeButton
+                        languageToggleButton
+                    }
+
+                    HStack(spacing: 6) {
                         footerLabeledButton(icon: "gearshape", title: localizer.settings, color: Theme.Colors.textSecondary) {
                             showSettings = true
                         }
-                        appearanceModeButton
-                        languageToggleButton
                         footerLabeledButton(icon: "sidebar.left", title: localizer.collapseSidebar, color: Theme.Colors.textTertiary) {
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                                 sidebarCollapsed = true
@@ -535,6 +564,24 @@ struct ContentView: View {
                 .padding(.vertical, Theme.Spacing.md)
             }
         }
+    }
+
+    private var iosRemoteFooterIcon: String {
+        iOSRemoteGatewayService.isRunning ? "iphone.radiowaves.left.and.right" : "iphone.slash"
+    }
+
+    private var iosRemoteFooterColor: Color {
+        iOSRemoteGatewayService.isRunning ? Theme.Colors.success : Theme.Colors.textTertiary
+    }
+
+    private var iosRemoteFooterTitle: String {
+        iOSRemoteGatewayService.isRunning
+            ? localizer.t("已连接", en: "Connected", zhHant: "已連接", ja: "接続済み", ko: "연결됨", mt: "Connected")
+            : localizer.t("未连接", en: "Disconnected", zhHant: "未連接", ja: "未接続", ko: "연결 안 됨", mt: "Disconnected")
+    }
+
+    private var iosRemoteFooterHelp: String {
+        localizer.t("iOS 远程配对", en: "iOS Remote Pairing", zhHant: "iOS 遠端配對", ja: "iOS リモートペアリング", ko: "iOS 원격 페어링", mt: "iOS Remote Pairing")
     }
 
     private func footerPanelBackground(cornerRadius: CGFloat) -> some View {
@@ -738,6 +785,644 @@ struct ContentView: View {
             IntelMigrationTab()
                 .environmentObject(localizer)
         }
+    }
+}
+
+struct TraceFenceIOSPairingSheet: View {
+    @EnvironmentObject var localizer: Localizer
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var gatewayService: IOSRemoteControlGatewayService
+    @Binding var isEnabled: Bool
+    @Binding var port: Int
+    @State private var copiedMessage: String?
+    @State private var agentCoreStatus: TraceFenceAgentCoreStatus?
+    @State private var isCheckingCoreUpdate = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                    gatewayCard
+
+                    if isEnabled {
+                        pairingCard
+                    }
+
+                    agentAdaptersCard
+                    accessRequirements
+                }
+                .padding(Theme.Spacing.xl)
+            }
+        }
+        .frame(width: 660, height: 680)
+        .background(Theme.Colors.background)
+        .onAppear {
+            gatewayService.refreshNetworkEndpoint()
+        }
+        .task {
+            if TraceFenceDistributionPolicy.currentChannel.isDirect {
+                agentCoreStatus = await TraceFenceAgentCoreClient.shared.refresh()
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(statusColor.opacity(0.13))
+                Image(systemName: statusIcon)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(statusColor)
+            }
+            .frame(width: 46, height: 46)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(localizer.t("iOS 远程配对", en: "iOS Remote Pairing", zhHant: "iOS 遠端配對", ja: "iOS リモートペアリング", ko: "iOS 원격 페어링", mt: "iOS Remote Pairing"))
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(localizer.t(
+                    "TraceFence Sentinel 通过本地 API 直接连接这台 Mac。",
+                    en: "TraceFence Sentinel connects directly to this Mac through a local API.",
+                    zhHant: "TraceFence Sentinel 透過本地 API 直接連接這台 Mac。",
+                    ja: "TraceFence Sentinel はローカル API 経由でこの Mac に直接接続します。",
+                    ko: "TraceFence Sentinel은 로컬 API를 통해 이 Mac에 직접 연결합니다.",
+                    mt: "TraceFence Sentinel connects directly to this Mac through a local API."
+                ))
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+            }
+
+            Spacer()
+
+            Button { dismiss() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(Theme.Spacing.xl)
+        .background(.ultraThinMaterial)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.72))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.Gradients.glassStroke)
+                .frame(height: 1)
+        }
+    }
+
+    private var gatewayCard: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(statusColor.opacity(0.12))
+                    Image(systemName: statusIcon)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(statusColor)
+                }
+                .frame(width: 42, height: 42)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(statusTitle)
+                        .font(Theme.Font.bodyMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(statusDetail)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $isEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .onChange(of: isEnabled) { enabled in
+                        gatewayService.setEnabled(enabled, port: port)
+                    }
+            }
+
+            Divider().overlay(Theme.Colors.separator.opacity(0.6))
+
+            HStack(alignment: .center, spacing: Theme.Spacing.md) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(localizer.t("连接地址", en: "Endpoint", zhHant: "連接地址", ja: "接続先", ko: "연결 주소", mt: "Endpoint"))
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(gatewayService.endpoint.isEmpty ? "http://127.0.0.1:\(port)" : gatewayService.endpoint)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer()
+
+                Stepper(value: $port, in: 1024...65535, step: 1) {
+                    Text(localizer.t("端口 \(port)", en: "Port \(port)", zhHant: "連接埠 \(port)", ja: "ポート \(port)", ko: "포트 \(port)", mt: "Port \(port)"))
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+                .frame(width: 160)
+                .onChange(of: port) { newPort in
+                    gatewayService.restart(port: newPort)
+                }
+            }
+
+            Divider().overlay(Theme.Colors.separator.opacity(0.6))
+
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                Image(systemName: gatewayService.isKeepingMacAwake ? "moon.zzz.fill" : "moon.zzz")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(gatewayService.isKeepingMacAwake ? Theme.Colors.success : Theme.Colors.textTertiary)
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(localizer.t(
+                        "锁屏时保持远程可用",
+                        en: "Keep Remote Access Available While Locked",
+                        zhHant: "鎖屏時保持遠端可用",
+                        ja: "ロック中もリモートアクセスを維持",
+                        ko: "잠금 중에도 원격 접근 유지",
+                        mt: "Keep Remote Access Available While Locked"
+                    ))
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+
+                    Text(localizer.t(
+                        "开启远程控制时阻止 Mac 自动睡眠；屏幕仍可关闭和锁定。合盖、关机或断网后仍无法连接。",
+                        en: "Prevents system sleep while remote control is enabled; the display may still turn off and lock. A closed lid, shutdown, or network outage still disconnects the Mac.",
+                        zhHant: "開啟遠端控制時阻止 Mac 自動睡眠；螢幕仍可關閉和鎖定。合蓋、關機或斷網後仍無法連接。",
+                        ja: "リモート制御中は自動スリープを防ぎます。画面の消灯とロックは可能です。蓋を閉じる、電源を切る、またはネットワークが切れると接続できません。",
+                        ko: "원격 제어가 켜져 있는 동안 시스템 잠자기를 방지합니다. 화면 끄기와 잠금은 계속 가능합니다. 덮개를 닫거나 종료하거나 네트워크가 끊기면 연결할 수 없습니다.",
+                        mt: "Prevents system sleep while remote control is enabled; the display may still turn off and lock. A closed lid, shutdown, or network outage still disconnects the Mac."
+                    ))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: Binding(
+                    get: { gatewayService.keepMacAwakeEnabled },
+                    set: { gatewayService.setKeepMacAwake($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
+        }
+        .padding(Theme.Spacing.lg)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.64))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Theme.Colors.separator.opacity(0.65), lineWidth: 1)
+        )
+    }
+
+    private var pairingCard: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(alignment: .top, spacing: Theme.Spacing.lg) {
+                TraceFencePairingQRCodeView(text: gatewayService.compactPairingPayloadText)
+                    .frame(width: 172, height: 172)
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    Label(localizer.t("用 iPhone 扫码", en: "Scan with iPhone", zhHant: "用 iPhone 掃碼", ja: "iPhone でスキャン", ko: "iPhone으로 스캔", mt: "Scan with iPhone"), systemImage: "qrcode.viewfinder")
+                        .font(Theme.Font.bodyMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+
+                    Text(localizer.t(
+                        "打开 TraceFence Sentinel 的“配对”页，扫描二维码即可导入 Mac 地址和配对密钥。",
+                        en: "Open the Pairing tab in TraceFence Sentinel and scan this code to import the Mac endpoint and pairing token.",
+                        zhHant: "打開 TraceFence Sentinel 的「配對」頁，掃描 QR Code 即可匯入 Mac 地址和配對密鑰。",
+                        ja: "TraceFence Sentinel の「ペアリング」タブを開き、このコードをスキャンすると Mac の接続先とペアリングトークンを取り込めます。",
+                        ko: "TraceFence Sentinel의 페어링 탭을 열고 이 코드를 스캔하면 Mac 주소와 페어링 토큰을 가져옵니다.",
+                        mt: "Open the Pairing tab in TraceFence Sentinel and scan this code to import the Mac endpoint and pairing token."
+                    ))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Button {
+                            copyToPasteboard(gatewayService.pairingPayloadText)
+                            showCopied(localizer.t("已复制配对信息", en: "Pairing copied", zhHant: "已複製配對資訊", ja: "ペアリング情報をコピーしました", ko: "페어링 정보를 복사했습니다", mt: "Pairing copied"))
+                        } label: {
+                            Label(localizer.t("复制配对信息", en: "Copy Pairing", zhHant: "複製配對資訊", ja: "ペアリングをコピー", ko: "페어링 복사", mt: "Copy Pairing"), systemImage: "doc.on.doc")
+                        }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 34))
+
+                        Button {
+                            gatewayService.rotatePairingToken()
+                            copyToPasteboard(gatewayService.pairingPayloadText)
+                            showCopied(localizer.t("已重置并复制新密钥", en: "Token reset and copied", zhHant: "已重設並複製新密鑰", ja: "トークンをリセットしてコピーしました", ko: "토큰을 재설정하고 복사했습니다", mt: "Token reset and copied"))
+                        } label: {
+                            Label(localizer.t("重置密钥", en: "Reset Token", zhHant: "重設密鑰", ja: "トークンをリセット", ko: "토큰 재설정", mt: "Reset Token"), systemImage: "key.horizontal.fill")
+                        }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .ghost, minHeight: 34))
+                    }
+
+                    if let copiedMessage {
+                        Label(copiedMessage, systemImage: "checkmark.circle.fill")
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.success)
+                    }
+                }
+
+                Spacer()
+            }
+
+            Text(localizer.t(
+                "配对密钥可以控制这台 Mac 上的 Agent 审批和会话暂停/继续，只给自己的 iPhone 使用。",
+                en: "The pairing token can control Agent approvals and session pause/resume on this Mac. Use it only with your own iPhone.",
+                zhHant: "配對密鑰可以控制這台 Mac 上的 Agent 審批與會話暫停/繼續，只給自己的 iPhone 使用。",
+                ja: "ペアリングトークンは、この Mac 上の Agent 承認とセッションの一時停止/再開を制御できます。自分の iPhone だけで使用してください。",
+                ko: "페어링 토큰은 이 Mac의 Agent 승인과 세션 일시 중지/재개를 제어할 수 있습니다. 본인의 iPhone에서만 사용하세요.",
+                mt: "The pairing token can control Agent approvals and session pause/resume on this Mac. Use it only with your own iPhone."
+            ))
+            .font(.system(size: 11))
+            .foregroundStyle(Theme.Colors.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Theme.Spacing.lg)
+        .background(Theme.Colors.cardBg.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Theme.Colors.separator.opacity(0.62), lineWidth: 1)
+        )
+    }
+
+    private var agentAdaptersCard: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            Label(localizer.t("Agent 控制适配器", en: "Agent Control Adapters"), systemImage: "puzzlepiece.extension.fill")
+                .font(Theme.Font.bodyMedium)
+                .foregroundStyle(Theme.Colors.textPrimary)
+
+            Text(localizer.t(
+                "Agent Core 与每个 Agent 适配器独立升级。以后 Codex 或 Claude 协议变化时，只需更新对应适配器，不需要同时更换 macOS 和 iOS 客户端。",
+                en: "Agent Core and each agent adapter update independently. When Codex or Claude changes its protocol, only that adapter needs an update; the macOS and iOS clients do not need to be replaced together."
+            ))
+            .font(Theme.Font.caption)
+            .foregroundStyle(Theme.Colors.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+            if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+                Label(
+                    localizer.t(
+                        "Mac App Store 版使用应用内 Hook 适配器。独立 Agent Core、CLI/PTY 启动和自更新仅在官网版提供。",
+                        en: "The Mac App Store build uses in-app Hook adapters. Independent Agent Core, CLI/PTY launch, and self-updates are available only in the website build."
+                    ),
+                    systemImage: "app.badge.checkmark"
+                )
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.info)
+            } else if let status = agentCoreStatus, status.connected {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Image(systemName: "cpu.fill")
+                        .foregroundStyle(Theme.Colors.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Core \(status.coreVersion ?? "-") (\(status.coreBuild ?? 0))")
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text(coreUpdateDescription(status))
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                    }
+                    Spacer()
+                    Button {
+                        Task {
+                            isCheckingCoreUpdate = true
+                            agentCoreStatus = await TraceFenceAgentCoreClient.shared.checkForUpdates()
+                            isCheckingCoreUpdate = false
+                        }
+                    } label: {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 13, weight: .semibold))
+                            .rotationEffect(isCheckingCoreUpdate ? .degrees(180) : .zero)
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(isCheckingCoreUpdate)
+                    .help(localizer.t(
+                        "检查 Agent Core 更新",
+                        en: "Check for Agent Core updates",
+                        zhHant: "檢查 Agent Core 更新",
+                        ja: "Agent Core の更新を確認",
+                        ko: "Agent Core 업데이트 확인",
+                        mt: "Check for Agent Core updates"
+                    ))
+                }
+
+                Divider()
+
+                ForEach(Array(status.adapters.enumerated()), id: \.offset) { _, adapter in
+                    let adapterId = adapter["id"] as? String ?? "agent"
+                    let name = adapter["displayName"] as? String ?? adapterId
+                    let operational = adapter["operational"] as? Bool ?? false
+                    let authenticated = adapter["authenticated"] as? Bool
+                    let ready = operational && authenticated != false
+                    HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+                        Image(systemName: ready ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .foregroundStyle(ready ? Theme.Colors.success : Theme.Colors.warning)
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(name)
+                                .font(Theme.Font.captionMedium)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Text(adapterDetail(id: adapterId, ready: ready))
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                    }
+                }
+            } else {
+                Label(
+                    localizer.t("Agent Core 未连接，请重新安装或启动常驻服务。", en: "Agent Core is not connected. Reinstall or start the background service."),
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.warning)
+            }
+        }
+        .padding(Theme.Spacing.lg)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.64))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Theme.Colors.separator.opacity(0.65), lineWidth: 1)
+        )
+    }
+
+    private func coreUpdateDescription(_ status: TraceFenceAgentCoreStatus) -> String {
+        let state = status.update["state"] as? String ?? ""
+        switch state {
+        case "up_to_date", "installed":
+            return localizer.t(
+                "Core 已是最新版本，可独立于客户端升级。",
+                en: "Core is current and updates independently from the clients.",
+                zhHant: "Core 已是最新版本，可獨立於用戶端升級。",
+                ja: "Core は最新で、クライアントとは独立して更新されます。",
+                ko: "Core는 최신이며 클라이언트와 독립적으로 업데이트됩니다.",
+                mt: "Core is current and updates independently from the clients."
+            )
+        case "checking", "downloading", "installing":
+            return localizer.t(
+                "正在由 Core 更新服务检查并安装…",
+                en: "The Core update service is checking and installing…",
+                zhHant: "Core 更新服務正在檢查並安裝…",
+                ja: "Core 更新サービスが確認とインストールを実行中です…",
+                ko: "Core 업데이트 서비스가 확인 및 설치 중입니다…",
+                mt: "The Core update service is checking and installing..."
+            )
+        case "update_available":
+            let version = status.update["latestVersion"] as? String ?? ""
+            return localizer.t(
+                "发现 Core \(version)，等待独立更新服务安装。",
+                en: "Core \(version) is available for independent installation.",
+                zhHant: "發現 Core \(version)，等待獨立更新服務安裝。",
+                ja: "Core \(version) を独立更新サービスでインストールできます。",
+                ko: "Core \(version)을 독립 업데이트 서비스로 설치할 수 있습니다.",
+                mt: "Core \(version) is available for independent installation."
+            )
+        case "rolled_back":
+            return localizer.t(
+                "候选版本健康检查失败，已自动回滚。",
+                en: "A candidate failed its health check and was rolled back automatically.",
+                zhHant: "候選版本健康檢查失敗，已自動回滾。",
+                ja: "候補版のヘルスチェックに失敗し、自動的にロールバックしました。",
+                ko: "후보 버전의 상태 확인 실패로 자동 롤백했습니다.",
+                mt: "A candidate failed its health check and was rolled back automatically."
+            )
+        case "failed":
+            return localizer.t(
+                "上次更新检查失败；当前 Core 继续正常运行。",
+                en: "The last update check failed; the current Core remains operational.",
+                zhHant: "上次更新檢查失敗；目前 Core 仍正常運作。",
+                ja: "前回の更新確認に失敗しました。現在の Core は正常に動作しています。",
+                ko: "마지막 업데이트 확인에 실패했지만 현재 Core는 정상 작동합니다.",
+                mt: "The last update check failed; the current Core remains operational."
+            )
+        default:
+            return localizer.t(
+                "独立更新服务已就绪。",
+                en: "The independent update service is ready.",
+                zhHant: "獨立更新服務已就緒。",
+                ja: "独立更新サービスの準備ができています。",
+                ko: "독립 업데이트 서비스가 준비되었습니다.",
+                mt: "The independent update service is ready."
+            )
+        }
+    }
+
+    private func adapterDetail(id: String, ready: Bool) -> String {
+        switch id {
+        case "codex":
+            return ready
+                ? localizer.t("官方 Codex app-server 已连接，可启动、插入指令、中断和审批。", en: "The official Codex app-server is connected for start, steer, interrupt, and approval controls.")
+                : localizer.t("需要安装官方独立 Codex CLI，并运行 codex app-server daemon bootstrap。", en: "Install the official standalone Codex CLI, then run codex app-server daemon bootstrap.")
+        case "claude":
+            return ready
+                ? localizer.t("Claude Code CLI 已登录；会话、停止、继续和权限 Hook 可用。", en: "Claude Code CLI is signed in; sessions, stop, continue, and permission hooks are available.")
+                : localizer.t("需要安装并登录 Claude Code CLI：在终端运行 claude auth login。Claude Desktop 登录不能替代它。", en: "Install and sign in to Claude Code CLI by running claude auth login in Terminal. Claude Desktop sign-in does not replace it.")
+        default:
+            return ready
+                ? localizer.t("适配器可用。", en: "Adapter ready.")
+                : localizer.t("适配器需要处理。", en: "Adapter needs attention.")
+        }
+    }
+
+    private var accessRequirements: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            Label(localizer.t("互联网远程控制需要什么", en: "What Internet Control Needs", zhHant: "網際網路遠端控制需要什麼", ja: "インターネット越しの制御に必要なもの", ko: "인터넷 원격 제어에 필요한 것", mt: "What Internet Control Needs"), systemImage: "network")
+                .font(Theme.Font.bodyMedium)
+                .foregroundStyle(Theme.Colors.textPrimary)
+
+            Text(localizer.t(
+                "TraceFence 不提供云端中继，也不会保存你的 Agent 数据。离开同一局域网时，需要你自己提供一条能从 iPhone 访问到这台 Mac 的网络通道。",
+                en: "TraceFence does not provide a cloud relay and does not store your Agent data. Outside the same local network, you provide the network path from iPhone to this Mac.",
+                zhHant: "TraceFence 不提供雲端中繼，也不會保存你的 Agent 資料。離開同一區域網路時，需要你自己提供一條能從 iPhone 連到這台 Mac 的網路通道。",
+                ja: "TraceFence はクラウドリレーを提供せず、Agent データも保存しません。同じローカルネットワーク外では、iPhone からこの Mac へ到達できるネットワーク経路をユーザー側で用意します。",
+                ko: "TraceFence는 클라우드 릴레이를 제공하지 않으며 Agent 데이터를 저장하지 않습니다. 같은 로컬 네트워크 밖에서는 iPhone에서 이 Mac으로 접속할 수 있는 네트워크 경로를 사용자가 준비해야 합니다.",
+                mt: "TraceFence does not provide a cloud relay and does not store your Agent data. Outside the same local network, you provide the network path from iPhone to this Mac."
+            ))
+            .font(Theme.Font.caption)
+            .foregroundStyle(Theme.Colors.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: Theme.Spacing.sm)], spacing: Theme.Spacing.sm) {
+                ForEach(Array(accessRows.enumerated()), id: \.offset) { _, row in
+                    remoteAccessRow(row)
+                }
+            }
+        }
+        .padding(Theme.Spacing.lg)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.46))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func remoteAccessRow(_ row: RemoteAccessCopy) -> some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+            Image(systemName: row.icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(row.color)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(row.title)
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(row.detail)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(row.note)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Theme.Spacing.sm)
+        .background(Theme.Colors.cardBg.opacity(0.56))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var statusIcon: String {
+        gatewayService.isRunning ? "iphone.radiowaves.left.and.right" : "iphone.slash"
+    }
+
+    private var statusColor: Color {
+        gatewayService.isRunning ? Theme.Colors.success : Theme.Colors.textTertiary
+    }
+
+    private var statusTitle: String {
+        gatewayService.isRunning
+            ? localizer.t("已连接，iPhone 可配对", en: "Connected, iPhone can pair", zhHant: "已連接，iPhone 可配對", ja: "接続済み、iPhone でペアリング可能", ko: "연결됨, iPhone 페어링 가능", mt: "Connected, iPhone can pair")
+            : localizer.t("未连接", en: "Disconnected", zhHant: "未連接", ja: "未接続", ko: "연결 안 됨", mt: "Disconnected")
+    }
+
+    private var statusDetail: String {
+        gatewayService.isRunning
+            ? localizer.t(
+                "本地控制 API 正在监听。iOS 客户端配对后可查看 Agent 任务、远程审批，并暂停或继续会话。",
+                en: "The local control API is listening. After pairing, the iOS client can monitor Agent tasks, approve operations, and pause or resume sessions.",
+                zhHant: "本地控制 API 正在監聽。iOS 用戶端配對後可查看 Agent 任務、遠端審批，並暫停或繼續會話。",
+                ja: "ローカル制御 API が待ち受け中です。ペアリング後、iOS クライアントで Agent タスクの監視、操作承認、セッションの一時停止/再開ができます。",
+                ko: "로컬 제어 API가 대기 중입니다. 페어링 후 iOS 클라이언트에서 Agent 작업 확인, 원격 승인, 세션 일시 중지/재개를 할 수 있습니다.",
+                mt: "The local control API is listening. After pairing, the iOS client can monitor Agent tasks, approve operations, and pause or resume sessions."
+            )
+            : localizer.t(
+                "开启后会在这台 Mac 上启动本地控制 API，并生成供 TraceFence Sentinel 扫描的配对二维码。",
+                en: "Turn it on to start the local control API on this Mac and generate a pairing QR code for TraceFence Sentinel.",
+                zhHant: "開啟後會在這台 Mac 上啟動本地控制 API，並產生供 TraceFence Sentinel 掃描的配對 QR Code。",
+                ja: "オンにすると、この Mac でローカル制御 API を開始し、TraceFence Sentinel 用のペアリング QR コードを生成します。",
+                ko: "켜면 이 Mac에서 로컬 제어 API를 시작하고 TraceFence Sentinel이 스캔할 페어링 QR 코드를 생성합니다.",
+                mt: "Turn it on to start the local control API on this Mac and generate a pairing QR code for TraceFence Sentinel."
+            )
+    }
+
+    private var accessRows: [RemoteAccessCopy] {
+        [
+            RemoteAccessCopy(
+                icon: "wifi",
+                title: localizer.t("同一 Wi-Fi 或局域网", en: "Same Wi-Fi or LAN", zhHant: "同一 Wi-Fi 或區域網路", ja: "同じ Wi-Fi または LAN", ko: "같은 Wi-Fi 또는 LAN", mt: "Same Wi-Fi or LAN"),
+                detail: localizer.t("Mac 和 iPhone 在同一网络下即可连接，不需要改路由器。", en: "Mac and iPhone can connect on the same network. No router changes are needed.", zhHant: "Mac 和 iPhone 在同一網路下即可連接，不需要修改路由器。", ja: "Mac と iPhone が同じネットワーク上にあれば接続できます。ルーター設定は不要です。", ko: "Mac과 iPhone이 같은 네트워크에 있으면 연결할 수 있으며 라우터 변경이 필요 없습니다.", mt: "Mac and iPhone can connect on the same network. No router changes are needed."),
+                note: localizer.t("适合家里或办公室。离开这个网络后就不能直连。", en: "Best for home or office. It stops working after the phone leaves that network.", zhHant: "適合家裡或辦公室。手機離開這個網路後就無法直連。", ja: "自宅やオフィス向きです。iPhone がそのネットワークを離れると直結できません。", ko: "집이나 사무실에 적합합니다. 휴대폰이 이 네트워크를 벗어나면 직접 연결할 수 없습니다.", mt: "Best for home or office. It stops working after the phone leaves that network."),
+                color: Theme.Colors.success
+            ),
+            RemoteAccessCopy(
+                icon: "lock.shield.fill",
+                title: localizer.t("私有 VPN / Tailnet", en: "Private VPN / Tailnet", zhHant: "私有 VPN / Tailnet", ja: "プライベート VPN / Tailnet", ko: "개인 VPN / Tailnet", mt: "Private VPN / Tailnet"),
+                detail: localizer.t("在 Mac 和 iPhone 上安装并登录 Tailscale、ZeroTier、WireGuard 或公司 VPN。", en: "Install and sign in to Tailscale, ZeroTier, WireGuard, or a company VPN on both devices.", zhHant: "在 Mac 和 iPhone 上安裝並登入 Tailscale、ZeroTier、WireGuard 或公司 VPN。", ja: "Mac と iPhone の両方で Tailscale、ZeroTier、WireGuard、または会社の VPN にログインします。", ko: "Mac과 iPhone 모두에서 Tailscale, ZeroTier, WireGuard 또는 회사 VPN에 로그인합니다.", mt: "Install and sign in to Tailscale, ZeroTier, WireGuard, or a company VPN on both devices."),
+                note: localizer.t("这是没有 TraceFence 后端时最推荐的互联网远程控制方式。", en: "Recommended for Internet control without a TraceFence backend.", zhHant: "這是沒有 TraceFence 後端時最推薦的網際網路遠端控制方式。", ja: "TraceFence バックエンドなしでインターネット越しに使う場合の推奨方式です。", ko: "TraceFence 백엔드 없이 인터넷 원격 제어를 할 때 권장되는 방식입니다.", mt: "Recommended for Internet control without a TraceFence backend."),
+                color: Theme.Colors.info
+            ),
+            RemoteAccessCopy(
+                icon: "network",
+                title: localizer.t("端口转发 + DDNS", en: "Port Forwarding + DDNS", zhHant: "連接埠轉發 + DDNS", ja: "ポート転送 + DDNS", ko: "포트 포워딩 + DDNS", mt: "Port Forwarding + DDNS"),
+                detail: localizer.t("你需要配置路由器端口转发、防火墙规则，以及稳定域名或静态 IP。", en: "You configure router port forwarding, firewall rules, and a stable hostname or static IP.", zhHant: "你需要配置路由器連接埠轉發、防火牆規則，以及穩定網域或固定 IP。", ja: "ルーターのポート転送、ファイアウォール規則、安定したホスト名または固定 IP を設定します。", ko: "라우터 포트 포워딩, 방화벽 규칙, 안정적인 호스트명 또는 고정 IP를 설정해야 합니다.", mt: "You configure router port forwarding, firewall rules, and a stable hostname or static IP."),
+                note: localizer.t("只建议高级用户使用；公网暴露时请使用 HTTPS 或安全隧道。", en: "For advanced users only; use HTTPS or a secure tunnel on public endpoints.", zhHant: "只建議進階使用者使用；對公網暴露時請使用 HTTPS 或安全隧道。", ja: "上級者向けです。公開エンドポイントでは HTTPS または安全なトンネルを使ってください。", ko: "고급 사용자에게만 권장합니다. 공개 엔드포인트에는 HTTPS 또는 보안 터널을 사용하세요.", mt: "For advanced users only; use HTTPS or a secure tunnel on public endpoints."),
+                color: Theme.Colors.warning
+            ),
+            RemoteAccessCopy(
+                icon: "point.3.connected.trianglepath.dotted",
+                title: localizer.t("自有反向隧道", en: "User-Owned Reverse Tunnel", zhHant: "自有反向隧道", ja: "ユーザー所有のリバーストンネル", ko: "사용자 소유 역방향 터널", mt: "User-Owned Reverse Tunnel"),
+                detail: localizer.t("你可以使用 Cloudflare Tunnel、frp、SSH 反向隧道或自己的 VPS 中继。", en: "You can use Cloudflare Tunnel, frp, SSH reverse tunnel, or your own VPS relay.", zhHant: "你可以使用 Cloudflare Tunnel、frp、SSH 反向隧道或自己的 VPS 中繼。", ja: "Cloudflare Tunnel、frp、SSH リバーストンネル、または自分の VPS リレーを利用できます。", ko: "Cloudflare Tunnel, frp, SSH 역방향 터널 또는 본인 VPS 릴레이를 사용할 수 있습니다.", mt: "You can use Cloudflare Tunnel, frp, SSH reverse tunnel, or your own VPS relay."),
+                note: localizer.t("隧道服务由你自己维护；TraceFence 只负责本机 API 和配对密钥。", en: "You operate the tunnel; TraceFence only provides the local API and pairing token.", zhHant: "隧道服務由你自己維護；TraceFence 只負責本地 API 和配對密鑰。", ja: "トンネルはユーザーが運用します。TraceFence はローカル API とペアリングトークンのみを提供します。", ko: "터널은 사용자가 운영합니다. TraceFence는 로컬 API와 페어링 토큰만 제공합니다.", mt: "You operate the tunnel; TraceFence only provides the local API and pairing token."),
+                color: Theme.Colors.purple
+            )
+        ]
+    }
+
+    private func copyToPasteboard(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private func showCopied(_ message: String) {
+        copiedMessage = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            if copiedMessage == message {
+                copiedMessage = nil
+            }
+        }
+    }
+
+    private struct RemoteAccessCopy {
+        let icon: String
+        let title: String
+        let detail: String
+        let note: String
+        let color: Color
+    }
+}
+
+private struct TraceFencePairingQRCodeView: View {
+    let text: String
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.white)
+            if let image = TraceFencePairingQRCodeFactory.image(from: text) {
+                Image(nsImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(10)
+            } else {
+                Image(systemName: "qrcode")
+                    .font(.system(size: 46, weight: .regular))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Theme.Colors.separator.opacity(0.7), lineWidth: 1)
+        )
+        .accessibilityLabel("TraceFence iOS pairing QR code")
+    }
+}
+
+private enum TraceFencePairingQRCodeFactory {
+    static func image(from text: String) -> NSImage? {
+        guard let data = text.data(using: .utf8) else { return nil }
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = data
+        filter.correctionLevel = "M"
+        guard let output = filter.outputImage else { return nil }
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
+        let representation = NSCIImageRep(ciImage: scaled)
+        let image = NSImage(size: representation.size)
+        image.addRepresentation(representation)
+        return image
     }
 }
 
@@ -1154,6 +1839,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
     private var lastRealtimeRefreshDate: Date?
     private var lastFullScanDate: Date?
     private let activeRetentionWindow: TimeInterval = 30 * 60
+    private let maxCachedSessions = 120
 
     private struct Cache: Codable {
         var version: Int = 1
@@ -1389,7 +2075,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
             if left == right { return $0.agentName < $1.agentName }
             return left > right
         }
-        return Array(rows.prefix(400))
+        return Array(rows.prefix(160))
     }
 
     private static func sanitizedSessions(_ sessions: [AgentMonitorSessionSnapshot]) -> [AgentMonitorSessionSnapshot] {
@@ -1489,7 +2175,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
                 if left == right { return $0.agentName < $1.agentName }
                 return left > right
             }
-            .prefix(400)
+            .prefix(160)
             .map { $0 }
 
         let focusedSnapshots = Self.usageSnapshots(from: sessions)
@@ -1535,7 +2221,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: SandboxPaths.shared.agentMonitorCachePath)),
               let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
         snapshots = cache.snapshots
-        sessions = Self.sanitizedSessions(cache.sessions)
+        sessions = Array(Self.sanitizedSessions(cache.sessions).prefix(maxCachedSessions))
         networkConnections = cache.networkConnections ?? []
         authorizedRoots = cache.authorizedRoots
         if !cache.scannedRoots.isEmpty {
@@ -1549,7 +2235,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
         let cache = Cache(
             updatedAt: Date(),
             snapshots: snapshots,
-            sessions: Array(Self.sanitizedSessions(sessions).prefix(240)),
+            sessions: Array(Self.sanitizedSessions(sessions).prefix(maxCachedSessions)),
             networkConnections: networkConnections,
             authorizedRoots: authorizedRoots,
             scannedRoots: scannedRoots,
@@ -1561,7 +2247,41 @@ final class AgentMonitorOverviewStore: ObservableObject {
     }
 }
 
+private final class AgentOverviewProcessOutputCapture: @unchecked Sendable {
+    private let limit: Int
+    private let lock = NSLock()
+    private var value = Data()
+
+    init(limit: Int) {
+        self.limit = limit
+    }
+
+    func drain(_ handle: FileHandle) {
+        while true {
+            let chunk = handle.readData(ofLength: 64 * 1_024)
+            if chunk.isEmpty { break }
+            lock.lock()
+            let available = max(0, limit - value.count)
+            if available > 0 { value.append(chunk.prefix(available)) }
+            lock.unlock()
+        }
+    }
+
+    func snapshot() -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
 private final class AgentMonitorOverviewScanner {
+    private static let iso8601Formatter = ISO8601DateFormatter()
+    private static let fractionalISO8601Formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
     fileprivate struct ScanResult {
         let snapshots: [AgentMonitorUsageSnapshot]
         let sessions: [AgentMonitorSessionSnapshot]
@@ -1692,7 +2412,7 @@ private final class AgentMonitorOverviewScanner {
         let processInfo = scanProcessInfo()
         let children = childrenMap(processInfo)
         let networkConnections = scanOutboundConnections(processInfo: processInfo)
-        let pidToSessionFiles = scanOpenSessionFiles()
+        let pidToSessionFiles = scanOpenSessionFiles(processInfo: processInfo)
         let portsByPid: [Int: [Int]] = [:]
         let processStats = countAgentProcesses(processInfo)
         let authorizedRoots = authorizedBookmarkRoots()
@@ -1853,7 +2573,7 @@ private final class AgentMonitorOverviewScanner {
         let processInfo = scanProcessInfo()
         let children = childrenMap(processInfo)
         let networkConnections = scanOutboundConnections(processInfo: processInfo)
-        let pidToSessionFiles = scanOpenSessionFiles()
+        let pidToSessionFiles = scanOpenSessionFiles(processInfo: processInfo)
         let authorizedRoots = authorizedBookmarkRoots()
         let fixedRoots = Array(Set(cachedRoots + authorizedRoots + specs.flatMap { spec in
             effectiveRoots(for: spec, authorizedRoots: authorizedRoots)
@@ -3201,9 +3921,9 @@ private final class AgentMonitorOverviewScanner {
             return cached.session
         }
 
-        guard let parsed = parseSessionFileUncached(url) else { return nil }
+        guard let parsed = autoreleasepool(invoking: { parseSessionFileUncached(url) }) else { return nil }
         parsedSessionCacheLock.lock()
-        if parsedSessionCache.count >= 600 {
+        if parsedSessionCache.count >= 240 {
             parsedSessionCache.removeAll(keepingCapacity: true)
         }
         parsedSessionCache[url.path] = ParsedSessionCacheEntry(
@@ -3609,9 +4329,9 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func sessionText(from url: URL) -> String? {
-        let fullReadLimit = 4_000_000
-        let headLimit = 512_000
-        let tailLimit = 8_000_000
+        let fullReadLimit = 1_000_000
+        let headLimit = 128_000
+        let tailLimit = 1_500_000
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let size = try? handle.seekToEnd() else { return nil }
@@ -3666,8 +4386,18 @@ private final class AgentMonitorOverviewScanner {
         return result
     }
 
-    private func scanOpenSessionFiles() -> [Int: [String]] {
-        let output = run("/usr/sbin/lsof", ["+c", "0", "-w", "-Fpn", "-u", "\(getuid())"])
+    private func scanOpenSessionFiles(processInfo: [Int: ProcessInfo]) -> [Int: [String]] {
+        let agentPids = processInfo.values.compactMap { process -> Int? in
+            let command = process.command.lowercased()
+            guard matchingSpecName(process.command) != nil
+                    || command.contains("codex app-server")
+                    || command.contains("tracefenceclaudeadapter") else { return nil }
+            return process.pid
+        }
+        let pidList = Array(Set(agentPids)).sorted().prefix(128).map(String.init).joined(separator: ",")
+        guard !pidList.isEmpty else { return [:] }
+
+        let output = run("/usr/sbin/lsof", ["+c", "0", "-w", "-Fpn", "-a", "-p", pidList])
         var result: [Int: [String]] = [:]
         var currentPid: Int?
         for line in output.components(separatedBy: .newlines) {
@@ -4587,20 +5317,35 @@ private final class AgentMonitorOverviewScanner {
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
+
+        let finished = DispatchSemaphore(value: 0)
+        let reader = DispatchGroup()
+        let capture = AgentOverviewProcessOutputCapture(limit: 8 * 1_024 * 1_024)
+        task.terminationHandler = { _ in finished.signal() }
+
         do {
             try task.run()
-            let deadline = DispatchTime.now() + .seconds(3)
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: deadline) {
-                if task.isRunning {
-                    task.terminate()
-                }
+            reader.enter()
+            DispatchQueue.global(qos: .utility).async {
+                capture.drain(pipe.fileHandleForReading)
+                reader.leave()
             }
-            task.waitUntilExit()
-            guard let data = try? pipe.fileHandleForReading.readToEnd() else { return "" }
-            return String(data: data, encoding: .utf8) ?? ""
         } catch {
             return ""
         }
+
+        if finished.wait(timeout: .now() + 3) == .timedOut {
+            task.terminate()
+            if finished.wait(timeout: .now() + 1) == .timedOut {
+                _ = kill(task.processIdentifier, SIGKILL)
+                _ = finished.wait(timeout: .now() + 1)
+            }
+            _ = reader.wait(timeout: .now() + 2)
+            return ""
+        }
+
+        _ = reader.wait(timeout: .now() + 2)
+        return String(data: capture.snapshot(), encoding: .utf8) ?? ""
     }
 
     private func expand(_ path: String) -> String {
@@ -4620,10 +5365,8 @@ private final class AgentMonitorOverviewScanner {
 
     private func dateFromISO(_ value: String) -> Date? {
         guard !value.isEmpty else { return nil }
-        let formatter = ISO8601DateFormatter()
-        if let date = formatter.date(from: value) { return date }
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: value)
+        return Self.iso8601Formatter.date(from: value)
+            ?? Self.fractionalISO8601Formatter.date(from: value)
     }
 
     private func authorizedBookmarkRoots() -> [String] {
@@ -4715,7 +5458,8 @@ private final class AgentMonitorOverviewScanner {
         let raw = stringValue(object, keys: ["timestamp", "created_at", "createdAt"])
             ?? stringValue(object["payload"] as? [String: Any], keys: ["timestamp", "created_at", "createdAt"])
         guard let raw else { return nil }
-        return ISO8601DateFormatter().date(from: raw)
+        return Self.iso8601Formatter.date(from: raw)
+            ?? Self.fractionalISO8601Formatter.date(from: raw)
     }
 
     private func maxDate(_ lhs: Date?, _ rhs: Date) -> Date {
@@ -7109,7 +7853,7 @@ private struct AgentCommandDashboardView: View {
                 .frame(maxWidth: .infinity, minHeight: 180)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    VStack(spacing: Theme.Spacing.xs) {
+                    LazyVStack(spacing: Theme.Spacing.xs) {
                         sessionTableHeader
                         ForEach(data.displayedSessions) { session in
                             sessionTableRow(session, selectedID: data.selectedSession?.id)
@@ -7257,14 +8001,13 @@ private struct AgentCommandDashboardView: View {
                 }
             }
             .padding(Theme.Spacing.md)
-            .background(.ultraThinMaterial)
             .background(selected ? Theme.Colors.accent.opacity(0.12) : Theme.Colors.elevatedCardBg.opacity(0.58))
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
                     .stroke(selected ? Theme.Colors.accent.opacity(0.44) : Theme.Colors.separator.opacity(0.18), lineWidth: 1)
             )
-            .shadow(color: selected ? Theme.Colors.accent.opacity(0.10) : .clear, radius: 12, y: 6)
+            .shadow(color: selected ? Theme.Colors.accent.opacity(0.08) : .clear, radius: 5, y: 2)
         }
         .buttonStyle(.plain)
     }
@@ -7951,15 +8694,19 @@ struct OperationLogTab: View {
     @State private var viewMode = 0
     @State private var selectedProjectId: String?
     @State private var automationProjectSnapshots: [MonitorProjectSnapshot] = []
+    @State private var coreSessionSnapshots: [TraceFenceAgentCoreSessionSnapshot] = []
     @State private var cachedProjectSnapshots: [MonitorProjectSnapshot] = []
     @State private var cachedDisplayableRecords: [OperationRecord] = []
     @State private var cachedAgentNames: [String] = []
     @State private var projectSnapshotSignature = ""
     @State private var lastHeavyRefresh = Date.distantPast
+    @State private var lastCoreRefresh = Date.distantPast
+    @State private var coreRefreshInFlight = false
     @Namespace private var segmentNS
 
     private static let projectRecordWindowLimit = 2_000
     private static let heavyRefreshInterval: TimeInterval = 60
+    private static let coreRefreshInterval: TimeInterval = 10
 
     enum TimeRange: String, CaseIterable {
         case all = "all"
@@ -8132,8 +8879,12 @@ struct OperationLogTab: View {
         var snapshots = sessionGroups.compactMap { key, sessions in
             makeSessionProject(key: key, sessions: sessions, recordsByProject: recordsByProject)
         }
-        let knownKeys = Set(snapshots.map(\.id))
-        snapshots.append(contentsOf: operationProjectSnapshots(excluding: knownKeys, groupedRecords: recordsByProject))
+        var knownKeys = Set(snapshots.map(\.id))
+        let operationSnapshots = operationProjectSnapshots(excluding: knownKeys, groupedRecords: recordsByProject)
+        snapshots.append(contentsOf: operationSnapshots)
+        knownKeys.formUnion(operationSnapshots.map(\.id))
+        let coreSnapshots = coreProjectSnapshots(excluding: knownKeys)
+        snapshots.append(contentsOf: coreSnapshots)
         snapshots.append(contentsOf: automationProjectSnapshots)
         snapshots.sort {
             if lanePriority($0.lane) != lanePriority($1.lane) {
@@ -8143,7 +8894,7 @@ struct OperationLogTab: View {
         }
 
         cachedDisplayableRecords = displayableRecords
-        cachedAgentNames = Array(Set(displayableRecords.map(\.agentName))).sorted()
+        cachedAgentNames = Array(Set(displayableRecords.map(\.agentName) + coreSessionSnapshots.map(\.agentType))).sorted()
         cachedProjectSnapshots = snapshots
         projectSnapshotSignature = signature
         if let selectedProjectId, !snapshots.contains(where: { $0.id == selectedProjectId }) {
@@ -8164,7 +8915,76 @@ struct OperationLogTab: View {
         let automationKey = automationProjectSnapshots
             .map { "\($0.id):\(Int($0.lastActivity.timeIntervalSince1970)):\($0.lane.rawValue)" }
             .joined(separator: ",")
-        return "\(records.count)|\(recordKey)|\(sessionKey)|\(automationKey)"
+        let coreKey = coreSessionSnapshots
+            .prefix(80)
+            .map { "\($0.id):\($0.phase):\(Int($0.lastActivityAt.timeIntervalSince1970))" }
+            .joined(separator: ",")
+        return "\(records.count)|\(recordKey)|\(sessionKey)|\(automationKey)|\(coreKey)"
+    }
+
+    private func coreProjectSnapshots(excluding knownKeys: Set<String>) -> [MonitorProjectSnapshot] {
+        let now = Date()
+        let recentCutoff = now.addingTimeInterval(-3 * 24 * 60 * 60)
+        let attentionCutoff = now.addingTimeInterval(-24 * 60 * 60)
+        let activeCutoff = now.addingTimeInterval(-20 * 60)
+        let rows = coreSessionSnapshots.filter {
+            !$0.scheduledTask && $0.lastActivityAt >= recentCutoff
+        }
+        let groups = Dictionary(grouping: rows) { row -> String in
+            let cwdRoot = projectRoot(from: row.cwd)
+            if !cwdRoot.isEmpty { return cwdRoot }
+            let projectRootValue = projectRoot(from: row.project)
+            if !projectRootValue.isEmpty { return projectRootValue }
+            let project = row.project.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !project.isEmpty { return project }
+            return "core-agent:\(row.agentType.lowercased())"
+        }
+
+        return groups.compactMap { key, sessions in
+            guard !knownKeys.contains(key),
+                  let latest = sessions.max(by: { $0.lastActivityAt < $1.lastActivityAt }) else {
+                return nil
+            }
+
+            let hasLiveSession = sessions.contains {
+                $0.isActive && ($0.controlAvailable || $0.lastActivityAt >= activeCutoff)
+            }
+            let hasAttention = sessions.contains {
+                $0.needsAttention && $0.lastActivityAt >= attentionCutoff
+            }
+            let lane: MonitorProjectLane = hasLiveSession ? .live : (hasAttention ? .blocked : .completed)
+            let title: String
+            if key.hasPrefix("core-agent:") {
+                title = localizer.t("无项目", en: "No Project", zhHant: "無專案", ja: "プロジェクトなし", ko: "프로젝트 없음", mt: "No Project")
+            } else {
+                title = projectDisplayName(for: key, fallback: latest.project.isEmpty ? latest.agentType : latest.project)
+            }
+            let summaryCandidates = [latest.statusLineText, latest.title, latest.lastToolName]
+            let summary = summaryCandidates.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+                ?? localizer.t("已从 Agent Core 读取会话状态", en: "Session state loaded from Agent Core", zhHant: "已從 Agent Core 讀取工作階段狀態", ja: "Agent Core からセッション状態を読み込みました", ko: "Agent Core에서 세션 상태를 불러왔습니다", mt: "Session state loaded from Agent Core")
+            let blocker = hasAttention
+                ? localizer.t("Agent 会话需要处理", en: "Agent session needs attention", zhHant: "Agent 工作階段需要處理", ja: "Agent セッションへの対応が必要です", ko: "Agent 세션에 주의가 필요합니다", mt: "Agent session needs attention")
+                : nil
+
+            return MonitorProjectSnapshot(
+                id: key,
+                title: title,
+                path: key.hasPrefix("core-agent:") ? "" : key,
+                lane: lane,
+                agents: uniqueStrings(sessions.map(\.agentType)),
+                sessions: [],
+                records: [],
+                progress: lane == .live ? 0.55 : (lane == .blocked ? 0.35 : 1.0),
+                summary: shortText(summary, limit: 150),
+                blocker: blocker,
+                scheduledHint: nil,
+                lastActivity: latest.lastActivityAt,
+                activeTools: uniqueStrings(sessions.map(\.lastToolName)),
+                completedTasks: 0,
+                totalTasks: 0
+            )
+        }
+        .sorted { $0.lastActivity > $1.lastActivity }
     }
 
     private var liveProjectCount: Int {
@@ -8894,7 +9714,32 @@ struct OperationLogTab: View {
             lastHeavyRefresh = now
         }
         automationProjectSnapshots = readAutomationProjectSnapshots()
+        refreshCoreSessionsIfNeeded(force: forceHeavy, now: now)
         rebuildProjectSnapshotCache(force: forceHeavy || shouldHeavyRefresh)
+    }
+
+    private func refreshCoreSessionsIfNeeded(force: Bool, now: Date) {
+        guard TraceFenceDistributionPolicy.currentChannel.isDirect,
+              !coreRefreshInFlight,
+              force || now.timeIntervalSince(lastCoreRefresh) >= Self.coreRefreshInterval else {
+            return
+        }
+        coreRefreshInFlight = true
+        lastCoreRefresh = now
+
+        Task { @MainActor in
+            let snapshots = await TraceFenceAgentCoreClient.shared.sessionSnapshots()
+            if !snapshots.isEmpty || coreSessionSnapshots.isEmpty {
+                coreSessionSnapshots = snapshots
+            }
+            coreRefreshInFlight = false
+            rebuildProjectSnapshotCache(force: true)
+#if DEBUG
+            if !snapshots.isEmpty {
+                print("[TraceFence] Agent Monitor loaded \(snapshots.count) Core sessions; projects=\(cachedProjectSnapshots.count)")
+            }
+#endif
+        }
     }
 
     private var modeSelector: some View {
@@ -11297,12 +12142,16 @@ struct MacCleanerTab: View {
         .onAppear {
             licenseService.refreshTrialState()
         }
-        .alert(localizer.t("需要 TraceFence Pro", en: "TraceFence Pro required"), isPresented: Binding(
+        .alert(localizer.t("需要 TraceFence 订阅", en: "TraceFence subscription required"), isPresented: Binding(
             get: { !paywallMessage.isEmpty },
             set: { if !$0 { paywallMessage = "" } }
         )) {
-            Button(localizer.t("购买 Pro", en: "Buy Pro")) {
-                licenseService.openPurchasePage()
+            Button(TraceFenceDistributionPolicy.currentChannel.isAppStore ? localizer.t("管理订阅", en: "Manage Subscription") : localizer.t("订阅", en: "Subscribe")) {
+                if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+                    showSettings = true
+                } else {
+                    licenseService.openPurchasePage(for: .standard)
+                }
                 paywallMessage = ""
             }
             Button(localizer.cancel, role: .cancel) {

@@ -11,7 +11,7 @@
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.tracefence.app</string>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -41,9 +41,17 @@
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>TraceFence uses access to your Downloads folder only when you choose to scan or monitor it. For example, it can identify downloaded app installers, AI agent logs, cache archives, and temporary files so you can review them before cleanup or include them in local token and agent activity statistics.</string>
 	<key>TraceFenceCheckoutURL</key>
-	<string>https://tracefence.lemonsqueezy.com/checkout/buy/044956c9-c8ea-476b-95d3-3e5c0670acfe</string>
+	<string>$(TRACEFENCE_CHECKOUT_URL)</string>
+	<key>TraceFenceDistributionChannel</key>
+	<string>$(TRACEFENCE_DISTRIBUTION_CHANNEL)</string>
+	<key>TraceFenceEnhancedCheckoutURL</key>
+	<string>$(TRACEFENCE_ENHANCED_CHECKOUT_URL)</string>
+	<key>TraceFenceAppStoreMonthlyProductID</key>
+	<string>com.tracefence.standard.monthly</string>
+	<key>TraceFenceAppStoreYearlyProductID</key>
+	<string>com.tracefence.standard.yearly</string>
 	<key>TraceFenceUpdateAPIURL</key>
-	<string>https://api.github.com/repos/AI-Scarlett/TraceFence/releases/latest</string>
+	<string>$(TRACEFENCE_UPDATE_API_URL)</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

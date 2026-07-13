@@ -1,0 +1,10 @@
+{
+  "id": "amp",
+  "version": "1.0.0",
+  "displayName": "Amp",
+  "executable": "TraceFenceUniversalAdapter",
+  "arguments": ["--adapter", "amp"],
+  "transport": "process",
+  "minimumCoreProtocol": 1,
+  "capabilities": ["instruction", "interrupt", "independent_update"]
+}

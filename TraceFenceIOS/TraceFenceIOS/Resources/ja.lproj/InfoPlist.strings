@@ -1,0 +1,3 @@
+"NSFaceIDUsageDescription" = "TraceFence は Face ID を使用して、Mac のペアリング、Agent セッション、承認、リモート操作を保護します。";
+"NSCameraUsageDescription" = "TraceFence は Mac に表示されたペアリング QR コードをスキャンします。";
+"NSLocalNetworkUsageDescription" = "TraceFence はプライベートなリモート制御のため、ローカルネットワーク上の Mac に直接接続します。";

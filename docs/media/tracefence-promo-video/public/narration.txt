@@ -1,0 +1,49 @@
+Meet TraceFence, the command center for modern AI coding. Not another model. Not another chat window. A visibility layer for the work already happening on your Mac.
+
+When Codex, Claude, Cursor, and other agents become part of daily production, the real question changes. What is running, what is changing, and what quota is still available?
+
+TraceFence turns that uncertainty into a native macOS cockpit: sessions, projects, tokens, provider quota, reset windows, alerts, cleanup, and diagnostics in one place.
+
+Start from the menu bar. Provider quota monitoring reads official provider signals and shows the limits that shape your day: five-hour windows, weekly windows, and reset timing.
+
+For heavy Codex users, this is the missing dashboard. You can see how much capacity remains before a coding sprint, not after the work is already blocked.
+
+TraceFence also tracks Codex manual reset credits. See how many resets remain, which credit expires next, and the exact window for each reset opportunity.
+
+That sounds small until you lose a reset you could have used. For AI operators, quota is inventory. Reset credits are time-sensitive assets.
+
+The overview page gives the executive view: aggregated sessions, active agents, project coverage, token volume, live activity, and data-source status without repeating the same numbers everywhere.
+
+You can open TraceFence and understand the state of your AI workspace in seconds. Is there activity? Which projects are covered? Are the sources authorized?
+
+Token Analytics turns usage from a feeling into a ledger. Total tokens, input tokens, output tokens, cache tokens, estimated cost, model ranking, project attribution, and session detail.
+
+You can finally answer the question every serious builder asks: which project is burning capacity, which model is expensive, and which sessions are unusually heavy?
+
+The model names come from local logs. If an agent records experimental names, TraceFence preserves them. The goal is observability, not a polished fiction.
+
+Agent Guard watches the other side of AI productivity: file creation, modification, deletion, reads, command execution, search behavior, and session activity.
+
+High-risk changes, sensitive directory access, suspicious batch operations, and protected-folder events become visible alerts instead of silent surprises.
+
+This is not about distrusting agents. It is about giving powerful tools the same discipline you expect from production systems: permission, observation, evidence, and control.
+
+The Agent Toolkit adds practical operations. Back up selected agent sessions without credentials. Run health diagnostics. Analyze usage trends. Audit configuration without exposing secrets.
+
+On the direct-download edition, TraceFence can also help control local agent processes with clear confirmations: quit, force quit, or restart when a tool gets stuck.
+
+TraceFence is also a developer-aware Mac maintenance suite. It understands cache, packages, dependencies, app data, hidden directories, and AI agent workspaces.
+
+Safe items can be cleaned. Risky items are explained first. Deletions prefer Trash, because an agent workspace is not the place for blind one-click destruction.
+
+Privacy stays local by design. TraceFence works with authorized folders, local logs, metadata, and system state. It does not need to upload private conversations to explain your workflow.
+
+For individuals, it is a personal AI operations room. For small teams, it is a shared language for usage, cost, risk, and recoverability.
+
+The benefit is simple: before you ask the model to do more, you know the capacity, the context, and the risk boundary.
+
+TraceFence does not replace Codex. It makes Codex, Claude, Cursor, and other agents easier to operate for the long run.
+
+See your quota. Track reset credits. Understand token flow. Watch agent activity. Protect your workspace. This is the dashboard AI coding has been missing.
+
+TraceFence. Build faster, but keep the cockpit lit. Download the direct edition and learn more at tracefence.com.

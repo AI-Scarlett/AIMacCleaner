@@ -82,6 +82,7 @@ final class CaptureShelfService: ObservableObject {
     private var lastPasteboardChangeCount: Int
     private var saveWorkItem: DispatchWorkItem?
     private var selectionOverlayController: CaptureSelectionOverlayController?
+    private var lastSelectionCaptureRequestAt = Date.distantPast
     private var recordingSession: AVCaptureSession?
     private var recordingOutput: AVCaptureMovieFileOutput?
     private var recordingDelegate: ScreenRecordingDelegate?
@@ -153,22 +154,19 @@ final class CaptureShelfService: ObservableObject {
 
     func captureSelectedRegionToClipboard() {
         guard prepareScreenCapture() else { return }
-        guard selectionOverlayController == nil else { return }
-
-        isCapturingScreen = true
-        let controller = CaptureSelectionOverlayController { [weak self] rect in
-            Task { @MainActor in
-                guard let self else { return }
-                self.selectionOverlayController = nil
-                if let rect, rect.width >= 6, rect.height >= 6 {
-                    self.captureScreen(rect: rect.integral, sourceTitle: "selection")
-                }
-                self.isCapturingScreen = false
-            }
+        presentSelectionOverlay { [weak self] rect in
+            guard let self, let rect, rect.width >= 6, rect.height >= 6 else { return }
+            self.captureScreen(rect: rect.integral, sourceTitle: "selection")
         }
-        selectionOverlayController = controller
-        controller.begin()
     }
+
+#if DEBUG
+    func presentSelectionOverlayForUITest() {
+        presentSelectionOverlay { rect in
+            print("[TraceFence][CaptureUITest] selection=\(String(describing: rect?.integral))")
+        }
+    }
+#endif
 
     func toggleScreenRecording() {
         if isRecordingScreen {
@@ -247,6 +245,26 @@ final class CaptureShelfService: ObservableObject {
             return false
         }
         return true
+    }
+
+    private func presentSelectionOverlay(onComplete: @escaping @MainActor (CGRect?) -> Void) {
+        guard selectionOverlayController == nil else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastSelectionCaptureRequestAt) >= 0.5 else { return }
+        lastSelectionCaptureRequestAt = now
+
+        isCapturingScreen = true
+        let controller = CaptureSelectionOverlayController { [weak self] rect in
+            Task { @MainActor in
+                guard let self else { return }
+                self.selectionOverlayController = nil
+                self.lastSelectionCaptureRequestAt = Date()
+                onComplete(rect)
+                self.isCapturingScreen = false
+            }
+        }
+        selectionOverlayController = controller
+        controller.begin()
     }
 
     private func captureScreen(rect: CGRect, sourceTitle: String) {

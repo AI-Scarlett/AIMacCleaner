@@ -12,6 +12,7 @@ struct AIMacCleanerApp: App {
     @StateObject private var overviewStore = AgentMonitorOverviewStore()
     @StateObject private var licenseService = DirectLicenseService.shared
     @StateObject private var updateService = DirectUpdateService.shared
+    @StateObject private var iOSRemoteGatewayService = IOSRemoteControlGatewayService.shared
     @StateObject private var providerQuotaService = ProviderQuotaService()
     @StateObject private var captureShelfService = CaptureShelfService.shared
     @StateObject private var menuBarController = MenuBarStatusController()
@@ -29,10 +30,16 @@ struct AIMacCleanerApp: App {
         if palette == nil || palette == AppColorPalette.aurora.rawValue {
             defaults.set(AppColorPalette.porcelain.rawValue, forKey: "colorPalette")
         }
+        Task { @MainActor in
+            IOSRemoteControlGatewayService.shared.startConfiguredIfNeeded()
+            if TraceFenceDistributionPolicy.currentChannel.isDirect {
+                _ = await TraceFenceAgentCoreClient.shared.refresh()
+            }
+        }
     }
 
     var body: some Scene {
-        WindowGroup {
+        Window("TraceFence", id: "main") {
             ContentView(overviewStore: overviewStore)
                 .environmentObject(service)
                 .environmentObject(localizer)
@@ -47,12 +54,19 @@ struct AIMacCleanerApp: App {
                     appDelegate.service = service
                     appDelegate.overviewStore = overviewStore
                     service.localizer = localizer
+                    iOSRemoteGatewayService.configure(
+                        scannerService: service,
+                        sessionStore: appDelegate.sessionStore,
+                        hookServer: appDelegate.hookServer,
+                        overviewStore: overviewStore
+                    )
                     appDelegate.configureAgentCenterContext(
                         sessionsViewModel: sessionsViewModel,
                         agentRegistry: agentRegistry,
                         conversationWatcher: conversationWatcher,
                         localizer: localizer
                     )
+                    appDelegate.initializeAgentCenterServices()
                     overviewStore.startBackgroundRefresh()
                     providerQuotaService.start()
                     captureShelfService.start()
@@ -66,7 +80,10 @@ struct AIMacCleanerApp: App {
                         }
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [updateService] in
-                        guard networkMode == "internet" else { return }
+#if DEBUG
+                        guard !ProcessInfo.processInfo.arguments.contains("--tracefence-capture-ui-test") else { return }
+#endif
+                        guard networkMode == "internet", TraceFenceDistributionPolicy.currentChannel.isDirect else { return }
                         Task { await updateService.checkForUpdates() }
                     }
                     menuBarController.configure(
@@ -94,6 +111,9 @@ struct AIMacCleanerApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))
         .defaultSize(width: 1100, height: 700)
+        .commands {
+            CommandGroup(replacing: .newItem) { }
+        }
     }
 }
 
@@ -190,7 +210,6 @@ extension Notification.Name {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindow: NSWindow?
-    private var fallbackWindow: NSWindow?
     private var fallbackService: ScannerService?
     private var fallbackLocalizer: Localizer?
     private var fallbackAgentRegistry: AgentRegistry?
@@ -214,21 +233,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private weak var agentRegistryContext: AgentRegistry?
     private weak var conversationWatcherContext: ConversationWatcher?
     private weak var localizerContext: Localizer?
+    private var didPresentInitialLaunchSurface = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.unhide(nil)
         terminateDuplicateTraceFenceInstances()
+        IOSRemoteControlGatewayService.shared.startConfiguredIfNeeded()
         DispatchQueue.main.async { [weak self] in
             self?.setupWindowDelegate()
             self?.ensureLaunchSurfaceVisible(reason: "launch")
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.bootstrapRemoteGatewayContext(reason: "launch")
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
             self?.ensureLaunchSurfaceVisible(reason: "launch-retry-1")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
+            self?.bootstrapRemoteGatewayContext(reason: "launch-retry")
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
             self?.ensureLaunchSurfaceVisible(reason: "launch-retry-2")
         }
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--tracefence-capture-ui-test") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+                CaptureShelfService.shared.presentSelectionOverlayForUITest()
+            }
+        }
+#endif
     }
 
     private func terminateDuplicateTraceFenceInstances() {
@@ -247,6 +281,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        NotificationCenter.default.removeObserver(
+            self,
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
         if let shortcutPressObserver {
             NotificationCenter.default.removeObserver(shortcutPressObserver)
             self.shortcutPressObserver = nil
@@ -264,32 +303,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         service?.guardFeature.saveCommandRules()
     }
 
+    @MainActor
     private func setupWindowDelegate() {
-        for window in NSApp.windows {
-            if window.title.contains("AgentWatch") || window.title.contains("AgentGuard") || window.title.contains("TraceFence") || window.className.contains("Window") {
-                mainWindow = window
-            }
-            window.delegate = WindowDelegate.shared
-        }
+        reconcileMainWindows()
         NotificationCenter.default.addObserver(
-            forName: NSWindow.didBecomeKeyNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            if let window = notification.object as? NSWindow {
-                self?.mainWindow = window
-                if window.delegate == nil {
-                    window.delegate = WindowDelegate.shared
-                }
-            }
+            self,
+            selector: #selector(mainWindowDidBecomeKey(_:)),
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
+    }
+
+    @MainActor
+    @objc private func mainWindowDidBecomeKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              isTraceFenceMainWindow(window) else {
+            return
         }
+        reconcileMainWindows(preferred: window)
     }
 
     @MainActor
     private func ensureLaunchSurfaceVisible(reason: String) {
+        if reason.hasPrefix("launch-retry"), didPresentInitialLaunchSurface {
+            return
+        }
+
         NSApp.setActivationPolicy(.regular)
         NSApp.unhide(nil)
 
+        reconcileMainWindows()
         if let window = bestMainWindow() {
             mainWindow = window
             window.delegate = WindowDelegate.shared
@@ -297,23 +340,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        createFallbackMainWindow(reason: reason)
+        print("[TraceFence] Main window not ready via \(reason); waiting for SwiftUI scene")
     }
 
     @MainActor
     private func bestMainWindow() -> NSWindow? {
-        if let mainWindow, mainWindow.contentView != nil {
+        if let mainWindow, isTraceFenceMainWindow(mainWindow) {
             return mainWindow
         }
 
-        return NSApp.windows.first { window in
-            guard window.contentView != nil,
-                  !window.isFloatingPanel,
-                  !window.isMiniaturized,
-                  window.canBecomeMain else {
-                return false
+        return NSApp.windows.first(where: isTraceFenceMainWindow)
+    }
+
+    private func isTraceFenceMainWindow(_ window: NSWindow) -> Bool {
+        window.contentView != nil &&
+            !window.isFloatingPanel &&
+            !window.isMiniaturized &&
+            window.canBecomeMain &&
+            window.styleMask.contains(.titled) &&
+            window.level < .screenSaver &&
+            window.title == "TraceFence"
+    }
+
+    @MainActor
+    private func reconcileMainWindows(preferred: NSWindow? = nil) {
+        let candidates = NSApp.windows.filter(isTraceFenceMainWindow)
+        guard !candidates.isEmpty else { return }
+
+        let canonical = preferred.flatMap { preferred in
+            candidates.first(where: { $0 === preferred })
+        } ?? candidates.first(where: \.isKeyWindow)
+            ?? candidates.first(where: \.isMainWindow)
+            ?? mainWindow.flatMap { current in
+                candidates.first(where: { $0 === current })
             }
-            return true
+            ?? candidates[0]
+
+        mainWindow = canonical
+        canonical.delegate = WindowDelegate.shared
+
+        for duplicate in candidates where duplicate !== canonical {
+            print("[TraceFence] Closing duplicate main window number=\(duplicate.windowNumber)")
+            duplicate.delegate = nil
+            duplicate.orderOut(nil)
+            duplicate.close()
         }
     }
 
@@ -324,67 +394,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        print("[TraceFence] Launch surface visible via \(reason)")
-    }
-
-    @MainActor
-    private func createFallbackMainWindow(reason: String) {
-        if let fallbackWindow {
-            mainWindow = fallbackWindow
-            show(window: fallbackWindow, reason: "\(reason)-existing-fallback")
-            return
+        if reason.hasPrefix("launch") {
+            didPresentInitialLaunchSurface = true
         }
-
-        let service = self.service ?? fallbackService ?? ScannerService()
-        let localizer = localizerContext ?? fallbackLocalizer ?? Localizer()
-        let agentRegistry = agentRegistryContext ?? fallbackAgentRegistry ?? AgentRegistry()
-        let sessionsViewModel = sessionsVM ?? fallbackSessionsViewModel ?? SessionsViewModel()
-        let conversationWatcher = conversationWatcherContext ?? fallbackConversationWatcher ?? ConversationWatcher()
-        let overviewStore = self.overviewStore ?? fallbackOverviewStore ?? AgentMonitorOverviewStore()
-
-        fallbackService = service
-        fallbackLocalizer = localizer
-        fallbackAgentRegistry = agentRegistry
-        fallbackSessionsViewModel = sessionsViewModel
-        fallbackConversationWatcher = conversationWatcher
-        fallbackOverviewStore = overviewStore
-
-        self.service = service
-        self.overviewStore = overviewStore
-        service.localizer = localizer
-        overviewStore.startBackgroundRefresh()
-        configureAgentCenterContext(
-            sessionsViewModel: sessionsViewModel,
-            agentRegistry: agentRegistry,
-            conversationWatcher: conversationWatcher,
-            localizer: localizer
-        )
-
-        let rootView = ContentView(overviewStore: overviewStore)
-            .environmentObject(service)
-            .environmentObject(localizer)
-            .environmentObject(agentRegistry)
-            .environmentObject(sessionsViewModel)
-            .environmentObject(conversationWatcher)
-            .environmentObject(DirectLicenseService.shared)
-            .environmentObject(DirectUpdateService.shared)
-            .frame(minWidth: 960, minHeight: 640)
-
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "TraceFence"
-        window.contentView = NSHostingView(rootView: rootView)
-        window.delegate = WindowDelegate.shared
-        window.setFrameAutosaveName("TraceFenceMainWindow")
-
-        fallbackWindow = window
-        mainWindow = window
-        show(window: window, reason: "\(reason)-fallback")
-
+        print("[TraceFence] Launch surface visible via \(reason)")
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -453,12 +466,59 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
+    private func bootstrapRemoteGatewayContext(reason: String) {
+        let service = self.service ?? fallbackService ?? ScannerService()
+        let overviewStore = self.overviewStore ?? fallbackOverviewStore ?? AgentMonitorOverviewStore()
+        let sessionsViewModel = sessionsVM ?? fallbackSessionsViewModel ?? SessionsViewModel()
+        let agentRegistry = agentRegistryContext ?? fallbackAgentRegistry ?? AgentRegistry()
+        let conversationWatcher = conversationWatcherContext ?? fallbackConversationWatcher ?? ConversationWatcher()
+        let localizer = localizerContext ?? fallbackLocalizer ?? Localizer()
+
+        self.service = service
+        self.overviewStore = overviewStore
+        fallbackService = service
+        fallbackOverviewStore = overviewStore
+        fallbackSessionsViewModel = sessionsViewModel
+        fallbackAgentRegistry = agentRegistry
+        fallbackConversationWatcher = conversationWatcher
+        fallbackLocalizer = localizer
+
+        service.localizer = localizer
+        overviewStore.startBackgroundRefresh()
+        overviewStore.refreshRealtime()
+        configureAgentCenterContext(
+            sessionsViewModel: sessionsViewModel,
+            agentRegistry: agentRegistry,
+            conversationWatcher: conversationWatcher,
+            localizer: localizer
+        )
+        IOSRemoteControlGatewayService.shared.configure(
+            scannerService: service,
+            sessionStore: sessionStore,
+            hookServer: hookServer,
+            overviewStore: overviewStore
+        )
+        initializeAgentCenterServices()
+        print("[TraceFence] Remote gateway context bootstrapped via \(reason)")
+    }
+
+    @MainActor
     func initializeAgentCenterServices() {
         guard let sessionsViewModel = sessionsVM,
               let agentRegistry = agentRegistryContext,
               let conversationWatcher = conversationWatcherContext else { return }
 
         if hookServer != nil {
+            if let store = sessionStore {
+                sessionsViewModel.setup(sessionStore: store)
+                conversationWatcher.setupExternalApprovalBridge(sessionStore: store)
+            }
+            IOSRemoteControlGatewayService.shared.configure(
+                scannerService: service,
+                sessionStore: sessionStore,
+                hookServer: hookServer,
+                overviewStore: overviewStore
+            )
             return
         }
 
@@ -475,6 +535,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         webhookNotifier = webhook
         remoteManager = remote
         bridgeBinary = bridge
+        IOSRemoteControlGatewayService.shared.configure(
+            scannerService: service,
+            sessionStore: store,
+            hookServer: server,
+            overviewStore: overviewStore
+        )
 
         Task {
             await remote.setup(hookServer: server)

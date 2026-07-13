@@ -1,6 +1,33 @@
 import Foundation
 import AppKit
 
+private final class OperationProcessOutputCapture: @unchecked Sendable {
+    private let limit: Int
+    private let lock = NSLock()
+    private var value = Data()
+
+    init(limit: Int) {
+        self.limit = limit
+    }
+
+    func drain(_ handle: FileHandle) {
+        while true {
+            let chunk = handle.readData(ofLength: 64 * 1_024)
+            if chunk.isEmpty { break }
+            lock.lock()
+            let available = max(0, limit - value.count)
+            if available > 0 { value.append(chunk.prefix(available)) }
+            lock.unlock()
+        }
+    }
+
+    func snapshot() -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
 class OperationMonitor: ObservableObject {
     @Published var records: [OperationRecord] = []
     @Published var isMonitoring: Bool = false
@@ -35,6 +62,7 @@ class OperationMonitor: ObservableObject {
         }
     }
     private let maxSnapshots = 10000
+    private let maxStoredRecords = 3000
     private var recordsPath: String { SandboxPaths.shared.operationsPath }
     private var curatedPath: String { SandboxPaths.shared.curatedPath }
     private var snapshotsPath: String { SandboxPaths.shared.snapshotsPath }
@@ -60,6 +88,7 @@ class OperationMonitor: ObservableObject {
     private var lastSnapshotFallbackPoll: Date = .distantPast
     private var fileAgentCache: [String: (agentName: String, processName: String, toolInfo: String?, cachedAt: Date, pid: pid_t)] = [:]
     private let cacheMaxSize = 5000
+    private let maxProcessArgumentLength = 2000
     private let cacheTTL: TimeInterval = 120.0
 
     @Published var activeAgentNames: Set<String> = []
@@ -454,6 +483,49 @@ class OperationMonitor: ObservableObject {
         restoreAccessFromBookmarks()
     }
 
+    private func runCapturedProcess(
+        executable: String,
+        arguments: [String],
+        timeout: TimeInterval,
+        outputLimit: Int = 8 * 1_024 * 1_024
+    ) -> (status: Int32, output: Data)? {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: executable)
+        task.arguments = arguments
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+
+        let finished = DispatchSemaphore(value: 0)
+        let reader = DispatchGroup()
+        let capture = OperationProcessOutputCapture(limit: outputLimit)
+        task.terminationHandler = { _ in finished.signal() }
+
+        do {
+            try task.run()
+            reader.enter()
+            DispatchQueue.global(qos: .utility).async {
+                capture.drain(pipe.fileHandleForReading)
+                reader.leave()
+            }
+        } catch {
+            return nil
+        }
+
+        if finished.wait(timeout: .now() + timeout) == .timedOut {
+            task.terminate()
+            if finished.wait(timeout: .now() + 1) == .timedOut {
+                _ = kill(task.processIdentifier, SIGKILL)
+                _ = finished.wait(timeout: .now() + 1)
+            }
+            _ = reader.wait(timeout: .now() + 2)
+            return nil
+        }
+
+        _ = reader.wait(timeout: .now() + 2)
+        return (task.terminationStatus, capture.snapshot())
+    }
+
     func start() {
         guard !isMonitoring else { return }
         isMonitoring = true
@@ -512,32 +584,22 @@ class OperationMonitor: ObservableObject {
             }
         }
 
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/ps")
-        task.arguments = ["-eo", "pid=,ppid=,comm=,args="]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
+        guard let result = runCapturedProcess(
+            executable: "/bin/ps",
+            arguments: ["-eo", "pid=,ppid=,comm=,args="],
+            timeout: 3
+        ), result.status == 0 || result.status == 1,
+           let output = String(data: result.output, encoding: .utf8) else { return }
 
-        do {
-            try task.run()
-            let deadline = DispatchTime.now() + .seconds(3)
-            DispatchQueue.global().asyncAfter(deadline: deadline) {
-                if task.isRunning { task.terminate() }
-            }
-            task.waitUntilExit()
-            guard task.terminationStatus == 0 || task.terminationStatus == 1,
-                  let data = try? pipe.fileHandleForReading.readToEnd(),
-                  let output = String(data: data, encoding: .utf8) else { return }
-
-            for line in output.components(separatedBy: .newlines) {
+        for line in output.components(separatedBy: .newlines) {
                 let parts = line.trimmingCharacters(in: .whitespaces).split(separator: " ", omittingEmptySubsequences: true)
                 guard parts.count >= 3,
                       let pid = pid_t(parts[0]),
                       let ppid = pid_t(parts[1]) else { continue }
 
-                let comm = String(parts[2])
-                let args = parts.count >= 4 ? String(parts[3...].joined(separator: " ")) : ""
+                let comm = String(parts[2].prefix(500))
+                let joinedArguments = parts.count >= 4 ? parts[3...].joined(separator: " ") : ""
+                let args = String(joinedArguments.prefix(maxProcessArgumentLength))
                 let lowerAll = (comm + " " + args).lowercased()
 
                 if lowerAll.contains("findersyncextension") || lowerAll.hasSuffix(".appex") ||
@@ -555,9 +617,6 @@ class OperationMonitor: ObservableObject {
                         }
                     }
                 }
-            }
-        } catch {
-            print("[AIMacCleaner] ps failed: \(error)")
         }
 
         stateLock.lock()
@@ -596,7 +655,7 @@ class OperationMonitor: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.processSnapshots.append(contentsOf: snapshot)
-            if self.processSnapshots.count > 10000 { self.processSnapshots = Array(self.processSnapshots.suffix(8000)) }
+            if self.processSnapshots.count > 4000 { self.processSnapshots = Array(self.processSnapshots.suffix(3200)) }
         }
 
         if agentsChanged || Date().timeIntervalSince(selfDirDiscoveryTime) > 30.0 {
@@ -613,35 +672,51 @@ class OperationMonitor: ObservableObject {
         let processCount = pidCommMap.count
         guard processCount > 0 else { return }
 
-        let uid = getuid()
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        task.arguments = ["+c", "0", "-w", "-FpcRn", "-u", "\(uid)"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
+        var agentProcessInfo: [pid_t: (agentName: String, comm: String, tool: String?)] = [:]
+        for (pid, comm) in pidCommMap {
+            if isSystemProcess(comm) { continue }
+            let args = pidArgsMap[pid] ?? ""
+            guard let agentName = resolvedAgentForProcess(
+                pid: pid,
+                comm: comm,
+                args: args,
+                ppidMap: ppidMap,
+                argsMap: pidArgsMap,
+                commMap: pidCommMap
+            ) else { continue }
+            agentProcessInfo[pid] = (agentName, comm, extractToolInfo(comm: comm, args: args))
+        }
+        if agentProcessInfo.isEmpty {
+            stateLock.lock()
+            allPidOpenFiles.removeAll(keepingCapacity: true)
+            lastLsofRefresh = Date()
+            stateLock.unlock()
+            return
+        }
 
-        do {
-            try task.run()
-            let deadline = DispatchTime.now() + .seconds(3)
-            DispatchQueue.global().asyncAfter(deadline: deadline) {
-                if task.isRunning { task.terminate() }
-            }
-            task.waitUntilExit()
+        let pidList = agentProcessInfo.keys
+            .sorted()
+            .prefix(512)
+            .map(String.init)
+            .joined(separator: ",")
+        guard let result = runCapturedProcess(
+            executable: "/usr/sbin/lsof",
+            arguments: ["+c", "0", "-w", "-FpcRn", "-p", pidList],
+            timeout: 3,
+            outputLimit: 16 * 1_024 * 1_024
+        ), result.status == 0 || result.status == 1,
+           let output = String(data: result.output, encoding: .utf8) else { return }
 
-            guard task.terminationStatus == 0 || task.terminationStatus == 1,
-                  let data = try? pipe.fileHandleForReading.readToEnd(),
-                  let output = String(data: data, encoding: .utf8) else { return }
+        var newPidOpenFiles: [pid_t: Set<String>] = [:]
+        var currentPid: pid_t = 0
 
-            var newPidOpenFiles: [pid_t: Set<String>] = [:]
-            var currentPid: pid_t = 0
-
-            for line in output.components(separatedBy: .newlines) {
+        for line in output.components(separatedBy: .newlines) {
                 if line.hasPrefix("p") {
                     if let pid = pid_t(String(line.dropFirst())) {
                         currentPid = pid
                     }
                 } else if line.hasPrefix("n") && currentPid != 0 {
+                    guard agentProcessInfo[currentPid] != nil else { continue }
                     let path = String(line.dropFirst())
                     guard path.hasPrefix("/"),
                           !path.hasPrefix("/dev/"),
@@ -659,22 +734,20 @@ class OperationMonitor: ObservableObject {
                         newPidOpenFiles[currentPid, default: []].insert(expanded)
                     }
                 }
-            }
+        }
 
-            stateLock.lock()
-            allPidOpenFiles = newPidOpenFiles
-            lastLsofRefresh = Date()
-            stateLock.unlock()
+        stateLock.lock()
+        allPidOpenFiles = newPidOpenFiles
+        lastLsofRefresh = Date()
+        stateLock.unlock()
 
-            let now = Date()
-            var newCacheEntries = 0
-            for (pid, files) in newPidOpenFiles {
-                let procName = pidCommMap[pid] ?? ""
-                if isSystemProcess(procName) { continue }
-
-                let args = pidArgsMap[pid] ?? ""
-                guard let agentName = resolvedAgentForProcess(pid: pid, comm: procName, args: args, ppidMap: ppidMap, argsMap: pidArgsMap, commMap: pidCommMap) else { continue }
-                let tool = extractToolInfo(comm: procName, args: args)
+        let now = Date()
+        var newCacheEntries = 0
+        for (pid, files) in newPidOpenFiles {
+            guard let processInfo = agentProcessInfo[pid] else { continue }
+            let procName = processInfo.comm
+            let agentName = processInfo.agentName
+            let tool = processInfo.tool
 
                 for file in files {
                     if shouldSkipPath(file) { continue }
@@ -686,20 +759,17 @@ class OperationMonitor: ObservableObject {
                     }
                     stateLock.unlock()
                 }
-            }
-
-            stateLock.lock()
-            fileAgentCache = fileAgentCache.filter { now.timeIntervalSince($0.value.cachedAt) < cacheTTL }
-            if fileAgentCache.count > cacheMaxSize {
-                let sorted = fileAgentCache.sorted { $0.value.cachedAt > $1.value.cachedAt }
-                fileAgentCache = Dictionary(uniqueKeysWithValues: sorted.prefix(cacheMaxSize).map { ($0.key, $0.value) })
-            }
-            stateLock.unlock()
-
-            print("[AIMacCleaner] lsof: \(newPidOpenFiles.count) PIDs, \(newPidOpenFiles.values.map{$0.count}.reduce(0,+)) files, cache: \(fileAgentCache.count) entries, new: \(newCacheEntries)")
-        } catch {
-            print("[AIMacCleaner] lsof failed: \(error)")
         }
+
+        stateLock.lock()
+        fileAgentCache = fileAgentCache.filter { now.timeIntervalSince($0.value.cachedAt) < cacheTTL }
+        if fileAgentCache.count > cacheMaxSize {
+            let sorted = fileAgentCache.sorted { $0.value.cachedAt > $1.value.cachedAt }
+            fileAgentCache = Dictionary(uniqueKeysWithValues: sorted.prefix(cacheMaxSize).map { ($0.key, $0.value) })
+        }
+        stateLock.unlock()
+
+        print("[AIMacCleaner] lsof: \(newPidOpenFiles.count) PIDs, \(newPidOpenFiles.values.map{$0.count}.reduce(0,+)) files, cache: \(fileAgentCache.count) entries, new: \(newCacheEntries)")
     }
 
     private func recordNewCommandExecutions(currentPidCommMap: [pid_t: String], currentPidArgsMap: [pid_t: String], currentPpidMap: [pid_t: pid_t]) {
@@ -814,30 +884,7 @@ class OperationMonitor: ObservableObject {
             }
         }
 
-        let pidFiles = allPidOpenFiles
-        let pidComms = allPidCommMap
-        let pidArgs = allPidArgsMap
         stateLock.unlock()
-
-        for (pid, files) in pidFiles {
-            if files.contains(expanded) || files.contains(eventPath) {
-                let comm = pidComms[pid] ?? ""
-                if isSystemProcess(comm) { continue }
-                guard let agentName = resolveAgentNameForPid(pid) else { continue }
-                let args = pidArgs[pid] ?? ""
-                let tool = extractToolInfo(comm: comm, args: args)
-                stateLock.lock()
-                fileAgentCache[expanded] = (agentName, comm, tool, now, pid)
-                stateLock.unlock()
-                return (agentName, comm, tool)
-            }
-        }
-
-        if abs(now.timeIntervalSince(lastLsofRefresh)) > 5.0 {
-            DispatchQueue.global(qos: .utility).async { [weak self] in
-                self?.refreshAllProcessInfo()
-            }
-        }
 
         return (nil, nil, nil)
     }
@@ -1264,10 +1311,7 @@ class OperationMonitor: ObservableObject {
             }
             guard !pathList.isEmpty else { return }
 
-            monitor.processQueue.async { [weak monitor] in
-                guard let monitor = monitor else { return }
-                monitor.processEvents(paths: pathList)
-            }
+            monitor.processEvents(paths: pathList)
         }
 
         var context = FSEventStreamContext(
@@ -1278,14 +1322,14 @@ class OperationMonitor: ObservableObject {
             copyDescription: nil
         )
 
-        let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagUseCFTypes)
+        let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
         streamRef = FSEventStreamCreate(
             kCFAllocatorDefault,
             callback,
             &context,
             watchPaths as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            0.5,
+            1.0,
             flags
         )
 
@@ -1310,10 +1354,6 @@ class OperationMonitor: ObservableObject {
     private func processEvents(paths: [String]) {
         let fm = FileManager.default
         let now = Date()
-
-        if now.timeIntervalSince(lastLsofRefresh) > 1.0 {
-            refreshAllProcessInfo()
-        }
 
         if now.timeIntervalSince(lastCleanupTime) > 60.0 {
             cleanupOldSnapshots()
@@ -1650,7 +1690,7 @@ class OperationMonitor: ObservableObject {
     private func recordsWithinRetention(_ input: [OperationRecord]) -> [OperationRecord] {
         let cutoff = Date().addingTimeInterval(-Double(recordRetentionHours) * 3600)
         var seen: Set<String> = []
-        return input
+        let retained = input
             .filter { $0.timestamp >= cutoff }
             .sorted { $0.timestamp > $1.timestamp }
             .filter { record in
@@ -1659,6 +1699,7 @@ class OperationMonitor: ObservableObject {
                 seen.insert(key)
                 return true
             }
+        return Array(retained.prefix(maxStoredRecords))
     }
 
     private func rebuildRecordFingerprints() {

@@ -1,0 +1,3 @@
+"NSFaceIDUsageDescription" = "TraceFence uses Face ID to protect Mac pairing, agent sessions, approvals, and remote controls.";
+"NSCameraUsageDescription" = "TraceFence scans the pairing QR code shown by your Mac.";
+"NSLocalNetworkUsageDescription" = "TraceFence connects directly to your Mac on your local network for private remote control.";

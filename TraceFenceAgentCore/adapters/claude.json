@@ -1,0 +1,16 @@
+{
+  "id": "claude",
+  "version": "1.0.2",
+  "displayName": "Claude Code",
+  "executable": "TraceFenceClaudeAdapter",
+  "arguments": [],
+  "transport": "process-to-daemon",
+  "minimumCoreProtocol": 1,
+  "capabilities": [
+    "session_discovery",
+    "instruction",
+    "interrupt",
+    "approval",
+    "independent_update"
+  ]
+}

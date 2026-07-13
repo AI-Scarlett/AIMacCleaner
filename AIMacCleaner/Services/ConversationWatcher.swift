@@ -30,13 +30,25 @@ class ConversationWatcher: ObservableObject {
     private var watchedPaths: Set<String> = []
     private let maxConversations = 500
     private let externalApprovalWindow: TimeInterval = 15 * 60
+    private let initialApprovalTailBytes: UInt64 = 4 * 1_024 * 1_024
+    private let maxApprovalDeltaBytes: UInt64 = 8 * 1_024 * 1_024
+    private let maxApprovalPartialLineBytes = 512 * 1_024
     private var processedExternalApprovalIds: Set<String> = []
     private var pendingExternalApprovalIds: [String: String] = [:]
+    private var externalApprovalCursors: [String: ExternalApprovalCursor] = [:]
     private weak var sessionStore: SessionStore?
+    private let jsonTimestampFormatter = ISO8601DateFormatter()
+    private let fractionalJSONTimestampFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
     nonisolated private static let sessionIdRegexes: [NSRegularExpression] = [
         try! NSRegularExpression(pattern: "session[-_]([a-f0-9-]{20,})", options: []),
         try! NSRegularExpression(pattern: "([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})", options: [])
     ]
+    nonisolated private static let approvalMarker = Data("require_escalated".utf8)
+    nonisolated private static let functionOutputMarker = Data("function_call_output".utf8)
 
     func setupExternalApprovalBridge(sessionStore: SessionStore) {
         self.sessionStore = sessionStore
@@ -54,7 +66,9 @@ class ConversationWatcher: ObservableObject {
                       let directories = await watcher.activeWatchedDirectories() else {
                     break
                 }
-                let found = Self.scanDirectoriesSnapshot(directories)
+                let found = autoreleasepool {
+                    Self.scanDirectoriesSnapshot(directories)
+                }
                 await watcher.applyScanResult(found)
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
             }
@@ -75,6 +89,7 @@ class ConversationWatcher: ObservableObject {
         monitorTask?.cancel()
         monitorTask = nil
         pendingExternalApprovalIds.removeAll()
+        externalApprovalCursors.removeAll()
     }
 
     func scanDirectories() {
@@ -92,41 +107,121 @@ class ConversationWatcher: ObservableObject {
         let cutoff = Date().addingTimeInterval(-externalApprovalWindow)
         guard let enumerator = FileManager.default.enumerator(
             at: sessionsRoot,
-            includingPropertiesForKeys: [.contentModificationDateKey],
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
             options: [.skipsHiddenFiles]
         ) else { return }
 
+        var activePaths = Set<String>()
         for case let url as URL in enumerator where url.pathExtension.lowercased() == "jsonl" {
-            guard let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
-                  (values.contentModificationDate ?? .distantPast) >= cutoff else { continue }
-            scanCodexRolloutForExternalApprovals(url: url, cutoff: cutoff, sessionStore: sessionStore)
+            guard let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
+                  (values.contentModificationDate ?? .distantPast) >= cutoff,
+                  let fileSize = values.fileSize,
+                  fileSize >= 0 else { continue }
+            activePaths.insert(url.path)
+            scanCodexRolloutForExternalApprovals(
+                url: url,
+                fileSize: UInt64(fileSize),
+                cutoff: cutoff,
+                sessionStore: sessionStore
+            )
         }
+        externalApprovalCursors = externalApprovalCursors.filter { activePaths.contains($0.key) }
     }
 
-    private func scanCodexRolloutForExternalApprovals(url: URL, cutoff: Date, sessionStore: SessionStore) {
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            guard let data = String(line).data(using: .utf8),
-                  let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let timestamp = parseJSONLTimestamp(raw["timestamp"] as? String),
-                  timestamp >= cutoff,
-                  let payload = raw["payload"] as? [String: Any] else { continue }
+    private func scanCodexRolloutForExternalApprovals(
+        url: URL,
+        fileSize: UInt64,
+        cutoff: Date,
+        sessionStore: SessionStore
+    ) {
+        let prior = externalApprovalCursors[url.path]
+        let cursorIsValid = prior.map { $0.offset <= fileSize } ?? false
+        var startOffset = cursorIsValid
+            ? (prior?.offset ?? 0)
+            : fileSize > initialApprovalTailBytes ? fileSize - initialApprovalTailBytes : 0
+        var partialLine = cursorIsValid ? (prior?.partialLine ?? Data()) : Data()
+        var dropsLeadingPartialLine = !cursorIsValid && startOffset > 0
 
-            if let request = parseCodexExternalApproval(payload: payload, timestamp: timestamp, rolloutURL: url) {
-                publishExternalApproval(request, sessionStore: sessionStore)
-                continue
+        if fileSize > startOffset, fileSize - startOffset > maxApprovalDeltaBytes {
+            startOffset = fileSize - maxApprovalDeltaBytes
+            partialLine.removeAll(keepingCapacity: false)
+            dropsLeadingPartialLine = true
+        }
+
+        guard fileSize > startOffset,
+              let handle = try? FileHandle(forReadingFrom: url) else {
+            externalApprovalCursors[url.path] = ExternalApprovalCursor(
+                offset: fileSize,
+                partialLine: partialLine
+            )
+            return
+        }
+
+        defer { try? handle.close() }
+        do {
+            try handle.seek(toOffset: startOffset)
+            let byteCount = Int(min(fileSize - startOffset, maxApprovalDeltaBytes))
+            guard let newData = try handle.read(upToCount: byteCount), !newData.isEmpty else { return }
+
+            var buffered = Data(capacity: partialLine.count + newData.count)
+            buffered.append(partialLine)
+            buffered.append(newData)
+
+            var lines = buffered.split(separator: 0x0A, omittingEmptySubsequences: false)
+            let endsWithNewline = buffered.last == 0x0A
+            var nextPartialLine = Data()
+            if endsWithNewline {
+                if lines.last?.isEmpty == true {
+                    lines.removeLast()
+                }
+            } else if let tail = lines.popLast(), tail.count <= maxApprovalPartialLineBytes {
+                nextPartialLine = Data(tail)
+            }
+            if dropsLeadingPartialLine, !lines.isEmpty {
+                lines.removeFirst()
             }
 
-            if let callId = payload["call_id"] as? String,
-               payload["type"] as? String == "function_call_output",
-               let sessionId = pendingExternalApprovalIds.removeValue(forKey: callId) {
-                Task { await sessionStore.setPendingPermission(sessionId, nil) }
+            for line in lines where !line.isEmpty {
+                autoreleasepool {
+                    let data = Data(line)
+                    guard data.range(of: Self.approvalMarker) != nil
+                            || data.range(of: Self.functionOutputMarker) != nil,
+                          let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let timestamp = parseJSONLTimestamp(raw["timestamp"] as? String),
+                          timestamp >= cutoff,
+                          let payload = raw["payload"] as? [String: Any] else { return }
+
+                    if let request = parseCodexExternalApproval(
+                        payload: payload,
+                        timestamp: timestamp,
+                        rolloutURL: url
+                    ) {
+                        publishExternalApproval(request, sessionStore: sessionStore)
+                        return
+                    }
+
+                    if let callId = payload["call_id"] as? String,
+                       payload["type"] as? String == "function_call_output",
+                       let sessionId = pendingExternalApprovalIds.removeValue(forKey: callId) {
+                        Task { await sessionStore.setPendingPermission(sessionId, nil) }
+                    }
+                }
             }
+
+            externalApprovalCursors[url.path] = ExternalApprovalCursor(
+                offset: startOffset + UInt64(newData.count),
+                partialLine: nextPartialLine
+            )
+        } catch {
+            externalApprovalCursors.removeValue(forKey: url.path)
         }
     }
 
     private func publishExternalApproval(_ request: ExternalApprovalRequest, sessionStore: SessionStore) {
         guard !processedExternalApprovalIds.contains(request.id) else { return }
+        if processedExternalApprovalIds.count >= 4_096 {
+            processedExternalApprovalIds.removeAll(keepingCapacity: true)
+        }
         processedExternalApprovalIds.insert(request.id)
         pendingExternalApprovalIds[request.callId] = request.id
 
@@ -195,7 +290,8 @@ class ConversationWatcher: ObservableObject {
 
     private func parseJSONLTimestamp(_ value: String?) -> Date? {
         guard let value else { return nil }
-        return ISO8601DateFormatter().date(from: value)
+        return fractionalJSONTimestampFormatter.date(from: value)
+            ?? jsonTimestampFormatter.date(from: value)
     }
 
     private func projectName(from cwd: String, fallback: String) -> String {
@@ -264,7 +360,11 @@ class ConversationWatcher: ObservableObject {
     }
 
     func readSnippet(for conversation: ConversationFile) -> String? {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: conversation.path)),
+        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: conversation.path)) else {
+            return nil
+        }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 4_096),
               let text = String(data: data, encoding: .utf8) else { return nil }
         return String(text.prefix(500))
     }
@@ -310,7 +410,8 @@ class ConversationWatcher: ObservableObject {
     }
 
     static func buildConversationDirectories(from profiles: [AgentIntegrationProfile]) -> [ConversationDirectory] {
-        profiles.compactMap { profile in
+        var seenPaths = Set<String>()
+        return profiles.compactMap { profile in
             let configPath = profile.fullConfigPath
             let expanded = configPath.path
             var isDir: ObjCBool = false
@@ -325,7 +426,9 @@ class ConversationWatcher: ObservableObject {
             }
 
             let conversationDirs = findConversationDirs(in: root, profile: profile)
-            return conversationDirs.first
+            guard let directory = conversationDirs.first,
+                  seenPaths.insert(directory.path).inserted else { return nil }
+            return directory
         }
     }
 
@@ -349,18 +452,13 @@ class ConversationWatcher: ObservableObject {
             }
         }
 
-        if dirs.isEmpty {
-            let dir = ConversationDirectory(
-                path: root,
-                agentId: profile.agentId,
-                agentName: profile.displayName,
-                lastModified: Date()
-            )
-            dirs.append(dir)
-        }
-
         return dirs
     }
+}
+
+private struct ExternalApprovalCursor {
+    var offset: UInt64
+    var partialLine: Data
 }
 
 private struct ExternalApprovalRequest {

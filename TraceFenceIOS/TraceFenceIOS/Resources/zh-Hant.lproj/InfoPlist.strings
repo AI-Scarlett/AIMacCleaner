@@ -1,0 +1,3 @@
+"NSFaceIDUsageDescription" = "TraceFence 使用 Face ID 保護 Mac 配對、Agent 工作階段、審批及遠端控制。";
+"NSCameraUsageDescription" = "TraceFence 用於掃描 Mac 顯示的配對 QR Code。";
+"NSLocalNetworkUsageDescription" = "TraceFence 透過區域網路直接連接你的 Mac，以進行私人遠端控制。";

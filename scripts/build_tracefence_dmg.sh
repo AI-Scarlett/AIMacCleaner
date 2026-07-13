@@ -3,14 +3,17 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="TraceFence"
-VERSION="${TRACEFENCE_VERSION:-1.0.55}"
+VERSION="${TRACEFENCE_VERSION:-1.0.66}"
 TAG="v${VERSION}"
 SCHEME="AIMacCleaner"
 CONFIGURATION="Release"
-BUILD_ROOT="/tmp/TraceFence-release-build"
-STAGING_DIR="/tmp/TraceFence-dmg-staging"
-OUTPUT_DMG="/tmp/${APP_NAME}-${TAG}-arm64.dmg"
-OUTPUT_ZIP="/tmp/${APP_NAME}-${TAG}-arm64.zip"
+BUILD_ROOT="${TRACEFENCE_BUILD_ROOT:-$PROJECT_DIR/build/.TraceFence-release-build}"
+STAGING_DIR="${TRACEFENCE_STAGING_DIR:-$PROJECT_DIR/build/.TraceFence-dmg-staging}"
+OUTPUT_DIR="${TRACEFENCE_OUTPUT_DIR:-$PROJECT_DIR/build/${APP_NAME}-${VERSION}}"
+OUTPUT_APP="$OUTPUT_DIR/${APP_NAME}.app"
+OUTPUT_DMG="$OUTPUT_DIR/${APP_NAME}-${TAG}-arm64.dmg"
+OUTPUT_ZIP="$OUTPUT_DIR/${APP_NAME}-${TAG}-arm64.zip"
+SWIFT_COMPILATION_MODE="${TRACEFENCE_SWIFT_COMPILATION_MODE:-singlefile}"
 SIGN_IDENTITY="${TRACEFENCE_SIGN_IDENTITY:-Developer ID Application: xiaoming zhou (UQ87N2WZ76)}"
 ENTITLEMENTS="$PROJECT_DIR/AIMacCleaner/AIMacCleaner.entitlements"
 DEFAULT_NOTARY_KEY="$HOME/.appstoreconnect/private_keys/AuthKey_JHKYSFS5HM.p8"
@@ -54,8 +57,8 @@ echo "========================================="
 echo "  Building ${APP_NAME} ${TAG}"
 echo "========================================="
 
-rm -rf "$BUILD_ROOT" "$STAGING_DIR" "$OUTPUT_DMG" "$OUTPUT_ZIP"
-mkdir -p "$BUILD_ROOT" "$STAGING_DIR"
+rm -rf "$BUILD_ROOT" "$STAGING_DIR" "$OUTPUT_DIR"
+mkdir -p "$BUILD_ROOT" "$STAGING_DIR" "$OUTPUT_DIR"
 
 if [ ! -x "$CODEXBAR_BINARY" ]; then
   if [ -z "$CODEXBAR_DIR" ] || [ ! -d "$CODEXBAR_DIR" ]; then
@@ -75,7 +78,9 @@ xcodebuild \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$BUILD_ROOT" \
   build \
-  CODE_SIGNING_ALLOWED=NO
+  CODE_SIGNING_ALLOWED=NO \
+  ENABLE_DEBUG_DYLIB=NO \
+  SWIFT_COMPILATION_MODE="$SWIFT_COMPILATION_MODE"
 
 BUILT_APP="$BUILD_ROOT/Build/Products/${CONFIGURATION}/${APP_NAME}.app"
 if [ ! -d "$BUILT_APP" ]; then
@@ -109,7 +114,10 @@ if [ "$NOTARIZE" = "1" ]; then
   spctl --assess --type execute --verbose=2 "$BUILT_APP"
 fi
 
-cp -R "$BUILT_APP" "$STAGING_DIR/"
+ditto "$BUILT_APP" "$OUTPUT_APP"
+codesign --verify --deep --strict --verbose=2 "$OUTPUT_APP"
+
+ditto "$OUTPUT_APP" "$STAGING_DIR/${APP_NAME}.app"
 ln -s /Applications "$STAGING_DIR/Applications"
 
 hdiutil create \
@@ -137,6 +145,6 @@ echo ""
 echo "========================================="
 echo "  Build Complete"
 echo "========================================="
-echo "  App:  $BUILT_APP"
+echo "  App:  $OUTPUT_APP"
 echo "  DMG:  $OUTPUT_DMG"
 echo "  SHA:  ${OUTPUT_DMG}.sha256"

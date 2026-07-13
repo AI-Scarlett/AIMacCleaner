@@ -8,8 +8,11 @@ struct QwenAdapter: AgentAdapter {
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
     private var userHome: URL { agentRealHomeURL() }
-    func detectInstallation() -> Bool { detectCLI("qwen") }
-    var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
+    func detectInstallation() -> Bool { detectCLI("qwen") || FileManager.default.fileExists(atPath: configRoot.path) }
+    var hooksInstalled: Bool { hookConfigPaths.contains { path in
+        guard let content = try? String(contentsOf: path, encoding: .utf8) else { return false }
+        return content.contains("agentguard-bridge") || content.contains("TraceFenceUniversalAdapter")
+    } }
     func installHooks(installer: HookInstaller) async throws {
         let bridgePath = try await installer.ensureBridgeBinary()
         let cmd = await installer.hookCommand(bridgePath: bridgePath, label: displayName, agentId: name)
@@ -62,7 +65,11 @@ struct OpenCodeAdapter: AgentAdapter {
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
     private var userHome: URL { agentRealHomeURL() }
-    func detectInstallation() -> Bool { detectCLI("opencode") }
+    func detectInstallation() -> Bool {
+        detectCLI("opencode")
+            || FileManager.default.fileExists(atPath: configRoot.path)
+            || FileManager.default.fileExists(atPath: userHome.appendingPathComponent(".local/share/opencode").path)
+    }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
         let bridgePath = try await installer.ensureBridgeBinary()
@@ -80,7 +87,7 @@ struct DroidAdapter: AgentAdapter {
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
     private var userHome: URL { agentRealHomeURL() }
-    func detectInstallation() -> Bool { detectCLI("droid") || detectApp(named: "Factory") }
+    func detectInstallation() -> Bool { detectCLI("droid") || detectApp(named: "Factory") || FileManager.default.fileExists(atPath: configRoot.path) }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
         let bridgePath = try await installer.ensureBridgeBinary()
@@ -152,7 +159,7 @@ struct HermesAdapter: AgentAdapter {
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("plugins/agentguard")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
     private var userHome: URL { agentRealHomeURL() }
-    func detectInstallation() -> Bool { detectCLI("hermes") || detectApp(named: "Hermes") }
+    func detectInstallation() -> Bool { detectCLI("hermes") || detectApp(named: "Hermes") || FileManager.default.fileExists(atPath: configRoot.path) }
     var hooksInstalled: Bool {
         let dir = configRoot.appendingPathComponent("plugins/agentguard")
         let yamlPath = dir.appendingPathComponent("plugin.yaml")
@@ -206,7 +213,7 @@ struct KiroAdapter: AgentAdapter {
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("agents/agentguard.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
     private var userHome: URL { agentRealHomeURL() }
-    func detectInstallation() -> Bool { detectAnyCLI(["kiro-cli", "kiro"]) || detectApp(named: "Kiro") }
+    func detectInstallation() -> Bool { detectAnyCLI(["kiro-cli", "kiro"]) || detectApp(named: "Kiro") || FileManager.default.fileExists(atPath: configRoot.path) }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
         let dir = configRoot.appendingPathComponent("agents")
@@ -232,7 +239,7 @@ struct OpenClawAdapter: AgentAdapter {
     var hookConfigPaths: [URL] { [configRoot.appendingPathComponent("settings.json")] }
     var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
     private var userHome: URL { agentRealHomeURL() }
-    func detectInstallation() -> Bool { detectCLI("openclaw") || detectApp(named: "OpenClaw") }
+    func detectInstallation() -> Bool { detectCLI("openclaw") || detectApp(named: "OpenClaw") || FileManager.default.fileExists(atPath: configRoot.path) }
     var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
     func installHooks(installer: HookInstaller) async throws {
         let bridgePath = try await installer.ensureBridgeBinary()
@@ -276,6 +283,104 @@ struct EasyClawAdapter: AgentAdapter {
         try await installer.injectJSONHooks(at: hookConfigPaths[0], events: AgentIntegrationProfile.easyClaw.events, hookCommand: cmd)
     }
     func removeHooks(installer: HookInstaller) async throws { try await installer.removeJSONHooks(at: hookConfigPaths[0]) }
+}
+
+struct CoreManagedAgentAdapter: AgentAdapter {
+    let name: String
+    let displayName: String
+    let icon: String
+    let configRootPath: String
+    let commandNames: [String]
+    let applicationNames: [String]
+    let dataPaths: [String]
+    let hookPaths: [String]
+    let hookMarker: String
+
+    private var userHome: URL { agentRealHomeURL() }
+    var configRoot: URL { userHome.appendingPathComponent(configRootPath) }
+    var hookConfigPaths: [URL] { hookPaths.map { userHome.appendingPathComponent($0) } }
+    var status: AdapterStatus { hooksInstalled ? .active : (detectInstallation() ? .installed : .unavailable) }
+
+    func detectInstallation() -> Bool {
+        detectAnyCLI(commandNames)
+            || detectAnyApp(applicationNames)
+            || dataPaths.contains { FileManager.default.fileExists(atPath: userHome.appendingPathComponent($0).path) }
+    }
+
+    var hooksInstalled: Bool {
+        guard !hookMarker.isEmpty else { return false }
+        return hookConfigPaths.contains { path in
+            (try? String(contentsOf: path, encoding: .utf8))?.contains(hookMarker) ?? false
+        }
+    }
+
+    func installHooks(installer: HookInstaller) async throws {
+        throw AgentError.hookInstallFailed("\(displayName) is managed by the independently upgradable TraceFence Agent Core adapter.")
+    }
+
+    func removeHooks(installer: HookInstaller) async throws {
+        throw AgentError.hookUninstallFailed("\(displayName) is managed by the independently upgradable TraceFence Agent Core adapter.")
+    }
+
+    static let grok = CoreManagedAgentAdapter(
+        name: "grok",
+        displayName: "Grok CLI",
+        icon: "terminal",
+        configRootPath: ".grok",
+        commandNames: ["grok"],
+        applicationNames: [],
+        dataPaths: [".grok"],
+        hookPaths: [".grok/hooks/tracefence.json"],
+        hookMarker: "TraceFenceUniversalAdapter"
+    )
+
+    static let miniMax = CoreManagedAgentAdapter(
+        name: "minimax",
+        displayName: "MiniMax Code",
+        icon: "m.square",
+        configRootPath: ".minimax",
+        commandNames: ["minimax", "mavis"],
+        applicationNames: ["MiniMax Code", "MiniMax"],
+        dataPaths: [".minimax", ".mavis", "Library/Application Support/MiniMax"],
+        hookPaths: [],
+        hookMarker: ""
+    )
+
+    static let aider = CoreManagedAgentAdapter(
+        name: "aider",
+        displayName: "Aider",
+        icon: "wand.and.stars",
+        configRootPath: ".aider",
+        commandNames: ["aider"],
+        applicationNames: [],
+        dataPaths: [".aider", ".aider.conf.yml"],
+        hookPaths: [],
+        hookMarker: ""
+    )
+
+    static let amp = CoreManagedAgentAdapter(
+        name: "amp",
+        displayName: "Amp",
+        icon: "bolt",
+        configRootPath: ".amp",
+        commandNames: ["amp"],
+        applicationNames: [],
+        dataPaths: [".amp", ".config/amp"],
+        hookPaths: [],
+        hookMarker: ""
+    )
+
+    static let goose = CoreManagedAgentAdapter(
+        name: "goose",
+        displayName: "Goose",
+        icon: "terminal",
+        configRootPath: ".config/goose",
+        commandNames: ["goose"],
+        applicationNames: ["Goose"],
+        dataPaths: [".config/goose", ".local/share/goose"],
+        hookPaths: [],
+        hookMarker: ""
+    )
 }
 
 struct AutoClawAdapter: AgentAdapter {

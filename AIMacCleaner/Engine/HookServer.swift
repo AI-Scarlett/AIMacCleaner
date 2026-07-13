@@ -172,6 +172,7 @@ actor HookServer {
 
         if updateSessionStore {
             await sessionStore?.handleEvent(event)
+            await updateSessionRuntime(from: normalized, sessionId: event.sessionId)
         }
         if let record = auditRecord(from: normalized, event: event) {
             await MainActor.run { [weak scannerService] in
@@ -197,6 +198,7 @@ actor HookServer {
             cwd: cwd,
             terminal: rawString(raw, keys: ["tty", "terminal"])
         )
+        await updateSessionRuntime(from: raw, sessionId: sessionId)
     }
 
     private func sendJSON<T: Encodable>(_ value: T, to connection: NWConnection) async {
@@ -278,6 +280,41 @@ actor HookServer {
             }
         }
         return fallback
+    }
+
+    private nonisolated func rawInt(_ raw: [String: Any], keys: [String]) -> Int? {
+        for key in keys {
+            if let value = raw[key] as? Int { return value }
+            if let value = raw[key] as? Int32 { return Int(value) }
+            if let value = raw[key] as? Int64 { return Int(value) }
+            if let value = raw[key] as? UInt32 { return Int(value) }
+            if let value = raw[key] as? UInt64 { return Int(value) }
+            if let value = raw[key] as? Double { return Int(value) }
+            if let value = raw[key] as? String,
+               let intValue = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return intValue
+            }
+        }
+        return nil
+    }
+
+    private func updateSessionRuntime(from raw: [String: Any], sessionId: String) async {
+        let pid = rawInt(raw, keys: ["pid", "process_id", "processId", "agent_pid", "agentPid"])
+        let tty = rawString(raw, keys: ["tty", "terminal"])
+        let termProgram = rawString(raw, keys: ["term_program", "termProgram", "TERM_PROGRAM"])
+        guard pid != nil || !tty.isEmpty || !termProgram.isEmpty else { return }
+        await sessionStore?.updateSession(sessionId) { session in
+            if let pid, pid > 1 {
+                session.pid = UInt32(pid)
+            }
+            if !tty.isEmpty {
+                session.tty = tty
+                session.terminal = tty
+            }
+            if !termProgram.isEmpty {
+                session.termProgram = termProgram
+            }
+        }
     }
 
     private func waitForQuestionResponse(from raw: [String: Any]) async -> QuestionResponse {

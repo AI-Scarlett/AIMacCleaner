@@ -36,6 +36,8 @@ class AgentSessionScanner: ObservableObject {
     private let operationFilesPerSourceLimit = 80
     private let codexOperationTailReadLimit = 512 * 1024
     private let codexOperationLineLimit = 900
+    private let genericOperationTailReadLimit = 4 * 1024 * 1024
+    private let structuredSessionReadLimit = 8 * 1024 * 1024
 
     init() {
         registerBuiltInSources()
@@ -160,6 +162,9 @@ class AgentSessionScanner: ObservableObject {
     func registerBuiltInSources() {
         registerClaudeCode()
         registerCodex()
+        registerGrok()
+        registerQwenCode()
+        registerCursorWorkspaces()
         registerKimi()
         registerMiniMax()
         registerAider()
@@ -229,7 +234,20 @@ class AgentSessionScanner: ObservableObject {
                     guard self.fileManager.fileExists(atPath: basePath) else { continue }
                     var isDir: ObjCBool = false
                     self.fileManager.fileExists(atPath: basePath, isDirectory: &isDir)
-                    guard isDir.boolValue else { continue }
+                    if !isDir.boolValue {
+                        sourceHasResults = true
+                        let modifiedAt = (try? self.fileManager.attributesOfItem(atPath: basePath)[.modificationDate]) as? Date
+                        let existing = merged[source.agentName]
+                        merged[source.agentName] = DiscoveredAgent(
+                            id: source.agentName + "_" + basePath,
+                            name: source.agentName,
+                            sessionCount: 1 + (existing?.sessionCount ?? 0),
+                            latestActivity: [modifiedAt, existing?.latestActivity].compactMap { $0 }.max(),
+                            projectDirs: existing?.projectDirs ?? [],
+                            dataPath: basePath
+                        )
+                        continue
+                    }
 
                     let depthLimit = 8
                     var sessionCount = 0
@@ -436,10 +454,16 @@ class AgentSessionScanner: ObservableObject {
         }
     }
 
-    func collectAllAgentOps(limit: Int = 10000) -> [AgentOpRecord] {
+    func collectAllAgentOps(limit: Int = 10000, filesPerSourceLimit: Int? = nil) -> [AgentOpRecord] {
         var allRecords: [AgentOpRecord] = []
+        let fileLimit = max(1, filesPerSourceLimit ?? operationFilesPerSourceLimit)
+        let sourceRecordLimit = max(100, min(limit, (limit / max(1, min(dataSources.count, 8))) * 2))
         for source in dataSources {
-            allRecords.append(contentsOf: collectAgentOps(for: source))
+            allRecords.append(contentsOf: collectAgentOps(
+                for: source,
+                fileLimit: fileLimit,
+                recordLimit: sourceRecordLimit
+            ))
             if allRecords.count > limit * 2 {
                 allRecords.sort { $0.timestamp > $1.timestamp }
                 allRecords = Array(allRecords.prefix(limit))
@@ -452,7 +476,7 @@ class AgentSessionScanner: ObservableObject {
         return allRecords
     }
 
-    private func collectAgentOps(for source: AgentDataSource) -> [AgentOpRecord] {
+    private func collectAgentOps(for source: AgentDataSource, fileLimit: Int, recordLimit: Int) -> [AgentOpRecord] {
         let home = SandboxPaths.realHomeDirectory
         let expandedPaths = source.searchPaths.map { $0.replacingOccurrences(of: "~", with: home) }
         var records: [AgentOpRecord] = []
@@ -462,16 +486,25 @@ class AgentSessionScanner: ObservableObject {
             var isDir: ObjCBool = false
             fileManager.fileExists(atPath: basePath, isDirectory: &isDir)
             if isDir.boolValue {
-                let urls = recentSessionFiles(in: basePath, pattern: source.filePattern, limit: operationFilesPerSourceLimit)
+                let urls = recentSessionFiles(in: basePath, pattern: source.filePattern, limit: fileLimit)
                 for url in urls {
-                    records.append(contentsOf: source.parser(url, source.agentName))
+                    records.append(contentsOf: autoreleasepool {
+                        source.parser(url, source.agentName)
+                    })
+                    if records.count > recordLimit * 2 {
+                        records.sort { $0.timestamp > $1.timestamp }
+                        records = Array(records.prefix(recordLimit))
+                    }
                 }
             } else {
-                records.append(contentsOf: source.parser(URL(fileURLWithPath: basePath), source.agentName))
+                records.append(contentsOf: autoreleasepool {
+                    source.parser(URL(fileURLWithPath: basePath), source.agentName)
+                })
             }
         }
 
-        return records
+        records.sort { $0.timestamp > $1.timestamp }
+        return Array(records.prefix(recordLimit))
     }
 
     private func recentSessionFiles(in dir: String, pattern: String, limit: Int) -> [URL] {
@@ -483,8 +516,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func modificationDate(for url: URL) -> Date {
-        let attrs = try? fileManager.attributesOfItem(atPath: url.path)
-        return (attrs?[.modificationDate] as? Date) ?? .distantPast
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
     }
 
     private func findSessionFiles(in dir: String, pattern: String) -> [URL] {
@@ -738,6 +770,43 @@ class AgentSessionScanner: ObservableObject {
         dataSources.append(source)
     }
 
+    private func registerGrok() {
+        let home = SandboxPaths.realHomeDirectory
+        dataSources.append(AgentDataSource(
+            agentName: "Grok CLI",
+            searchPaths: [home + "/.grok/sessions"],
+            filePattern: ".jsonl",
+            parser: { [weak self] url, name in
+                self?.parseGrokUpdates(url: url, agentName: name) ?? []
+            }
+        ))
+    }
+
+    private func registerQwenCode() {
+        let home = SandboxPaths.realHomeDirectory
+        dataSources.append(AgentDataSource(
+            agentName: "Qwen Code",
+            searchPaths: [home + "/.qwen/projects"],
+            filePattern: ".jsonl",
+            parser: { [weak self] url, name in
+                self?.parseGenericJSONL(url: url, agentName: name) ?? []
+            }
+        ))
+    }
+
+    private func registerCursorWorkspaces() {
+        let home = SandboxPaths.realHomeDirectory
+        dataSources.append(AgentDataSource(
+            agentName: "Cursor",
+            searchPaths: [home + "/Library/Application Support/Cursor/User/workspaceStorage"],
+            filePattern: ".vscdb",
+            isVSCodeType: true,
+            parser: { [weak self] url, name in
+                self?.parseVscdbSQLite(url: url, agentName: name) ?? []
+            }
+        ))
+    }
+
     private func registerKimi() {
         let home = SandboxPaths.realHomeDirectory
         let paths = [
@@ -757,18 +826,15 @@ class AgentSessionScanner: ObservableObject {
     private func registerMiniMax() {
         let home = SandboxPaths.realHomeDirectory
         let paths = [
-            home + "/.minimax",
-            home + "/.minimax-agent",
-            home + "/Library/Application Support/MiniMax",
-            home + "/Library/Application Support/MiniMax Agent",
-            home + "/Library/Application Support/minimax"
+            home + "/.minimax/sqlite.db",
+            home + "/.minimax/nexus/nexus.db"
         ]
         let source = AgentDataSource(
-            agentName: "MiniMax Agent",
+            agentName: "MiniMax Code",
             searchPaths: paths,
-            filePattern: ".json",
+            filePattern: ".db",
             parser: { [weak self] url, name in
-                self?.parseGenericJSONL(url: url, agentName: name) ?? []
+                self?.parseMiniMaxSQLite(url: url, agentName: name) ?? []
             }
         )
         dataSources.append(source)
@@ -780,8 +846,9 @@ class AgentSessionScanner: ObservableObject {
             agentName: "Aider",
             searchPaths: [home + "/.aider"],
             filePattern: ".md",
-            parser: { url, name in
-                guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+            parser: { [weak self] url, name in
+                guard let self,
+                      let content = self.readOperationTail(url: url, maxBytes: self.genericOperationTailReadLimit) else { return [] }
                 var records: [AgentOpRecord] = []
                 let lines = content.components(separatedBy: "\n")
                 for (i, line) in lines.enumerated() {
@@ -845,7 +912,8 @@ class AgentSessionScanner: ObservableObject {
     private func registerOpenCode() {
         let home = SandboxPaths.realHomeDirectory
         let paths = [
-            home + "/.opencode"
+            home + "/.opencode",
+            home + "/.local/share/opencode"
         ]
         let source = AgentDataSource(
             agentName: "OpenCode",
@@ -1050,7 +1118,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func parseOpenClawJSONL(url: URL, agentName: String) -> [AgentOpRecord] {
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        guard let content = readOperationTail(url: url, maxBytes: genericOperationTailReadLimit) else { return [] }
         var records: [AgentOpRecord] = []
         let sessionId = url.deletingPathExtension().lastPathComponent
 
@@ -1128,7 +1196,7 @@ class AgentSessionScanner: ObservableObject {
         let filename = url.lastPathComponent
         if filename.hasPrefix("request_dump_") { return [] }
 
-        guard let data = try? Data(contentsOf: url),
+        guard let data = boundedStructuredData(url: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
 
         var records: [AgentOpRecord] = []
@@ -1368,7 +1436,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func parseOpenHandsJSON(url: URL, agentName: String) -> [AgentOpRecord] {
-        guard let data = try? Data(contentsOf: url),
+        guard let data = boundedStructuredData(url: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
 
         var records: [AgentOpRecord] = []
@@ -1560,7 +1628,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func parseTraeSandbox(url: URL, agentName: String) -> [AgentOpRecord] {
-        guard let data = try? Data(contentsOf: url),
+        guard let data = boundedStructuredData(url: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
 
         let sessionId = json["name"] as? String ?? url.deletingPathExtension().lastPathComponent
@@ -1592,7 +1660,7 @@ class AgentSessionScanner: ObservableObject {
         let filename = url.lastPathComponent
         guard filename == "entries.json" else { return [] }
 
-        guard let data = try? Data(contentsOf: url),
+        guard let data = boundedStructuredData(url: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
 
         let resource = json["resource"] as? String ?? ""
@@ -1725,7 +1793,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func parseClaudeCodeJSONL(url: URL, agentName: String) -> [AgentOpRecord] {
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        guard let content = readOperationTail(url: url, maxBytes: genericOperationTailReadLimit) else { return [] }
         var records: [AgentOpRecord] = []
         var cwd = ""
         var sessionId = url.deletingPathExtension().lastPathComponent
@@ -2225,7 +2293,7 @@ class AgentSessionScanner: ObservableObject {
 
         var workspaceFolder = ""
         let wsPath = url.deletingLastPathComponent().appendingPathComponent("workspace.json").path
-        if let wsData = try? Data(contentsOf: URL(fileURLWithPath: wsPath)),
+        if let wsData = boundedStructuredData(url: URL(fileURLWithPath: wsPath)),
            let wsJson = try? JSONSerialization.jsonObject(with: wsData) as? [String: Any],
            let folder = wsJson["folder"] as? String {
             workspaceFolder = folder
@@ -2472,7 +2540,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     func parseFileChangesJSON(url: URL, agentName: String) -> [AgentOpRecord] {
-        guard let data = try? Data(contentsOf: url),
+        guard let data = boundedStructuredData(url: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
 
         let filePath = json["filePath"] as? String ?? ""
@@ -2541,8 +2609,140 @@ class AgentSessionScanner: ObservableObject {
         return parseGenericJSONL(url: url, agentName: agentName)
     }
 
+    private func parseGrokUpdates(url: URL, agentName: String) -> [AgentOpRecord] {
+        guard url.lastPathComponent == "updates.jsonl",
+              let content = readOperationTail(url: url, maxBytes: 2 * 1024 * 1024) else { return [] }
+        let sessionId = url.deletingLastPathComponent().lastPathComponent
+        let encodedCWD = url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
+        let cwd = encodedCWD.removingPercentEncoding ?? ""
+        var records: [AgentOpRecord] = []
+
+        for line in content.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let data = String(line).data(using: .utf8),
+                  let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let params = event["params"] as? [String: Any],
+                  let update = params["update"] as? [String: Any],
+                  update["sessionUpdate"] as? String == "tool_call" else { continue }
+
+            let toolName = (update["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? update["kind"] as? String
+                ?? "tool"
+            let input = update["rawInput"] as? [String: Any] ?? [:]
+            let target = stringArg(input, ["file_path", "path", "cwd", "workdir", "pattern"]) ?? cwd
+            let detail = stringArg(input, ["command", "cmd", "query", "content"])
+                ?? jsonText(input)
+            let rawTimestamp = (event["timestamp"] as? NSNumber)?.doubleValue ?? 0
+            let timestamp = rawTimestamp > 0
+                ? Date(timeIntervalSince1970: rawTimestamp > 9_999_999_999 ? rawTimestamp / 1_000 : rawTimestamp)
+                : (fileModificationDate(url) ?? Date())
+            records.append(AgentOpRecord(
+                id: update["toolCallId"] as? String ?? UUID().uuidString,
+                agentName: agentName,
+                sessionId: params["sessionId"] as? String ?? sessionId,
+                projectDir: cwd,
+                timestamp: timestamp,
+                toolName: toolName,
+                targetPath: target,
+                opType: classifyOpType(toolName),
+                detail: String(detail.prefix(300))
+            ))
+        }
+        return records
+    }
+
+    private func parseMiniMaxSQLite(url: URL, agentName: String) -> [AgentOpRecord] {
+        guard fileManager.fileExists(atPath: url.path), fileManager.isReadableFile(atPath: url.path) else { return [] }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_close(db) }
+
+        let sql = """
+        SELECT m.id, m.session_id, m.timestamp, m.data, COALESCE(s.workspace_dir, '')
+        FROM session_messages m
+        LEFT JOIN sessions s ON s.session_id = m.session_id
+        WHERE m.data LIKE '%"tool_calls"%'
+        ORDER BY m.timestamp DESC
+        LIMIT 2000;
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            return parseAutoGenSQLite(url: url, agentName: agentName)
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var records: [AgentOpRecord] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let rowId = sqlite3_column_int64(stmt, 0)
+            let sessionId = sqliteText(stmt, 1)
+            let rawTimestamp = sqlite3_column_int64(stmt, 2)
+            let rawData = sqliteText(stmt, 3)
+            let cwd = sqliteText(stmt, 4)
+            guard let data = rawData.data(using: .utf8),
+                  let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let calls = message["tool_calls"] as? [[String: Any]] else { continue }
+            let timestampValue = TimeInterval(rawTimestamp)
+            let timestamp = Date(timeIntervalSince1970: timestampValue > 9_999_999_999 ? timestampValue / 1_000 : timestampValue)
+            for (index, call) in calls.enumerated() {
+                guard let record = genericToolCallRecord(
+                    call,
+                    agentName: agentName,
+                    sessionId: sessionId,
+                    cwd: cwd,
+                    ts: timestamp
+                ) else { continue }
+                records.append(AgentOpRecord(
+                    id: "minimax_\(rowId)_\(index)",
+                    agentName: record.agentName,
+                    sessionId: record.sessionId,
+                    projectDir: record.projectDir,
+                    timestamp: record.timestamp,
+                    toolName: record.toolName,
+                    targetPath: record.targetPath,
+                    opType: record.opType,
+                    detail: record.detail
+                ))
+            }
+        }
+        return records
+    }
+
+    private func readOperationTail(url: URL, maxBytes: Int) -> String? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+              let size = (attributes[.size] as? NSNumber)?.uint64Value,
+              size > 0,
+              let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        let start = size > UInt64(maxBytes) ? size - UInt64(maxBytes) : 0
+        do {
+            try handle.seek(toOffset: start)
+            guard let data = try handle.readToEnd() else { return nil }
+            var content = String(decoding: data, as: UTF8.self)
+            if start > 0, let newline = content.firstIndex(of: "\n") {
+                content = String(content[content.index(after: newline)...])
+            }
+            return content
+        } catch {
+            return nil
+        }
+    }
+
+    private func boundedStructuredData(url: URL) -> Data? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+              let size = (attributes[.size] as? NSNumber)?.intValue,
+              size >= 0,
+              size <= structuredSessionReadLimit else { return nil }
+        return try? Data(contentsOf: url, options: .mappedIfSafe)
+    }
+
+    private func jsonText(_ value: Any) -> String {
+        guard JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
+              let text = String(data: data, encoding: .utf8) else { return String(describing: value) }
+        return text
+    }
+
     func parseGenericJSONL(url: URL, agentName: String) -> [AgentOpRecord] {
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        guard let content = readOperationTail(url: url, maxBytes: genericOperationTailReadLimit) else { return [] }
         var records: [AgentOpRecord] = []
         let sessionId = url.deletingPathExtension().lastPathComponent
         var cwd = ""
@@ -2712,6 +2912,7 @@ class AgentSessionScanner: ObservableObject {
         let argumentsText = value["arguments"] as? String
             ?? value["input"] as? String
             ?? value["args"] as? String
+            ?? value["tool_call_args"] as? String
             ?? ""
         if input.isEmpty, let parsed = parseJSONString(argumentsText) {
             input = parsed

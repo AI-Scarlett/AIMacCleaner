@@ -1,0 +1,10 @@
+{
+  "id": "kiro",
+  "version": "1.0.0",
+  "displayName": "Kiro CLI",
+  "executable": "TraceFenceUniversalAdapter",
+  "arguments": ["--adapter", "kiro"],
+  "transport": "process",
+  "minimumCoreProtocol": 1,
+  "capabilities": ["session_discovery", "session_context", "instruction", "interrupt", "independent_update"]
+}

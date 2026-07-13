@@ -60,7 +60,7 @@ struct ProtectedTrashItem: Identifiable, Codable, Hashable {
     let movedAt: Date
 }
 
-private struct ProtectedPathSnapshot {
+private struct ProtectedPathSnapshot: Sendable {
     let path: String
     let size: Int64
     let fileCount: Int
@@ -230,6 +230,8 @@ struct AuditReport {
 
 @MainActor
 class AgentGuardFeature: ObservableObject {
+    private static let statsHourFormatter = ISO8601DateFormatter()
+
     @Published var alerts: [GuardAlert] = []
     @Published var alertRule: AlertRule = AlertRule()
     @Published var protectedDirs: [String] = []
@@ -257,7 +259,10 @@ class AgentGuardFeature: ObservableObject {
     private var lastStatsSaveTime: Date = .distantPast
     private var lastProtectedTrashReminderTime: Date = .distantPast
     private var protectedDirectorySnapshots: [String: [String: ProtectedPathSnapshot]] = [:]
-    private let maxProtectedDirectorySnapshotItems = 5000
+    private var protectedDirectoryAuditInProgress = false
+    private var lastProtectedDirectoryAuditTime = Date.distantPast
+    private let protectedDirectoryAuditInterval: TimeInterval = 5 * 60
+    private let maxProtectedDirectorySnapshotItems = 2000
     private var alertRuleSaveTask: Task<Void, Never>?
     private var commandRegexCache: [String: Regex<AnyRegexOutput>] = [:]
     private var failedRegexRuleIds: Set<String> = []
@@ -599,7 +604,7 @@ class AgentGuardFeature: ObservableObject {
     func recordStats(_ record: OperationRecord) {
         let calendar = Calendar.current
         let hourStart = calendar.dateInterval(of: .hour, for: record.timestamp)?.start ?? record.timestamp
-        let hourKey = ISO8601DateFormatter().string(from: hourStart)
+        let hourKey = Self.statsHourFormatter.string(from: hourStart)
 
         if let idx = hourlyStats.firstIndex(where: { $0.id == hourKey }) {
             switch record.operationType {
@@ -861,6 +866,7 @@ class AgentGuardFeature: ObservableObject {
         guard !protectedDirs.contains(expanded) else { return }
         protectedDirs.append(expanded)
         protectedDirectorySnapshots.removeValue(forKey: expanded)
+        lastProtectedDirectoryAuditTime = .distantPast
         saveProtectedDirs()
     }
 
@@ -868,6 +874,7 @@ class AgentGuardFeature: ObservableObject {
         let expanded = normalizedPath(path)
         protectedDirs.removeAll { normalizedPath($0) == expanded }
         protectedDirectorySnapshots.removeValue(forKey: expanded)
+        lastProtectedDirectoryAuditTime = .distantPast
         saveProtectedDirs()
     }
 
@@ -944,32 +951,46 @@ class AgentGuardFeature: ObservableObject {
             return
         }
 
+        let now = Date()
+        guard !protectedDirectoryAuditInProgress,
+              now.timeIntervalSince(lastProtectedDirectoryAuditTime) >= protectedDirectoryAuditInterval else { return }
+
         let roots = protectedDirs.map(normalizedPath)
         let rootSet = Set(roots)
         protectedDirectorySnapshots = protectedDirectorySnapshots.filter { rootSet.contains($0.key) }
+        let previousSnapshots = protectedDirectorySnapshots
+        let itemLimit = maxProtectedDirectorySnapshotItems
+        protectedDirectoryAuditInProgress = true
+        lastProtectedDirectoryAuditTime = now
 
-        for root in roots {
-            let current = snapshotProtectedDirectory(root)
-            guard let previous = protectedDirectorySnapshots[root] else {
-                protectedDirectorySnapshots[root] = current
-                continue
-            }
-
-            let missingItems = previous.keys
-                .filter { current[$0] == nil }
-                .compactMap { previous[$0] }
-            for item in topLevelMissingSnapshots(from: missingItems).prefix(10) {
-                if let trashPath = inferredTrashPath(forOriginalPath: item.path) {
-                    recordProtectedTrashItem(
-                        originalPath: item.path,
-                        trashPath: trashPath,
-                        size: item.size,
-                        fileCount: item.fileCount
-                    )
+        Task.detached(priority: .background) {
+            let currentSnapshots = Dictionary(uniqueKeysWithValues: roots.map { root in
+                (root, Self.snapshotProtectedDirectory(root, maxItems: itemLimit))
+            })
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                defer { self.protectedDirectoryAuditInProgress = false }
+                let activeRoots = Set(self.protectedDirs.map(self.normalizedPath))
+                for root in roots where activeRoots.contains(root) {
+                    let current = currentSnapshots[root] ?? [:]
+                    if let previous = previousSnapshots[root] {
+                        let missingItems = previous.keys
+                            .filter { current[$0] == nil }
+                            .compactMap { previous[$0] }
+                        for item in self.topLevelMissingSnapshots(from: missingItems).prefix(10) {
+                            if let trashPath = self.inferredTrashPath(forOriginalPath: item.path) {
+                                self.recordProtectedTrashItem(
+                                    originalPath: item.path,
+                                    trashPath: trashPath,
+                                    size: item.size,
+                                    fileCount: item.fileCount
+                                )
+                            }
+                        }
+                    }
+                    self.protectedDirectorySnapshots[root] = current
                 }
             }
-
-            protectedDirectorySnapshots[root] = current
         }
     }
 
@@ -1008,38 +1029,52 @@ class AgentGuardFeature: ObservableObject {
         fireAlert(alert)
     }
 
-    private func snapshotProtectedDirectory(_ root: String) -> [String: ProtectedPathSnapshot] {
+    nonisolated private static func snapshotProtectedDirectory(
+        _ root: String,
+        maxItems: Int
+    ) -> [String: ProtectedPathSnapshot] {
         let fm = FileManager.default
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: root, isDirectory: &isDirectory) else { return [:] }
 
         var snapshot: [String: ProtectedPathSnapshot] = [:]
-        addSnapshotItem(path: root, to: &snapshot)
+        addSnapshotItem(url: URL(fileURLWithPath: root), isDirectory: isDirectory.boolValue, to: &snapshot)
 
         guard isDirectory.boolValue else { return snapshot }
         let rootURL = URL(fileURLWithPath: root, isDirectory: true)
         let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey, .totalFileAllocatedSizeKey]
-        let options: FileManager.DirectoryEnumerationOptions = [.skipsPackageDescendants]
+        let options: FileManager.DirectoryEnumerationOptions = [.skipsPackageDescendants, .skipsHiddenFiles]
         guard let enumerator = fm.enumerator(at: rootURL, includingPropertiesForKeys: keys, options: options) else {
             return snapshot
         }
 
         for case let url as URL in enumerator {
-            addSnapshotItem(path: url.path, to: &snapshot)
-            if snapshot.count >= maxProtectedDirectorySnapshotItems { break }
+            let name = url.lastPathComponent.lowercased()
+            if [".git", ".build", ".swiftpm", "node_modules", "deriveddata", "build", "dist", "cache", "caches"].contains(name) {
+                enumerator.skipDescendants()
+                continue
+            }
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            addSnapshotItem(
+                url: url,
+                isDirectory: values?.isDirectory ?? false,
+                size: Int64(values?.totalFileAllocatedSize ?? values?.fileSize ?? 0),
+                to: &snapshot
+            )
+            if snapshot.count >= maxItems { break }
         }
         return snapshot
     }
 
-    private func addSnapshotItem(path: String, to snapshot: inout [String: ProtectedPathSnapshot]) {
-        let normalized = normalizedPath(path)
+    nonisolated private static func addSnapshotItem(
+        url: URL,
+        isDirectory: Bool,
+        size: Int64 = 0,
+        to snapshot: inout [String: ProtectedPathSnapshot]
+    ) {
+        let normalized = url.standardizedFileURL.path
         guard snapshot[normalized] == nil else { return }
-        let fm = FileManager.default
-        var isDirectory: ObjCBool = false
-        guard fm.fileExists(atPath: normalized, isDirectory: &isDirectory) else { return }
-        let attrs = (try? fm.attributesOfItem(atPath: normalized)) ?? [:]
-        let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
-        snapshot[normalized] = ProtectedPathSnapshot(path: normalized, size: size, fileCount: isDirectory.boolValue ? 1 : 0)
+        snapshot[normalized] = ProtectedPathSnapshot(path: normalized, size: size, fileCount: isDirectory ? 1 : 0)
     }
 
     private func topLevelMissingSnapshots(from items: [ProtectedPathSnapshot]) -> [ProtectedPathSnapshot] {

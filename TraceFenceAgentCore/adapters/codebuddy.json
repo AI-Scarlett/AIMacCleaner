@@ -1,0 +1,10 @@
+{
+  "id": "codebuddy",
+  "version": "1.0.0",
+  "displayName": "CodeBuddy",
+  "executable": "TraceFenceUniversalAdapter",
+  "arguments": ["--adapter", "codebuddy"],
+  "transport": "process",
+  "minimumCoreProtocol": 1,
+  "capabilities": ["session_discovery", "session_context", "independent_update"]
+}

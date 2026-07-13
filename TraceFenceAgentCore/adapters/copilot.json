@@ -1,0 +1,10 @@
+{
+  "id": "copilot",
+  "version": "1.0.0",
+  "displayName": "GitHub Copilot CLI",
+  "executable": "TraceFenceUniversalAdapter",
+  "arguments": ["--adapter", "copilot"],
+  "transport": "process",
+  "minimumCoreProtocol": 1,
+  "capabilities": ["instruction", "interrupt", "independent_update"]
+}

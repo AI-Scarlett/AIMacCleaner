@@ -52,6 +52,10 @@
 		B1F081C0D25DCA024DE764FB /* RemoteManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F081C0D25DCA024DE764FB /* RemoteManager.swift */; };
 		B114AC07FB1218B1D5F4C9AC /* GlobalShortcutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F114AC07FB1218B1D5F4C9AC /* GlobalShortcutService.swift */; };
 		B1DE3880A0446E246F14E423 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1DE3880A0446E246F14E423 /* NetworkMonitor.swift */; };
+		D2F002001122334455667788 /* AgentPTYRuntimeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F002101122334455667788 /* AgentPTYRuntimeService.swift */; };
+		D2F001001122334455667788 /* IOSRemoteControlGatewayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F001101122334455667788 /* IOSRemoteControlGatewayService.swift */; };
+		D2F003001122334455667788 /* CodexControlPlaneService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F003101122334455667788 /* CodexControlPlaneService.swift */; };
+		D2F004001122334455667788 /* TraceFenceAgentCoreClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F004101122334455667788 /* TraceFenceAgentCoreClient.swift */; };
 		B116459B8B7913107AAE0C86 /* ConversationWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */; };
 		D1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift */; };
 		D1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift */; };
@@ -116,6 +120,10 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		F1F081C0D25DCA024DE764FB /* RemoteManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/RemoteManager.swift; sourceTree = "<group>"; };
 		F114AC07FB1218B1D5F4C9AC /* GlobalShortcutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/GlobalShortcutService.swift; sourceTree = "<group>"; };
 		F1DE3880A0446E246F14E423 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/NetworkMonitor.swift; sourceTree = "<group>"; };
+		D2F002101122334455667788 /* AgentPTYRuntimeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AgentPTYRuntimeService.swift; sourceTree = "<group>"; };
+		D2F001101122334455667788 /* IOSRemoteControlGatewayService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/IOSRemoteControlGatewayService.swift; sourceTree = "<group>"; };
+		D2F003101122334455667788 /* CodexControlPlaneService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/CodexControlPlaneService.swift; sourceTree = "<group>"; };
+		D2F004101122334455667788 /* TraceFenceAgentCoreClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/TraceFenceAgentCoreClient.swift; sourceTree = "<group>"; };
 		F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ConversationWatcher.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/DirectLicenseService.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/DirectUpdateService.swift; sourceTree = "<group>"; };
@@ -202,6 +210,10 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				F1F081C0D25DCA024DE764FB /* RemoteManager.swift */,
 				F114AC07FB1218B1D5F4C9AC /* GlobalShortcutService.swift */,
 				F1DE3880A0446E246F14E423 /* NetworkMonitor.swift */,
+				D2F002101122334455667788 /* AgentPTYRuntimeService.swift */,
+				D2F001101122334455667788 /* IOSRemoteControlGatewayService.swift */,
+				D2F003101122334455667788 /* CodexControlPlaneService.swift */,
+				D2F004101122334455667788 /* TraceFenceAgentCoreClient.swift */,
 				F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */,
 				E1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift */,
 				E1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift */,
@@ -224,6 +236,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 			buildPhases = (
 				1966423F0571FCFAFFCD6863 /* Sources */,
 				2DA348074FE152181CBDA495 /* Resources */,
+				TF20STRIPDIRECTRES000001 /* Strip Direct-Only Resources */,
 			);
 			buildRules = (
 			);
@@ -282,6 +295,28 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		TF20STRIPDIRECTRES000001 /* Strip Direct-Only Resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Strip Direct-Only Resources";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"$TRACEFENCE_DISTRIBUTION_CHANNEL\" = \"appStore\" ]; then\n  rm -f \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/codexbar\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		1966423F0571FCFAFFCD6863 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -329,6 +364,10 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				B1F081C0D25DCA024DE764FB /* RemoteManager.swift in Sources */,
 				B114AC07FB1218B1D5F4C9AC /* GlobalShortcutService.swift in Sources */,
 				B1DE3880A0446E246F14E423 /* NetworkMonitor.swift in Sources */,
+				D2F002001122334455667788 /* AgentPTYRuntimeService.swift in Sources */,
+				D2F001001122334455667788 /* IOSRemoteControlGatewayService.swift in Sources */,
+				D2F003001122334455667788 /* CodexControlPlaneService.swift in Sources */,
+				D2F004001122334455667788 /* TraceFenceAgentCoreClient.swift in Sources */,
 				B116459B8B7913107AAE0C86 /* ConversationWatcher.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift in Sources */,
@@ -355,7 +394,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-					CURRENT_PROJECT_VERSION = 55;
+					CURRENT_PROJECT_VERSION = 66;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
@@ -366,12 +405,16 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 1.0.55;
+			MARKETING_VERSION = 1.0.66;
 			OPTIMIZATION_LEVEL = "-O";
 				PRODUCT_BUNDLE_IDENTIFIER = com.tracefence.app;
 				PRODUCT_NAME = TraceFence;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
+				TRACEFENCE_CHECKOUT_URL = "https://tracefence.lemonsqueezy.com/checkout/buy/044956c9-c8ea-476b-95d3-3e5c0670acfe";
+				TRACEFENCE_DISTRIBUTION_CHANNEL = direct;
+				TRACEFENCE_ENHANCED_CHECKOUT_URL = "";
+				TRACEFENCE_UPDATE_API_URL = "https://api.github.com/repos/AI-Scarlett/TraceFence/releases/latest";
 			};
 			name = Release;
 		};
@@ -501,7 +544,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-					CURRENT_PROJECT_VERSION = 55;
+					CURRENT_PROJECT_VERSION = 66;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
@@ -512,12 +555,16 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 1.0.55;
+			MARKETING_VERSION = 1.0.66;
 			OPTIMIZATION_LEVEL = "-Onone";
 				PRODUCT_BUNDLE_IDENTIFIER = com.tracefence.app;
 				PRODUCT_NAME = TraceFence;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
+				TRACEFENCE_CHECKOUT_URL = "https://tracefence.lemonsqueezy.com/checkout/buy/044956c9-c8ea-476b-95d3-3e5c0670acfe";
+				TRACEFENCE_DISTRIBUTION_CHANNEL = direct;
+				TRACEFENCE_ENHANCED_CHECKOUT_URL = "";
+				TRACEFENCE_UPDATE_API_URL = "https://api.github.com/repos/AI-Scarlett/TraceFence/releases/latest";
 			};
 			name = Debug;
 		};

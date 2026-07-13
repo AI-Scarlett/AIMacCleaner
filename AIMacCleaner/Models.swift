@@ -200,13 +200,21 @@ struct CLIAgentLaunchTarget: Identifiable {
 
     static let supported: [CLIAgentLaunchTarget] = [
         grok,
+        CLIAgentLaunchTarget(id: "codex", displayName: "Codex CLI", commandName: "codex", launcherFileName: "Launch Codex CLI.command", icon: "terminal"),
+        CLIAgentLaunchTarget(id: "claude", displayName: "Claude Code", commandName: "claude", launcherFileName: "Launch Claude Code.command", icon: "bubble.left.and.text.bubble.right"),
         CLIAgentLaunchTarget(id: "gemini", displayName: "Gemini CLI", commandName: "gemini", launcherFileName: "Launch Gemini CLI.command", icon: "sparkles"),
         CLIAgentLaunchTarget(id: "cursor-agent", displayName: "Cursor Agent", commandName: "cursor-agent", launcherFileName: "Launch Cursor Agent.command", icon: "cursorarrow"),
         CLIAgentLaunchTarget(id: "opencode", displayName: "OpenCode", commandName: "opencode", launcherFileName: "Launch OpenCode.command", icon: "terminal"),
         CLIAgentLaunchTarget(id: "aider", displayName: "Aider", commandName: "aider", launcherFileName: "Launch Aider.command", icon: "wand.and.stars"),
         CLIAgentLaunchTarget(id: "amp", displayName: "Amp", commandName: "amp", launcherFileName: "Launch Amp.command", icon: "bolt"),
         CLIAgentLaunchTarget(id: "goose", displayName: "Goose", commandName: "goose", launcherFileName: "Launch Goose.command", icon: "terminal"),
-        CLIAgentLaunchTarget(id: "qwen", displayName: "Qwen", commandName: "qwen", launcherFileName: "Launch Qwen.command", icon: "terminal")
+        CLIAgentLaunchTarget(id: "qwen", displayName: "Qwen", commandName: "qwen", launcherFileName: "Launch Qwen.command", icon: "terminal"),
+        CLIAgentLaunchTarget(id: "openclaw", displayName: "OpenClaw", commandName: "openclaw", launcherFileName: "Launch OpenClaw.command", icon: "terminal"),
+        CLIAgentLaunchTarget(id: "hermes", displayName: "Hermes", commandName: "hermes", launcherFileName: "Launch Hermes.command", icon: "terminal"),
+        CLIAgentLaunchTarget(id: "minimax", displayName: "MiniMax Code", commandName: "minimax", launcherFileName: "Launch MiniMax Code.command", icon: "terminal"),
+        CLIAgentLaunchTarget(id: "kiro", displayName: "Kiro CLI", commandName: "kiro-cli", launcherFileName: "Launch Kiro CLI.command", icon: "terminal"),
+        CLIAgentLaunchTarget(id: "copilot", displayName: "GitHub Copilot CLI", commandName: "copilot", launcherFileName: "Launch Copilot CLI.command", icon: "terminal"),
+        CLIAgentLaunchTarget(id: "droid", displayName: "Factory Droid", commandName: "droid", launcherFileName: "Launch Droid.command", icon: "terminal")
     ]
 }
 

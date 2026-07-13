@@ -1,0 +1,177 @@
+[
+  {
+    "text": "认识 TraceFence：现代 AI Coding 的指挥中心。它不是另一个模型，也不是另一个聊天窗口，而是让你看清本机 AI 工作流的可视化层。",
+    "startMs": 2600,
+    "endMs": 11841,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "当 Codex、Claude、Cursor 等 Agent 进入日常生产，真正的问题变成：谁在运行、改了什么、还剩多少额度？",
+    "startMs": 11841,
+    "endMs": 21390,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "TraceFence 把这些不确定性变成本机 macOS 控制台：会话、项目、Token、Provider 额度、重置窗口、告警、清理和诊断集中呈现。",
+    "startMs": 21390,
+    "endMs": 29399,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "先看菜单栏。Provider 额度监控读取官方 provider 信号，展示真正影响工作节奏的 5 小时额度、每周额度和重置时间。",
+    "startMs": 29399,
+    "endMs": 38640,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "对 Codex 重度用户来说，这就是缺失已久的仪表盘：开工前就知道水位，而不是被限流后才发现。",
+    "startMs": 38640,
+    "endMs": 47881,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "TraceFence 还会监控 Codex 手动重置次数：剩余几次、哪一次最近到期，以及每个重置机会的具体时间窗口。",
+    "startMs": 47881,
+    "endMs": 56198,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "这听起来很小，直到你错过一次本该使用的重置。对 AI 操作者来说，额度是库存，重置次数是有保质期的资产。",
+    "startMs": 56198,
+    "endMs": 64207,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "概览页提供总览视角：聚合会话、活跃 Agent、项目覆盖、Token 总量、实时活动和数据源状态，不再重复堆数据。",
+    "startMs": 64207,
+    "endMs": 73140,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "打开 TraceFence，几秒钟就能看懂 AI 工作台状态：是否活跃、覆盖哪些项目、数据源是否已授权。",
+    "startMs": 73140,
+    "endMs": 81765,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Token Analytics 把用量从体感变成账本：总 Token、输入、输出、缓存、估算成本、模型排行、项目归因和会话明细。",
+    "startMs": 81765,
+    "endMs": 91006,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "你终于能回答重度开发者真正关心的问题：哪个项目最消耗额度、哪个模型最贵、哪些会话异常偏重？",
+    "startMs": 91006,
+    "endMs": 99631,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "模型名来自本机日志。如果 Agent 写入实验模型名，TraceFence 会保留原始记录。目标是可观察，而不是编造漂亮答案。",
+    "startMs": 99631,
+    "endMs": 107948,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Agent Guard 关注 AI 生产力的另一面：文件创建、修改、删除、读取、命令执行、搜索行为和会话活动。",
+    "startMs": 107948,
+    "endMs": 115341,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "高风险变更、敏感目录访问、可疑批量操作和保护目录事件，会变成可见告警，而不是沉默的意外。",
+    "startMs": 115341,
+    "endMs": 121810,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "这不是不信任 Agent，而是给强大工具配上生产系统该有的纪律：授权、观察、证据和控制。",
+    "startMs": 121810,
+    "endMs": 130435,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Agent 工具箱提供实用运维：备份选定会话且不包含凭证，执行健康诊断，分析用量趋势，审计配置但不展示密钥。",
+    "startMs": 130435,
+    "endMs": 138752,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "在官网版中，TraceFence 还可以在明确确认后控制本机 Agent 进程：关闭、强制关闭或重启卡住的工具。",
+    "startMs": 138752,
+    "endMs": 147377,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "TraceFence 也是面向开发者的 Mac 维护套件。它理解缓存、包、依赖、App 数据、隐藏目录和 AI Agent 工作区。",
+    "startMs": 147377,
+    "endMs": 154770,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "安全项可以清理，风险项先解释。删除优先移入废纸篓，因为 Agent 工作现场不适合盲目一键毁灭。",
+    "startMs": 154770,
+    "endMs": 163395,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "隐私默认本机优先。TraceFence 读取授权目录、本机日志、元数据和系统状态，不需要上传私密会话才能解释工作流。",
+    "startMs": 163395,
+    "endMs": 172944,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "对个人，它是 AI 运维室；对小团队，它是讨论用量、成本、风险和可恢复性的共同语言。",
+    "startMs": 172944,
+    "endMs": 180953,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "它的价值很简单：在让模型继续做事之前，你先知道容量、上下文和风险边界。",
+    "startMs": 180953,
+    "endMs": 188654,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "TraceFence 不替代 Codex。它让 Codex、Claude、Cursor 和其它 Agent 更适合长期运转。",
+    "startMs": 188654,
+    "endMs": 195739,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "看见额度，追踪重置次数，理解 Token 流向，观察 Agent 活动，保护工作区。这就是 AI Coding 一直缺少的仪表盘。",
+    "startMs": 195739,
+    "endMs": 204056,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "TraceFence。更快构建，也让驾驶舱保持亮起。访问 tracefence.com 下载官网版并了解更多。",
+    "startMs": 204056,
+    "endMs": 210222,
+    "timestampMs": null,
+    "confidence": null
+  }
+]

@@ -70,6 +70,11 @@ enum Theme {
             palette(for: selectedPalette)
         }
 
+        private static let auroraPalette = makePalette(for: .aurora)
+        private static let rosePalette = makePalette(for: .rose)
+        private static let shieldPalette = makePalette(for: .shield)
+        private static let porcelainPalette = makePalette(for: .porcelain)
+
         private static func adaptive(_ light: KeyPath<PaletteSpec, NSColor>, _ dark: KeyPath<PaletteSpec, NSColor>) -> Color {
             Color(nsColor: NSColor(name: nil) { appearance in
                 let match = appearance.bestMatch(from: [.darkAqua, .aqua])
@@ -83,6 +88,15 @@ enum Theme {
         }
 
         private static func palette(for palette: AppColorPalette) -> PaletteSpec {
+            switch palette {
+            case .aurora: return auroraPalette
+            case .rose: return rosePalette
+            case .shield: return shieldPalette
+            case .porcelain: return porcelainPalette
+            }
+        }
+
+        private static func makePalette(for palette: AppColorPalette) -> PaletteSpec {
             switch palette {
             case .aurora:
                 return PaletteSpec(

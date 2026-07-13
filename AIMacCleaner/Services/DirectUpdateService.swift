@@ -57,6 +57,7 @@ struct CLIUpdateAlert: Identifiable, Equatable, Sendable {
 final class DirectUpdateService: ObservableObject {
     static let shared = DirectUpdateService()
     static let cliUpdateStrongReminderEnabledKey = "cliUpdateStrongReminderEnabled"
+    private static let cliUpdateLastNotifiedSignatureKey = "traceFence.cliUpdateReminder.lastNotifiedSignature"
 
     @Published private(set) var isChecking = false
     @Published private(set) var isDownloading = false
@@ -393,13 +394,13 @@ final class DirectUpdateService: ObservableObject {
 
         let attention = results.filter(\.needsStrongReminder)
         guard cliUpdateStrongReminderEnabled else { return }
-        guard !attention.isEmpty,
-              userInitiated || shouldShowCLIUpdateReminder(for: attention) else {
-            return
-        }
+        guard !attention.isEmpty else { return }
         let alert = Self.makeCLIUpdateAlert(for: attention)
-        cliUpdateAlert = alert
-        postCLIUpdateNotification(alert: alert, outdated: attention)
+        if userInitiated {
+            cliUpdateAlert = alert
+        } else if shouldPostCLIUpdateNotification(for: attention) {
+            postCLIUpdateNotification(alert: alert, outdated: attention)
+        }
     }
 
     private nonisolated static func cliUpdateSummary(for results: [CLIUpdateCheckResult]) -> String? {
@@ -453,16 +454,15 @@ final class DirectUpdateService: ObservableObject {
         return nil
     }
 
-    private func shouldShowCLIUpdateReminder(for outdated: [CLIUpdateCheckResult]) -> Bool {
+    private func shouldPostCLIUpdateNotification(for outdated: [CLIUpdateCheckResult]) -> Bool {
         let signature = outdated
             .map { "\($0.id):\($0.latestVersion ?? "unknown")" }
             .sorted()
             .joined(separator: "|")
-        let key = "traceFence.cliUpdateReminder.lastShown.\(signature)"
-        let now = Date().timeIntervalSince1970
-        let lastShown = UserDefaults.standard.double(forKey: key)
-        guard now - lastShown > 12 * 60 * 60 else { return false }
-        UserDefaults.standard.set(now, forKey: key)
+        guard UserDefaults.standard.string(forKey: Self.cliUpdateLastNotifiedSignatureKey) != signature else {
+            return false
+        }
+        UserDefaults.standard.set(signature, forKey: Self.cliUpdateLastNotifiedSignatureKey)
         return true
     }
 

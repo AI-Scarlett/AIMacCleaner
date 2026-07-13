@@ -10,11 +10,25 @@ struct ClaudeCodeAdapter: AgentAdapter {
     private var userHome: URL { agentRealHomeURL() }
 
     func detectInstallation() -> Bool { detectCLI("claude") }
-    var hooksInstalled: Bool { hookConfigPaths.contains { path in (try? String(contentsOf: path, encoding: .utf8))?.contains("agentguard-bridge") ?? false } }
+    var hooksInstalled: Bool {
+        hookConfigPaths.contains { path in
+            guard let value = try? String(contentsOf: path, encoding: .utf8) else { return false }
+            return value.contains("TraceFenceClaudeAdapter") || value.contains("agentguard-bridge")
+        }
+    }
 
     func installHooks(installer: HookInstaller) async throws {
-        let bridgePath = try await installer.ensureBridgeBinary()
-        let cmd = await installer.hookCommand(bridgePath: bridgePath, label: displayName, agentId: name)
+        let coreDirectory = userHome.appendingPathComponent("Library/Application Support/TraceFence/Core", isDirectory: true)
+        let coreAdapter = coreDirectory.appendingPathComponent("adapters/TraceFenceClaudeAdapter")
+        let cmd: String
+        if FileManager.default.isExecutableFile(atPath: coreAdapter.path) {
+            let executable = await installer.shellQuote(coreAdapter.path)
+            let socket = await installer.shellQuote(coreDirectory.appendingPathComponent("claude-hooks.sock").path)
+            cmd = "/usr/bin/env TRACEFENCE_CLAUDE_HOOK_SOCKET=\(socket) \(executable) --hook"
+        } else {
+            let bridgePath = try await installer.ensureBridgeBinary()
+            cmd = await installer.hookCommand(bridgePath: bridgePath, label: displayName, agentId: name)
+        }
         try await installer.injectJSONHooks(at: hookConfigPaths[0], events: AgentIntegrationProfile.claudeCode.events, hookCommand: cmd)
     }
 
@@ -35,6 +49,11 @@ func detectCLI(_ binary: String) -> Bool {
         "/usr/bin",
         "/bin",
         "\(home)/.local/bin",
+        "\(home)/.grok/bin",
+        "\(home)/.qwen/bin",
+        "\(home)/.cursor/bin",
+        "\(home)/.minimax/bin",
+        "\(home)/.opencode/bin",
         "\(home)/bin",
         "\(home)/.npm-global/bin",
         "\(home)/.bun/bin",

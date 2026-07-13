@@ -130,6 +130,7 @@ actor GlobalShortcutService {
     private var eventHandlers: [EventHotKeyRef] = []
     private var eventHandlerRef: EventHandlerRef?
     private var actionHandlers: [GlobalShortcut.ShortcutAction: @MainActor () -> Void] = [:]
+    private var lastHandledAt: [GlobalShortcut.ShortcutAction: Date] = [:]
 
     static let defaultShortcuts: [GlobalShortcut] = [
         GlobalShortcut(
@@ -209,6 +210,12 @@ actor GlobalShortcutService {
         guard registeredShortcuts.indices.contains(id) else { return }
         let action = registeredShortcuts[id].action
         guard let handler = actionHandlers[action] else { return }
+        let now = Date()
+        let minimumInterval: TimeInterval = action == .toggleScreenRecording ? 0.8 : 0.45
+        if let lastHandled = lastHandledAt[action], now.timeIntervalSince(lastHandled) < minimumInterval {
+            return
+        }
+        lastHandledAt[action] = now
         Task { @MainActor in
             handler()
         }

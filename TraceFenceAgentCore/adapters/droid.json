@@ -1,0 +1,10 @@
+{
+  "id": "droid",
+  "version": "1.0.0",
+  "displayName": "Factory / Droid",
+  "executable": "TraceFenceUniversalAdapter",
+  "arguments": ["--adapter", "droid"],
+  "transport": "process",
+  "minimumCoreProtocol": 1,
+  "capabilities": ["instruction", "interrupt", "independent_update"]
+}

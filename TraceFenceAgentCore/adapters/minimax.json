@@ -1,0 +1,10 @@
+{
+  "id": "minimax",
+  "version": "1.0.0",
+  "displayName": "MiniMax Code",
+  "executable": "TraceFenceUniversalAdapter",
+  "arguments": ["--adapter", "minimax"],
+  "transport": "process",
+  "minimumCoreProtocol": 1,
+  "capabilities": ["session_discovery", "session_context", "instruction", "interrupt", "approval", "independent_update"]
+}

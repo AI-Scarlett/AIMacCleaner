@@ -12,7 +12,8 @@ actor HookInstaller {
     private let blockStart = "# [AGENTGUARD-START]"
     private let blockEnd = "# [AGENTGUARD-END]"
     private let marker = "agentguard-bridge"
-    private let fallbackBridgeMarker = "# AgentGuard fallback bridge v3"
+    private let coreClaudeMarker = "TraceFenceClaudeAdapter"
+    private let fallbackBridgeMarker = "# AgentGuard fallback bridge v4"
 
     func ensureBridgeBinary() throws -> String {
         let home = agentRealHomeURL()
@@ -48,26 +49,66 @@ actor HookInstaller {
     }
 
     private func writeFallbackBridge(to destPath: URL) throws {
-        let script = """
-        #!/bin/sh
-        \(fallbackBridgeMarker)
-        log_dir="${HOME}/.agentguard"
-        log_file="${log_dir}/bridge.log"
-        socket="${AGENTGUARD_SOCKET:-/tmp/agentguard.sock}"
-        payload="$(cat)"
-        if [ -z "$payload" ]; then
-          exit 0
-        fi
-
-        mkdir -p "$log_dir" 2>/dev/null || true
-
-        if command -v nc >/dev/null 2>&1 && printf '%s\\n' "$payload" | nc -U -w 2 "$socket" >/dev/null 2>&1; then
-          exit 0
-        fi
-
-        printf '%s AgentGuard bridge failed to deliver event to %s\\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$socket" >> "$log_file" 2>/dev/null || true
-        exit 1
-        """
+        let script = [
+            "#!/bin/sh",
+            fallbackBridgeMarker,
+            "log_dir=\"${HOME}/.agentguard\"",
+            "log_file=\"${log_dir}/bridge.log\"",
+            "socket=\"${AGENTGUARD_SOCKET:-/tmp/agentguard.sock}\"",
+            "payload=\"$(cat)\"",
+            "if [ -z \"$payload\" ]; then",
+            "  exit 0",
+            "fi",
+            "",
+            "mkdir -p \"$log_dir\" 2>/dev/null || true",
+            "agent_pid=\"${PPID:-}\"",
+            "tty_path=\"$(tty 2>/dev/null || true)\"",
+            "if [ \"$tty_path\" = \"not a tty\" ]; then",
+            "  tty_path=\"\"",
+            "fi",
+            "",
+            "enriched_payload=\"$payload\"",
+            "if command -v python3 >/dev/null 2>&1; then",
+            "  enriched_payload=\"$(AGENTGUARD_PAYLOAD=\"$payload\" AGENTGUARD_PARENT_PID=\"$agent_pid\" AGENTGUARD_TTY=\"$tty_path\" python3 - <<'PY'",
+            "import json",
+            "import os",
+            "import sys",
+            "",
+            "payload = os.environ.get('AGENTGUARD_PAYLOAD', '')",
+            "try:",
+            "    event = json.loads(payload)",
+            "except Exception:",
+            "    print(payload)",
+            "    sys.exit(0)",
+            "",
+            "if isinstance(event, dict):",
+            "    parent_pid = os.environ.get('AGENTGUARD_PARENT_PID', '')",
+            "    tty = os.environ.get('AGENTGUARD_TTY', '')",
+            "    if parent_pid.isdigit():",
+            "        event.setdefault('pid', int(parent_pid))",
+            "        event.setdefault('process_id', int(parent_pid))",
+            "    if tty:",
+            "        event.setdefault('tty', tty)",
+            "        event.setdefault('terminal', tty)",
+            "    if os.environ.get('AGENTGUARD_AGENT'):",
+            "        event.setdefault('source_label', os.environ['AGENTGUARD_AGENT'])",
+            "    if os.environ.get('AGENTGUARD_ENGINE_ID'):",
+            "        event.setdefault('engine_id', os.environ['AGENTGUARD_ENGINE_ID'])",
+            "    print(json.dumps(event, separators=(',', ':')))",
+            "else:",
+            "    print(payload)",
+            "PY",
+            "  )\" || enriched_payload=\"$payload\"",
+            "fi",
+            "",
+            "if command -v nc >/dev/null 2>&1 && printf '%s\\n' \"$enriched_payload\" | nc -U -w 2 \"$socket\" >/dev/null 2>&1; then",
+            "  exit 0",
+            "fi",
+            "",
+            "printf '%s AgentGuard bridge failed to deliver event to %s\\n' \"$(date '+%Y-%m-%d %H:%M:%S')\" \"$socket\" >> \"$log_file\" 2>/dev/null || true",
+            "exit 1",
+            ""
+        ].joined(separator: "\n")
         try script.write(to: destPath, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destPath.path)
     }
@@ -159,7 +200,7 @@ actor HookInstaller {
     func checkHealth(at configPath: URL) -> HookInstallHealth {
         guard FileManager.default.fileExists(atPath: configPath.path) else { return .notInstalled }
         guard let content = try? String(contentsOf: configPath, encoding: .utf8) else { return .settingsCorrupted }
-        if content.contains(marker) {
+        if content.contains(marker) || content.contains(coreClaudeMarker) {
             guard bridgeExecutableExists(in: content) else { return .installed }
             if requiresNestedCommandHooks(configPath), hasLegacyFlatAgentGuardHooks(content) {
                 return .installed
@@ -170,6 +211,11 @@ actor HookInstaller {
     }
 
     private func bridgeExecutableExists(in content: String) -> Bool {
+        if content.contains(coreClaudeMarker) {
+            let coreAdapter = agentRealHomeURL()
+                .appendingPathComponent("Library/Application Support/TraceFence/Core/adapters/TraceFenceClaudeAdapter")
+            if FileManager.default.isExecutableFile(atPath: coreAdapter.path) { return true }
+        }
         let pattern = #"(/[^\s"']*agentguard-bridge)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
             return isCurrentBridge(at: agentRealHomeURL().appendingPathComponent(".agentguard/bin/agentguard-bridge"))
@@ -213,12 +259,13 @@ actor HookInstaller {
     }
 
     private func entryContainsAgentGuardCommand(_ entry: [String: Any]) -> Bool {
-        if let cmd = entry["command"] as? String, cmd.contains(marker) {
+        if let cmd = entry["command"] as? String, cmd.contains(marker) || cmd.contains(coreClaudeMarker) {
             return true
         }
         if let nestedHooks = entry["hooks"] as? [[String: Any]] {
             return nestedHooks.contains { hook in
-                (hook["command"] as? String)?.contains(marker) == true
+                guard let command = hook["command"] as? String else { return false }
+                return command.contains(marker) || command.contains(coreClaudeMarker)
             }
         }
         return false

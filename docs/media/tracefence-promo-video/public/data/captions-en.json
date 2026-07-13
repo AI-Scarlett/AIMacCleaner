@@ -1,0 +1,177 @@
+[
+  {
+    "text": "Meet TraceFence, the command center for modern AI coding. Not another model. Not another chat window. A visibility layer for the work already happening on your Mac.",
+    "startMs": 2600,
+    "endMs": 11841,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "When Codex, Claude, Cursor, and other agents become part of daily production, the real question changes. What is running, what is changing, and what quota is still available?",
+    "startMs": 11841,
+    "endMs": 21390,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "TraceFence turns that uncertainty into a native macOS cockpit: sessions, projects, tokens, provider quota, reset windows, alerts, cleanup, and diagnostics in one place.",
+    "startMs": 21390,
+    "endMs": 29399,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Start from the menu bar. Provider quota monitoring reads official provider signals and shows the limits that shape your day: five-hour windows, weekly windows, and reset timing.",
+    "startMs": 29399,
+    "endMs": 38640,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "For heavy Codex users, this is the missing dashboard. You can see how much capacity remains before a coding sprint, not after the work is already blocked.",
+    "startMs": 38640,
+    "endMs": 47881,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "TraceFence also tracks Codex manual reset credits. See how many resets remain, which credit expires next, and the exact window for each reset opportunity.",
+    "startMs": 47881,
+    "endMs": 56198,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "That sounds small until you lose a reset you could have used. For AI operators, quota is inventory. Reset credits are time-sensitive assets.",
+    "startMs": 56198,
+    "endMs": 64207,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "The overview page gives the executive view: aggregated sessions, active agents, project coverage, token volume, live activity, and data-source status without repeating the same numbers everywhere.",
+    "startMs": 64207,
+    "endMs": 73140,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "You can open TraceFence and understand the state of your AI workspace in seconds. Is there activity? Which projects are covered? Are the sources authorized?",
+    "startMs": 73140,
+    "endMs": 81765,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Token Analytics turns usage from a feeling into a ledger. Total tokens, input tokens, output tokens, cache tokens, estimated cost, model ranking, project attribution, and session detail.",
+    "startMs": 81765,
+    "endMs": 91006,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "You can finally answer the question every serious builder asks: which project is burning capacity, which model is expensive, and which sessions are unusually heavy?",
+    "startMs": 91006,
+    "endMs": 99631,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "The model names come from local logs. If an agent records experimental names, TraceFence preserves them. The goal is observability, not a polished fiction.",
+    "startMs": 99631,
+    "endMs": 107948,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Agent Guard watches the other side of AI productivity: file creation, modification, deletion, reads, command execution, search behavior, and session activity.",
+    "startMs": 107948,
+    "endMs": 115341,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "High-risk changes, sensitive directory access, suspicious batch operations, and protected-folder events become visible alerts instead of silent surprises.",
+    "startMs": 115341,
+    "endMs": 121810,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "This is not about distrusting agents. It is about giving powerful tools the same discipline you expect from production systems: permission, observation, evidence, and control.",
+    "startMs": 121810,
+    "endMs": 130435,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "The Agent Toolkit adds practical operations. Back up selected agent sessions without credentials. Run health diagnostics. Analyze usage trends. Audit configuration without exposing secrets.",
+    "startMs": 130435,
+    "endMs": 138752,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "On the direct-download edition, TraceFence can also help control local agent processes with clear confirmations: quit, force quit, or restart when a tool gets stuck.",
+    "startMs": 138752,
+    "endMs": 147377,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "TraceFence is also a developer-aware Mac maintenance suite. It understands cache, packages, dependencies, app data, hidden directories, and AI agent workspaces.",
+    "startMs": 147377,
+    "endMs": 154770,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Safe items can be cleaned. Risky items are explained first. Deletions prefer Trash, because an agent workspace is not the place for blind one-click destruction.",
+    "startMs": 154770,
+    "endMs": 163395,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Privacy stays local by design. TraceFence works with authorized folders, local logs, metadata, and system state. It does not need to upload private conversations to explain your workflow.",
+    "startMs": 163395,
+    "endMs": 172944,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "For individuals, it is a personal AI operations room. For small teams, it is a shared language for usage, cost, risk, and recoverability.",
+    "startMs": 172944,
+    "endMs": 180953,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "The benefit is simple: before you ask the model to do more, you know the capacity, the context, and the risk boundary.",
+    "startMs": 180953,
+    "endMs": 188654,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "TraceFence does not replace Codex. It makes Codex, Claude, Cursor, and other agents easier to operate for the long run.",
+    "startMs": 188654,
+    "endMs": 195739,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "See your quota. Track reset credits. Understand token flow. Watch agent activity. Protect your workspace. This is the dashboard AI coding has been missing.",
+    "startMs": 195739,
+    "endMs": 204056,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "TraceFence. Build faster, but keep the cockpit lit. Download the direct edition and learn more at tracefence.com.",
+    "startMs": 204056,
+    "endMs": 210222,
+    "timestampMs": null,
+    "confidence": null
+  }
+]
