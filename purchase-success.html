@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>TraceFence - Subscription Complete</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: #17191d;
+            background: #f4f6f8;
+        }
+        button, a { font: inherit; }
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: min(760px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 22px 0;
+        }
+        .brand { display: flex; align-items: center; gap: 10px; font-weight: 750; }
+        .brand-mark {
+            display: grid;
+            place-items: center;
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            color: #fff;
+            background: #2468d8;
+            font-size: 13px;
+            letter-spacing: 0;
+        }
+        .language { display: flex; border: 1px solid #d9dde4; border-radius: 7px; overflow: hidden; }
+        .language button {
+            border: 0;
+            padding: 7px 11px;
+            color: #5d6673;
+            background: #fff;
+            cursor: pointer;
+        }
+        .language button[aria-pressed="true"] { color: #fff; background: #252a31; }
+        main { width: min(760px, calc(100% - 32px)); margin: 24px auto 56px; }
+        .panel {
+            padding: clamp(24px, 5vw, 44px);
+            border: 1px solid #dfe3e8;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 18px 42px rgba(28, 36, 50, 0.08);
+        }
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 6px 9px;
+            border-radius: 6px;
+            color: #08734f;
+            background: #e9f7f1;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+        .status.error { color: #a5362d; background: #fff0ee; }
+        .status.pending { color: #8a5a00; background: #fff6df; }
+        h1 { margin: 18px 0 10px; font-size: clamp(28px, 6vw, 42px); line-height: 1.13; letter-spacing: 0; }
+        .lead { margin: 0; color: #5d6673; font-size: 17px; line-height: 1.65; }
+        .license-box {
+            margin-top: 28px;
+            padding: 18px;
+            border: 1px solid #b9cdf3;
+            border-radius: 8px;
+            background: #f4f8ff;
+        }
+        .license-label { margin: 0 0 9px; color: #395579; font-size: 13px; font-weight: 700; }
+        .key-row { display: flex; align-items: center; gap: 10px; }
+        code {
+            flex: 1;
+            min-width: 0;
+            padding: 12px;
+            border: 1px solid #d2dff5;
+            border-radius: 6px;
+            color: #173c72;
+            background: #fff;
+            font: 600 14px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+            overflow-wrap: anywhere;
+            user-select: all;
+        }
+        .primary {
+            min-height: 42px;
+            border: 0;
+            border-radius: 6px;
+            padding: 0 16px;
+            color: #fff;
+            background: #2468d8;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .copy-result { min-height: 20px; margin: 8px 0 0; color: #08734f; font-size: 13px; }
+        .details { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 14px; color: #6d7580; font-size: 13px; }
+        .steps { margin-top: 32px; padding-top: 28px; border-top: 1px solid #e5e8ec; }
+        h2 { margin: 0 0 15px; font-size: 19px; letter-spacing: 0; }
+        ol { margin: 0; padding-left: 22px; color: #424952; line-height: 1.8; }
+        .notice { margin-top: 22px; padding: 13px 15px; border-left: 3px solid #d49b20; color: #684b0f; background: #fff9eb; line-height: 1.55; }
+        footer { margin-top: 22px; text-align: center; color: #79818b; font-size: 13px; }
+        footer a { color: #355f9e; text-decoration: none; margin: 0 8px; }
+        [hidden] { display: none !important; }
+        @media (max-width: 560px) {
+            .key-row { align-items: stretch; flex-direction: column; }
+            .primary { width: 100%; }
+            .panel { padding: 24px 20px; }
+        }
+    </style>
+</head>
+<body>
+<header class="topbar">
+    <div class="brand"><span class="brand-mark">TF</span><span>TraceFence</span></div>
+    <div class="language" aria-label="Language">
+        <button id="lang-en" type="button" aria-pressed="true">EN</button>
+        <button id="lang-zh" type="button" aria-pressed="false">中文</button>
+    </div>
+</header>
+
+<main>
+    <section class="panel">
+        <span id="status-badge" class="status" data-i18n="statusSuccess">Subscription active</span>
+        <h1 data-i18n="title">TraceFence Standard is ready</h1>
+        <p id="lead" class="lead" data-i18n="lead">Copy your license key and activate it in the TraceFence Mac app.</p>
+
+        <div id="license-box" class="license-box" hidden>
+            <p class="license-label" data-i18n="licenseLabel">Your license key</p>
+            <div class="key-row">
+                <code id="license-key"></code>
+                <button id="copy-key" class="primary" type="button" data-i18n="copy">Copy key</button>
+            </div>
+            <p id="copy-result" class="copy-result" role="status"></p>
+            <div class="details">
+                <span id="subscription-detail" hidden></span>
+                <span id="email-detail" hidden></span>
+            </div>
+        </div>
+
+        <div class="steps">
+            <h2 data-i18n="activateTitle">Activate on this Mac</h2>
+            <ol>
+                <li data-i18n="step1">Open TraceFence on your Mac.</li>
+                <li data-i18n="step2">Open Settings, then TraceFence Subscription.</li>
+                <li data-i18n="step3">Paste the license key and select Activate.</li>
+            </ol>
+        </div>
+
+        <p id="missing-key" class="notice" hidden data-i18n="missingKey">The subscription is active, but no license key was returned. Check the purchase email and confirm that the Dodo License Key entitlement is enabled for this product.</p>
+    </section>
+
+    <footer>
+        <a href="support.html" data-i18n="support">Support</a>
+        <a href="privacy-policy.html" data-i18n="privacy">Privacy</a>
+        <a href="terms-of-service.html" data-i18n="terms">Terms</a>
+    </footer>
+</main>
+
+<script>
+    const copy = {
+        en: {
+            statusSuccess: "Subscription active",
+            statusPending: "Payment processing",
+            statusError: "Payment not completed",
+            title: "TraceFence Standard is ready",
+            titlePending: "Your payment is processing",
+            titleError: "The subscription was not completed",
+            lead: "Copy your license key and activate it in the TraceFence Mac app.",
+            leadPending: "Keep this page open while Dodo Payments confirms the subscription.",
+            leadError: "Return to checkout and try again. No license has been activated.",
+            licenseLabel: "Your license key",
+            copy: "Copy key",
+            copied: "License key copied.",
+            copyFailed: "Select the key and copy it manually.",
+            activateTitle: "Activate on this Mac",
+            step1: "Open TraceFence on your Mac.",
+            step2: "Open Settings, then TraceFence Subscription.",
+            step3: "Paste the license key and select Activate.",
+            missingKey: "The subscription is active, but no license key was returned. Check the purchase email and confirm that the Dodo License Key entitlement is enabled for this product.",
+            subscription: "Subscription",
+            account: "Account",
+            support: "Support",
+            privacy: "Privacy",
+            terms: "Terms"
+        },
+        zh: {
+            statusSuccess: "订阅已生效",
+            statusPending: "支付处理中",
+            statusError: "支付未完成",
+            title: "TraceFence Standard 已准备好",
+            titlePending: "正在确认你的订阅",
+            titleError: "订阅尚未完成",
+            lead: "复制 License Key，然后在 Mac 版 TraceFence 中激活。",
+            leadPending: "请暂时保留此页面，等待 Dodo Payments 确认订阅。",
+            leadError: "请返回结账页重试，目前没有激活任何授权。",
+            licenseLabel: "你的 License Key",
+            copy: "复制 Key",
+            copied: "License Key 已复制。",
+            copyFailed: "请选中 Key 后手动复制。",
+            activateTitle: "在这台 Mac 上激活",
+            step1: "在 Mac 上打开 TraceFence。",
+            step2: "打开“设置”，进入“TraceFence 订阅”。",
+            step3: "粘贴 License Key，然后点击“激活”。",
+            missingKey: "订阅已生效，但返回页面没有收到 License Key。请检查购买邮箱，并确认该 Dodo 商品已经绑定 License Key 权益。",
+            subscription: "订阅编号",
+            account: "购买账号",
+            support: "技术支持",
+            privacy: "隐私政策",
+            terms: "服务条款"
+        }
+    };
+
+    const params = new URLSearchParams(window.location.search);
+    const status = (params.get("status") || "").toLowerCase();
+    const rawKeys = params.get("license_key") || "";
+    const subscriptionID = params.get("subscription_id") || "";
+    const email = params.get("email") || "";
+    const successStates = new Set(["active", "succeeded", "success"]);
+    const pendingStates = new Set(["pending", "processing"]);
+    let language = navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+
+    const statusBadge = document.getElementById("status-badge");
+    const title = document.querySelector("h1");
+    const lead = document.getElementById("lead");
+    const licenseBox = document.getElementById("license-box");
+    const licenseKey = document.getElementById("license-key");
+    const missingKey = document.getElementById("missing-key");
+    const subscriptionDetail = document.getElementById("subscription-detail");
+    const emailDetail = document.getElementById("email-detail");
+
+    function stateKind() {
+        if (successStates.has(status) || (!status && rawKeys)) return "success";
+        if (pendingStates.has(status) || !status) return "pending";
+        return "error";
+    }
+
+    function render() {
+        const strings = copy[language];
+        document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+        document.querySelectorAll("[data-i18n]").forEach((element) => {
+            const key = element.dataset.i18n;
+            if (strings[key]) element.textContent = strings[key];
+        });
+
+        const kind = stateKind();
+        statusBadge.className = `status ${kind === "success" ? "" : kind}`.trim();
+        if (kind === "pending") {
+            statusBadge.textContent = strings.statusPending;
+            title.textContent = strings.titlePending;
+            lead.textContent = strings.leadPending;
+        } else if (kind === "error") {
+            statusBadge.textContent = strings.statusError;
+            title.textContent = strings.titleError;
+            lead.textContent = strings.leadError;
+        } else {
+            statusBadge.textContent = strings.statusSuccess;
+            title.textContent = strings.title;
+            lead.textContent = strings.lead;
+        }
+
+        if (rawKeys) {
+            licenseBox.hidden = false;
+            licenseKey.textContent = rawKeys.split(",").join("\n");
+        } else {
+            licenseBox.hidden = true;
+            missingKey.hidden = kind !== "success";
+        }
+
+        if (subscriptionID) {
+            subscriptionDetail.hidden = false;
+            subscriptionDetail.textContent = `${strings.subscription}: ${subscriptionID}`;
+        }
+        if (email) {
+            emailDetail.hidden = false;
+            emailDetail.textContent = `${strings.account}: ${email}`;
+        }
+
+        document.getElementById("lang-en").setAttribute("aria-pressed", String(language === "en"));
+        document.getElementById("lang-zh").setAttribute("aria-pressed", String(language === "zh"));
+    }
+
+    document.getElementById("lang-en").addEventListener("click", () => { language = "en"; render(); });
+    document.getElementById("lang-zh").addEventListener("click", () => { language = "zh"; render(); });
+    document.getElementById("copy-key").addEventListener("click", async () => {
+        const result = document.getElementById("copy-result");
+        try {
+            await navigator.clipboard.writeText(rawKeys);
+            result.textContent = copy[language].copied;
+        } catch (_) {
+            result.textContent = copy[language].copyFailed;
+        }
+    });
+
+    render();
+    if (window.location.search) {
+        window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+    }
+</script>
+</body>
+</html>

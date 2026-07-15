@@ -9,17 +9,16 @@ TraceFence v2 uses two macOS distribution lines and one shared iOS client.
 | Line | Payment | Feature Level | Notes |
 | --- | --- | --- | --- |
 | Mac App Store | Apple in-app subscription | Standard | Monthly/yearly subscription. Same price and core feature level as Website Standard. No external checkout, no direct updater, no system-extension firewall promise. |
-| Website Standard | Lemon Squeezy subscription | Standard | Same price and core feature level as Mac App Store. Uses license key activation and website billing. |
-| Website Enhanced | Lemon Squeezy subscription | Enhanced | Higher price. Website-only advanced policies, direct update channel, broader local diagnostics, and future EndpointSecurity/System Extension firewall support. |
+| Website Standard | Dodo Payments subscription | Standard | Current website feature set. Monthly is $9.99 and annual is $79.99. Dodo Payments provides checkout, subscription billing, tax handling, invoices, and license-key entitlement delivery. |
 
-Existing lifetime buyers should keep their purchased feature set as a legacy entitlement. New v2 remote approval, AI reports, and advanced policies should be subscription-gated.
+There is no Website Enhanced tier in the current product. A future multi-Mac plan may be designed after centralized iOS management and concurrent device authorization are implemented and tested.
 
 ## iOS Client
 
 The iOS app remains one app. It pairs with either Mac build and reads the Mac's reported channel:
 
 - `appStore`: Apple subscription unlocks Standard.
-- `direct`: Lemon Squeezy license unlocks Website Standard or Website Enhanced.
+- `direct`: A Dodo Payments license unlocks Website Standard.
 
 The iOS UI should not sell separate tiers. It should explain what the paired Mac supports and send users back to the Mac build's correct subscription surface.
 
@@ -43,9 +42,10 @@ The clients must say plainly that Internet access depends on the user's network 
 The first implementation pass added:
 
 - `TraceFenceDistributionPolicy` for channel and plan detection.
-- `TraceFenceSubscriptionTier` for Standard / Enhanced / Legacy gating.
+- `TraceFenceSubscriptionTier` for App Store Standard and Website Standard gating.
 - `AppStoreSubscriptionService` for StoreKit product loading, purchase, restore, and entitlement refresh.
-- Direct checkout separation for Website Standard and Website Enhanced.
+- Dodo Payments static checkout links for Website Standard monthly and annual billing.
+- Public Dodo Payments license activation, validation, and deactivation calls, with business-ID and product-ID allowlists. No Dodo API secret is embedded in the app.
 - Settings UI that explains both macOS lines and the no-backend remote control options.
 - `IOSRemoteControlGatewayService`, a default-off local HTTP JSON API for the shared iOS client.
 - Build-time channel switching through `TRACEFENCE_DISTRIBUTION_CHANNEL`; default local builds remain `direct`, while App Store builds can pass `TRACEFENCE_DISTRIBUTION_CHANNEL=appStore`.
@@ -97,13 +97,14 @@ This avoids presenting log/database/GUI snapshots as controllable tasks. A sessi
 | `process_group` / `process_tree` / `single_process` | Sends SIGSTOP/SIGCONT to a safe CLI runtime target. | Execution control only; it does not rewrite model context. |
 | `display_only` | No control action is available. | Observation only; buttons must stay disabled. |
 
-Website Enhanced should add TraceFence PTY and future Agent API adapters before claiming generic "send instruction" control. EndpointSecurity/System Extension features remain Website Enhanced candidates, not Mac App Store baseline features.
+The current Standard plan only claims controls backed by the capability contract above. A future multi-Mac plan must be based on real centralized device management and simultaneous authorization, not on renaming existing local features.
 
 ## Required Follow-up Work
 
 - Add real App Store product IDs in App Store Connect and update `TraceFenceAppStoreMonthlyProductID` / `TraceFenceAppStoreYearlyProductID`.
-- Create the Website Enhanced Lemon Squeezy product and set `TraceFenceEnhancedCheckoutURL`.
+- Complete Dodo Payments Test Mode checkout and license lifecycle tests for both Standard products.
+- Before release, copy both products to Dodo Live Mode, replace both product IDs, and set `TRACEFENCE_DODO_ENVIRONMENT=live`.
+- Publish `purchase-success.html` before enabling the live checkout buttons.
 - Add dedicated release scripts/schemes for Website and App Store builds so the channel override, signing, export options, and notarization/App Store upload paths cannot be mixed accidentally.
 - Harden the TraceFence PTY runner with richer terminal history and per-Agent launch presets.
 - Expand Agent adapters from installation/status into runtime controls: `observe`, `interrupt`, `resume(instruction)`, `approve`, `deny`, and `capabilities`.
-- Gate future EndpointSecurity/System Extension features behind Website Enhanced only.
