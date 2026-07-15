@@ -294,20 +294,20 @@ class AgentGuardFeature: ObservableObject {
 
     // MARK: - F25/F26 Batch Operation Alert
 
-    func checkBatchOperation(record: OperationRecord) {
-        let now = Date()
+    func checkBatchOperation(record: OperationRecord, sendNotification: Bool = true) {
+        let eventTime = record.timestamp
         let window = alertRule.batchTimeWindowSeconds
 
         switch record.operationType {
         case .delete:
-            recentDeleteEvents.append(now)
-            recentDeleteEvents = recentDeleteEvents.filter { now.timeIntervalSince($0) < window }
+            recentDeleteEvents.append(eventTime)
+            recentDeleteEvents = recentDeleteEvents.filter { abs(eventTime.timeIntervalSince($0)) < window }
             if recentDeleteEvents.count >= alertRule.batchDeleteThreshold {
                 let key = "batch_delete_\(record.agentName)"
-                if shouldFireAlert(key: key) {
+                if shouldFireAlert(key: key, timestamp: eventTime) {
                     let alert = GuardAlert(
                         id: UUID().uuidString,
-                        timestamp: now,
+                        timestamp: eventTime,
                         alertType: .batchDelete,
                         severity: .critical,
                         title: localizer?.batchDeleteAlertTitle ?? "Batch Delete Alert",
@@ -316,19 +316,19 @@ class AgentGuardFeature: ObservableObject {
                         targetPath: record.targetPath,
                         detail: "\(recentDeleteEvents.count) deletions in \(Int(window))s window"
                     )
-                    fireAlert(alert)
+                    fireAlert(alert, sendNotification: sendNotification)
                     recentDeleteEvents.removeAll()
                 }
             }
         case .modify:
-            recentModifyEvents.append(now)
-            recentModifyEvents = recentModifyEvents.filter { now.timeIntervalSince($0) < window }
+            recentModifyEvents.append(eventTime)
+            recentModifyEvents = recentModifyEvents.filter { abs(eventTime.timeIntervalSince($0)) < window }
             if recentModifyEvents.count >= alertRule.batchModifyThreshold {
                 let key = "batch_modify_\(record.agentName)"
-                if shouldFireAlert(key: key) {
+                if shouldFireAlert(key: key, timestamp: eventTime) {
                     let alert = GuardAlert(
                         id: UUID().uuidString,
-                        timestamp: now,
+                        timestamp: eventTime,
                         alertType: .batchModify,
                         severity: .warning,
                         title: localizer?.batchModifyAlertTitle ?? "Batch Modify Alert",
@@ -337,13 +337,51 @@ class AgentGuardFeature: ObservableObject {
                         targetPath: record.targetPath,
                         detail: "\(recentModifyEvents.count) modifications in \(Int(window))s window"
                     )
-                    fireAlert(alert)
+                    fireAlert(alert, sendNotification: sendNotification)
                     recentModifyEvents.removeAll()
                 }
             }
         default:
             break
         }
+    }
+
+    func checkDestructiveOperation(record: OperationRecord, sendNotification: Bool = true) {
+        guard record.operationType == .delete else { return }
+        let key = "delete_operation_\(record.agentName)"
+        guard shouldFireAlert(key: key, timestamp: record.timestamp) else { return }
+
+        let detail = (record.detail.isEmpty ? record.targetPath : record.detail)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let summary = String(detail.prefix(240))
+        let title = localizer?.t(
+            "检测到删除操作",
+            en: "Delete Operation Detected",
+            zhHant: "偵測到刪除操作",
+            ja: "削除操作を検出",
+            ko: "삭제 작업 감지",
+            mt: "Delete Operation Detected"
+        ) ?? "Delete Operation Detected"
+        let message = localizer?.t(
+            "Agent \(record.agentName) 执行了删除操作。",
+            en: "Agent \(record.agentName) performed a delete operation.",
+            zhHant: "Agent \(record.agentName) 執行了刪除操作。",
+            ja: "Agent \(record.agentName) が削除操作を実行しました。",
+            ko: "Agent \(record.agentName)이(가) 삭제 작업을 실행했습니다.",
+            mt: "Agent \(record.agentName) performed a delete operation."
+        ) ?? "Agent \(record.agentName) performed a delete operation."
+        let alert = GuardAlert(
+            id: UUID().uuidString,
+            timestamp: record.timestamp,
+            alertType: .batchDelete,
+            severity: .warning,
+            title: title,
+            message: message,
+            agentName: record.agentName,
+            targetPath: record.targetPath,
+            detail: summary
+        )
+        fireAlert(alert, sendNotification: sendNotification)
     }
 
     // MARK: - F28/F29 Sensitive File Detection
@@ -787,24 +825,27 @@ class AgentGuardFeature: ObservableObject {
 
     // MARK: - F40/F41/F42 Notification
 
-    private func fireAlert(_ alert: GuardAlert) {
+    private func fireAlert(_ alert: GuardAlert, sendNotification shouldNotify: Bool = true) {
         alerts.insert(alert, at: 0)
         if alerts.count > maxAlerts {
             alerts = Array(alerts.prefix(maxAlerts))
         }
         saveAlerts()
 
-        if alertRule.notificationEnabled && !isDoNotDisturb() {
+        if shouldNotify && alertRule.notificationEnabled && !isDoNotDisturb() {
             sendNotification(alert)
         }
     }
 
-    private func shouldFireAlert(key: String) -> Bool {
-        let now = Date()
-        if let lastTime = lastAlertTimes[key], now.timeIntervalSince(lastTime) < alertRule.alertCooldownSeconds {
+    private func shouldFireAlert(key: String, timestamp: Date = Date()) -> Bool {
+        if let lastTime = lastAlertTimes[key], abs(timestamp.timeIntervalSince(lastTime)) < alertRule.alertCooldownSeconds {
             return false
         }
-        lastAlertTimes[key] = now
+        if let lastTime = lastAlertTimes[key] {
+            lastAlertTimes[key] = max(lastTime, timestamp)
+        } else {
+            lastAlertTimes[key] = timestamp
+        }
         return true
     }
 
@@ -1130,6 +1171,17 @@ class AgentGuardFeature: ObservableObject {
         saveAlerts()
     }
 
+    @discardableResult
+    func removeAlerts(where shouldRemove: (GuardAlert) -> Bool) -> Int {
+        let previousCount = alerts.count
+        alerts.removeAll(where: shouldRemove)
+        let removedCount = previousCount - alerts.count
+        if removedCount > 0 {
+            saveAlerts()
+        }
+        return removedCount
+    }
+
     var unreadAlertCount: Int {
         alerts.filter { !$0.isRead }.count
     }
@@ -1199,7 +1251,7 @@ class AgentGuardFeature: ObservableObject {
                 incrementRuleCount(at: i, agentName: agentName, timestamp: timestamp, shouldSave: shouldSave)
                 let rule = commandRules[i]
                 let key = "cmd_unclassified_\(rule.id)"
-                if shouldSave && shouldFireAlert(key: key) {
+                if rule.source != .discovered && shouldSave && shouldFireAlert(key: key) {
                     let alert = GuardAlert(
                         id: UUID().uuidString,
                         timestamp: Date(),
@@ -1224,6 +1276,10 @@ class AgentGuardFeature: ObservableObject {
     func recordObservedCommand(command: String, agentName: String, timestamp: Date = Date(), shouldSave: Bool = true) -> CommandCheckResult {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .allowed }
+        let normalized = trimmed.lowercased()
+        if normalized.hasPrefix("const ") && normalized.contains("await tools.") {
+            return .allowed
+        }
         let result = checkCommand(command: trimmed, agentName: agentName, timestamp: timestamp, shouldSave: shouldSave)
         if case .unknown = result {
             discoverCommand(pattern: normalizedCommandPattern(trimmed), agentName: agentName, shouldSave: shouldSave)
@@ -1253,6 +1309,7 @@ class AgentGuardFeature: ObservableObject {
                 toolInfo: event.sessionId
             )
             checkBatchOperation(record: record)
+            checkDestructiveOperation(record: record)
             checkSensitiveFile(record: record)
             checkProtectedDir(record: record)
             recordStats(record)
@@ -1363,8 +1420,44 @@ class AgentGuardFeature: ObservableObject {
             guard let regex = cachedRegex(for: rule) else { return false }
             return (try? regex.firstMatch(in: cmdLower)) != nil
         } else {
-            return cmdLower.contains(rule.pattern.lowercased())
+            return containsLiteralCommandPattern(cmdLower, pattern: rule.pattern.lowercased())
         }
+    }
+
+    private func containsLiteralCommandPattern(_ command: String, pattern rawPattern: String) -> Bool {
+        let pattern = rawPattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !pattern.isEmpty else { return false }
+        let boundaryCharacters = CharacterSet.whitespacesAndNewlines
+            .union(CharacterSet(charactersIn: "|;&(){}[]/\\\"'`"))
+        let needsTrailingBoundary = pattern.last?.isLetter == true
+            || pattern.last?.isNumber == true
+            || pattern.last.map { "._-".contains($0) } == true
+        var searchStart = command.startIndex
+
+        while searchStart < command.endIndex,
+              let range = command.range(of: pattern, range: searchStart..<command.endIndex) {
+            let leadingBoundary: Bool
+            if range.lowerBound == command.startIndex {
+                leadingBoundary = true
+            } else {
+                let previous = command[command.index(before: range.lowerBound)]
+                leadingBoundary = previous.unicodeScalars.allSatisfy(boundaryCharacters.contains)
+            }
+
+            let trailingBoundary: Bool
+            if !needsTrailingBoundary || range.upperBound == command.endIndex {
+                trailingBoundary = true
+            } else {
+                let next = command[range.upperBound]
+                trailingBoundary = next.unicodeScalars.allSatisfy(boundaryCharacters.contains)
+            }
+
+            if leadingBoundary && trailingBoundary {
+                return true
+            }
+            searchStart = range.upperBound
+        }
+        return false
     }
 
     private func cachedRegex(for rule: CommandRule) -> Regex<AnyRegexOutput>? {
@@ -1596,6 +1689,19 @@ class AgentGuardFeature: ObservableObject {
         commandRegexCache.removeValue(forKey: id)
         failedRegexRuleIds.remove(id)
         saveCommandRules()
+    }
+
+    @discardableResult
+    func removeCommandRules(where shouldRemove: (CommandRule) -> Bool) -> Int {
+        let removedIDs = Set(commandRules.filter(shouldRemove).map(\.id))
+        guard !removedIDs.isEmpty else { return 0 }
+        commandRules.removeAll { removedIDs.contains($0.id) }
+        for id in removedIDs {
+            commandRegexCache.removeValue(forKey: id)
+            failedRegexRuleIds.remove(id)
+        }
+        saveCommandRules()
+        return removedIDs.count
     }
 
     // MARK: - Persistence

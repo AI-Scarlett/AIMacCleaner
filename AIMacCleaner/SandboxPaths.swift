@@ -76,6 +76,7 @@ class SandboxPaths {
     var customAgentSourcesPath: String { dataDirectory + "/custom_agents.json" }
     var snapshotsPath: String { dataDirectory + "/snapshots.json" }
     var captureShelfHistoryPath: String { dataDirectory + "/capture_shelf_history.json" }
+    var artifactShelfPath: String { dataDirectory + "/artifact_shelf.json" }
     var shortcutsPath: String { dataDirectory + "/shortcuts.json" }
     var screenRecordingsDirectory: String {
         let path = dataDirectory + "/Recordings"
@@ -168,6 +169,7 @@ class SandboxPaths {
         "custom_agents.json",
         "snapshots.json",
         "capture_shelf_history.json",
+        "artifact_shelf.json",
         "shortcuts.json"
     ]
 

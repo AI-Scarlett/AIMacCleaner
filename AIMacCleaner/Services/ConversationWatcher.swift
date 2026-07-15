@@ -1,6 +1,6 @@
 import Foundation
 
-struct ConversationFile: Codable, Identifiable {
+struct ConversationFile: Codable, Identifiable, Equatable {
     var id: String
     var path: String
     var agentId: String
@@ -27,28 +27,20 @@ class ConversationWatcher: ObservableObject {
     @Published var isWatching: Bool = false
 
     private var monitorTask: Task<Void, Never>?
+    private var externalApprovalScanTask: Task<Void, Never>?
     private var watchedPaths: Set<String> = []
     private let maxConversations = 500
     private let externalApprovalWindow: TimeInterval = 15 * 60
-    private let initialApprovalTailBytes: UInt64 = 4 * 1_024 * 1_024
-    private let maxApprovalDeltaBytes: UInt64 = 8 * 1_024 * 1_024
-    private let maxApprovalPartialLineBytes = 512 * 1_024
     private var processedExternalApprovalIds: Set<String> = []
     private var pendingExternalApprovalIds: [String: String] = [:]
-    private var externalApprovalCursors: [String: ExternalApprovalCursor] = [:]
     private weak var sessionStore: SessionStore?
-    private let jsonTimestampFormatter = ISO8601DateFormatter()
-    private let fractionalJSONTimestampFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
+    private let externalApprovalScanner = ExternalApprovalScanner()
     nonisolated private static let sessionIdRegexes: [NSRegularExpression] = [
         try! NSRegularExpression(pattern: "session[-_]([a-f0-9-]{20,})", options: []),
         try! NSRegularExpression(pattern: "([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})", options: [])
     ]
-    nonisolated private static let approvalMarker = Data("require_escalated".utf8)
-    nonisolated private static let functionOutputMarker = Data("function_call_output".utf8)
+    nonisolated private static let scanResultLimit = 500
+    nonisolated private static let scanPruneThreshold = 1_000
 
     func setupExternalApprovalBridge(sessionStore: SessionStore) {
         self.sessionStore = sessionStore
@@ -88,132 +80,49 @@ class ConversationWatcher: ObservableObject {
         isWatching = false
         monitorTask?.cancel()
         monitorTask = nil
+        externalApprovalScanTask?.cancel()
+        externalApprovalScanTask = nil
         pendingExternalApprovalIds.removeAll()
-        externalApprovalCursors.removeAll()
     }
 
     func scanDirectories() {
-        mergeDiscoveredConversations(Self.scanDirectoriesSnapshot(watchedDirectories))
+        let directories = watchedDirectories
+        Task.detached(priority: .utility) { [weak self] in
+            let found = autoreleasepool {
+                Self.scanDirectoriesSnapshot(directories)
+            }
+            await self?.applyScanResult(found)
+        }
     }
 
     func scanExternalApprovals() {
         guard let codexDir = watchedDirectories.first(where: { $0.agentId == "codex" }),
-              let sessionStore else { return }
+              sessionStore != nil,
+              externalApprovalScanTask == nil else { return }
 
         let root = URL(fileURLWithPath: NSString(string: codexDir.path).expandingTildeInPath)
         let sessionsRoot = root.lastPathComponent == "sessions" ? root : root.appendingPathComponent("sessions")
         guard FileManager.default.fileExists(atPath: sessionsRoot.path) else { return }
 
         let cutoff = Date().addingTimeInterval(-externalApprovalWindow)
-        guard let enumerator = FileManager.default.enumerator(
-            at: sessionsRoot,
-            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
-            options: [.skipsHiddenFiles]
-        ) else { return }
-
-        var activePaths = Set<String>()
-        for case let url as URL in enumerator where url.pathExtension.lowercased() == "jsonl" {
-            guard let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
-                  (values.contentModificationDate ?? .distantPast) >= cutoff,
-                  let fileSize = values.fileSize,
-                  fileSize >= 0 else { continue }
-            activePaths.insert(url.path)
-            scanCodexRolloutForExternalApprovals(
-                url: url,
-                fileSize: UInt64(fileSize),
-                cutoff: cutoff,
-                sessionStore: sessionStore
-            )
+        externalApprovalScanTask = Task { [weak self, externalApprovalScanner] in
+            let events = await externalApprovalScanner.scan(sessionsRoot: sessionsRoot, cutoff: cutoff)
+            guard !Task.isCancelled, let self else { return }
+            self.externalApprovalScanTask = nil
+            self.applyExternalApprovalEvents(events)
         }
-        externalApprovalCursors = externalApprovalCursors.filter { activePaths.contains($0.key) }
     }
 
-    private func scanCodexRolloutForExternalApprovals(
-        url: URL,
-        fileSize: UInt64,
-        cutoff: Date,
-        sessionStore: SessionStore
-    ) {
-        let prior = externalApprovalCursors[url.path]
-        let cursorIsValid = prior.map { $0.offset <= fileSize } ?? false
-        var startOffset = cursorIsValid
-            ? (prior?.offset ?? 0)
-            : fileSize > initialApprovalTailBytes ? fileSize - initialApprovalTailBytes : 0
-        var partialLine = cursorIsValid ? (prior?.partialLine ?? Data()) : Data()
-        var dropsLeadingPartialLine = !cursorIsValid && startOffset > 0
-
-        if fileSize > startOffset, fileSize - startOffset > maxApprovalDeltaBytes {
-            startOffset = fileSize - maxApprovalDeltaBytes
-            partialLine.removeAll(keepingCapacity: false)
-            dropsLeadingPartialLine = true
-        }
-
-        guard fileSize > startOffset,
-              let handle = try? FileHandle(forReadingFrom: url) else {
-            externalApprovalCursors[url.path] = ExternalApprovalCursor(
-                offset: fileSize,
-                partialLine: partialLine
-            )
-            return
-        }
-
-        defer { try? handle.close() }
-        do {
-            try handle.seek(toOffset: startOffset)
-            let byteCount = Int(min(fileSize - startOffset, maxApprovalDeltaBytes))
-            guard let newData = try handle.read(upToCount: byteCount), !newData.isEmpty else { return }
-
-            var buffered = Data(capacity: partialLine.count + newData.count)
-            buffered.append(partialLine)
-            buffered.append(newData)
-
-            var lines = buffered.split(separator: 0x0A, omittingEmptySubsequences: false)
-            let endsWithNewline = buffered.last == 0x0A
-            var nextPartialLine = Data()
-            if endsWithNewline {
-                if lines.last?.isEmpty == true {
-                    lines.removeLast()
-                }
-            } else if let tail = lines.popLast(), tail.count <= maxApprovalPartialLineBytes {
-                nextPartialLine = Data(tail)
+    private func applyExternalApprovalEvents(_ events: [ExternalApprovalEvent]) {
+        guard let sessionStore else { return }
+        for event in events {
+            switch event {
+            case .request(let request):
+                publishExternalApproval(request, sessionStore: sessionStore)
+            case .completed(let callId):
+                guard let sessionId = pendingExternalApprovalIds.removeValue(forKey: callId) else { continue }
+                Task { await sessionStore.setPendingPermission(sessionId, nil) }
             }
-            if dropsLeadingPartialLine, !lines.isEmpty {
-                lines.removeFirst()
-            }
-
-            for line in lines where !line.isEmpty {
-                autoreleasepool {
-                    let data = Data(line)
-                    guard data.range(of: Self.approvalMarker) != nil
-                            || data.range(of: Self.functionOutputMarker) != nil,
-                          let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          let timestamp = parseJSONLTimestamp(raw["timestamp"] as? String),
-                          timestamp >= cutoff,
-                          let payload = raw["payload"] as? [String: Any] else { return }
-
-                    if let request = parseCodexExternalApproval(
-                        payload: payload,
-                        timestamp: timestamp,
-                        rolloutURL: url
-                    ) {
-                        publishExternalApproval(request, sessionStore: sessionStore)
-                        return
-                    }
-
-                    if let callId = payload["call_id"] as? String,
-                       payload["type"] as? String == "function_call_output",
-                       let sessionId = pendingExternalApprovalIds.removeValue(forKey: callId) {
-                        Task { await sessionStore.setPendingPermission(sessionId, nil) }
-                    }
-                }
-            }
-
-            externalApprovalCursors[url.path] = ExternalApprovalCursor(
-                offset: startOffset + UInt64(newData.count),
-                partialLine: nextPartialLine
-            )
-        } catch {
-            externalApprovalCursors.removeValue(forKey: url.path)
         }
     }
 
@@ -247,60 +156,17 @@ class ConversationWatcher: ObservableObject {
         }
     }
 
-    private func parseCodexExternalApproval(
-        payload: [String: Any],
-        timestamp: Date,
-        rolloutURL: URL
-    ) -> ExternalApprovalRequest? {
-        guard payload["type"] as? String == "function_call",
-              payload["name"] as? String == "exec_command",
-              let callId = payload["call_id"] as? String,
-              let arguments = payload["arguments"] as? String,
-              let args = parseJSONString(arguments),
-              args["sandbox_permissions"] as? String == "require_escalated" else { return nil }
-
-        let command = args["cmd"] as? String ?? "exec_command"
-        let cwd = args["workdir"] as? String ?? ""
-        let justification = args["justification"] as? String ?? ""
-        let prefix = (args["prefix_rule"] as? [Any])?.compactMap { $0 as? String }.joined(separator: " ") ?? ""
-        let detail = [
-            justification.isEmpty ? nil : justification,
-            command.isEmpty ? nil : "Command: \(command)",
-            prefix.isEmpty ? nil : "Prefix: \(prefix)"
-        ].compactMap { $0 }.joined(separator: "\n\n")
-
-        return ExternalApprovalRequest(
-            id: "codex-external-\(callId)",
-            callId: callId,
-            agentName: "Codex",
-            toolName: "exec_command",
-            command: command,
-            detail: detail,
-            cwd: cwd,
-            project: projectName(from: cwd, fallback: rolloutURL.deletingPathExtension().lastPathComponent),
-            actionHint: "Open Codex to approve or reject this permission request.",
-            timestamp: timestamp
-        )
-    }
-
-    private func parseJSONString(_ text: String) -> [String: Any]? {
-        guard let data = text.data(using: .utf8) else { return nil }
-        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-    }
-
-    private func parseJSONLTimestamp(_ value: String?) -> Date? {
-        guard let value else { return nil }
-        return fractionalJSONTimestampFormatter.date(from: value)
-            ?? jsonTimestampFormatter.date(from: value)
-    }
-
-    private func projectName(from cwd: String, fallback: String) -> String {
-        guard !cwd.isEmpty else { return fallback }
-        return URL(fileURLWithPath: cwd).lastPathComponent
-    }
-
     nonisolated private static func scanDirectoriesSnapshot(_ directories: [ConversationDirectory]) -> [ConversationFile] {
-        directories.flatMap { scanDirectory($0) }
+        var found: [ConversationFile] = []
+        for directory in directories {
+            found.append(contentsOf: scanDirectory(directory))
+            if found.count >= scanPruneThreshold {
+                found.sort { $0.timestamp > $1.timestamp }
+                found.removeSubrange(scanResultLimit..<found.count)
+            }
+        }
+        found.sort { $0.timestamp > $1.timestamp }
+        return Array(found.prefix(scanResultLimit))
     }
 
     nonisolated private static func scanDirectory(_ dir: ConversationDirectory) -> [ConversationFile] {
@@ -321,9 +187,10 @@ class ConversationWatcher: ObservableObject {
             let ext = url.pathExtension.lowercased()
             guard ext == "json" || ext == "jsonl" || ext == "md" || ext == "txt" else { continue }
 
-            guard let attrs = try? fm.attributesOfItem(atPath: url.path),
-                  let modDate = attrs[.modificationDate] as? Date,
-                  let size = attrs[.size] as? Int64 else { continue }
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+                  let modDate = values.contentModificationDate,
+                  let sizeValue = values.fileSize else { continue }
+            let size = Int64(sizeValue)
 
             let fileName = url.deletingPathExtension().lastPathComponent
             let sessionId = extractSessionId(from: fileName, path: url.path)
@@ -341,21 +208,31 @@ class ConversationWatcher: ObservableObject {
             )
 
             found.append(conv)
-        }
-
-        return found
-    }
-
-    private func mergeDiscoveredConversations(_ found: [ConversationFile]) {
-        let existingIds = Set(discoveredConversations.map { $0.id })
-        for conv in found {
-            if !existingIds.contains(conv.id) {
-                discoveredConversations.insert(conv, at: 0)
+            if found.count >= scanPruneThreshold {
+                found.sort { $0.timestamp > $1.timestamp }
+                found.removeSubrange(scanResultLimit..<found.count)
             }
         }
 
-        if discoveredConversations.count > maxConversations {
-            discoveredConversations = Array(discoveredConversations.prefix(maxConversations))
+        found.sort { $0.timestamp > $1.timestamp }
+        return Array(found.prefix(scanResultLimit))
+    }
+
+    private func mergeDiscoveredConversations(_ found: [ConversationFile]) {
+        var mergedByID = Dictionary(uniqueKeysWithValues: discoveredConversations.map { ($0.id, $0) })
+        for conv in found {
+            if let existing = mergedByID[conv.id], existing.timestamp > conv.timestamp {
+                continue
+            }
+            mergedByID[conv.id] = conv
+        }
+
+        let merged = Array(mergedByID.values)
+            .sorted { $0.timestamp > $1.timestamp }
+            .prefix(maxConversations)
+        let next = Array(merged)
+        if next != discoveredConversations {
+            discoveredConversations = next
         }
     }
 
@@ -456,12 +333,17 @@ class ConversationWatcher: ObservableObject {
     }
 }
 
-private struct ExternalApprovalCursor {
+private enum ExternalApprovalEvent: Sendable {
+    case request(ExternalApprovalRequest)
+    case completed(callId: String)
+}
+
+private struct ExternalApprovalCursor: Sendable {
     var offset: UInt64
     var partialLine: Data
 }
 
-private struct ExternalApprovalRequest {
+private struct ExternalApprovalRequest: Sendable {
     var id: String
     var callId: String
     var agentName: String
@@ -472,4 +354,174 @@ private struct ExternalApprovalRequest {
     var project: String
     var actionHint: String
     var timestamp: Date
+}
+
+private actor ExternalApprovalScanner {
+    private let initialTailBytes: UInt64 = 4 * 1_024 * 1_024
+    private let maxDeltaBytes: UInt64 = 8 * 1_024 * 1_024
+    private let maxPartialLineBytes = 512 * 1_024
+    private let approvalMarker = Data("require_escalated".utf8)
+    private let functionOutputMarker = Data("function_call_output".utf8)
+    private var cursors: [String: ExternalApprovalCursor] = [:]
+    private let timestampFormatter = ISO8601DateFormatter()
+    private let fractionalTimestampFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    func scan(sessionsRoot: URL, cutoff: Date) -> [ExternalApprovalEvent] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: sessionsRoot,
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        var activePaths = Set<String>()
+        var events: [ExternalApprovalEvent] = []
+        for case let url as URL in enumerator {
+            guard !Task.isCancelled else { break }
+            guard url.pathExtension.lowercased() == "jsonl",
+                  let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
+                  (values.contentModificationDate ?? .distantPast) >= cutoff,
+                  let fileSize = values.fileSize,
+                  fileSize >= 0 else { continue }
+
+            activePaths.insert(url.path)
+            events.append(contentsOf: scanRollout(
+                url: url,
+                fileSize: UInt64(fileSize),
+                cutoff: cutoff
+            ))
+        }
+        cursors = cursors.filter { activePaths.contains($0.key) }
+        return events
+    }
+
+    private func scanRollout(
+        url: URL,
+        fileSize: UInt64,
+        cutoff: Date
+    ) -> [ExternalApprovalEvent] {
+        let prior = cursors[url.path]
+        let cursorIsValid = prior.map { $0.offset <= fileSize } ?? false
+        var startOffset = cursorIsValid
+            ? (prior?.offset ?? 0)
+            : fileSize > initialTailBytes ? fileSize - initialTailBytes : 0
+        var partialLine = cursorIsValid ? (prior?.partialLine ?? Data()) : Data()
+        var dropsLeadingPartialLine = !cursorIsValid && startOffset > 0
+
+        if fileSize > startOffset, fileSize - startOffset > maxDeltaBytes {
+            startOffset = fileSize - maxDeltaBytes
+            partialLine.removeAll(keepingCapacity: false)
+            dropsLeadingPartialLine = true
+        }
+
+        guard fileSize > startOffset,
+              let handle = try? FileHandle(forReadingFrom: url) else {
+            cursors[url.path] = ExternalApprovalCursor(offset: fileSize, partialLine: partialLine)
+            return []
+        }
+
+        defer { try? handle.close() }
+        do {
+            try handle.seek(toOffset: startOffset)
+            let byteCount = Int(min(fileSize - startOffset, maxDeltaBytes))
+            guard let newData = try handle.read(upToCount: byteCount), !newData.isEmpty else { return [] }
+
+            var buffered = Data(capacity: partialLine.count + newData.count)
+            buffered.append(partialLine)
+            buffered.append(newData)
+
+            var lines = buffered.split(separator: 0x0A, omittingEmptySubsequences: false)
+            let endsWithNewline = buffered.last == 0x0A
+            var nextPartialLine = Data()
+            if endsWithNewline {
+                if lines.last?.isEmpty == true {
+                    lines.removeLast()
+                }
+            } else if let tail = lines.popLast(), tail.count <= maxPartialLineBytes {
+                nextPartialLine = Data(tail)
+            }
+            if dropsLeadingPartialLine, !lines.isEmpty {
+                lines.removeFirst()
+            }
+
+            var events: [ExternalApprovalEvent] = []
+            for line in lines where !line.isEmpty {
+                autoreleasepool {
+                    let data = Data(line)
+                    guard data.range(of: approvalMarker) != nil
+                            || data.range(of: functionOutputMarker) != nil,
+                          let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let timestamp = parseTimestamp(raw["timestamp"] as? String),
+                          timestamp >= cutoff,
+                          let payload = raw["payload"] as? [String: Any] else { return }
+
+                    if let request = parseRequest(payload: payload, timestamp: timestamp, rolloutURL: url) {
+                        events.append(.request(request))
+                    } else if let callId = payload["call_id"] as? String,
+                              payload["type"] as? String == "function_call_output" {
+                        events.append(.completed(callId: callId))
+                    }
+                }
+            }
+
+            cursors[url.path] = ExternalApprovalCursor(
+                offset: startOffset + UInt64(newData.count),
+                partialLine: nextPartialLine
+            )
+            return events
+        } catch {
+            cursors.removeValue(forKey: url.path)
+            return []
+        }
+    }
+
+    private func parseRequest(
+        payload: [String: Any],
+        timestamp: Date,
+        rolloutURL: URL
+    ) -> ExternalApprovalRequest? {
+        guard payload["type"] as? String == "function_call",
+              payload["name"] as? String == "exec_command",
+              let callId = payload["call_id"] as? String,
+              let arguments = payload["arguments"] as? String,
+              let args = parseJSONString(arguments),
+              args["sandbox_permissions"] as? String == "require_escalated" else { return nil }
+
+        let command = args["cmd"] as? String ?? "exec_command"
+        let cwd = args["workdir"] as? String ?? ""
+        let justification = args["justification"] as? String ?? ""
+        let prefix = (args["prefix_rule"] as? [Any])?.compactMap { $0 as? String }.joined(separator: " ") ?? ""
+        let detail = [
+            justification.isEmpty ? nil : justification,
+            command.isEmpty ? nil : "Command: \(command)",
+            prefix.isEmpty ? nil : "Prefix: \(prefix)"
+        ].compactMap { $0 }.joined(separator: "\n\n")
+
+        return ExternalApprovalRequest(
+            id: "codex-external-\(callId)",
+            callId: callId,
+            agentName: "Codex",
+            toolName: "exec_command",
+            command: command,
+            detail: detail,
+            cwd: cwd,
+            project: cwd.isEmpty ? rolloutURL.deletingPathExtension().lastPathComponent : URL(fileURLWithPath: cwd).lastPathComponent,
+            actionHint: "Open Codex to approve or reject this permission request.",
+            timestamp: timestamp
+        )
+    }
+
+    private func parseJSONString(_ text: String) -> [String: Any]? {
+        guard let data = text.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    private func parseTimestamp(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        return fractionalTimestampFormatter.date(from: value)
+            ?? timestampFormatter.date(from: value)
+    }
 }

@@ -86,7 +86,7 @@ class StorageAnalyzer: ObservableObject {
             id: "documents", name: localizer?.appNameDocs ?? "Documents", icon: "doc.fill", color: .blue,
             paths: [
                 "\(home)/Desktop", "\(home)/Documents", "\(home)/Downloads",
-                "\(home)/Movies", "\(home)/Music", "\(home)/Pictures",
+                "\(home)/Pictures",
             ]
         )
 

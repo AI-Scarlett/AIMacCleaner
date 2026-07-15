@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import os
 import SwiftUI
 
 struct ProviderQuotaWindow: Identifiable, Codable {
@@ -103,6 +104,7 @@ final class ProviderQuotaService: ObservableObject {
     @Published private(set) var lastRefreshDate: Date?
 
     private let provider = CodexBarQuotaProvider()
+    private let logger = Logger(subsystem: "com.tracefence.app", category: "provider-quota")
     private var timer: Timer?
 
     var menuBarSummary: String? {
@@ -116,6 +118,7 @@ final class ProviderQuotaService: ObservableObject {
     }
 
     func start() {
+        logger.info("Quota service start requested; snapshots=\(self.snapshots.count, privacy: .public) refreshing=\(self.isRefreshing, privacy: .public)")
         if timer == nil {
             timer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
                 self?.refresh()
@@ -134,6 +137,7 @@ final class ProviderQuotaService: ObservableObject {
     func refresh() {
         guard !isRefreshing else { return }
         isRefreshing = true
+        logger.info("Quota refresh started")
 
         DispatchQueue.global(qos: .utility).async { [provider] in
             let result = provider.fetch()
@@ -141,6 +145,13 @@ final class ProviderQuotaService: ObservableObject {
                 self.snapshots = result.sortedByQuotaReadiness()
                 self.lastRefreshDate = Date()
                 self.isRefreshing = false
+                let readableCount = result.filter(\.hasReadableQuotaData).count
+                if readableCount > 0 {
+                    let menuSummary = self.menuBarSummary ?? "unavailable"
+                    self.logger.info("Quota refresh completed: \(readableCount, privacy: .public) readable of \(result.count, privacy: .public) snapshots; menu=\(menuSummary, privacy: .private)")
+                } else {
+                    self.logger.error("Quota refresh completed without readable snapshots")
+                }
             }
         }
     }
@@ -194,6 +205,8 @@ private extension ProviderQuotaWindow {
 }
 
 private struct CodexBarQuotaProvider {
+    private let logger = Logger(subsystem: "com.tracefence.app", category: "provider-quota")
+
     func fetch() -> [ProviderQuotaSnapshot] {
         guard let executable = findExecutable() else {
             return [ProviderQuotaSnapshot(
@@ -227,7 +240,7 @@ private struct CodexBarQuotaProvider {
             payloads,
             with: readCodexOAuthPayloads(from: executable, decoder: decoder)
         )
-        if !codexPayloadsHaveExtraWindows(payloads) {
+        if !codexPayloadsHaveCompleteSupplementalData(payloads) {
             payloads = payloadsByMergingCodexSources(
                 payloads,
                 with: readCodexWebPayloads(from: executable, decoder: decoder)
@@ -239,6 +252,14 @@ private struct CodexBarQuotaProvider {
             }
             return nil
         }
+        let codexSnapshots = snapshots.filter { $0.providerName.caseInsensitiveCompare("Codex") == .orderedSame }
+        let sparkWindowCount = codexSnapshots.reduce(into: 0) { count, snapshot in
+            count += snapshot.windows.filter(isCodexSparkWindow).count
+        }
+        let resetKnown = codexSnapshots.contains { $0.resetCredits != nil }
+        logger.info(
+            "Codex presentation snapshot: accounts=\(codexSnapshots.count, privacy: .public), spark-windows=\(sparkWindowCount, privacy: .public), reset-known=\(resetKnown, privacy: .public)"
+        )
         if snapshots.isEmpty {
             return [ProviderQuotaSnapshot(
                 id: "provider-engine-empty",
@@ -263,12 +284,14 @@ private struct CodexBarQuotaProvider {
         let helperExecutable = bundleURL
             .appendingPathComponent("Contents/Helpers/CodexBarHelper.app/Contents/MacOS/codexbar")
         let bundledCandidates = [
-            Bundle.main.url(forResource: "codexbar", withExtension: nil),
             Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("codexbar"),
+            Bundle.main.url(forResource: "codexbar", withExtension: nil),
             helperExecutable
         ].compactMap(\.self)
-        let candidates = (SandboxPaths.isSandboxed ? directDistributionCodexBarCandidates() : [])
-            + bundledCandidates
+        let candidates = bundledCandidates
+            + (TraceFenceDistributionPolicy.currentChannel.isDirect
+                ? directDistributionCodexBarCandidates()
+                : [])
 
         return candidates.first { url in
             fileManager.isExecutableFile(atPath: url.path)
@@ -338,17 +361,51 @@ private struct CodexBarQuotaProvider {
                     "--format", "json",
                     "--source", "auto"
                 ],
-                timeout: providerID == "codex" ? 12 : 4
+                timeout: providerID == "codex" || providerID == "grok" ? 12 : 4
             )
             let providerDecoder = JSONDecoder()
             providerDecoder.dateDecodingStrategy = quotaDateDecodingStrategy()
-            return (try? providerDecoder.decode([CodexBarProviderPayload].self, from: data)) ?? []
+            do {
+                let payloads = try providerDecoder.decode([CodexBarProviderPayload].self, from: data)
+                let readableCount = payloads.filter { $0.usage != nil || $0.credits != nil }.count
+                let diagnostic = providerDiagnosticCategory(for: payloads)
+                logger.info("Provider \(providerID, privacy: .public) returned \(payloads.count, privacy: .public) payloads, readable=\(readableCount, privacy: .public), diagnostic=\(diagnostic, privacy: .public)")
+                return payloads
+            } catch {
+                logger.error("Provider \(providerID, privacy: .public) returned undecodable JSON")
+                return [providerReadFailurePayload(
+                    providerID,
+                    error: CodexBarQuotaError.commandFailed("\(displayName(for: providerID)) quota response could not be decoded.")
+                )]
+            }
         } catch {
+            logger.error("Provider \(providerID, privacy: .public) command failed")
             guard shouldSurfaceProviderReadFailure(providerID, config: configs[providerID]) else {
                 return []
             }
             return [providerReadFailurePayload(providerID, error: error)]
         }
+    }
+
+    private func providerDiagnosticCategory(for payloads: [CodexBarProviderPayload]) -> String {
+        let messages = payloads.compactMap { $0.error?.message.lowercased() }
+        guard !messages.isEmpty else { return "none" }
+        if messages.contains(where: { $0.contains("timed out") || $0.contains("读取超时") }) {
+            return "timeout"
+        }
+        if messages.contains(where: { $0.contains("cookie") || $0.contains("session") || $0.contains("log in") || $0.contains("login") }) {
+            return "login-session"
+        }
+        if messages.contains(where: { $0.contains("api key") || $0.contains("credential") }) {
+            return "credentials"
+        }
+        if messages.contains(where: { $0.contains("not installed") || $0.contains("not on path") || $0.contains("cli") }) {
+            return "cli-unavailable"
+        }
+        if messages.contains(where: { $0.contains("no available fetch strategy") }) {
+            return "no-fetch-strategy"
+        }
+        return "other"
     }
 
     private func quotaProviderIDs(configs: [String: CodexBarProviderConfigPayload]) -> [String] {
@@ -407,8 +464,11 @@ private struct CodexBarQuotaProvider {
                 ],
                 timeout: 20
             )
-            return try decoder.decode([CodexBarProviderPayload].self, from: data)
+            let payloads = try decoder.decode([CodexBarProviderPayload].self, from: data)
+            logCodexSupplementalPayloads(payloads, source: "oauth")
+            return payloads
         } catch {
+            logger.error("Codex supplemental source oauth failed")
             return []
         }
     }
@@ -429,8 +489,11 @@ private struct CodexBarQuotaProvider {
                 ],
                 timeout: 20
             )
-            return try decoder.decode([CodexBarProviderPayload].self, from: data)
+            let payloads = try decoder.decode([CodexBarProviderPayload].self, from: data)
+            logCodexSupplementalPayloads(payloads, source: "auto")
+            return payloads
         } catch {
+            logger.error("Codex supplemental source auto failed")
             return []
         }
     }
@@ -451,10 +514,28 @@ private struct CodexBarQuotaProvider {
                 ],
                 timeout: 20
             )
-            return try decoder.decode([CodexBarProviderPayload].self, from: data)
+            let payloads = try decoder.decode([CodexBarProviderPayload].self, from: data)
+            logCodexSupplementalPayloads(payloads, source: "web")
+            return payloads
         } catch {
+            logger.error("Codex supplemental source web failed")
             return []
         }
+    }
+
+    private func logCodexSupplementalPayloads(
+        _ payloads: [CodexBarProviderPayload],
+        source: String
+    ) {
+        let codexPayloads = payloads.filter { $0.provider.lowercased() == "codex" }
+        let knownExtraCount = codexPayloads.reduce(into: 0) { count, payload in
+            count += (payload.usage?.extraRateWindows ?? []).filter(\.usageKnown).count
+        }
+        let resetKnown = codexPayloads.contains { $0.usage?.codexResetCredits != nil }
+        let resetAvailable = codexPayloads.compactMap { $0.usage?.codexResetCredits?.availableCount }.max()
+        logger.info(
+            "Codex supplemental source \(source, privacy: .public) returned \(codexPayloads.count, privacy: .public) payloads, known-extra=\(knownExtraCount, privacy: .public), reset-known=\(resetKnown, privacy: .public), reset-available=\(resetAvailable ?? -1, privacy: .private)"
+        )
     }
 
     private func payloadsByMergingCodexSources(
@@ -566,11 +647,32 @@ private struct CodexBarQuotaProvider {
         return base.updatedAt >= supplemental.updatedAt ? base : supplemental
     }
 
-    private func codexPayloadsHaveExtraWindows(_ payloads: [CodexBarProviderPayload]) -> Bool {
-        payloads.contains { payload in
-            payload.provider.lowercased() == "codex"
-                && !(payload.usage?.extraRateWindows ?? []).isEmpty
+    private func codexPayloadsHaveCompleteSupplementalData(_ payloads: [CodexBarProviderPayload]) -> Bool {
+        let codexPayloads = payloads.filter {
+            $0.provider.lowercased() == "codex" && $0.usage != nil
         }
+        guard !codexPayloads.isEmpty else { return false }
+
+        return codexPayloads.allSatisfy { payload in
+            guard let usage = payload.usage else { return false }
+            let hasSparkWindow = (usage.extraRateWindows ?? []).contains { window in
+                guard window.usageKnown else { return false }
+                let normalized = "\(window.id) \(window.title)"
+                    .replacingOccurrences(of: "_", with: " ")
+                    .replacingOccurrences(of: "-", with: " ")
+                    .lowercased()
+                return normalized.contains("codex") && normalized.contains("spark")
+            }
+            return hasSparkWindow && usage.codexResetCredits != nil
+        }
+    }
+
+    private func isCodexSparkWindow(_ window: ProviderQuotaWindow) -> Bool {
+        let normalized = "\(window.id) \(window.title)"
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .lowercased()
+        return normalized.contains("codex") && normalized.contains("spark")
     }
 
     private func readProviderConfigs(from executable: URL) -> [String: CodexBarProviderConfigPayload] {
@@ -649,7 +751,7 @@ private struct CodexBarQuotaProvider {
         let now = Date()
         let usage = payload.usage
         let windows = makeWindows(from: usage)
-        let resetCredits = usage?.codexResetCredits ?? emptyCodexResetCredits(for: payload, usage: usage)
+        let resetCredits = usage?.codexResetCredits
         let errorMessage = displayErrorMessage(for: payload)
         let config = configs[payload.provider]
 
@@ -670,14 +772,6 @@ private struct CodexBarQuotaProvider {
             errorMessage: windows.isEmpty && resetCredits == nil ? errorMessage : nil,
             setupHint: windows.isEmpty && resetCredits == nil ? setupHint(for: payload) : nil,
             isSetupNotice: false)
-    }
-
-    private func emptyCodexResetCredits(
-        for payload: CodexBarProviderPayload,
-        usage: CodexBarUsagePayload?
-    ) -> ProviderQuotaResetCredits? {
-        guard payload.provider.lowercased() == "codex", let usage else { return nil }
-        return ProviderQuotaResetCredits(availableCount: 0, credits: [], updatedAt: usage.updatedAt)
     }
 
     private func setupNotice(count: Int) -> ProviderQuotaSnapshot {
@@ -708,6 +802,9 @@ private struct CodexBarQuotaProvider {
     private func setupHint(for payload: CodexBarProviderPayload) -> String? {
         let provider = payload.provider.lowercased()
         let message = payload.error?.message.lowercased() ?? ""
+        if provider == "grok", message.contains("no available fetch strategy") {
+            return "Grok is installed, but its login data is not readable. Authorize your Home or ~/.grok folder in TraceFence, then refresh. If it still fails, run `grok login`."
+        }
         if message.contains("api key") {
             return "Configure the \(displayName(for: provider)) API key or account credentials, then refresh the TraceFence provider monitor."
         }
@@ -779,6 +876,15 @@ private struct CodexBarQuotaProvider {
         ].joined(separator: ":")
         environment["PATH"] = fallbackPath
         environment["HOME"] = SandboxPaths.realHomeDirectory
+        if environment["CODEX_HOME"]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            environment["CODEX_HOME"] = homeURL.appendingPathComponent(".codex", isDirectory: true).path
+        }
+        // Foundation resolves homeDirectoryForCurrentUser to the app container inside
+        // a sandboxed helper. Codex and Grok honor explicit home variables, so point
+        // them at user-authorized data directories instead of the container's empty homes.
+        if environment["GROK_HOME"]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            environment["GROK_HOME"] = homeURL.appendingPathComponent(".grok", isDirectory: true).path
+        }
         environment["USER"] = NSUserName()
         environment["LOGNAME"] = NSUserName()
         [
@@ -980,14 +1086,18 @@ private enum CodexBarQuotaError: LocalizedError {
 
 private final class ProviderQuotaSecurityScopedAccess {
     private var activeURLs: [URL] = []
+    private let logger = Logger(subsystem: "com.tracefence.app", category: "provider-quota")
 
     func start() {
+        guard SandboxPaths.isSandboxed || !SandboxPaths.isDirectDistribution else { return }
+
         let bookmarkFiles = [
             SandboxPaths.shared.bookmarksPath,
             SandboxPaths.shared.scanBookmarksPath,
             SandboxPaths.shared.tokenScopeBookmarksPath
         ]
         var seen = Set<String>()
+        var staleCount = 0
 
         for bookmarkFile in bookmarkFiles {
             guard let data = try? Data(contentsOf: URL(fileURLWithPath: bookmarkFile)),
@@ -1005,13 +1115,25 @@ private final class ProviderQuotaSecurityScopedAccess {
                 ) else {
                     continue
                 }
+                if stale { staleCount += 1 }
                 let path = url.standardizedFileURL.path
-                guard seen.insert(path).inserted else { continue }
+                guard !seen.contains(path) else { continue }
                 if url.startAccessingSecurityScopedResource() {
+                    seen.insert(path)
                     activeURLs.append(url)
                 }
             }
         }
+
+        let home = URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true).standardizedFileURL.path
+        let grokPath = URL(fileURLWithPath: home, isDirectory: true)
+            .appendingPathComponent(".grok", isDirectory: true)
+            .standardizedFileURL.path
+        let grokCovered = activeURLs.contains { url in
+            let root = url.standardizedFileURL.path
+            return root == home || root == grokPath || grokPath.hasPrefix(root + "/")
+        }
+        logger.info("Quota data access: active=\(self.activeURLs.count, privacy: .public), stale=\(staleCount, privacy: .public), grok-covered=\(grokCovered, privacy: .public)")
     }
 
     func stop() {

@@ -22,16 +22,12 @@ enum TraceFenceSubscriptionTier: String, Codable, CaseIterable {
     case none
     case appStoreStandard
     case directStandard
-    case directEnhanced
-    case legacy
 
     var title: String {
         switch self {
         case .none: return "Free"
         case .appStoreStandard: return "TraceFence Standard"
         case .directStandard: return "TraceFence Standard"
-        case .directEnhanced: return "TraceFence Enhanced"
-        case .legacy: return "Legacy License"
         }
     }
 
@@ -41,10 +37,6 @@ enum TraceFenceSubscriptionTier: String, Codable, CaseIterable {
             return "Limited local monitoring"
         case .appStoreStandard, .directStandard:
             return "$9.99/month or $79.99/year"
-        case .directEnhanced:
-            return "Higher website-only tier"
-        case .legacy:
-            return "Existing purchased features"
         }
     }
 
@@ -55,11 +47,7 @@ enum TraceFenceSubscriptionTier: String, Codable, CaseIterable {
         case .appStoreStandard:
             return "Agent timeline, AI reports, iPhone remote control, and hook-based approvals within App Store limits."
         case .directStandard:
-            return "Same feature and price level as the App Store subscription."
-        case .directEnhanced:
-            return "Website-only advanced policies, direct update channel, broader local diagnostics, and future system-extension firewall support."
-        case .legacy:
-            return "Existing customers keep the features they already bought; subscription upgrades unlock new v2 features."
+            return "The current website feature set, with monthly or annual billing through Dodo Payments."
         }
     }
 
@@ -70,9 +58,6 @@ enum TraceFenceSubscriptionTier: String, Codable, CaseIterable {
         }
     }
 
-    var includesEnhancedDirectFeatures: Bool {
-        self == .directEnhanced
-    }
 }
 
 struct TraceFenceSubscriptionPlan: Identifiable, Equatable {
@@ -84,9 +69,35 @@ struct TraceFenceSubscriptionPlan: Identifiable, Equatable {
     let isRecommended: Bool
 }
 
-enum TraceFenceCheckoutPlan {
-    case standard
-    case enhanced
+enum TraceFenceCheckoutPlan: String, CaseIterable {
+    case monthly
+    case annual
+
+    var priceLine: String {
+        switch self {
+        case .monthly: return "$9.99 / month"
+        case .annual: return "$79.99 / year"
+        }
+    }
+}
+
+enum TraceFenceDodoEnvironment: String {
+    case test
+    case live
+
+    var checkoutHost: String {
+        switch self {
+        case .test: return "test.checkout.dodopayments.com"
+        case .live: return "checkout.dodopayments.com"
+        }
+    }
+
+    var licenseBaseURL: URL {
+        switch self {
+        case .test: return URL(string: "https://test.dodopayments.com/licenses")!
+        case .live: return URL(string: "https://live.dodopayments.com/licenses")!
+        }
+    }
 }
 
 enum TraceFenceRemoteAccessMode: String, CaseIterable, Identifiable {
@@ -134,8 +145,26 @@ enum TraceFenceRemoteAccessMode: String, CaseIterable, Identifiable {
 }
 
 enum TraceFenceDistributionPolicy {
+    static let dodoEnvironmentDefaultsKey = "traceFenceDodoEnvironment"
+    static let dodoBusinessIDDefaultsKey = "traceFenceDodoBusinessID"
+    static let dodoMonthlyProductIDDefaultsKey = "traceFenceDodoMonthlyProductID"
+    static let dodoAnnualProductIDDefaultsKey = "traceFenceDodoAnnualProductID"
+
+    static var allowsDodoRuntimeOverrides: Bool {
+#if DEBUG
+        currentChannel.isDirect
+#else
+        false
+#endif
+    }
+
     static var currentChannel: TraceFenceDistributionChannel {
-        if let override = UserDefaults.standard.string(forKey: "traceFenceDistributionChannel"),
+        if let bundled = Bundle.main.object(forInfoDictionaryKey: "TraceFenceDistributionChannel") as? String,
+           let channel = TraceFenceDistributionChannel(rawValue: bundled),
+           channel.isAppStore {
+            return .appStore
+        }
+        if let override = debugOverride(forKey: "traceFenceDistributionChannel"),
            let channel = TraceFenceDistributionChannel(rawValue: override) {
             return channel
         }
@@ -158,6 +187,9 @@ enum TraceFenceDistributionPolicy {
         return [monthly, yearly].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
+    static let privacyPolicyURL = URL(string: "https://ai-scarlett.github.io/TraceFence/privacy-policy.html")!
+    static let standardEULAURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
+
     static var directPlans: [TraceFenceSubscriptionPlan] {
         [
             TraceFenceSubscriptionPlan(
@@ -167,15 +199,7 @@ enum TraceFenceDistributionPolicy {
                 priceLine: TraceFenceSubscriptionTier.directStandard.priceLine,
                 featureLine: TraceFenceSubscriptionTier.directStandard.featureLine,
                 isRecommended: true
-            ),
-            TraceFenceSubscriptionPlan(
-                id: .directEnhanced,
-                channel: .direct,
-                title: TraceFenceSubscriptionTier.directEnhanced.title,
-                priceLine: TraceFenceSubscriptionTier.directEnhanced.priceLine,
-                featureLine: TraceFenceSubscriptionTier.directEnhanced.featureLine,
-                isRecommended: false
-            ),
+            )
         ]
     }
 
@@ -193,38 +217,106 @@ enum TraceFenceDistributionPolicy {
     }
 
     static func checkoutURL(for plan: TraceFenceCheckoutPlan) -> URL? {
-        let key: String
-        let defaultsKey: String
-        switch plan {
-        case .standard:
-            key = "TraceFenceCheckoutURL"
-            defaultsKey = "traceFenceCheckoutURL"
-        case .enhanced:
-            key = "TraceFenceEnhancedCheckoutURL"
-            defaultsKey = "traceFenceEnhancedCheckoutURL"
-        }
-
-        let rawValue = (Bundle.main.object(forInfoDictionaryKey: key) as? String)
-            ?? UserDefaults.standard.string(forKey: defaultsKey)
-        guard let rawValue,
-              !rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard currentChannel.isDirect,
+              let productID = dodoProductID(for: plan),
+              let returnURL = checkoutReturnURL,
+              var components = URLComponents(string: "https://\(dodoEnvironment.checkoutHost)/buy/\(productID)") else {
             return nil
         }
-        return URL(string: rawValue)
+        components.queryItems = [
+            URLQueryItem(name: "quantity", value: "1"),
+            URLQueryItem(name: "showDiscounts", value: "false"),
+            URLQueryItem(name: "redirect_url", value: returnURL.absoluteString)
+        ]
+        return components.url
+    }
+
+    static var dodoEnvironment: TraceFenceDodoEnvironment {
+        guard let rawValue = configuredValue(
+            infoKey: "TraceFenceDodoEnvironment",
+            defaultsKey: dodoEnvironmentDefaultsKey
+        ), let environment = TraceFenceDodoEnvironment(rawValue: rawValue.lowercased()) else {
+            return .test
+        }
+        return environment
+    }
+
+    static func dodoProductID(for plan: TraceFenceCheckoutPlan) -> String? {
+        guard currentChannel.isDirect else { return nil }
+        let infoKey: String
+        let defaultsKey: String
+        switch plan {
+        case .monthly:
+            infoKey = "TraceFenceDodoMonthlyProductID"
+            defaultsKey = dodoMonthlyProductIDDefaultsKey
+        case .annual:
+            infoKey = "TraceFenceDodoAnnualProductID"
+            defaultsKey = dodoAnnualProductIDDefaultsKey
+        }
+        guard let value = configuredValue(infoKey: infoKey, defaultsKey: defaultsKey),
+              value.range(of: #"^pdt_[A-Za-z0-9]+$"#, options: .regularExpression) != nil else {
+            return nil
+        }
+        return value
+    }
+
+    static var dodoStandardProductIDs: Set<String> {
+        Set(TraceFenceCheckoutPlan.allCases.compactMap(dodoProductID(for:)))
+    }
+
+    static var dodoBusinessID: String? {
+        guard currentChannel.isDirect,
+              let value = configuredValue(
+            infoKey: "TraceFenceDodoBusinessID",
+            defaultsKey: dodoBusinessIDDefaultsKey
+        ), value.range(of: #"^bus_[A-Za-z0-9]+$"#, options: .regularExpression) != nil else {
+            return nil
+        }
+        return value
+    }
+
+    static func isSupportedDodoProductID(_ productID: String) -> Bool {
+        dodoStandardProductIDs.contains(productID)
+    }
+
+    static func isSupportedDodoBusinessID(_ businessID: String) -> Bool {
+        businessID == dodoBusinessID
+    }
+
+    static var checkoutReturnURL: URL? {
+        guard currentChannel.isDirect,
+              let rawValue = configuredValue(
+            infoKey: "TraceFenceCheckoutReturnURL",
+            defaultsKey: "traceFenceCheckoutReturnURL"
+              ) else { return nil }
+        guard let url = URL(string: rawValue), url.scheme == "https" else { return nil }
+        return url
+    }
+
+    private static func configuredValue(infoKey: String, defaultsKey: String) -> String? {
+        let candidates = [
+            debugOverride(forKey: defaultsKey),
+            Bundle.main.object(forInfoDictionaryKey: infoKey) as? String
+        ]
+        for candidate in candidates {
+            let value = candidate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !value.isEmpty, !value.contains("$(") {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func debugOverride(forKey key: String) -> String? {
+#if DEBUG
+        UserDefaults.standard.string(forKey: key)
+#else
+        nil
+#endif
     }
 
     static func tier(from snapshot: DirectLicenseSnapshot) -> TraceFenceSubscriptionTier {
         guard snapshot.status == .licensed else { return .none }
-        let product = (snapshot.productName ?? "").lowercased()
-        if product.contains("enhanced") ||
-            product.contains("advanced") ||
-            product.contains("firewall") ||
-            product.contains("system extension") {
-            return .directEnhanced
-        }
-        if product.contains("legacy") || product.contains("lifetime") {
-            return .legacy
-        }
         return .directStandard
     }
 }
@@ -240,6 +332,21 @@ enum AppStoreSubscriptionError: LocalizedError {
     }
 }
 
+enum AppStoreSubscriptionNotice: Equatable {
+    case productsUnavailable
+    case subscriptionActive
+    case purchaseCancelled
+    case purchasePending
+    case purchaseStateUnknown
+    case subscriptionRestored
+    case noActiveSubscription
+    case requestFailed
+}
+
+extension Notification.Name {
+    static let traceFenceEntitlementDidChange = Notification.Name("traceFenceEntitlementDidChange")
+}
+
 @MainActor
 final class AppStoreSubscriptionService: ObservableObject {
     static let shared = AppStoreSubscriptionService()
@@ -249,33 +356,54 @@ final class AppStoreSubscriptionService: ObservableObject {
     @Published private(set) var isSubscribed = false
     @Published private(set) var activeProductID: String?
     @Published private(set) var expiresAt: Date?
-    @Published var message: String?
+    @Published private(set) var notice: AppStoreSubscriptionNotice?
 
     var canUseCoreFeatures: Bool { isSubscribed }
     var canUseProFeatures: Bool { isSubscribed }
 
     private var productIDs: [String] { TraceFenceDistributionPolicy.appStoreProductIDs }
+    private var transactionUpdatesTask: Task<Void, Never>?
+    private var expirationRefreshTask: Task<Void, Never>?
 
     private init() {}
 
     func refresh() async {
+        startTransactionListenerIfNeeded()
         await loadProducts()
         await refreshEntitlements()
+    }
+
+    func startTransactionListenerIfNeeded() {
+        guard transactionUpdatesTask == nil else { return }
+        transactionUpdatesTask = Task { [weak self] in
+            for await result in Transaction.updates {
+                guard !Task.isCancelled, let self else { return }
+                guard let transaction = try? self.checkVerified(result),
+                      self.productIDs.contains(transaction.productID) else {
+                    continue
+                }
+                await transaction.finish()
+                await self.refreshEntitlements()
+            }
+        }
     }
 
     func loadProducts() async {
         guard !productIDs.isEmpty else { return }
         isLoading = true
+        notice = nil
         defer { isLoading = false }
         do {
             products = try await Product.products(for: productIDs).sorted { lhs, rhs in
                 lhs.price < rhs.price
             }
             if products.isEmpty {
-                message = "App Store subscription products are not configured yet."
+                notice = .productsUnavailable
             }
         } catch {
-            message = error.localizedDescription
+            if products.isEmpty {
+                notice = .requestFailed
+            }
         }
     }
 
@@ -289,16 +417,16 @@ final class AppStoreSubscriptionService: ObservableObject {
                 let transaction = try checkVerified(verification)
                 await transaction.finish()
                 await refreshEntitlements()
-                message = "Subscription is active."
+                notice = .subscriptionActive
             case .userCancelled:
-                message = "Purchase cancelled."
+                notice = .purchaseCancelled
             case .pending:
-                message = "Purchase is pending approval."
+                notice = .purchasePending
             @unknown default:
-                message = "Purchase state is unknown."
+                notice = .purchaseStateUnknown
             }
         } catch {
-            message = error.localizedDescription
+            notice = .requestFailed
         }
     }
 
@@ -308,9 +436,9 @@ final class AppStoreSubscriptionService: ObservableObject {
         do {
             try await AppStore.sync()
             await refreshEntitlements()
-            message = isSubscribed ? "Subscription restored." : "No active subscription found."
+            notice = isSubscribed ? .subscriptionRestored : .noActiveSubscription
         } catch {
-            message = error.localizedDescription
+            notice = .requestFailed
         }
     }
 
@@ -322,7 +450,9 @@ final class AppStoreSubscriptionService: ObservableObject {
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result),
                   productIDs.contains(transaction.productID),
-                  transaction.revocationDate == nil else {
+                  transaction.revocationDate == nil,
+                  !transaction.isUpgraded,
+                  transaction.expirationDate.map({ $0 > Date() }) ?? true else {
                 continue
             }
             foundActive = true
@@ -333,6 +463,31 @@ final class AppStoreSubscriptionService: ObservableObject {
         isSubscribed = foundActive
         activeProductID = foundProductID
         expiresAt = foundExpiration
+        scheduleExpirationRefresh(for: foundExpiration)
+        NotificationCenter.default.post(
+            name: .traceFenceEntitlementDidChange,
+            object: nil,
+            userInfo: ["canUseProFeatures": foundActive]
+        )
+    }
+
+    private func scheduleExpirationRefresh(for expirationDate: Date?) {
+        expirationRefreshTask?.cancel()
+        guard let expirationDate else {
+            expirationRefreshTask = nil
+            return
+        }
+        let delay = max(1, expirationDate.timeIntervalSinceNow + 1)
+        expirationRefreshTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } catch {
+                return
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.expirationRefreshTask = nil
+            await self.refreshEntitlements()
+        }
     }
 
     private func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
@@ -341,6 +496,31 @@ final class AppStoreSubscriptionService: ObservableObject {
             return value
         case .unverified:
             throw AppStoreSubscriptionError.unverified
+        }
+    }
+}
+
+@MainActor
+enum TraceFenceEntitlementPolicy {
+    static var canUseCoreFeatures: Bool {
+        if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+            return AppStoreSubscriptionService.shared.canUseCoreFeatures
+        }
+        return DirectLicenseService.shared.canUseCoreFeatures
+    }
+
+    static var canUseProFeatures: Bool {
+        if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+            return AppStoreSubscriptionService.shared.canUseProFeatures
+        }
+        return DirectLicenseService.shared.canUseProFeatures
+    }
+
+    static func refresh() async {
+        if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+            await AppStoreSubscriptionService.shared.refresh()
+        } else {
+            DirectLicenseService.shared.refreshTrialState()
         }
     }
 }
@@ -361,6 +541,8 @@ struct DirectLicenseSnapshot: Codable {
     var instanceId: String?
     var customerName: String?
     var customerEmail: String?
+    var businessID: String?
+    var productID: String?
     var productName: String?
     var expiresAt: String?
     var activationLimit: Int?
@@ -394,20 +576,22 @@ final class DirectLicenseService: ObservableObject {
     var canUseCoreFeatures: Bool { isLicensed || isTrialActive }
     var canUseProFeatures: Bool { isLicensed }
     var currentTier: TraceFenceSubscriptionTier { TraceFenceDistributionPolicy.tier(from: snapshot) }
-    var canUseEnhancedFeatures: Bool { currentTier.includesEnhancedDirectFeatures }
     var trialRemainingSeconds: TimeInterval {
         max(0, trialSnapshot.expiresAt.timeIntervalSinceNow)
     }
     var purchaseURL: URL? {
-        TraceFenceDistributionPolicy.checkoutURL(for: .standard)
+        TraceFenceDistributionPolicy.checkoutURL(for: .monthly)
     }
 
-    private let licenseBaseURL = URL(string: "https://api.lemonsqueezy.com/v1/licenses")!
+    private var dodoLicenseBaseURL: URL { TraceFenceDistributionPolicy.dodoEnvironment.licenseBaseURL }
+    private let offlineGraceDuration: TimeInterval = 72 * 60 * 60
     private let snapshotKey = "traceFenceLicenseSnapshot"
     private let trialStartedKey = "traceFenceTrialStartedAt"
     private let serviceName = "TraceFence.DirectLicense"
     private let licenseAccount = "license_key"
     private let instanceAccount = "instance_id"
+    private let businessAccount = "business_id"
+    private let productAccount = "product_id"
     private let decoder = JSONDecoder()
     private let dateCodec = ISO8601DateFormatter()
 
@@ -423,9 +607,10 @@ final class DirectLicenseService: ObservableObject {
         trialSnapshot = loadOrStartTrial()
     }
 
-    func openPurchasePage(for plan: TraceFenceCheckoutPlan = .standard) {
-        guard let purchaseURL = TraceFenceDistributionPolicy.checkoutURL(for: plan) else {
-            snapshot.message = "Purchase URL is not configured yet."
+    func openPurchasePage(for plan: TraceFenceCheckoutPlan = .monthly) {
+        guard TraceFenceDistributionPolicy.currentChannel.isDirect,
+              let purchaseURL = TraceFenceDistributionPolicy.checkoutURL(for: plan) else {
+            snapshot.message = "Dodo Payments product ID is not configured for this billing period."
             persistSnapshot()
             return
         }
@@ -437,6 +622,7 @@ final class DirectLicenseService: ObservableObject {
     }
 
     func activate(licenseKey rawLicenseKey: String) async {
+        guard TraceFenceDistributionPolicy.currentChannel.isDirect else { return }
         let licenseKey = rawLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !licenseKey.isEmpty else {
             snapshot.message = "Enter a license key first."
@@ -445,40 +631,46 @@ final class DirectLicenseService: ObservableObject {
         }
 
         isBusy = true
+        defer { isBusy = false }
         snapshot.status = .validating
         snapshot.message = nil
         persistSnapshot()
 
         do {
-            let response = try await post(endpoint: "activate", fields: [
-                "license_key": licenseKey,
-                "instance_name": instanceName()
-            ])
-            if response.activated == true || response.valid == true {
-                saveSecret(licenseKey, account: licenseAccount)
-                if let instanceId = response.instance?.id {
-                    saveSecret(instanceId, account: instanceAccount)
-                }
-                apply(response: response, fallbackKey: licenseKey)
-            } else {
-                snapshot = DirectLicenseSnapshot(
-                    status: status(from: response.licenseKey?.status, valid: false),
-                    licenseKeySuffix: licenseKey.suffixText,
-                    message: response.error ?? "License activation failed."
-                )
-                persistSnapshot()
+            let response: DodoLicenseActivationResponse = try await postDodo(
+                endpoint: "activate",
+                fields: [
+                    "license_key": licenseKey,
+                    "name": instanceName()
+                ]
+            )
+            guard let expectedBusinessID = TraceFenceDistributionPolicy.dodoBusinessID else {
+                await rollbackRejectedActivation(licenseKey: licenseKey, instanceID: response.id)
+                throw DirectLicenseError.missingBusinessID
             }
+            guard response.businessId == expectedBusinessID else {
+                await rollbackRejectedActivation(licenseKey: licenseKey, instanceID: response.id)
+                throw DirectLicenseError.unexpectedBusiness(response.businessId)
+            }
+            guard TraceFenceDistributionPolicy.isSupportedDodoProductID(response.product.productId) else {
+                await rollbackRejectedActivation(licenseKey: licenseKey, instanceID: response.id)
+                throw DirectLicenseError.unexpectedProduct(response.product.productId)
+            }
+            saveSecret(licenseKey, account: licenseAccount)
+            saveSecret(response.id, account: instanceAccount)
+            saveSecret(response.businessId, account: businessAccount)
+            saveSecret(response.product.productId, account: productAccount)
+            apply(dodoResponse: response, fallbackKey: licenseKey)
         } catch {
             snapshot.status = .error
             snapshot.licenseKeySuffix = licenseKey.suffixText
-            snapshot.message = error.localizedDescription
+            snapshot.message = activationFailureMessage(for: error)
             persistSnapshot()
         }
-
-        isBusy = false
     }
 
     func validateCurrentLicense() async {
+        guard TraceFenceDistributionPolicy.currentChannel.isDirect else { return }
         guard let licenseKey = readSecret(account: licenseAccount) else {
             snapshot = .empty
             licenseSyncedThisRun = false
@@ -486,29 +678,40 @@ final class DirectLicenseService: ObservableObject {
             return
         }
 
-        isBusy = true
-        snapshot.status = .validating
-        persistSnapshot()
-
-        var fields = ["license_key": licenseKey]
-        if let instanceId = readSecret(account: instanceAccount) {
-            fields["instance_id"] = instanceId
-        }
-
-        do {
-            let response = try await post(endpoint: "validate", fields: fields)
-            apply(response: response, fallbackKey: licenseKey)
-        } catch {
-            snapshot.status = .error
-            snapshot.message = error.localizedDescription
+        let previousSnapshot = snapshot
+        guard let businessID = readSecret(account: businessAccount),
+              TraceFenceDistributionPolicy.isSupportedDodoBusinessID(businessID),
+              let productID = readSecret(account: productAccount),
+              TraceFenceDistributionPolicy.isSupportedDodoProductID(productID) else {
+            snapshot.status = .inactive
+            snapshot.message = "The stored license does not match this TraceFence Dodo Payments business and product configuration. Activate it again with a supported TraceFence Standard key."
             licenseSyncedThisRun = false
             persistSnapshot()
+            return
         }
+        isBusy = true
+        defer { isBusy = false }
+        snapshot.status = .validating
+        snapshot.message = nil
+        persistSnapshot()
 
-        isBusy = false
+        do {
+            var fields = ["license_key": licenseKey]
+            if let instanceId = readSecret(account: instanceAccount) {
+                fields["license_key_instance_id"] = instanceId
+            }
+            let response: DodoLicenseValidationResponse = try await postDodo(
+                endpoint: "validate",
+                fields: fields
+            )
+            apply(dodoValidation: response, previousSnapshot: previousSnapshot)
+        } catch {
+            applyValidationFailure(error, previousSnapshot: previousSnapshot)
+        }
     }
 
     func deactivateCurrentLicense() async {
+        guard TraceFenceDistributionPolicy.currentChannel.isDirect else { return }
         guard let licenseKey = readSecret(account: licenseAccount),
               let instanceId = readSecret(account: instanceAccount) else {
             clearLicense()
@@ -516,83 +719,156 @@ final class DirectLicenseService: ObservableObject {
         }
 
         isBusy = true
+        defer { isBusy = false }
         do {
-            _ = try await post(endpoint: "deactivate", fields: [
+            try await postDodoWithoutResponse(endpoint: "deactivate", fields: [
                 "license_key": licenseKey,
-                "instance_id": instanceId
+                "license_key_instance_id": instanceId
             ])
+            clearLicense()
         } catch {
             snapshot.message = error.localizedDescription
             persistSnapshot()
         }
-        clearLicense()
-        isBusy = false
     }
 
     func clearLicense() {
         deleteSecret(account: licenseAccount)
         deleteSecret(account: instanceAccount)
+        deleteSecret(account: businessAccount)
+        deleteSecret(account: productAccount)
         snapshot = .empty
         licenseSyncedThisRun = false
         refreshTrialState()
         persistSnapshot()
     }
 
-    private func post(endpoint: String, fields: [String: String]) async throws -> LemonLicenseResponse {
-        var request = URLRequest(url: licenseBaseURL.appendingPathComponent(endpoint))
+    private func postDodo<T: Decodable>(endpoint: String, fields: [String: String]) async throws -> T {
+        let data = try await postDodoData(endpoint: endpoint, fields: fields)
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw DirectLicenseError.invalidResponse
+        }
+    }
+
+    private func postDodoWithoutResponse(endpoint: String, fields: [String: String]) async throws {
+        _ = try await postDodoData(endpoint: endpoint, fields: fields)
+    }
+
+    private func rollbackRejectedActivation(licenseKey: String, instanceID: String) async {
+        try? await postDodoWithoutResponse(endpoint: "deactivate", fields: [
+            "license_key": licenseKey,
+            "license_key_instance_id": instanceID
+        ])
+    }
+
+    private func postDodoData(endpoint: String, fields: [String: String]) async throws -> Data {
+        guard TraceFenceDistributionPolicy.currentChannel.isDirect else {
+            throw DirectLicenseError.directDistributionRequired
+        }
+        var request = URLRequest(url: dodoLicenseBaseURL.appendingPathComponent(endpoint))
         request.httpMethod = "POST"
+        request.timeoutInterval = 20
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.setValue("TraceFence/3.1", forHTTPHeaderField: "User-Agent")
-        request.httpBody = fields
-            .map { key, value in "\(urlEncode(key))=\(urlEncode(value))" }
-            .joined(separator: "&")
-            .data(using: .utf8)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("TraceFence/3.2", forHTTPHeaderField: "User-Agent")
+        request.httpBody = try JSONSerialization.data(withJSONObject: fields)
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        try validateHTTPResponse(response, data: data)
+        return data
+    }
+
+    private func validateHTTPResponse(_ response: URLResponse, data: Data) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw DirectLicenseError.invalidResponse
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
-            let message = String(data: data, encoding: .utf8) ?? "HTTP \(httpResponse.statusCode)"
-            throw DirectLicenseError.server(message)
+            throw DirectLicenseError.http(
+                statusCode: httpResponse.statusCode,
+                message: serverMessage(from: data, statusCode: httpResponse.statusCode)
+            )
         }
-        return try decoder.decode(LemonLicenseResponse.self, from: data)
     }
 
-    private func apply(response: LemonLicenseResponse, fallbackKey: String) {
-        let licenseKey = response.licenseKey
-        let existingInstanceId = snapshot.instanceId
+    private func apply(dodoResponse response: DodoLicenseActivationResponse, fallbackKey: String) {
         snapshot = DirectLicenseSnapshot(
-            status: status(from: licenseKey?.status, valid: response.valid ?? response.activated ?? false),
-            licenseKeySuffix: licenseKey?.key?.suffixText ?? fallbackKey.suffixText,
-            instanceId: response.instance?.id ?? existingInstanceId,
-            customerName: response.meta?.customerName,
-            customerEmail: response.meta?.customerEmail,
-            productName: response.meta?.productName,
-            expiresAt: licenseKey?.expiresAt,
-            activationLimit: licenseKey?.activationLimit ?? licenseKey?.instanceLimit,
-            activationUsage: licenseKey?.activationUsage ?? licenseKey?.instancesCount,
+            status: .licensed,
+            licenseKeySuffix: fallbackKey.suffixText,
+            instanceId: response.id,
+            customerName: response.customer?.name,
+            customerEmail: response.customer?.email,
+            businessID: response.businessId,
+            productID: response.product.productId,
+            productName: response.product.name,
             lastValidatedAt: Date(),
-            message: response.error
+            message: nil
         )
         licenseSyncedThisRun = true
         persistSnapshot()
     }
 
-    private func status(from rawStatus: String?, valid: Bool) -> DirectLicenseStatus {
-        switch rawStatus?.lowercased() {
-        case "active":
-            return valid ? .licensed : .inactive
-        case "expired":
-            return .expired
-        case "disabled":
-            return .disabled
-        case "inactive":
-            return .inactive
-        default:
-            return valid ? .licensed : .unlicensed
+    private func apply(dodoValidation response: DodoLicenseValidationResponse, previousSnapshot: DirectLicenseSnapshot) {
+        snapshot = previousSnapshot
+        snapshot.status = response.valid ? .licensed : .inactive
+        snapshot.lastValidatedAt = Date()
+        snapshot.message = response.valid ? nil : "This Dodo Payments license is no longer valid."
+        licenseSyncedThisRun = true
+        persistSnapshot()
+    }
+
+    private func applyValidationFailure(_ error: Error, previousSnapshot: DirectLicenseSnapshot) {
+        snapshot = previousSnapshot
+        licenseSyncedThisRun = false
+
+        let isWithinGracePeriod = previousSnapshot.status == .licensed &&
+            previousSnapshot.lastValidatedAt.map { Date().timeIntervalSince($0) <= offlineGraceDuration } == true
+        if isTransientValidationError(error), isWithinGracePeriod {
+            snapshot.status = .licensed
+            snapshot.message = "The license service is temporarily unreachable. Cached authorization remains active during the 72-hour offline grace period."
+        } else {
+            snapshot.status = isDefinitiveLicenseFailure(error) ? .inactive : .error
+            snapshot.message = error.localizedDescription
         }
+        persistSnapshot()
+    }
+
+    private func activationFailureMessage(for error: Error) -> String {
+        if let directError = error as? DirectLicenseError {
+            switch directError {
+            case .http(let statusCode, _) where (400..<500).contains(statusCode):
+                return "The license key was not recognized. Check the key from Dodo Payments and try again."
+            default:
+                return directError.localizedDescription
+            }
+        }
+        return error.localizedDescription
+    }
+
+    private func isTransientValidationError(_ error: Error) -> Bool {
+        if error is URLError { return true }
+        guard let directError = error as? DirectLicenseError else { return true }
+        return directError.isTransient
+    }
+
+    private func isDefinitiveLicenseFailure(_ error: Error) -> Bool {
+        guard let directError = error as? DirectLicenseError else { return false }
+        return directError.isDefinitiveLicenseFailure
+    }
+
+    private func serverMessage(from data: Data, statusCode: Int) -> String {
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            for key in ["message", "error", "detail"] {
+                if let value = object[key] as? String, !value.isEmpty {
+                    return value
+                }
+            }
+        }
+        if let text = String(data: data, encoding: .utf8), !text.isEmpty {
+            return String(text.prefix(500))
+        }
+        return "HTTP \(statusCode)"
     }
 
     private func instanceName() -> String {
@@ -624,6 +900,7 @@ final class DirectLicenseService: ObservableObject {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: account,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             kSecValueData as String: data
         ]
         SecItemAdd(query as CFDictionary, nil)
@@ -654,51 +931,73 @@ final class DirectLicenseService: ObservableObject {
         SecItemDelete(query as CFDictionary)
     }
 
-    private func urlEncode(_ value: String) -> String {
-        value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
-    }
 }
 
-private struct LemonLicenseResponse: Decodable {
-    var activated: Bool?
-    var valid: Bool?
-    var error: String?
-    var licenseKey: LemonLicenseKey?
-    var instance: LemonLicenseInstance?
-    var meta: LemonLicenseMeta?
+private struct DodoLicenseActivationResponse: Decodable {
+    var businessId: String
+    var id: String
+    var customer: DodoLicenseCustomer?
+    var product: DodoLicenseProduct
 }
 
-private struct LemonLicenseKey: Decodable {
-    var status: String?
-    var key: String?
-    var expiresAt: String?
-    var activationLimit: Int?
-    var activationUsage: Int?
-    var instanceLimit: Int?
-    var instancesCount: Int?
+private struct DodoLicenseCustomer: Decodable {
+    var name: String?
+    var email: String?
 }
 
-private struct LemonLicenseInstance: Decodable {
-    var id: String?
+private struct DodoLicenseProduct: Decodable {
+    var productId: String
     var name: String?
 }
 
-private struct LemonLicenseMeta: Decodable {
-    var productName: String?
-    var customerName: String?
-    var customerEmail: String?
+private struct DodoLicenseValidationResponse: Decodable {
+    var valid: Bool
 }
 
 private enum DirectLicenseError: LocalizedError {
     case invalidResponse
-    case server(String)
+    case directDistributionRequired
+    case http(statusCode: Int, message: String)
+    case missingBusinessID
+    case unexpectedBusiness(String)
+    case unexpectedProduct(String)
+
+    var isTransient: Bool {
+        switch self {
+        case .invalidResponse, .directDistributionRequired:
+            return true
+        case .http(let statusCode, _):
+            return statusCode == 408 || statusCode == 429 || statusCode >= 500
+        case .missingBusinessID, .unexpectedBusiness, .unexpectedProduct:
+            return false
+        }
+    }
+
+    var isDefinitiveLicenseFailure: Bool {
+        switch self {
+        case .http(let statusCode, _):
+            return (400..<500).contains(statusCode) && statusCode != 408 && statusCode != 429
+        case .missingBusinessID, .unexpectedBusiness, .unexpectedProduct:
+            return true
+        case .invalidResponse, .directDistributionRequired:
+            return false
+        }
+    }
 
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
             return "The license server returned an invalid response."
-        case .server(let message):
-            return message
+        case .directDistributionRequired:
+            return "Website license activation is unavailable in the Mac App Store build."
+        case .http(let statusCode, let message):
+            return "License server error (HTTP \(statusCode)): \(message)"
+        case .missingBusinessID:
+            return "The TraceFence Dodo Payments business ID is not configured."
+        case .unexpectedBusiness(let businessID):
+            return "This key belongs to an unsupported Dodo Payments business (\(businessID))."
+        case .unexpectedProduct(let productID):
+            return "This key belongs to an unsupported product (\(productID)). Use a TraceFence Standard monthly or annual license."
         }
     }
 }

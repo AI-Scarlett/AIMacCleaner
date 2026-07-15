@@ -560,7 +560,7 @@ struct AppInfo: Identifiable, Codable, Hashable {
     }
 }
 
-struct OperationRecord: Identifiable, Codable {
+struct OperationRecord: Identifiable, Codable, Equatable {
     let id: String
     let timestamp: Date
     let agentName: String

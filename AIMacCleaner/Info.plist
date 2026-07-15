@@ -40,12 +40,20 @@
 	<string>TraceFence scans folders you choose, such as Documents workspaces, to identify AI agent caches, logs, and temporary files that can be reviewed before cleanup.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>TraceFence uses access to your Downloads folder only when you choose to scan or monitor it. For example, it can identify downloaded app installers, AI agent logs, cache archives, and temporary files so you can review them before cleanup or include them in local token and agent activity statistics.</string>
-	<key>TraceFenceCheckoutURL</key>
-	<string>$(TRACEFENCE_CHECKOUT_URL)</string>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>TraceFence accesses local files in your Apple Music library only when you explicitly choose the Music folder for a local scan. For example, it reads file names, sizes, and modification dates to identify cleanup candidates. Your library contents stay on your Mac and are not uploaded.</string>
+	<key>TraceFenceCheckoutReturnURL</key>
+	<string>$(TRACEFENCE_CHECKOUT_RETURN_URL)</string>
 	<key>TraceFenceDistributionChannel</key>
 	<string>$(TRACEFENCE_DISTRIBUTION_CHANNEL)</string>
-	<key>TraceFenceEnhancedCheckoutURL</key>
-	<string>$(TRACEFENCE_ENHANCED_CHECKOUT_URL)</string>
+	<key>TraceFenceDodoMonthlyProductID</key>
+	<string>$(TRACEFENCE_DODO_MONTHLY_PRODUCT_ID)</string>
+	<key>TraceFenceDodoAnnualProductID</key>
+	<string>$(TRACEFENCE_DODO_ANNUAL_PRODUCT_ID)</string>
+	<key>TraceFenceDodoBusinessID</key>
+	<string>$(TRACEFENCE_DODO_BUSINESS_ID)</string>
+	<key>TraceFenceDodoEnvironment</key>
+	<string>$(TRACEFENCE_DODO_ENVIRONMENT)</string>
 	<key>TraceFenceAppStoreMonthlyProductID</key>
 	<string>com.tracefence.standard.monthly</string>
 	<key>TraceFenceAppStoreYearlyProductID</key>

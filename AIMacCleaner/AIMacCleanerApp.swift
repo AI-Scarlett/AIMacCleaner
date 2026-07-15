@@ -15,6 +15,7 @@ struct AIMacCleanerApp: App {
     @StateObject private var iOSRemoteGatewayService = IOSRemoteControlGatewayService.shared
     @StateObject private var providerQuotaService = ProviderQuotaService()
     @StateObject private var captureShelfService = CaptureShelfService.shared
+    @StateObject private var artifactSidecarController = ArtifactSidecarController.shared
     @StateObject private var menuBarController = MenuBarStatusController()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @AppStorage("monitorEnabled") private var monitorEnabled = false
@@ -38,6 +39,24 @@ struct AIMacCleanerApp: App {
         }
     }
 
+    @MainActor
+    private func startEntitledServices() {
+        overviewStore.startBackgroundRefresh()
+        appDelegate.initializeAgentCenterServices()
+        iOSRemoteGatewayService.startConfiguredIfNeeded()
+    }
+
+    @MainActor
+    private func stopEntitledServices() {
+        monitorEnabled = false
+        operationMonitorEnabled = false
+        service.stopMonitoring()
+        service.stopOperationMonitor()
+        overviewStore.stopBackgroundRefresh()
+        appDelegate.cleanupAgentCenterServices()
+        iOSRemoteGatewayService.stop()
+    }
+
     var body: some Scene {
         Window("TraceFence", id: "main") {
             ContentView(overviewStore: overviewStore)
@@ -52,7 +71,7 @@ struct AIMacCleanerApp: App {
                 .frame(minWidth: 960, minHeight: 640)
                 .onAppear {
                     appDelegate.service = service
-                    appDelegate.overviewStore = overviewStore
+                    appDelegate.adoptOverviewStore(overviewStore)
                     service.localizer = localizer
                     iOSRemoteGatewayService.configure(
                         scannerService: service,
@@ -66,17 +85,32 @@ struct AIMacCleanerApp: App {
                         conversationWatcher: conversationWatcher,
                         localizer: localizer
                     )
-                    appDelegate.initializeAgentCenterServices()
-                    overviewStore.startBackgroundRefresh()
-                    providerQuotaService.start()
                     captureShelfService.start()
+                    providerQuotaService.start()
+                    if SandboxPaths.isDirectDistribution {
+                        ArtifactShelfService.shared.start()
+                        artifactSidecarController.start()
+                    }
                     AgentGeoMirrorService.shared.refreshEnabledProfileInBackground()
                     AgentGeoMirrorProfileServer.shared.syncWithDefaults()
                     NSApp.setActivationPolicy(.regular)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [service, licenseService] in
-                        licenseService.refreshTrialState()
-                        if monitorEnabled, licenseService.canUseProFeatures {
+                    if TraceFenceDistributionPolicy.currentChannel.isDirect {
+                        startEntitledServices()
+                    }
+                    Task { @MainActor in
+                        await TraceFenceEntitlementPolicy.refresh()
+                        guard TraceFenceEntitlementPolicy.canUseProFeatures else {
+                            if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+                                stopEntitledServices()
+                            }
+                            return
+                        }
+                        startEntitledServices()
+                        if monitorEnabled {
                             service.startMonitoring()
+                        }
+                        if operationMonitorEnabled {
+                            service.ensureAgentGuardDataPipeline()
                         }
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [updateService] in
@@ -98,6 +132,18 @@ struct AIMacCleanerApp: App {
                 .onChange(of: menuBarMonitorEnabled) { newValue in
                     menuBarController.setEnabled(newValue)
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .traceFenceEntitlementDidChange)) { notification in
+                    let isActive = notification.userInfo?["canUseProFeatures"] as? Bool == true
+                    if isActive {
+                        startEntitledServices()
+                    } else {
+                        stopEntitledServices()
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    guard TraceFenceDistributionPolicy.currentChannel.isAppStore else { return }
+                    Task { await AppStoreSubscriptionService.shared.refreshEntitlements() }
+                }
                 .alert(item: $updateService.cliUpdateAlert) { alert in
                     Alert(
                         title: Text(alert.title),
@@ -113,6 +159,15 @@ struct AIMacCleanerApp: App {
         .defaultSize(width: 1100, height: 700)
         .commands {
             CommandGroup(replacing: .newItem) { }
+        }
+
+        Settings {
+            SettingsView(
+                initialTab: TraceFenceDistributionPolicy.currentChannel.isAppStore ? .license : .features
+            )
+            .environmentObject(service)
+            .environmentObject(localizer)
+            .environmentObject(licenseService)
         }
     }
 }
@@ -253,7 +308,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.bootstrapRemoteGatewayContext(reason: "launch-retry")
         }
 #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--tracefence-capture-ui-test") {
+        let launchArguments = ProcessInfo.processInfo.arguments
+        if launchArguments.contains("--tracefence-capture-e2e-test") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+                CaptureShelfService.shared.captureSelectedRegionToClipboard()
+            }
+        } else if launchArguments.contains("--tracefence-capture-ui-test") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
                 CaptureShelfService.shared.presentSelectionOverlayForUITest()
             }
@@ -291,6 +351,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.shortcutChangeObserver = nil
         }
         Task { @MainActor in
+            ArtifactSidecarController.shared.stop()
+            ArtifactShelfService.shared.stop()
             cleanupAgentCenterServices()
         }
         service?.operationMonitor.saveRecords()
@@ -484,6 +546,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         requestFullQuit()
     }
 
+    @MainActor
+    func adoptOverviewStore(_ store: AgentMonitorOverviewStore) {
+        if let previous = overviewStore, previous !== store {
+            previous.stopBackgroundRefresh()
+        }
+        if let fallback = fallbackOverviewStore, fallback !== store {
+            fallback.stopBackgroundRefresh()
+        }
+        fallbackOverviewStore = nil
+        overviewStore = store
+    }
+
     func configureAgentCenterContext(
         sessionsViewModel: SessionsViewModel,
         agentRegistry: AgentRegistry,
@@ -515,8 +589,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         fallbackLocalizer = localizer
 
         service.localizer = localizer
-        overviewStore.startBackgroundRefresh()
-        overviewStore.refreshRealtime()
+        let mayRunEntitledServices = TraceFenceDistributionPolicy.currentChannel.isDirect
+            || AppStoreSubscriptionService.shared.canUseProFeatures
+        if mayRunEntitledServices {
+            overviewStore.startBackgroundRefresh()
+            overviewStore.refreshRealtime()
+        } else {
+            overviewStore.stopBackgroundRefresh()
+        }
         configureAgentCenterContext(
             sessionsViewModel: sessionsViewModel,
             agentRegistry: agentRegistry,
@@ -529,12 +609,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             hookServer: hookServer,
             overviewStore: overviewStore
         )
-        initializeAgentCenterServices()
+        if mayRunEntitledServices {
+            initializeAgentCenterServices()
+        } else {
+            IOSRemoteControlGatewayService.shared.stop()
+        }
         print("[TraceFence] Remote gateway context bootstrapped via \(reason)")
     }
 
     @MainActor
     func initializeAgentCenterServices() {
+        guard TraceFenceDistributionPolicy.currentChannel.isDirect
+                || AppStoreSubscriptionService.shared.canUseProFeatures else {
+            cleanupAgentCenterServices()
+            return
+        }
         guard let sessionsViewModel = sessionsVM,
               let agentRegistry = agentRegistryContext,
               let conversationWatcher = conversationWatcherContext else { return }
@@ -588,14 +677,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             agentRegistry.refreshAllStatuses()
         }
 
-        Task {
+        Task { [weak self] in
             do {
+                guard self?.hookServer === server else { return }
                 await server.setup(
                     sessionStore: store,
                     soundEngine: sound,
-                    guardFeature: service?.guardFeature,
-                    scannerService: service
+                    guardFeature: self?.service?.guardFeature,
+                    scannerService: self?.service
                 )
+                guard self?.hookServer === server else { return }
                 try await server.start()
                 sessionsViewModel.startObserving()
 
@@ -689,10 +780,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     func cleanupAgentCenterServices() {
+        let activeHookServer = hookServer
+        let activeNetworkMonitor = networkMonitor
+        hookServer = nil
+        sessionStore = nil
+        soundEngine = nil
+        webhookNotifier = nil
+        remoteManager = nil
+        networkMonitor = nil
         Task {
-            await hookServer?.stop()
+            await activeHookServer?.stop()
+            await activeNetworkMonitor?.stopMonitoring()
         }
         sessionsVM?.stopObserving()
+        conversationWatcherContext?.stopWatching()
     }
 }
 

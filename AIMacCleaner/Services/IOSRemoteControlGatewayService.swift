@@ -68,6 +68,10 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             self.hookServer = hookServer
         }
         if let overviewStore {
+            if let ownedOverviewStore, ownedOverviewStore !== overviewStore {
+                ownedOverviewStore.stopBackgroundRefresh()
+                self.ownedOverviewStore = nil
+            }
             self.overviewStore = overviewStore
         }
         if UserDefaults.standard.bool(forKey: Self.enabledKey) {
@@ -181,25 +185,35 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     }
 
     var compactPairingPayloadText: String {
-        let payload: [String: Any] = [
-            "version": 1,
-            "service": "TraceFence iOS Remote Control",
-            "endpoint": endpoint,
-            "token": currentToken,
-            "port": configuredPort,
-            "backgroundCorePort": Self.backgroundCorePort,
-            "channel": TraceFenceDistributionPolicy.currentChannel.rawValue,
-            "noBackend": true,
-            "localHostName": ProcessInfo.processInfo.hostName,
-            "bonjourHostName": Self.bonjourHostName,
-            "bonjourServiceName": Self.bonjourServiceName,
-            "localAddresses": localAddresses(),
-            "accessEndpoints": pairingAccessEndpoints()
-        ]
-        return Self.prettyJSONString(payload)
+        let token = currentToken
+        let host = localAddresses().first ?? "127.0.0.1"
+        if let compactToken = Self.base32Token(fromHex: token) {
+            var components = URLComponents()
+            components.scheme = "TF"
+            components.host = Self.urlComponentsHost(host)
+            if configuredPort != defaultPort {
+                components.port = configuredPort
+            }
+            components.path = "/\(compactToken)"
+            if let compactURL = components.string {
+                return compactURL
+            }
+        }
+
+        // Kept only as a defensive fallback for a legacy, non-hex token stored
+        // by an older build. Current tokens always use 32 random bytes.
+        return Self.compactJSONString([
+            "endpoint": Self.httpEndpoint(host: host, port: configuredPort),
+            "token": token
+        ])
     }
 
     private func start(port: Int) {
+        if TraceFenceDistributionPolicy.currentChannel.isAppStore,
+           !AppStoreSubscriptionService.shared.canUseProFeatures {
+            stop()
+            return
+        }
         let normalized = Self.normalizedPort(port)
         UserDefaults.standard.set(normalized, forKey: Self.portKey)
         UserDefaults.standard.set(normalized, forKey: "traceFenceIOSRemoteGatewayLastStartPort")
@@ -2911,7 +2925,7 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             "channel": TraceFenceDistributionPolicy.currentChannel.rawValue,
             "tier": DirectLicenseService.shared.currentTier.rawValue,
             "active": DirectLicenseService.shared.canUseProFeatures || DirectLicenseService.shared.isTrialActive,
-            "enhanced": DirectLicenseService.shared.canUseEnhancedFeatures
+            "enhanced": false
         ]
     }
 
@@ -3045,7 +3059,7 @@ final class IOSRemoteControlGatewayService: ObservableObject {
 
     private func refreshEndpoint() {
         let address = localAddresses().first ?? "127.0.0.1"
-        endpoint = "http://\(address):\(configuredPort)"
+        endpoint = Self.httpEndpoint(host: address, port: configuredPort)
     }
 
     private func pairingAccessEndpoints() -> [[String: Any]] {
@@ -3065,11 +3079,11 @@ final class IOSRemoteControlGatewayService: ObservableObject {
         }
 
         append(endpoint, label: "Current LAN endpoint", kind: "local")
-        append("http://\(Self.bonjourHostName):\(port)", label: "Bonjour / .local", kind: "bonjour")
-        append("http://\(Self.bonjourHostName):\(Self.backgroundCorePort)", label: "Background Agent Core", kind: "bonjour")
+        append(Self.httpEndpoint(host: Self.bonjourHostName, port: port), label: "Bonjour / .local", kind: "bonjour")
+        append(Self.httpEndpoint(host: Self.bonjourHostName, port: Self.backgroundCorePort), label: "Background Agent Core", kind: "bonjour")
         for address in localAddresses() {
-            append("http://\(address):\(port)", label: "LAN address", kind: "local")
-            append("http://\(address):\(Self.backgroundCorePort)", label: "Background Agent Core", kind: "local")
+            append(Self.httpEndpoint(host: address, port: port), label: "LAN address", kind: "local")
+            append(Self.httpEndpoint(host: address, port: Self.backgroundCorePort), label: "Background Agent Core", kind: "local")
         }
         return endpoints
     }
@@ -3145,6 +3159,38 @@ final class IOSRemoteControlGatewayService: ObservableObject {
         return UUID().uuidString.replacingOccurrences(of: "-", with: "") + UUID().uuidString.replacingOccurrences(of: "-", with: "")
     }
 
+    private static func base32Token(fromHex value: String) -> String? {
+        guard value.count == 64 else { return nil }
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(32)
+        var index = value.startIndex
+        while index < value.endIndex {
+            let next = value.index(index, offsetBy: 2)
+            guard let byte = UInt8(value[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+
+        let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".utf8)
+        var output = [UInt8]()
+        output.reserveCapacity(52)
+        var buffer: UInt16 = 0
+        var bitCount = 0
+        for byte in bytes {
+            buffer = (buffer << 8) | UInt16(byte)
+            bitCount += 8
+            while bitCount >= 5 {
+                bitCount -= 5
+                output.append(alphabet[Int((buffer >> bitCount) & 0x1f)])
+            }
+            buffer = bitCount == 0 ? 0 : buffer & UInt16((1 << bitCount) - 1)
+        }
+        if bitCount > 0 {
+            output.append(alphabet[Int((buffer << (5 - bitCount)) & 0x1f)])
+        }
+        return String(decoding: output, as: UTF8.self)
+    }
+
     private static func stableIDFragment(_ text: String) -> String {
         var hash: UInt64 = 14_695_981_039_346_656_037
         for byte in text.utf8 {
@@ -3160,6 +3206,27 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             return "{}"
         }
         return text
+    }
+
+    private static func compactJSONString(_ value: [String: Any]) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
+              let text = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return text
+    }
+
+    private static func httpEndpoint(host: String, port: Int) -> String {
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = urlComponentsHost(host)
+        components.port = port
+        return components.string ?? "http://\(urlComponentsHost(host)):\(port)"
+    }
+
+    private static func urlComponentsHost(_ host: String) -> String {
+        guard host.contains(":"), !host.hasPrefix("[") else { return host }
+        return "[\(host)]"
     }
 
     private static func reasonPhrase(for status: Int) -> String {

@@ -11,6 +11,7 @@ struct ContentView: View {
     @StateObject private var iOSRemoteGatewayService = IOSRemoteControlGatewayService.shared
     @ObservedObject var overviewStore: AgentMonitorOverviewStore
     @State private var showSettings = false
+    @State private var settingsInitialTab: SettingsView.SettingsTab = .features
     @State private var showIOSRemotePairing = false
     @State private var sidebarCollapsed = false
     @State private var toolboxExpanded = false
@@ -162,10 +163,14 @@ struct ContentView: View {
             service.refreshDiskInfo()
             service.refreshHardwareInfo()
             iOSRemoteGatewayService.configure(scannerService: service)
-            overviewStore.startBackgroundRefresh()
+            if TraceFenceDistributionPolicy.currentChannel.isDirect
+                || AppStoreSubscriptionService.shared.canUseProFeatures {
+                overviewStore.startBackgroundRefresh()
+            }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView()
+            SettingsView(initialTab: settingsInitialTab)
+                .id(settingsInitialTab)
                 .environmentObject(service)
                 .environmentObject(localizer)
                 .environmentObject(licenseService)
@@ -502,8 +507,18 @@ struct ContentView: View {
                         showIOSRemotePairing = true
                     }
 
+                    if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+                        footerIconButton(
+                            icon: "creditcard.fill",
+                            color: Theme.Colors.accent,
+                            help: localizer.t("订阅 TraceFence Standard", en: "Subscribe to TraceFence Standard")
+                        ) {
+                            openSettings(.license)
+                        }
+                    }
+
                     footerIconButton(icon: "gearshape", color: Theme.Colors.textSecondary, help: localizer.settings) {
-                        showSettings = true
+                        openSettings()
                     }
 
                     appearanceModeButton
@@ -547,9 +562,19 @@ struct ContentView: View {
                         languageToggleButton
                     }
 
+                    if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+                        footerLabeledButton(
+                            icon: "creditcard.fill",
+                            title: localizer.t("订阅 Standard", en: "Subscribe Standard"),
+                            color: Theme.Colors.accent
+                        ) {
+                            openSettings(.license)
+                        }
+                    }
+
                     HStack(spacing: 6) {
                         footerLabeledButton(icon: "gearshape", title: localizer.settings, color: Theme.Colors.textSecondary) {
-                            showSettings = true
+                            openSettings()
                         }
                         footerLabeledButton(icon: "sidebar.left", title: localizer.collapseSidebar, color: Theme.Colors.textTertiary) {
                             withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
@@ -568,6 +593,12 @@ struct ContentView: View {
 
     private var iosRemoteFooterIcon: String {
         iOSRemoteGatewayService.isRunning ? "iphone.radiowaves.left.and.right" : "iphone.slash"
+    }
+
+    private func openSettings(_ tab: SettingsView.SettingsTab? = nil) {
+        settingsInitialTab = tab
+            ?? (TraceFenceDistributionPolicy.currentChannel.isAppStore ? .license : .features)
+        showSettings = true
     }
 
     private var iosRemoteFooterColor: Color {
@@ -805,6 +836,7 @@ struct TraceFenceIOSPairingSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     gatewayCard
+                    sentinelInstallCard
 
                     if isEnabled {
                         pairingCard
@@ -985,11 +1017,78 @@ struct TraceFenceIOSPairingSheet: View {
         )
     }
 
+    private var sentinelInstallCard: some View {
+        let testFlightURL = "https://testflight.apple.com/join/yZTXmaJ8"
+        return HStack(alignment: .center, spacing: Theme.Spacing.lg) {
+            TraceFencePairingQRCodeView(
+                text: testFlightURL,
+                accessibilityText: "TraceFence Sentinel TestFlight QR code"
+            )
+            .frame(width: 112, height: 112)
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Label(
+                    localizer.t(
+                        "安装 TraceFence Sentinel",
+                        en: "Install TraceFence Sentinel",
+                        zhHant: "安裝 TraceFence Sentinel",
+                        ja: "TraceFence Sentinel をインストール",
+                        ko: "TraceFence Sentinel 설치",
+                        mt: "Install TraceFence Sentinel"
+                    ),
+                    systemImage: "arrow.down.app.fill"
+                )
+                .font(Theme.Font.bodyMedium)
+                .foregroundStyle(Theme.Colors.textPrimary)
+
+                Text(localizer.t(
+                    "如果 App Store 版本暂时不可用，请先扫描左侧二维码安装 TestFlight 版，再回到此页扫描下方的 Mac 配对二维码。",
+                    en: "If the App Store version is temporarily unavailable, scan the code to install the TestFlight build, then return here and scan the Mac pairing code below.",
+                    zhHant: "如果 App Store 版本暫時無法使用，請先掃描左側 QR Code 安裝 TestFlight 版，再回到此頁掃描下方的 Mac 配對 QR Code。",
+                    ja: "App Store 版が一時的に利用できない場合は、左の QR コードから TestFlight 版をインストールし、この画面に戻って下の Mac ペアリングコードをスキャンしてください。",
+                    ko: "App Store 버전을 일시적으로 사용할 수 없다면 왼쪽 QR 코드를 스캔해 TestFlight 버전을 설치한 뒤 이 화면으로 돌아와 아래의 Mac 페어링 코드를 스캔하세요.",
+                    mt: "If the App Store version is temporarily unavailable, scan the code to install the TestFlight build, then return here and scan the Mac pairing code below."
+                ))
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: Theme.Spacing.sm) {
+                    Button {
+                        if let url = URL(string: testFlightURL) {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        Label(localizer.t("打开 TestFlight", en: "Open TestFlight"), systemImage: "arrow.up.right.square")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 34))
+
+                    Button {
+                        copyToPasteboard(testFlightURL)
+                        showCopied(localizer.t("已复制 TestFlight 链接", en: "TestFlight link copied"))
+                    } label: {
+                        Label(localizer.t("复制链接", en: "Copy Link"), systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .ghost, minHeight: 34))
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(Theme.Spacing.lg)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.64))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Theme.Colors.separator.opacity(0.65), lineWidth: 1)
+        )
+    }
+
     private var pairingCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             HStack(alignment: .top, spacing: Theme.Spacing.lg) {
                 TraceFencePairingQRCodeView(text: gatewayService.compactPairingPayloadText)
-                    .frame(width: 172, height: 172)
+                    .frame(width: 196, height: 196)
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                     Label(localizer.t("用 iPhone 扫码", en: "Scan with iPhone", zhHant: "用 iPhone 掃碼", ja: "iPhone でスキャン", ko: "iPhone으로 스캔", mt: "Scan with iPhone"), systemImage: "qrcode.viewfinder")
@@ -1386,17 +1485,23 @@ struct TraceFenceIOSPairingSheet: View {
 
 private struct TraceFencePairingQRCodeView: View {
     let text: String
+    let accessibilityText: String
+
+    init(text: String, accessibilityText: String = "TraceFence iOS pairing QR code") {
+        self.text = text
+        self.accessibilityText = accessibilityText
+    }
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.white)
-            if let image = TraceFencePairingQRCodeFactory.image(from: text) {
+            if let image = TraceFenceQRCodeImageFactory.image(from: text) {
                 Image(nsImage: image)
                     .interpolation(.none)
                     .resizable()
                     .scaledToFit()
-                    .padding(10)
+                    .padding(4)
             } else {
                 Image(systemName: "qrcode")
                     .font(.system(size: 46, weight: .regular))
@@ -1407,22 +1512,53 @@ private struct TraceFencePairingQRCodeView: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Theme.Colors.separator.opacity(0.7), lineWidth: 1)
         )
-        .accessibilityLabel("TraceFence iOS pairing QR code")
+        .accessibilityLabel(accessibilityText)
     }
 }
 
-private enum TraceFencePairingQRCodeFactory {
+enum TraceFenceQRCodeImageFactory {
+    private static let quietZoneModules = 4
+    private static let pixelsPerModule = 8
+
     static func image(from text: String) -> NSImage? {
         guard let data = text.data(using: .utf8) else { return nil }
         let filter = CIFilter.qrCodeGenerator()
         filter.message = data
-        filter.correctionLevel = "M"
+        filter.correctionLevel = "L"
         guard let output = filter.outputImage else { return nil }
-        let scaled = output.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
-        let representation = NSCIImageRep(ciImage: scaled)
-        let image = NSImage(size: representation.size)
-        image.addRepresentation(representation)
-        return image
+        let extent = output.extent.integral
+        let ciContext = CIContext(options: [.useSoftwareRenderer: true])
+        guard let source = ciContext.createCGImage(output, from: extent) else { return nil }
+
+        let moduleWidth = source.width
+        let moduleHeight = source.height
+        let pixelWidth = (moduleWidth + quietZoneModules * 2) * pixelsPerModule
+        let pixelHeight = (moduleHeight + quietZoneModules * 2) * pixelsPerModule
+        guard let context = CGContext(
+            data: nil,
+            width: pixelWidth,
+            height: pixelHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        context.setFillColor(NSColor.white.cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
+        context.interpolationQuality = .none
+        let inset = quietZoneModules * pixelsPerModule
+        context.draw(
+            source,
+            in: CGRect(
+                x: inset,
+                y: inset,
+                width: moduleWidth * pixelsPerModule,
+                height: moduleHeight * pixelsPerModule
+            )
+        )
+        guard let rendered = context.makeImage() else { return nil }
+        return NSImage(cgImage: rendered, size: NSSize(width: pixelWidth, height: pixelHeight))
     }
 }
 
@@ -1833,6 +1969,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
     private let scanner = AgentMonitorOverviewScanner()
     private let cachedRootsKey = "agentMonitorOverview.scannedRoots"
     private var backgroundRefreshTimer: Timer?
+    private var isBackgroundRefreshActive = false
     private var isRefreshingRealtime = false
     private var focusedRefreshKeysInFlight: Set<String> = []
     private var lastFocusedRefreshByKey: [String: Date] = [:]
@@ -1864,16 +2001,25 @@ final class AgentMonitorOverviewStore: ObservableObject {
 
     func startBackgroundRefresh() {
         guard backgroundRefreshTimer == nil else { return }
+        isBackgroundRefreshActive = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
-            self?.refreshRealtime()
+            guard let self, self.isBackgroundRefreshActive else { return }
+            self.refreshRealtime()
         }
         let timer = Timer(timeInterval: 120, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.refreshRealtime()
+                guard let self, self.isBackgroundRefreshActive else { return }
+                self.refreshRealtime()
             }
         }
         backgroundRefreshTimer = timer
         RunLoop.main.add(timer, forMode: .common)
+    }
+
+    func stopBackgroundRefresh() {
+        isBackgroundRefreshActive = false
+        backgroundRefreshTimer?.invalidate()
+        backgroundRefreshTimer = nil
     }
 
     func refresh(force: Bool = false) {
@@ -2339,9 +2485,17 @@ private final class AgentMonitorOverviewScanner {
         let session: ParsedSession
     }
 
+    private struct LatestInstructionCacheEntry {
+        let fileSize: Int
+        let modifiedAt: Date?
+        let instruction: String?
+    }
+
     private let fileManager = FileManager.default
     private let parsedSessionCacheLock = NSLock()
     private var parsedSessionCache: [String: ParsedSessionCacheEntry] = [:]
+    private let latestInstructionCacheLock = NSLock()
+    private var latestInstructionCache: [String: LatestInstructionCacheEntry] = [:]
     private let discoveryCacheLock = NSLock()
     private var specsCache: [AgentSpec] = []
     private var specsCacheDate: Date = .distantPast
@@ -2354,6 +2508,9 @@ private final class AgentMonitorOverviewScanner {
     private var processInfoCache: [Int: ProcessInfo] = [:]
     private var processInfoCacheDate: Date = .distantPast
     private let processInfoCacheTTL: TimeInterval = 45
+    private let commandAgentCacheLock = NSLock()
+    private var commandAgentCache: [String: String] = [:]
+    private var nonAgentCommandCache: Set<String> = []
     private var home: String { SandboxPaths.realHomeDirectory }
 
     private var specs: [AgentSpec] {
@@ -2606,20 +2763,25 @@ private final class AgentMonitorOverviewScanner {
             processInfo: processInfo,
             children: children
         ))
-        let hasCursorProcess = processInfo.values.contains { $0.command.lowercased().contains("cursor") }
+        let runningAgentNames = Set(processInfo.values.compactMap { matchingSpecName($0.command) })
+        let hasCursorProcess = runningAgentNames.contains("Cursor")
         var parsedCursorDatabaseCount = 0
         for root in fixedRoots {
             if root.hasSuffix("/opencode.db") {
+                guard runningAgentNames.contains("OpenCode") || runningAgentNames.contains("MiniMax Agent") else { continue }
                 liveSessions.append(contentsOf: parseOpenCodeDBSessions(path: root, processInfo: processInfo))
             } else if root.hasSuffix("/sqlite.db"), root.lowercased().contains("minimax") {
+                guard runningAgentNames.contains("MiniMax Agent") else { continue }
                 liveSessions.append(contentsOf: parseMiniMaxDBSessions(path: root, processInfo: processInfo))
             } else if root.hasSuffix("/nexus.db"), root.lowercased().contains("minimax") {
+                guard runningAgentNames.contains("MiniMax Agent") else { continue }
                 liveSessions.append(contentsOf: parseMiniMaxNexusDBSessions(path: root, processInfo: processInfo))
             } else if root.hasSuffix(".vscdb"), root.lowercased().contains("cursor") {
                 guard hasCursorProcess, parsedCursorDatabaseCount < 6 else { continue }
                 parsedCursorDatabaseCount += 1
                 liveSessions.append(contentsOf: parseCursorDBSessions(path: root, processInfo: processInfo, rowLimit: 800))
             } else if root.hasSuffix("/sessions.json"), root.lowercased().contains("openclaw") || root.lowercased().contains("qclaw") {
+                guard runningAgentNames.contains("OpenClaw") else { continue }
                 liveSessions.append(contentsOf: parseOpenClawSessionStore(path: root, processInfo: processInfo))
             }
         }
@@ -3313,6 +3475,16 @@ private final class AgentMonitorOverviewScanner {
             WHERE m2.session_id = s.id AND json_extract(m2.data, '$.role') = 'assistant'
             ORDER BY m2.time_created DESC
             LIMIT 1
+          ), ''),
+          COALESCE((
+            SELECT SUBSTR(json_extract(pu.data, '$.text'), 1, 4096)
+            FROM message mu
+            JOIN part pu ON pu.message_id = mu.id
+            WHERE mu.session_id = s.id
+              AND lower(COALESCE(json_extract(mu.data, '$.role'), '')) = 'user'
+              AND lower(COALESCE(json_extract(pu.data, '$.type'), '')) IN ('text', 'input_text')
+            ORDER BY COALESCE(pu.time_created, mu.time_created) DESC, pu.id DESC
+            LIMIT 1
           ), '')
         FROM session s
         LEFT JOIN project p ON s.project_id = p.id
@@ -3351,7 +3523,8 @@ private final class AgentMonitorOverviewScanner {
             let output = Int(sqlite3_column_int64(stmt, 9))
             let cache = Int(sqlite3_column_int64(stmt, 10))
             let model = sqliteText(stmt, 11)
-            let currentTask = latestOpenCodeUserInstruction(db: db, sessionId: sessionId)
+            let latestInstruction = sqliteText(stmt, 12)
+            let currentTask = normalizedInstruction(latestInstruction)
                 ?? normalizedInstruction(title)
                 ?? "OpenCode session"
             let latest = dateFromMilliseconds(updatedMs)
@@ -3426,7 +3599,19 @@ private final class AgentMonitorOverviewScanner {
           COALESCE(SUM(t.input_tokens), 0),
           COALESCE(SUM(t.output_tokens), 0),
           COALESCE(SUM(t.cache_read_tokens), 0),
-          COUNT(DISTINCT t.turn_id)
+          COUNT(DISTINCT t.turn_id),
+          COALESCE((
+            SELECT SUBSTR(sm.data, 1, 4096)
+            FROM session_messages sm
+            WHERE sm.session_id = s.session_id
+              AND (
+                lower(COALESCE(sm.role, '')) = 'user'
+                OR lower(COALESCE(json_extract(sm.data, '$.role'), '')) = 'user'
+                OR COALESCE(json_extract(sm.data, '$.msg_type'), 0) = 1
+              )
+            ORDER BY sm.timestamp DESC, sm.id DESC
+            LIMIT 1
+          ), '')
         FROM sessions s
         LEFT JOIN token_usage t ON t.session_id = s.session_id
         GROUP BY s.session_id
@@ -3463,6 +3648,7 @@ private final class AgentMonitorOverviewScanner {
             let output = Int(sqlite3_column_int64(stmt, 11))
             let cache = Int(sqlite3_column_int64(stmt, 12))
             let turns = Int(sqlite3_column_int64(stmt, 13))
+            let latestInstruction = sqliteText(stmt, 14)
             let pid = pidValue > 0 ? pidValue : nil
             let latest = dateFromMilliseconds(activeMs > 0 ? activeMs : updatedMs)
             let hasActiveStatus = ["start", "running", "active", "working", "processing", "progress", "queued", "pending"]
@@ -3488,7 +3674,7 @@ private final class AgentMonitorOverviewScanner {
             let contextWindow = 512_000
             let contextPercent = min(Double(input + cache) / Double(contextWindow), 1)
             let label = agent.isEmpty ? "MiniMax" : "MiniMax \(agent)"
-            let currentTask = latestMiniMaxUserInstruction(db: db, sessionId: sessionId)
+            let currentTask = instructionFromStoredText(latestInstruction)
                 ?? normalizedInstruction(title)
                 ?? label
 
@@ -3647,8 +3833,12 @@ private final class AgentMonitorOverviewScanner {
             let contextWindow = intValue(row["contextTokens"] ?? row["contextWindow"]) ?? 200_000
             let title = stringValue(row, keys: ["label", "title", "name", "lastMessage", "last_message"]) ?? sessionKey
             let source = stringValue(row, keys: ["sessionFile", "session_file"]) ?? path
-            let currentTask = latestUserInstructionInJSONLines(path: source)
-                ?? latestUserInstruction(in: row)
+            // Historical OpenClaw stores can contain multi-megabyte transcripts. The
+            // index title is enough for history; only inspect a transcript while its
+            // session is live, and let the transcript reader cache unchanged files.
+            let shouldInspectTranscript = isRunning || isRecentlyLive
+            let currentTask = (shouldInspectTranscript ? latestUserInstructionInJSONLines(path: source) : nil)
+                ?? (shouldInspectTranscript ? latestUserInstruction(in: row) : nil)
                 ?? normalizedInstruction(title)
                 ?? sessionKey
             let pid = ["Executing", "Thinking", "Waiting"].contains(status) ? liveProcess?.pid : nil
@@ -3824,15 +4014,43 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func latestUserInstructionInJSONLines(path: String) -> String? {
-        guard fileManager.fileExists(atPath: path),
-              let text = sessionText(from: URL(fileURLWithPath: path)) else { return nil }
+        let url = URL(fileURLWithPath: path)
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+              let fileSize = values.fileSize else { return nil }
+
+        latestInstructionCacheLock.lock()
+        if let cached = latestInstructionCache[path],
+           cached.fileSize == fileSize,
+           cached.modifiedAt == values.contentModificationDate {
+            latestInstructionCacheLock.unlock()
+            return cached.instruction
+        }
+        latestInstructionCacheLock.unlock()
+
+        guard let text = sessionText(from: url) else { return nil }
+        var latestInstruction: String?
         for line in text.split(whereSeparator: \.isNewline).reversed() {
             guard let object = jsonObject(from: String(line)) else { continue }
             if let instruction = latestUserInstruction(in: object) {
-                return instruction
+                latestInstruction = instruction
+                break
             }
         }
-        return nil
+
+        latestInstructionCacheLock.lock()
+        latestInstructionCache[path] = LatestInstructionCacheEntry(
+            fileSize: fileSize,
+            modifiedAt: values.contentModificationDate,
+            instruction: latestInstruction
+        )
+        if latestInstructionCache.count > 2_048 {
+            let stalePaths = latestInstructionCache.keys.filter { !fileManager.fileExists(atPath: $0) }
+            for stalePath in stalePaths {
+                latestInstructionCache.removeValue(forKey: stalePath)
+            }
+        }
+        latestInstructionCacheLock.unlock()
+        return latestInstruction
     }
 
     private func scanLiveSessions(
@@ -4330,8 +4548,8 @@ private final class AgentMonitorOverviewScanner {
 
     private func sessionText(from url: URL) -> String? {
         let fullReadLimit = 1_000_000
-        let headLimit = 128_000
-        let tailLimit = 1_500_000
+        let headLimit = 96_000
+        let tailLimit = 768_000
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let size = try? handle.seekToEnd() else { return nil }
@@ -5262,13 +5480,65 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func matchingSpecName(_ command: String) -> String? {
-        let lower = command.lowercased()
-        if lower.contains("minimax") || lower.contains("mavis") {
-            return specs.first { $0.name == "MiniMax Agent" }?.name
+        let cacheKey = String(command.prefix(1_024)).lowercased()
+        commandAgentCacheLock.lock()
+        if let cached = commandAgentCache[cacheKey] {
+            commandAgentCacheLock.unlock()
+            return cached
         }
-        return specs.first { spec in
-            spec.processKeywords.contains { lower.contains($0) }
-        }?.name
+        if nonAgentCommandCache.contains(cacheKey) {
+            commandAgentCacheLock.unlock()
+            return nil
+        }
+        commandAgentCacheLock.unlock()
+
+        let matched: String?
+        if shouldIgnoreAgentProcess(command: cacheKey) {
+            matched = nil
+        } else if cacheKey.contains("minimax") || cacheKey.contains("mavis") {
+            matched = specs.first { $0.name == "MiniMax Agent" }?.name
+        } else {
+            matched = specs.first { spec in
+                spec.processKeywords.contains { cacheKey.contains($0) }
+            }?.name
+        }
+
+        commandAgentCacheLock.lock()
+        if commandAgentCache.count + nonAgentCommandCache.count >= 2_048 {
+            commandAgentCache.removeAll(keepingCapacity: true)
+            nonAgentCommandCache.removeAll(keepingCapacity: true)
+        }
+        if let matched {
+            commandAgentCache[cacheKey] = matched
+        } else {
+            nonAgentCommandCache.insert(cacheKey)
+        }
+        commandAgentCacheLock.unlock()
+        return matched
+    }
+
+    private func shouldIgnoreAgentProcess(command: String) -> Bool {
+        let executable = command
+            .split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+            .first
+            .map(String.init) ?? ""
+        let executableName = URL(fileURLWithPath: executable)
+            .lastPathComponent
+            .lowercased()
+
+        if executableName.hasPrefix("tracefence")
+            || command.contains("/tracefence.app/")
+            || command.contains("/application support/tracefence/core/") {
+            return true
+        }
+
+        let inspectionAndShellTools: Set<String> = [
+            "bash", "sh", "zsh", "fish", "dash", "rg", "grep", "egrep", "fgrep",
+            "sed", "awk", "cat", "head", "tail", "find", "xargs", "jq", "ps",
+            "sample", "git", "xcodebuild", "swiftc", "swift-frontend", "clang",
+            "clang++", "make", "cmake", "ninja", "sleep", "env", "osascript", "open"
+        ]
+        return inspectionAndShellTools.contains(executableName)
     }
 
     private func specForSessionPath(_ path: String) -> AgentSpec? {
@@ -11888,6 +12158,7 @@ struct MacCleanerTab: View {
     @State private var filterRisk = ""
     @State private var filterSource = ""
     @State private var showSettings = false
+    @State private var settingsInitialTab: SettingsView.SettingsTab = .features
     @State private var showDeleteConfirm = false
     @State private var deleteTargetIds: [String] = []
     @State private var showCleanResult = false
@@ -12134,7 +12405,8 @@ struct MacCleanerTab: View {
             }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView()
+            SettingsView(initialTab: settingsInitialTab)
+                .id(settingsInitialTab)
                 .environmentObject(service)
                 .environmentObject(localizer)
                 .environmentObject(licenseService)
@@ -12146,13 +12418,21 @@ struct MacCleanerTab: View {
             get: { !paywallMessage.isEmpty },
             set: { if !$0 { paywallMessage = "" } }
         )) {
-            Button(TraceFenceDistributionPolicy.currentChannel.isAppStore ? localizer.t("管理订阅", en: "Manage Subscription") : localizer.t("订阅", en: "Subscribe")) {
-                if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+            if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+                Button(localizer.t("管理订阅", en: "Manage Subscription")) {
+                    settingsInitialTab = .license
                     showSettings = true
-                } else {
-                    licenseService.openPurchasePage(for: .standard)
+                    paywallMessage = ""
                 }
-                paywallMessage = ""
+            } else {
+                Button(localizer.t("月付 $9.99", en: "Monthly $9.99")) {
+                    licenseService.openPurchasePage(for: .monthly)
+                    paywallMessage = ""
+                }
+                Button(localizer.t("年付 $79.99", en: "Annual $79.99")) {
+                    licenseService.openPurchasePage(for: .annual)
+                    paywallMessage = ""
+                }
             }
             Button(localizer.cancel, role: .cancel) {
                 paywallMessage = ""
@@ -12557,7 +12837,7 @@ struct MacCleanerTab: View {
 
     private func runCoreAction(_ action: @escaping () async -> Void) {
         licenseService.refreshTrialState()
-        guard licenseService.canUseCoreFeatures else {
+        guard TraceFenceEntitlementPolicy.canUseCoreFeatures else {
             showTrialExpiredPrompt()
             return
         }
@@ -12576,21 +12856,35 @@ struct MacCleanerTab: View {
 
     private func requireProAccess() -> Bool {
         licenseService.refreshTrialState()
-        guard licenseService.canUseProFeatures else {
-            paywallMessage = localizer.t(
-                "试用期可以扫描、浏览和预览清理结果；增强扫描、智能清理和删除执行需要激活 TraceFence Pro。",
-                en: "The trial can scan, browse, and preview cleanup results. Enhanced scan, smart cleanup, and delete actions require TraceFence Pro."
-            )
+        guard TraceFenceEntitlementPolicy.canUseProFeatures else {
+            if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+                paywallMessage = localizer.t(
+                    "订阅 TraceFence Standard 后可使用增强扫描、智能清理和删除执行。",
+                    en: "Subscribe to TraceFence Standard to use enhanced scans, smart cleanup, and deletion actions."
+                )
+            } else {
+                paywallMessage = localizer.t(
+                    "试用期可以扫描、浏览和预览清理结果；增强扫描、智能清理和删除执行需要激活 TraceFence Standard。",
+                    en: "The trial can scan, browse, and preview cleanup results. Enhanced scans, smart cleanup, and deletion actions require TraceFence Standard."
+                )
+            }
             return false
         }
         return true
     }
 
     private func showTrialExpiredPrompt() {
-        paywallMessage = localizer.t(
-            "48 小时试用已结束。购买并激活 TraceFence Pro 后可继续扫描和使用高级操作。",
-            en: "The 48-hour trial has ended. Buy and activate TraceFence Pro to continue scanning and using advanced actions."
-        )
+        if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+            paywallMessage = localizer.t(
+                "订阅 TraceFence Standard 后可继续扫描并使用高级操作。",
+                en: "Subscribe to TraceFence Standard to continue scanning and using advanced actions."
+            )
+        } else {
+            paywallMessage = localizer.t(
+                "48 小时试用已结束。订阅并激活 TraceFence Standard 后可继续扫描和使用高级操作。",
+                en: "The 48-hour trial has ended. Subscribe and activate TraceFence Standard to continue scanning and using advanced actions."
+            )
+        }
     }
 }
 

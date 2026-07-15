@@ -4,6 +4,8 @@ import Combine
 import CoreGraphics
 import CryptoKit
 import Foundation
+import UniformTypeIdentifiers
+import Vision
 
 struct CaptureShelfItem: Identifiable, Codable, Hashable {
     enum Kind: String, Codable {
@@ -83,6 +85,8 @@ final class CaptureShelfService: ObservableObject {
     private var saveWorkItem: DispatchWorkItem?
     private var selectionOverlayController: CaptureSelectionOverlayController?
     private var lastSelectionCaptureRequestAt = Date.distantPast
+    private var pinnedImageControllers: [UUID: CapturePinnedImageController] = [:]
+    private var completionPreviewController: CaptureCompletionPreviewController?
     private var recordingSession: AVCaptureSession?
     private var recordingOutput: AVCaptureMovieFileOutput?
     private var recordingDelegate: ScreenRecordingDelegate?
@@ -148,23 +152,41 @@ final class CaptureShelfService: ObservableObject {
     func captureVisibleScreenToClipboard() {
         guard prepareScreenCapture() else { return }
         isCapturingScreen = true
-        captureScreen(rect: .infinite, sourceTitle: "screen")
-        isCapturingScreen = false
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let snapshots = try await CaptureSnapshotProvider.prepareScreens()
+                let mouseLocation = NSEvent.mouseLocation
+                let snapshot = snapshots.first(where: { $0.screenFrame.contains(mouseLocation) })
+                    ?? snapshots.first
+                guard let snapshot else { throw CaptureSessionError.noDisplays }
+                self.processCapturedImage(
+                    snapshot.image,
+                    sourceTitle: "screen",
+                    action: .copy,
+                    screenRect: snapshot.screenFrame
+                )
+            } catch {
+                self.setStatus(.init(
+                    level: .error,
+                    code: .captureFailed,
+                    detail: error.localizedDescription,
+                    createdAt: Date()
+                ))
+            }
+            self.isCapturingScreen = false
+        }
     }
 
     func captureSelectedRegionToClipboard() {
         guard prepareScreenCapture() else { return }
-        presentSelectionOverlay { [weak self] rect in
-            guard let self, let rect, rect.width >= 6, rect.height >= 6 else { return }
-            self.captureScreen(rect: rect.integral, sourceTitle: "selection")
-        }
+        presentSelectionOverlay(isUITest: false)
     }
 
 #if DEBUG
     func presentSelectionOverlayForUITest() {
-        presentSelectionOverlay { rect in
-            print("[TraceFence][CaptureUITest] selection=\(String(describing: rect?.integral))")
-        }
+        guard prepareScreenCapture() else { return }
+        presentSelectionOverlay(isUITest: true)
     }
 #endif
 
@@ -247,34 +269,163 @@ final class CaptureShelfService: ObservableObject {
         return true
     }
 
-    private func presentSelectionOverlay(onComplete: @escaping @MainActor (CGRect?) -> Void) {
-        guard selectionOverlayController == nil else { return }
+    private func presentSelectionOverlay(isUITest: Bool) {
+        guard selectionOverlayController == nil, !isCapturingScreen else { return }
         let now = Date()
         guard now.timeIntervalSince(lastSelectionCaptureRequestAt) >= 0.5 else { return }
         lastSelectionCaptureRequestAt = now
 
         isCapturingScreen = true
-        let controller = CaptureSelectionOverlayController { [weak self] rect in
-            Task { @MainActor in
-                guard let self else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let snapshots = try await CaptureSnapshotProvider.prepareScreens()
+                guard self.selectionOverlayController == nil else {
+                    self.isCapturingScreen = false
+                    return
+                }
+                let controller = CaptureSelectionOverlayController(
+                    snapshots: snapshots
+                ) { [weak self] result in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        self.selectionOverlayController = nil
+                        self.lastSelectionCaptureRequestAt = Date()
+#if DEBUG
+                        if isUITest {
+                            print("[TraceFence][CaptureUITest] result=\(String(describing: result?.screenRect.integral)) action=\(String(describing: result?.action))")
+                        }
+#endif
+                        if !isUITest, let result {
+                            self.processCapturedImage(
+                                result.image,
+                                sourceTitle: "selection",
+                                action: result.action,
+                                screenRect: result.screenRect
+                            )
+                        }
+                        self.isCapturingScreen = false
+                    }
+                }
+                self.selectionOverlayController = controller
+                controller.begin()
+            } catch {
                 self.selectionOverlayController = nil
-                self.lastSelectionCaptureRequestAt = Date()
-                onComplete(rect)
                 self.isCapturingScreen = false
+                self.setStatus(.init(
+                    level: .error,
+                    code: .captureFailed,
+                    detail: error.localizedDescription,
+                    createdAt: Date()
+                ))
             }
         }
-        selectionOverlayController = controller
-        controller.begin()
     }
 
-    private func captureScreen(rect: CGRect, sourceTitle: String) {
-        let imageOptions: CGWindowImageOption = [.bestResolution, .boundsIgnoreFraming]
-        guard let cgImage = CGWindowListCreateImage(rect, .optionOnScreenOnly, kCGNullWindowID, imageOptions) else {
+    private func processCapturedImage(
+        _ image: NSImage,
+        sourceTitle: String,
+        action: CaptureSelectionAction,
+        screenRect: NSRect
+    ) {
+        switch action {
+        case .copy:
+            copyCapturedImage(image, sourceTitle: sourceTitle)
+            showCompletionPreview(image: image, near: screenRect)
+        case .save:
+            guard let savedURL = saveCapturedImage(image) else { return }
+            if let item = makeImageItem(from: image, sourceTitle: sourceTitle) {
+                insert(item)
+            }
+            setStatus(.init(
+                level: .success,
+                code: .captureCopied,
+                detail: savedURL.lastPathComponent,
+                createdAt: Date()
+            ))
+            showCompletionPreview(image: image, near: screenRect)
+        case .pin:
+            pinCapturedImage(image, near: screenRect)
+            if let item = makeImageItem(from: image, sourceTitle: sourceTitle) {
+                insert(item)
+            }
+            setStatus(.init(
+                level: .success,
+                code: .captureCopied,
+                detail: nil,
+                createdAt: Date()
+            ))
+        case .recognizeText:
+            recognizeText(in: image, sourceTitle: sourceTitle, screenRect: screenRect)
+        }
+    }
+
+    private func recognizeText(
+        in image: NSImage,
+        sourceTitle: String,
+        screenRect: NSRect
+    ) {
+        var proposedRect = NSRect(origin: .zero, size: image.size)
+        guard let cgImage = image.cgImage(
+            forProposedRect: &proposedRect,
+            context: nil,
+            hints: nil
+        ) else {
             setStatus(.init(level: .error, code: .captureFailed, detail: nil, createdAt: Date()))
             return
         }
 
-        let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        Task { [weak self] in
+            do {
+                let recognizedText = try await Task.detached(priority: .userInitiated) {
+                    let request = VNRecognizeTextRequest()
+                    request.recognitionLevel = .accurate
+                    request.usesLanguageCorrection = true
+                    request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US", "ja-JP", "ko-KR"]
+                    let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+                    try handler.perform([request])
+                    let observations = request.results?.sorted { lhs, rhs in
+                        if abs(lhs.boundingBox.midY - rhs.boundingBox.midY) > 0.015 {
+                            return lhs.boundingBox.midY > rhs.boundingBox.midY
+                        }
+                        return lhs.boundingBox.minX < rhs.boundingBox.minX
+                    } ?? []
+                    return observations
+                        .compactMap { $0.topCandidates(1).first?.string }
+                        .joined(separator: "\n")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                }.value
+
+                guard let self else { return }
+                if !recognizedText.isEmpty {
+                    self.pasteboard.clearContents()
+                    self.pasteboard.setString(recognizedText, forType: .string)
+                    self.lastPasteboardChangeCount = self.pasteboard.changeCount
+                }
+                if let item = self.makeImageItem(from: image, sourceTitle: sourceTitle) {
+                    self.insert(item)
+                }
+                self.setStatus(.init(
+                    level: recognizedText.isEmpty ? .warning : .success,
+                    code: recognizedText.isEmpty ? .captureFailed : .captureCopied,
+                    detail: recognizedText.isEmpty ? nil : "OCR",
+                    createdAt: Date()
+                ))
+                if !recognizedText.isEmpty {
+                    self.showCompletionPreview(image: image, near: screenRect)
+                }
+            } catch {
+                self?.setStatus(.init(
+                    level: .error,
+                    code: .captureFailed,
+                    detail: error.localizedDescription,
+                    createdAt: Date()
+                ))
+            }
+        }
+    }
+
+    private func copyCapturedImage(_ image: NSImage, sourceTitle: String) {
         pasteboard.clearContents()
         pasteboard.writeObjects([image])
         lastPasteboardChangeCount = pasteboard.changeCount
@@ -283,6 +434,57 @@ final class CaptureShelfService: ObservableObject {
             insert(item)
         }
         setStatus(.init(level: .success, code: .captureCopied, detail: nil, createdAt: Date()))
+    }
+
+    private func saveCapturedImage(_ image: NSImage) -> URL? {
+        guard let data = fullResolutionPNGData(for: image) else {
+            setStatus(.init(level: .error, code: .captureFailed, detail: nil, createdAt: Date()))
+            return nil
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "TraceFence-Capture-\(formatter.string(from: Date())).png"
+        panel.directoryURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        do {
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            setStatus(.init(
+                level: .error,
+                code: .captureFailed,
+                detail: error.localizedDescription,
+                createdAt: Date()
+            ))
+            return nil
+        }
+    }
+
+    private func pinCapturedImage(_ image: NSImage, near screenRect: NSRect) {
+        let id = UUID()
+        let controller = CapturePinnedImageController(
+            image: image,
+            screenRect: screenRect
+        ) { [weak self] in
+            self?.pinnedImageControllers[id] = nil
+        }
+        pinnedImageControllers[id] = controller
+        controller.show()
+    }
+
+    private func showCompletionPreview(image: NSImage, near screenRect: NSRect) {
+        completionPreviewController?.dismiss()
+        let controller = CaptureCompletionPreviewController(image: image, screenRect: screenRect)
+        completionPreviewController = controller
+        controller.onDismiss = { [weak self, weak controller] in
+            guard self?.completionPreviewController === controller else { return }
+            self?.completionPreviewController = nil
+        }
+        controller.show()
     }
 
     private func finishScreenRecording(outputURL: URL?, error: Error?) {
@@ -541,9 +743,240 @@ final class CaptureShelfService: ObservableObject {
         return bitmap.representation(using: .png, properties: [:])
     }
 
+    private func fullResolutionPNGData(for image: NSImage) -> Data? {
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData) else {
+            return nil
+        }
+        return bitmap.representation(using: .png, properties: [:])
+    }
+
     private static func clampedLimit(_ rawValue: Int) -> Int {
         if rawValue == 0 { return defaultHistoryLimit }
         return min(max(rawValue, minHistoryLimit), maxHistoryLimit)
+    }
+}
+
+@MainActor
+private final class CapturePinnedImageController: NSObject, NSWindowDelegate {
+    private let panel: CapturePinnedImagePanel
+    private let onClose: () -> Void
+    private var didClose = false
+
+    init(image: NSImage, screenRect: NSRect, onClose: @escaping () -> Void) {
+        self.onClose = onClose
+        let aspect = max(image.size.width / max(image.size.height, 1), 0.1)
+        var width = min(max(image.size.width, 220), 720)
+        var height = width / aspect
+        if height > 520 {
+            height = 520
+            width = height * aspect
+        }
+        panel = CapturePinnedImagePanel(
+            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        super.init()
+
+        panel.delegate = self
+        panel.onRequestClose = { [weak self] in self?.close() }
+        panel.level = .floating
+        panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = false
+        panel.hasShadow = true
+        panel.isMovableByWindowBackground = true
+        panel.isReleasedWhenClosed = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.contentAspectRatio = image.size
+        panel.minSize = NSSize(width: 120, height: 80)
+        panel.title = CapturePinnedImageLocalization.windowTitle
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.titlebarSeparatorStyle = .none
+        panel.standardWindowButton(.closeButton)?.toolTip = CapturePinnedImageLocalization.closeTitle
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
+
+        let imageView = CapturePinnedImageView(
+            frame: NSRect(origin: .zero, size: panel.contentRect(forFrameRect: panel.frame).size)
+        )
+        imageView.onRequestClose = { [weak self] in self?.close() }
+        imageView.image = image
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.imageAlignment = .alignCenter
+        imageView.wantsLayer = true
+        imageView.layer?.backgroundColor = NSColor.black.cgColor
+        imageView.autoresizingMask = [.width, .height]
+        panel.contentView = imageView
+
+        let origin = NSPoint(
+            x: screenRect.midX - width / 2,
+            y: screenRect.midY - height / 2
+        )
+        panel.setFrameOrigin(origin)
+    }
+
+    func show() {
+        panel.orderFrontRegardless()
+        panel.makeKey()
+    }
+
+    @objc private func close() {
+        panel.close()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard !didClose else { return }
+        didClose = true
+        onClose()
+    }
+}
+
+@MainActor
+private final class CapturePinnedImagePanel: NSPanel {
+    var onRequestClose: (() -> Void)?
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    override func cancelOperation(_ sender: Any?) {
+        onRequestClose?()
+    }
+}
+
+@MainActor
+private final class CapturePinnedImageView: NSImageView {
+    var onRequestClose: (() -> Void)?
+
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    override func rightMouseDown(with event: NSEvent) {
+        let menu = NSMenu()
+        let closeItem = NSMenuItem(
+            title: CapturePinnedImageLocalization.closeTitle,
+            action: #selector(closePinnedImage),
+            keyEquivalent: ""
+        )
+        closeItem.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)
+        closeItem.target = self
+        menu.addItem(closeItem)
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    @objc private func closePinnedImage() {
+        onRequestClose?()
+    }
+}
+
+private enum CapturePinnedImageLocalization {
+    static var windowTitle: String {
+        localized(
+            zh: "钉图",
+            en: "Pinned Capture",
+            zhHant: "釘圖",
+            ja: "固定したキャプチャ",
+            ko: "고정된 캡처",
+            mt: "Pinned Capture"
+        )
+    }
+
+    static var closeTitle: String {
+        localized(
+            zh: "关闭钉图",
+            en: "Close Pinned Capture",
+            zhHant: "關閉釘圖",
+            ja: "固定キャプチャを閉じる",
+            ko: "고정된 캡처 닫기",
+            mt: "Close Pinned Capture"
+        )
+    }
+
+    private static func localized(
+        zh: String,
+        en: String,
+        zhHant: String,
+        ja: String,
+        ko: String,
+        mt: String
+    ) -> String {
+        let raw = UserDefaults.standard.string(forKey: "appLanguage") ?? AppLanguage.english.rawValue
+        switch AppLanguage(rawValue: raw) ?? .english {
+        case .simplifiedChinese: return zh
+        case .traditionalChinese: return zhHant
+        case .japanese: return ja
+        case .korean: return ko
+        case .maltese: return mt
+        case .english: return en
+        }
+    }
+}
+
+@MainActor
+private final class CaptureCompletionPreviewController: NSObject {
+    let panel: NSPanel
+    var onDismiss: (() -> Void)?
+    private var dismissWorkItem: DispatchWorkItem?
+
+    init(image: NSImage, screenRect: NSRect) {
+        let maxWidth: CGFloat = 210
+        let maxHeight: CGFloat = 150
+        let aspect = max(image.size.width / max(image.size.height, 1), 0.1)
+        var width = maxWidth
+        var height = width / aspect
+        if height > maxHeight {
+            height = maxHeight
+            width = height * aspect
+        }
+        width = max(width, 96)
+        height = max(height, 72)
+
+        panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        super.init()
+        panel.level = .floating
+        panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = false
+        panel.hasShadow = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+        let imageView = NSImageView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        imageView.image = image
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.wantsLayer = true
+        imageView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        imageView.layer?.cornerRadius = 7
+        imageView.layer?.masksToBounds = true
+        panel.contentView = imageView
+
+        let visibleFrame = NSScreen.screens.first(where: { $0.frame.intersects(screenRect) })?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+            ?? screenRect
+        let x = min(max(screenRect.maxX - width, visibleFrame.minX + 10), visibleFrame.maxX - width - 10)
+        let below = screenRect.minY - height - 12
+        let y = below >= visibleFrame.minY + 10
+            ? below
+            : min(screenRect.maxY + 12, visibleFrame.maxY - height - 10)
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    func show() {
+        panel.orderFrontRegardless()
+        let work = DispatchWorkItem { [weak self] in self?.dismiss() }
+        dismissWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.2, execute: work)
+    }
+
+    func dismiss() {
+        dismissWorkItem?.cancel()
+        dismissWorkItem = nil
+        panel.orderOut(nil)
+        onDismiss?()
     }
 }
 

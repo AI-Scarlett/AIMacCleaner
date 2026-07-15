@@ -16,6 +16,12 @@ struct CodexSessionSnapshot: Identifiable {
     let source: String
 }
 
+struct CodexArtifactMessageSnapshot: Sendable {
+    let text: String
+    let order: Int
+    let isFinalAnswer: Bool
+}
+
 struct CodexApprovalSnapshot: Identifiable {
     let id: String
     let threadId: String
@@ -71,6 +77,7 @@ final class CodexControlPlaneService {
     private var process: Process?
     private var inputHandle: FileHandle?
     private var outputBuffer = Data()
+    private var outputSearchOffset = 0
     private var errorTail = ""
     private var nextRequestId = 0
     private var pendingRequests: [Int: PendingRequest] = [:]
@@ -101,17 +108,13 @@ final class CodexControlPlaneService {
             return cachedSessions
         }
 
+        var coreSnapshots: [CodexSessionSnapshot] = []
         if let coreRows = await TraceFenceAgentCoreClient.shared.listSessions() {
-            let coreSnapshots = coreRows.compactMap(sessionSnapshot(from:))
+            coreSnapshots = coreRows.compactMap(sessionSnapshot(from:))
             for row in coreRows {
                 if let threadId = row["id"] as? String {
                     captureDesktopApprovals(from: row, threadId: threadId)
                 }
-            }
-            if !coreSnapshots.isEmpty {
-                cachedSessions = coreSnapshots.sorted { $0.updatedAt > $1.updatedAt }
-                lastSessionRefresh = Date()
-                return cachedSessions
             }
         }
 
@@ -138,11 +141,15 @@ final class CodexControlPlaneService {
             } while cursor != nil && pageCount < 2 && rows.count < maxCachedSessions
 
             let snapshots = rows.compactMap(sessionSnapshot(from:))
-            let merged = mergeDesktopSessions(with: snapshots)
+            let merged = mergeDesktopSessions(with: mergeCoreSessions(coreSnapshots, native: snapshots))
             cachedSessions = Array(merged.prefix(maxCachedSessions))
             lastSessionRefresh = Date()
             return cachedSessions
         } catch {
+            if !coreSnapshots.isEmpty {
+                cachedSessions = Array(mergeDesktopSessions(with: coreSnapshots).prefix(maxCachedSessions))
+                lastSessionRefresh = Date()
+            }
             return cachedSessions
         }
     }
@@ -151,10 +158,69 @@ final class CodexControlPlaneService {
         cachedSessions
     }
 
+    /// Returns the complete assistant-message history that Codex itself uses
+    /// to render file cards for a task. Callers decide which message phases
+    /// qualify as user-facing deliveries.
+    func artifactMessageSnapshots(threadId: String) async -> [CodexArtifactMessageSnapshot] {
+        do {
+            let thread = try await readThread(threadId: threadId)
+            let turns = thread["turns"] as? [[String: Any]] ?? []
+            var messages: [CodexArtifactMessageSnapshot] = []
+            var order = 0
+            for turn in turns {
+                let items = turn["items"] as? [[String: Any]] ?? []
+                for item in items {
+                    let type = (item["type"] as? String ?? "").lowercased()
+                    guard type == "agentmessage" || type == "assistantmessage" else { continue }
+                    guard let text = (item["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !text.isEmpty else { continue }
+                    let phase = (item["phase"] as? String ?? "").lowercased()
+                    messages.append(CodexArtifactMessageSnapshot(
+                        text: text,
+                        order: order,
+                        isFinalAnswer: phase == "final_answer" || phase == "finalanswer"
+                    ))
+                    order += 1
+                }
+            }
+            return messages
+        } catch {
+            return []
+        }
+    }
+
     private func mergeDesktopSessions(with snapshots: [CodexSessionSnapshot]) -> [CodexSessionSnapshot] {
         var merged = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
         for (id, snapshot) in desktopSessions {
             merged[id] = snapshot
+        }
+        return merged.values.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private func mergeCoreSessions(
+        _ core: [CodexSessionSnapshot],
+        native: [CodexSessionSnapshot]
+    ) -> [CodexSessionSnapshot] {
+        var merged = Dictionary(uniqueKeysWithValues: core.map { ($0.id, $0) })
+        for nativeSession in native {
+            guard let coreSession = merged[nativeSession.id] else {
+                merged[nativeSession.id] = nativeSession
+                continue
+            }
+            merged[nativeSession.id] = CodexSessionSnapshot(
+                id: nativeSession.id,
+                preview: nativeSession.preview,
+                cwd: nativeSession.cwd.isEmpty ? coreSession.cwd : nativeSession.cwd,
+                sourcePath: nativeSession.sourcePath.isEmpty ? coreSession.sourcePath : nativeSession.sourcePath,
+                createdAt: min(nativeSession.createdAt, coreSession.createdAt),
+                updatedAt: max(nativeSession.updatedAt, coreSession.updatedAt),
+                phase: coreSession.phase,
+                activeTurnId: coreSession.activeTurnId ?? nativeSession.activeTurnId,
+                lastResponse: nativeSession.lastResponse.isEmpty ? coreSession.lastResponse : nativeSession.lastResponse,
+                lastUserMessage: nativeSession.lastUserMessage.isEmpty ? coreSession.lastUserMessage : nativeSession.lastUserMessage,
+                model: nativeSession.model.isEmpty ? coreSession.model : nativeSession.model,
+                source: "native+\(coreSession.source)"
+            )
         }
         return merged.values.sorted { $0.updatedAt > $1.updatedAt }
     }
@@ -813,6 +879,7 @@ final class CodexControlPlaneService {
         self.process = process
         inputHandle = inputPipe.fileHandleForWriting
         outputBuffer.removeAll(keepingCapacity: true)
+        outputSearchOffset = 0
         initialized = false
 
         _ = try await requestWithoutStartup(
@@ -864,12 +931,16 @@ final class CodexControlPlaneService {
 
     private func consumeOutput(_ data: Data) {
         outputBuffer.append(data)
-        while let newlineIndex = outputBuffer.firstIndex(of: 0x0A) {
-            let line = Data(outputBuffer[outputBuffer.startIndex..<newlineIndex])
-            let nextIndex = outputBuffer.index(after: newlineIndex)
-            outputBuffer = nextIndex < outputBuffer.endIndex
-                ? Data(outputBuffer[nextIndex..<outputBuffer.endIndex])
-                : Data()
+        var lineStart = outputBuffer.startIndex
+        var searchStart = outputBuffer.index(
+            outputBuffer.startIndex,
+            offsetBy: min(outputSearchOffset, outputBuffer.count)
+        )
+        while searchStart < outputBuffer.endIndex,
+              let newlineIndex = outputBuffer[searchStart...].firstIndex(of: 0x0A) {
+            let line = outputBuffer[lineStart..<newlineIndex]
+            lineStart = outputBuffer.index(after: newlineIndex)
+            searchStart = lineStart
             guard !line.isEmpty,
                   let object = try? JSONSerialization.jsonObject(with: line),
                   let message = object as? [String: Any]
@@ -878,6 +949,15 @@ final class CodexControlPlaneService {
             }
             handleMessage(message)
         }
+        if lineStart > outputBuffer.startIndex {
+            outputBuffer = lineStart < outputBuffer.endIndex
+                ? Data(outputBuffer[lineStart..<outputBuffer.endIndex])
+                : Data()
+        }
+        // Bytes left in the buffer have already been checked. Starting the
+        // next search at the old end avoids rescanning a growing giant JSON
+        // response on every pipe callback.
+        outputSearchOffset = outputBuffer.count
     }
 
     private func handleMessage(_ message: [String: Any]) {
@@ -1050,6 +1130,8 @@ final class CodexControlPlaneService {
         }
         process = nil
         inputHandle = nil
+        outputBuffer.removeAll(keepingCapacity: true)
+        outputSearchOffset = 0
         initialized = false
     }
 

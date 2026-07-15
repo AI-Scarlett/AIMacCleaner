@@ -695,7 +695,7 @@ struct AgentCenterView: View {
                     .font(Theme.Font.captionMedium)
                     .foregroundStyle(Theme.Colors.purple)
                 Button {
-                    service.importKnownAgentHistory()
+                    service.importKnownAgentHistory(force: true)
                     service.refreshOperationRecordsSnapshot()
                 } label: {
                     Label(localizer.agentCenterRefresh, systemImage: "arrow.triangle.2.circlepath")
