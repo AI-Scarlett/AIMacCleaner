@@ -4,9 +4,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-BUILD_NUMBER="${1:-71}"
+BUILD_NUMBER="${1:-73}"
 VERSION="3.1.8"
 DERIVED_DATA_PATH="build/.TraceFence-appstore-debug-${BUILD_NUMBER}"
+
+QR_MODULE_CACHE="$ROOT/build/.tracefence-qr-module-cache"
+mkdir -p "$QR_MODULE_CACHE"
+CLANG_MODULE_CACHE_PATH="$QR_MODULE_CACHE" \
+  SWIFT_MODULE_CACHE_PATH="$QR_MODULE_CACHE" \
+  xcrun swift scripts/verify_tracefence_pairing_qr.swift
 
 xcodebuild build \
   -project AIMacCleaner.xcodeproj \
@@ -66,6 +72,11 @@ HELPER_IDENTIFIER="$(codesign -dvv "$PROVIDER_ENGINE" 2>&1 | awk -F= '/^Identifi
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PLIST")" == "$VERSION" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PLIST")" == "$BUILD_NUMBER" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :TraceFenceDistributionChannel' "$APP_PLIST")" == "appStore" ]]
+MUSIC_PURPOSE="$(/usr/libexec/PlistBuddy -c 'Print :NSAppleMusicUsageDescription' "$APP_PLIST" 2>/dev/null || true)"
+[[ -n "$MUSIC_PURPOSE" ]] || {
+  printf 'App Store debug build is missing NSAppleMusicUsageDescription\n' >&2
+  exit 1
+}
 for key in \
   TraceFenceDodoEnvironment \
   TraceFenceDodoBusinessID \
