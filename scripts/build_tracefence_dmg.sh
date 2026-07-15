@@ -3,7 +3,8 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="TraceFence"
-VERSION="${TRACEFENCE_VERSION:-1.0.66}"
+VERSION="${TRACEFENCE_VERSION:-1.0.72}"
+BUILD_NUMBER="${TRACEFENCE_BUILD_NUMBER:-${VERSION##*.}}"
 TAG="v${VERSION}"
 SCHEME="AIMacCleaner"
 CONFIGURATION="Release"
@@ -57,6 +58,12 @@ echo "========================================="
 echo "  Building ${APP_NAME} ${TAG}"
 echo "========================================="
 
+QR_MODULE_CACHE="$PROJECT_DIR/build/.tracefence-qr-module-cache"
+mkdir -p "$QR_MODULE_CACHE"
+CLANG_MODULE_CACHE_PATH="$QR_MODULE_CACHE" \
+  SWIFT_MODULE_CACHE_PATH="$QR_MODULE_CACHE" \
+  xcrun swift "$PROJECT_DIR/scripts/verify_tracefence_pairing_qr.swift"
+
 rm -rf "$BUILD_ROOT" "$STAGING_DIR" "$OUTPUT_DIR"
 mkdir -p "$BUILD_ROOT" "$STAGING_DIR" "$OUTPUT_DIR"
 
@@ -80,6 +87,8 @@ xcodebuild \
   build \
   CODE_SIGNING_ALLOWED=NO \
   ENABLE_DEBUG_DYLIB=NO \
+  MARKETING_VERSION="$VERSION" \
+  CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
   SWIFT_COMPILATION_MODE="$SWIFT_COMPILATION_MODE"
 
 BUILT_APP="$BUILD_ROOT/Build/Products/${CONFIGURATION}/${APP_NAME}.app"
@@ -88,15 +97,26 @@ if [ ! -d "$BUILT_APP" ]; then
   exit 1
 fi
 
-mkdir -p "$BUILT_APP/Contents/Resources"
-cp "$CODEXBAR_BINARY" "$BUILT_APP/Contents/Resources/codexbar"
-chmod 755 "$BUILT_APP/Contents/Resources/codexbar"
+BUILT_PLIST="$BUILT_APP/Contents/Info.plist"
+BUILT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$BUILT_PLIST")"
+BUILT_NUMBER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$BUILT_PLIST")"
+BUILT_CHANNEL="$(/usr/libexec/PlistBuddy -c 'Print :TraceFenceDistributionChannel' "$BUILT_PLIST")"
+BUILT_MUSIC_PURPOSE="$(/usr/libexec/PlistBuddy -c 'Print :NSAppleMusicUsageDescription' "$BUILT_PLIST" 2>/dev/null || true)"
+[ "$BUILT_VERSION" = "$VERSION" ] || { echo "Wrong built marketing version: $BUILT_VERSION" >&2; exit 1; }
+[ "$BUILT_NUMBER" = "$BUILD_NUMBER" ] || { echo "Wrong built build number: $BUILT_NUMBER" >&2; exit 1; }
+[ "$BUILT_CHANNEL" = "direct" ] || { echo "Wrong built distribution channel: $BUILT_CHANNEL" >&2; exit 1; }
+[ -n "$BUILT_MUSIC_PURPOSE" ] || { echo "Missing Apple Music purpose string" >&2; exit 1; }
+
+PROVIDER_ENGINE="$BUILT_APP/Contents/MacOS/codexbar"
+if [ ! -x "$PROVIDER_ENGINE" ]; then
+  install -m 755 "$CODEXBAR_BINARY" "$PROVIDER_ENGINE"
+fi
 
 codesign --force \
   --options runtime \
   --timestamp \
   --sign "$SIGN_IDENTITY" \
-  "$BUILT_APP/Contents/Resources/codexbar"
+  "$PROVIDER_ENGINE"
 
 codesign --force \
   --deep \

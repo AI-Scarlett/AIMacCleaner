@@ -1121,7 +1121,6 @@ extension TraceFenceStatusResponse.SubscriptionMetadata {
         switch tier {
         case "appStoreStandard": return "App Store 标准订阅".tfLocalized
         case "directStandard": return "官网标准订阅".tfLocalized
-        case "directEnhanced": return "官网增强订阅".tfLocalized
         case "legacy": return "历史授权".tfLocalized
         case "none": return "未订阅".tfLocalized
         default: return tier ?? "未知方案".tfLocalized

@@ -21,42 +21,42 @@ from scripts.appstoreconnect.sync_tracefence_sentinel_submission import ASC, KEY
 
 APP_ID = "6772386897"
 GROUP_REFERENCE_NAME = "TraceFence Standard"
-REVIEW_SCREENSHOT = ROOT / "build/TraceFence-AppStore-Screenshots/Subscription/TraceFence-Subscription-1440x900.jpg"
+REVIEW_SCREENSHOT = ROOT / "build/TraceFence-AppStore-Screenshots/Subscription/TraceFence-Subscription-1440x900-final.png"
 LOCALES = {
     "en-US": {
         "group": "TraceFence Standard",
         "monthly_name": "Standard Monthly",
         "monthly_description": "TraceFence Standard features, billed monthly.",
         "yearly_name": "Standard Yearly",
-        "yearly_description": "TraceFence Standard features, billed yearly.",
+        "yearly_description": "TraceFence Standard features with annual billing.",
     },
     "zh-Hans": {
         "group": "TraceFence 标准版",
         "monthly_name": "标准版月度订阅",
         "monthly_description": "按月解锁 TraceFence 标准版功能。",
         "yearly_name": "标准版年度订阅",
-        "yearly_description": "按年解锁 TraceFence 标准版功能。",
+        "yearly_description": "按年订阅并解锁 TraceFence 标准版功能。",
     },
     "zh-Hant": {
         "group": "TraceFence 標準版",
         "monthly_name": "標準版月度訂閱",
         "monthly_description": "按月解鎖 TraceFence 標準版功能。",
         "yearly_name": "標準版年度訂閱",
-        "yearly_description": "按年解鎖 TraceFence 標準版功能。",
+        "yearly_description": "按年訂閱並解鎖 TraceFence 標準版功能。",
     },
     "ja": {
         "group": "TraceFence Standard",
         "monthly_name": "Standard 月額",
         "monthly_description": "TraceFence Standard を月額で利用できます。",
         "yearly_name": "Standard 年額",
-        "yearly_description": "TraceFence Standard を年額で利用できます。",
+        "yearly_description": "TraceFence Standard を年単位で利用できます。",
     },
     "ko": {
         "group": "TraceFence Standard",
         "monthly_name": "Standard 월간",
-        "monthly_description": "TraceFence Standard 기능을 매월 이용합니다.",
+        "monthly_description": "TraceFence Standard 기능을 월 단위로 이용할 수 있습니다.",
         "yearly_name": "Standard 연간",
-        "yearly_description": "TraceFence Standard 기능을 매년 이용합니다.",
+        "yearly_description": "TraceFence Standard 기능을 연 단위로 이용할 수 있습니다.",
     },
 }
 
@@ -91,15 +91,90 @@ def all_resources(api: ASC, path: str, params: dict[str, Any] | None = None) -> 
     return result
 
 
+def assert_no_rejected_localizations(
+    api: ASC,
+    parent_path: str,
+    context: str,
+    *,
+    max_rejected: int = 0,
+    expected_by_locale: dict[str, dict[str, Any]] | None = None,
+) -> None:
+    """Re-fetch localizations and reject stale content or unexpected rejected state."""
+    localizations = all_resources(api, parent_path, {"limit": 100})
+    if expected_by_locale is not None:
+        actual_by_locale = {
+            str((item.get("attributes") or {}).get("locale") or ""): item.get("attributes") or {}
+            for item in localizations
+        }
+        missing = sorted(set(expected_by_locale) - set(actual_by_locale))
+        if missing:
+            raise RuntimeError(f"{context} is missing localization(s): {', '.join(missing)}")
+        mismatches: list[str] = []
+        for locale, expected in expected_by_locale.items():
+            actual = actual_by_locale[locale]
+            for key, value in expected.items():
+                if actual.get(key) != value:
+                    mismatches.append(
+                        f"{locale}.{key}: expected {value!r}, found {actual.get(key)!r}"
+                    )
+        if mismatches:
+            raise RuntimeError(f"{context} has stale localization content: {'; '.join(mismatches)}")
+    rejected = [
+        item
+        for item in localizations
+        if str((item.get("attributes") or {}).get("state") or "").upper() == "REJECTED"
+    ]
+    if len(rejected) <= max_rejected:
+        if rejected:
+            details = ", ".join(
+                f"{(item.get('attributes') or {}).get('locale') or 'unknown locale'} "
+                f"({item.get('id') or 'unknown id'})"
+                for item in rejected
+            )
+            print(
+                f"{context} retains {len(rejected)} edited REJECTED localization(s) "
+                f"with verified current content until Apple processes the resubmission: {details}"
+            )
+        return
+
+    details = ", ".join(
+        f"{(item.get('attributes') or {}).get('locale') or 'unknown locale'} ({item.get('id') or 'unknown id'})"
+        for item in rejected
+    )
+    raise RuntimeError(
+        f"{context} still has REJECTED localization(s) after synchronization: {details}"
+    )
+
+
 def upsert_localization(api: ASC, parent_path: str, collection_path: str, resource_type: str,
                         relationship_name: str, parent_type: str, parent_id: str,
                         locale: str, attributes: dict[str, Any]) -> str:
     existing = {
-        item["attributes"]["locale"]: item["id"]
+        item["attributes"]["locale"]: item
         for item in all_resources(api, parent_path, {"limit": 100})
     }
     if locale in existing:
-        resource_id = existing[locale]
+        existing_item = existing[locale]
+        resource_id = existing_item["id"]
+        existing_attributes = existing_item.get("attributes") or {}
+        state = str(existing_attributes.get("state") or "").upper()
+        if state == "REJECTED":
+            mismatches = [
+                f"{key}: expected {value!r}, found {existing_attributes.get(key)!r}"
+                for key, value in attributes.items()
+                if existing_attributes.get(key) != value
+            ]
+            if mismatches:
+                raise RuntimeError(
+                    f"Rejected {resource_type} localization {locale} ({resource_id}) has stale content "
+                    f"and Apple does not allow API edits in this state; edit it in App Store Connect: "
+                    f"{'; '.join(mismatches)}"
+                )
+            print(
+                f"Verified retained {resource_type} localization {locale}; "
+                "its content is current and Apple will clear REJECTED when it is resubmitted"
+            )
+            return resource_id
         api.json("PATCH", f"/{resource_type}/{resource_id}",
                  json=body(resource_type, resource_id, attributes))
         return resource_id
@@ -129,6 +204,16 @@ def ensure_group(api: ASC) -> str:
             "subscriptionGroup", "subscriptionGroups", group_id, locale,
             {"name": values["group"], "customAppName": None},
         )
+    assert_no_rejected_localizations(
+        api,
+        f"/subscriptionGroups/{group_id}/subscriptionGroupLocalizations",
+        f"Subscription group {group_id}",
+        max_rejected=len(LOCALES),
+        expected_by_locale={
+            locale: {"name": values["group"], "customAppName": None}
+            for locale, values in LOCALES.items()
+        },
+    )
     print("Synced subscription group localizations")
     return group_id
 
@@ -155,6 +240,23 @@ def ensure_subscription(api: ASC, group_id: str, product: dict[str, Any]) -> str
         )["data"]
         print(f"Created {product['product_id']} as {subscription['id']}")
     subscription_id = subscription["id"]
+    review_note = (
+        "Open TraceFence and click Subscribe Standard in the left sidebar footer, or open "
+        "Settings > Subscription. Both monthly and yearly Apple plans, Restore Purchases, "
+        "Privacy Policy, and Terms of Use are visible in the same purchase flow."
+    )
+    if subscription["attributes"].get("reviewNote") != review_note:
+        for attempt in range(3):
+            try:
+                api.json(
+                    "PATCH", f"/subscriptions/{subscription_id}",
+                    json=body("subscriptions", subscription_id, {"reviewNote": review_note}),
+                )
+                break
+            except RuntimeError as error:
+                if "-> 500:" not in str(error) or attempt == 2:
+                    raise
+                time.sleep(2 * (attempt + 1))
     prefix = product["localization_prefix"]
     for locale, values in LOCALES.items():
         upsert_localization(
@@ -163,6 +265,19 @@ def ensure_subscription(api: ASC, group_id: str, product: dict[str, Any]) -> str
             "subscription", "subscriptions", subscription_id, locale,
             {"name": values[f"{prefix}_name"], "description": values[f"{prefix}_description"]},
         )
+    assert_no_rejected_localizations(
+        api,
+        f"/subscriptions/{subscription_id}/subscriptionLocalizations",
+        f"Subscription {product['product_id']} ({subscription_id})",
+        max_rejected=len(LOCALES),
+        expected_by_locale={
+            locale: {
+                "name": values[f"{prefix}_name"],
+                "description": values[f"{prefix}_description"],
+            }
+            for locale, values in LOCALES.items()
+        },
+    )
     print(f"Synced localizations for {product['product_id']}")
     return subscription_id
 
@@ -238,9 +353,15 @@ def ensure_prices(api: ASC, subscription_id: str, target_price: Decimal) -> None
 
 
 def ensure_review_screenshot(api: ASC, subscription_id: str) -> None:
+    data = REVIEW_SCREENSHOT.read_bytes()
+    expected_checksum = hashlib.md5(data).hexdigest()
     try:
         existing = api.json("GET", f"/subscriptions/{subscription_id}/appStoreReviewScreenshot")["data"]
-        if existing and existing["attributes"].get("assetDeliveryState", {}).get("state") == "COMPLETE":
+        if (
+            existing
+            and existing["attributes"].get("assetDeliveryState", {}).get("state") == "COMPLETE"
+            and existing["attributes"].get("sourceFileChecksum") == expected_checksum
+        ):
             print(f"Review screenshot already configured for {subscription_id}")
             return
         if existing:
@@ -249,7 +370,6 @@ def ensure_review_screenshot(api: ASC, subscription_id: str) -> None:
         if "-> 404:" not in str(error):
             raise
 
-    data = REVIEW_SCREENSHOT.read_bytes()
     created = api.json(
         "POST", "/subscriptionAppStoreReviewScreenshots", ok=(201,),
         json=body(
@@ -273,7 +393,7 @@ def ensure_review_screenshot(api: ASC, subscription_id: str) -> None:
         "PATCH", f"/subscriptionAppStoreReviewScreenshots/{screenshot_id}",
         json=body(
             "subscriptionAppStoreReviewScreenshots", screenshot_id,
-            {"sourceFileChecksum": hashlib.md5(data).hexdigest(), "uploaded": True},
+            {"sourceFileChecksum": expected_checksum, "uploaded": True},
         ),
     )
     for _ in range(20):

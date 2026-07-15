@@ -995,6 +995,9 @@ final class ConnectionStore: ObservableObject {
 
     func parsePairingText(_ text: String) throws -> TraceFenceConnection {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.lowercased().hasPrefix("tf://") {
+            return try parseCompactPairingURL(trimmed)
+        }
         guard let data = trimmed.data(using: .utf8) else {
             throw PairingError.invalidText
         }
@@ -1019,6 +1022,66 @@ final class ConnectionStore: ObservableObject {
         connection.mergeLocalAddresses(payload.localAddresses ?? [], port: port)
         connection.accessEndpoints = Array(connection.prioritizedAccessEndpoints.prefix(16))
         return connection
+    }
+
+    private func parseCompactPairingURL(_ text: String) throws -> TraceFenceConnection {
+        guard let components = URLComponents(string: text),
+              components.scheme?.lowercased() == "tf",
+              let host = components.host,
+              !host.isEmpty else {
+            throw PairingError.invalidText
+        }
+        let encodedToken = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let token = Self.hexToken(fromBase32: encodedToken) else {
+            throw PairingError.invalidText
+        }
+        let port = components.port ?? 17_895
+        guard (1...65_535).contains(port) else {
+            throw PairingError.invalidText
+        }
+
+        var endpointComponents = URLComponents()
+        endpointComponents.scheme = "http"
+        endpointComponents.host = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+        endpointComponents.port = port
+        guard let endpointText = endpointComponents.string else {
+            throw PairingError.invalidText
+        }
+        let endpoint = normalizedEndpoint(endpointText)
+        var connection = TraceFenceConnection(
+            name: "TraceFence",
+            endpoint: endpoint,
+            token: token
+        )
+        connection.addAccessEndpoint(
+            url: endpoint,
+            label: "扫码地址".tfLocalized,
+            kind: endpoint.tfIsPrivateNetworkEndpoint ? .local : .manual
+        )
+        connection.accessEndpoints = Array(connection.prioritizedAccessEndpoints.prefix(16))
+        return connection
+    }
+
+    private static func hexToken(fromBase32 value: String) -> String? {
+        guard value.count == 52 else { return nil }
+        let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".utf8)
+        let lookup = Dictionary(uniqueKeysWithValues: alphabet.enumerated().map { ($0.element, UInt16($0.offset)) })
+        var output = [UInt8]()
+        output.reserveCapacity(32)
+        var buffer: UInt16 = 0
+        var bitCount = 0
+        for character in value.uppercased().utf8 {
+            guard let bits = lookup[character] else { return nil }
+            buffer = (buffer << 5) | bits
+            bitCount += 5
+            if bitCount >= 8 {
+                bitCount -= 8
+                output.append(UInt8((buffer >> bitCount) & 0xff))
+            }
+            buffer = bitCount == 0 ? 0 : buffer & UInt16((1 << bitCount) - 1)
+        }
+        guard output.count == 32, buffer == 0 else { return nil }
+        return output.map { String(format: "%02x", $0) }.joined()
     }
 
     private func currentReachableConnection(_ connection: TraceFenceConnection) async throws -> TraceFenceConnection {
