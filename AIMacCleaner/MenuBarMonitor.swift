@@ -140,10 +140,8 @@ struct MenuBarMonitor: View {
             HStack(spacing: Theme.Spacing.sm) {
                 Button {
                     dismissMenuBarPopoverSoon()
-                    NSApp.setActivationPolicy(.regular)
-                    NSApp.activate(ignoringOtherApps: true)
-                    if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("TraceFence") || $0.title.contains("AgentGuard") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
-                        window.makeKeyAndOrderFront(nil)
+                    if let appDelegate = NSApp.delegate as? AppDelegate {
+                        appDelegate.presentMainWindow(reason: "menu-bar-popover")
                     }
                 } label: {
                     HStack(spacing: Theme.Spacing.xs) {
@@ -2314,10 +2312,8 @@ struct MenuBarMonitor: View {
 
                 if !displayableOperationRecords.isEmpty {
                     Button {
-                        NSApp.setActivationPolicy(.regular)
-                        NSApp.activate(ignoringOtherApps: true)
-                        if let window = NSApp.windows.first(where: { $0.title.contains("AgentWatch") || $0.title.contains("Agent卫士") || (!$0.title.isEmpty && $0.className.contains("Window")) }) {
-                            window.makeKeyAndOrderFront(nil)
+                        if let appDelegate = NSApp.delegate as? AppDelegate {
+                            appDelegate.presentMainWindow(reason: "menu-bar-operations")
                         }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             if let menuWindow = NSApp.windows.first(where: { $0.isFloatingPanel || $0.level == .floating }) {

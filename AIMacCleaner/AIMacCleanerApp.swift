@@ -99,7 +99,7 @@ struct AIMacCleanerApp: App {
     }
 
     var body: some Scene {
-        Window("TraceFence", id: "main") {
+        WindowGroup("TraceFence", id: "main") {
             ContentView(overviewStore: overviewStore)
                 .environmentObject(service)
                 .environmentObject(localizer)
@@ -111,6 +111,7 @@ struct AIMacCleanerApp: App {
                 .environmentObject(providerQuotaService)
                 .environmentObject(agentUsageInsightsService)
                 .environmentObject(captureShelfService)
+                .background(MainWindowOpenActionBridge(appDelegate: appDelegate))
                 .frame(minWidth: 960, minHeight: 640)
                 .onAppear {
                     appDelegate.service = service
@@ -228,6 +229,20 @@ struct AIMacCleanerApp: App {
     }
 }
 
+private struct MainWindowOpenActionBridge: View {
+    @Environment(\.openWindow) private var openWindow
+    let appDelegate: AppDelegate
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .onAppear {
+                appDelegate.installMainWindowOpenAction(openWindow)
+            }
+    }
+}
+
 struct MenuBarShieldEyeIcon: View {
     var color: Color = .primary
 
@@ -322,6 +337,7 @@ extension Notification.Name {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindow: NSWindow?
+    private var openMainWindowAction: OpenWindowAction?
     private var fallbackService: ScannerService?
     private var fallbackLocalizer: Localizer?
     private var fallbackAgentRegistry: AgentRegistry?
@@ -447,6 +463,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
+    func installMainWindowOpenAction(_ action: OpenWindowAction) {
+        openMainWindowAction = action
+    }
+
+    @MainActor
+    func presentMainWindow(reason: String) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.unhide(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        reconcileMainWindows()
+        if let window = bestMainWindow() {
+            show(window: window, reason: reason)
+            return
+        }
+
+        guard let openMainWindowAction else {
+            ensureLaunchSurfaceVisible(reason: reason)
+            return
+        }
+
+        mainWindow = nil
+        openMainWindowAction(id: "main")
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @MainActor
     @objc private func mainWindowLevelPreferenceDidChange(_ notification: Notification) {
         guard let window = bestMainWindow() else { return }
         applyPreferredMainWindowLevel(to: window)
@@ -515,11 +558,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     private func bestMainWindow() -> NSWindow? {
-        if let mainWindow, isTraceFenceMainWindow(mainWindow) {
+        let windows = NSApp.windows
+        if let mainWindow,
+           windows.contains(where: { $0 === mainWindow }),
+           isTraceFenceMainWindow(mainWindow) {
             return mainWindow
         }
 
-        return NSApp.windows.first(where: isTraceFenceMainWindow)
+        mainWindow = nil
+        return windows.first(where: isTraceFenceMainWindow)
     }
 
     private func isTraceFenceMainWindow(_ window: NSWindow) -> Bool {
@@ -582,21 +629,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.unhide(nil)
-        NSApp.activate(ignoringOtherApps: true)
-
-        if let window = mainWindow {
-            window.makeKeyAndOrderFront(nil)
-        } else if let window = sender.windows.first(where: { !$0.title.isEmpty && $0.className.contains("Window") }) {
-            mainWindow = window
-            window.makeKeyAndOrderFront(nil)
-        } else {
-            Task { @MainActor in
-                self.ensureLaunchSurfaceVisible(reason: "reopen")
-            }
-        }
-        return true
+        presentMainWindow(reason: "reopen")
+        return false
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

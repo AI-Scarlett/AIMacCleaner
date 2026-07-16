@@ -514,10 +514,9 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
     }
 
     @objc private func openMainWindowFromMenu() {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-        if let window = NSApp.windows.first(where: { $0.title.contains("TraceFence") || $0.title.contains("AgentGuard") || (!$0.title.isEmpty && $0.canBecomeMain) }) {
-            window.makeKeyAndOrderFront(nil)
+        closePopover()
+        if let appDelegate = NSApp.delegate as? AppDelegate {
+            appDelegate.presentMainWindow(reason: "menu-bar")
         }
     }
 
