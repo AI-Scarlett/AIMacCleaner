@@ -2926,6 +2926,51 @@ private struct AgentUsageCodexWorkItem {
     let cached: AgentUsageFileCacheEntry?
 }
 
+private enum AgentUsageLineAlignmentResult: Equatable {
+    case aligned(Int64)
+    case insufficientBudget
+    case ioFailure
+}
+
+private enum AgentUsageLineAlignment {
+    static func resolve(in url: URL, proposedOffset: Int64, upperBound: Int64) -> AgentUsageLineAlignmentResult {
+        let proposed = max(0, min(proposedOffset, upperBound))
+        if proposed == 0 { return .aligned(0) }
+        guard proposed < upperBound else { return .insufficientBudget }
+
+        let handle: FileHandle
+        do {
+            handle = try FileHandle(forReadingFrom: url)
+        } catch {
+            return .ioFailure
+        }
+        defer { try? handle.close() }
+
+        do {
+            try handle.seek(toOffset: UInt64(proposed - 1))
+            if try handle.read(upToCount: 1)?.first == 10 { return .aligned(proposed) }
+            try handle.seek(toOffset: UInt64(proposed))
+            var cursor = proposed
+            while cursor < upperBound {
+                try Task.checkCancellation()
+                let count = Int(min(Int64(64 * 1_024), upperBound - cursor))
+                guard let chunk = try handle.read(upToCount: count), !chunk.isEmpty else {
+                    return .ioFailure
+                }
+                if let newline = chunk.firstIndex(of: 10) {
+                    return .aligned(
+                        cursor + Int64(chunk.distance(from: chunk.startIndex, to: newline)) + 1
+                    )
+                }
+                cursor += Int64(chunk.count)
+            }
+        } catch {
+            return .ioFailure
+        }
+        return .insufficientBudget
+    }
+}
+
 private final class AgentUsageCodexProvider: @unchecked Sendable {
     private let fileManager = FileManager.default
     private let context: AgentUsageStatisticsContext
@@ -3159,7 +3204,7 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             )
         ))
 
-        for (workIndex, item) in workItems.enumerated() {
+        workLoop: for (workIndex, item) in workItems.enumerated() {
             if Task.isCancelled { break }
             if Date() >= scanDeadline {
                 stoppedByDeadline = true
@@ -3169,7 +3214,6 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                 stoppedByReadBudget = true
                 break
             }
-            attemptedThisRun += 1
             progress(AgentUsageScanProgress(
                 phase: .scanningCodexSessions,
                 current: workIndex + 1,
@@ -3203,14 +3247,14 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                       appendBytes <= maximumReadBytesPerFile,
                       appendBytes <= remainingReadBytes else {
                     if appendBytes > remainingReadBytes { stoppedByReadBudget = true }
-                    continue
+                    continue workLoop
                 }
                 proposedStart = cached.size
                 upperBound = item.fingerprint.size
             case .backfill:
                 guard let cached = item.cached, cached.scannedFromOffset > 0 else {
                     failures += 1
-                    continue
+                    continue workLoop
                 }
                 upperBound = cached.scannedFromOffset
                 proposedStart = max(
@@ -3223,16 +3267,27 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                 upperBound = item.fingerprint.size
             }
 
-            let startingOffset = alignedLineStart(
+            let startingOffset: Int64
+            switch AgentUsageLineAlignment.resolve(
                 in: item.url,
                 proposedOffset: proposedStart,
                 upperBound: upperBound
-            )
+            ) {
+            case let .aligned(value):
+                startingOffset = value
+            case .insufficientBudget:
+                stoppedByReadBudget = true
+                break workLoop
+            case .ioFailure:
+                failures += 1
+                continue workLoop
+            }
             let rangeBytes = max(0, upperBound - startingOffset)
             guard rangeBytes > 0 || item.fingerprint.size == 0 else {
-                failures += 1
-                continue
+                stoppedByReadBudget = true
+                break workLoop
             }
+            attemptedThisRun += 1
             guard let parsed = parser.parse(
                 url: item.url,
                 source: item.thread,
@@ -3242,13 +3297,13 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                 deadline: nil
             ) else {
                 failures += 1
-                continue
+                continue workLoop
             }
             remainingReadBytes = max(0, remainingReadBytes - max(1, parsed.bytesRead))
             guard parsed.completedRequestedRange else {
                 // Never advance a cursor for a partially-read planned range.
                 failures += 1
-                continue
+                continue workLoop
             }
 
             let parsedDisk = parsed.summary.redactedForDisk()
@@ -3459,31 +3514,6 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             message: "Codex session scan complete"
         ))
         return aggregate
-    }
-
-    private func alignedLineStart(in url: URL, proposedOffset: Int64, upperBound: Int64) -> Int64 {
-        let proposed = max(0, min(proposedOffset, upperBound))
-        guard proposed > 0, proposed < upperBound,
-              let handle = try? FileHandle(forReadingFrom: url) else { return proposed }
-        defer { try? handle.close() }
-        do {
-            try handle.seek(toOffset: UInt64(proposed - 1))
-            if try handle.read(upToCount: 1)?.first == 10 { return proposed }
-            try handle.seek(toOffset: UInt64(proposed))
-            var cursor = proposed
-            while cursor < upperBound {
-                try Task.checkCancellation()
-                let count = Int(min(Int64(64 * 1_024), upperBound - cursor))
-                guard let chunk = try handle.read(upToCount: count), !chunk.isEmpty else { break }
-                if let newline = chunk.firstIndex(of: 10) {
-                    return cursor + Int64(chunk.distance(from: chunk.startIndex, to: newline)) + 1
-                }
-                cursor += Int64(chunk.count)
-            }
-        } catch {
-            return upperBound
-        }
-        return upperBound
     }
 
     private func codexDatabaseURL() -> URL? {
@@ -4721,6 +4751,82 @@ extension AgentUsageInsightsService {
             ) == 2,
             "skipped must count only attempted work with no advance and no failure"
         )
+
+        let lineAlignmentFixture = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tracefence-agent-usage-line-alignment-\(UUID().uuidString).jsonl")
+        do {
+            // The newline is deliberately one byte beyond upperBound. A warm
+            // pass with only 57 bytes left cannot form a complete JSONL range.
+            var fixture = Data(repeating: 0x61, count: 100)
+            fixture.append(0x0A)
+            try fixture.write(to: lineAlignmentFixture, options: .atomic)
+            defer { try? FileManager.default.removeItem(at: lineAlignmentFixture) }
+
+            let residualBudgetResult = AgentUsageLineAlignment.resolve(
+                in: lineAlignmentFixture,
+                proposedOffset: 43,
+                upperBound: 100
+            )
+            expect(
+                residualBudgetResult == .insufficientBudget,
+                "a 57-byte residual without a line boundary must be deferred, not reported as IO failure"
+            )
+
+            // Repeating the same warm-cache boundary must remain stable. This
+            // guards against a later pass turning deferred work into a burst of
+            // failures or skips merely because the cache is already populated.
+            let consecutiveWarmResults = (0..<2).map { _ in
+                AgentUsageLineAlignment.resolve(
+                    in: lineAlignmentFixture,
+                    proposedOffset: 43,
+                    upperBound: 100
+                )
+            }
+            let consecutiveWarmAttempts = consecutiveWarmResults.reduce(into: 0) { count, result in
+                if case .aligned = result { count += 1 }
+            }
+            let consecutiveWarmFailures = consecutiveWarmResults.reduce(into: 0) { count, result in
+                if case .ioFailure = result { count += 1 }
+            }
+            expect(
+                consecutiveWarmAttempts == 0 && consecutiveWarmFailures == 0,
+                "consecutive warm-cache budget deferrals must not become attempted or failed reads"
+            )
+            expect(
+                AgentUsageBackfillOutcomePolicy.skippedCount(
+                    attemptedThisRun: consecutiveWarmAttempts,
+                    advancedThisRun: 0,
+                    failedThisRun: consecutiveWarmFailures
+                ) == 0,
+                "consecutive warm-cache budget deferrals must remain pending instead of skipped"
+            )
+            expect(
+                AgentUsageBackfillOutcomePolicy.resolve(
+                    remainingSessions: 1,
+                    excludedByInventoryLimit: 0,
+                    cancelled: false,
+                    stoppedByDeadline: false,
+                    stoppedByReadBudget: true,
+                    failedThisRun: consecutiveWarmFailures
+                ) == .readBudgetReached,
+                "a 57-byte warm-cache boundary must end as read-budget reached"
+            )
+
+            let missingFixture = lineAlignmentFixture
+                .deletingLastPathComponent()
+                .appendingPathComponent("tracefence-agent-usage-missing-\(UUID().uuidString).jsonl")
+            expect(
+                AgentUsageLineAlignment.resolve(
+                    in: missingFixture,
+                    proposedOffset: 1,
+                    upperBound: 2
+                ) == .ioFailure,
+                "a genuine file-open failure must remain distinguishable from insufficient budget"
+            )
+        } catch {
+            failures.append("line-alignment fixture could not be created")
+        }
+
         let statusReceipt = AgentUsageBackfillStatus(
             stage: .completed,
             checkedSessions: 20,
