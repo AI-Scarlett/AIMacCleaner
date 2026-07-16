@@ -9,6 +9,8 @@ import SQLite3
 enum AgentUsageScope: String, CaseIterable, Codable, Identifiable, Sendable {
     case codex
     case claude
+    case openCode
+    case openClaw
     case combined
 
     var id: String { rawValue }
@@ -17,7 +19,9 @@ enum AgentUsageScope: String, CaseIterable, Codable, Identifiable, Sendable {
         switch self {
         case .codex: return "Codex"
         case .claude: return "Claude Code"
-        case .combined: return "All Agents"
+        case .openCode: return "OpenCode"
+        case .openClaw: return "OpenClaw / QClaw"
+        case .combined: return "All trusted sources"
         }
     }
 }
@@ -182,6 +186,40 @@ struct AgentUsageProjectUsage: Codable, Equatable, Identifiable, Sendable {
     let sourceQuality: AgentUsageSourceQuality
 }
 
+struct AgentUsageModelUsage: Codable, Equatable, Identifiable, Sendable {
+    let id: String
+    let scope: AgentUsageScope
+    let model: String
+    let tokens: AgentUsageTokenTotals
+    let estimatedAPIValueUSD: Double
+    let sessionCount: Int
+    let lastActiveAt: Date?
+    let sourceQuality: AgentUsageSourceQuality
+}
+
+struct AgentUsageSessionUsage: Codable, Equatable, Identifiable, Sendable {
+    let id: String
+    let scope: AgentUsageScope
+    let projectName: String
+    let fullProjectPath: String
+    let model: String
+    let tokens: AgentUsageTokenTotals
+    let estimatedAPIValueUSD: Double
+    let lastActiveAt: Date?
+    let sourceQuality: AgentUsageSourceQuality
+}
+
+struct AgentUsageSourceSummary: Codable, Equatable, Identifiable, Sendable {
+    var id: String { scope.rawValue }
+    let scope: AgentUsageScope
+    let available: Bool
+    let partial: Bool
+    let parsedFileCount: Int
+    let tokenEventCount: Int
+    let sourceQuality: AgentUsageSourceQuality
+    let diagnosticCount: Int
+}
+
 struct AgentUsageToolUsage: Codable, Equatable, Identifiable, Sendable {
     var id: String { "\(scope.rawValue):\(name)" }
     let scope: AgentUsageScope
@@ -257,6 +295,10 @@ struct AgentUsageSnapshot: Codable, Equatable, Sendable {
     let last7Days: AgentUsageTokenTotals
     let currentMonth: AgentUsageTokenTotals
     let allTime: AgentUsageTokenTotals
+    /// Portion of `allTime` backed by parsed records with a real token
+    /// breakdown. The remainder may come from aggregate-only indexes such as
+    /// Codex's SQLite thread totals and must not be assigned to fake fields.
+    let allTimeDetailed: AgentUsageTokenTotals
     let estimatedAPIValueUSD: AgentUsageValueEstimate
     let dailyBuckets: [AgentUsageDailyBucket]
     let weekdayHourHeatmap: [AgentUsageHeatmapCell]
@@ -264,6 +306,9 @@ struct AgentUsageSnapshot: Codable, Equatable, Sendable {
     let previous7DayComparison: AgentUsagePeriodComparison
     let projectRankings7Days: [AgentUsageProjectUsage]
     let projectRankingsAllTime: [AgentUsageProjectUsage]
+    let modelRankings: [AgentUsageModelUsage]
+    let recentSessions: [AgentUsageSessionUsage]
+    let sourceSummaries: [AgentUsageSourceSummary]
     let topTools: [AgentUsageToolUsage]
     let topSkills: [AgentUsageSkillUsage]
     let tasks: AgentUsageTaskBoard
@@ -282,6 +327,7 @@ struct AgentUsageSnapshot: Codable, Equatable, Sendable {
             last7Days: .zero,
             currentMonth: .zero,
             allTime: .zero,
+            allTimeDetailed: .zero,
             estimatedAPIValueUSD: .zero,
             dailyBuckets: [],
             weekdayHourHeatmap: [],
@@ -289,6 +335,9 @@ struct AgentUsageSnapshot: Codable, Equatable, Sendable {
             previous7DayComparison: AgentUsagePeriodComparison(current: .zero, previous: .zero, changePercent: nil, isNewActivity: false),
             projectRankings7Days: [],
             projectRankingsAllTime: [],
+            modelRankings: [],
+            recentSessions: [],
+            sourceSummaries: [],
             topTools: [],
             topSkills: [],
             tasks: .empty,
@@ -312,6 +361,8 @@ enum AgentUsageScanPhase: String, Codable, Equatable, Sendable {
     case readingCodexDatabase
     case scanningCodexSessions
     case scanningClaudeTranscripts
+    case readingOpenCodeDatabase
+    case scanningOpenClawSessions
     case readingTasks
     case aggregating
     case completed
@@ -337,6 +388,12 @@ struct AgentUsageDebugProbe: Codable, Equatable, Sendable {
     let tokenEventCount: Int
     let todayTokens: Int64
     let last7DaysTokens: Int64
+    let allTimeTokens: Int64
+    let allTimeDetailedTokens: Int64
+    let allTimeUnattributedTokens: Int64
+    let sourceAllTimeTokens: [String: Int64]
+    let sourceDetailedTokens: [String: Int64]
+    let sourceTokenEventCounts: [String: Int]
     let diagnosticCodes: [String]
     let selfTestFailures: [String]
     let error: String?
@@ -389,6 +446,7 @@ final class AgentUsageInsightsService: ObservableObject {
     private var lastRefreshAt: Date?
 
     private init(defaults: UserDefaults = .standard) {
+        Self.retireLegacyTokenScopeCache()
         let initialScope = defaults.string(forKey: Self.scopeDefaultsKey)
             .flatMap(AgentUsageScope.init(rawValue:)) ?? .combined
         let initialTimeZoneMode = AgentUsageTimeZoneMode(
@@ -399,7 +457,16 @@ final class AgentUsageInsightsService: ObservableObject {
         snapshot = .empty(scope: initialScope, timeZone: initialTimeZoneMode.resolvedTimeZone)
     }
 
+    nonisolated private static func retireLegacyTokenScopeCache() {
+        // The old TokenScope cache was derived from a second scanner with a
+        // different file cap and token arithmetic. Bookmarks are intentionally
+        // preserved; only the conflicting derived cache is retired.
+        let url = URL(fileURLWithPath: SandboxPaths.shared.tokenScopeCachePath)
+        try? FileManager.default.removeItem(at: url)
+    }
+
     func startScheduling() {
+        Self.retireLegacyTokenScopeCache()
         guard scheduler == nil else { return }
         refresh()
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
@@ -419,6 +486,15 @@ final class AgentUsageInsightsService: ObservableObject {
     func setApplicationActive(_ active: Bool) {
         applicationIsActive = active
         if active { refreshIfDue() }
+    }
+
+    /// Returns a stable scope snapshot without changing the user's filter.
+    /// Overview uses `.combined` so switching the analytics page to Codex or
+    /// Claude cannot silently change the global headline.
+    func snapshot(for scope: AgentUsageScope) -> AgentUsageSnapshot {
+        if let value = snapshots[scope] { return value }
+        if snapshot.scope == scope { return snapshot }
+        return .empty(scope: scope, timeZone: timeZoneMode.resolvedTimeZone)
     }
 
     func refresh(force: Bool = false) {
@@ -564,6 +640,19 @@ private extension AgentUsageSnapshot {
             scheduled: redactTasks(tasks.scheduled, category: .scheduled),
             done: redactTasks(tasks.done, category: .done)
         )
+        let redactedSessions = recentSessions.enumerated().map { index, value in
+            AgentUsageSessionUsage(
+                id: "session-\(index + 1)",
+                scope: value.scope,
+                projectName: "Project \(index + 1)",
+                fullProjectPath: "",
+                model: value.model,
+                tokens: value.tokens,
+                estimatedAPIValueUSD: value.estimatedAPIValueUSD,
+                lastActiveAt: value.lastActiveAt,
+                sourceQuality: value.sourceQuality
+            )
+        }
         return AgentUsageSnapshot(
             scope: scope,
             generatedAt: generatedAt,
@@ -574,6 +663,7 @@ private extension AgentUsageSnapshot {
             last7Days: last7Days,
             currentMonth: currentMonth,
             allTime: allTime,
+            allTimeDetailed: allTimeDetailed,
             estimatedAPIValueUSD: estimatedAPIValueUSD,
             dailyBuckets: dailyBuckets,
             weekdayHourHeatmap: weekdayHourHeatmap,
@@ -581,6 +671,9 @@ private extension AgentUsageSnapshot {
             previous7DayComparison: previous7DayComparison,
             projectRankings7Days: redactProjects(projectRankings7Days),
             projectRankingsAllTime: redactProjects(projectRankingsAllTime),
+            modelRankings: modelRankings,
+            recentSessions: redactedSessions,
+            sourceSummaries: sourceSummaries,
             topTools: topTools,
             topSkills: topSkills.map {
                 AgentUsageSkillUsage(
@@ -708,7 +801,7 @@ private enum AgentUsageLoaderError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noLocalSources: return "No Codex or Claude Code local usage sources were found."
+        case .noLocalSources: return "No trusted local Agent token sources were found."
         case let .unexpected(message): return message
         }
     }
@@ -721,6 +814,56 @@ private enum AgentUsageMath {
         let (value, overflow) = lhs.addingReportingOverflow(rhs)
         if !overflow { return value }
         return rhs >= 0 ? Int64.max : Int64.min
+    }
+}
+
+/// Normalizes providers whose native schema reports cache and reasoning as
+/// separate, non-overlapping components. TraceFence stores `input` inclusive
+/// of cached input and `output` inclusive of reasoning so the four UI rows can
+/// remain mutually exclusive (`input - cached`, `cached`, `output - reasoning`,
+/// `reasoning`) without double counting.
+private enum AgentUsageExplicitTokenNormalizer {
+    static func isZeroUsage(
+        input: Int64,
+        cacheRead: Int64,
+        cacheWrite: Int64,
+        output: Int64,
+        reasoning: Int64,
+        reportedTotal: Int64?
+    ) -> Bool {
+        input == 0
+            && cacheRead == 0
+            && cacheWrite == 0
+            && output == 0
+            && reasoning == 0
+            && (reportedTotal ?? 0) == 0
+    }
+
+    static func totals(
+        input: Int64,
+        cacheRead: Int64,
+        cacheWrite: Int64,
+        output: Int64,
+        reasoning: Int64,
+        reportedTotal: Int64?
+    ) -> AgentUsageTokenTotals? {
+        let fields = [input, cacheRead, cacheWrite, output, reasoning]
+        guard fields.allSatisfy({ $0 >= 0 }), (reportedTotal ?? 0) >= 0 else { return nil }
+        let cached = AgentUsageMath.saturatingAdd(cacheRead, cacheWrite)
+        let inclusiveInput = AgentUsageMath.saturatingAdd(input, cached)
+        let inclusiveOutput = AgentUsageMath.saturatingAdd(output, reasoning)
+        let componentTotal = AgentUsageMath.saturatingAdd(inclusiveInput, inclusiveOutput)
+        guard componentTotal > 0 else { return nil }
+        if let reportedTotal, reportedTotal > 0, reportedTotal != componentTotal {
+            return nil
+        }
+        return AgentUsageTokenTotals(
+            input: inclusiveInput,
+            cached: cached,
+            output: inclusiveOutput,
+            reasoning: reasoning,
+            total: reportedTotal.flatMap { $0 > 0 ? $0 : nil } ?? componentTotal
+        )
     }
 }
 
@@ -819,6 +962,11 @@ private enum AgentUsagePricingCatalog {
                 return AgentUsageModelPrice(inputPerMillion: 0.8, cachedInputPerMillion: 0.08, outputPerMillion: 4)
             }
             return nil
+        case .openCode, .openClaw:
+            // These providers expose an explicit per-message cost when their
+            // runtime has one. Unknown models are never assigned a guessed
+            // catalog price here.
+            return nil
         case .combined:
             return nil
         }
@@ -856,6 +1004,26 @@ private enum AgentUsagePathPolicy {
             .standardizedFileURL.resolvingSymlinksInPath()
     }
 
+    static var openCodeRoot: URL {
+        home.appendingPathComponent(".local/share/opencode", isDirectory: true)
+            .standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    static var miniMaxRoot: URL {
+        home.appendingPathComponent(".minimax", isDirectory: true)
+            .standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    static var qClawRoot: URL {
+        home.appendingPathComponent(".qclaw", isDirectory: true)
+            .standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    static var openClawRoot: URL {
+        home.appendingPathComponent(".openclaw", isDirectory: true)
+            .standardizedFileURL.resolvingSymlinksInPath()
+    }
+
     static var allowedSkillRoots: [URL] {
         [
             codexRoot.appendingPathComponent("skills", isDirectory: true),
@@ -886,6 +1054,18 @@ private enum AgentUsagePathPolicy {
             .standardizedFileURL.resolvingSymlinksInPath()
         guard normalized.pathExtension.lowercased() == "jsonl",
               isContained(normalized, in: projects),
+              isSafe(normalized) else { return nil }
+        return normalized
+    }
+
+    static func normalizedOpenClawTranscriptURL(_ url: URL) -> URL? {
+        let normalized = url.standardizedFileURL.resolvingSymlinksInPath()
+        let roots = [qClawRoot, openClawRoot]
+        guard normalized.pathExtension.lowercased() == "jsonl",
+              !normalized.lastPathComponent.contains(".reset."),
+              !normalized.lastPathComponent.contains(".deleted."),
+              normalized.pathComponents.contains("sessions"),
+              roots.contains(where: { isContained(normalized, in: $0) }),
               isSafe(normalized) else { return nil }
         return normalized
     }
@@ -1038,7 +1218,7 @@ private enum AgentUsageFileCacheStore {
         switch scope {
         case .codex: name = codexName
         case .claude: name = claudeName
-        case .combined: return nil
+        case .openCode, .openClaw, .combined: return nil
         }
         return URL(fileURLWithPath: SandboxPaths.shared.dataDirectory, isDirectory: true)
             .appendingPathComponent(name)
@@ -1287,6 +1467,30 @@ private struct AgentUsageCodexThread {
     let title: String?
 }
 
+private struct AgentUsageOpenCodeMessageRow {
+    let id: String
+    let sessionID: String
+    let createdAt: Date?
+    let directory: String
+    let data: String
+}
+
+private struct AgentUsageMiniMaxTokenRow {
+    let usageID: String
+    let turnID: String?
+    let sessionID: String
+    let createdAt: Date?
+    let model: String?
+    let directory: String
+    let input: Int64
+    let output: Int64
+    let reasoning: Int64
+    let cacheRead: Int64
+    let cacheWrite: Int64
+    let raw: String?
+    let costUSD: Double?
+}
+
 private final class AgentUsageSQLiteReader {
     private var database: OpaquePointer?
 
@@ -1344,8 +1548,101 @@ private final class AgentUsageSQLiteReader {
         }
     }
 
+    func openCodeMessages() -> [AgentUsageOpenCodeMessageRow]? {
+        guard let messageColumns = columnNames(table: "message"),
+              let sessionColumns = columnNames(table: "session"),
+              messageColumns.isSuperset(of: ["id", "session_id", "time_created", "data"]),
+              sessionColumns.isSuperset(of: ["id", "directory"]) else { return nil }
+        let sql = """
+        SELECT m.id AS message_id,
+               m.session_id AS session_id,
+               m.time_created AS time_created,
+               m.data AS data,
+               COALESCE(s.directory, '') AS directory
+        FROM message AS m
+        LEFT JOIN session AS s ON s.id = m.session_id
+        ORDER BY m.time_created ASC, m.id ASC;
+        """
+        guard let rows = rows(sql) else { return nil }
+        return rows.compactMap { row in
+            guard let id = row.string("message_id"),
+                  let sessionID = row.string("session_id"),
+                  let data = row.string("data") else { return nil }
+            return AgentUsageOpenCodeMessageRow(
+                id: id,
+                sessionID: sessionID,
+                createdAt: AgentUsageDateParser.epoch(row.int64("time_created")),
+                directory: row.string("directory") ?? "",
+                data: data
+            )
+        }
+    }
+
+    func miniMaxTokenRows() -> [AgentUsageMiniMaxTokenRow]? {
+        guard let usageColumns = columnNames(table: "token_usage"),
+              usageColumns.isSuperset(of: [
+                "id", "session_id", "ts", "input_tokens", "output_tokens",
+                "reasoning_tokens", "cache_read_tokens", "cache_write_tokens"
+              ]) else { return nil }
+        let hasSessions = columnNames(table: "sessions")?.isSuperset(of: ["session_id", "workspace_dir"]) == true
+        let join = hasSessions
+            ? "LEFT JOIN sessions AS s ON s.session_id = t.session_id"
+            : ""
+        let directory = hasSessions ? "COALESCE(s.workspace_dir, '')" : "''"
+        func expression(_ name: String, fallback: String = "NULL") -> String {
+            usageColumns.contains(name) ? "t.\(name)" : fallback
+        }
+        let sql = """
+        SELECT t.id AS usage_id,
+               \(expression("turn_id")) AS turn_id,
+               t.session_id AS session_id,
+               t.ts AS ts,
+               \(expression("model")) AS model,
+               \(directory) AS directory,
+               t.input_tokens AS input_tokens,
+               t.output_tokens AS output_tokens,
+               t.reasoning_tokens AS reasoning_tokens,
+               t.cache_read_tokens AS cache_read_tokens,
+               t.cache_write_tokens AS cache_write_tokens,
+               \(expression("raw")) AS raw,
+               \(expression("cost_usd")) AS cost_usd
+        FROM token_usage AS t
+        \(join)
+        ORDER BY t.ts ASC, t.id ASC;
+        """
+        guard let rows = rows(sql) else { return nil }
+        return rows.compactMap { row in
+            guard let usageID = row.string("usage_id"),
+                  let sessionID = row.string("session_id") else { return nil }
+            return AgentUsageMiniMaxTokenRow(
+                usageID: usageID,
+                turnID: row.string("turn_id").flatMap { $0.isEmpty ? nil : $0 },
+                sessionID: sessionID,
+                createdAt: AgentUsageDateParser.epoch(row.int64("ts")),
+                model: row.string("model"),
+                directory: row.string("directory") ?? "",
+                input: max(0, row.int64("input_tokens") ?? 0),
+                output: max(0, row.int64("output_tokens") ?? 0),
+                reasoning: max(0, row.int64("reasoning_tokens") ?? 0),
+                cacheRead: max(0, row.int64("cache_read_tokens") ?? 0),
+                cacheWrite: max(0, row.int64("cache_write_tokens") ?? 0),
+                raw: row.string("raw"),
+                costUSD: row.double("cost_usd")
+            )
+        }
+    }
+
     private func columnNames(table: String) -> Set<String>? {
-        guard table == "threads", let rows = rows("PRAGMA table_info(threads);") else { return nil }
+        let sql: String
+        switch table {
+        case "threads": sql = "PRAGMA table_info(threads);"
+        case "message": sql = "PRAGMA table_info(message);"
+        case "session": sql = "PRAGMA table_info(session);"
+        case "token_usage": sql = "PRAGMA table_info(token_usage);"
+        case "sessions": sql = "PRAGMA table_info(sessions);"
+        default: return nil
+        }
+        guard let rows = rows(sql) else { return nil }
         return Set(rows.compactMap { $0.string("name") })
     }
 
@@ -1408,6 +1705,15 @@ private struct AgentUsageSQLiteRow {
         case let .integer(value): return value
         case let .double(value): return Int64(value)
         case let .text(value): return Int64(value)
+        default: return nil
+        }
+    }
+
+    func double(_ key: String) -> Double? {
+        switch values[key] {
+        case let .integer(value): return Double(value)
+        case let .double(value): return value
+        case let .text(value): return Double(value)
         default: return nil
         }
     }
@@ -1758,6 +2064,12 @@ private enum AgentUsageValues {
     static func int64(_ value: Any?) -> Int64? {
         if let value = value as? NSNumber { return value.int64Value }
         if let value = value as? String { return Int64(value) }
+        return nil
+    }
+
+    static func double(_ value: Any?) -> Double? {
+        if let value = value as? NSNumber { return value.doubleValue }
+        if let value = value as? String { return Double(value) }
         return nil
     }
 
@@ -2289,13 +2601,20 @@ private final class AgentUsageSecurityScopeLease {
                     scope: nil,
                     severity: .warning,
                     code: "usage_bookmark_required",
-                    message: "Choose your Codex or Claude Code data folder in TokenScope to authorize local usage analytics.",
+                    message: "Choose an Agent data folder or your home folder to authorize local usage analytics.",
                     source: nil
                 )]
             )
         }
 
-        let desiredRoots = [AgentUsagePathPolicy.codexRoot, AgentUsagePathPolicy.claudeRoot]
+        let desiredRoots = [
+            AgentUsagePathPolicy.codexRoot,
+            AgentUsagePathPolicy.claudeRoot,
+            AgentUsagePathPolicy.openCodeRoot,
+            AgentUsagePathPolicy.miniMaxRoot,
+            AgentUsagePathPolicy.qClawRoot,
+            AgentUsagePathPolicy.openClawRoot
+        ]
         var accessed: [URL] = []
         var failures = 0
         for (_, bookmark) in bookmarks.sorted(by: { $0.key < $1.key }).prefix(64) {
@@ -2328,7 +2647,7 @@ private final class AgentUsageSecurityScopeLease {
                 scope: nil,
                 severity: .warning,
                 code: "usage_bookmark_unavailable",
-                message: "The saved Codex or Claude Code folder permission is unavailable. Choose the folder again in TokenScope.",
+                message: "The saved Agent data-folder permission is unavailable. Choose the folder again in Token & Usage.",
                 source: nil
             ))
         } else if failures > 0 {
@@ -2918,11 +3237,458 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
     }
 }
 
+// MARK: - OpenCode / MiniMax provider family
+
+/// OpenCode and the MiniMax host can mirror the same turn counters into two
+/// local databases. MiniMax rows carry the OpenCode message id in `turn_id`,
+/// so this provider family normalizes both stores and counts every turn once.
+private final class AgentUsageOpenCodeProvider: @unchecked Sendable {
+    private let fileManager = FileManager.default
+    private let progress: @Sendable (AgentUsageScanProgress) -> Void
+
+    init(progress: @escaping @Sendable (AgentUsageScanProgress) -> Void) {
+        self.progress = progress
+    }
+
+    func load() -> AgentUsageRuntimeAggregate {
+        var aggregate = AgentUsageRuntimeAggregate(scope: .openCode)
+        let openCodeDatabase = AgentUsagePathPolicy.openCodeRoot.appendingPathComponent("opencode.db")
+        let miniMaxDatabase = AgentUsagePathPolicy.miniMaxRoot.appendingPathComponent("sqlite.db")
+        let openCodeReadable = isReadableDatabase(openCodeDatabase, inside: AgentUsagePathPolicy.openCodeRoot)
+        let miniMaxReadable = isReadableDatabase(miniMaxDatabase, inside: AgentUsagePathPolicy.miniMaxRoot)
+        let sourceCount = (openCodeReadable ? 1 : 0) + (miniMaxReadable ? 1 : 0)
+        aggregate.available = sourceCount > 0
+
+        progress(AgentUsageScanProgress(
+            phase: .readingOpenCodeDatabase,
+            current: 0,
+            total: sourceCount,
+            currentSource: nil,
+            message: "Reading trusted OpenCode / MiniMax token records"
+        ))
+
+        var seenCanonicalIDs = Set<String>()
+        var invalidRows = 0
+        var mirroredRows = 0
+        var readFailures = 0
+        var completedSources = 0
+
+        // Prefer MiniMax-hosted rows when both stores contain the same turn:
+        // they retain the same native counters plus host/workspace metadata.
+        if miniMaxReadable {
+            if let rows = AgentUsageSQLiteReader(path: miniMaxDatabase.path)?.miniMaxTokenRows() {
+                aggregate.parsedFileCount += 1
+                for row in rows {
+                    let reportedTotal = miniMaxReportedTotal(row.raw)
+                    if AgentUsageExplicitTokenNormalizer.isZeroUsage(
+                        input: row.input,
+                        cacheRead: row.cacheRead,
+                        cacheWrite: row.cacheWrite,
+                        output: row.output,
+                        reasoning: row.reasoning,
+                        reportedTotal: reportedTotal
+                    ) {
+                        continue
+                    }
+                    guard let date = row.createdAt,
+                          let totals = AgentUsageExplicitTokenNormalizer.totals(
+                            input: row.input,
+                            cacheRead: row.cacheRead,
+                            cacheWrite: row.cacheWrite,
+                            output: row.output,
+                            reasoning: row.reasoning,
+                            reportedTotal: reportedTotal
+                          ) else {
+                        invalidRows += 1
+                        continue
+                    }
+                    let canonicalID = row.turnID ?? "minimax:\(row.usageID)"
+                    guard seenCanonicalIDs.insert(canonicalID).inserted else {
+                        mirroredRows += 1
+                        continue
+                    }
+                    let cost = max(0, row.costUSD ?? 0)
+                    aggregate.events.append(AgentUsageEvent(
+                        id: AgentUsagePrivacy.digest("opencode-family:" + canonicalID),
+                        date: date,
+                        tokens: totals,
+                        estimatedCostUSD: cost,
+                        priceKnown: row.costUSD != nil,
+                        model: row.model,
+                        projectPath: row.directory,
+                        sessionID: row.sessionID
+                    ))
+                }
+            } else {
+                readFailures += 1
+            }
+            completedSources += 1
+            progress(AgentUsageScanProgress(
+                phase: .readingOpenCodeDatabase,
+                current: completedSources,
+                total: sourceCount,
+                currentSource: "MiniMax",
+                message: "Read MiniMax-hosted OpenCode token records"
+            ))
+        }
+
+        if openCodeReadable {
+            if let rows = AgentUsageSQLiteReader(path: openCodeDatabase.path)?.openCodeMessages() {
+                aggregate.parsedFileCount += 1
+                for row in rows {
+                    guard let data = row.data.data(using: .utf8),
+                          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                        invalidRows += 1
+                        continue
+                    }
+                    guard AgentUsageValues.string(object["role"]) == "assistant",
+                          let tokenObject = object["tokens"] as? [String: Any] else { continue }
+                    guard let cacheObject = tokenObject["cache"] as? [String: Any] else {
+                        invalidRows += 1
+                        continue
+                    }
+                    let input = AgentUsageValues.int64(tokenObject["input"]) ?? 0
+                    let cacheRead = AgentUsageValues.int64(cacheObject["read"]) ?? 0
+                    let cacheWrite = AgentUsageValues.int64(cacheObject["write"]) ?? 0
+                    let output = AgentUsageValues.int64(tokenObject["output"]) ?? 0
+                    let reasoning = AgentUsageValues.int64(tokenObject["reasoning"]) ?? 0
+                    let reportedTotal = AgentUsageValues.int64(tokenObject["total"])
+                    if AgentUsageExplicitTokenNormalizer.isZeroUsage(
+                        input: input,
+                        cacheRead: cacheRead,
+                        cacheWrite: cacheWrite,
+                        output: output,
+                        reasoning: reasoning,
+                        reportedTotal: reportedTotal
+                    ) {
+                        continue
+                    }
+                    guard let date = row.createdAt,
+                          let totals = AgentUsageExplicitTokenNormalizer.totals(
+                            input: input,
+                            cacheRead: cacheRead,
+                            cacheWrite: cacheWrite,
+                            output: output,
+                            reasoning: reasoning,
+                            reportedTotal: reportedTotal
+                          ) else {
+                        invalidRows += 1
+                        continue
+                    }
+                    guard seenCanonicalIDs.insert(row.id).inserted else {
+                        mirroredRows += 1
+                        continue
+                    }
+                    let costValue = AgentUsageValues.double(object["cost"])
+                    let model = AgentUsageValues.string(object["modelID"])
+                        ?? AgentUsageValues.string(object["model"])
+                    aggregate.events.append(AgentUsageEvent(
+                        id: AgentUsagePrivacy.digest("opencode-family:" + row.id),
+                        date: date,
+                        tokens: totals,
+                        estimatedCostUSD: max(0, costValue ?? 0),
+                        priceKnown: costValue != nil,
+                        model: model,
+                        projectPath: row.directory,
+                        sessionID: row.sessionID
+                    ))
+                }
+            } else {
+                readFailures += 1
+            }
+            completedSources += 1
+            progress(AgentUsageScanProgress(
+                phase: .readingOpenCodeDatabase,
+                current: completedSources,
+                total: sourceCount,
+                currentSource: "OpenCode",
+                message: "Read standalone OpenCode token records"
+            ))
+        }
+
+        aggregate.tokenEventCount = aggregate.events.count
+        aggregate.sourceQuality = aggregate.events.isEmpty ? .unavailable : .detailed
+        if !aggregate.available {
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .openCode,
+                severity: .info,
+                code: "opencode_sources_missing",
+                message: "No readable OpenCode or MiniMax token database was found.",
+                source: nil
+            ))
+        } else if aggregate.events.isEmpty {
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .openCode,
+                severity: .info,
+                code: "opencode_usage_empty",
+                message: "OpenCode / MiniMax databases were found, but they contain no nonzero native token records.",
+                source: nil
+            ))
+        }
+        if mirroredRows > 0 {
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .openCode,
+                severity: .info,
+                code: "opencode_mirror_deduplicated",
+                message: "\(mirroredRows) MiniMax-hosted OpenCode turns were mirrored across local databases and counted once.",
+                source: nil
+            ))
+        }
+        if invalidRows > 0 {
+            aggregate.partial = true
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .openCode,
+                severity: .warning,
+                code: "opencode_usage_inconsistent",
+                message: "\(invalidRows) OpenCode / MiniMax token rows failed the native total consistency check and were skipped.",
+                source: nil
+            ))
+        }
+        if readFailures > 0 {
+            aggregate.partial = true
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .openCode,
+                severity: .warning,
+                code: "opencode_database_read_failed",
+                message: "\(readFailures) OpenCode / MiniMax token databases could not be read.",
+                source: nil
+            ))
+        }
+        return aggregate
+    }
+
+    private func isReadableDatabase(_ url: URL, inside root: URL) -> Bool {
+        let normalized = url.standardizedFileURL.resolvingSymlinksInPath()
+        return AgentUsagePathPolicy.isContained(normalized, in: root)
+            && fileManager.isReadableFile(atPath: normalized.path)
+    }
+
+    private func miniMaxReportedTotal(_ raw: String?) -> Int64? {
+        guard let raw, let data = raw.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return AgentUsageValues.int64(object["total"])
+    }
+}
+
+// MARK: - OpenClaw / QClaw provider family
+
+private final class AgentUsageOpenClawProvider: @unchecked Sendable {
+    private let fileManager = FileManager.default
+    private let progress: @Sendable (AgentUsageScanProgress) -> Void
+    private let dateParser = AgentUsageDateParser()
+
+    init(progress: @escaping @Sendable (AgentUsageScanProgress) -> Void) {
+        self.progress = progress
+    }
+
+    func load() -> AgentUsageRuntimeAggregate {
+        var aggregate = AgentUsageRuntimeAggregate(scope: .openClaw)
+        let files = transcriptFiles()
+        aggregate.available = !files.isEmpty
+        progress(AgentUsageScanProgress(
+            phase: .scanningOpenClawSessions,
+            current: 0,
+            total: files.count,
+            currentSource: nil,
+            message: "Scanning native OpenClaw / QClaw usage records"
+        ))
+
+        var seenEventIDs = Set<String>()
+        var invalidRows = 0
+        var duplicateRows = 0
+        var parseFailures = 0
+
+        for (index, file) in files.enumerated() {
+            if Task.isCancelled { break }
+            if index == 0 || index == files.count - 1 || index % 8 == 0 {
+                progress(AgentUsageScanProgress(
+                    phase: .scanningOpenClawSessions,
+                    current: index,
+                    total: files.count,
+                    currentSource: file.lastPathComponent,
+                    message: "Reading OpenClaw / QClaw session \(index + 1) of \(files.count)"
+                ))
+            }
+            var sessionID = file.deletingPathExtension().lastPathComponent
+            var projectPath = ""
+            var localEvents: [AgentUsageEvent] = []
+            do {
+                let stats = try AgentUsageJSONStream.forEachLine(
+                    at: file,
+                    maximumLineBytes: 8 * 1_024 * 1_024
+                ) { line in
+                    guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                          let type = AgentUsageValues.string(object["type"]) else { return }
+                    if type == "session" {
+                        if let value = AgentUsageValues.string(object["id"]) { sessionID = value }
+                        if let value = AgentUsageValues.string(object["cwd"]) { projectPath = value }
+                        return
+                    }
+                    guard type == "message",
+                          let message = object["message"] as? [String: Any],
+                          AgentUsageValues.string(message["role"]) == "assistant",
+                          let usage = message["usage"] as? [String: Any] else { return }
+                    let input = AgentUsageValues.int64(usage["input"]) ?? 0
+                    let cacheRead = AgentUsageValues.int64(usage["cacheRead"]) ?? 0
+                    let cacheWrite = AgentUsageValues.int64(usage["cacheWrite"]) ?? 0
+                    let output = AgentUsageValues.int64(usage["output"]) ?? 0
+                    let reasoning = AgentUsageValues.int64(usage["reasoning"]) ?? 0
+                    let reportedTotal = AgentUsageValues.int64(usage["totalTokens"])
+                    if AgentUsageExplicitTokenNormalizer.isZeroUsage(
+                        input: input,
+                        cacheRead: cacheRead,
+                        cacheWrite: cacheWrite,
+                        output: output,
+                        reasoning: reasoning,
+                        reportedTotal: reportedTotal
+                    ) {
+                        return
+                    }
+                    guard let rawEventID = AgentUsageValues.string(object["id"]),
+                          let date = dateParser.date(object["timestamp"])
+                            ?? dateParser.date(message["timestamp"]),
+                          let totals = AgentUsageExplicitTokenNormalizer.totals(
+                            input: input,
+                            cacheRead: cacheRead,
+                            cacheWrite: cacheWrite,
+                            output: output,
+                            reasoning: reasoning,
+                            reportedTotal: reportedTotal
+                          ) else {
+                        invalidRows += 1
+                        return
+                    }
+                    guard seenEventIDs.insert(rawEventID).inserted else {
+                        duplicateRows += 1
+                        return
+                    }
+                    let costValue = (usage["cost"] as? [String: Any])
+                        .flatMap { AgentUsageValues.double($0["total"]) }
+                    localEvents.append(AgentUsageEvent(
+                        id: AgentUsagePrivacy.digest("openclaw-family:" + rawEventID),
+                        date: date,
+                        tokens: totals,
+                        estimatedCostUSD: max(0, costValue ?? 0),
+                        priceKnown: costValue != nil,
+                        model: AgentUsageValues.string(message["model"]),
+                        projectPath: projectPath,
+                        sessionID: sessionID
+                    ))
+                }
+                if stats.oversizedRelevantLineCount > 0 {
+                    invalidRows += stats.oversizedRelevantLineCount
+                }
+                // Rehydrate after the full pass so session metadata remains
+                // correct even if it appears after an assistant record.
+                aggregate.events.append(contentsOf: localEvents.map { event in
+                    AgentUsageEvent(
+                        id: event.id,
+                        date: event.date,
+                        tokens: event.tokens,
+                        estimatedCostUSD: event.estimatedCostUSD,
+                        priceKnown: event.priceKnown,
+                        model: event.model,
+                        projectPath: projectPath,
+                        sessionID: sessionID
+                    )
+                })
+                aggregate.parsedFileCount += 1
+            } catch {
+                parseFailures += 1
+            }
+        }
+
+        aggregate.tokenEventCount = aggregate.events.count
+        aggregate.sourceQuality = aggregate.events.isEmpty ? .unavailable : .detailed
+        if files.isEmpty {
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .openClaw,
+                severity: .info,
+                code: "openclaw_sessions_missing",
+                message: "No readable OpenClaw / QClaw native session usage files were found.",
+                source: nil
+            ))
+        } else if aggregate.events.isEmpty {
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .openClaw,
+                severity: .info,
+                code: "openclaw_usage_empty",
+                message: "OpenClaw / QClaw sessions were found, but no nonzero native message.usage records were available.",
+                source: nil
+            ))
+        }
+        if duplicateRows > 0 {
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .openClaw,
+                severity: .info,
+                code: "openclaw_events_deduplicated",
+                message: "\(duplicateRows) mirrored OpenClaw / QClaw usage events were counted once by native event id.",
+                source: nil
+            ))
+        }
+        if invalidRows > 0 {
+            aggregate.partial = true
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .openClaw,
+                severity: .warning,
+                code: "openclaw_usage_inconsistent",
+                message: "\(invalidRows) OpenClaw / QClaw usage rows lacked a stable id/time or failed the native total consistency check.",
+                source: nil
+            ))
+        }
+        if parseFailures > 0 {
+            aggregate.partial = true
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .openClaw,
+                severity: .warning,
+                code: "openclaw_session_parse_partial",
+                message: "\(parseFailures) OpenClaw / QClaw session files could not be parsed.",
+                source: nil
+            ))
+        }
+        progress(AgentUsageScanProgress(
+            phase: .scanningOpenClawSessions,
+            current: files.count,
+            total: files.count,
+            currentSource: nil,
+            message: "OpenClaw / QClaw native usage scan complete"
+        ))
+        return aggregate
+    }
+
+    private func transcriptFiles() -> [URL] {
+        var result: [URL] = []
+        for root in [AgentUsagePathPolicy.qClawRoot, AgentUsagePathPolicy.openClawRoot] {
+            let agentsRoot = root.appendingPathComponent("agents", isDirectory: true)
+            guard let enumerator = fileManager.enumerator(
+                at: agentsRoot,
+                includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
+                options: [.skipsPackageDescendants]
+            ) else { continue }
+            var visited = 0
+            for case let url as URL in enumerator {
+                visited += 1
+                if visited > 50_000 || result.count >= 2_000 {
+                    enumerator.skipDescendants()
+                    break
+                }
+                guard let normalized = AgentUsagePathPolicy.normalizedOpenClawTranscriptURL(url) else { continue }
+                result.append(normalized)
+            }
+        }
+        return Array(Set(result.map(\.path)))
+            .map(URL.init(fileURLWithPath:))
+            .sorted { $0.path < $1.path }
+    }
+}
+
 // MARK: - Snapshot aggregation
 
 private enum AgentUsageProviderLoadResult: Sendable {
     case codex(AgentUsageRuntimeAggregate)
     case claude(AgentUsageRuntimeAggregate)
+    case openCode(AgentUsageRuntimeAggregate)
+    case openClaw(AgentUsageRuntimeAggregate)
 }
 
 private struct AgentUsageInsightsLoader: Sendable {
@@ -2944,6 +3710,8 @@ private struct AgentUsageInsightsLoader: Sendable {
         let skillIndex = AgentUsageSkillIndex.shared
         var codex = AgentUsageRuntimeAggregate(scope: .codex)
         var claude = AgentUsageRuntimeAggregate(scope: .claude)
+        var openCode = AgentUsageRuntimeAggregate(scope: .openCode)
+        var openClaw = AgentUsageRuntimeAggregate(scope: .openClaw)
 
         await withTaskGroup(of: AgentUsageProviderLoadResult.self) { group in
             group.addTask(priority: .utility) {
@@ -2960,10 +3728,18 @@ private struct AgentUsageInsightsLoader: Sendable {
                     progress: progress
                 ).load())
             }
+            group.addTask(priority: .utility) {
+                .openCode(AgentUsageOpenCodeProvider(progress: progress).load())
+            }
+            group.addTask(priority: .utility) {
+                .openClaw(AgentUsageOpenClawProvider(progress: progress).load())
+            }
             for await result in group {
                 switch result {
                 case let .codex(value): codex = value
                 case let .claude(value): claude = value
+                case let .openCode(value): openCode = value
+                case let .openClaw(value): openClaw = value
                 }
             }
         }
@@ -2974,18 +3750,23 @@ private struct AgentUsageInsightsLoader: Sendable {
         if !lease.diagnostics.isEmpty {
             codex.diagnostics.append(contentsOf: lease.diagnostics)
             claude.diagnostics.append(contentsOf: lease.diagnostics)
+            openCode.diagnostics.append(contentsOf: lease.diagnostics)
+            openClaw.diagnostics.append(contentsOf: lease.diagnostics)
             codex.partial = true
             claude.partial = true
+            openCode.partial = true
+            openClaw.partial = true
         }
         progress(AgentUsageScanProgress(
             phase: .aggregating,
             current: 0,
-            total: 3,
+            total: 5,
             currentSource: nil,
             message: "Aggregating local usage metrics"
         ))
 
-        if !codex.available && !claude.available && lease.diagnostics.isEmpty {
+        if !codex.available && !claude.available && !openCode.available && !openClaw.available
+            && lease.diagnostics.isEmpty {
             return .failure(.noLocalSources)
         }
         let builder = AgentUsageSnapshotBuilder(context: context, skillIndex: skillIndex)
@@ -2993,7 +3774,7 @@ private struct AgentUsageInsightsLoader: Sendable {
         progress(AgentUsageScanProgress(
             phase: .aggregating,
             current: 1,
-            total: 3,
+            total: 5,
             currentSource: "Codex",
             message: "Aggregated Codex usage"
         ))
@@ -3001,14 +3782,32 @@ private struct AgentUsageInsightsLoader: Sendable {
         progress(AgentUsageScanProgress(
             phase: .aggregating,
             current: 2,
-            total: 3,
+            total: 5,
             currentSource: "Claude Code",
             message: "Aggregated Claude Code usage"
         ))
-        let combinedSnapshot = builder.build(scope: .combined, providers: [codex, claude])
+        let openCodeSnapshot = builder.build(scope: .openCode, providers: [openCode])
+        progress(AgentUsageScanProgress(
+            phase: .aggregating,
+            current: 3,
+            total: 5,
+            currentSource: "OpenCode / MiniMax",
+            message: "Aggregated OpenCode / MiniMax usage"
+        ))
+        let openClawSnapshot = builder.build(scope: .openClaw, providers: [openClaw])
+        progress(AgentUsageScanProgress(
+            phase: .aggregating,
+            current: 4,
+            total: 5,
+            currentSource: "OpenClaw / QClaw",
+            message: "Aggregated OpenClaw / QClaw usage"
+        ))
+        let combinedSnapshot = builder.build(scope: .combined, providers: [codex, claude, openCode, openClaw])
         return .success([
             .codex: codexSnapshot,
             .claude: claudeSnapshot,
+            .openCode: openCodeSnapshot,
+            .openClaw: openClawSnapshot,
             .combined: combinedSnapshot
         ])
     }
@@ -3027,19 +3826,12 @@ private struct AgentUsageSnapshotBuilder {
         let today = totals(todayEvents)
         let last7Days = totals(sevenDayEvents)
         let currentMonth = totals(monthEvents)
-        var allTime = AgentUsageTokenTotals.zero
-        for provider in providers {
-            var providerTotal = totals(provider.events.filter {
-                $0.date <= context.now.addingTimeInterval(5 * 60)
-            })
-            let approximateTotal = provider.approximateAllTimeProjects.reduce(Int64(0)) {
-                AgentUsageMath.saturatingAdd($0, $1.tokens.total)
-            }
-            if approximateTotal > 0 {
-                providerTotal.total = max(providerTotal.total, approximateTotal)
-            }
-            allTime.add(providerTotal)
-        }
+        let allTimeReconciliation = Self.reconcileAllTime(
+            providers: providers,
+            through: context.now.addingTimeInterval(5 * 60)
+        )
+        let allTime = allTimeReconciliation.reported
+        let allTimeDetailed = allTimeReconciliation.detailed
         let previous = totals(previousEvents)
 
         let quality = sourceQuality(providers)
@@ -3065,6 +3857,7 @@ private struct AgentUsageSnapshotBuilder {
             last7Days: last7Days,
             currentMonth: currentMonth,
             allTime: allTime,
+            allTimeDetailed: allTimeDetailed,
             estimatedAPIValueUSD: AgentUsageValueEstimate(
                 todayUSD: cost(todayEvents),
                 last7DaysUSD: cost(sevenDayEvents),
@@ -3079,6 +3872,9 @@ private struct AgentUsageSnapshotBuilder {
             previous7DayComparison: comparison,
             projectRankings7Days: projectRankings(providers: providers, since: context.sevenDayStart, approximateFallback: false),
             projectRankingsAllTime: projectRankings(providers: providers, since: nil, approximateFallback: true),
+            modelRankings: modelRankings(providers),
+            recentSessions: recentSessions(providers),
+            sourceSummaries: sourceSummaries(providers),
             topTools: topTools(providers),
             topSkills: topSkills(providers),
             tasks: taskBoard(providers.flatMap(\.tasks)),
@@ -3090,6 +3886,30 @@ private struct AgentUsageSnapshotBuilder {
 
     private func totals(_ events: [AgentUsageEvent]) -> AgentUsageTokenTotals {
         events.reduce(into: .zero) { $0.add($1.tokens) }
+    }
+
+    fileprivate static func reconcileAllTime(
+        providers: [AgentUsageRuntimeAggregate],
+        through cutoff: Date
+    ) -> (reported: AgentUsageTokenTotals, detailed: AgentUsageTokenTotals) {
+        var reported = AgentUsageTokenTotals.zero
+        var detailed = AgentUsageTokenTotals.zero
+        for provider in providers {
+            let providerDetailed = provider.events
+                .filter { $0.date <= cutoff }
+                .reduce(into: AgentUsageTokenTotals.zero) { $0.add($1.tokens) }
+            detailed.add(providerDetailed)
+
+            var providerReported = providerDetailed
+            let aggregateOnlyTotal = provider.approximateAllTimeProjects.reduce(Int64(0)) {
+                AgentUsageMath.saturatingAdd($0, $1.tokens.total)
+            }
+            if aggregateOnlyTotal > 0 {
+                providerReported.total = max(providerReported.total, aggregateOnlyTotal)
+            }
+            reported.add(providerReported)
+        }
+        return (reported, detailed)
     }
 
     private func cost(_ events: [AgentUsageEvent]) -> Double {
@@ -3214,6 +4034,104 @@ private struct AgentUsageSnapshotBuilder {
                 sourceQuality: .detailed
             )
         }
+    }
+
+    private func modelRankings(_ providers: [AgentUsageRuntimeAggregate]) -> [AgentUsageModelUsage] {
+        struct Accumulator {
+            var tokens = AgentUsageTokenTotals.zero
+            var cost: Double = 0
+            var sessions = Set<String>()
+            var lastActive: Date?
+        }
+        var result: [AgentUsageModelUsage] = []
+        for provider in providers {
+            var grouped: [String: Accumulator] = [:]
+            for event in provider.events {
+                let model = event.model?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let key = (model?.isEmpty == false ? model! : "Unknown model")
+                var value = grouped[key, default: Accumulator()]
+                value.tokens.add(event.tokens)
+                value.cost += event.estimatedCostUSD
+                value.sessions.insert(event.sessionID)
+                if value.lastActive == nil || event.date > value.lastActive! { value.lastActive = event.date }
+                grouped[key] = value
+            }
+            result.append(contentsOf: grouped.map { model, value in
+                AgentUsageModelUsage(
+                    id: provider.scope.rawValue + ":" + AgentUsagePrivacy.digest(model),
+                    scope: provider.scope,
+                    model: model,
+                    tokens: value.tokens,
+                    estimatedAPIValueUSD: value.cost,
+                    sessionCount: value.sessions.count,
+                    lastActiveAt: value.lastActive,
+                    sourceQuality: provider.sourceQuality
+                )
+            })
+        }
+        return result.sorted {
+            if $0.tokens.total == $1.tokens.total {
+                return $0.model.localizedStandardCompare($1.model) == .orderedAscending
+            }
+            return $0.tokens.total > $1.tokens.total
+        }.prefix(100).map { $0 }
+    }
+
+    private func recentSessions(_ providers: [AgentUsageRuntimeAggregate]) -> [AgentUsageSessionUsage] {
+        struct Accumulator {
+            var tokens = AgentUsageTokenTotals.zero
+            var cost: Double = 0
+            var projectPath = ""
+            var model = "Unknown model"
+            var lastActive: Date?
+        }
+        var result: [AgentUsageSessionUsage] = []
+        for provider in providers {
+            var grouped: [String: Accumulator] = [:]
+            for event in provider.events {
+                var value = grouped[event.sessionID, default: Accumulator()]
+                value.tokens.add(event.tokens)
+                value.cost += event.estimatedCostUSD
+                if !event.projectPath.isEmpty { value.projectPath = event.projectPath }
+                if let model = event.model, !model.isEmpty { value.model = model }
+                if value.lastActive == nil || event.date > value.lastActive! { value.lastActive = event.date }
+                grouped[event.sessionID] = value
+            }
+            result.append(contentsOf: grouped.map { sessionID, value in
+                let component = URL(fileURLWithPath: value.projectPath).lastPathComponent
+                return AgentUsageSessionUsage(
+                    id: provider.scope.rawValue + ":" + AgentUsagePrivacy.digest(sessionID),
+                    scope: provider.scope,
+                    projectName: component.isEmpty ? "Unknown project" : component,
+                    fullProjectPath: value.projectPath,
+                    model: value.model,
+                    tokens: value.tokens,
+                    estimatedAPIValueUSD: value.cost,
+                    lastActiveAt: value.lastActive,
+                    sourceQuality: provider.sourceQuality
+                )
+            })
+        }
+        return result.sorted {
+            let left = $0.lastActiveAt ?? .distantPast
+            let right = $1.lastActiveAt ?? .distantPast
+            if left == right { return $0.tokens.total > $1.tokens.total }
+            return left > right
+        }.prefix(100).map { $0 }
+    }
+
+    private func sourceSummaries(_ providers: [AgentUsageRuntimeAggregate]) -> [AgentUsageSourceSummary] {
+        providers.map { provider in
+            AgentUsageSourceSummary(
+                scope: provider.scope,
+                available: provider.available,
+                partial: provider.partial,
+                parsedFileCount: provider.parsedFileCount,
+                tokenEventCount: provider.tokenEventCount,
+                sourceQuality: provider.sourceQuality,
+                diagnosticCount: provider.diagnostics.count
+            )
+        }.sorted { $0.scope.rawValue < $1.scope.rawValue }
     }
 
     private func topTools(_ providers: [AgentUsageRuntimeAggregate]) -> [AgentUsageToolUsage] {
@@ -3381,6 +4299,88 @@ extension AgentUsageInsightsService {
 
         expect(!AgentUsageDetailedSanity.isSuspicious(detailed: 2_000_000, approximate: 1_000_000), "normal detailed variance must remain accepted")
         expect(AgentUsageDetailedSanity.isSuspicious(detailed: 8_000_000_000, approximate: 1_000_000_000), "extreme detailed inflation must fail closed")
+
+        let explicit = AgentUsageExplicitTokenNormalizer.totals(
+            input: 100,
+            cacheRead: 30,
+            cacheWrite: 20,
+            output: 40,
+            reasoning: 10,
+            reportedTotal: 200
+        )
+        expect(explicit?.input == 150, "explicit native input must include cache components exactly once")
+        expect(explicit?.cached == 50, "explicit native cache components must be preserved")
+        expect(explicit?.output == 50, "explicit native output must include reasoning exactly once")
+        expect(explicit?.reasoning == 10, "explicit native reasoning must be preserved")
+        expect(explicit?.total == 200, "explicit native total must reconcile with its components")
+        let inconsistentExplicit = AgentUsageExplicitTokenNormalizer.totals(
+            input: 100,
+            cacheRead: 30,
+            cacheWrite: 20,
+            output: 40,
+            reasoning: 10,
+            reportedTotal: 201
+        )
+        expect(inconsistentExplicit == nil, "inconsistent explicit native totals must fail closed")
+
+        let fixtureDate = Date(timeIntervalSince1970: 1_700_000_000)
+        func fixtureProvider(
+            scope: AgentUsageScope,
+            tokens: AgentUsageTokenTotals,
+            aggregateOnlyTotal: Int64
+        ) -> AgentUsageRuntimeAggregate {
+            var provider = AgentUsageRuntimeAggregate(scope: scope)
+            provider.events = [AgentUsageEvent(
+                id: nil,
+                date: fixtureDate,
+                tokens: tokens,
+                estimatedCostUSD: 0,
+                priceKnown: false,
+                model: nil,
+                projectPath: "/fixture/\(scope.rawValue)",
+                sessionID: "fixture-\(scope.rawValue)"
+            )]
+            provider.approximateAllTimeProjects = [AgentUsageProjectUsage(
+                id: "fixture-\(scope.rawValue)",
+                name: "Fixture",
+                fullPath: "/fixture/\(scope.rawValue)",
+                tokens: AgentUsageTokenTotals(input: 0, cached: 0, output: 0, reasoning: 0, total: aggregateOnlyTotal),
+                estimatedAPIValueUSD: 0,
+                sessionCount: 1,
+                lastActiveAt: fixtureDate,
+                sourceQuality: .approximate
+            )]
+            return provider
+        }
+        let fixtureCodex = fixtureProvider(
+            scope: .codex,
+            tokens: AgentUsageTokenTotals(input: 100, cached: 80, output: 40, reasoning: 10, total: 140),
+            aggregateOnlyTotal: 1_000
+        )
+        let codexReconciliation = AgentUsageSnapshotBuilder.reconcileAllTime(
+            providers: [fixtureCodex],
+            through: fixtureDate.addingTimeInterval(1)
+        )
+        expect(codexReconciliation.reported.total == 1_000, "aggregate-only inventory must remain the all-time headline")
+        expect(codexReconciliation.detailed.total == 140, "parsed all-time detail must remain independently measurable")
+        expect(codexReconciliation.reported.total - codexReconciliation.detailed.total == 860, "unattributed all-time history must reconcile exactly")
+        expect(codexReconciliation.reported.input == codexReconciliation.detailed.input, "aggregate-only inventory must not fabricate input tokens")
+        expect(codexReconciliation.reported.output == codexReconciliation.detailed.output, "aggregate-only inventory must not fabricate output tokens")
+        expect(codexReconciliation.detailed.cached <= codexReconciliation.detailed.input, "cached input must remain a subset of input")
+        expect(codexReconciliation.detailed.reasoning <= codexReconciliation.detailed.output, "reasoning output must remain a subset of output")
+        expect(codexReconciliation.detailed.total >= AgentUsageMath.saturatingAdd(codexReconciliation.detailed.input, codexReconciliation.detailed.output), "reported detailed total must cover input plus output")
+
+        let fixtureClaude = fixtureProvider(
+            scope: .claude,
+            tokens: AgentUsageTokenTotals(input: 40, cached: 10, output: 20, reasoning: 5, total: 60),
+            aggregateOnlyTotal: 200
+        )
+        let combinedReconciliation = AgentUsageSnapshotBuilder.reconcileAllTime(
+            providers: [fixtureCodex, fixtureClaude],
+            through: fixtureDate.addingTimeInterval(1)
+        )
+        expect(combinedReconciliation.reported.total == 1_200, "combined all-time inventory must add provider headlines once")
+        expect(combinedReconciliation.detailed.total == 200, "combined parsed detail must add provider detail once")
         return failures
     }
 
@@ -3389,6 +4389,7 @@ extension AgentUsageInsightsService {
     /// This synchronous wrapper is intended for a DEBUG launch argument or a
     /// command-line regression harness, never for the main-thread UI path.
     nonisolated static func debugRunLocalUsageProbe(timeout: TimeInterval = 120) -> AgentUsageDebugProbe {
+        retireLegacyTokenScopeCache()
         let started = Date()
         let semaphore = DispatchSemaphore(value: 0)
         let box = AgentUsageProbeBox()
@@ -3403,6 +4404,7 @@ extension AgentUsageInsightsService {
             switch result {
             case let .success(snapshots):
                 let snapshot = snapshots[.combined] ?? .empty(scope: .combined, now: started)
+                let sourceSnapshots = snapshots.filter { $0.key != .combined }
                 box.set(AgentUsageDebugProbe(
                     succeeded: true,
                     elapsedMilliseconds: elapsed,
@@ -3410,6 +4412,12 @@ extension AgentUsageInsightsService {
                     tokenEventCount: snapshot.tokenEventCount,
                     todayTokens: snapshot.today.total,
                     last7DaysTokens: snapshot.last7Days.total,
+                    allTimeTokens: snapshot.allTime.total,
+                    allTimeDetailedTokens: snapshot.allTimeDetailed.total,
+                    allTimeUnattributedTokens: max(0, snapshot.allTime.total - snapshot.allTimeDetailed.total),
+                    sourceAllTimeTokens: Dictionary(uniqueKeysWithValues: sourceSnapshots.map { ($0.key.rawValue, $0.value.allTime.total) }),
+                    sourceDetailedTokens: Dictionary(uniqueKeysWithValues: sourceSnapshots.map { ($0.key.rawValue, $0.value.allTimeDetailed.total) }),
+                    sourceTokenEventCounts: Dictionary(uniqueKeysWithValues: sourceSnapshots.map { ($0.key.rawValue, $0.value.tokenEventCount) }),
                     diagnosticCodes: snapshot.diagnostics.map(\.code).sorted(),
                     selfTestFailures: selfTests,
                     error: nil
@@ -3422,6 +4430,12 @@ extension AgentUsageInsightsService {
                     tokenEventCount: 0,
                     todayTokens: 0,
                     last7DaysTokens: 0,
+                    allTimeTokens: 0,
+                    allTimeDetailedTokens: 0,
+                    allTimeUnattributedTokens: 0,
+                    sourceAllTimeTokens: [:],
+                    sourceDetailedTokens: [:],
+                    sourceTokenEventCounts: [:],
                     diagnosticCodes: [],
                     selfTestFailures: selfTests,
                     error: error.localizedDescription
@@ -3438,6 +4452,12 @@ extension AgentUsageInsightsService {
                 tokenEventCount: 0,
                 todayTokens: 0,
                 last7DaysTokens: 0,
+                allTimeTokens: 0,
+                allTimeDetailedTokens: 0,
+                allTimeUnattributedTokens: 0,
+                sourceAllTimeTokens: [:],
+                sourceDetailedTokens: [:],
+                sourceTokenEventCounts: [:],
                 diagnosticCodes: ["usage_probe_timeout"],
                 selfTestFailures: debugUsageInsightsSelfTestFailures(),
                 error: "Local usage probe timed out."

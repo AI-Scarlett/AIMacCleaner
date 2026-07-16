@@ -5,18 +5,25 @@ import UniformTypeIdentifiers
 
 // MARK: - Full dashboard
 
+enum AgentUsageInsightsMode: Equatable {
+    case tokenAnalytics
+    case projectMonitor
+}
+
 @MainActor
 struct AgentUsageInsightsView: View {
     @EnvironmentObject private var localizer: Localizer
     @ObservedObject private var service: AgentUsageInsightsService
+    let mode: AgentUsageInsightsMode
 
     @State private var projectPeriod: AgentUsageProjectPeriod = .last7Days
     @State private var fixedTimeZoneIdentifier: String
     @State private var alert: AgentUsageDashboardAlert?
 
-    init(service: AgentUsageInsightsService? = nil) {
+    init(mode: AgentUsageInsightsMode = .tokenAnalytics, service: AgentUsageInsightsService? = nil) {
         let resolvedService = service ?? AgentUsageInsightsService.shared
         self.service = resolvedService
+        self.mode = mode
         switch resolvedService.timeZoneMode {
         case let .fixed(identifier):
             _fixedTimeZoneIdentifier = State(initialValue: identifier)
@@ -29,12 +36,17 @@ struct AgentUsageInsightsView: View {
         LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             dashboardHeader
             loadStateBanner
-            tokenOverview
-            valueOverview
-            activitySection
-            rankingSection
-            taskBoardSection
-            preferencesAndDiagnostics
+            if mode == .tokenAnalytics {
+                tokenOverview
+                valueOverview
+                activitySection
+                usageRankingSection
+                modelAndSessionSection
+                preferencesAndDiagnostics
+            } else {
+                projectUsageSection
+                taskBoardSection
+            }
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.lg)
@@ -51,8 +63,8 @@ struct AgentUsageInsightsView: View {
                 return Alert(
                     title: Text(localizer.t("清除用量缓存？", en: "Clear usage caches?")),
                     message: Text(localizer.t(
-                        "只会删除派生统计缓存，不会修改 Codex、Claude Code 的会话、任务或数据库。随后会立即重新扫描。",
-                        en: "Only derived analytics caches will be removed. Codex and Claude Code sessions, tasks, and databases are never changed. A new scan will start immediately."
+                        "只会删除 TraceFence 的派生统计缓存，不会修改任何 Agent 的会话、任务、日志或数据库。随后会立即重新扫描。",
+                        en: "Only TraceFence's derived analytics caches will be removed. Agent sessions, tasks, logs, and databases are never changed. A new scan will start immediately."
                     )),
                     primaryButton: .destructive(Text(localizer.t("清除并重扫", en: "Clear & Rescan"))) {
                         service.clearCaches()
@@ -85,13 +97,10 @@ struct AgentUsageInsightsView: View {
                     .frame(width: 44, height: 44)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(localizer.t("Agent 用量洞察", en: "Agent Usage Insights"))
+                        Text(dashboardTitle)
                             .font(Theme.Font.title2Bold)
                             .foregroundStyle(Theme.Colors.textPrimary)
-                        Text(localizer.t(
-                            "本机解析 Codex 与 Claude Code 的聚合用量；不会上传会话内容。",
-                            en: "Local aggregate analytics for Codex and Claude Code. Session content never leaves this Mac."
-                        ))
+                        Text(dashboardSubtitle)
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
                     }
@@ -103,7 +112,12 @@ struct AgentUsageInsightsView: View {
                     Button {
                         service.refresh(force: true)
                     } label: {
-                        Label(localizer.t("刷新", en: "Refresh"), systemImage: "arrow.clockwise")
+                        Label(
+                            hasPendingBackfill
+                                ? localizer.t("继续补全", en: "Continue backfill")
+                                : localizer.t("刷新", en: "Refresh"),
+                            systemImage: "arrow.clockwise"
+                        )
                     }
                     .buttonStyle(BrandButtonStyle(variant: .secondary, minHeight: 30))
                     .disabled(isLoading)
@@ -113,7 +127,7 @@ struct AgentUsageInsightsView: View {
                 Divider().overlay(Theme.Colors.separator)
 
                 HStack(spacing: Theme.Spacing.sm) {
-                    Text(localizer.t("数据范围", en: "Data scope"))
+                    Text(localizer.t("可信 Token 来源", en: "Trusted token sources"))
                         .font(Theme.Font.captionMedium)
                         .foregroundStyle(Theme.Colors.textSecondary)
 
@@ -171,11 +185,19 @@ struct AgentUsageInsightsView: View {
         case .loading:
             scanProgressBanner
         case let .partial(message):
+            let warning = service.snapshot.diagnostics.first(where: { $0.severity != .info })
+            let isBackfill = warning.map(AgentUsageDiagnosticPresentation.isBackfill) ?? false
             AgentUsageMessageBanner(
                 icon: "exclamationmark.triangle.fill",
                 color: Theme.Colors.warning,
-                title: localizer.t("数据不完整", en: "Partial data"),
-                detail: message
+                title: isBackfill
+                    ? localizer.t("TraceFence 本机明细待续补", en: "TraceFence local detail backfill pending")
+                    : localizer.t("数据不完整", en: "Partial data"),
+                detail: warning.map {
+                    isBackfill
+                        ? AgentUsageDiagnosticPresentation.backfillExplanation($0, localizer: localizer)
+                        : AgentUsageDiagnosticPresentation.message($0, localizer: localizer)
+                } ?? message
             )
         case let .failed(message, previous):
             AgentUsageMessageBanner(
@@ -215,9 +237,7 @@ struct AgentUsageInsightsView: View {
                                 .foregroundStyle(Theme.Colors.textSecondary)
                         }
                     }
-                    Text(service.progress.message.isEmpty
-                         ? localizer.t("正在读取本地数据…", en: "Reading local data…")
-                         : service.progress.message)
+                    Text(localizedProgressMessage)
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
                 }
@@ -264,7 +284,10 @@ struct AgentUsageInsightsView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             sectionTitle(
                 localizer.t("Token 概览", en: "Token overview"),
-                subtitle: localizer.t("输入包含缓存输入；总量遵循各来源记录的累计口径。", en: "Input includes cached input; totals follow each source's recorded counter semantics."),
+                subtitle: localizer.t(
+                    "四个分项互不重复；总量遵循来源累计口径，缺少分项的历史量单列为“未拆分”。",
+                    en: "Breakdown fields do not overlap. Aggregate-only history is shown separately as Unattributed."
+                ),
                 icon: "number"
             )
 
@@ -274,6 +297,7 @@ struct AgentUsageInsightsView: View {
                     icon: "sun.max.fill",
                     color: Theme.Colors.accent,
                     totals: service.snapshot.today,
+                    detailedTotal: nil,
                     localizer: localizer
                 )
                 AgentUsageTokenCard(
@@ -281,6 +305,7 @@ struct AgentUsageInsightsView: View {
                     icon: "calendar.badge.clock",
                     color: Theme.Colors.info,
                     totals: service.snapshot.last7Days,
+                    detailedTotal: nil,
                     localizer: localizer
                 )
                 AgentUsageTokenCard(
@@ -288,6 +313,7 @@ struct AgentUsageInsightsView: View {
                     icon: "calendar",
                     color: Theme.Colors.purple,
                     totals: service.snapshot.currentMonth,
+                    detailedTotal: nil,
                     localizer: localizer
                 )
                 AgentUsageTokenCard(
@@ -295,6 +321,7 @@ struct AgentUsageInsightsView: View {
                     icon: "infinity",
                     color: Theme.Colors.teal,
                     totals: service.snapshot.allTime,
+                    detailedTotal: service.snapshot.allTimeDetailed.total,
                     localizer: localizer
                 )
             }
@@ -326,7 +353,7 @@ struct AgentUsageInsightsView: View {
                     valueMetric(localizer.t("今天", en: "Today"), service.snapshot.estimatedAPIValueUSD.todayUSD)
                     valueMetric(localizer.t("最近 7 天", en: "Last 7 days"), service.snapshot.estimatedAPIValueUSD.last7DaysUSD)
                     valueMetric(localizer.t("本月", en: "This month"), service.snapshot.estimatedAPIValueUSD.currentMonthUSD)
-                    valueMetric(localizer.t("全部时间", en: "All time"), service.snapshot.estimatedAPIValueUSD.allTimeUSD)
+                    valueMetric(localizer.t("全部时间（已解析）", en: "All time (parsed)"), service.snapshot.estimatedAPIValueUSD.allTimeUSD)
                 }
 
                 if !service.snapshot.estimatedAPIValueUSD.unknownModels.isEmpty {
@@ -522,18 +549,27 @@ struct AgentUsageInsightsView: View {
 
     // MARK: Rankings
 
-    private var rankingSection: some View {
+    private var usageRankingSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             sectionTitle(
-                localizer.t("使用排行", en: "Usage rankings"),
-                subtitle: localizer.t("按项目、工具与 Skill 汇总本地活动。", en: "Local activity summarized by project, tool, and Skill."),
+                localizer.t("工具与 Skill 使用", en: "Tool & Skill usage"),
+                subtitle: localizer.t("按调用次数汇总本地 Agent 能力使用。", en: "Local Agent capabilities summarized by invocation count."),
                 icon: "list.number"
             )
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 430), spacing: Theme.Spacing.md)], spacing: Theme.Spacing.md) {
-                projectRankingCard
-                toolsAndSkillsCard
-            }
+            toolsAndSkillsCard
+        }
+    }
+
+    private var projectUsageSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            sectionTitle(
+                localizer.t("项目用量", en: "Project usage"),
+                subtitle: localizer.t("项目归因与任务状态统一放在 Agent 监控。", en: "Project attribution and task state are unified in Agent Monitor."),
+                icon: "folder.badge.gearshape"
+            )
+
+            projectRankingCard
         }
     }
 
@@ -612,6 +648,122 @@ struct AgentUsageInsightsView: View {
                             )
                         }
                     )
+                }
+            }
+        }
+    }
+
+    private var modelAndSessionSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            sectionTitle(
+                localizer.t("模型与会话归因", en: "Model & session attribution"),
+                subtitle: localizer.t(
+                    "模型与会话只归因已解析明细；未拆分历史量不会被猜测到模型或会话。",
+                    en: "Models and sessions use parsed records only; unattributed history is never guessed."
+                ),
+                icon: "cpu"
+            )
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 430), spacing: Theme.Spacing.md)], spacing: Theme.Spacing.md) {
+                modelRankingCard
+                recentSessionsCard
+            }
+        }
+    }
+
+    private var modelRankingCard: some View {
+        CardView {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                Text(localizer.t("模型排行", en: "Models"))
+                    .font(Theme.Font.subheadlineMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+
+                if service.snapshot.modelRankings.isEmpty {
+                    emptyState(localizer.t("暂无模型归因", en: "No model attribution yet"), icon: "cpu")
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(service.snapshot.modelRankings.prefix(12).enumerated()), id: \.element.id) { index, model in
+                            HStack(spacing: Theme.Spacing.sm) {
+                                Text("\(index + 1)")
+                                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                                    .foregroundStyle(index < 3 ? Theme.Colors.accent : Theme.Colors.textTertiary)
+                                    .frame(width: 18)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(model.model)
+                                        .font(Theme.Font.captionMedium)
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                        .lineLimit(1)
+                                    Text("\(localizedScope(model.scope)) · \(model.sessionCount) " + localizer.t("个会话", en: "sessions"))
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(Theme.Colors.textTertiary)
+                                }
+                                Spacer()
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    Text(AgentUsageFormat.tokens(model.tokens.total))
+                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                        .monospacedDigit()
+                                    Text(AgentUsageFormat.currency(model.estimatedAPIValueUSD))
+                                        .font(.system(size: 9, design: .rounded))
+                                        .foregroundStyle(Theme.Colors.textTertiary)
+                                }
+                            }
+                            .padding(.vertical, 7)
+                            if index < min(service.snapshot.modelRankings.count, 12) - 1 {
+                                Divider().overlay(Theme.Colors.separator.opacity(0.5))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var recentSessionsCard: some View {
+        CardView {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                Text(localizer.t("最近会话", en: "Recent sessions"))
+                    .font(Theme.Font.subheadlineMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+
+                if service.snapshot.recentSessions.isEmpty {
+                    emptyState(localizer.t("暂无会话归因", en: "No session attribution yet"), icon: "list.bullet.rectangle")
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(service.snapshot.recentSessions.prefix(12).enumerated()), id: \.element.id) { index, session in
+                            HStack(spacing: Theme.Spacing.sm) {
+                                Image(systemName: "bubble.left.and.text.bubble.right")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.Colors.info)
+                                    .frame(width: 22)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(session.projectName)
+                                        .font(Theme.Font.captionMedium)
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                        .lineLimit(1)
+                                    Text("\(localizedScope(session.scope)) · \(session.model)")
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(Theme.Colors.textTertiary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    Text(AgentUsageFormat.tokens(session.tokens.total))
+                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                        .monospacedDigit()
+                                    if let date = session.lastActiveAt {
+                                        Text(AgentUsageFormat.relative(date))
+                                            .font(.system(size: 9))
+                                            .foregroundStyle(Theme.Colors.textTertiary)
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 7)
+                            .help(session.fullProjectPath)
+                            if index < min(service.snapshot.recentSessions.count, 12) - 1 {
+                                Divider().overlay(Theme.Colors.separator.opacity(0.5))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -894,6 +1046,26 @@ struct AgentUsageInsightsView: View {
                     )
                 }
 
+                if !service.snapshot.sourceSummaries.isEmpty {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        ForEach(service.snapshot.sourceSummaries) { source in
+                            sourceSummaryPill(source)
+                        }
+                        Spacer()
+                    }
+                }
+
+                Label {
+                    Text(localizer.t(
+                        "只有提供原生 Token 计数、稳定事件 ID 和真实时间戳，并通过一致性校验的来源才会计入。Cursor、Trae、CodeBuddy、Qoder 等仍在 Agent 监控显示活动；未提供可信 Token 时不会估算。",
+                        en: "Only sources with native token counters, stable event IDs, real timestamps, and consistent totals are included. Cursor, Trae, CodeBuddy, Qoder, and others remain visible in Agent Monitor; TraceFence never estimates tokens when trustworthy counters are unavailable."
+                    ))
+                } icon: {
+                    Image(systemName: "checkmark.shield")
+                }
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+
                 if service.snapshot.diagnostics.isEmpty {
                     Label(localizer.t("没有发现数据源问题", en: "No source issues detected"), systemImage: "checkmark.circle.fill")
                         .font(Theme.Font.captionMedium)
@@ -917,6 +1089,30 @@ struct AgentUsageInsightsView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.system(size: 9)).foregroundStyle(Theme.Colors.textTertiary)
             Text(value).font(Theme.Font.captionMedium).foregroundStyle(color).lineLimit(1)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(color.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    private func sourceSummaryPill(_ source: AgentUsageSourceSummary) -> some View {
+        let color: Color
+        if !source.available || source.sourceQuality == .unavailable {
+            color = Theme.Colors.textTertiary
+        } else {
+            color = source.partial ? Theme.Colors.warning : Theme.Colors.success
+        }
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(localizedScope(source.scope))
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(color)
+            Text(localizer.t(
+                "\(source.parsedFileCount) 文件 · \(source.tokenEventCount) 事件",
+                en: "\(source.parsedFileCount) files · \(source.tokenEventCount) events"
+            ))
+            .font(.system(size: 9, design: .monospaced))
+            .foregroundStyle(Theme.Colors.textTertiary)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
@@ -1012,6 +1208,38 @@ struct AgentUsageInsightsView: View {
         return false
     }
 
+    private var hasPendingBackfill: Bool {
+        service.snapshot.diagnostics.contains(where: AgentUsageDiagnosticPresentation.isBackfill)
+    }
+
+    private var localizedProgressMessage: String {
+        let current = service.progress.current
+        let total = service.progress.total
+        let count = total > 0 ? " · \(current) / \(total)" : ""
+        switch service.progress.phase {
+        case .idle:
+            return localizer.t("TraceFence 正在准备本机扫描…", en: "TraceFence is preparing the local scan…")
+        case .readingCodexDatabase:
+            return localizer.t("TraceFence 正在本机读取 Codex 索引\(count)", en: "TraceFence is reading the local Codex index\(count)")
+        case .scanningCodexSessions:
+            return localizer.t("TraceFence 正在本机解析 Codex 会话\(count)", en: "TraceFence is scanning local Codex sessions\(count)")
+        case .scanningClaudeTranscripts:
+            return localizer.t("TraceFence 正在本机解析 Claude Code 会话\(count)", en: "TraceFence is scanning local Claude Code sessions\(count)")
+        case .readingOpenCodeDatabase:
+            return localizer.t("TraceFence 正在本机读取 OpenCode / MiniMax 原生 Token\(count)", en: "TraceFence is reading native OpenCode / MiniMax tokens\(count)")
+        case .scanningOpenClawSessions:
+            return localizer.t("TraceFence 正在本机解析 OpenClaw / QClaw 原生 Token\(count)", en: "TraceFence is scanning native OpenClaw / QClaw tokens\(count)")
+        case .readingTasks:
+            return localizer.t("TraceFence 正在本机读取 Agent 任务状态\(count)", en: "TraceFence is reading local Agent task state\(count)")
+        case .aggregating:
+            return localizer.t("TraceFence 正在合并并去重可信来源\(count)", en: "TraceFence is merging and deduplicating trusted sources\(count)")
+        case .completed:
+            return localizer.t("TraceFence 本机扫描完成", en: "TraceFence local scan complete")
+        case .failed:
+            return localizer.t("TraceFence 本机扫描失败", en: "TraceFence local scan failed")
+        }
+    }
+
     private var loadStatePresentation: (title: String, color: Color) {
         switch service.state {
         case .idle:
@@ -1021,7 +1249,7 @@ struct AgentUsageInsightsView: View {
         case .ready:
             return (localizer.t("已更新", en: "Up to date"), Theme.Colors.success)
         case .partial:
-            return (localizer.t("部分可用", en: "Partial"), Theme.Colors.warning)
+            return (localizer.t("本机待续补", en: "Local backfill pending"), Theme.Colors.warning)
         case .failed:
             return (localizer.t("读取失败", en: "Failed"), Theme.Colors.danger)
         }
@@ -1031,6 +1259,30 @@ struct AgentUsageInsightsView: View {
         switch projectPeriod {
         case .last7Days: return service.snapshot.projectRankings7Days
         case .allTime: return service.snapshot.projectRankingsAllTime
+        }
+    }
+
+    private var dashboardTitle: String {
+        switch mode {
+        case .tokenAnalytics:
+            return localizer.t("统一 Token 与用量", en: "Unified Token & Usage")
+        case .projectMonitor:
+            return localizer.t("项目用量与任务", en: "Project Usage & Tasks")
+        }
+    }
+
+    private var dashboardSubtitle: String {
+        switch mode {
+        case .tokenAnalytics:
+            return localizer.t(
+                "概览与本页共用 Codex、Claude Code、OpenCode / MiniMax、OpenClaw / QClaw 的可信本机计数；不会上传会话内容。",
+                en: "Overview and this page share trusted local counters from Codex, Claude Code, OpenCode / MiniMax, and OpenClaw / QClaw. Session content never leaves this Mac."
+            )
+        case .projectMonitor:
+            return localizer.t(
+                "按项目查看 Token 归因和 Agent 任务状态；统计口径与 Token 与用量页面一致。",
+                en: "Review project attribution and Agent task state using the same totals as Token & Usage."
+            )
         }
     }
 
@@ -1056,7 +1308,9 @@ struct AgentUsageInsightsView: View {
         switch scope {
         case .codex: return "Codex"
         case .claude: return "Claude Code"
-        case .combined: return localizer.t("全部 Agent", en: "All Agents")
+        case .openCode: return "OpenCode / MiniMax"
+        case .openClaw: return "OpenClaw / QClaw"
+        case .combined: return localizer.t("全部可信来源", en: "All trusted sources")
         }
     }
 
@@ -1066,6 +1320,8 @@ struct AgentUsageInsightsView: View {
         case .readingCodexDatabase: return localizer.t("读取 Codex 索引", en: "Reading Codex index")
         case .scanningCodexSessions: return localizer.t("解析 Codex 会话", en: "Scanning Codex sessions")
         case .scanningClaudeTranscripts: return localizer.t("解析 Claude Code 会话", en: "Scanning Claude Code sessions")
+        case .readingOpenCodeDatabase: return localizer.t("读取 OpenCode / MiniMax 原生计数", en: "Reading OpenCode / MiniMax counters")
+        case .scanningOpenClawSessions: return localizer.t("解析 OpenClaw / QClaw 会话", en: "Scanning OpenClaw / QClaw sessions")
         case .readingTasks: return localizer.t("读取任务状态", en: "Reading task status")
         case .aggregating: return localizer.t("汇总统计", en: "Aggregating statistics")
         case .completed: return localizer.t("扫描完成", en: "Scan complete")
@@ -1133,10 +1389,10 @@ struct AgentUsageInsightsView: View {
 
     private func authorizeUsageDataFolders() {
         let panel = NSOpenPanel()
-        panel.title = localizer.t("授权 Codex / Claude Code 数据目录", en: "Authorize Codex / Claude Code data folders")
+        panel.title = localizer.t("授权 Agent 数据目录", en: "Authorize Agent data folders")
         panel.message = localizer.t(
-            "请选择 ~/.codex、~/.claude，或同时包含它们的用户主目录。TraceFence 只读取本地用量元数据。",
-            en: "Choose ~/.codex, ~/.claude, or the home folder that contains them. TraceFence reads local usage metadata only."
+            "请选择 ~/.codex、~/.claude、~/.qclaw、~/.openclaw、~/.minimax、~/.local/share/opencode，或包含它们的用户主目录。TraceFence 只读取本地用量元数据。",
+            en: "Choose a supported Agent data folder, or the home folder that contains them. TraceFence reads local usage metadata only."
         )
         panel.prompt = localizer.t("授权", en: "Authorize")
         panel.canChooseFiles = false
@@ -1369,7 +1625,9 @@ struct AgentUsageRuntimeSummaryView: View {
         switch scope {
         case .codex: return "Codex"
         case .claude: return "Claude Code"
-        case .combined: return localizer.t("全部 Agent", en: "All Agents")
+        case .openCode: return "OpenCode / MiniMax"
+        case .openClaw: return "OpenClaw / QClaw"
+        case .combined: return localizer.t("全部可信来源", en: "All trusted sources")
         }
     }
 
@@ -1384,6 +1642,8 @@ struct AgentUsageRuntimeSummaryView: View {
         case .readingCodexDatabase: return localizer.t("读取 Codex 索引", en: "Reading Codex index")
         case .scanningCodexSessions: return localizer.t("解析 Codex 会话", en: "Scanning Codex sessions")
         case .scanningClaudeTranscripts: return localizer.t("解析 Claude 会话", en: "Scanning Claude sessions")
+        case .readingOpenCodeDatabase: return localizer.t("读取 OpenCode / MiniMax", en: "Reading OpenCode / MiniMax")
+        case .scanningOpenClawSessions: return localizer.t("解析 OpenClaw / QClaw", en: "Scanning OpenClaw / QClaw")
         case .readingTasks: return localizer.t("读取任务", en: "Reading tasks")
         case .aggregating: return localizer.t("汇总统计", en: "Aggregating")
         case .completed: return localizer.t("扫描完成", en: "Complete")
@@ -1399,6 +1659,7 @@ private struct AgentUsageTokenCard: View {
     let icon: String
     let color: Color
     let totals: AgentUsageTokenTotals
+    let detailedTotal: Int64?
     let localizer: Localizer
 
     var body: some View {
@@ -1414,14 +1675,82 @@ private struct AgentUsageTokenCard: View {
                     .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .monospacedDigit()
+                if unattributedTotal > 0 {
+                    VStack(alignment: .leading, spacing: 5) {
+                        breakdown(
+                            localizer.t("可拆分明细", en: "Parsed detail"),
+                            resolvedDetailedTotal,
+                            Theme.Colors.success
+                        )
+                        breakdown(
+                            localizer.t("历史未拆分", en: "Unattributed history"),
+                            unattributedTotal,
+                            Theme.Colors.warning
+                        )
+                        ProgressView(value: detailCoverage)
+                            .progressViewStyle(.linear)
+                            .tint(Theme.Colors.success)
+                            .help(String(format: localizer.t("明细覆盖 %.1f%%", en: "Detail coverage %.1f%%"), detailCoverage * 100))
+                        Text(localizer.t("可拆分明细构成", en: "Parsed detail breakdown"))
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    Divider().overlay(Theme.Colors.separator.opacity(0.7))
+                }
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 5) {
-                    breakdown(localizer.t("输入", en: "Input"), totals.input, Theme.Colors.info)
-                    breakdown(localizer.t("缓存", en: "Cached"), totals.cached, Theme.Colors.teal)
-                    breakdown(localizer.t("输出", en: "Output"), totals.output, Theme.Colors.purple)
-                    breakdown(localizer.t("推理", en: "Reasoning"), totals.reasoning, Theme.Colors.warning)
+                    breakdown(localizer.t("非缓存输入", en: "Uncached input"), uncachedInput, Theme.Colors.info)
+                    breakdown(localizer.t("缓存输入", en: "Cached input"), cachedInput, Theme.Colors.teal)
+                    breakdown(localizer.t("普通输出", en: "Standard output"), standardOutput, Theme.Colors.purple)
+                    breakdown(localizer.t("推理输出", en: "Reasoning output"), reasoningOutput, Theme.Colors.warning)
+                }
+                if detailedUnclassifiedTotal > 0 {
+                    breakdown(
+                        localizer.t("明细未分类", en: "Unclassified detail"),
+                        detailedUnclassifiedTotal,
+                        Theme.Colors.textTertiary
+                    )
                 }
             }
         }
+    }
+
+    private var resolvedDetailedTotal: Int64 {
+        min(totals.total, max(0, detailedTotal ?? totals.total))
+    }
+
+    private var unattributedTotal: Int64 {
+        max(0, totals.total - resolvedDetailedTotal)
+    }
+
+    private var cachedInput: Int64 {
+        min(max(0, totals.cached), max(0, totals.input))
+    }
+
+    private var uncachedInput: Int64 {
+        max(0, totals.input - cachedInput)
+    }
+
+    private var reasoningOutput: Int64 {
+        min(max(0, totals.reasoning), max(0, totals.output))
+    }
+
+    private var standardOutput: Int64 {
+        max(0, totals.output - reasoningOutput)
+    }
+
+    private var categorizedDetailedTotal: Int64 {
+        let inputs = AgentUsageFormat.saturatingAdd(uncachedInput, cachedInput)
+        let outputs = AgentUsageFormat.saturatingAdd(standardOutput, reasoningOutput)
+        return AgentUsageFormat.saturatingAdd(inputs, outputs)
+    }
+
+    private var detailedUnclassifiedTotal: Int64 {
+        max(0, resolvedDetailedTotal - categorizedDetailedTotal)
+    }
+
+    private var detailCoverage: Double {
+        guard totals.total > 0 else { return 1 }
+        return min(1, max(0, Double(resolvedDetailedTotal) / Double(totals.total)))
     }
 
     private func breakdown(_ label: String, _ value: Int64, _ color: Color) -> some View {
@@ -1612,6 +1941,99 @@ private struct AgentUsageProjectRow: View {
     }
 }
 
+private enum AgentUsageDiagnosticPresentation {
+    static func isBackfill(_ diagnostic: AgentUsageDiagnostic) -> Bool {
+        diagnostic.code == "codex_scan_bounded"
+    }
+
+    static func message(_ diagnostic: AgentUsageDiagnostic, localizer: Localizer) -> String {
+        let count = leadingCount(diagnostic.message)
+        switch diagnostic.code {
+        case "codex_scan_bounded":
+            return localizer.t(
+                "\(count ?? "部分") 个较大或尚未缓存的 Codex 会话正在渐进补全；为保持界面流畅，本轮仅处理了有界数据。后续刷新会继续读取。",
+                en: diagnostic.message
+            )
+        case "codex_backfill_bounded":
+            return localizer.t(
+                "Codex 历史超过 2,000 个会话的本地补全上限；当前优先读取最新会话，全历史总量仍来自本地索引。",
+                en: diagnostic.message
+            )
+        case "codex_old_history_aggregated":
+            return localizer.t(
+                "\(count ?? "部分") 个较早的 Codex 任务仅提供全历史汇总，不重放完整转录。",
+                en: diagnostic.message
+            )
+        case "codex_cache_write_failed":
+            return localizer.t("Codex 用量缓存无法保存；下次刷新可能更慢。", en: diagnostic.message)
+        case "codex_state_unavailable":
+            return localizer.t("Codex 本地状态索引当前不可用。", en: diagnostic.message)
+        case "codex_state_read_failed":
+            return localizer.t("无法读取 Codex 本地状态索引。", en: diagnostic.message)
+        case "codex_detailed_usage_rejected":
+            return localizer.t("详细 Codex 用量明显异常，已拒绝该明细并保留可信汇总。", en: diagnostic.message)
+        case "codex_rollout_rejected":
+            return localizer.t("部分 Codex 会话文件不在允许范围内，已跳过。", en: diagnostic.message)
+        case "codex_session_parse_partial":
+            return localizer.t("部分 Codex 会话记录无法完整解析；其余数据仍可用。", en: diagnostic.message)
+        case "codex_sources_missing":
+            return localizer.t("未找到可读取的 Codex 本地用量来源。", en: diagnostic.message)
+        case "claude_projects_missing":
+            return localizer.t("未找到可读取的 Claude Code 项目记录。", en: diagnostic.message)
+        case "claude_cache_write_failed":
+            return localizer.t("Claude Code 用量缓存无法保存；下次刷新可能更慢。", en: diagnostic.message)
+        case "claude_transcript_parse_partial":
+            return localizer.t("部分 Claude Code 转录无法完整解析；其余数据仍可用。", en: diagnostic.message)
+        case "claude_transcripts_empty":
+            return localizer.t("Claude Code 转录中暂未发现可用记录。", en: diagnostic.message)
+        case "claude_usage_empty":
+            return localizer.t("Claude Code 本地记录中暂未发现 Token 用量。", en: diagnostic.message)
+        case "opencode_sources_missing":
+            return localizer.t("未找到 OpenCode / MiniMax 原生 Token 数据库；该来源未计入总量。", en: diagnostic.message)
+        case "opencode_usage_empty":
+            return localizer.t("已检测到 OpenCode / MiniMax，但数据库暂未写入非零原生 Token。", en: diagnostic.message)
+        case "opencode_mirror_deduplicated":
+            return localizer.t("MiniMax 与 OpenCode 的同一批 turn 已按原生 ID 去重，只计一次。", en: diagnostic.message)
+        case "opencode_usage_inconsistent":
+            return localizer.t("部分 OpenCode / MiniMax 原生计数未通过分项与总量一致性检查，已跳过。", en: diagnostic.message)
+        case "opencode_database_read_failed":
+            return localizer.t("部分 OpenCode / MiniMax 数据库当前无法读取。", en: diagnostic.message)
+        case "openclaw_sessions_missing":
+            return localizer.t("未找到 OpenClaw / QClaw 原生会话用量文件；该来源未计入总量。", en: diagnostic.message)
+        case "openclaw_usage_empty":
+            return localizer.t("已检测到 OpenClaw / QClaw 会话，但暂未发现非零原生 message.usage。", en: diagnostic.message)
+        case "openclaw_events_deduplicated":
+            return localizer.t("OpenClaw / QClaw 镜像事件已按原生事件 ID 去重，只计一次。", en: diagnostic.message)
+        case "openclaw_usage_inconsistent":
+            return localizer.t("部分 OpenClaw / QClaw 原生计数缺少稳定 ID、时间或未通过总量一致性检查，已跳过。", en: diagnostic.message)
+        case "openclaw_session_parse_partial":
+            return localizer.t("部分 OpenClaw / QClaw 会话文件无法完整解析；其余可信记录仍可用。", en: diagnostic.message)
+        case "usage_bookmark_required":
+            return localizer.t("需要重新授权本地目录，才能继续读取该用量来源。", en: diagnostic.message)
+        case "usage_bookmark_unavailable":
+            return localizer.t("已保存的本地目录授权当前不可用。", en: diagnostic.message)
+        case "usage_bookmark_partial":
+            return localizer.t("部分本地目录授权不可用；已继续读取其余来源。", en: diagnostic.message)
+        default:
+            return diagnostic.message
+        }
+    }
+
+    static func backfillExplanation(_ diagnostic: AgentUsageDiagnostic, localizer: Localizer) -> String {
+        let count = leadingCount(diagnostic.message) ?? "部分"
+        return localizer.t(
+            "由 TraceFence 应用内的本机扫描器执行，不是 Codex、Claude 或云端 Agent。当前剩余 \(count) 个 Codex 会话待补全；保持 TraceFence 运行会按计划继续，退出应用后暂停，下次启动从缓存续读。全部时间 Token 总量已可用；历史模型、项目和会话归因仍在补全。",
+            en: "TraceFence's in-app local scanner performs this work—not Codex, Claude, or a cloud agent. \(count) Codex sessions remain. It continues while TraceFence is running, pauses when the app exits, and resumes from its cache next launch. The all-time token total is already available; historical model, project, and session attribution is still being filled in."
+        )
+    }
+
+    private static func leadingCount(_ message: String) -> String? {
+        guard let first = message.split(separator: " ").first,
+              Int(first) != nil else { return nil }
+        return String(first)
+    }
+}
+
 private struct AgentUsageDiagnosticRow: View {
     let diagnostic: AgentUsageDiagnostic
     let localizer: Localizer
@@ -1633,7 +2055,7 @@ private struct AgentUsageDiagnosticRow: View {
                             .foregroundStyle(Theme.Colors.textTertiary)
                     }
                 }
-                Text(diagnostic.message)
+                Text(AgentUsageDiagnosticPresentation.message(diagnostic, localizer: localizer))
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .textSelection(.enabled)

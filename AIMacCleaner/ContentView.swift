@@ -1979,7 +1979,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
     private let maxCachedSessions = 120
 
     private struct Cache: Codable {
-        var version: Int = 1
+        var version: Int = 2
         var updatedAt: Date = Date()
         var snapshots: [AgentMonitorUsageSnapshot] = []
         var sessions: [AgentMonitorSessionSnapshot] = []
@@ -2364,8 +2364,13 @@ final class AgentMonitorOverviewStore: ObservableObject {
     }
 
     private func loadCache() {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: SandboxPaths.shared.agentMonitorCachePath)),
+        let url = URL(fileURLWithPath: SandboxPaths.shared.agentMonitorCachePath)
+        guard let data = try? Data(contentsOf: url),
               let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
+        guard cache.version == 2 else {
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
         snapshots = cache.snapshots
         sessions = Array(Self.sanitizedSessions(cache.sessions).prefix(maxCachedSessions))
         networkConnections = cache.networkConnections ?? []
@@ -2974,7 +2979,6 @@ private final class AgentMonitorOverviewScanner {
         var roots = Set(spec.roots.map(expand))
         let authorized = authorizedRoots.map(expand)
         for root in authorized {
-            roots.insert(root)
             if root == home || root.hasSuffix("/\(NSUserName())") {
                 roots.formUnion(homeAgentRoots(for: spec))
             } else {
@@ -7009,6 +7013,7 @@ private struct AgentCommandDashboardView: View {
     @ObservedObject var monitor: OperationMonitor
     @EnvironmentObject var localizer: Localizer
     @EnvironmentObject var service: ScannerService
+    @EnvironmentObject var usageInsightsService: AgentUsageInsightsService
     let onRefresh: () -> Void
 
     @State private var selectedSessionID: String?
@@ -7069,10 +7074,8 @@ private struct AgentCommandDashboardView: View {
                 return $0.context > $1.context
             }
 
-        let totalTokens = max(
-            allSessions.reduce(0) { $0 + $1.tokens.total },
-            store.snapshots.reduce(0) { $0 + $1.totalTokens }
-        )
+        let combinedUsage = usageInsightsService.snapshot(for: .combined)
+        let totalTokens = Int(clamping: combinedUsage.allTime.total)
         let activeChartValues = activeSessions
             .sorted { $0.contextPercent > $1.contextPercent }
             .prefix(6)
@@ -7099,8 +7102,8 @@ private struct AgentCommandDashboardView: View {
                 .sorted(by: >)
                 .prefix(6)
                 .map { $0 },
-            tokenChartValues: projectRows
-                .map { Double($0.tokens) }
+            tokenChartValues: combinedUsage.projectRankingsAllTime
+                .map { Double($0.tokens.total) }
                 .sorted(by: >)
                 .prefix(6)
                 .map { $0 },
@@ -7162,10 +7165,7 @@ private struct AgentCommandDashboardView: View {
     }
 
     private var totalTokens: Int {
-        max(
-            allSessions.reduce(0) { $0 + $1.tokens.total },
-            store.snapshots.reduce(0) { $0 + $1.totalTokens }
-        )
+        Int(clamping: usageInsightsService.snapshot(for: .combined).allTime.total)
     }
     private var realtimeConversationCount: Int { activeSessions.count }
     private var realtimeToolCallCount: Int {
@@ -7287,8 +7287,8 @@ private struct AgentCommandDashboardView: View {
     }
 
     private var tokenChartValues: [Double] {
-        projectRows
-            .map { Double($0.tokens) }
+        usageInsightsService.snapshot(for: .combined).projectRankingsAllTime
+            .map { Double($0.tokens.total) }
             .sorted(by: >)
             .prefix(6)
             .map { $0 }
@@ -7343,6 +7343,7 @@ private struct AgentCommandDashboardView: View {
             .background(Theme.Colors.sidebarBg.opacity(0.24))
         }
         .onAppear {
+            usageInsightsService.startScheduling()
             onRefresh()
             normalizeSelection()
             refreshSelectedActiveSessionIfNeeded(data)
@@ -7549,9 +7550,9 @@ private struct AgentCommandDashboardView: View {
                 values: data.projectChartValues
             )
             heroMetricChart(
-                title: localizer.overviewTokensTotal,
+                title: localizer.t("全部可信 Agent · 全部时间 Token", en: "All Trusted Agents · All-time Tokens", zhHant: "全部可信 Agent · 全部時間 Token", ja: "信頼済み Agent · 全期間 Token", ko: "신뢰할 수 있는 Agent · 전체 기간 Token", mt: "All Trusted Agents · All-time Tokens"),
                 value: compactCount(data.totalTokens),
-                detail: localizer.overviewInputOutputCache,
+                detail: localizer.t("与 Token 与用量页面同口径", en: "Same source as Token & Usage", zhHant: "與 Token 與用量頁面同口徑", ja: "Token と使用量と同じ集計", ko: "Token 및 사용량과 동일한 기준", mt: "Same source as Token & Usage"),
                 icon: "sum",
                 color: Theme.Colors.purple,
                 values: data.tokenChartValues
@@ -8955,6 +8956,7 @@ struct OperationLogTab: View {
     @EnvironmentObject var localizer: Localizer
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var sessionsViewModel: SessionsViewModel
+    @EnvironmentObject var usageInsightsService: AgentUsageInsightsService
     @State private var searchText = ""
     @State private var filterAgent = ""
     @State private var filterOpType: OperationRecord.OperationType?
@@ -9057,6 +9059,16 @@ struct OperationLogTab: View {
         var sessionCount: Int { sessions.count }
     }
 
+    private struct ProjectUsageRollup {
+        var sevenDayTokens = AgentUsageTokenTotals.zero
+        var allTimeTokens = AgentUsageTokenTotals.zero
+        var estimatedAPIValueUSD: Double = 0
+        var sessionCount = 0
+        var lastActiveAt: Date?
+        var agents = Set<String>()
+        var sourceQuality: AgentUsageSourceQuality = .unavailable
+    }
+
     private struct MonitorAutomationConfig {
         let id: String
         let name: String
@@ -9155,7 +9167,10 @@ struct OperationLogTab: View {
         knownKeys.formUnion(operationSnapshots.map(\.id))
         let coreSnapshots = coreProjectSnapshots(excluding: knownKeys)
         snapshots.append(contentsOf: coreSnapshots)
+        knownKeys.formUnion(coreSnapshots.map(\.id))
         snapshots.append(contentsOf: automationProjectSnapshots)
+        knownKeys.formUnion(automationProjectSnapshots.map(\.id))
+        snapshots.append(contentsOf: usageProjectSnapshots(excluding: knownKeys, existing: snapshots))
         snapshots.sort {
             if lanePriority($0.lane) != lanePriority($1.lane) {
                 return lanePriority($0.lane) < lanePriority($1.lane)
@@ -9255,6 +9270,124 @@ struct OperationLogTab: View {
             )
         }
         .sorted { $0.lastActivity > $1.lastActivity }
+    }
+
+    private func usageProjectSnapshots(
+        excluding knownKeys: Set<String>,
+        existing: [MonitorProjectSnapshot]
+    ) -> [MonitorProjectSnapshot] {
+        let knownPaths = Set(existing.compactMap { project -> String? in
+            let value = normalizedProjectPath(project.path)
+            return value.isEmpty ? nil : value
+        }).union(knownKeys.compactMap { key -> String? in
+            guard key.hasPrefix("/") || key.hasPrefix("~") else { return nil }
+            let value = normalizedProjectPath(key)
+            return value.isEmpty ? nil : value
+        })
+
+        return projectUsageRollups().compactMap { path, usage -> MonitorProjectSnapshot? in
+            guard !path.isEmpty, !knownPaths.contains(path) else { return nil }
+            let title = URL(fileURLWithPath: path).lastPathComponent
+            let tasks = usageTasks(projectPath: path, projectName: title)
+            return MonitorProjectSnapshot(
+                id: path,
+                title: title.isEmpty ? localizer.t("未知项目", en: "Unknown Project") : title,
+                path: path,
+                lane: .completed,
+                agents: usage.agents.sorted(),
+                sessions: [],
+                records: [],
+                progress: 1,
+                summary: localizer.t(
+                    "来自统一 Token 与用量统计的历史项目。",
+                    en: "Historical project from unified Token & Usage analytics."
+                ),
+                blocker: nil,
+                scheduledHint: nil,
+                lastActivity: usage.lastActiveAt ?? .distantPast,
+                activeTools: [],
+                completedTasks: tasks.filter { $0.category == .done }.count,
+                totalTasks: tasks.count
+            )
+        }
+    }
+
+    private func projectUsageRollups() -> [String: ProjectUsageRollup] {
+        let snapshot = usageInsightsService.snapshot(for: .combined)
+        var result: [String: ProjectUsageRollup] = [:]
+
+        for project in snapshot.projectRankingsAllTime {
+            let path = normalizedProjectPath(project.fullPath)
+            guard !path.isEmpty else { continue }
+            var value = result[path, default: ProjectUsageRollup()]
+            value.allTimeTokens.add(project.tokens)
+            value.estimatedAPIValueUSD += project.estimatedAPIValueUSD
+            value.sessionCount += project.sessionCount
+            if let date = project.lastActiveAt,
+               value.lastActiveAt == nil || date > value.lastActiveAt! {
+                value.lastActiveAt = date
+            }
+            value.agents.insert(usageScopeName(project.id))
+            value.sourceQuality = mergedSourceQuality(value.sourceQuality, project.sourceQuality)
+            result[path] = value
+        }
+
+        for project in snapshot.projectRankings7Days {
+            let path = normalizedProjectPath(project.fullPath)
+            guard !path.isEmpty else { continue }
+            var value = result[path, default: ProjectUsageRollup()]
+            value.sevenDayTokens.add(project.tokens)
+            value.agents.insert(usageScopeName(project.id))
+            value.sourceQuality = mergedSourceQuality(value.sourceQuality, project.sourceQuality)
+            result[path] = value
+        }
+        return result
+    }
+
+    private func usageForProject(_ project: MonitorProjectSnapshot) -> ProjectUsageRollup? {
+        let path = normalizedProjectPath(project.path)
+        guard !path.isEmpty else { return nil }
+        return projectUsageRollups()[path]
+    }
+
+    private func usageTasks(for project: MonitorProjectSnapshot) -> [AgentUsageTaskItem] {
+        usageTasks(projectPath: project.path, projectName: project.title)
+    }
+
+    private func usageTasks(projectPath: String, projectName: String) -> [AgentUsageTaskItem] {
+        let normalizedPath = normalizedProjectPath(projectPath)
+        let normalizedName = projectName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return usageInsightsService.snapshot(for: .combined).tasks.all.filter { task in
+            guard let taskProject = task.project?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !taskProject.isEmpty else { return false }
+            let taskPath = normalizedProjectPath(taskProject)
+            if !normalizedPath.isEmpty, !taskPath.isEmpty, taskPath == normalizedPath { return true }
+            let taskName = URL(fileURLWithPath: taskProject).lastPathComponent.lowercased()
+            return !normalizedName.isEmpty && (taskProject.lowercased() == normalizedName || taskName == normalizedName)
+        }
+    }
+
+    private func normalizedProjectPath(_ path: String) -> String {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != "Unknown project" else { return "" }
+        let expanded = (trimmed as NSString).expandingTildeInPath
+        guard expanded.hasPrefix("/") else { return "" }
+        return URL(fileURLWithPath: expanded).standardizedFileURL.path
+    }
+
+    private func usageScopeName(_ projectID: String) -> String {
+        if projectID.hasPrefix("claude:") { return "Claude Code" }
+        if projectID.hasPrefix("codex:") { return "Codex" }
+        return localizer.t("Agent", en: "Agent")
+    }
+
+    private func mergedSourceQuality(
+        _ lhs: AgentUsageSourceQuality,
+        _ rhs: AgentUsageSourceQuality
+    ) -> AgentUsageSourceQuality {
+        if lhs == .unavailable { return rhs }
+        if rhs == .unavailable || lhs == rhs { return lhs }
+        return .mixed
     }
 
     private var liveProjectCount: Int {
@@ -9945,12 +10078,19 @@ struct OperationLogTab: View {
                 projectBoardView
             case 1:
                 liveView
-            default:
+            case 2:
                 targetedView
+            default:
+                ScrollView {
+                    AgentUsageInsightsView(mode: .projectMonitor)
+                        .environmentObject(localizer)
+                }
+                .background(Theme.Colors.sidebarBg.opacity(0.24))
             }
         }
         .frame(minWidth: 600, minHeight: 400)
         .onAppear {
+            usageInsightsService.startScheduling()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 service.ensureAgentGuardDataPipeline()
                 refreshAgentMonitor(forceHeavy: true)
@@ -9965,6 +10105,9 @@ struct OperationLogTab: View {
         }
         .onChange(of: sessionsViewModel.sessions.count) { _ in
             rebuildProjectSnapshotCache()
+        }
+        .onChange(of: usageInsightsService.snapshot.generatedAt) { _ in
+            rebuildProjectSnapshotCache(force: true)
         }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
             guard viewMode != 2, autoRefreshSeconds > 0 else { return }
@@ -10017,6 +10160,7 @@ struct OperationLogTab: View {
             modeButton(title: localizer.t("项目看板", en: "Project Board", zhHant: "專案看板", ja: "プロジェクトボード", ko: "프로젝트 보드", mt: "Project Board"), mode: 0)
             modeButton(title: localizer.t("实时明细", en: "Live Details", zhHant: "即時明細", ja: "ライブ詳細", ko: "실시간 상세", mt: "Live Details"), mode: 1)
             modeButton(title: localizer.audit, mode: 2)
+            modeButton(title: localizer.t("项目用量", en: "Project Usage", zhHant: "專案用量", ja: "プロジェクト使用量", ko: "프로젝트 사용량", mt: "Project Usage"), mode: 3)
         }
         .padding(3)
         .background(
@@ -10206,7 +10350,8 @@ struct OperationLogTab: View {
     }
 
     private func projectCard(_ project: MonitorProjectSnapshot, activeProjectId: String?) -> some View {
-        Button {
+        let usage = usageForProject(project)
+        return Button {
             selectedProjectId = project.id
         } label: {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
@@ -10278,6 +10423,14 @@ struct OperationLogTab: View {
                     if project.totalTasks > 0 {
                         projectMetricPill(icon: "checklist", value: "\(project.completedTasks)/\(project.totalTasks)", color: Theme.Colors.success, help: localizer.t("任务", en: "Tasks", zhHant: "任務", ja: "タスク", ko: "작업", mt: "Tasks"))
                     }
+                    if let usage, usage.allTimeTokens.total > 0 {
+                        projectMetricPill(
+                            icon: "sum",
+                            value: compactUsageTokens(usage.allTimeTokens.total),
+                            color: Theme.Colors.accent,
+                            help: localizer.t("全部时间 Token", en: "All-time Tokens")
+                        )
+                    }
                     Spacer()
                 }
             }
@@ -10311,6 +10464,8 @@ struct OperationLogTab: View {
             Divider()
 
             if let project {
+                let usage = usageForProject(project)
+                let attributedTasks = usageTasks(for: project)
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(alignment: .top, spacing: Theme.Spacing.sm) {
@@ -10378,6 +10533,12 @@ struct OperationLogTab: View {
                             projectDetailStat(title: localizer.audit, value: "\(project.recordCount)", icon: "doc.text.magnifyingglass", color: Theme.Colors.purple)
                             projectDetailStat(title: localizer.t("子 Agent", en: "Subagents", zhHant: "子 Agent", ja: "サブAgent", ko: "하위 Agent", mt: "Subagents"), value: "\(project.sessions.reduce(0) { $0 + $1.subagents.count })", icon: "person.2.fill", color: Theme.Colors.teal)
                             projectDetailStat(title: localizer.t("待处理", en: "Pending", zhHant: "待處理", ja: "保留中", ko: "대기", mt: "Pending"), value: "\(project.sessions.filter(hasPendingAttention).count)", icon: "hand.raised.fill", color: project.sessions.contains(where: hasPendingAttention) ? Theme.Colors.warning : Theme.Colors.success)
+                            if let usage {
+                                projectDetailStat(title: localizer.t("7 天 Token", en: "7-day Tokens"), value: compactUsageTokens(usage.sevenDayTokens.total), icon: "calendar.badge.clock", color: Theme.Colors.accent)
+                                projectDetailStat(title: localizer.t("全部 Token", en: "All-time Tokens"), value: compactUsageTokens(usage.allTimeTokens.total), icon: "sum", color: Theme.Colors.purple)
+                                projectDetailStat(title: localizer.t("API 等值", en: "API Equivalent"), value: usageCurrency(usage.estimatedAPIValueUSD), icon: "dollarsign.circle", color: Theme.Colors.warning)
+                                projectDetailStat(title: localizer.t("用量会话", en: "Usage Sessions"), value: "\(usage.sessionCount)", icon: "chart.bar.doc.horizontal", color: Theme.Colors.teal)
+                            }
                         }
 
                         if let blocker = project.blocker {
@@ -10394,6 +10555,37 @@ struct OperationLogTab: View {
                                 VStack(alignment: .leading, spacing: 6) {
                                     ForEach(project.activeTools.prefix(6), id: \.self) { tool in
                                         projectToolRow(tool)
+                                    }
+                                }
+                            }
+                        }
+
+                        if !attributedTasks.isEmpty {
+                            projectDetailSection(title: localizer.t("Agent 任务", en: "Agent Tasks"), icon: "checklist", color: Theme.Colors.accent) {
+                                VStack(spacing: 7) {
+                                    ForEach(attributedTasks.prefix(10)) { task in
+                                        HStack(alignment: .top, spacing: 7) {
+                                            Circle()
+                                                .fill(usageTaskColor(task.category))
+                                                .frame(width: 7, height: 7)
+                                                .padding(.top, 5)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(task.title)
+                                                    .font(Theme.Font.captionMedium)
+                                                    .foregroundStyle(Theme.Colors.textPrimary)
+                                                    .lineLimit(2)
+                                                Text(usageTaskLabel(task.category) + " · " + task.scope.displayName)
+                                                    .font(.system(size: 9))
+                                                    .foregroundStyle(Theme.Colors.textTertiary)
+                                            }
+                                            Spacer(minLength: 4)
+                                            if let tokens = task.tokens {
+                                                Text(compactUsageTokens(tokens))
+                                                    .font(.system(size: 9, design: .rounded))
+                                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                                    .monospacedDigit()
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -10492,6 +10684,40 @@ struct OperationLogTab: View {
         .background(color.opacity(0.09))
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         .help(help)
+    }
+
+    private func compactUsageTokens(_ value: Int64) -> String {
+        let amount = Double(max(0, value))
+        switch amount {
+        case 1_000_000_000...: return String(format: "%.2fB", amount / 1_000_000_000)
+        case 1_000_000...: return String(format: "%.2fM", amount / 1_000_000)
+        case 1_000...: return String(format: "%.1fK", amount / 1_000)
+        default: return String(Int64(amount))
+        }
+    }
+
+    private func usageCurrency(_ value: Double) -> String {
+        if value >= 1_000 { return String(format: "$%.0f", value) }
+        if value >= 100 { return String(format: "$%.1f", value) }
+        return String(format: "$%.2f", value)
+    }
+
+    private func usageTaskLabel(_ category: AgentUsageTaskCategory) -> String {
+        switch category {
+        case .active: return localizer.t("进行中", en: "Active")
+        case .pending: return localizer.t("待处理", en: "Pending")
+        case .scheduled: return localizer.t("已计划", en: "Scheduled")
+        case .done: return localizer.t("已完成", en: "Done")
+        }
+    }
+
+    private func usageTaskColor(_ category: AgentUsageTaskCategory) -> Color {
+        switch category {
+        case .active: return Theme.Colors.accent
+        case .pending: return Theme.Colors.warning
+        case .scheduled: return Theme.Colors.info
+        case .done: return Theme.Colors.success
+        }
     }
 
     private func projectDetailStat(title: String, value: String, icon: String, color: Color) -> some View {

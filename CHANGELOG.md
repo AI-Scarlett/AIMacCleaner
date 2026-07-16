@@ -5,7 +5,7 @@ All notable changes to AIMacCleaner will be documented in this file.
 ## [Unreleased] - 2026-07-16
 
 ### Added
-- Codex 与 Claude Code 本地用量洞察：Token 分项、180 天热力图、7 日对比、项目/工具/Skill 排行和今日任务看板。
+- Codex、Claude Code、OpenCode / MiniMax、OpenClaw / QClaw 本地用量洞察：Token 分项、180 天热力图、7 日对比、模型/会话排行和来源诊断。
 - 菜单栏用量页，以及仅图标/单项/详细三档状态显示、已用/剩余切换和重置倒计时。
 - 系统/UTC/固定 IANA 统计时区、扫描进度、结构化诊断、脱敏 JSON 导出与派生缓存清理。
 - 主窗口置顶、启动自动检查更新开关、快捷键恢复默认和冲突/系统保留组合校验。
@@ -13,9 +13,17 @@ All notable changes to AIMacCleaner will be documented in this file.
 ### Improved
 - Codex 官方额度严格按 300/10080 分钟识别；临时刷新失败时保留并标注上一次可信额度。
 - 大型 JSONL 采用有界流式读取与文件指纹缓存，统计任务离开主线程，缓存不保存提示词或回复正文。
+- “Token 统计”与“用量洞察”合并为单一“Token 与用量”入口；模型、会话、来源诊断共用同一规范化事件快照，项目排行和任务归入 Agent 监控。
+- Agent 监控项目看板按标准化完整路径合并 7 天/全部时间 Token、API 等值、用量会话和任务，避免同名项目串联。
+- 页面明确说明“明细补全”由 TraceFence 本机扫描器执行；应用运行时渐进续读，退出暂停，下次从本地缓存恢复。
 
 ### Fixed
 - 当前会话产物的任务目录不再把子 Agent 线程重复列为独立任务；传输别名按原生 thread ID 合并，长提示词型标题压缩为稳定短标题，同时保留同名的真实短任务。
+- 修复普通授权目录被注入每一种 Agent 扫描根、同一批日志被重复归因并由旧缓存永久放大的问题；旧污染缓存与第二套 TokenScope 派生缓存会自动淘汰。
+- 概览固定显示“全部可信 Agent · 全部时间 Token”，与 Token 与用量页面的同范围快照完全一致，切换页面筛选不会暗改概览数字。
+- 全历史累计总量与已解析分项不再混画：聚合索引仅贡献总量，输入/输出分项保持真实明细，并单列“历史未拆分”、明细覆盖率与渐进补全状态。
+- OpenCode 与 MiniMax 按原生 turn ID 去重，OpenClaw 与 QClaw 按原生事件 ID 去重；合法零用量记录静默忽略，不再误报为数据异常。
+- Cursor、Trae、CodeBuddy、Qoder 等只在存在可信原生 Token 计数时进入汇总；否则继续在 Agent 监控显示活动，不按文件大小或活动次数猜算。
 
 ## [1.7.4] - 2026-05-15
 

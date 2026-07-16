@@ -1303,8 +1303,8 @@ extension Localizer {
     var selectDirectory: String { t("选择目录", en: "Select Directory", zhHant: "選擇目錄", ja: "ディレクトリを選択", ko: "디렉토리 선택", mt: "Select Directory") }
     var navToolbox: String { t("实验室", en: "Lab", zhHant: "實驗室", ja: "ラボ", ko: "실험실", mt: "Lab") }
     var subToolbox: String { t("实验性质工具，功能可能调整、下线或移动入口", en: "Experimental tools that may change, be removed, or move to another entry point", zhHant: "實驗性質工具，功能可能調整、下線或移動入口", ja: "変更、削除、または別の導線へ移動される可能性がある実験的ツール", ko: "변경, 제거 또는 다른 진입 경로로 이동될 수 있는 실험적 도구", mt: "Experimental tools that may change, be removed, or move to another entry point") }
-    var tokenScopeTitle: String { t("Token 统计", en: "Token Analytics", zhHant: "Token 統計", ja: "Token 分析", ko: "Token 분석", mt: "Token Analytics") }
-    var tokenScopeSubtitle: String { t("Token、成本、配额与项目归因分析", en: "Token, cost, quota, and project attribution analytics", zhHant: "Token、成本、配額與專案歸因分析", ja: "トークン、コスト、クォータ、プロジェクト帰属分析", ko: "토큰, 비용, 할당량, 프로젝트 귀속 분석", mt: "Token, cost, quota, and project attribution analytics") }
+    var tokenScopeTitle: String { t("Token 与用量", en: "Token & Usage", zhHant: "Token 與用量", ja: "Token と使用量", ko: "Token 및 사용량", mt: "Token & Usage") }
+    var tokenScopeSubtitle: String { t("统一 Token、成本、趋势与来源诊断", en: "Unified token, cost, trend, and source diagnostics", zhHant: "統一 Token、成本、趨勢與來源診斷", ja: "Token、コスト、傾向、ソース診断を統合", ko: "Token, 비용, 추세 및 소스 진단 통합", mt: "Unified token, cost, trend, and source diagnostics") }
     var tokenScopeSyncNow: String { t("立即同步", en: "Sync Now", zhHant: "立即同步", ja: "今すぐ同期", ko: "지금 동기화", mt: "Sync Now") }
     var tokenScopeSelectDataFolder: String { t("授权数据目录", en: "Authorize Data Folder", zhHant: "授權資料目錄", ja: "データフォルダを許可", ko: "데이터 폴더 승인", mt: "Authorize Data Folder") }
     var tokenScopeLocalData: String { t("本机真实数据", en: "Local Real Data", zhHant: "本機真實資料", ja: "ローカル実データ", ko: "로컬 실제 데이터", mt: "Local Real Data") }

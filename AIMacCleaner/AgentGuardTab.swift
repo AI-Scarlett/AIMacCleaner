@@ -51,7 +51,6 @@ struct AgentGuardTab: View {
                 case 3: commandRulesView
                 case 4: protectedDirsView
                 case 5: AgentToolkitView()
-                case 6: AgentUsageInsightsView()
                 default: dashboardView
                 }
             }
@@ -101,13 +100,6 @@ struct AgentGuardTab: View {
                     title: localizer.t("Agent 工具箱", en: "Agent Toolkit", zhHant: "Agent 工具箱", ja: "Agent ツールキット", ko: "Agent 도구 상자", mt: "Agent Toolkit"),
                     icon: "cross.case.fill",
                     index: 5,
-                    tint: Theme.Colors.accent,
-                    selected: $selectedSegment
-                )
-                SegmentButton(
-                    title: localizer.t("用量洞察", en: "Usage Insights", zhHant: "用量洞察", ja: "使用状況", ko: "사용량 인사이트", mt: "Usage Insights"),
-                    icon: "chart.xyaxis.line",
-                    index: 6,
                     tint: Theme.Colors.accent,
                     selected: $selectedSegment
                 )
