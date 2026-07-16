@@ -884,7 +884,9 @@ private struct TokenScopeEmptyInline: View {
 // MARK: - Store
 
 private final class TokenScopeStore: ObservableObject {
-    private static let cacheVersion = 2
+    // v4 invalidates caches created before all task-start description/title
+    // fields were excluded and cache files became owner-readable only.
+    private static let cacheVersion = 4
 
     @Published private(set) var records: [TokenScopeUsageRecord] = []
     @Published private var summaries: [TokenScopeRange: TokenScopeSummary] = TokenScopeRange.emptySummaries
@@ -990,9 +992,15 @@ private final class TokenScopeStore: ObservableObject {
     }
 
     private func loadCache() {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: SandboxPaths.shared.tokenScopeCachePath)),
+        let url = URL(fileURLWithPath: SandboxPaths.shared.tokenScopeCachePath)
+        guard let data = try? Data(contentsOf: url),
               let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
-        guard cache.version == Self.cacheVersion else { return }
+        guard cache.version == Self.cacheVersion else {
+            // Older cache versions may contain task-start prompt text. Delete
+            // them immediately instead of leaving sensitive stale data behind.
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
         records = cache.records
         summaries = TokenScopeRange.cachedSummaries(for: cache.records)
         if !cache.sources.isEmpty {
@@ -1004,7 +1012,13 @@ private final class TokenScopeStore: ObservableObject {
     private func saveCache() {
         let cache = Cache(version: Self.cacheVersion, updatedAt: Date(), records: records, sources: sources)
         guard let data = try? JSONEncoder().encode(cache) else { return }
-        try? data.write(to: URL(fileURLWithPath: SandboxPaths.shared.tokenScopeCachePath), options: .atomic)
+        let url = URL(fileURLWithPath: SandboxPaths.shared.tokenScopeCachePath)
+        do {
+            try data.write(to: url, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 }
 
@@ -1072,7 +1086,13 @@ private final class TokenScopeBookmarkStore {
 
     private func write(_ bookmarks: [String: Data]) {
         guard let data = try? JSONEncoder().encode(bookmarks) else { return }
-        try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        let url = URL(fileURLWithPath: path)
+        do {
+            try data.write(to: url, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 }
 
@@ -2326,20 +2346,10 @@ private enum TokenScopeCodexAdapter {
             ?? TokenScopeJSON.string(object, path: ["payload", "turn", "id"])
     }
 
-    private static func taskTitle(from object: Any?) -> String? {
-        guard let object else { return nil }
-        return TokenScopeJSON.firstString(object, paths: [
-            ["description"],
-            ["objective"],
-            ["title"],
-            ["task"],
-            ["prompt"],
-            ["payload", "description"],
-            ["payload", "objective"],
-            ["payload", "title"],
-            ["payload", "task"]
-        ])
-        .map { String($0.prefix(160)) }
+    private static func taskTitle(from _: Any?) -> String? {
+        // Task-start description/objective/title fields are often the user's
+        // prompt. TokenScope needs attribution and counters, not prompt text.
+        nil
     }
 
     private static func taskAttribution(threadSource: String?, originator: String?, taskName: String?, project: String, model: String, sessionTitle: String) -> (kind: String?, name: String?, detail: String?, source: String?) {

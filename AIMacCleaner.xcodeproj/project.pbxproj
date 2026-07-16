@@ -70,6 +70,9 @@
 		AGM10AGENTGEOMIRROR002 /* AgentGeoMirrorSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AGM20AGENTGEOMIRROR002 /* AgentGeoMirrorSettingsView.swift */; };
 		TF10CODEXBARRESOURCE0001 /* codexbar in Embed Provider Engine */ = {isa = PBXBuildFile; fileRef = TF11CODEXBARRESOURCE0002 /* codexbar */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		TF10CODEXBARLICENSE0001 /* CodexBar-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = TF11CODEXBARLICENSE0002 /* CodexBar-LICENSE.txt */; };
+		C0DE00000000000000000001 /* AgentUsageInsightsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000002 /* AgentUsageInsightsService.swift */; };
+		C0DE00000000000000000003 /* AgentUsageInsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000004 /* AgentUsageInsightsView.swift */; };
+		C0DE00000000000000000005 /* codexU-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000006 /* codexU-LICENSE.txt */; };
 		CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */; };
 		AD10AD10AD10AD10AD10AD10 /* DiskAdvisorLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD20AD20AD20AD20AD20AD20 /* DiskAdvisorLabView.swift */; };
 		LD10LOCALDIAGNOSTIC001 /* LocalSystemDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = LD20LOCALDIAGNOSTIC002 /* LocalSystemDiagnosticsView.swift */; };
@@ -142,6 +145,9 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		AGM20AGENTGEOMIRROR002 /* AgentGeoMirrorSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGeoMirrorSettingsView.swift; sourceTree = "<group>"; };
 		TF11CODEXBARRESOURCE0002 /* codexbar */ = {isa = PBXFileReference; lastKnownFileType = file; path = Resources/codexbar; sourceTree = "<group>"; };
 		TF11CODEXBARLICENSE0002 /* CodexBar-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Resources/CodexBar-LICENSE.txt"; sourceTree = "<group>"; };
+		C0DE00000000000000000002 /* AgentUsageInsightsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AgentUsageInsightsService.swift; sourceTree = "<group>"; };
+		C0DE00000000000000000004 /* AgentUsageInsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUsageInsightsView.swift; sourceTree = "<group>"; };
+		C0DE00000000000000000006 /* codexU-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Resources/codexU-LICENSE.txt"; sourceTree = "<group>"; };
 		CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenScopeLabView.swift; sourceTree = "<group>"; };
 		AD20AD20AD20AD20AD20AD20 /* DiskAdvisorLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskAdvisorLabView.swift; sourceTree = "<group>"; };
 		LD20LOCALDIAGNOSTIC002 /* LocalSystemDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSystemDiagnosticsView.swift; sourceTree = "<group>"; };
@@ -235,6 +241,9 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				E1A2B3C4D5E6F708192A3B52 /* CaptureSession.swift */,
 				TF11CODEXBARRESOURCE0002 /* codexbar */,
 				TF11CODEXBARLICENSE0002 /* CodexBar-LICENSE.txt */,
+				C0DE00000000000000000002 /* AgentUsageInsightsService.swift */,
+				C0DE00000000000000000004 /* AgentUsageInsightsView.swift */,
+				C0DE00000000000000000006 /* codexU-LICENSE.txt */,
 			);
 			path = AIMacCleaner;
 			sourceTree = "<group>";
@@ -317,6 +326,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				CBCF198FD371A93A86185BEC /* Assets.xcassets in Resources */,
 				E1F2A3B4C5D6E7F8091A2B3C /* PrivacyInfo.xcprivacy in Resources */,
 				TF10CODEXBARLICENSE0001 /* CodexBar-LICENSE.txt in Resources */,
+				C0DE00000000000000000005 /* codexU-LICENSE.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -402,6 +412,8 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				D1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift in Sources */,
+				C0DE00000000000000000001 /* AgentUsageInsightsService.swift in Sources */,
+				C0DE00000000000000000003 /* AgentUsageInsightsView.swift in Sources */,
 				AGM10AGENTGEOMIRROR001 /* AgentGeoMirrorService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B50 /* CaptureShelfService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B51 /* CaptureSelectionOverlay.swift in Sources */,

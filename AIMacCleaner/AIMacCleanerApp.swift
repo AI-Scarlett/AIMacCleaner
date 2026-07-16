@@ -14,6 +14,7 @@ struct AIMacCleanerApp: App {
     @StateObject private var updateService = DirectUpdateService.shared
     @StateObject private var iOSRemoteGatewayService = IOSRemoteControlGatewayService.shared
     @StateObject private var providerQuotaService = ProviderQuotaService()
+    @StateObject private var agentUsageInsightsService = AgentUsageInsightsService.shared
     @StateObject private var captureShelfService = CaptureShelfService.shared
     @StateObject private var artifactSidecarController = ArtifactSidecarController.shared
     @StateObject private var menuBarController = MenuBarStatusController()
@@ -24,8 +25,38 @@ struct AIMacCleanerApp: App {
     @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
     @AppStorage("quitBehavior") private var quitBehavior: String = "quitAll"
     @AppStorage("networkMode") private var networkMode = "internet"
+    @AppStorage("automaticUpdateChecksEnabled") private var automaticUpdateChecksEnabled = true
 
     init() {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--tracefence-agent-usage-probe") {
+            let probe = AgentUsageInsightsService.debugRunLocalUsageProbe(timeout: 180)
+            let quotaFailures = ProviderQuotaService.debugQuotaSelfTestFailures()
+            let taskCatalogFailures = ArtifactShelfService.debugTaskCatalogSelfTestFailures()
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let data = try? encoder.encode(probe) {
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data("\n".utf8))
+            }
+            if !quotaFailures.isEmpty || !taskCatalogFailures.isEmpty,
+               let data = try? JSONSerialization.data(withJSONObject: [
+                   "quotaSelfTestFailures": quotaFailures,
+                   "taskCatalogSelfTestFailures": taskCatalogFailures
+               ], options: [.prettyPrinted, .sortedKeys]) {
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data("\n".utf8))
+            }
+            Darwin.exit(
+                probe.succeeded
+                    && probe.selfTestFailures.isEmpty
+                    && quotaFailures.isEmpty
+                    && taskCatalogFailures.isEmpty
+                    ? 0
+                    : 2
+            )
+        }
+#endif
         let defaults = UserDefaults.standard
         let palette = defaults.string(forKey: "colorPalette")
         if palette == nil || palette == AppColorPalette.aurora.rawValue {
@@ -57,6 +88,16 @@ struct AIMacCleanerApp: App {
         iOSRemoteGatewayService.stop()
     }
 
+    private var shouldStartUsageInsightsAtLaunch: Bool {
+        let defaults = UserDefaults.standard
+        let style = defaults.string(forKey: MenuBarStatusPreferences.styleKey)
+            .flatMap(MenuBarStatusStyle.init(rawValue:)) ?? .classic
+        let metric = defaults.string(forKey: MenuBarStatusPreferences.primaryMetricKey)
+            .flatMap(MenuBarPrimaryMetric.init(rawValue:)) ?? .tightest
+        guard style != .minimal else { return false }
+        return style == .detailed || metric == .todayTokens
+    }
+
     var body: some Scene {
         Window("TraceFence", id: "main") {
             ContentView(overviewStore: overviewStore)
@@ -67,6 +108,8 @@ struct AIMacCleanerApp: App {
                 .environmentObject(conversationWatcher)
                 .environmentObject(licenseService)
                 .environmentObject(updateService)
+                .environmentObject(providerQuotaService)
+                .environmentObject(agentUsageInsightsService)
                 .environmentObject(captureShelfService)
                 .frame(minWidth: 960, minHeight: 640)
                 .onAppear {
@@ -87,6 +130,12 @@ struct AIMacCleanerApp: App {
                     )
                     captureShelfService.start()
                     providerQuotaService.start()
+                    agentUsageInsightsService.setApplicationActive(NSApp.isActive)
+                    if shouldStartUsageInsightsAtLaunch {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                            agentUsageInsightsService.startScheduling()
+                        }
+                    }
                     if SandboxPaths.isDirectDistribution {
                         artifactSidecarController.start()
                     }
@@ -116,12 +165,15 @@ struct AIMacCleanerApp: App {
 #if DEBUG
                         guard !ProcessInfo.processInfo.arguments.contains("--tracefence-capture-ui-test") else { return }
 #endif
-                        guard networkMode == "internet", TraceFenceDistributionPolicy.currentChannel.isDirect else { return }
+                        guard automaticUpdateChecksEnabled,
+                              networkMode == "internet",
+                              TraceFenceDistributionPolicy.currentChannel.isDirect else { return }
                         Task { await updateService.checkForUpdates() }
                     }
                     menuBarController.configure(
                         service: service,
                         quotaService: providerQuotaService,
+                        usageInsightsService: agentUsageInsightsService,
                         captureService: captureShelfService,
                         localizer: localizer,
                         isEnabled: menuBarMonitorEnabled
@@ -140,8 +192,12 @@ struct AIMacCleanerApp: App {
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    agentUsageInsightsService.setApplicationActive(true)
                     guard TraceFenceDistributionPolicy.currentChannel.isAppStore else { return }
                     Task { await AppStoreSubscriptionService.shared.refreshEntitlements() }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+                    agentUsageInsightsService.setApplicationActive(false)
                 }
                 .alert(item: $updateService.cliUpdateAlert) { alert in
                     Alert(
@@ -167,6 +223,7 @@ struct AIMacCleanerApp: App {
             .environmentObject(service)
             .environmentObject(localizer)
             .environmentObject(licenseService)
+            .environmentObject(agentUsageInsightsService)
         }
     }
 }
@@ -260,6 +317,7 @@ enum MenuBarShieldEyeTemplateImage {
 
 extension Notification.Name {
     static let agentCenterShouldInitialize = Notification.Name("agentCenterShouldInitialize")
+    static let traceFenceMainWindowLevelChanged = Notification.Name("traceFenceMainWindowLevelChanged")
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -336,6 +394,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        AgentUsageInsightsService.shared.stopScheduling()
         NotificationCenter.default.removeObserver(
             self,
             name: NSWindow.didBecomeKeyNotification,
@@ -349,6 +408,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.removeObserver(shortcutChangeObserver)
             self.shortcutChangeObserver = nil
         }
+        NotificationCenter.default.removeObserver(
+            self,
+            name: .traceFenceMainWindowLevelChanged,
+            object: nil
+        )
         Task { @MainActor in
             ArtifactSidecarController.shared.stop()
             ArtifactShelfService.shared.stop()
@@ -362,6 +426,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     private func setupWindowDelegate() {
+        NotificationCenter.default.removeObserver(
+            self,
+            name: .traceFenceMainWindowLevelChanged,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(mainWindowLevelPreferenceDidChange(_:)),
+            name: .traceFenceMainWindowLevelChanged,
+            object: nil
+        )
         reconcileMainWindows()
         NotificationCenter.default.addObserver(
             self,
@@ -369,6 +444,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWindow.didBecomeKeyNotification,
             object: nil
         )
+    }
+
+    @MainActor
+    @objc private func mainWindowLevelPreferenceDidChange(_ notification: Notification) {
+        guard let window = bestMainWindow() else { return }
+        applyPreferredMainWindowLevel(to: window)
     }
 
     @MainActor
@@ -467,6 +548,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindow = canonical
         canonical.delegate = WindowDelegate.shared
         canonical.isRestorable = false
+        applyPreferredMainWindowLevel(to: canonical)
 
         for duplicate in candidates where duplicate !== canonical {
             print("[TraceFence] Closing duplicate main window number=\(duplicate.windowNumber)")
@@ -478,6 +560,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     private func show(window: NSWindow, reason: String) {
+        applyPreferredMainWindowLevel(to: window)
         if window.isMiniaturized {
             window.deminiaturize(nil)
         }
@@ -490,6 +573,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             didPresentInitialLaunchSurface = true
         }
         print("[TraceFence] Launch surface visible via \(reason)")
+    }
+
+    @MainActor
+    private func applyPreferredMainWindowLevel(to window: NSWindow) {
+        let staysOnTop = UserDefaults.standard.bool(forKey: "mainWindowAlwaysOnTop")
+        window.level = staysOnTop ? .floating : .normal
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

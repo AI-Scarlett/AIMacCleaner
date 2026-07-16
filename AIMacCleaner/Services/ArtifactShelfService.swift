@@ -53,6 +53,11 @@ struct ArtifactShelfTask: Identifiable, Hashable, Sendable {
     }
 }
 
+private struct LocalCodexTaskCatalog: Sendable {
+    let tasks: [ArtifactShelfTask]
+    let subagentThreadIDs: Set<String>
+}
+
 struct ArtifactShelfCandidate: Identifiable, Hashable, Sendable {
     enum Kind: String, Codable, Sendable {
         case file, directory, image, html, url
@@ -341,12 +346,12 @@ final class ArtifactShelfService: ObservableObject {
                 let snapshotTasks = snapshots.map {
                     ArtifactShelfTask(id: $0.id, title: $0.preview, cwd: $0.cwd, rolloutPath: $0.sourcePath, updatedAt: $0.updatedAt, phase: $0.phase)
                 }
-                let localCodexTasks = await Task.detached(priority: .utility) {
-                    Self.loadLocalCodexTasks()
+                let localCatalog = await Task.detached(priority: .utility) {
+                    Self.loadLocalCodexTaskCatalog()
                 }.value
                 guard !Task.isCancelled, self.refreshGeneration == generation else { return }
                 var merged = Dictionary(uniqueKeysWithValues: snapshotTasks.map { ($0.id, $0) })
-                for local in localCodexTasks {
+                for local in localCatalog.tasks {
                     if let live = merged[local.id] {
                         let liveTitle = live.title.trimmingCharacters(in: .whitespacesAndNewlines)
                         let genericLiveTitle = liveTitle.isEmpty || ["codex 会话", "codex session"].contains(liveTitle.lowercased())
@@ -362,7 +367,10 @@ final class ArtifactShelfService: ObservableObject {
                         merged[local.id] = local
                     }
                 }
-                let nextTasks = merged.values.sorted { $0.updatedAt > $1.updatedAt }
+                let nextTasks = Self.cleanedTaskCatalog(
+                    Array(merged.values),
+                    subagentThreadIDs: localCatalog.subagentThreadIDs
+                )
                 if self.tasks != nextTasks {
                     self.tasks = nextTasks
                 }
@@ -1223,6 +1231,176 @@ final class ArtifactShelfService: ObservableObject {
         taskID.split(separator: "|", omittingEmptySubsequences: true).last.map(String.init) ?? taskID
     }
 
+    /// The Codex state database includes worker/subagent threads. Those rows
+    /// inherit the parent's first prompt, so presenting them as independent
+    /// user tasks creates dozens of visually identical entries. Canonicalize
+    /// transport aliases, hide known worker threads, and only collapse exact
+    /// long prompt clones. Short titles such as "继续" remain independent.
+    nonisolated private static func cleanedTaskCatalog(
+        _ input: [ArtifactShelfTask],
+        subagentThreadIDs: Set<String>
+    ) -> [ArtifactShelfTask] {
+        var canonical: [String: ArtifactShelfTask] = [:]
+        for task in input {
+            let nativeID = nativeThreadID(from: task.id)
+            guard !subagentThreadIDs.contains(nativeID) else { continue }
+            let key = "\(task.agentID)|\(nativeID)"
+            if let existing = canonical[key] {
+                canonical[key] = mergeCatalogAliases(existing, task)
+            } else {
+                canonical[key] = task
+            }
+        }
+
+        var seenLongPrompts: Set<String> = []
+        var result: [ArtifactShelfTask] = []
+        for task in canonical.values.sorted(by: { $0.updatedAt > $1.updatedAt }) {
+            let rawTitle = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if isPromptDerivedTitle(rawTitle) {
+                let normalizedCWD = URL(fileURLWithPath: task.cwd).standardizedFileURL.path.lowercased()
+                let digest = SHA256.hash(data: Data(rawTitle.utf8)).map { String(format: "%02x", $0) }.joined()
+                let key = "\(task.agentID)|\(normalizedCWD)|\(digest)"
+                guard seenLongPrompts.insert(key).inserted else { continue }
+            }
+            result.append(ArtifactShelfTask(
+                id: task.id,
+                title: safeTaskDisplayTitle(task.title, cwd: task.cwd),
+                cwd: task.cwd,
+                rolloutPath: task.rolloutPath,
+                updatedAt: task.updatedAt,
+                phase: task.phase
+            ))
+        }
+        return result
+    }
+
+    nonisolated private static func mergeCatalogAliases(
+        _ lhs: ArtifactShelfTask,
+        _ rhs: ArtifactShelfTask
+    ) -> ArtifactShelfTask {
+        let newer = lhs.updatedAt >= rhs.updatedAt ? lhs : rhs
+        let older = lhs.updatedAt >= rhs.updatedAt ? rhs : lhs
+        let nativeID = nativeThreadID(from: newer.id)
+        let stableID = [newer, older].first(where: { $0.id == nativeID })?.id ?? newer.id
+        let preferredTitle = catalogTitleScore(newer.title) >= catalogTitleScore(older.title)
+            ? newer.title
+            : older.title
+        let activeCatalogPhases: Set<String> = ["processing", "waitingApproval", "waitingInput", "compacting"]
+        let active = [lhs, rhs].first(where: { activeCatalogPhases.contains($0.phase) })
+        return ArtifactShelfTask(
+            id: stableID,
+            title: preferredTitle,
+            cwd: newer.cwd.isEmpty ? older.cwd : newer.cwd,
+            rolloutPath: newer.rolloutPath.isEmpty ? older.rolloutPath : newer.rolloutPath,
+            updatedAt: newer.updatedAt,
+            phase: active?.phase ?? newer.phase
+        )
+    }
+
+    nonisolated private static func catalogTitleScore(_ raw: String) -> Int {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty || ["codex 会话", "codex session"].contains(value.lowercased()) { return 0 }
+        if value.count <= 80, !value.contains("\n") { return 4 }
+        if value.count <= 160, !value.contains("\n") { return 3 }
+        return 1
+    }
+
+    nonisolated private static func isPromptDerivedTitle(_ raw: String) -> Bool {
+        raw.count > 160 || raw.contains("\n") || raw.contains("<in-app-browser-context")
+    }
+
+    nonisolated private static func safeTaskDisplayTitle(_ raw: String, cwd: String) -> String {
+        let skippedPrefixes = [
+            "<in-app-browser-context", "<environment_context", "<image", "# files mentioned",
+            "## my request", "my request for codex:", "```", "---"
+        ]
+        let meaningfulLine = raw
+            .components(separatedBy: .newlines)
+            .lazy
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { line in
+                guard !line.isEmpty else { return false }
+                let lower = line.lowercased()
+                return !skippedPrefixes.contains(where: { lower.hasPrefix($0) })
+            } ?? ""
+        var value = meaningfulLine
+            .replacingOccurrences(of: "\t", with: " ")
+            .components(separatedBy: .whitespaces)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        if let boundary = value.firstIndex(where: { "。！？!?".contains($0) }) {
+            let next = value.index(after: boundary)
+            value = String(value[..<next])
+        }
+        let maxLength = 64
+        if value.count > maxLength {
+            value = String(value.prefix(maxLength)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+        }
+        if !value.isEmpty { return value }
+        let project = URL(fileURLWithPath: cwd).lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        return project.isEmpty ? "Codex task" : project
+    }
+
+#if DEBUG
+    nonisolated static func debugTaskCatalogSelfTestFailures() -> [String] {
+        var failures: [String] = []
+        func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
+            if !condition() { failures.append(message) }
+        }
+        func task(
+            _ id: String,
+            _ title: String,
+            cwd: String = "/tmp/project-a",
+            updatedAt: TimeInterval = 1
+        ) -> ArtifactShelfTask {
+            ArtifactShelfTask(
+                id: id,
+                title: title,
+                cwd: cwd,
+                rolloutPath: "/tmp/\(id).jsonl",
+                updatedAt: Date(timeIntervalSince1970: updatedAt),
+                phase: "idle"
+            )
+        }
+
+        let inheritedPrompt = String(repeating: "This is a long inherited parent prompt. ", count: 8)
+        let promptClones = cleanedTaskCatalog([
+            task("old", inheritedPrompt, updatedAt: 1),
+            task("new", inheritedPrompt, updatedAt: 2)
+        ], subagentThreadIDs: [])
+        expect(promptClones.count == 1, "exact long prompt clones in one project must collapse")
+        expect(promptClones.first?.id == "new", "newest long prompt clone must represent the logical task")
+        expect((promptClones.first?.title.count ?? 0) <= 65, "prompt-derived task titles must be compact")
+
+        let shortTitles = cleanedTaskCatalog([
+            task("short-a", "继续", updatedAt: 1),
+            task("short-b", "继续", updatedAt: 2)
+        ], subagentThreadIDs: [])
+        expect(shortTitles.count == 2, "short generic titles must not be collapsed")
+
+        let differentProjects = cleanedTaskCatalog([
+            task("project-a", inheritedPrompt, cwd: "/tmp/project-a"),
+            task("project-b", inheritedPrompt, cwd: "/tmp/project-b")
+        ], subagentThreadIDs: [])
+        expect(differentProjects.count == 2, "same prompt in different projects must remain distinct")
+
+        let canonicalAliases = cleanedTaskCatalog([
+            task("thread-1", "Readable title", updatedAt: 1),
+            task("core|codex|thread-1", inheritedPrompt, updatedAt: 2)
+        ], subagentThreadIDs: [])
+        expect(canonicalAliases.count == 1, "transport aliases for one native thread must merge")
+        expect(canonicalAliases.first?.id == "thread-1", "native thread id must win over transport aliases")
+        expect(canonicalAliases.first?.title == "Readable title", "concise live title must win over inherited prompt")
+
+        let filteredWorkers = cleanedTaskCatalog([
+            task("parent", "Parent task"),
+            task("worker", inheritedPrompt)
+        ], subagentThreadIDs: ["worker"])
+        expect(filteredWorkers.map(\.id) == ["parent"], "known subagent threads must not appear as user tasks")
+        return failures
+    }
+#endif
+
     nonisolated private static func sortedCandidates<S: Sequence>(_ values: S) -> [ArtifactShelfCandidate]
     where S.Element == ArtifactShelfCandidate {
         values
@@ -1235,7 +1413,7 @@ final class ArtifactShelfService: ObservableObject {
             .map { $0 }
     }
 
-    nonisolated private static func loadLocalCodexTasks() -> [ArtifactShelfTask] {
+    nonisolated private static func loadLocalCodexTaskCatalog() -> LocalCodexTaskCatalog {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let candidates = [
             home + "/.codex/state_5.sqlite",
@@ -1245,28 +1423,28 @@ final class ArtifactShelfService: ObservableObject {
             let left = (try? FileManager.default.attributesOfItem(atPath: $0)[.modificationDate] as? Date) ?? .distantPast
             let right = (try? FileManager.default.attributesOfItem(atPath: $1)[.modificationDate] as? Date) ?? .distantPast
             return left < right
-        }) else { return [] }
+        }) else { return LocalCodexTaskCatalog(tasks: [], subagentThreadIDs: []) }
 
         var database: OpaquePointer?
         guard sqlite3_open_v2(path, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK,
               let database else {
             if database != nil { sqlite3_close(database) }
-            return []
+            return LocalCodexTaskCatalog(tasks: [], subagentThreadIDs: [])
         }
         defer { sqlite3_close(database) }
         sqlite3_busy_timeout(database, 350)
 
         let sql = """
         SELECT id, title, preview, cwd, rollout_path,
-               COALESCE(NULLIF(recency_at, 0), updated_at)
+               COALESCE(NULLIF(recency_at, 0), updated_at), source
           FROM threads
          WHERE archived = 0 AND rollout_path <> ''
          ORDER BY recency_at DESC, updated_at DESC
-         LIMIT 320
+         LIMIT 640
         """
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
-              let statement else { return [] }
+              let statement else { return LocalCodexTaskCatalog(tasks: [], subagentThreadIDs: []) }
         defer { sqlite3_finalize(statement) }
 
         func string(at index: Int32) -> String {
@@ -1275,23 +1453,29 @@ final class ArtifactShelfService: ObservableObject {
         }
 
         var result: [ArtifactShelfTask] = []
+        var subagentThreadIDs: Set<String> = []
         while sqlite3_step(statement) == SQLITE_ROW {
             let id = string(at: 0)
             let title = string(at: 1).trimmingCharacters(in: .whitespacesAndNewlines)
             let preview = string(at: 2).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !id.isEmpty else { continue }
+            let source = string(at: 6).lowercased()
+            if source.contains("subagent") {
+                subagentThreadIDs.insert(id)
+                continue
+            }
             var timestamp = sqlite3_column_double(statement, 5)
             if timestamp > 10_000_000_000 { timestamp /= 1_000 }
             result.append(ArtifactShelfTask(
                 id: id,
-                title: String((title.isEmpty ? preview : title).prefix(180)),
+                title: title.isEmpty ? preview : title,
                 cwd: string(at: 3),
                 rolloutPath: string(at: 4),
                 updatedAt: timestamp > 0 ? Date(timeIntervalSince1970: timestamp) : .distantPast,
                 phase: "idle"
             ))
         }
-        return result
+        return LocalCodexTaskCatalog(tasks: result, subagentThreadIDs: subagentThreadIDs)
     }
 
     private func targetURL(_ target: String) -> URL? {

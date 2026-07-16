@@ -4,6 +4,7 @@ import Darwin
 struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
     @ObservedObject var quotaService: ProviderQuotaService
+    @ObservedObject var usageInsightsService: AgentUsageInsightsService
     @ObservedObject var captureService: CaptureShelfService
     @ObservedObject private var artifactShelfService = ArtifactShelfService.shared
     @ObservedObject private var artifactSidecarController = ArtifactSidecarController.shared
@@ -29,6 +30,7 @@ struct MenuBarMonitor: View {
 
     enum MonitorTab: String, CaseIterable {
         case quotas = "quotas"
+        case usage = "usage"
         case capture = "capture"
         case operations = "operations"
         case overview = "overview"
@@ -36,6 +38,7 @@ struct MenuBarMonitor: View {
         func label(_ localizer: Localizer) -> String {
             switch self {
             case .quotas: return localizer.t("额度", en: "Quota", zhHant: "額度", ja: "クォータ", ko: "할당량", mt: "Quota")
+            case .usage: return localizer.t("用量", en: "Usage", zhHant: "用量", ja: "使用量", ko: "사용량", mt: "Usage")
             case .capture: return localizer.t("采集", en: "Capture", zhHant: "採集", ja: "収集", ko: "캡처", mt: "Capture")
             case .operations: return localizer.agentMonitorTitle
             case .overview: return localizer.systemMonitorTitle
@@ -45,6 +48,7 @@ struct MenuBarMonitor: View {
         var icon: String {
             switch self {
             case .quotas: return "gauge.with.dots.needle.67percent"
+            case .usage: return "chart.xyaxis.line"
             case .capture: return "viewfinder"
             case .operations: return "chart.bar"
             case .overview: return "gauge.open.with.lines.needle.84percent"
@@ -61,6 +65,9 @@ struct MenuBarMonitor: View {
                 switch selectedTab {
                 case .quotas:
                     quotaContent
+                case .usage:
+                    AgentUsageRuntimeSummaryView()
+                        .environmentObject(usageInsightsService)
                 case .capture:
                     captureContent
                 case .overview:
@@ -1182,6 +1189,15 @@ struct MenuBarMonitor: View {
                                 .background(Theme.Colors.accent.opacity(0.1))
                                 .clipShape(Capsule())
                         }
+                        if snapshot.isStale {
+                            Text(localizer.t("缓存", en: "STALE", zhHant: "快取", ja: "古い値", ko: "이전 값", mt: "STALE"))
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.warning)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Theme.Colors.warning.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
                     }
                     Text(localizedQuotaText(snapshot.accountLabel ?? sourceLabel(snapshot.source)))
                         .font(Theme.Font.caption)
@@ -1192,7 +1208,7 @@ struct MenuBarMonitor: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(relativeRefreshText(snapshot.updatedAt))
+                    Text(relativeRefreshText(snapshot.lastSuccessfulAt ?? snapshot.updatedAt))
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textTertiary)
                     if let credits = snapshot.credits {
@@ -1201,6 +1217,23 @@ struct MenuBarMonitor: View {
                             .foregroundStyle(Theme.Colors.warning)
                     }
                 }
+            }
+
+            if snapshot.isStale {
+                Label(
+                    localizedQuotaText(snapshot.refreshErrorMessage ?? localizer.t(
+                        "本次刷新失败，当前显示上一次可信额度。",
+                        en: "The latest refresh failed. Showing the last trusted quota values.",
+                        zhHant: "本次重新整理失敗，目前顯示上一次可信額度。",
+                        ja: "最新の更新に失敗したため、前回の信頼できる値を表示しています。",
+                        ko: "최근 새로 고침에 실패하여 마지막으로 확인된 값을 표시합니다.",
+                        mt: "The latest refresh failed. Showing the last trusted values."
+                    )),
+                    systemImage: "clock.badge.exclamationmark"
+                )
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.warning)
+                .fixedSize(horizontal: false, vertical: true)
             }
 
             if let error = quotaErrorText(snapshot.errorMessage) {
@@ -2546,6 +2579,8 @@ struct MenuBarMonitor: View {
                 service.startOperationMonitor()
             case .quotas:
                 break
+            case .usage:
+                usageInsightsService.refresh()
             case .capture:
                 captureService.start()
             }

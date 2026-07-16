@@ -3,10 +3,42 @@ import Combine
 import Darwin
 import SwiftUI
 
+enum MenuBarStatusStyle: String, CaseIterable, Identifiable {
+    case minimal
+    case classic
+    case detailed
+
+    var id: String { rawValue }
+}
+
+enum MenuBarQuotaDisplayMode: String, CaseIterable, Identifiable {
+    case remaining
+    case used
+
+    var id: String { rawValue }
+}
+
+enum MenuBarPrimaryMetric: String, CaseIterable, Identifiable {
+    case tightest
+    case fiveHour
+    case weekly
+    case todayTokens
+
+    var id: String { rawValue }
+}
+
+enum MenuBarStatusPreferences {
+    static let styleKey = "traceFence.menuBar.statusStyle"
+    static let quotaDisplayModeKey = "traceFence.menuBar.quotaDisplayMode"
+    static let primaryMetricKey = "traceFence.menuBar.primaryMetric"
+    static let showResetCountdownKey = "traceFence.menuBar.showResetCountdown"
+}
+
 @MainActor
 final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegate {
     private weak var service: ScannerService?
     private weak var quotaService: ProviderQuotaService?
+    private weak var usageInsightsService: AgentUsageInsightsService?
     private weak var captureService: CaptureShelfService?
     private weak var localizer: Localizer?
     private var statusItem: NSStatusItem?
@@ -22,12 +54,14 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
     func configure(
         service: ScannerService,
         quotaService: ProviderQuotaService,
+        usageInsightsService: AgentUsageInsightsService,
         captureService: CaptureShelfService,
         localizer: Localizer,
         isEnabled: Bool
     ) {
         self.service = service
         self.quotaService = quotaService
+        self.usageInsightsService = usageInsightsService
         self.captureService = captureService
         self.localizer = localizer
         bindPublishersIfNeeded()
@@ -56,6 +90,23 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
             }
             .store(in: &cancellables)
 
+        usageInsightsService?.objectWillChange
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.scheduleButtonLabelRefresh()
+                }
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.startUsageInsightsIfRequiredByMenuBar()
+                    self?.scheduleButtonLabelRefresh()
+                }
+            }
+            .store(in: &cancellables)
+
         localizer?.objectWillChange
             .sink { [weak self] _ in
                 Task { @MainActor in
@@ -63,6 +114,16 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
                 }
             }
             .store(in: &cancellables)
+    }
+
+    private func startUsageInsightsIfRequiredByMenuBar() {
+        let defaults = UserDefaults.standard
+        let style = defaults.string(forKey: MenuBarStatusPreferences.styleKey)
+            .flatMap(MenuBarStatusStyle.init(rawValue:)) ?? .classic
+        let metric = defaults.string(forKey: MenuBarStatusPreferences.primaryMetricKey)
+            .flatMap(MenuBarPrimaryMetric.init(rawValue:)) ?? .tightest
+        guard style != .minimal, style == .detailed || metric == .todayTokens else { return }
+        usageInsightsService?.startScheduling()
     }
 
     private func ensureStatusItem() {
@@ -155,13 +216,114 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
     }
 
     private func currentStatusTitle() -> String? {
-        if let quota = quotaService?.menuBarSummary, !quota.isEmpty {
-            return quota
+        let defaults = UserDefaults.standard
+        let style = defaults.string(forKey: MenuBarStatusPreferences.styleKey)
+            .flatMap(MenuBarStatusStyle.init(rawValue:)) ?? .classic
+        guard style != .minimal else { return nil }
+
+        let displayMode = defaults.string(forKey: MenuBarStatusPreferences.quotaDisplayModeKey)
+            .flatMap(MenuBarQuotaDisplayMode.init(rawValue:)) ?? .remaining
+        let primaryMetric = defaults.string(forKey: MenuBarStatusPreferences.primaryMetricKey)
+            .flatMap(MenuBarPrimaryMetric.init(rawValue:)) ?? .tightest
+        let windows = quotaService?.snapshots
+            .filter { !$0.isSetupNotice }
+            .flatMap(\.windows)
+            .filter { ["primary", "secondary", "tertiary"].contains($0.id) } ?? []
+        let staleSuffix = quotaService?.snapshots.contains(where: {
+            $0.isStale && $0.windows.contains(where: { ["primary", "secondary", "tertiary"].contains($0.id) })
+        }) == true ? " ~" : ""
+
+        if style == .detailed {
+            var parts: [String] = []
+            if let fiveHour = tightestWindow(kind: .fiveHour, in: windows) {
+                parts.append(formatQuota(fiveHour, displayMode: displayMode))
+            }
+            if let weekly = tightestWindow(kind: .weekly, in: windows) {
+                parts.append(formatQuota(weekly, displayMode: displayMode))
+            }
+            if let today = usageInsightsService?.snapshot.today.total, today > 0 {
+                parts.append("T \(Self.compactCount(today))")
+            }
+            let showResetCountdown = defaults.object(forKey: MenuBarStatusPreferences.showResetCountdownKey) == nil
+                ? true
+                : defaults.bool(forKey: MenuBarStatusPreferences.showResetCountdownKey)
+            if showResetCountdown,
+               let reset = windows.compactMap(\.resetsAt).filter({ $0 > Date() }).min() {
+                parts.append(Self.compactCountdown(to: reset))
+            }
+            if !parts.isEmpty { return parts.joined(separator: " · ") + staleSuffix }
+        } else if let value = compactMetric(primaryMetric, windows: windows, displayMode: displayMode) {
+            return value + staleSuffix
         }
         if let disk = service?.diskInfo {
             return String(format: "%.0f%%", 100.0 - disk.usedPct)
         }
         return nil
+    }
+
+    private func compactMetric(
+        _ metric: MenuBarPrimaryMetric,
+        windows: [ProviderQuotaWindow],
+        displayMode: MenuBarQuotaDisplayMode
+    ) -> String? {
+        switch metric {
+        case .tightest:
+            return windows.min(by: { $0.remainingPercent < $1.remainingPercent })
+                .map { formatQuota($0, displayMode: displayMode) }
+        case .fiveHour:
+            return tightestWindow(kind: .fiveHour, in: windows)
+                .map { formatQuota($0, displayMode: displayMode) }
+        case .weekly:
+            return tightestWindow(kind: .weekly, in: windows)
+                .map { formatQuota($0, displayMode: displayMode) }
+        case .todayTokens:
+            guard let total = usageInsightsService?.snapshot.today.total, total > 0 else { return nil }
+            return "T \(Self.compactCount(total))"
+        }
+    }
+
+    private func tightestWindow(
+        kind: ProviderQuotaWindow.Kind,
+        in windows: [ProviderQuotaWindow]
+    ) -> ProviderQuotaWindow? {
+        windows.filter { $0.kind == kind }
+            .min { $0.remainingPercent < $1.remainingPercent }
+    }
+
+    private func formatQuota(
+        _ window: ProviderQuotaWindow,
+        displayMode: MenuBarQuotaDisplayMode
+    ) -> String {
+        let percent = displayMode == .remaining ? window.remainingPercent : window.usedPercent
+        let suffix = displayMode == .remaining ? "" : " " + localized("已用", en: "used")
+        let title: String
+        switch window.kind {
+        case .fiveHour: title = "5h"
+        case .weekly: title = "7d"
+        case .monthly: title = "30d"
+        case .extra: title = window.title
+        }
+        return "\(title) \(Int(percent.rounded()))%\(suffix)"
+    }
+
+    private static func compactCount(_ value: Int64) -> String {
+        switch value {
+        case 1_000_000_000...:
+            return String(format: "%.1fB", Double(value) / 1_000_000_000)
+        case 1_000_000...:
+            return String(format: "%.1fM", Double(value) / 1_000_000)
+        case 1_000...:
+            return String(format: "%.1fK", Double(value) / 1_000)
+        default:
+            return "\(value)"
+        }
+    }
+
+    private static func compactCountdown(to date: Date) -> String {
+        let minutes = max(0, Int(date.timeIntervalSinceNow / 60))
+        if minutes >= 1_440 { return "\(minutes / 1_440)d" }
+        if minutes >= 60 { return "\(minutes / 60)h\(minutes % 60)m" }
+        return "\(minutes)m"
     }
 
     @objc private func statusItemClicked(_ sender: Any?) {
@@ -188,7 +350,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
     }
 
     private func showPopover() {
-        guard let service, let quotaService, let captureService, let localizer else { return }
+        guard let service, let quotaService, let usageInsightsService, let captureService, let localizer else { return }
         guard let button = statusItem?.button else {
             rebuildStatusItem()
             return
@@ -198,7 +360,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
 
         let panelSize = NSSize(width: 520, height: 640)
         let hostingView = NSHostingView(
-            rootView: MenuBarMonitor(service: service, quotaService: quotaService, captureService: captureService)
+            rootView: MenuBarMonitor(service: service, quotaService: quotaService, usageInsightsService: usageInsightsService, captureService: captureService)
                 .environmentObject(localizer)
         )
         hostingView.frame = NSRect(origin: .zero, size: panelSize)

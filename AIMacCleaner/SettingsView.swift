@@ -35,6 +35,12 @@ struct SettingsView: View {
     @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = false
     @AppStorage("networkMode") private var networkMode = "internet"
     @AppStorage("quitBehavior") private var quitBehavior: String = "quitAll"
+    @AppStorage("mainWindowAlwaysOnTop") private var mainWindowAlwaysOnTop = false
+    @AppStorage("automaticUpdateChecksEnabled") private var automaticUpdateChecksEnabled = true
+    @AppStorage(MenuBarStatusPreferences.styleKey) private var menuBarStatusStyle = MenuBarStatusStyle.classic.rawValue
+    @AppStorage(MenuBarStatusPreferences.quotaDisplayModeKey) private var menuBarQuotaDisplayMode = MenuBarQuotaDisplayMode.remaining.rawValue
+    @AppStorage(MenuBarStatusPreferences.primaryMetricKey) private var menuBarPrimaryMetric = MenuBarPrimaryMetric.tightest.rawValue
+    @AppStorage(MenuBarStatusPreferences.showResetCountdownKey) private var menuBarShowResetCountdown = true
     @AppStorage("colorPalette") private var colorPalette = AppColorPalette.porcelain.rawValue
     @AppStorage(IOSRemoteControlGatewayService.enabledKey) private var iOSRemoteGatewayEnabled = false
     @AppStorage(IOSRemoteControlGatewayService.portKey) private var iOSRemoteGatewayPort = 17895
@@ -250,6 +256,19 @@ struct SettingsView: View {
         .onDisappear {
             stopShortcutRecording()
         }
+        .onChange(of: mainWindowAlwaysOnTop) { _ in
+            NotificationCenter.default.post(name: .traceFenceMainWindowLevelChanged, object: nil)
+        }
+        .onChange(of: menuBarStatusStyle) { value in
+            if value == MenuBarStatusStyle.detailed.rawValue {
+                AgentUsageInsightsService.shared.startScheduling()
+            }
+        }
+        .onChange(of: menuBarPrimaryMetric) { value in
+            if value == MenuBarPrimaryMetric.todayTokens.rawValue {
+                AgentUsageInsightsService.shared.startScheduling()
+            }
+        }
     }
 
     private var appearanceSection: some View {
@@ -413,6 +432,8 @@ struct SettingsView: View {
                     isOn: $menuBarMonitorEnabled
                 )
                 SettingsRowDivider()
+                windowAndMenuBarPresentationSetting
+                SettingsRowDivider()
                 ToggleSetting(
                     icon: "video.fill",
                     title: localizer.sensorMonitor,
@@ -435,6 +456,82 @@ struct SettingsView: View {
             }
             .cardStyle()
         }
+    }
+
+    private var windowAndMenuBarPresentationSetting: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                Image(systemName: "rectangle.topthird.inset.filled")
+                    .font(Theme.Font.subheadline)
+                    .foregroundStyle(Theme.Colors.accent)
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localizer.t("窗口与菜单栏信息", en: "Window & Menu Bar Info", zhHant: "視窗與選單列資訊", ja: "ウインドウとメニューバー", ko: "윈도우 및 메뉴 막대", mt: "Window & Menu Bar Info"))
+                        .font(Theme.Font.captionMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(localizer.t("控制主窗口置顶，并选择菜单栏显示的额度或今日 Token。", en: "Keep the main window on top and choose which quota or token metric appears in the menu bar.", zhHant: "控制主視窗置頂，並選擇選單列顯示的額度或今日 Token。", ja: "メインウインドウの常時表示とメニューバー指標を設定します。", ko: "기본 창 고정과 메뉴 막대 지표를 설정합니다.", mt: "Keep the main window on top and choose the menu bar metric."))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Toggle("", isOn: $mainWindowAlwaysOnTop)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .help(localizer.t("主窗口始终置顶", en: "Keep main window on top", zhHant: "主視窗始終置頂", ja: "常に手前に表示", ko: "항상 위에 표시", mt: "Keep main window on top"))
+            }
+
+            VStack(spacing: Theme.Spacing.sm) {
+                HStack {
+                    Text(localizer.t("菜单栏样式", en: "Menu bar style", zhHant: "選單列樣式", ja: "表示スタイル", ko: "메뉴 막대 스타일", mt: "Menu bar style"))
+                    Spacer()
+                    Picker("", selection: $menuBarStatusStyle) {
+                        Text(localizer.t("仅图标", en: "Icon only", zhHant: "僅圖示", ja: "アイコンのみ", ko: "아이콘만", mt: "Icon only")).tag(MenuBarStatusStyle.minimal.rawValue)
+                        Text(localizer.t("单项", en: "Single metric", zhHant: "單項", ja: "単一指標", ko: "단일 지표", mt: "Single metric")).tag(MenuBarStatusStyle.classic.rawValue)
+                        Text(localizer.t("详细", en: "Detailed", zhHant: "詳細", ja: "詳細", ko: "상세", mt: "Detailed")).tag(MenuBarStatusStyle.detailed.rawValue)
+                    }
+                    .labelsHidden()
+                    .frame(width: 150)
+                }
+
+                if menuBarStatusStyle == MenuBarStatusStyle.classic.rawValue {
+                    HStack {
+                        Text(localizer.t("主指标", en: "Primary metric", zhHant: "主指標", ja: "主な指標", ko: "기본 지표", mt: "Primary metric"))
+                        Spacer()
+                        Picker("", selection: $menuBarPrimaryMetric) {
+                            Text(localizer.t("最紧额度", en: "Tightest quota", zhHant: "最緊額度", ja: "最小クォータ", ko: "가장 낮은 할당량", mt: "Tightest quota")).tag(MenuBarPrimaryMetric.tightest.rawValue)
+                            Text("5h").tag(MenuBarPrimaryMetric.fiveHour.rawValue)
+                            Text("7d").tag(MenuBarPrimaryMetric.weekly.rawValue)
+                            Text(localizer.t("今日 Token", en: "Today's tokens", zhHant: "今日 Token", ja: "今日のトークン", ko: "오늘 토큰", mt: "Today's tokens")).tag(MenuBarPrimaryMetric.todayTokens.rawValue)
+                        }
+                        .labelsHidden()
+                        .frame(width: 150)
+                    }
+                }
+
+                if menuBarStatusStyle != MenuBarStatusStyle.minimal.rawValue {
+                    HStack {
+                        Picker("", selection: $menuBarQuotaDisplayMode) {
+                            Text(localizer.t("显示剩余", en: "Show remaining", zhHant: "顯示剩餘", ja: "残りを表示", ko: "잔여 표시", mt: "Show remaining")).tag(MenuBarQuotaDisplayMode.remaining.rawValue)
+                            Text(localizer.t("显示已用", en: "Show used", zhHant: "顯示已用", ja: "使用量を表示", ko: "사용량 표시", mt: "Show used")).tag(MenuBarQuotaDisplayMode.used.rawValue)
+                        }
+                        .labelsHidden()
+                        Spacer()
+                        if menuBarStatusStyle == MenuBarStatusStyle.detailed.rawValue {
+                            Toggle(localizer.t("重置倒计时", en: "Reset countdown", zhHant: "重置倒數", ja: "リセットまで", ko: "초기화 카운트다운", mt: "Reset countdown"), isOn: $menuBarShowResetCountdown)
+                                .toggleStyle(.checkbox)
+                        }
+                    }
+                }
+            }
+            .font(Theme.Font.caption)
+            .foregroundStyle(Theme.Colors.textSecondary)
+            .padding(.leading, 36)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Theme.Spacing.sm)
     }
 
     private var localCaptureSetting: some View {
@@ -506,6 +603,16 @@ struct SettingsView: View {
                 }
 
                 Spacer()
+
+                Button(localizer.t("恢复默认", en: "Restore Defaults", zhHant: "恢復預設", ja: "デフォルトに戻す", ko: "기본값 복원", mt: "Restore Defaults")) {
+                    stopShortcutRecording()
+                    shortcutSettings = GlobalShortcutService.defaultShortcuts
+                    GlobalShortcutService.savePersistedShortcuts(shortcutSettings)
+                    NotificationCenter.default.post(name: .traceFenceShortcutsChanged, object: nil)
+                    shortcutMessage = localizer.t("已恢复默认快捷键。", en: "Default shortcuts restored.", zhHant: "已恢復預設快捷鍵。", ja: "デフォルトのショートカットに戻しました。", ko: "기본 단축키를 복원했습니다.", mt: "Default shortcuts restored.")
+                }
+                .buttonStyle(.borderless)
+                .font(Theme.Font.caption)
             }
 
             VStack(spacing: Theme.Spacing.xs) {
@@ -1696,6 +1803,21 @@ struct SettingsView: View {
                     }
                 }
 
+                if TraceFenceDistributionPolicy.currentChannel.isDirect {
+                    Toggle(isOn: $automaticUpdateChecksEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(localizer.t("启动后自动检查更新", en: "Check for updates automatically", zhHant: "啟動後自動檢查更新", ja: "起動時に自動確認", ko: "시작 시 자동 업데이트 확인", mt: "Check for updates automatically"))
+                                .font(Theme.Font.captionMedium)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Text(localizer.t("关闭后仍可手动检查；不会降低下载包的签名、校验和版本验证。", en: "Manual checks remain available; signature, checksum, and version verification are unchanged.", zhHant: "關閉後仍可手動檢查；簽章、校驗和版本驗證不變。", ja: "オフでも手動確認でき、署名・チェックサム・バージョン検証は維持されます。", ko: "꺼도 수동 확인이 가능하며 서명, 체크섬, 버전 검증은 유지됩니다.", mt: "Manual checks remain available; verification is unchanged."))
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+
                 if TraceFenceDistributionPolicy.currentChannel.isDirect, let latest = updateService.latestUpdate {
                     VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                         Text(localizer.t("发现新版本 v\(latest.version)", en: "New version available v\(latest.version)"))
@@ -2402,7 +2524,7 @@ struct SettingsView: View {
             return
         }
         stopShortcutRecording()
-        shortcutMessage = localizer.t("请按下包含 ⌘、⌥ 或 ⌃ 的组合键。", en: "Press a key combo that includes Command, Option, or Control.", zhHant: "請按下包含 ⌘、⌥ 或 ⌃ 的組合鍵。", ja: "Command、Option、Control のいずれかを含むキー組み合わせを押してください。", ko: "Command, Option 또는 Control이 포함된 키 조합을 누르세요.", mt: "Press a key combo that includes Command, Option, or Control.")
+        shortcutMessage = localizer.t("请按下至少两个修饰键，并包含 ⌘ 或 ⌃。", en: "Press a combo with at least two modifiers, including Command or Control.", zhHant: "請按下至少兩個修飾鍵，並包含 ⌘ 或 ⌃。", ja: "2つ以上の修飾キーを使い、Command または Control を含めてください。", ko: "보조 키를 2개 이상 누르고 Command 또는 Control을 포함하세요.", mt: "Press a combo with at least two modifiers, including Command or Control.")
         recordingShortcutAction = action
         shortcutRecorderMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             handleShortcutRecordingEvent(event)
@@ -2417,19 +2539,28 @@ struct SettingsView: View {
             return
         }
 
-        let modifiers = GlobalShortcut.ModifierFlags(eventModifiers: event.modifierFlags)
-        guard modifiers.hasPrimaryModifier else {
-            shortcutMessage = localizer.t("至少需要包含 ⌘、⌥ 或 ⌃，避免误触单个按键。", en: "Include Command, Option, or Control to avoid single-key triggers.", zhHant: "至少需要包含 ⌘、⌥ 或 ⌃，避免誤觸單個按鍵。", ja: "単独キーの誤動作を避けるため、Command、Option、Control のいずれかを含めてください。", ko: "단일 키 오작동을 피하려면 Command, Option 또는 Control을 포함하세요.", mt: "Include Command, Option, or Control to avoid single-key triggers.")
-            return
-        }
-
         guard let index = shortcutSettings.firstIndex(where: { $0.action == action }) else {
             stopShortcutRecording()
             return
         }
 
-        shortcutSettings[index].keyCode = Int(event.keyCode)
-        shortcutSettings[index].modifiers = modifiers
+        let modifiers = GlobalShortcut.ModifierFlags(eventModifiers: event.modifierFlags)
+        var candidate = shortcutSettings[index]
+        candidate.keyCode = Int(event.keyCode)
+        candidate.modifiers = modifiers
+        if let issue = GlobalShortcutService.validationIssue(for: candidate, among: shortcutSettings) {
+            shortcutMessage = issue.localizedMessage(localizer)
+            return
+        }
+
+        let previous = shortcutSettings[index]
+        let registrationChanged = previous.keyCode != candidate.keyCode || previous.modifiers != candidate.modifiers
+        if registrationChanged, !GlobalShortcutService.canRegisterTemporarily(candidate) {
+            shortcutMessage = GlobalShortcutValidationIssue.unavailable.localizedMessage(localizer)
+            return
+        }
+
+        shortcutSettings[index] = candidate
         GlobalShortcutService.savePersistedShortcuts(shortcutSettings)
         NotificationCenter.default.post(name: .traceFenceShortcutsChanged, object: nil)
         shortcutMessage = localizer.t("快捷键已保存。", en: "Shortcut saved.", zhHant: "快捷鍵已儲存。", ja: "ショートカットを保存しました。", ko: "단축키가 저장되었습니다.", mt: "Shortcut saved.")

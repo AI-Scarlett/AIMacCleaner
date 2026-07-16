@@ -3,7 +3,7 @@ import Darwin
 import os
 import SwiftUI
 
-struct ProviderQuotaWindow: Identifiable, Codable {
+struct ProviderQuotaWindow: Identifiable, Codable, Equatable {
     enum Kind: String, Codable {
         case fiveHour
         case weekly
@@ -36,6 +36,109 @@ struct ProviderQuotaSnapshot: Identifiable, Codable {
     let errorMessage: String?
     let setupHint: String?
     let isSetupNotice: Bool
+    /// `true` when quota values come from the last successful refresh because
+    /// the latest attempt did not return a trustworthy provider snapshot.
+    let isStale: Bool
+    /// The wall-clock time of the refresh that most recently produced the
+    /// authoritative values displayed by this snapshot.
+    let lastSuccessfulAt: Date?
+    /// The latest refresh diagnostic. Kept separate from `errorMessage` so a
+    /// stale last-known-good snapshot remains renderable by existing clients.
+    let refreshErrorMessage: String?
+    /// Whether the provider response authoritatively described its quota
+    /// topology. This is false for transport failures and ambiguous Codex
+    /// window payloads, even when diagnostic or extra-window data is present.
+    let quotaReadSucceeded: Bool
+
+    enum Freshness: String, Codable {
+        case fresh
+        case stale
+        case unavailable
+    }
+
+    var freshness: Freshness {
+        if isStale { return .stale }
+        return quotaReadSucceeded ? .fresh : .unavailable
+    }
+
+    var isFresh: Bool { freshness == .fresh }
+
+    init(
+        id: String,
+        providerName: String,
+        planName: String?,
+        accountLabel: String?,
+        credits: Double?,
+        windows: [ProviderQuotaWindow],
+        resetCredits: ProviderQuotaResetCredits?,
+        updatedAt: Date,
+        source: String,
+        errorMessage: String?,
+        setupHint: String?,
+        isSetupNotice: Bool,
+        isStale: Bool = false,
+        lastSuccessfulAt: Date? = nil,
+        refreshErrorMessage: String? = nil,
+        quotaReadSucceeded: Bool? = nil
+    ) {
+        self.id = id
+        self.providerName = providerName
+        self.planName = planName
+        self.accountLabel = accountLabel
+        self.credits = credits
+        self.windows = windows
+        self.resetCredits = resetCredits
+        self.updatedAt = updatedAt
+        self.source = source
+        self.errorMessage = errorMessage
+        self.setupHint = setupHint
+        self.isSetupNotice = isSetupNotice
+        self.isStale = isStale
+        self.lastSuccessfulAt = lastSuccessfulAt
+        self.refreshErrorMessage = refreshErrorMessage
+        self.quotaReadSucceeded = quotaReadSucceeded
+            ?? (!isSetupNotice && (!windows.isEmpty || resetCredits != nil || credits != nil))
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case providerName
+        case planName
+        case accountLabel
+        case credits
+        case windows
+        case resetCredits
+        case updatedAt
+        case source
+        case errorMessage
+        case setupHint
+        case isSetupNotice
+        case isStale
+        case lastSuccessfulAt
+        case refreshErrorMessage
+        case quotaReadSucceeded
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        providerName = try container.decode(String.self, forKey: .providerName)
+        planName = try container.decodeIfPresent(String.self, forKey: .planName)
+        accountLabel = try container.decodeIfPresent(String.self, forKey: .accountLabel)
+        credits = try container.decodeIfPresent(Double.self, forKey: .credits)
+        windows = try container.decodeIfPresent([ProviderQuotaWindow].self, forKey: .windows) ?? []
+        resetCredits = try container.decodeIfPresent(ProviderQuotaResetCredits.self, forKey: .resetCredits)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        source = try container.decode(String.self, forKey: .source)
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+        setupHint = try container.decodeIfPresent(String.self, forKey: .setupHint)
+        isSetupNotice = try container.decodeIfPresent(Bool.self, forKey: .isSetupNotice) ?? false
+        isStale = try container.decodeIfPresent(Bool.self, forKey: .isStale) ?? false
+        lastSuccessfulAt = try container.decodeIfPresent(Date.self, forKey: .lastSuccessfulAt)
+        refreshErrorMessage = try container.decodeIfPresent(String.self, forKey: .refreshErrorMessage)
+        quotaReadSucceeded = try container.decodeIfPresent(Bool.self, forKey: .quotaReadSucceeded)
+            ?? (!isSetupNotice && (!windows.isEmpty || resetCredits != nil || credits != nil))
+    }
 
     var tightestWindow: ProviderQuotaWindow? {
         windows.min { lhs, rhs in
@@ -117,6 +220,251 @@ final class ProviderQuotaService: ObservableObject {
             }
     }
 
+    /// Pure reconciliation entry point used by the live refresh path and debug
+    /// tests. Identity deliberately excludes plan/source so an OAuth fallback
+    /// or plan-label change cannot split one provider account into two cards.
+    static func reconcileQuotaSnapshots(
+        previous: [ProviderQuotaSnapshot],
+        incoming: [ProviderQuotaSnapshot],
+        attemptedAt: Date
+    ) -> [ProviderQuotaSnapshot] {
+        let previousCandidates = previous.filter(\.canSeedQuotaContinuity)
+        var previousByKey: [ProviderQuotaContinuityKey: ProviderQuotaSnapshot] = [:]
+        for snapshot in previousCandidates {
+            previousByKey[snapshot.continuityKey] = snapshot
+        }
+
+        let engineFailure = incoming.first(where: { $0.isProviderEngineNotice && $0.errorMessage != nil })
+        var failedProviders: [String: String] = [:]
+        var representedKeys = Set<ProviderQuotaContinuityKey>()
+        var reconciled: [ProviderQuotaSnapshot] = []
+
+        for snapshot in incoming {
+            if snapshot.isSetupNotice || snapshot.isProviderEngineNotice {
+                // Notices remain diagnostics only and never participate in
+                // quota identity matching or last-known-good selection.
+                reconciled.append(snapshot)
+                continue
+            }
+
+            let key = snapshot.continuityKey
+            if snapshot.quotaReadSucceeded {
+                reconciled.append(snapshot.markedFresh(at: attemptedAt))
+                representedKeys.insert(key)
+                continue
+            }
+
+            let diagnostic = snapshot.refreshDiagnostic
+            if key.account == nil {
+                let providerHistory = previousCandidates.filter {
+                    $0.continuityKey.provider == key.provider
+                }
+                if !providerHistory.isEmpty {
+                    // A provider-level failure has no reliable account identity.
+                    // Fan it out onto existing accounts instead of replacing a
+                    // healthy multi-account set with one anonymous error card.
+                    failedProviders[key.provider] = diagnostic
+                    continue
+                }
+            }
+
+            if let lastGood = previousByKey[key] {
+                reconciled.append(lastGood.retainingQuota(after: snapshot, diagnostic: diagnostic))
+                representedKeys.insert(key)
+            } else {
+                reconciled.append(snapshot)
+            }
+        }
+
+        if let engineFailure {
+            let diagnostic = engineFailure.refreshDiagnostic
+            for snapshot in previousCandidates where !representedKeys.contains(snapshot.continuityKey) {
+                reconciled.append(snapshot.retainingQuota(after: nil, diagnostic: diagnostic))
+                representedKeys.insert(snapshot.continuityKey)
+            }
+        } else if !failedProviders.isEmpty {
+            for snapshot in previousCandidates where !representedKeys.contains(snapshot.continuityKey) {
+                let key = snapshot.continuityKey
+                guard let diagnostic = failedProviders[key.provider] else { continue }
+                reconciled.append(snapshot.retainingQuota(after: nil, diagnostic: diagnostic))
+                representedKeys.insert(key)
+            }
+        }
+
+        return reconciled
+    }
+
+    /// Deterministic protocol/continuity checks that can be called by a debug
+    /// command or XCTest target without launching CodexBar or touching disk.
+    static func debugQuotaSelfTestFailures() -> [String] {
+        var failures: [String] = []
+        func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
+            if !condition() { failures.append(message) }
+        }
+
+        let reversed = CodexOfficialWindowNormalizer.normalize(
+            windowMinutes: [10_080, 300],
+            hasWindowFields: true,
+            hasMalformedWindow: false
+        )
+        expect(reversed.fiveHourIndex == 1, "300 minutes must classify as 5h regardless of slot order")
+        expect(reversed.sevenDayIndex == 0, "10080 minutes must classify as 7d regardless of slot order")
+        expect(reversed.isAuthoritative, "known exact durations should be authoritative")
+
+        let duplicate = CodexOfficialWindowNormalizer.normalize(
+            windowMinutes: [300, 300, 10_080],
+            hasWindowFields: true,
+            hasMalformedWindow: false
+        )
+        expect(duplicate.fiveHourIndex == nil, "duplicate 300-minute windows must fail closed")
+        expect(!duplicate.isAuthoritative, "duplicate official windows must not be authoritative")
+
+        let unknown = CodexOfficialWindowNormalizer.normalize(
+            windowMinutes: [43_200, 10_080],
+            hasWindowFields: true,
+            hasMalformedWindow: false
+        )
+        expect(unknown.fiveHourIndex == nil, "unknown duration must not be labeled 5h")
+        expect(unknown.sevenDayIndex == 1, "known 7d duration should survive beside an unknown window")
+        expect(unknown.untrustedIndexes == [0], "unknown duration should remain explicitly unclassified")
+        expect(!unknown.isAuthoritative, "unknown official duration must not define a trustworthy topology")
+
+        let nullWindows = CodexOfficialWindowNormalizer.normalize(
+            windowMinutes: [],
+            hasWindowFields: true,
+            hasMalformedWindow: false
+        )
+        expect(!nullWindows.isAuthoritative, "null or empty official windows must not replace trusted quota data")
+
+        let missingWindows = CodexOfficialWindowNormalizer.normalize(
+            windowMinutes: [],
+            hasWindowFields: false,
+            hasMalformedWindow: false
+        )
+        expect(!missingWindows.isAuthoritative, "missing official window fields must not be authoritative")
+
+        let missingFiveHour = CodexOfficialWindowNormalizer.normalize(
+            windowMinutes: [10_080],
+            hasWindowFields: true,
+            hasMalformedWindow: false
+        )
+        expect(!missingFiveHour.isAuthoritative, "a partial payload missing the 5h window must not evict complete quota data")
+
+        let missingWeekly = CodexOfficialWindowNormalizer.normalize(
+            windowMinutes: [300],
+            hasWindowFields: true,
+            hasMalformedWindow: false
+        )
+        expect(!missingWeekly.isAuthoritative, "a partial payload missing the 7d window must not evict complete quota data")
+
+        let successfulAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let attemptedAt = successfulAt.addingTimeInterval(120)
+        let weekly = ProviderQuotaWindow(
+            id: "secondary",
+            kind: .weekly,
+            title: "Weekly quota",
+            usedPercent: 25,
+            resetsAt: successfulAt.addingTimeInterval(3_600),
+            windowMinutes: 10_080
+        )
+        let resetCredits = ProviderQuotaResetCredits(
+            availableCount: 1,
+            credits: [],
+            updatedAt: successfulAt
+        )
+        func snapshot(
+            id: String,
+            account: String?,
+            windows: [ProviderQuotaWindow],
+            resetCredits: ProviderQuotaResetCredits? = nil,
+            error: String? = nil,
+            setup: Bool = false,
+            succeeded: Bool
+        ) -> ProviderQuotaSnapshot {
+            ProviderQuotaSnapshot(
+                id: id,
+                providerName: setup ? "Other Providers" : "Codex",
+                planName: nil,
+                accountLabel: account,
+                credits: nil,
+                windows: windows,
+                resetCredits: resetCredits,
+                updatedAt: successfulAt,
+                source: setup ? "setup" : "auto",
+                errorMessage: error,
+                setupHint: nil,
+                isSetupNotice: setup,
+                lastSuccessfulAt: succeeded ? successfulAt : nil,
+                quotaReadSucceeded: succeeded
+            )
+        }
+
+        let accountA = snapshot(
+            id: "codex-a",
+            account: "a@example.com",
+            windows: [weekly],
+            resetCredits: resetCredits,
+            succeeded: true
+        )
+        let accountB = snapshot(
+            id: "codex-b",
+            account: "b@example.com",
+            windows: [weekly],
+            succeeded: true
+        )
+        let anonymousFailure = snapshot(
+            id: "codex-auto-failure",
+            account: "auto",
+            windows: [],
+            error: "Codex quota read timed out",
+            succeeded: false
+        )
+        let retainedAccounts = reconcileQuotaSnapshots(
+            previous: [accountA, accountB],
+            incoming: [anonymousFailure],
+            attemptedAt: attemptedAt
+        )
+        expect(retainedAccounts.count == 2, "one anonymous failure must not replace multiple Codex accounts")
+        expect(retainedAccounts.allSatisfy(\.isStale), "provider failure should mark every retained account stale")
+        expect(retainedAccounts.allSatisfy { $0.windows == [weekly] }, "stale accounts should retain trusted windows")
+        expect(retainedAccounts.first(where: { $0.id == "codex-a" })?.resetCredits?.availableCount == 1,
+               "stale continuity should retain reset credits")
+
+        let recovered = snapshot(
+            id: "codex-a-new-source",
+            account: "a@example.com",
+            windows: [weekly],
+            resetCredits: resetCredits,
+            succeeded: true
+        )
+        let recoveredResult = reconcileQuotaSnapshots(
+            previous: retainedAccounts,
+            incoming: [recovered],
+            attemptedAt: attemptedAt
+        )
+        expect(recoveredResult.count == 1 && recoveredResult[0].isFresh,
+               "a successful account refresh should replace stale continuity data")
+        expect(recoveredResult[0].lastSuccessfulAt == attemptedAt,
+               "fresh recovery should publish the latest successful refresh time")
+
+        let setupNotice = snapshot(
+            id: "provider-setup-notice",
+            account: "Optional setup",
+            windows: [],
+            error: "inactive providers",
+            setup: true,
+            succeeded: false
+        )
+        let noticeResult = reconcileQuotaSnapshots(
+            previous: [],
+            incoming: [setupNotice],
+            attemptedAt: attemptedAt
+        )
+        expect(noticeResult.count == 1 && !noticeResult[0].hasReadableQuotaData,
+               "setup notices must never count as available quota data")
+        return failures
+    }
+
     func start() {
         logger.info("Quota service start requested; snapshots=\(self.snapshots.count, privacy: .public) refreshing=\(self.isRefreshing, privacy: .public)")
         if timer == nil {
@@ -142,10 +490,15 @@ final class ProviderQuotaService: ObservableObject {
         DispatchQueue.global(qos: .utility).async { [provider] in
             let result = provider.fetch()
             DispatchQueue.main.async {
-                self.snapshots = result.sortedByQuotaReadiness()
-                self.lastRefreshDate = Date()
+                let completedAt = Date()
+                self.snapshots = Self.reconcileQuotaSnapshots(
+                    previous: self.snapshots,
+                    incoming: result,
+                    attemptedAt: completedAt
+                ).sortedByQuotaReadiness()
+                self.lastRefreshDate = completedAt
                 self.isRefreshing = false
-                let readableCount = result.filter(\.hasReadableQuotaData).count
+                let readableCount = self.snapshots.filter(\.hasReadableQuotaData).count
                 if readableCount > 0 {
                     let menuSummary = self.menuBarSummary ?? "unavailable"
                     self.logger.info("Quota refresh completed: \(readableCount, privacy: .public) readable of \(result.count, privacy: .public) snapshots; menu=\(menuSummary, privacy: .private)")
@@ -172,6 +525,11 @@ private extension Array where Element == ProviderQuotaSnapshot {
     }
 }
 
+private struct ProviderQuotaContinuityKey: Hashable {
+    let provider: String
+    let account: String?
+}
+
 private extension ProviderQuotaSnapshot {
     var quotaReadinessRank: Int {
         if hasReadableQuotaData { return 0 }
@@ -181,12 +539,113 @@ private extension ProviderQuotaSnapshot {
     }
 
     var hasReadableQuotaData: Bool {
-        !windows.isEmpty || resetCredits != nil || credits != nil
+        !isSetupNotice && (!windows.isEmpty || resetCredits != nil || credits != nil)
     }
 
     var isProviderEngineNotice: Bool {
         id.hasPrefix("provider-engine-")
     }
+
+    var canSeedQuotaContinuity: Bool {
+        !isSetupNotice
+            && !isProviderEngineNotice
+            && hasReadableQuotaData
+            && (quotaReadSucceeded || isStale)
+    }
+
+    var continuityKey: ProviderQuotaContinuityKey {
+        ProviderQuotaContinuityKey(
+            provider: normalizedQuotaIdentityPart(providerName),
+            account: normalizedQuotaAccount(accountLabel, source: source)
+        )
+    }
+
+    var refreshDiagnostic: String {
+        refreshErrorMessage
+            ?? errorMessage
+            ?? "The latest quota refresh did not return a trustworthy snapshot."
+    }
+
+    func markedFresh(at date: Date) -> ProviderQuotaSnapshot {
+        ProviderQuotaSnapshot(
+            id: id,
+            providerName: providerName,
+            planName: planName,
+            accountLabel: accountLabel,
+            credits: credits,
+            windows: windows,
+            resetCredits: resetCredits,
+            updatedAt: updatedAt,
+            source: source,
+            errorMessage: errorMessage,
+            setupHint: setupHint,
+            isSetupNotice: isSetupNotice,
+            isStale: false,
+            lastSuccessfulAt: date,
+            refreshErrorMessage: nil,
+            quotaReadSucceeded: true
+        )
+    }
+
+    func retainingQuota(
+        after failedSnapshot: ProviderQuotaSnapshot?,
+        diagnostic: String
+    ) -> ProviderQuotaSnapshot {
+        let retainedWindows = mergedContinuityWindows(with: failedSnapshot)
+        return ProviderQuotaSnapshot(
+            id: id,
+            providerName: providerName,
+            planName: planName,
+            accountLabel: accountLabel,
+            credits: failedSnapshot?.credits ?? credits,
+            windows: retainedWindows,
+            resetCredits: failedSnapshot?.resetCredits ?? resetCredits,
+            updatedAt: updatedAt,
+            source: source,
+            // Existing UI treats errorMessage as mutually exclusive with data.
+            // Keep the refresh error in its dedicated field so retained quota
+            // remains visible while newer UI can render stale diagnostics.
+            errorMessage: nil,
+            setupHint: failedSnapshot?.setupHint ?? setupHint,
+            isSetupNotice: false,
+            isStale: true,
+            lastSuccessfulAt: lastSuccessfulAt ?? updatedAt,
+            refreshErrorMessage: diagnostic,
+            quotaReadSucceeded: false
+        )
+    }
+
+    func mergedContinuityWindows(with failedSnapshot: ProviderQuotaSnapshot?) -> [ProviderQuotaWindow] {
+        guard let failedSnapshot, !failedSnapshot.windows.isEmpty else { return windows }
+        guard providerName.caseInsensitiveCompare("Codex") == .orderedSame else { return windows }
+
+        // Ambiguous official Codex slots never replace confirmed 5h/7d data,
+        // but independently sourced extras (including Spark) may still update.
+        var merged = windows
+        for candidate in failedSnapshot.windows where !candidate.isPrimaryAllowanceWindow {
+            if let index = merged.firstIndex(where: { $0.id == candidate.id }) {
+                merged[index] = candidate
+            } else {
+                merged.append(candidate)
+            }
+        }
+        return merged
+    }
+}
+
+private func normalizedQuotaIdentityPart(_ value: String) -> String {
+    value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+}
+
+private func normalizedQuotaAccount(_ accountLabel: String?, source: String) -> String? {
+    guard let accountLabel else { return nil }
+    let normalized = normalizedQuotaIdentityPart(accountLabel)
+    guard !normalized.isEmpty else { return nil }
+    let anonymousLabels = Set([
+        "auto", "oauth", "web", "api", "cli", "bundle", "setup",
+        normalizedQuotaIdentityPart(source)
+    ])
+    return anonymousLabels.contains(normalized) ? nil : normalized
 }
 
 private extension ProviderQuotaWindow {
@@ -202,6 +661,63 @@ private extension ProviderQuotaWindow {
         case .extra: return title
         }
     }
+}
+
+private struct CodexOfficialWindowClassification {
+    let fiveHourIndex: Int?
+    let sevenDayIndex: Int?
+    let untrustedIndexes: [Int]
+    let fiveHourMatchCount: Int
+    let sevenDayMatchCount: Int
+    let isAuthoritative: Bool
+}
+
+private enum CodexOfficialWindowNormalizer {
+    static let fiveHourMinutes = 300
+    static let sevenDayMinutes = 10_080
+
+    /// Classifies official primary/secondary/tertiary slots by exact protocol
+    /// duration, never by slot order or a fuzzy duration range.
+    static func normalize(
+        windowMinutes: [Int?],
+        hasWindowFields: Bool,
+        hasMalformedWindow: Bool
+    ) -> CodexOfficialWindowClassification {
+        let fiveHourMatches = windowMinutes.indices.filter {
+            windowMinutes[$0] == fiveHourMinutes
+        }
+        let sevenDayMatches = windowMinutes.indices.filter {
+            windowMinutes[$0] == sevenDayMinutes
+        }
+        let unknown = windowMinutes.indices.filter { index in
+            guard let minutes = windowMinutes[index] else { return true }
+            return minutes != fiveHourMinutes && minutes != sevenDayMinutes
+        }
+        let untrusted = Set(
+            unknown
+                + (fiveHourMatches.count == 1 ? [] : fiveHourMatches)
+                + (sevenDayMatches.count == 1 ? [] : sevenDayMatches)
+        )
+
+        return CodexOfficialWindowClassification(
+            fiveHourIndex: fiveHourMatches.count == 1 ? fiveHourMatches[0] : nil,
+            sevenDayIndex: sevenDayMatches.count == 1 ? sevenDayMatches[0] : nil,
+            untrustedIndexes: untrusted.sorted(),
+            fiveHourMatchCount: fiveHourMatches.count,
+            sevenDayMatchCount: sevenDayMatches.count,
+            isAuthoritative: hasWindowFields
+                && !hasMalformedWindow
+                && fiveHourMatches.count == 1
+                && sevenDayMatches.count == 1
+                && unknown.isEmpty
+        )
+    }
+}
+
+private struct ProviderQuotaWindowBuildResult {
+    let windows: [ProviderQuotaWindow]
+    let officialTopologyIsAuthoritative: Bool
+    let diagnostic: String?
 }
 
 private struct CodexBarQuotaProvider {
@@ -601,6 +1117,10 @@ private struct CodexBarQuotaProvider {
         guard let base else { return supplemental }
         guard let supplemental else { return base }
 
+        let hasCleanOfficialSource = [base, supplemental].contains {
+            $0.hasOfficialWindowFields && !$0.hasMalformedOfficialWindow
+        }
+
         return CodexBarUsagePayload(
             primary: base.primary ?? supplemental.primary,
             secondary: base.secondary ?? supplemental.secondary,
@@ -610,7 +1130,10 @@ private struct CodexBarQuotaProvider {
             updatedAt: max(base.updatedAt, supplemental.updatedAt),
             identity: base.identity ?? supplemental.identity,
             accountEmail: base.accountEmail ?? supplemental.accountEmail,
-            loginMethod: base.loginMethod ?? supplemental.loginMethod
+            loginMethod: base.loginMethod ?? supplemental.loginMethod,
+            hasOfficialWindowFields: base.hasOfficialWindowFields || supplemental.hasOfficialWindowFields,
+            hasMalformedOfficialWindow: !hasCleanOfficialSource
+                && (base.hasMalformedOfficialWindow || supplemental.hasMalformedOfficialWindow)
         )
     }
 
@@ -750,12 +1273,22 @@ private struct CodexBarQuotaProvider {
     ) -> ProviderQuotaSnapshot? {
         let now = Date()
         let usage = payload.usage
-        let windows = makeWindows(from: usage)
-        let resetCredits = usage?.codexResetCredits
+        let windowBuild = makeWindows(from: usage, provider: payload.provider)
+        let windows = windowBuild.windows
+        let resetCredits = normalizedResetCredits(usage?.codexResetCredits)
         let errorMessage = displayErrorMessage(for: payload)
         let config = configs[payload.provider]
+        let isCodex = payload.provider.caseInsensitiveCompare("codex") == .orderedSame
+        let quotaReadSucceeded = isCodex
+            ? windowBuild.officialTopologyIsAuthoritative
+            : (!windows.isEmpty || payload.credits != nil || resetCredits != nil)
 
-        guard !windows.isEmpty || payload.credits != nil || resetCredits != nil || shouldShowDiagnostic(for: payload, config: config) else {
+        guard !windows.isEmpty
+                || payload.credits != nil
+                || resetCredits != nil
+                || (isCodex && windowBuild.officialTopologyIsAuthoritative)
+                || shouldShowDiagnostic(for: payload, config: config)
+        else {
             return nil
         }
 
@@ -771,7 +1304,9 @@ private struct CodexBarQuotaProvider {
             source: payload.source,
             errorMessage: windows.isEmpty && resetCredits == nil ? errorMessage : nil,
             setupHint: windows.isEmpty && resetCredits == nil ? setupHint(for: payload) : nil,
-            isSetupNotice: false)
+            isSetupNotice: false,
+            refreshErrorMessage: quotaReadSucceeded ? nil : (windowBuild.diagnostic ?? errorMessage),
+            quotaReadSucceeded: quotaReadSucceeded)
     }
 
     private func setupNotice(count: Int) -> ProviderQuotaSnapshot {
@@ -934,23 +1469,143 @@ private struct CodexBarQuotaProvider {
             .contains { $0.standardizedFileURL.path == executable.standardizedFileURL.path }
     }
 
-    private func makeWindows(from usage: CodexBarUsagePayload?) -> [ProviderQuotaWindow] {
-        guard let usage else { return [] }
+    private func makeWindows(
+        from usage: CodexBarUsagePayload?,
+        provider: String
+    ) -> ProviderQuotaWindowBuildResult {
+        guard let usage else {
+            return ProviderQuotaWindowBuildResult(
+                windows: [],
+                officialTopologyIsAuthoritative: false,
+                diagnostic: "The quota response did not include a usage payload."
+            )
+        }
+
+        let officialCandidates: [(slot: String, fallback: String, payload: CodexBarRateWindowPayload)] = [
+            usage.primary.map { ("primary", "Current window", $0) },
+            usage.secondary.map { ("secondary", "Long-term window", $0) },
+            usage.tertiary.map { ("tertiary", "Additional window", $0) }
+        ].compactMap { $0 }
 
         var windows: [ProviderQuotaWindow] = []
-        if let primary = usage.primary {
-            windows.append(makeWindow(id: "primary", title: title(for: primary, fallback: "Current window"), payload: primary))
+        var authoritative = true
+        var diagnostic: String?
+
+        if provider.caseInsensitiveCompare("codex") == .orderedSame {
+            let classification = CodexOfficialWindowNormalizer.normalize(
+                windowMinutes: officialCandidates.map { $0.payload.windowMinutes },
+                hasWindowFields: usage.hasOfficialWindowFields,
+                hasMalformedWindow: usage.hasMalformedOfficialWindow
+            )
+            authoritative = classification.isAuthoritative
+
+            if let index = classification.fiveHourIndex {
+                let candidate = officialCandidates[index]
+                windows.append(makeExactCodexWindow(
+                    id: "primary",
+                    title: "5-hour quota",
+                    kind: .fiveHour,
+                    payload: candidate.payload
+                ))
+            }
+            if let index = classification.sevenDayIndex {
+                let candidate = officialCandidates[index]
+                windows.append(makeExactCodexWindow(
+                    id: "secondary",
+                    title: "Weekly quota",
+                    kind: .weekly,
+                    payload: candidate.payload
+                ))
+            }
+            for index in classification.untrustedIndexes {
+                let candidate = officialCandidates[index]
+                windows.append(makeUnclassifiedCodexWindow(candidate))
+            }
+
+            diagnostic = codexWindowDiagnostic(
+                classification,
+                hasWindowFields: usage.hasOfficialWindowFields,
+                hasMalformedWindow: usage.hasMalformedOfficialWindow
+            )
+        } else {
+            for candidate in officialCandidates {
+                windows.append(makeWindow(
+                    id: candidate.slot,
+                    title: title(for: candidate.payload, fallback: candidate.fallback),
+                    payload: candidate.payload
+                ))
+            }
         }
-        if let secondary = usage.secondary {
-            windows.append(makeWindow(id: "secondary", title: title(for: secondary, fallback: "Long-term window"), payload: secondary))
-        }
-        if let tertiary = usage.tertiary {
-            windows.append(makeWindow(id: "tertiary", title: title(for: tertiary, fallback: "Additional window"), payload: tertiary))
-        }
+
+        // Named extra windows are a separate protocol surface. Keep their
+        // existing behavior (including Codex Spark) independent from official
+        // Codex primary/secondary/tertiary topology validation.
         for extra in usage.extraRateWindows ?? [] where extra.usageKnown {
             windows.append(makeWindow(id: extra.id, title: extra.title, payload: extra.window))
         }
-        return windows
+        return ProviderQuotaWindowBuildResult(
+            windows: windows,
+            officialTopologyIsAuthoritative: authoritative,
+            diagnostic: diagnostic
+        )
+    }
+
+    private func makeExactCodexWindow(
+        id: String,
+        title: String,
+        kind: ProviderQuotaWindow.Kind,
+        payload: CodexBarRateWindowPayload
+    ) -> ProviderQuotaWindow {
+        ProviderQuotaWindow(
+            id: id,
+            kind: kind,
+            title: title,
+            usedPercent: max(0, min(100, payload.usedPercent)),
+            resetsAt: payload.resetsAt,
+            windowMinutes: payload.windowMinutes
+        )
+    }
+
+    private func makeUnclassifiedCodexWindow(
+        _ candidate: (slot: String, fallback: String, payload: CodexBarRateWindowPayload)
+    ) -> ProviderQuotaWindow {
+        let duration = candidate.payload.windowMinutes.map { " · \($0) min" } ?? ""
+        return ProviderQuotaWindow(
+            id: "codex-official-unclassified-\(candidate.slot)",
+            kind: .extra,
+            title: "\(candidate.fallback) · unclassified\(duration)",
+            usedPercent: max(0, min(100, candidate.payload.usedPercent)),
+            resetsAt: candidate.payload.resetsAt,
+            windowMinutes: candidate.payload.windowMinutes
+        )
+    }
+
+    private func codexWindowDiagnostic(
+        _ classification: CodexOfficialWindowClassification,
+        hasWindowFields: Bool,
+        hasMalformedWindow: Bool
+    ) -> String? {
+        var reasons: [String] = []
+        if !hasWindowFields { reasons.append("official window fields were missing") }
+        if hasMalformedWindow { reasons.append("an official window was malformed") }
+        if classification.fiveHourMatchCount > 1 { reasons.append("the 300-minute window was duplicated") }
+        if classification.sevenDayMatchCount > 1 { reasons.append("the 10080-minute window was duplicated") }
+        if classification.fiveHourMatchCount == 0 { reasons.append("the 300-minute window was missing") }
+        if classification.sevenDayMatchCount == 0 { reasons.append("the 10080-minute window was missing") }
+        if !classification.untrustedIndexes.isEmpty,
+           classification.fiveHourMatchCount <= 1,
+           classification.sevenDayMatchCount <= 1 {
+            reasons.append("an official window had an unknown or missing duration")
+        }
+        guard !reasons.isEmpty else { return nil }
+        return "Codex quota topology was not authoritative because \(reasons.joined(separator: ", "))."
+    }
+
+    private func normalizedResetCredits(
+        _ resetCredits: ProviderQuotaResetCredits?
+    ) -> ProviderQuotaResetCredits? {
+        guard let resetCredits, resetCredits.availableCount >= 0 else { return nil }
+        return resetCredits
     }
 
     private func makeWindow(id: String, title: String, payload: CodexBarRateWindowPayload) -> ProviderQuotaWindow {
@@ -1169,6 +1824,74 @@ private struct CodexBarUsagePayload: Decodable {
     let identity: CodexBarIdentityPayload?
     let accountEmail: String?
     let loginMethod: String?
+    let hasOfficialWindowFields: Bool
+    let hasMalformedOfficialWindow: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case primary
+        case secondary
+        case tertiary
+        case extraRateWindows
+        case codexResetCredits
+        case updatedAt
+        case identity
+        case accountEmail
+        case loginMethod
+    }
+
+    init(
+        primary: CodexBarRateWindowPayload?,
+        secondary: CodexBarRateWindowPayload?,
+        tertiary: CodexBarRateWindowPayload?,
+        extraRateWindows: [CodexBarNamedRateWindowPayload]?,
+        codexResetCredits: ProviderQuotaResetCredits?,
+        updatedAt: Date,
+        identity: CodexBarIdentityPayload?,
+        accountEmail: String?,
+        loginMethod: String?,
+        hasOfficialWindowFields: Bool = true,
+        hasMalformedOfficialWindow: Bool = false
+    ) {
+        self.primary = primary
+        self.secondary = secondary
+        self.tertiary = tertiary
+        self.extraRateWindows = extraRateWindows
+        self.codexResetCredits = codexResetCredits
+        self.updatedAt = updatedAt
+        self.identity = identity
+        self.accountEmail = accountEmail
+        self.loginMethod = loginMethod
+        self.hasOfficialWindowFields = hasOfficialWindowFields
+        self.hasMalformedOfficialWindow = hasMalformedOfficialWindow
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        var malformedWindow = false
+
+        func decodeWindow(_ key: CodingKeys) -> CodexBarRateWindowPayload? {
+            do {
+                return try container.decodeIfPresent(CodexBarRateWindowPayload.self, forKey: key)
+            } catch {
+                malformedWindow = true
+                return nil
+            }
+        }
+
+        primary = decodeWindow(.primary)
+        secondary = decodeWindow(.secondary)
+        tertiary = decodeWindow(.tertiary)
+        extraRateWindows = try container.decodeIfPresent([CodexBarNamedRateWindowPayload].self, forKey: .extraRateWindows)
+        codexResetCredits = try container.decodeIfPresent(ProviderQuotaResetCredits.self, forKey: .codexResetCredits)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        identity = try container.decodeIfPresent(CodexBarIdentityPayload.self, forKey: .identity)
+        accountEmail = try container.decodeIfPresent(String.self, forKey: .accountEmail)
+        loginMethod = try container.decodeIfPresent(String.self, forKey: .loginMethod)
+        hasOfficialWindowFields = container.contains(.primary)
+            || container.contains(.secondary)
+            || container.contains(.tertiary)
+        hasMalformedOfficialWindow = malformedWindow
+    }
 }
 
 private struct CodexBarRateWindowPayload: Decodable {

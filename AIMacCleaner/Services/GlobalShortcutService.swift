@@ -110,6 +110,32 @@ struct GlobalShortcut: Identifiable, Codable {
     }
 }
 
+enum GlobalShortcutValidationIssue: Equatable {
+    case tooFewModifiers
+    case requiresCommandOrControl
+    case unsupportedKey
+    case reservedSystemShortcut
+    case duplicate
+    case unavailable
+
+    func localizedMessage(_ localizer: Localizer) -> String {
+        switch self {
+        case .tooFewModifiers:
+            return localizer.t("自定义快捷键至少需要两个修饰键。", en: "Custom shortcuts require at least two modifier keys.", zhHant: "自訂快捷鍵至少需要兩個修飾鍵。", ja: "カスタムショートカットには修飾キーが2つ以上必要です。", ko: "사용자 지정 단축키에는 보조 키가 2개 이상 필요합니다.", mt: "Custom shortcuts require at least two modifier keys.")
+        case .requiresCommandOrControl:
+            return localizer.t("快捷键必须包含 Command 或 Control。", en: "The shortcut must include Command or Control.", zhHant: "快捷鍵必須包含 Command 或 Control。", ja: "ショートカットには Command または Control が必要です。", ko: "단축키에는 Command 또는 Control이 포함되어야 합니다.", mt: "The shortcut must include Command or Control.")
+        case .unsupportedKey:
+            return localizer.t("请选择字母、数字、方向键或 F1–F12。", en: "Choose a letter, number, arrow key, or F1–F12.", zhHant: "請選擇字母、數字、方向鍵或 F1–F12。", ja: "英数字、矢印キー、または F1–F12 を選択してください。", ko: "문자, 숫자, 방향 키 또는 F1–F12를 선택하세요.", mt: "Choose a letter, number, arrow key, or F1–F12.")
+        case .reservedSystemShortcut:
+            return localizer.t("该组合由 macOS 或辅助功能保留，请选择其他快捷键。", en: "This combination is reserved by macOS or accessibility features. Choose another shortcut.", zhHant: "此組合由 macOS 或輔助功能保留，請選擇其他快捷鍵。", ja: "この組み合わせは macOS またはアクセシビリティ機能で予約されています。", ko: "이 조합은 macOS 또는 손쉬운 사용 기능에 예약되어 있습니다.", mt: "This combination is reserved by macOS or accessibility features. Choose another shortcut.")
+        case .duplicate:
+            return localizer.t("这个组合已用于另一项 TraceFence 操作。", en: "This combination is already assigned to another TraceFence action.", zhHant: "此組合已用於另一項 TraceFence 操作。", ja: "この組み合わせは別の TraceFence 操作に割り当てられています。", ko: "이 조합은 다른 TraceFence 작업에 이미 할당되어 있습니다.", mt: "This combination is already assigned to another TraceFence action.")
+        case .unavailable:
+            return localizer.t("该快捷键已被其它应用占用，或系统无法注册。", en: "This shortcut is used by another app or could not be registered by macOS.", zhHant: "此快捷鍵已被其他應用程式佔用，或系統無法註冊。", ja: "このショートカットは他のアプリで使用中か、macOS が登録できません。", ko: "이 단축키는 다른 앱에서 사용 중이거나 macOS가 등록할 수 없습니다.", mt: "This shortcut is used by another app or could not be registered by macOS.")
+        }
+    }
+}
+
 extension GlobalShortcut.ModifierFlags {
     init(eventModifiers: NSEvent.ModifierFlags) {
         var value: GlobalShortcut.ModifierFlags = []
@@ -122,6 +148,12 @@ extension GlobalShortcut.ModifierFlags {
 
     var hasPrimaryModifier: Bool {
         contains(.command) || contains(.option) || contains(.control)
+    }
+
+    var modifierCount: Int {
+        [Self.command, .option, .control, .shift].reduce(0) { count, flag in
+            count + (contains(flag) ? 1 : 0)
+        }
     }
 }
 
@@ -162,6 +194,57 @@ actor GlobalShortcutService {
             action: .toggleScreenRecording
         ),
     ]
+
+    static func validationIssue(
+        for shortcut: GlobalShortcut,
+        among shortcuts: [GlobalShortcut]
+    ) -> GlobalShortcutValidationIssue? {
+        if shortcuts.contains(where: {
+            $0.action != shortcut.action
+                && $0.keyCode == shortcut.keyCode
+                && $0.modifiers == shortcut.modifiers
+        }) {
+            return .duplicate
+        }
+
+        // Existing defaults remain valid so upgrades do not disable capture
+        // shortcuts chosen before the stricter recorder rules were added.
+        let isShippedDefault = defaultShortcuts.contains {
+            $0.action == shortcut.action
+                && $0.keyCode == shortcut.keyCode
+                && $0.modifiers == shortcut.modifiers
+        }
+        if isShippedDefault { return nil }
+
+        guard shortcut.modifiers.modifierCount >= 2 else { return .tooFewModifiers }
+        guard shortcut.modifiers.contains(.command) || shortcut.modifiers.contains(.control) else {
+            return .requiresCommandOrControl
+        }
+        guard supportedKeyCodes.contains(shortcut.keyCode) else { return .unsupportedKey }
+        guard !isReservedSystemShortcut(shortcut) else { return .reservedSystemShortcut }
+        return nil
+    }
+
+    /// Probes Carbon registration before replacing a saved shortcut. The
+    /// candidate is immediately unregistered; the live actor reload then owns
+    /// the real registration. Existing self-registration is handled by the
+    /// caller by skipping this probe when the combination did not change.
+    static func canRegisterTemporarily(_ shortcut: GlobalShortcut) -> Bool {
+        var reference: EventHotKeyRef?
+        let identifier = EventHotKeyID(signature: 0x54465052, id: UInt32.random(in: 1...UInt32.max))
+        let status = RegisterEventHotKey(
+            UInt32(shortcut.keyCode),
+            shortcut.modifiers.carbonValue,
+            identifier,
+            GetApplicationEventTarget(),
+            0,
+            &reference
+        )
+        if let reference {
+            UnregisterEventHotKey(reference)
+        }
+        return status == noErr
+    }
 
     init() {
         registeredShortcuts = Self.loadPersistedShortcuts()
@@ -281,7 +364,12 @@ actor GlobalShortcutService {
         } else {
             saved = defaultShortcuts
         }
-        return mergedWithDefaults(saved)
+        let merged = mergedWithDefaults(saved)
+        return merged.map { shortcut in
+            validationIssue(for: shortcut, among: merged) == nil
+                ? shortcut
+                : (defaultShortcuts.first { $0.action == shortcut.action } ?? shortcut)
+        }
     }
 
     static func savePersistedShortcuts(_ shortcuts: [GlobalShortcut]) {
@@ -299,6 +387,39 @@ actor GlobalShortcutService {
     }
 
     private static let hotKeySignature: OSType = 0x54464B59
+
+    private static let supportedKeyCodes: Set<Int> = Set(
+        Array(0...50)
+            + [96, 97, 98, 99, 100, 101, 103, 109, 111, 117, 120, 122, 123, 124, 125, 126]
+    )
+
+    private static func isReservedSystemShortcut(_ shortcut: GlobalShortcut) -> Bool {
+        let modifiers = shortcut.modifiers
+        if modifiers.contains(.control)
+            && modifiers.contains(.option)
+            && !modifiers.contains(.command) {
+            return true
+        }
+
+        let reserved: [(keyCode: Int, modifiers: GlobalShortcut.ModifierFlags)] = [
+            (53, [.command, .option]),
+            (12, [.command, .control]),
+            (12, [.command, .shift]),
+            (2, [.command, .option]),
+            (3, [.command, .control]),
+            (4, [.command, .option]),
+            (46, [.command, .option]),
+            (13, [.command, .option]),
+            (20, [.command, .shift]),
+            (21, [.command, .shift]),
+            (23, [.command, .shift]),
+            (96, [.command, .option])
+        ]
+        return reserved.contains { item in
+            item.keyCode == shortcut.keyCode
+                && modifiers.intersection(item.modifiers) == item.modifiers
+        }
+    }
 }
 
 extension Notification.Name {
