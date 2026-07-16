@@ -213,9 +213,6 @@ struct AIMacCleanerApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))
         .defaultSize(width: 1100, height: 700)
-        .commands {
-            CommandGroup(replacing: .newItem) { }
-        }
 
         Settings {
             SettingsView(
@@ -468,7 +465,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
-    func presentMainWindow(reason: String) {
+    @discardableResult
+    func presentMainWindow(reason: String) -> Bool {
         NSApp.setActivationPolicy(.regular)
         NSApp.unhide(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -476,17 +474,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         reconcileMainWindows()
         if let window = bestMainWindow() {
             show(window: window, reason: reason)
-            return
+            return true
         }
 
         guard let openMainWindowAction else {
+            if requestNativeMainWindowCreation(reason: reason) {
+                return true
+            }
             ensureLaunchSurfaceVisible(reason: reason)
-            return
+            return false
         }
 
         mainWindow = nil
         openMainWindowAction(id: "main")
         NSApp.activate(ignoringOtherApps: true)
+        return true
+    }
+
+    @MainActor
+    private func requestNativeMainWindowCreation(reason: String) -> Bool {
+        let commandMask = NSEvent.ModifierFlags.command
+        let menuItem = NSApp.mainMenu?.items
+            .compactMap(\.submenu)
+            .flatMap(\.items)
+            .first { item in
+                item.isEnabled &&
+                    item.keyEquivalent.lowercased() == "n" &&
+                    item.keyEquivalentModifierMask.contains(commandMask) &&
+                    item.action != nil
+            }
+
+        guard let menuItem, let action = menuItem.action else {
+            print("[TraceFence] Native new-window action unavailable via \(reason)")
+            return false
+        }
+
+        let dispatched = NSApp.sendAction(action, to: menuItem.target, from: menuItem)
+        if dispatched {
+            NSApp.activate(ignoringOtherApps: true)
+            print("[TraceFence] Requested native SwiftUI window via \(reason)")
+        }
+        return dispatched
     }
 
     @MainActor
@@ -629,8 +657,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        presentMainWindow(reason: "reopen")
-        return false
+        !presentMainWindow(reason: "reopen")
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
