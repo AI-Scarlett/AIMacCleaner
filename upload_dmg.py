@@ -6,19 +6,28 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.66")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.71")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Adds a compact TraceFence-icon artifact capsule that follows the active Codex, Claude, or Cursor task and expands only when needed.\n"
+    "- Shows the current or selected historical task's final user-facing deliverables, with code, configuration, draft, and process files filtered by default.\n"
+    "- Opens Markdown, HTML, images, and directories inside the TraceFence sidecar instead of sending users to Finder.\n"
+    "- Streams very large historical Codex rollouts incrementally in the background, avoiding main-thread stalls while preserving searchable older artifacts.\n"
+    "- Enables the production Dodo Payments Standard monthly and annual subscriptions with live checkout and strict business/product license validation.\n"
+    "- Restores continuous Agent Guard ingestion after long-running sessions and detects destructive commands nested inside Codex functions.exec payloads.\n"
+    "- Removes duplicate overview refresh stores and timers to reduce sustained CPU and memory use.\n"
+    "- Moves Codex approval-log discovery and incremental JSONL parsing off the main actor so background monitoring no longer stalls the desktop UI.\n"
     "- Fixes duplicate TraceFence desktop windows caused by the legacy SwiftUI WindowGroup state and the former AppKit fallback window racing during launch.\n"
     "- Migrates the desktop shell to one uniquely identified main window, closes stale restored duplicates, and safely reopens the same scene when upgrading from an older saved window state.\n"
     "- Keeps repeated Finder, Dock, and updater launches attached to the existing TraceFence process and main window.\n"
@@ -113,17 +122,17 @@ RELEASE_BODY = (
     "- Adds configurable shortcuts for opening TraceFence, region screenshots, full screenshots, and screen recording.\n"
     "- Adds a double-click and right-click menu bar emergency menu with refresh, quit, and force-quit actions.\n"
     "- Delays heavier quota and capture startup work until after the popover appears to reduce menu bar stalls.\n"
-    "- Refreshes saved Lemon Squeezy license state from the server so activation usage and device limits stay current.\n"
+    "- Uses Dodo Payments Standard monthly or annual subscriptions with local license-key activation.\n"
     "- Restores the default release build path to signed and Apple-notarized output.\n"
 )
 
 
-def release_payload():
+def release_payload(*, draft):
     return {
         "tag_name": TAG,
         "name": RELEASE_NAME,
         "body": RELEASE_BODY,
-        "draft": False,
+        "draft": draft,
         "prerelease": False,
     }
 
@@ -197,18 +206,87 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
+def find_release_by_tag(token):
+    page = 1
+    while True:
+        releases = request("GET", f"/releases?per_page=100&page={page}", token) or []
+        for release in releases:
+            if release.get("tag_name") == TAG:
+                return release
+        if len(releases) < 100:
+            return None
+        page += 1
+
+
 def find_or_create_release(token):
-    try:
-        release = request("GET", f"/releases/tags/{TAG}", token)
-        print(f"Found release {TAG}: {release['html_url']}")
-        return request("PATCH", f"/releases/{release['id']}", token, release_payload())
-    except RuntimeError:
-        print(f"Creating release {TAG}...")
-    return request("POST", "/releases", token, release_payload())
+    release = find_release_by_tag(token)
+    if release:
+        if not release.get("draft"):
+            raise RuntimeError(
+                f"Refusing to replace assets on published release {TAG}. "
+                "Publish a new version instead."
+            )
+        print(f"Resuming draft release {TAG}: {release['html_url']}")
+        return request(
+            "PATCH",
+            f"/releases/{release['id']}",
+            token,
+            release_payload(draft=True),
+        )
+    print(f"Creating draft release {TAG}...")
+    return request("POST", "/releases", token, release_payload(draft=True))
+
+
+def verify_uploaded_asset(token, upload_result, local_path, expected_name=None):
+    expected_name = expected_name or os.path.basename(local_path)
+    expected_size = os.path.getsize(local_path)
+    expected_digest = f"sha256:{sha256_file(local_path)}"
+    asset_id = upload_result.get("id")
+    if not asset_id:
+        raise RuntimeError(f"GitHub did not return an asset id for {expected_name}")
+
+    asset = upload_result
+    for attempt in range(10):
+        if (
+            asset.get("state") == "uploaded"
+            and asset.get("digest")
+        ):
+            break
+        if attempt < 9:
+            time.sleep(1)
+            asset = request("GET", f"/releases/assets/{asset_id}", token)
+
+    if asset.get("name") != expected_name:
+        raise RuntimeError(
+            f"Release asset name mismatch: {asset.get('name')} != {expected_name}"
+        )
+    if asset.get("state") != "uploaded":
+        raise RuntimeError(
+            f"Release asset is not ready: {expected_name} ({asset.get('state')})"
+        )
+    if asset.get("size") != expected_size:
+        raise RuntimeError(
+            f"Release asset size mismatch: {expected_name} "
+            f"({asset.get('size')} != {expected_size})"
+        )
+    if asset.get("digest") != expected_digest:
+        raise RuntimeError(
+            f"Release asset digest mismatch: {expected_name} "
+            f"({asset.get('digest')} != {expected_digest})"
+        )
+
+
+def publish_release(token, release):
+    payload = release_payload(draft=False)
+    payload["make_latest"] = "true"
+    published = request("PATCH", f"/releases/{release['id']}", token, payload)
+    if published.get("draft"):
+        raise RuntimeError(f"Release {TAG} is still a draft after publication")
+    return published
 
 
 def clean_release_assets(token, release):
-    assets = request("GET", f"/releases/{release['id']}/assets", token) or []
+    assets = request("GET", f"/releases/{release['id']}/assets?per_page=100", token) or []
     for asset in assets:
         name = asset["name"].lower()
         if name.endswith(".dmg") or "source" in name or name.endswith(".zip") or name.endswith(".sha256") or name == MANIFEST_NAME:
@@ -262,9 +340,9 @@ def main():
         return 1
 
     release = find_or_create_release(token)
+    if not release.get("draft"):
+        raise RuntimeError(f"Release {TAG} must remain a draft until every asset is verified")
     clean_release_assets(token, release)
-    if args.clean_historical_assets:
-        clean_historical_release_assets(token, release["id"])
 
     digest = sha256_file(args.dmg)
     sha_path = f"{args.dmg}.sha256"
@@ -290,13 +368,20 @@ def main():
         file.write("\n")
 
     print(f"Uploading {dmg_name}...")
-    upload_asset(upload_url, token, args.dmg, dmg_name, "application/octet-stream")
+    dmg_asset = upload_asset(upload_url, token, args.dmg, dmg_name, "application/octet-stream")
     print(f"Uploading {checksum_name}...")
-    upload_asset(upload_url, token, sha_path, checksum_name, "text/plain")
+    checksum_asset = upload_asset(upload_url, token, sha_path, checksum_name, "text/plain")
     print(f"Uploading {MANIFEST_NAME}...")
-    upload_asset(upload_url, token, manifest_path, MANIFEST_NAME, "application/json")
+    manifest_asset = upload_asset(upload_url, token, manifest_path, MANIFEST_NAME, "application/json")
 
-    print(f"Release URL: {release['html_url']}")
+    verify_uploaded_asset(token, dmg_asset, args.dmg)
+    verify_uploaded_asset(token, checksum_asset, sha_path)
+    verify_uploaded_asset(token, manifest_asset, manifest_path, MANIFEST_NAME)
+    release = publish_release(token, release)
+    if args.clean_historical_assets:
+        clean_historical_release_assets(token, release["id"])
+
+    print(f"Published release: {release['html_url']}")
     print(f"SHA256: {digest}")
     return 0
 

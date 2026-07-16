@@ -207,6 +207,7 @@ struct DiskAdvisorLabView: View {
     @StateObject private var licenseService = DirectLicenseService.shared
     @State private var searchText = ""
     @State private var showAISettings = false
+    @State private var showSubscriptionSettings = false
     @State private var showDeleteConfirm = false
     @State private var showExternalAIConsent = false
     @State private var showCleanResult = false
@@ -274,13 +275,26 @@ struct DiskAdvisorLabView: View {
                 .environmentObject(service)
                 .environmentObject(localizer)
         }
-        .alert(localizer.t("需要 TraceFence Pro", en: "TraceFence Pro required"), isPresented: Binding(
+        .sheet(isPresented: $showSubscriptionSettings) {
+            SettingsView(initialTab: .license)
+                .environmentObject(service)
+                .environmentObject(localizer)
+                .environmentObject(licenseService)
+        }
+        .alert(localizer.t("需要 TraceFence Standard", en: "TraceFence Standard required"), isPresented: Binding(
             get: { !paywallMessage.isEmpty },
             set: { if !$0 { paywallMessage = "" } }
         )) {
-            Button(localizer.t("购买 Pro", en: "Buy Pro")) {
-                licenseService.openPurchasePage()
-                paywallMessage = ""
+            if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+                Button(localizer.t("管理订阅", en: "Manage Subscription")) {
+                    showSubscriptionSettings = true
+                    paywallMessage = ""
+                }
+            } else {
+                Button(localizer.t("订阅 Standard", en: "Subscribe Standard")) {
+                    licenseService.openPurchasePage()
+                    paywallMessage = ""
+                }
             }
             Button(localizer.cancelBtn, role: .cancel) {
                 paywallMessage = ""
@@ -649,11 +663,18 @@ struct DiskAdvisorLabView: View {
 
     private func confirmDelete() {
         licenseService.refreshTrialState()
-        guard SandboxPaths.isSandboxed || licenseService.canUseProFeatures else {
-            paywallMessage = localizer.t(
-                "试用期可以扫描、浏览和预览 AI 建议；执行清理需要激活 TraceFence Pro。",
-                en: "The trial can scan, browse, and preview AI suggestions. Cleanup execution requires TraceFence Pro."
-            )
+        guard TraceFenceEntitlementPolicy.canUseProFeatures else {
+            if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+                paywallMessage = localizer.t(
+                    "订阅 TraceFence Standard 后可执行 AI 建议的清理操作。",
+                    en: "Subscribe to TraceFence Standard to run cleanup actions recommended by AI Disk Advisor."
+                )
+            } else {
+                paywallMessage = localizer.t(
+                    "试用期可以扫描、浏览和预览 AI 建议；执行清理需要激活 TraceFence Standard。",
+                    en: "The trial can scan, browse, and preview AI suggestions. Cleanup execution requires TraceFence Standard."
+                )
+            }
             return
         }
         showDeleteConfirm = true

@@ -68,6 +68,10 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             self.hookServer = hookServer
         }
         if let overviewStore {
+            if let ownedOverviewStore, ownedOverviewStore !== overviewStore {
+                ownedOverviewStore.stopBackgroundRefresh()
+                self.ownedOverviewStore = nil
+            }
             self.overviewStore = overviewStore
         }
         if UserDefaults.standard.bool(forKey: Self.enabledKey) {
@@ -200,6 +204,11 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     }
 
     private func start(port: Int) {
+        if TraceFenceDistributionPolicy.currentChannel.isAppStore,
+           !AppStoreSubscriptionService.shared.canUseProFeatures {
+            stop()
+            return
+        }
         let normalized = Self.normalizedPort(port)
         UserDefaults.standard.set(normalized, forKey: Self.portKey)
         UserDefaults.standard.set(normalized, forKey: "traceFenceIOSRemoteGatewayLastStartPort")
@@ -2911,7 +2920,7 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             "channel": TraceFenceDistributionPolicy.currentChannel.rawValue,
             "tier": DirectLicenseService.shared.currentTier.rawValue,
             "active": DirectLicenseService.shared.canUseProFeatures || DirectLicenseService.shared.isTrialActive,
-            "enhanced": DirectLicenseService.shared.canUseEnhancedFeatures
+            "enhanced": false
         ]
     }
 

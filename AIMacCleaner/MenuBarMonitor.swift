@@ -5,6 +5,8 @@ struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
     @ObservedObject var quotaService: ProviderQuotaService
     @ObservedObject var captureService: CaptureShelfService
+    @ObservedObject private var artifactShelfService = ArtifactShelfService.shared
+    @ObservedObject private var artifactSidecarController = ArtifactSidecarController.shared
     @EnvironmentObject var localizer: Localizer
     @State private var selectedTab: MonitorTab = .quotas
     @AppStorage("networkMode") private var networkMode = "internet"
@@ -16,6 +18,14 @@ struct MenuBarMonitor: View {
     @AppStorage("agentGeoMirrorEnabled") private var agentGeoMirrorEnabled = false
     @State private var agentGeoMirrorBusy = false
     @State private var agentGeoMirrorMessage: String?
+    @State private var captureSection: CaptureSection = .artifacts
+    @State private var renameBookmark: ArtifactShelfBookmark?
+    @State private var renameText = ""
+
+    private enum CaptureSection: String, CaseIterable {
+        case artifacts
+        case clipboard
+    }
 
     enum MonitorTab: String, CaseIterable {
         case quotas = "quotas"
@@ -251,14 +261,34 @@ struct MenuBarMonitor: View {
 
                     Spacer()
 
-                    Button {
-                        quotaService.refresh()
-                    } label: {
-                        Label(quotaService.isRefreshing ? localizer.tokenScopeScanning : localizer.refresh, systemImage: "arrow.clockwise")
-                            .font(Theme.Font.captionMedium)
+                    HStack(spacing: Theme.Spacing.xs) {
+                        if SandboxPaths.isSandboxed {
+                            Button {
+                                authorizeQuotaData()
+                            } label: {
+                                Label(
+                                    localizer.t(
+                                        "授权 Agent 数据",
+                                        en: "Authorize Data",
+                                        zhHant: "授權 Agent 資料",
+                                        ja: "データを許可",
+                                        ko: "데이터 승인",
+                                        mt: "Authorize Data"),
+                                    systemImage: "folder.badge.gearshape")
+                                .font(Theme.Font.captionMedium)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        Button {
+                            quotaService.refresh()
+                        } label: {
+                            Label(quotaService.isRefreshing ? localizer.tokenScopeScanning : localizer.refresh, systemImage: "arrow.clockwise")
+                                .font(Theme.Font.captionMedium)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(quotaService.isRefreshing)
                     }
-                    .buttonStyle(.bordered)
-                    .disabled(quotaService.isRefreshing)
                 }
 
                 if quotaService.snapshots.isEmpty {
@@ -281,9 +311,21 @@ struct MenuBarMonitor: View {
     private var captureContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                captureActionPanel
-                captureHistorySettingsPanel
-                captureHistoryPanel
+                if SandboxPaths.isDirectDistribution {
+                    Picker("", selection: $captureSection) {
+                        Text(localizer.t("任务资料", en: "Task Artifacts", zhHant: "任務資料", ja: "タスク資料", ko: "작업 자료", mt: "Task Artifacts")).tag(CaptureSection.artifacts)
+                        Text(localizer.t("剪贴板", en: "Clipboard", zhHant: "剪貼簿", ja: "クリップボード", ko: "클립보드", mt: "Clipboard")).tag(CaptureSection.clipboard)
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                if SandboxPaths.isDirectDistribution && captureSection == .artifacts {
+                    artifactShelfPanel
+                } else {
+                    captureActionPanel
+                    captureHistorySettingsPanel
+                    captureHistoryPanel
+                }
             }
             .padding(.horizontal, Theme.Spacing.lg)
             .padding(.vertical, Theme.Spacing.md)
@@ -292,6 +334,232 @@ struct MenuBarMonitor: View {
         .onAppear {
             captureService.start()
             captureService.refreshScreenCaptureAccess()
+            artifactShelfService.start()
+        }
+        .alert(localizer.t("重命名收藏", en: "Rename Bookmark", zhHant: "重新命名收藏", ja: "名前を変更", ko: "이름 변경", mt: "Rename Bookmark"), isPresented: Binding(
+            get: { renameBookmark != nil },
+            set: { if !$0 { renameBookmark = nil } }
+        )) {
+            TextField(localizer.t("显示名称", en: "Display name", zhHant: "顯示名稱", ja: "表示名", ko: "표시 이름", mt: "Display name"), text: $renameText)
+            Button(localizer.t("取消", en: "Cancel", zhHant: "取消", ja: "キャンセル", ko: "취소", mt: "Cancel"), role: .cancel) { renameBookmark = nil }
+            Button(localizer.t("保存", en: "Save", zhHant: "儲存", ja: "保存", ko: "저장", mt: "Save")) {
+                if let bookmark = renameBookmark { artifactShelfService.renameBookmark(bookmark, title: renameText) }
+                renameBookmark = nil
+            }
+        }
+    }
+
+    private var artifactShelfPanel: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Picker("", selection: Binding(
+                    get: { artifactShelfService.selectedTaskID ?? "" },
+                    set: {
+                        if !$0.isEmpty {
+                            artifactShelfService.selectTask($0)
+                            artifactSidecarController.setFollowPaused(true)
+                        }
+                    }
+                )) {
+                    if artifactShelfService.tasks.isEmpty {
+                        Text(localizer.t("没有可用任务", en: "No tasks available", zhHant: "沒有可用任務", ja: "利用可能なタスクなし", ko: "사용 가능한 작업 없음", mt: "No tasks available")).tag("")
+                    }
+                    ForEach(artifactShelfService.tasks) { task in
+                        Text(task.title).tag(task.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity)
+
+                Button { artifactShelfService.refresh(force: true) } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .disabled(artifactShelfService.isLoadingCandidates)
+            }
+
+            TextField(localizer.t("搜索文件、目录或链接", en: "Search files, folders, or links", zhHant: "搜尋檔案、目錄或連結", ja: "ファイル・フォルダ・リンクを検索", ko: "파일, 폴더 또는 링크 검색", mt: "Search files, folders, or links"), text: $artifactShelfService.searchText)
+                .textFieldStyle(.roundedBorder)
+
+            artifactSectionHeader(
+                localizer.t("已收藏", en: "Saved", zhHant: "已收藏", ja: "保存済み", ko: "저장됨", mt: "Saved"),
+                icon: "star.fill",
+                count: artifactShelfService.bookmarksForSelectedTask.count
+            )
+
+            if artifactShelfService.bookmarksForSelectedTask.isEmpty {
+                artifactEmptyState(
+                    title: localizer.t("还没有收藏", en: "Nothing saved yet", zhHant: "尚未收藏", ja: "まだ保存されていません", ko: "저장된 항목 없음", mt: "Nothing saved yet"),
+                    detail: localizer.t("从下面发现的任务产物中点击星标。", en: "Star a discovered task output below.", zhHant: "從下方發現的任務產物點擊星標。", ja: "下のタスク成果物にスターを付けます。", ko: "아래 작업 결과물에 별표를 지정하세요.", mt: "Star a discovered task output below.")
+                )
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(artifactShelfService.bookmarksForSelectedTask) { bookmark in
+                        artifactBookmarkRow(bookmark)
+                        if bookmark.id != artifactShelfService.bookmarksForSelectedTask.last?.id { Divider() }
+                    }
+                }
+                .background(Theme.Colors.cardBg.opacity(0.7))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            }
+
+            artifactSectionHeader(
+                localizer.t("发现的任务产物", en: "Discovered Outputs", zhHant: "發現的任務產物", ja: "検出した成果物", ko: "발견된 결과물", mt: "Discovered Outputs"),
+                icon: "sparkle.magnifyingglass",
+                count: artifactShelfService.visibleCandidates.count
+            )
+
+            if artifactShelfService.visibleCandidates.isEmpty {
+                if artifactShelfService.isLoadingCandidates {
+                    artifactEmptyState(
+                        title: localizer.t("正在扫描", en: "Scanning", zhHant: "正在掃描", ja: "スキャン中", ko: "검색 중", mt: "Scanning"),
+                        detail: localizer.t("正在读取完整任务历史。", en: "Reading the complete task history.", zhHant: "正在讀取完整任務歷史。", ja: "タスク履歴全体を読み込んでいます。", ko: "전체 작업 기록을 읽는 중입니다.", mt: "Reading the complete task history.")
+                    )
+                } else if !artifactShelfService.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    artifactEmptyState(
+                        title: localizer.t("没有匹配结果", en: "No matches", zhHant: "沒有相符結果", ja: "一致する項目なし", ko: "일치하는 결과 없음", mt: "No matches"),
+                        detail: localizer.t("换个关键词，或清空搜索查看最近交付。", en: "Try another term or clear search to see recent deliveries.", zhHant: "請更換關鍵字，或清除搜尋以查看最近交付。", ja: "別の語句を試すか、検索を消去して最近の成果物を表示してください。", ko: "다른 검색어를 시도하거나 검색을 지워 최근 결과물을 확인하세요.", mt: "Try another term or clear search to see recent deliveries.")
+                    )
+                } else if artifactShelfService.hiddenCandidateCount > 0 {
+                    artifactEmptyState(
+                        title: localizer.t("旧批次与过程文件已收起", en: "Older and process files are tucked away", zhHant: "舊批次與過程檔案已收起", ja: "旧版・作業ファイルは折りたたまれています", ko: "이전 버전 및 작업 파일이 숨겨져 있습니다", mt: "Older and process files are tucked away"),
+                        detail: localizer.t("使用搜索可以找回。", en: "Use search to find them.", zhHant: "可使用搜尋找回。", ja: "検索して表示できます。", ko: "검색으로 찾을 수 있습니다.", mt: "Use search to find them.")
+                    )
+                } else {
+                    artifactEmptyState(
+                        title: localizer.t("暂未发现产物", en: "No outputs found", zhHant: "暫未發現產物", ja: "成果物がありません", ko: "발견된 결과물 없음", mt: "No outputs found"),
+                        detail: localizer.t("这里只显示最终答复明确交付的文件和目录。", en: "Only files and folders explicitly delivered in final answers appear here.", zhHant: "此處只顯示最終答覆明確交付的檔案與目錄。", ja: "最終回答で明示的に納品されたファイルとフォルダだけを表示します。", ko: "최종 답변에서 명시적으로 전달된 파일과 폴더만 표시됩니다.", mt: "Only files and folders explicitly delivered in final answers appear here.")
+                    )
+                }
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(artifactShelfService.visibleCandidates.prefix(30)) { candidate in
+                        artifactCandidateRow(candidate)
+                        if candidate.id != artifactShelfService.visibleCandidates.prefix(30).last?.id { Divider() }
+                    }
+                }
+                .background(Theme.Colors.cardBg.opacity(0.7))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            }
+            if artifactShelfService.hiddenCandidateCount > 0 {
+                Text(localizer.t(
+                    "已优先显示最近交付；搜索可查另外 \(artifactShelfService.hiddenCandidateCount) 项旧批次或过程文件。",
+                    en: "Recent deliveries are prioritized; search to find \(artifactShelfService.hiddenCandidateCount) older or process files.",
+                    zhHant: "已優先顯示最近交付；搜尋可查另外 \(artifactShelfService.hiddenCandidateCount) 個舊批次或過程檔案。",
+                    ja: "最近の成果物を優先表示しています。検索すると、ほかの \(artifactShelfService.hiddenCandidateCount) 件の旧版・作業ファイルを確認できます。",
+                    ko: "최근 결과물을 우선 표시합니다. 검색하면 이전 버전 또는 작업 파일 \(artifactShelfService.hiddenCandidateCount)개를 더 찾을 수 있습니다.",
+                    mt: "Recent deliveries are prioritized; search to find \(artifactShelfService.hiddenCandidateCount) older or process files."
+                ))
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textTertiary)
+            }
+
+            HStack {
+                Button {
+                    let panel = NSOpenPanel()
+                    panel.canChooseFiles = true
+                    panel.canChooseDirectories = true
+                    panel.allowsMultipleSelection = false
+                    if panel.runModal() == .OK, let url = panel.url { artifactShelfService.addTarget(url.path) }
+                } label: {
+                    Label(localizer.t("添加文件或目录", en: "Add File or Folder", zhHant: "新增檔案或目錄", ja: "ファイル・フォルダを追加", ko: "파일 또는 폴더 추가", mt: "Add File or Folder"), systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+                Spacer()
+                Toggle(isOn: Binding(
+                    get: { artifactSidecarController.isEnabled },
+                    set: { artifactSidecarController.setEnabled($0) }
+                )) {
+                    Text(localizer.t("伴随侧栏", en: "Companion Sidebar", zhHant: "伴隨側欄", ja: "コンパニオンサイドバー", ko: "동반 사이드바", mt: "Companion Sidebar"))
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help(localizer.t("跟随当前 Agent 窗口并在侧栏内预览产物", en: "Follow the current agent window and preview outputs in the sidebar", zhHant: "跟隨目前 Agent 視窗並在側欄內預覽產物", ja: "現在の Agent ウィンドウに追従して成果物をプレビューします", ko: "현재 Agent 창을 따라가며 사이드바에서 결과물을 미리 봅니다", mt: "Follow the current agent window and preview outputs in the sidebar"))
+                Text(localizer.t("仅保存在本机", en: "Stored only on this Mac", zhHant: "僅儲存在本機", ja: "このMacのみに保存", ko: "이 Mac에만 저장", mt: "Stored only on this Mac"))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+        }
+    }
+
+    private func artifactSectionHeader(_ title: String, icon: String, count: Int) -> some View {
+        HStack {
+            Label(title, systemImage: icon)
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(Theme.Colors.textPrimary)
+            Spacer()
+            Text("\(count)")
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textTertiary)
+        }
+    }
+
+    private func artifactEmptyState(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(Theme.Font.captionMedium).foregroundStyle(Theme.Colors.textPrimary)
+            Text(detail).font(Theme.Font.caption).foregroundStyle(Theme.Colors.textSecondary)
+        }
+        .padding(Theme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.cardBg.opacity(0.7))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    private func artifactCandidateRow(_ candidate: ArtifactShelfCandidate) -> some View {
+        artifactRow(kind: candidate.kind, target: candidate.target, title: candidate.title, image: artifactShelfService.thumbnail(for: candidate)) {
+            Button { artifactShelfService.addBookmark(candidate) } label: { Image(systemName: "star") }.help(localizer.t("收藏", en: "Save", zhHant: "收藏", ja: "保存", ko: "저장", mt: "Save"))
+            artifactOpenButtons(target: candidate.target, kind: candidate.kind)
+        }
+    }
+
+    private func artifactBookmarkRow(_ bookmark: ArtifactShelfBookmark) -> some View {
+        artifactRow(kind: bookmark.kind, target: bookmark.target, title: bookmark.title, image: artifactShelfService.thumbnail(for: bookmark)) {
+            Button { artifactShelfService.moveBookmark(bookmark, offset: -1) } label: { Image(systemName: "chevron.up") }.help(localizer.t("上移", en: "Move Up", zhHant: "上移", ja: "上へ", ko: "위로", mt: "Move Up"))
+            Button { artifactShelfService.moveBookmark(bookmark, offset: 1) } label: { Image(systemName: "chevron.down") }.help(localizer.t("下移", en: "Move Down", zhHant: "下移", ja: "下へ", ko: "아래로", mt: "Move Down"))
+            Button {
+                renameText = bookmark.title
+                renameBookmark = bookmark
+            } label: { Image(systemName: "pencil") }.help(localizer.t("重命名", en: "Rename", zhHant: "重新命名", ja: "名前を変更", ko: "이름 변경", mt: "Rename"))
+            artifactOpenButtons(target: bookmark.target, kind: bookmark.kind)
+            Button { artifactShelfService.removeBookmark(bookmark) } label: { Image(systemName: "star.slash") }.help(localizer.t("取消收藏", en: "Remove", zhHant: "取消收藏", ja: "保存解除", ko: "저장 취소", mt: "Remove"))
+        }
+    }
+
+    private func artifactRow<Actions: View>(kind: ArtifactShelfCandidate.Kind, target: String, title: String, image: NSImage?, @ViewBuilder actions: () -> Actions) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            if let image {
+                Image(nsImage: image).resizable().scaledToFill().frame(width: 34, height: 34).clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            } else {
+                Image(systemName: artifactIcon(kind)).frame(width: 34, height: 34).foregroundStyle(Theme.Colors.accent).background(Theme.Colors.accent.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(Theme.Font.captionMedium).foregroundStyle(Theme.Colors.textPrimary).lineLimit(1)
+                Text(target).font(Theme.Font.caption).foregroundStyle(Theme.Colors.textTertiary).lineLimit(1).truncationMode(.middle)
+            }
+            Spacer(minLength: 4)
+            HStack(spacing: 7) { actions() }.buttonStyle(.plain).foregroundStyle(Theme.Colors.textSecondary)
+        }
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.vertical, Theme.Spacing.xs)
+        .frame(minHeight: 50)
+    }
+
+    @ViewBuilder
+    private func artifactOpenButtons(target: String, kind: ArtifactShelfCandidate.Kind) -> some View {
+        Button { artifactShelfService.open(target) } label: { Image(systemName: "arrow.up.forward.square") }.help(localizer.t("打开", en: "Open", zhHant: "開啟", ja: "開く", ko: "열기", mt: "Open"))
+        if kind != .url {
+            Button { artifactShelfService.reveal(target) } label: { Image(systemName: "folder") }.help(localizer.t("在 Finder 中显示", en: "Reveal in Finder", zhHant: "在 Finder 中顯示", ja: "Finderに表示", ko: "Finder에서 보기", mt: "Reveal in Finder"))
+        }
+        Button { artifactShelfService.copyTarget(target) } label: { Image(systemName: "doc.on.doc") }.help(localizer.t("复制路径", en: "Copy Path", zhHant: "複製路徑", ja: "パスをコピー", ko: "경로 복사", mt: "Copy Path"))
+    }
+
+    private func artifactIcon(_ kind: ArtifactShelfCandidate.Kind) -> String {
+        switch kind {
+        case .file: return "doc"
+        case .directory: return "folder.fill"
+        case .image: return "photo"
+        case .html: return "safari"
+        case .url: return "link"
         }
     }
 
@@ -798,6 +1066,23 @@ struct MenuBarMonitor: View {
                             .foregroundStyle(Theme.Colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    if shouldOfferQuotaDataAuthorization(snapshot) {
+                        Button {
+                            authorizeQuotaData()
+                        } label: {
+                            Label(
+                                localizer.t(
+                                    "授权 Grok 数据目录",
+                                    en: "Authorize Grok Data Folder",
+                                    zhHant: "授權 Grok 資料目錄",
+                                    ja: "Grok データフォルダを許可",
+                                    ko: "Grok 데이터 폴더 승인",
+                                    mt: "Authorize Grok Data Folder"),
+                                systemImage: "folder.badge.gearshape")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
                 }
                 .padding(Theme.Spacing.sm)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -826,6 +1111,21 @@ struct MenuBarMonitor: View {
         case "auto": return localizer.t("自动读取", en: "Auto", zhHant: "自動讀取", ja: "自動読み取り", ko: "자동 읽기", mt: "Auto")
         case "setup": return localizer.t("可选配置", en: "Optional setup", zhHant: "可選配置", ja: "任意設定", ko: "선택 설정", mt: "Optional setup")
         default: return source
+        }
+    }
+
+    private func shouldOfferQuotaDataAuthorization(_ snapshot: ProviderQuotaSnapshot) -> Bool {
+        guard SandboxPaths.isSandboxed,
+              snapshot.providerName.caseInsensitiveCompare("Grok") == .orderedSame,
+              let error = snapshot.errorMessage?.lowercased()
+        else { return false }
+        return error.contains("fetch strategy") || error.contains("login session") || error.contains("登录会话")
+    }
+
+    private func authorizeQuotaData() {
+        service.operationMonitor.requestAccessForStalePaths()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            quotaService.refresh()
         }
     }
 
@@ -917,6 +1217,14 @@ struct MenuBarMonitor: View {
             return localizer.t("未发现 Cursor 登录会话", en: "No Cursor login session found", zhHant: "未發現 Cursor 登入會話", ja: "Cursor のログインセッションが見つかりません", ko: "Cursor 로그인 세션을 찾을 수 없습니다", mt: "No Cursor login session found")
         case "Command line tool is not installed or not on PATH", "命令行工具未安装或不在 PATH 中":
             return localizer.t("命令行工具未安装或不在 PATH 中", en: "Command line tool is not installed or not on PATH", zhHant: "命令列工具未安裝或不在 PATH 中", ja: "コマンドラインツールが未インストール、または PATH にありません", ko: "명령줄 도구가 설치되지 않았거나 PATH에 없습니다", mt: "Command line tool is not installed or not on PATH")
+        case "Grok is installed, but its login data is not readable. Authorize your Home or ~/.grok folder in TraceFence, then refresh. If it still fails, run `grok login`.":
+            return localizer.t(
+                "已检测到 Grok，但暂时无法读取登录数据。请授权主目录或 ~/.grok 后刷新；若仍失败，请运行 `grok login`。",
+                en: "Grok is installed, but its login data is not readable. Authorize your Home or ~/.grok folder in TraceFence, then refresh. If it still fails, run `grok login`.",
+                zhHant: "已偵測到 Grok，但暫時無法讀取登入資料。請授權主目錄或 ~/.grok 後重新整理；若仍失敗，請執行 `grok login`。",
+                ja: "Grok は検出されましたが、ログインデータを読み取れません。ホームまたは ~/.grok フォルダを許可して更新してください。解決しない場合は `grok login` を実行してください。",
+                ko: "Grok가 감지되었지만 로그인 데이터를 읽을 수 없습니다. 홈 또는 ~/.grok 폴더를 승인한 뒤 새로고침하세요. 계속 실패하면 `grok login`을 실행하세요.",
+                mt: "Grok is installed, but its login data is not readable. Authorize your Home or ~/.grok folder in TraceFence, then refresh. If it still fails, run `grok login`.")
         default:
             break
         }
@@ -1488,6 +1796,12 @@ struct MenuBarMonitor: View {
                     .tint(Theme.Colors.warning)
                     .onChange(of: monitoringEnabled) { newValue in
                         if newValue {
+                            guard TraceFenceEntitlementPolicy.canUseProFeatures else {
+                                monitoringEnabled = false
+                                service.stopMonitoring()
+                                saveSettings()
+                                return
+                            }
                             service.startMonitoring()
                         } else {
                             service.stopMonitoring()
@@ -1910,6 +2224,12 @@ struct MenuBarMonitor: View {
             HStack(spacing: Theme.Spacing.xs) {
                 Button {
                     operationMonitorEnabled.toggle()
+                    if operationMonitorEnabled, !TraceFenceEntitlementPolicy.canUseProFeatures {
+                        operationMonitorEnabled = false
+                        service.stopOperationMonitor()
+                        saveSettings()
+                        return
+                    }
                     saveSettings()
                     if operationMonitorEnabled {
                         service.startOperationMonitor()

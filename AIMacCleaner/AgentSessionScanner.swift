@@ -19,7 +19,7 @@ struct AgentDataSource {
     }
 }
 
-class AgentSessionScanner: ObservableObject {
+class AgentSessionScanner: ObservableObject, @unchecked Sendable {
     @Published var discoveredAgents: [DiscoveredAgent] = []
     @Published var opRecords: [AgentOpRecord] = []
     @Published var isScanning: Bool = false
@@ -38,6 +38,20 @@ class AgentSessionScanner: ObservableObject {
     private let codexOperationLineLimit = 900
     private let genericOperationTailReadLimit = 4 * 1024 * 1024
     private let structuredSessionReadLimit = 8 * 1024 * 1024
+    private struct RecentSessionFileCacheEntry {
+        var urls: [URL]
+        var directoryModificationDates: [String: Date]
+        var refreshedAt: Date
+    }
+
+    private let recentSessionFileCacheLifetime: TimeInterval = 30 * 60
+    private let cachedSessionFileLimit = 128
+    private let cachedSessionDirectoryLimit = 128
+    private let incrementalReadOverlapLimit = 128 * 1024
+    private let recentOperationTimestampOverlap: TimeInterval = 90
+    private var recentSessionFileCache: [String: RecentSessionFileCacheEntry] = [:]
+    private var incrementalReadOffsets: [String: UInt64] = [:]
+    private var usesIncrementalReadWindow = false
 
     init() {
         registerBuiltInSources()
@@ -476,17 +490,71 @@ class AgentSessionScanner: ObservableObject {
         return allRecords
     }
 
-    private func collectAgentOps(for source: AgentDataSource, fileLimit: Int, recordLimit: Int) -> [AgentOpRecord] {
+    func collectRecentAgentOps(since: Date, limit: Int = 1200, filesPerSourceLimit: Int = 4) -> [AgentOpRecord] {
+        usesIncrementalReadWindow = true
+        defer { usesIncrementalReadWindow = false }
+        // Session writers can append a JSONL record while a scan is reading the file.
+        // Revisit a short time window so the completed record is picked up next pass.
+        let toleratedSince = since.addingTimeInterval(-recentOperationTimestampOverlap)
+        var allRecords: [AgentOpRecord] = []
+        for source in dataSources {
+            allRecords.append(contentsOf: collectAgentOps(
+                for: source,
+                fileLimit: max(1, filesPerSourceLimit),
+                recordLimit: limit,
+                modifiedSince: toleratedSince
+            ))
+            if allRecords.count > limit * 2 {
+                allRecords.sort { $0.timestamp > $1.timestamp }
+                allRecords = Array(allRecords.prefix(limit))
+            }
+        }
+        allRecords = allRecords.filter {
+            $0.timestamp >= toleratedSince && $0.timestamp <= Date().addingTimeInterval(5 * 60)
+        }
+        allRecords.sort { $0.timestamp > $1.timestamp }
+        return Array(allRecords.prefix(limit))
+    }
+
+    private func collectAgentOps(
+        for source: AgentDataSource,
+        fileLimit: Int,
+        recordLimit: Int,
+        modifiedSince: Date? = nil
+    ) -> [AgentOpRecord] {
         let home = SandboxPaths.realHomeDirectory
         let expandedPaths = source.searchPaths.map { $0.replacingOccurrences(of: "~", with: home) }
         var records: [AgentOpRecord] = []
+        var hasCodexPrimaryRecords = false
+        var hasCodexPrimarySource = false
 
         for basePath in expandedPaths {
+            if source.agentName == "Codex",
+               hasCodexPrimaryRecords || hasCodexPrimarySource,
+               basePath.hasSuffix("state_5.sqlite") || basePath.hasSuffix("logs_2.sqlite") {
+                continue
+            }
             guard fileManager.fileExists(atPath: basePath) else { continue }
+            let recordCountBeforePath = records.count
             var isDir: ObjCBool = false
             fileManager.fileExists(atPath: basePath, isDirectory: &isDir)
             if isDir.boolValue {
-                let urls = recentSessionFiles(in: basePath, pattern: source.filePattern, limit: fileLimit)
+                let candidateURLs = recentSessionFiles(
+                    in: basePath,
+                    pattern: source.filePattern,
+                    limit: fileLimit,
+                    cacheLifetime: modifiedSince == nil ? nil : recentSessionFileCacheLifetime
+                )
+                if source.agentName == "Codex",
+                   basePath.hasSuffix("/.codex/sessions"),
+                   !candidateURLs.isEmpty {
+                    hasCodexPrimarySource = true
+                }
+                let urls = candidateURLs
+                    .filter { url in
+                        guard let modifiedSince else { return true }
+                        return modificationDate(for: url) >= modifiedSince
+                    }
                 for url in urls {
                     records.append(contentsOf: autoreleasepool {
                         source.parser(url, source.agentName)
@@ -497,9 +565,17 @@ class AgentSessionScanner: ObservableObject {
                     }
                 }
             } else {
+                if let modifiedSince, modificationDate(for: URL(fileURLWithPath: basePath)) < modifiedSince {
+                    continue
+                }
                 records.append(contentsOf: autoreleasepool {
                     source.parser(URL(fileURLWithPath: basePath), source.agentName)
                 })
+            }
+            if source.agentName == "Codex",
+               basePath.hasSuffix("/.codex/sessions"),
+               records.count > recordCountBeforePath {
+                hasCodexPrimaryRecords = true
             }
         }
 
@@ -507,21 +583,174 @@ class AgentSessionScanner: ObservableObject {
         return Array(records.prefix(recordLimit))
     }
 
-    private func recentSessionFiles(in dir: String, pattern: String, limit: Int) -> [URL] {
-        let urls = findSessionFiles(in: dir, pattern: pattern)
+    private func recentSessionFiles(
+        in dir: String,
+        pattern: String,
+        limit: Int,
+        cacheLifetime: TimeInterval? = nil
+    ) -> [URL] {
+        let cacheKey = "\(dir)|\(pattern)"
+        if let cacheLifetime,
+           var cached = recentSessionFileCache[cacheKey],
+           Date().timeIntervalSince(cached.refreshedAt) < cacheLifetime {
+            refreshChangedSessionDirectories(
+                in: dir,
+                pattern: pattern,
+                entry: &cached
+            )
+            cached.urls = newestSessionFiles(
+                cached.urls.filter { fileManager.fileExists(atPath: $0.path) },
+                limit: max(limit, cachedSessionFileLimit)
+            )
+            cached.directoryModificationDates = monitoredSessionDirectories(
+                cached.directoryModificationDates,
+                root: dir,
+                activeURLs: cached.urls
+            )
+            recentSessionFileCache[cacheKey] = cached
+            return Array(cached.urls.prefix(limit))
+        }
+
+        let scan = scanSessionFiles(in: dir, pattern: pattern)
+        let cachedURLs = newestSessionFiles(scan.urls, limit: max(limit, cachedSessionFileLimit))
+        if cacheLifetime != nil {
+            recentSessionFileCache[cacheKey] = RecentSessionFileCacheEntry(
+                urls: cachedURLs,
+                directoryModificationDates: monitoredSessionDirectories(
+                    scan.directoryModificationDates,
+                    root: dir,
+                    activeURLs: cachedURLs
+                ),
+                refreshedAt: Date()
+            )
+        }
+        return Array(cachedURLs.prefix(limit))
+    }
+
+    private func newestSessionFiles(_ urls: [URL], limit: Int) -> [URL] {
         let dated = urls.map { (url: $0, modifiedAt: modificationDate(for: $0)) }
-        let sorted = dated.sorted { $0.modifiedAt > $1.modifiedAt }.map(\.url)
-        guard sorted.count > limit else { return sorted }
-        return Array(sorted.prefix(limit))
+        return dated
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+            .prefix(limit)
+            .map(\.url)
+    }
+
+    private func refreshChangedSessionDirectories(
+        in root: String,
+        pattern: String,
+        entry: inout RecentSessionFileCacheEntry
+    ) {
+        var knownURLs = Set(entry.urls.map(\.path))
+        var knownDirectories = entry.directoryModificationDates
+        let paths = knownDirectories.keys.sorted { $0.count < $1.count }
+
+        for path in paths {
+            guard let currentDate = directoryModificationDate(at: path) else {
+                knownDirectories.removeValue(forKey: path)
+                continue
+            }
+            guard currentDate != knownDirectories[path] else { continue }
+            knownDirectories[path] = currentDate
+
+            guard let contents = try? fileManager.contentsOfDirectory(
+                at: URL(fileURLWithPath: path),
+                includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+
+            for url in contents {
+                let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey])
+                if values?.isDirectory == true {
+                    guard url.lastPathComponent != ".git" else { continue }
+                    let relativePath = String(url.path.dropFirst(min(root.count + 1, url.path.count)))
+                    guard relativePath.components(separatedBy: "/").count <= 8 else { continue }
+                    if knownDirectories[url.path] == nil {
+                        let nested = scanSessionFiles(in: url.path, pattern: pattern)
+                        for candidate in nested.urls where knownURLs.insert(candidate.path).inserted {
+                            entry.urls.append(candidate)
+                        }
+                        knownDirectories.merge(nested.directoryModificationDates) { _, new in new }
+                    }
+                } else if isSessionCandidate(url, pattern: pattern),
+                          knownURLs.insert(url.path).inserted {
+                    entry.urls.append(url)
+                }
+            }
+        }
+
+        entry.directoryModificationDates = knownDirectories
+    }
+
+    private func monitoredSessionDirectories(
+        _ dates: [String: Date],
+        root: String,
+        activeURLs: [URL]
+    ) -> [String: Date] {
+        let rootPath = URL(fileURLWithPath: root).standardizedFileURL.path
+        var monitoredPaths: Set<String> = [rootPath]
+
+        func addPathAndAncestors(_ path: String) {
+            var current = URL(fileURLWithPath: path).standardizedFileURL.path
+            while current == rootPath || current.hasPrefix(rootPath + "/") {
+                monitoredPaths.insert(current)
+                guard current != rootPath else { break }
+                let parent = URL(fileURLWithPath: current).deletingLastPathComponent().path
+                guard parent != current else { break }
+                current = parent
+            }
+        }
+
+        for url in activeURLs {
+            addPathAndAncestors(url.deletingLastPathComponent().path)
+        }
+
+        for (path, _) in dates.sorted(by: { $0.value > $1.value }) {
+            guard monitoredPaths.count < cachedSessionDirectoryLimit else { break }
+            addPathAndAncestors(path)
+        }
+
+        var monitored: [String: Date] = [:]
+        for path in monitoredPaths {
+            if let date = dates[path] ?? directoryModificationDate(at: path) {
+                monitored[path] = date
+            }
+        }
+        return monitored
+    }
+
+    private func directoryModificationDate(at path: String) -> Date? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: path) else {
+            return nil
+        }
+        return attributes[.modificationDate] as? Date
     }
 
     private func modificationDate(for url: URL) -> Date {
-        (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+              let modifiedAt = attributes[.modificationDate] as? Date else {
+            return .distantPast
+        }
+        return modifiedAt
     }
 
     private func findSessionFiles(in dir: String, pattern: String) -> [URL] {
+        scanSessionFiles(in: dir, pattern: pattern).urls
+    }
+
+    private func scanSessionFiles(
+        in dir: String,
+        pattern: String
+    ) -> (urls: [URL], directoryModificationDates: [String: Date]) {
         var results: [URL] = []
-        guard let enumerator = fileManager.enumerator(at: URL(fileURLWithPath: dir), includingPropertiesForKeys: nil) else { return results }
+        var directoryModificationDates: [String: Date] = [:]
+        if let rootDate = directoryModificationDate(at: dir) {
+            directoryModificationDates[dir] = rootDate
+        }
+        guard let enumerator = fileManager.enumerator(
+            at: URL(fileURLWithPath: dir),
+            includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return (results, directoryModificationDates) }
         for case let url as URL in enumerator {
             let relPath = String(url.path.dropFirst(dir.count + 1))
             let depth = relPath.components(separatedBy: "/").count
@@ -530,20 +759,26 @@ class AgentSessionScanner: ObservableObject {
                 continue
             }
             let lastComponent = url.lastPathComponent
-            if lastComponent == ".git" {
-                if pattern == ".git" { results.append(url) }
-                enumerator.skipDescendants()
-                continue
-            }
-            if lastComponent.hasPrefix(".") && lastComponent != ".jsonl" {
-                enumerator.skipDescendants()
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey])
+            if values?.isDirectory == true {
+                if let modifiedAt = values?.contentModificationDate {
+                    directoryModificationDates[url.path] = modifiedAt
+                }
+                if lastComponent == ".git" {
+                    if pattern == ".git" { results.append(url) }
+                    enumerator.skipDescendants()
+                    continue
+                }
+                if lastComponent.hasPrefix(".") {
+                    enumerator.skipDescendants()
+                }
                 continue
             }
             if isSessionCandidate(url, pattern: pattern) {
                 results.append(url)
             }
         }
-        return results
+        return (results, directoryModificationDates)
     }
 
     private func isSessionCandidate(_ url: URL, pattern: String) -> Bool {
@@ -1871,7 +2106,9 @@ class AgentSessionScanner: ObservableObject {
         let sessionId = url.deletingPathExtension().lastPathComponent
         var cwd = ""
 
-        for line in content.split(separator: "\n", omittingEmptySubsequences: true).suffix(codexOperationLineLimit) {
+        let allLines = content.split(separator: "\n", omittingEmptySubsequences: true)
+        let lines = usesIncrementalReadWindow ? allLines[...] : allLines.suffix(codexOperationLineLimit)[...]
+        for line in lines {
             guard let data = String(line).data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
 
@@ -1889,9 +2126,13 @@ class AgentSessionScanner: ObservableObject {
                 let ts = parseTimestamp(json["timestamp"] as? String) ?? Date()
 
                 if payloadType == "function_call" || payloadType == "custom_tool_call" {
-                    if let record = codexFunctionCallRecord(payload: payload, agentName: agentName, sessionId: sessionId, cwd: cwd, ts: ts) {
-                        records.append(record)
-                    }
+                    records.append(contentsOf: codexFunctionCallRecords(
+                        payload: payload,
+                        agentName: agentName,
+                        sessionId: sessionId,
+                        cwd: cwd,
+                        ts: ts
+                    ))
                 } else if payloadType == "message" {
                     let role = payload["role"] as? String ?? ""
                     guard role == "assistant" else { continue }
@@ -1948,25 +2189,7 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func readCodexOperationWindow(url: URL) -> String? {
-        let attrs = try? fileManager.attributesOfItem(atPath: url.path)
-        let fileSize = (attrs?[.size] as? NSNumber)?.uint64Value ?? 0
-        guard fileSize > 0 else { return nil }
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-
-        let maxBytes = UInt64(codexOperationTailReadLimit)
-        let startOffset = fileSize > maxBytes ? fileSize - maxBytes : 0
-        do {
-            try handle.seek(toOffset: startOffset)
-            guard let data = try handle.readToEnd() else { return nil }
-            var content = String(decoding: data, as: UTF8.self)
-            if startOffset > 0, let firstBreak = content.firstIndex(of: "\n") {
-                content = String(content[content.index(after: firstBreak)...])
-            }
-            return content
-        } catch {
-            return nil
-        }
+        readOperationWindow(url: url, maxBytes: codexOperationTailReadLimit)
     }
 
     private func parseCodexDataSource(url: URL, agentName: String) -> [AgentOpRecord] {
@@ -2124,9 +2347,9 @@ class AgentSessionScanner: ObservableObject {
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
-    private func codexFunctionCallRecord(payload: [String: Any], agentName: String, sessionId: String, cwd: String, ts: Date) -> AgentOpRecord? {
+    private func codexFunctionCallRecords(payload: [String: Any], agentName: String, sessionId: String, cwd: String, ts: Date) -> [AgentOpRecord] {
         let rawName = payload["name"] as? String ?? ""
-        guard !rawName.isEmpty else { return nil }
+        guard !rawName.isEmpty else { return [] }
 
         let argumentsText = payload["arguments"] as? String ?? payload["input"] as? String ?? ""
         let parsedArgs: [String: Any]
@@ -2138,11 +2361,30 @@ class AgentSessionScanner: ObservableObject {
         }
 
         let displayName = rawName.replacingOccurrences(of: "functions.", with: "")
+        let payloadID = payload["call_id"] as? String ?? payload["id"] as? String
+        let baseID = payloadID.map { "\(sessionId)_\($0)" } ?? UUID().uuidString
+        let nestedCommands = embeddedCodexExecCommands(in: argumentsText)
+        if !nestedCommands.isEmpty {
+            return nestedCommands.enumerated().map { index, command in
+                AgentOpRecord(
+                    id: index == 0 ? baseID : "\(baseID)_exec_\(index)",
+                    agentName: agentName,
+                    sessionId: sessionId,
+                    projectDir: stringArg(parsedArgs, ["workdir", "cwd"]) ?? cwd,
+                    timestamp: ts,
+                    toolName: "exec_command",
+                    targetPath: firstPathLikeToken(in: command) ?? cwd,
+                    opType: "Execute",
+                    detail: String(command.prefix(300))
+                )
+            }
+        }
+
         let targetPath = codexTargetPath(toolName: displayName, args: parsedArgs, rawArguments: argumentsText, cwd: cwd)
         let detail = codexDetail(toolName: displayName, args: parsedArgs, rawArguments: argumentsText)
 
-        return AgentOpRecord(
-            id: UUID().uuidString,
+        return [AgentOpRecord(
+            id: baseID,
             agentName: agentName,
             sessionId: sessionId,
             projectDir: stringArg(parsedArgs, ["workdir", "cwd"]) ?? cwd,
@@ -2151,7 +2393,7 @@ class AgentSessionScanner: ObservableObject {
             targetPath: targetPath,
             opType: classifyOpType(displayName),
             detail: String(detail.prefix(300))
-        )
+        )]
     }
 
     private func codexTargetPath(toolName: String, args: [String: Any], rawArguments: String, cwd: String) -> String {
@@ -2174,6 +2416,55 @@ class AgentSessionScanner: ObservableObject {
         if let query = stringArg(args, ["query", "pattern"]), !query.isEmpty { return query }
         if toolName.contains("apply_patch") { return firstPatchSummary(in: rawArguments) ?? "apply_patch" }
         return rawArguments
+    }
+
+    private func embeddedCodexExecCommands(in source: String) -> [String] {
+        let pattern = #"tools\.exec_command\s*\(\s*\{[\s\S]*?\bcmd\s*:\s*(?:\"((?:\\.|[^\"\\])*)\"|'((?:\\.|[^'\\])*)'|`((?:\\.|[^`\\])*)`)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(source.startIndex..., in: source)
+        var commands: [String] = []
+        regex.enumerateMatches(in: source, range: range) { match, _, _ in
+            guard let match else { return }
+            for captureIndex in 1...3 where match.range(at: captureIndex).location != NSNotFound {
+                guard let captureRange = Range(match.range(at: captureIndex), in: source) else { continue }
+                let command = unescapeJavaScriptString(String(source[captureRange]))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !command.isEmpty {
+                    commands.append(command)
+                }
+                break
+            }
+        }
+        return commands
+    }
+
+    private func unescapeJavaScriptString(_ value: String) -> String {
+        var result = ""
+        var index = value.startIndex
+        while index < value.endIndex {
+            let character = value[index]
+            guard character == "\\" else {
+                result.append(character)
+                index = value.index(after: index)
+                continue
+            }
+
+            let escapedIndex = value.index(after: index)
+            guard escapedIndex < value.endIndex else {
+                result.append(character)
+                break
+            }
+            switch value[escapedIndex] {
+            case "n": result.append("\n")
+            case "r": result.append("\r")
+            case "t": result.append("\t")
+            case "b": result.append("\u{0008}")
+            case "f": result.append("\u{000C}")
+            default: result.append(value[escapedIndex])
+            }
+            index = value.index(after: escapedIndex)
+        }
+        return result
     }
 
     private func stringArg(_ args: [String: Any], _ keys: [String]) -> String? {
@@ -2707,15 +2998,35 @@ class AgentSessionScanner: ObservableObject {
     }
 
     private func readOperationTail(url: URL, maxBytes: Int) -> String? {
+        readOperationWindow(url: url, maxBytes: maxBytes)
+    }
+
+    private func readOperationWindow(url: URL, maxBytes: Int) -> String? {
         guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
               let size = (attributes[.size] as? NSNumber)?.uint64Value,
               size > 0,
               let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
-        let start = size > UInt64(maxBytes) ? size - UInt64(maxBytes) : 0
+        let maximumWindow = UInt64(max(1, maxBytes))
+        var start = size > maximumWindow ? size - maximumWindow : 0
+        if usesIncrementalReadWindow,
+           let previousOffset = incrementalReadOffsets[url.path],
+           previousOffset <= size {
+            let overlap = UInt64(min(maxBytes, incrementalReadOverlapLimit))
+            let overlapStart = previousOffset > overlap ? previousOffset - overlap : 0
+            let boundedStart = size > maximumWindow ? size - maximumWindow : 0
+            // Never read an unbounded backlog after sleep or a long-running session.
+            // The newest bounded window is enough for realtime monitoring; the
+            // scheduled history import remains responsible for older records.
+            start = max(overlapStart, boundedStart)
+        }
         do {
             try handle.seek(toOffset: start)
-            guard let data = try handle.readToEnd() else { return nil }
+            let readLength = Int(min(maximumWindow, size - start))
+            guard let data = try handle.read(upToCount: readLength) else { return nil }
+            if usesIncrementalReadWindow {
+                incrementalReadOffsets[url.path] = size
+            }
             var content = String(decoding: data, as: UTF8.self)
             if start > 0, let newline = content.firstIndex(of: "\n") {
                 content = String(content[content.index(after: newline)...])

@@ -3,7 +3,7 @@
 This is the shared iOS client for both TraceFence macOS distribution lines:
 
 - Mac App Store build: Apple subscription unlocks Standard remote control.
-- Website build: Lemon Squeezy Standard / Enhanced license unlocks remote control.
+- Website build: Dodo Payments Standard monthly or annual license unlocks remote control.
 
 The iOS app does not talk to a TraceFence backend. It connects directly to the paired Mac, preferring the independently updatable Agent Core gateway on port `17896` and falling back to the macOS compatibility gateway on port `17895`.
 

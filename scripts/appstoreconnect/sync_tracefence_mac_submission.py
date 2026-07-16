@@ -21,10 +21,16 @@ from scripts.appstoreconnect.sync_tracefence_sentinel_submission import ASC, KEY
 
 APP_ID = "6772386897"
 VERSION = "3.1.8"
-BUILD = os.environ.get("TRACEFENCE_MAC_BUILD", "68")
+BUILD = os.environ.get("TRACEFENCE_MAC_BUILD", "71")
 SCREENSHOT_DIR = ROOT / "build/TraceFence-AppStore-Screenshots/APP_DESKTOP"
+REVIEW_ATTACHMENT = (
+    ROOT
+    / "build/TraceFence-AppStore-Screenshots/Subscription/TraceFence-Subscription-Review-Flow.mov"
+)
 SUPPORT_URL = "https://ai-scarlett.github.io/TraceFence/support.html"
-MARKETING_URL = "https://ai-scarlett.github.io/TraceFence/"
+MARKETING_URL = "https://tracefence.com/"
+PRIVACY_URL = "https://ai-scarlett.github.io/TraceFence/privacy-policy.html"
+EULA_URL = "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"
 
 DESCRIPTION = """TraceFence is a local-first control and observability console for developers who run AI coding agents on their Mac.
 
@@ -41,34 +47,51 @@ Approvals and iPhone companion
 - TraceFence does not operate a cloud relay or require a TraceFence account.
 
 Provider quota and local diagnostics
-- Track supported Codex quota windows and reset times when authorized data is available.
+- Track supported Codex and Grok quota windows and reset times when authorized data is available.
 - Inspect local TokenScope attribution and project-level context.
 - Review local interfaces, reachability, launch items, and authorized cleanup candidates.
 
 Privacy and App Store boundaries
 - Agent prompts, project paths, and session data remain on the Mac and paired iPhone.
 - No ads, tracking, analytics, root certificates, VPN interception, or unrelated traffic capture.
-- The App Store build uses Apple subscriptions and sandbox-compatible hook-based controls. Direct-only CLI helpers, self-updates, and external control-plane processes are not included."""
+- The App Store build uses Apple subscriptions, sandbox-compatible hook-based controls, and a bundled sandbox-inheriting one-shot quota reader. Direct-only control helpers, self-updates, and external control-plane processes are not included.
+
+Privacy Policy: https://ai-scarlett.github.io/TraceFence/privacy-policy.html
+Terms of Use (Apple Standard EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"""
 
 WHATS_NEW = """- Adds the project-based Agent Monitor with live, scheduled, blocked, paused, and recently completed work.
 - Fixes empty real-time project and recent-completion sections.
+- Fixes Grok quota discovery in the sandboxed App Store build and adds an authorization prompt for provider data.
 - Adds monthly and yearly TraceFence Standard subscriptions through Apple.
+- Adds a prominent Subscribe Standard entry that opens the in-app Subscription screen and starts Apple’s StoreKit purchase flow.
+- Shows monthly and yearly titles, localized prices, billing periods, Restore Purchases, Privacy Policy, and Terms of Use in the purchase flow.
 - Improves iPhone pairing, remote approvals, recent session context, and supported follow-up controls.
 - Reduces memory pressure and polling work during long-running sessions.
 - Reorganizes connection, Settings, and Collapse controls in the sidebar.
-- Keeps direct-only helpers and external update paths out of the sandboxed App Store build."""
+- Keeps direct-only control helpers and external update paths out of the sandboxed App Store build."""
 
 REVIEW_NOTES = """TraceFence is a sandboxed local-first developer utility. No account is required.
 
-Primary review flow:
-1. Launch TraceFence and open Agent Monitor to see locally detected agent/project summaries.
-2. Open Agent Guard to inspect hook-based events and approvals.
-3. Open Settings > License to see the Apple monthly/yearly subscription options.
-4. iPhone pairing is optional and requires TraceFence Sentinel plus the same LAN or the reviewer's own VPN.
+Subscription review flow:
+1. Launch TraceFence.
+2. In the left sidebar footer, click Subscribe Standard (credit-card icon). This opens Settings > Subscription directly.
+3. Under TraceFence Standard, both Apple products are displayed with localized price and duration:
+   - Standard Monthly (com.tracefence.standard.monthly), 1 month
+   - Standard Yearly (com.tracefence.standard.yearly), 1 year
+4. Click either plan to display Apple's sandbox purchase confirmation sheet. Restore Purchases, Privacy Policy, and Terms of Use (EULA) are visible in the same flow.
 
-The App Store build intentionally excludes the website-only codexbar helper, external Agent Core process, CLI/PTY control, self-update URL, and external checkout URLs. It retains sandbox-compatible local session parsing, hook-based approval handling, Apple subscriptions, and the direct authenticated iPhone gateway.
+Alternative path: click the Settings gear, then select Subscription in the Settings sidebar.
 
-Some controls only appear when a supported local agent session or hook request exists. Subscription products are com.tracefence.standard.monthly and com.tracefence.standard.yearly. No demo account is required."""
+No account or demo credentials are required. The subscriptions are not restricted by storefront or device configuration. Product names and prices may be localized by the Apple sandbox storefront. iPhone pairing is optional and requires TraceFence Sentinel plus the same LAN or the reviewer's own VPN.
+
+Provider quota testing is optional. For Grok quota, click Authorize Data in the quota panel and select the review Mac's Home folder or ~/.grok, then refresh. TraceFence keeps only a security-scoped bookmark and reads the reviewer's own local Grok login data.
+
+The App Store build includes a bundled, signed, sandbox-inheriting quota helper. TraceFence invokes only noninteractive, one-shot config and usage commands; it never invokes server mode or exposes helper commands in the UI. Each invocation exits after its quota read. The build does not invoke a separately installed website build, external Agent Core process, CLI/PTY control, self-update flow, or external checkout. It retains sandbox-compatible local session parsing, hook-based approval handling, Apple subscriptions, and the direct authenticated iPhone gateway.
+
+Some controls only appear when a supported local agent session or hook request exists.
+
+Privacy Policy: https://ai-scarlett.github.io/TraceFence/privacy-policy.html
+Terms of Use (Apple Standard EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"""
 
 
 def first(api: ASC, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -139,7 +162,56 @@ def sync_localization(api: ASC, version_id: str) -> str:
     return localization["id"]
 
 
-def sync_version(api: ASC, version_id: str, build_id: str) -> None:
+def sync_app_info_privacy(api: ASC) -> None:
+    app_infos = api.json("GET", f"/apps/{APP_ID}/appInfos", params={"limit": 50})["data"]
+    updated = 0
+    for app_info in app_infos:
+        localizations = api.json(
+            "GET", f"/appInfos/{app_info['id']}/appInfoLocalizations", params={"limit": 100}
+        )["data"]
+        for localization in localizations:
+            if localization["attributes"].get("locale") != "en-US":
+                continue
+            current_url = str(localization["attributes"].get("privacyPolicyUrl") or "")
+            app_info_state = str(app_info["attributes"].get("state") or "")
+            app_store_state = str(app_info["attributes"].get("appStoreState") or "")
+            try:
+                api.json(
+                    "PATCH", f"/appInfoLocalizations/{localization['id']}",
+                    json=body(
+                        "appInfoLocalizations",
+                        localization["id"],
+                        {"privacyPolicyUrl": PRIVACY_URL},
+                    ),
+                )
+            except RuntimeError as error:
+                immutable_published_record = (
+                    app_info_state == "READY_FOR_DISTRIBUTION"
+                    or app_store_state == "READY_FOR_SALE"
+                )
+                if (
+                    "ATTRIBUTE.INVALID.INVALID_STATE" not in str(error)
+                    or not immutable_published_record
+                    or not current_url.startswith("https://")
+                ):
+                    raise
+                response = requests.get(current_url, allow_redirects=True, timeout=30)
+                if response.status_code >= 400:
+                    raise RuntimeError(
+                        f"App Info privacy URL is immutable and not functional: {current_url} "
+                        f"returned {response.status_code}"
+                    ) from error
+                print(
+                    f"Retained immutable functional Privacy Policy URL for App Info "
+                    f"{app_info['id']}: {current_url}"
+                )
+            updated += 1
+    if not updated:
+        raise RuntimeError("Missing en-US app info localization for Privacy Policy URL")
+    print(f"Synced Privacy Policy URL for {updated} App Info localization(s)")
+
+
+def sync_version(api: ASC, version_id: str, build_id: str) -> str:
     api.json(
         "PATCH", f"/apps/{APP_ID}",
         json=body("apps", APP_ID, {"contentRightsDeclaration": "DOES_NOT_USE_THIRD_PARTY_CONTENT"}),
@@ -168,13 +240,16 @@ def sync_version(api: ASC, version_id: str, build_id: str) -> None:
             "PATCH", f"/appStoreReviewDetails/{review['id']}",
             json=body("appStoreReviewDetails", review["id"], review_attributes),
         )
+        review_id = review["id"]
     else:
-        api.json(
+        created = api.json(
             "POST", "/appStoreReviewDetails", ok=(201,),
             json=body("appStoreReviewDetails", attributes=review_attributes,
                       relationships={"appStoreVersion": rel("appStoreVersions", version_id)}),
         )
+        review_id = created["data"]["id"]
     print(f"Bound Mac build {BUILD} and synced review details")
+    return review_id
 
 
 def upload_asset(api: ASC, resource_type: str, resource_id: str, path: Path) -> None:
@@ -234,6 +309,89 @@ def sync_screenshots(api: ASC, localization_id: str) -> None:
         print(f"Uploaded {path.name}")
 
 
+def sync_review_attachment(api: ASC, review_id: str) -> None:
+    if not REVIEW_ATTACHMENT.exists():
+        raise RuntimeError(f"Missing App Review screen recording: {REVIEW_ATTACHMENT}")
+    data = REVIEW_ATTACHMENT.read_bytes()
+    checksum = hashlib.md5(data).hexdigest()
+    existing = api.json(
+        "GET",
+        f"/appStoreReviewDetails/{review_id}/appStoreReviewAttachments",
+        params={"limit": 200},
+    )["data"]
+    matching = [
+        item
+        for item in existing
+        if item["attributes"].get("fileName") == REVIEW_ATTACHMENT.name
+    ]
+    complete_match = next(
+        (
+            item
+            for item in matching
+            if item["attributes"].get("sourceFileChecksum") == checksum
+            and item["attributes"].get("assetDeliveryState", {}).get("state") == "COMPLETE"
+        ),
+        None,
+    )
+    if complete_match:
+        for item in matching:
+            if item["id"] != complete_match["id"]:
+                api.json("DELETE", f"/appStoreReviewAttachments/{item['id']}")
+        print("App Review screen recording already uploaded")
+        return
+    for item in matching:
+        api.json("DELETE", f"/appStoreReviewAttachments/{item['id']}")
+
+    created = api.json(
+        "POST",
+        "/appStoreReviewAttachments",
+        ok=(201,),
+        json=body(
+            "appStoreReviewAttachments",
+            attributes={"fileName": REVIEW_ATTACHMENT.name, "fileSize": len(data)},
+            relationships={"appStoreReviewDetail": rel("appStoreReviewDetails", review_id)},
+        ),
+    )["data"]
+    attachment_id = created["id"]
+    for operation in created["attributes"].get("uploadOperations") or []:
+        offset = int(operation.get("offset") or 0)
+        length = int(operation.get("length") or len(data))
+        headers = {header["name"]: header["value"] for header in operation.get("requestHeaders", [])}
+        response = requests.request(
+            operation["method"],
+            operation["url"],
+            headers=headers,
+            data=data[offset:offset + length],
+            timeout=180,
+        )
+        if response.status_code // 100 != 2:
+            raise RuntimeError(
+                f"App Review attachment upload failed: {response.status_code} {response.text[:500]}"
+            )
+    api.json(
+        "PATCH",
+        f"/appStoreReviewAttachments/{attachment_id}",
+        json=body(
+            "appStoreReviewAttachments",
+            attachment_id,
+            {"sourceFileChecksum": checksum, "uploaded": True},
+        ),
+    )
+    for _ in range(200):
+        current = api.json("GET", f"/appStoreReviewAttachments/{attachment_id}")["data"]
+        state = current["attributes"].get("assetDeliveryState", {}).get("state")
+        if state == "COMPLETE":
+            print(f"Uploaded App Review screen recording: {REVIEW_ATTACHMENT.name}")
+            return
+        if state == "FAILED":
+            raise RuntimeError(
+                f"App Review screen recording failed: "
+                f"{current['attributes'].get('assetDeliveryState')}"
+            )
+        time.sleep(3)
+    raise RuntimeError(f"App Review screen recording {attachment_id} did not finish processing")
+
+
 def main() -> int:
     key_path = Path.home() / f".appstoreconnect/private_keys/AuthKey_{KEY_ID}.p8"
     if not key_path.exists():
@@ -242,8 +400,10 @@ def main() -> int:
     version_id = ensure_version(api)
     build_id = wait_for_build(api)
     localization_id = sync_localization(api, version_id)
-    sync_version(api, version_id, build_id)
+    sync_app_info_privacy(api)
+    review_id = sync_version(api, version_id, build_id)
     sync_screenshots(api, localization_id)
+    sync_review_attachment(api, review_id)
     print(f"TraceFence Mac {VERSION} is prepared. First subscriptions must be attached in App Store Connect web UI.")
     return 0
 

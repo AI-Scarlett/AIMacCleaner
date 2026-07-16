@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="TraceFence"
-VERSION="${TRACEFENCE_VERSION:-1.0.66}"
+VERSION="${TRACEFENCE_VERSION:-1.0.71}"
 TAG="v${VERSION}"
 SCHEME="AIMacCleaner"
 CONFIGURATION="Release"
@@ -88,15 +88,16 @@ if [ ! -d "$BUILT_APP" ]; then
   exit 1
 fi
 
-mkdir -p "$BUILT_APP/Contents/Resources"
-cp "$CODEXBAR_BINARY" "$BUILT_APP/Contents/Resources/codexbar"
-chmod 755 "$BUILT_APP/Contents/Resources/codexbar"
+PROVIDER_ENGINE="$BUILT_APP/Contents/MacOS/codexbar"
+if [ ! -x "$PROVIDER_ENGINE" ]; then
+  install -m 755 "$CODEXBAR_BINARY" "$PROVIDER_ENGINE"
+fi
 
 codesign --force \
   --options runtime \
   --timestamp \
   --sign "$SIGN_IDENTITY" \
-  "$BUILT_APP/Contents/Resources/codexbar"
+  "$PROVIDER_ENGINE"
 
 codesign --force \
   --deep \

@@ -171,7 +171,7 @@ struct AgentGuardTab: View {
             Spacer()
             Button {
                 service.operationMonitor.requestAccessForStalePaths()
-                service.importKnownAgentHistory()
+                service.importKnownAgentHistory(force: true)
             } label: {
                 Text(localizer.reauthorize)
                     .font(Theme.Font.captionMedium)

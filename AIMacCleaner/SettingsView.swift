@@ -8,7 +8,8 @@ struct SettingsView: View {
     @EnvironmentObject var localizer: Localizer
     @Environment(\.dismiss) var dismiss
 
-    @State private var selectedTab: SettingsTab = .features
+    private let initialTab: SettingsTab
+    @State private var selectedTab: SettingsTab
     @State private var showAIConfig = false
     @StateObject private var licenseService = DirectLicenseService.shared
     @StateObject private var appStoreSubscriptionService = AppStoreSubscriptionService.shared
@@ -20,6 +21,14 @@ struct SettingsView: View {
     @State private var recordingShortcutAction: GlobalShortcut.ShortcutAction?
     @State private var shortcutRecorderMonitor: Any?
     @State private var shortcutMessage: String?
+#if DEBUG
+    @State private var debugDodoEnvironment = TraceFenceDodoEnvironment.test.rawValue
+    @State private var debugDodoBusinessID = ""
+    @State private var debugDodoMonthlyProductID = ""
+    @State private var debugDodoAnnualProductID = ""
+    @State private var debugDodoConfigurationMessage: String?
+    @State private var debugDodoConfigurationSucceeded = false
+#endif
 
     @AppStorage("menuBarMonitorEnabled") private var menuBarMonitorEnabled = true
     @AppStorage("sensorMonitorEnabled") private var sensorMonitorEnabled = false
@@ -46,7 +55,7 @@ struct SettingsView: View {
             switch self {
             case .ai: "brain"
             case .features: "switch.2"
-            case .license: "key.fill"
+            case .license: TraceFenceDistributionPolicy.currentChannel.isAppStore ? "creditcard.fill" : "key.fill"
             case .appearance: "paintpalette.fill"
             case .lab: "flask"
             case .monitor: "bell.badge"
@@ -74,7 +83,12 @@ struct SettingsView: View {
             switch self {
             case .ai: localizer.settingsTabAI
             case .features: localizer.settingsTabFeatures
-            case .license: localizer.t("授权", en: "License", zhHant: "授權", ja: "ライセンス", ko: "라이선스", mt: "License")
+            case .license:
+                if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+                    localizer.t("订阅", en: "Subscription", zhHant: "訂閱", ja: "サブスクリプション", ko: "구독", mt: "Subscription")
+                } else {
+                    localizer.t("授权", en: "License", zhHant: "授權", ja: "ライセンス", ko: "라이선스", mt: "License")
+                }
             case .appearance: localizer.t("外观", en: "Appearance", zhHant: "外觀", ja: "外観", ko: "외관", mt: "Appearance")
             case .lab: localizer.settingsTabLab
             case .monitor: localizer.settingsTabMonitor
@@ -83,6 +97,11 @@ struct SettingsView: View {
             case .version: localizer.settingsTabVersion
             }
         }
+    }
+
+    init(initialTab: SettingsTab = .features) {
+        self.initialTab = initialTab
+        _selectedTab = State(initialValue: initialTab)
     }
 
     var body: some View {
@@ -158,23 +177,36 @@ struct SettingsView: View {
                         .frame(width: 1)
                 }
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-                        switch selectedTab {
-                        case .ai: aiSection
-                        case .features: featuresSection
-                        case .license: licenseSection
-                        case .appearance: appearanceSection
-                        case .lab: labSection
-                        case .monitor: monitorSection
-                        case .network: networkSection
-                        case .language: languageSection
-                        case .version: versionSection
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+                            Color.clear
+                                .frame(height: 0)
+                                .id("settingsContentTop")
+                            switch selectedTab {
+                            case .ai: aiSection
+                            case .features: featuresSection
+                            case .license: licenseSection
+                            case .appearance: appearanceSection
+                            case .lab: labSection
+                            case .monitor: monitorSection
+                            case .network: networkSection
+                            case .language: languageSection
+                            case .version: versionSection
+                            }
+                            Spacer(minLength: 0)
                         }
-                        Spacer(minLength: 0)
+                        .padding(Theme.Spacing.xl)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(Theme.Spacing.xl)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onAppear {
+                        DispatchQueue.main.async {
+                            proxy.scrollTo("settingsContentTop", anchor: .top)
+                        }
+                    }
+                    .onChange(of: selectedTab) { _ in
+                        proxy.scrollTo("settingsContentTop", anchor: .top)
+                    }
                 }
             }
 
@@ -201,6 +233,9 @@ struct SettingsView: View {
                 .environmentObject(service)
                 .environmentObject(localizer)
         }
+        .onAppear {
+            selectedTab = initialTab
+        }
         .task {
             licenseService.refreshTrialState()
             iOSRemoteGatewayService.configure(scannerService: service)
@@ -208,6 +243,9 @@ struct SettingsView: View {
                 await appStoreSubscriptionService.refresh()
             }
             loadShortcutSettings()
+#if DEBUG
+            loadDebugDodoConfiguration()
+#endif
         }
         .onDisappear {
             stopShortcutRecording()
@@ -548,15 +586,11 @@ struct SettingsView: View {
 
     private var licenseSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            SectionHeader(title: localizer.t("TraceFence 订阅", en: "TraceFence Subscription", zhHant: "TraceFence 訂閱", ja: "TraceFence サブスクリプション", ko: "TraceFence 구독", mt: "TraceFence Subscription"), icon: "key.fill")
-            Text(localizer.t(
-                "TraceFence 分为 Mac App Store 订阅版和官网订阅版。iOS 客户端保持一个版本，同时支持两条 macOS 分发线；官网增强订阅会开放上架版不能承诺的高级本机能力。",
-                en: "TraceFence now has a Mac App Store subscription line and a website subscription line. The iOS client stays unified and supports both Mac builds; the website Enhanced tier can unlock advanced local capabilities that the App Store build cannot promise.",
-                zhHant: "TraceFence 分為 Mac App Store 訂閱版和官網訂閱版。iOS 用戶端維持單一版本，同時支援兩條 macOS 分發線；官網增強訂閱會開放上架版不能承諾的進階本機能力。",
-                ja: "TraceFence は Mac App Store サブスクリプション版と公式サイト版に分かれます。iOS クライアントは1つのままで両方の Mac ビルドをサポートし、公式サイトの Enhanced では App Store 版では約束できない高度なローカル機能を解放します。",
-                ko: "TraceFence는 Mac App Store 구독 라인과 웹사이트 구독 라인으로 나뉩니다. iOS 클라이언트는 하나로 유지되며 두 Mac 빌드를 모두 지원하고, 웹사이트 Enhanced 티어는 App Store 빌드에서 약속하기 어려운 고급 로컬 기능을 제공합니다.",
-                mt: "TraceFence now has a Mac App Store subscription line and a website subscription line. The iOS client stays unified and supports both Mac builds; the website Enhanced tier can unlock advanced local capabilities that the App Store build cannot promise."
-            ))
+            SectionHeader(
+                title: localizer.t("TraceFence 订阅", en: "TraceFence Subscription", zhHant: "TraceFence 訂閱", ja: "TraceFence サブスクリプション", ko: "TraceFence 구독", mt: "Abbonament TraceFence"),
+                icon: TraceFenceDistributionPolicy.currentChannel.isAppStore ? "creditcard.fill" : "key.fill"
+            )
+            Text(subscriptionIntroText)
             .font(Theme.Font.caption)
             .foregroundStyle(Theme.Colors.textSecondary)
 
@@ -566,6 +600,9 @@ struct SettingsView: View {
                 appStoreSubscriptionControls
             } else {
                 directSubscriptionControls
+#if DEBUG
+                debugDodoConfigurationSection
+#endif
             }
         }
     }
@@ -582,7 +619,7 @@ struct SettingsView: View {
             .frame(width: 46, height: 46)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(localizer.t("当前安装渠道：\(TraceFenceDistributionPolicy.currentChannel.title)", en: "Installed channel: \(TraceFenceDistributionPolicy.currentChannel.title)"))
+                Text(installedChannelTitle)
                     .font(Theme.Font.bodyMedium)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Text(channelDetailText)
@@ -597,10 +634,6 @@ struct SettingsView: View {
 
     private var appStoreSubscriptionControls: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            ForEach(TraceFenceDistributionPolicy.appStorePlans) { plan in
-                subscriptionPlanCard(plan)
-            }
-
             HStack(spacing: Theme.Spacing.md) {
                 ZStack {
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
@@ -627,56 +660,162 @@ struct SettingsView: View {
                 }
             }
 
-            if let message = appStoreSubscriptionService.message, !message.isEmpty {
-                Label(message, systemImage: "info.circle")
+            if let noticeText = appStoreNoticeText {
+                Label(noticeText, systemImage: "info.circle")
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if appStoreSubscriptionService.products.isEmpty {
-                Button {
-                    Task { await appStoreSubscriptionService.refresh() }
-                } label: {
-                    Label(localizer.t("载入订阅方案", en: "Load Subscriptions"), systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
-                .disabled(appStoreSubscriptionService.isLoading)
-            } else {
-                HStack(spacing: Theme.Spacing.sm) {
-                    ForEach(appStoreSubscriptionService.products, id: \.id) { product in
-                        appStoreProductButton(product)
-                    }
-
-                    Button {
-                        Task { await appStoreSubscriptionService.restorePurchases() }
-                    } label: {
-                        Label(localizer.t("恢复购买", en: "Restore"), systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .ghost, minHeight: 34))
-                    .disabled(appStoreSubscriptionService.isLoading)
-                }
-            }
+            appStoreSubscriptionButtons
 
             Text(localizer.t(
-                "App Store 版只通过 Apple 内购订阅解锁，不显示官网 License Key，也不包含系统扩展级增强能力。",
-                en: "The App Store build unlocks only through Apple in-app subscriptions. It does not show website license keys or include system-extension-level enhanced capabilities."
+                "App Store 版只通过 Apple 应用内购买解锁，不显示官网结账或许可证密钥。",
+                en: "The App Store build unlocks only through Apple in-app purchases and does not show website checkout or license keys.",
+                zhHant: "App Store 版只透過 Apple App 內購買解鎖，不顯示官網結帳或授權金鑰。",
+                ja: "App Store 版は Apple のアプリ内課金でのみ解除され、公式サイトの決済やライセンスキーは表示しません。",
+                ko: "App Store 버전은 Apple 앱 내 구입으로만 잠금 해제되며 웹사이트 결제나 라이선스 키를 표시하지 않습니다.",
+                mt: "Il-verżjoni tal-App Store tinfetaħ biss permezz ta' xiri fl-app ta' Apple u ma turix ħlas mis-sit jew ċwievet tal-liċenzja."
             ))
             .font(Theme.Font.caption)
             .foregroundStyle(Theme.Colors.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
+
+            appStoreLegalDisclosure
         }
         .cardStyle()
+    }
+
+    private var appStoreSubscriptionButtons: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            ForEach(TraceFenceDistributionPolicy.appStoreProductIDs, id: \.self) { productID in
+                if let product = appStoreSubscriptionService.products.first(where: { $0.id == productID }) {
+                    appStoreProductButton(product)
+                } else {
+                    legacyProductPlaceholder(
+                        title: appStoreProductTitle(productID),
+                        detail: appStoreProductTerm(productID)
+                    )
+                }
+            }
+
+            if appStoreSubscriptionService.products.count < TraceFenceDistributionPolicy.appStoreProductIDs.count {
+                Button {
+                    Task { await appStoreSubscriptionService.refresh() }
+                } label: {
+                    Label(localizer.t(
+                        "重新载入 Apple 价格",
+                        en: "Reload Apple Prices",
+                        zhHant: "重新載入 Apple 價格",
+                        ja: "Apple の価格を再読み込み",
+                        ko: "Apple 가격 다시 불러오기",
+                        mt: "Erġa' tella' l-prezzijiet ta' Apple"
+                    ), systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
+                .disabled(appStoreSubscriptionService.isLoading)
+            }
+
+            Button {
+                Task { await appStoreSubscriptionService.restorePurchases() }
+            } label: {
+                Label(localizer.t(
+                    "恢复购买",
+                    en: "Restore Purchases",
+                    zhHant: "恢復購買",
+                    ja: "購入を復元",
+                    ko: "구입 복원",
+                    mt: "Irrestawra x-xiri"
+                ), systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .ghost, minHeight: 34))
+            .disabled(appStoreSubscriptionService.isLoading)
+        }
+    }
+
+    private func legacyProductPlaceholder(title: String, detail: String) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(detail)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            }
+            Spacer()
+            Text(localizer.t(
+                "正在载入本地价格",
+                en: "Loading local price",
+                zhHant: "正在載入當地價格",
+                ja: "現地価格を読み込み中",
+                ko: "현지 가격 불러오는 중",
+                mt: "Qed jitgħabba l-prezz lokali"
+            ))
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(Theme.Colors.textTertiary)
+        }
+        .padding(Theme.Spacing.sm)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    private var appStoreLegalDisclosure: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Text(localizer.t(
+                "付款确认后订阅将自动续订，除非在当前计费周期结束前至少 24 小时通过 Apple 取消。",
+                en: "Payment is charged by Apple after confirmation. The subscription renews automatically unless canceled through Apple at least 24 hours before the end of the current billing period.",
+                zhHant: "付款確認後訂閱將自動續訂，除非在目前計費週期結束前至少 24 小時透過 Apple 取消。",
+                ja: "購入確認後、Apple により課金されます。現在の請求期間が終了する24時間前までに Apple で解約しない限り、自動更新されます。",
+                ko: "구매 확인 후 Apple에서 결제됩니다. 현재 결제 기간 종료 최소 24시간 전에 Apple을 통해 취소하지 않으면 자동 갱신됩니다.",
+                mt: "Payment is charged by Apple after confirmation. The subscription renews automatically unless canceled through Apple at least 24 hours before the end of the current billing period."
+            ))
+            .font(Theme.Font.caption)
+            .foregroundStyle(Theme.Colors.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: Theme.Spacing.lg) {
+                Link(destination: TraceFenceDistributionPolicy.privacyPolicyURL) {
+                    Label(localizer.t("隐私政策", en: "Privacy Policy", zhHant: "隱私權政策", ja: "プライバシーポリシー", ko: "개인정보 처리방침", mt: "Politika tal-Privatezza"), systemImage: "hand.raised.fill")
+                }
+                Link(destination: TraceFenceDistributionPolicy.standardEULAURL) {
+                    Label(localizer.t("使用条款（EULA）", en: "Terms of Use (EULA)", zhHant: "使用條款（EULA）", ja: "利用規約（EULA）", ko: "이용 약관(EULA)", mt: "Termini tal-Użu (EULA)"), systemImage: "doc.text.fill")
+                }
+            }
+            .font(Theme.Font.captionMedium)
+        }
     }
 
     private func appStoreProductButton(_ product: Product) -> some View {
         Button {
             Task { await appStoreSubscriptionService.purchase(product) }
         } label: {
-            Label("\(product.displayName) \(product.displayPrice)", systemImage: "checkmark.seal.fill")
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(appStoreProductTitle(product.id))
+                        .font(Theme.Font.bodyMedium)
+                    Text(appStoreProductTerm(product))
+                        .font(Theme.Font.caption)
+                }
+                Spacer()
+                Text(product.displayPrice)
+                    .font(Theme.Font.bodyMedium)
+            }
+            .frame(maxWidth: .infinity)
         }
         .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 34))
         .disabled(appStoreSubscriptionService.isLoading)
+    }
+
+    private func appStoreProductTerm(_ product: Product) -> String {
+        appStoreProductTerm(product.id)
+    }
+
+    private func appStoreProductTerm(_ productID: String) -> String {
+        if productID == TraceFenceDistributionPolicy.appStoreProductIDs.first {
+            return appStoreMonthlyTerm
+        }
+        return appStoreYearlyTerm
     }
 
     private var directSubscriptionControls: some View {
@@ -744,21 +883,23 @@ struct SettingsView: View {
 
             HStack(spacing: Theme.Spacing.sm) {
                 Button {
-                    licenseService.openPurchasePage(for: .standard)
+                    licenseService.openPurchasePage(for: .monthly)
                 } label: {
-                    Label(localizer.t("订阅标准版", en: "Subscribe Standard"), systemImage: "cart.fill")
+                    Label(localizer.t("月付 $9.99", en: "Monthly $9.99", zhHant: "月付 $9.99", ja: "月払い $9.99", ko: "월간 $9.99", mt: "Monthly $9.99"), systemImage: "calendar")
                 }
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 32))
-                .disabled(TraceFenceDistributionPolicy.checkoutURL(for: .standard) == nil)
+                .disabled(TraceFenceDistributionPolicy.checkoutURL(for: .monthly) == nil)
 
                 Button {
-                    licenseService.openPurchasePage(for: .enhanced)
+                    licenseService.openPurchasePage(for: .annual)
                 } label: {
-                    Label(localizer.t("订阅增强版", en: "Subscribe Enhanced"), systemImage: "bolt.shield.fill")
+                    Label(localizer.t("年付 $79.99", en: "Annual $79.99", zhHant: "年付 $79.99", ja: "年払い $79.99", ko: "연간 $79.99", mt: "Annual $79.99"), systemImage: "calendar.badge.checkmark")
                 }
-                .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .secondary, minHeight: 32))
-                .disabled(TraceFenceDistributionPolicy.checkoutURL(for: .enhanced) == nil)
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.success, variant: .secondary, minHeight: 32))
+                .disabled(TraceFenceDistributionPolicy.checkoutURL(for: .annual) == nil)
+            }
 
+            HStack(spacing: Theme.Spacing.sm) {
                 Button {
                     Task { await licenseService.validateCurrentLicense() }
                 } label: {
@@ -776,10 +917,24 @@ struct SettingsView: View {
                 .disabled(licenseService.isBusy || licenseService.snapshot.status == .unlicensed)
             }
 
-            if TraceFenceDistributionPolicy.checkoutURL(for: .enhanced) == nil {
+            if TraceFenceDistributionPolicy.dodoEnvironment == .test {
+                Label(
+                    localizer.t(
+                        "Dodo Payments 测试环境：支付不会产生真实扣款，测试 Key 不能用于正式版。",
+                        en: "Dodo Payments Test Mode: no real charge is made, and test license keys cannot be used in production."
+                    ),
+                    systemImage: "testtube.2"
+                )
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.warning)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if TraceFenceDistributionPolicy.checkoutURL(for: .monthly) == nil ||
+                TraceFenceDistributionPolicy.checkoutURL(for: .annual) == nil {
                 Text(localizer.t(
-                    "增强版需要配置 TraceFenceEnhancedCheckoutURL 后才会打开购买页。",
-                    en: "Enhanced subscription purchase requires TraceFenceEnhancedCheckoutURL to be configured."
+                    "Dodo Payments 的月付或年付商品 ID 尚未配置完整。",
+                    en: "The Dodo Payments monthly or annual product ID is not fully configured."
                 ))
                 .font(Theme.Font.caption)
                 .foregroundStyle(Theme.Colors.textTertiary)
@@ -788,12 +943,208 @@ struct SettingsView: View {
         .cardStyle()
     }
 
+#if DEBUG
+    private var debugDodoConfigurationSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "testtube.2")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.warning)
+                    .frame(width: 24)
+                Text(localizer.t(
+                    "Dodo 测试配置",
+                    en: "Dodo Test Configuration",
+                    zhHant: "Dodo 測試設定",
+                    ja: "Dodo テスト設定",
+                    ko: "Dodo 테스트 구성",
+                    mt: "Dodo Test Configuration"
+                ))
+                .font(Theme.Font.bodyMedium)
+                .foregroundStyle(Theme.Colors.textPrimary)
+                Spacer()
+                Text("DEBUG ONLY")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.Colors.warning)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Theme.Colors.warning.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            }
+
+            Text(localizer.t(
+                "仅当前调试构建读取这些本机覆盖值；正式 Release 包会忽略它们，只读取包内的 Live 配置。",
+                en: "Only this debug build reads these local overrides. Production Release builds ignore them and use only bundled Live configuration.",
+                zhHant: "只有目前的除錯版本會讀取這些本機覆寫值；正式 Release 版本會忽略它們，只讀取套件內的 Live 設定。",
+                ja: "このデバッグビルドだけがローカル上書きを読み取ります。正式な Release ビルドは無視し、バンドルされた Live 設定のみを使用します。",
+                ko: "현재 디버그 빌드만 로컬 재정의 값을 읽습니다. 정식 Release 빌드는 이를 무시하고 번들된 Live 구성만 사용합니다.",
+                mt: "Only this debug build reads these local overrides. Production Release builds ignore them and use only bundled Live configuration."
+            ))
+            .font(Theme.Font.caption)
+            .foregroundStyle(Theme.Colors.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: Theme.Spacing.md) {
+                Text(localizer.t("环境", en: "Environment", zhHant: "環境", ja: "環境", ko: "환경", mt: "Environment"))
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .frame(width: 92, alignment: .leading)
+                Picker("", selection: $debugDodoEnvironment) {
+                    Text("Test").tag(TraceFenceDodoEnvironment.test.rawValue)
+                    Text("Live").tag(TraceFenceDodoEnvironment.live.rawValue)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 260)
+                Spacer()
+            }
+
+            debugDodoTextField(
+                title: localizer.t("商户 ID", en: "Business ID", zhHant: "商戶 ID", ja: "事業者 ID", ko: "비즈니스 ID", mt: "Business ID"),
+                text: $debugDodoBusinessID
+            )
+            debugDodoTextField(
+                title: localizer.t("月付商品", en: "Monthly Product", zhHant: "月付商品", ja: "月額商品", ko: "월간 상품", mt: "Monthly Product"),
+                text: $debugDodoMonthlyProductID
+            )
+            debugDodoTextField(
+                title: localizer.t("年付商品", en: "Annual Product", zhHant: "年付商品", ja: "年額商品", ko: "연간 상품", mt: "Annual Product"),
+                text: $debugDodoAnnualProductID
+            )
+
+            if debugDodoEnvironment == TraceFenceDodoEnvironment.live.rawValue {
+                Label(
+                    localizer.t(
+                        "Live 环境可能产生真实扣款，请只使用专门的内部测试账号。",
+                        en: "Live mode may create real charges. Use only a dedicated internal test account.",
+                        zhHant: "Live 環境可能產生真實扣款，請只使用專門的內部測試帳號。",
+                        ja: "Live 環境では実際に課金される可能性があります。専用の内部テストアカウントのみを使用してください。",
+                        ko: "Live 환경에서는 실제 결제가 발생할 수 있습니다. 전용 내부 테스트 계정만 사용하세요.",
+                        mt: "Live mode may create real charges. Use only a dedicated internal test account."
+                    ),
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.danger)
+            }
+
+            HStack(spacing: Theme.Spacing.sm) {
+                Button {
+                    saveDebugDodoConfiguration()
+                } label: {
+                    Label(localizer.t("应用测试配置", en: "Apply Test Configuration", zhHant: "套用測試設定", ja: "テスト設定を適用", ko: "테스트 구성 적용", mt: "Apply Test Configuration"), systemImage: "checkmark.circle.fill")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .secondary, minHeight: 32))
+
+                Button {
+                    resetDebugDodoConfiguration()
+                } label: {
+                    Label(localizer.t("恢复内置值", en: "Restore Bundled Values", zhHant: "還原內建值", ja: "内蔵値に戻す", ko: "번들 값 복원", mt: "Restore Bundled Values"), systemImage: "arrow.counterclockwise")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 32))
+            }
+
+            if let message = debugDodoConfigurationMessage {
+                Label(message, systemImage: debugDodoConfigurationSucceeded ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(debugDodoConfigurationSucceeded ? Theme.Colors.success : Theme.Colors.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .cardStyle()
+    }
+
+    private func debugDodoTextField(title: String, text: Binding<String>) -> some View {
+        HStack(spacing: Theme.Spacing.md) {
+            Text(title)
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .frame(width: 92, alignment: .leading)
+            TextField("", text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, design: .monospaced))
+                .padding(.horizontal, Theme.Spacing.sm)
+                .padding(.vertical, 7)
+                .background(Theme.Colors.elevatedCardBg.opacity(0.75))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                .overlay {
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .stroke(Theme.Colors.separator.opacity(0.75), lineWidth: 1)
+                }
+        }
+    }
+
+    private func loadDebugDodoConfiguration() {
+        debugDodoEnvironment = TraceFenceDistributionPolicy.dodoEnvironment.rawValue
+        debugDodoBusinessID = TraceFenceDistributionPolicy.dodoBusinessID ?? ""
+        debugDodoMonthlyProductID = TraceFenceDistributionPolicy.dodoProductID(for: .monthly) ?? ""
+        debugDodoAnnualProductID = TraceFenceDistributionPolicy.dodoProductID(for: .annual) ?? ""
+        debugDodoConfigurationMessage = nil
+    }
+
+    private func saveDebugDodoConfiguration() {
+        let businessID = debugDodoBusinessID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let monthlyProductID = debugDodoMonthlyProductID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let annualProductID = debugDodoAnnualProductID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard TraceFenceDodoEnvironment(rawValue: debugDodoEnvironment) != nil,
+              businessID.range(of: #"^bus_[A-Za-z0-9]+$"#, options: .regularExpression) != nil,
+              monthlyProductID.range(of: #"^pdt_[A-Za-z0-9]+$"#, options: .regularExpression) != nil,
+              annualProductID.range(of: #"^pdt_[A-Za-z0-9]+$"#, options: .regularExpression) != nil else {
+            debugDodoConfigurationSucceeded = false
+            debugDodoConfigurationMessage = localizer.t(
+                "配置格式不正确：商户 ID 应以 bus_ 开头，商品 ID 应以 pdt_ 开头。",
+                en: "Invalid configuration. Business IDs must start with bus_ and product IDs with pdt_.",
+                zhHant: "設定格式不正確：商戶 ID 應以 bus_ 開頭，商品 ID 應以 pdt_ 開頭。",
+                ja: "設定形式が正しくありません。事業者 ID は bus_、商品 ID は pdt_ で始まる必要があります。",
+                ko: "구성 형식이 올바르지 않습니다. 비즈니스 ID는 bus_, 상품 ID는 pdt_로 시작해야 합니다.",
+                mt: "Invalid configuration. Business IDs must start with bus_ and product IDs with pdt_."
+            )
+            return
+        }
+
+        let defaults = UserDefaults.standard
+        defaults.set(debugDodoEnvironment, forKey: TraceFenceDistributionPolicy.dodoEnvironmentDefaultsKey)
+        defaults.set(businessID, forKey: TraceFenceDistributionPolicy.dodoBusinessIDDefaultsKey)
+        defaults.set(monthlyProductID, forKey: TraceFenceDistributionPolicy.dodoMonthlyProductIDDefaultsKey)
+        defaults.set(annualProductID, forKey: TraceFenceDistributionPolicy.dodoAnnualProductIDDefaultsKey)
+        debugDodoBusinessID = businessID
+        debugDodoMonthlyProductID = monthlyProductID
+        debugDodoAnnualProductID = annualProductID
+        debugDodoConfigurationSucceeded = true
+        debugDodoConfigurationMessage = localizer.t(
+            "测试配置已生效，后续购买、激活和验证会立即使用这些值。",
+            en: "The test configuration is active. New checkout, activation, and validation requests use it immediately.",
+            zhHant: "測試設定已生效，後續購買、啟用和驗證會立即使用這些值。",
+            ja: "テスト設定を適用しました。以後の購入、有効化、検証にすぐ使用されます。",
+            ko: "테스트 구성이 적용되었습니다. 이후 구매, 활성화 및 검증 요청에 즉시 사용됩니다.",
+            mt: "The test configuration is active. New checkout, activation, and validation requests use it immediately."
+        )
+    }
+
+    private func resetDebugDodoConfiguration() {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: TraceFenceDistributionPolicy.dodoEnvironmentDefaultsKey)
+        defaults.removeObject(forKey: TraceFenceDistributionPolicy.dodoBusinessIDDefaultsKey)
+        defaults.removeObject(forKey: TraceFenceDistributionPolicy.dodoMonthlyProductIDDefaultsKey)
+        defaults.removeObject(forKey: TraceFenceDistributionPolicy.dodoAnnualProductIDDefaultsKey)
+        loadDebugDodoConfiguration()
+        debugDodoConfigurationSucceeded = true
+        debugDodoConfigurationMessage = localizer.t(
+            "已恢复当前 Debug 包内置的 Dodo 测试配置。",
+            en: "Restored the Dodo test configuration bundled with this Debug build.",
+            zhHant: "已還原目前 Debug 版本內建的 Dodo 測試設定。",
+            ja: "この Debug ビルドに内蔵された Dodo テスト設定へ戻しました。",
+            ko: "현재 Debug 빌드에 번들된 Dodo 테스트 구성을 복원했습니다.",
+            mt: "Restored the Dodo test configuration bundled with this Debug build."
+        )
+    }
+#endif
+
     private func subscriptionPlanCard(_ plan: TraceFenceSubscriptionPlan) -> some View {
         let isActive = isPlanActive(plan)
         return HStack(alignment: .top, spacing: Theme.Spacing.md) {
-            Image(systemName: isActive ? "checkmark.seal.fill" : (plan.id == .directEnhanced ? "bolt.shield.fill" : "shield.lefthalf.filled"))
+            Image(systemName: isActive ? "checkmark.seal.fill" : "shield.lefthalf.filled")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(isActive ? Theme.Colors.success : (plan.id == .directEnhanced ? Theme.Colors.warning : Theme.Colors.accent))
+                .foregroundStyle(isActive ? Theme.Colors.success : Theme.Colors.accent)
                 .frame(width: 26, height: 26)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -1335,7 +1686,7 @@ struct SettingsView: View {
                     .frame(width: 46, height: 46)
 
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("TraceFence v\(updateService.currentVersion)")
+                        Text(appVersionTitle)
                             .font(Theme.Font.bodyMedium)
                             .foregroundStyle(Theme.Colors.textPrimary)
                         Text(TraceFenceDistributionPolicy.currentChannel.isDirect
@@ -1658,29 +2009,166 @@ struct SettingsView: View {
         return URL(string: "macappstore://apps.apple.com/app/id\(appStoreID)")
     }
 
+    private var appVersionTitle: String {
+        if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+            return "TraceFence \(updateService.currentVersion) (\(updateService.currentBuildNumber)) · Mac App Store"
+        }
+        return localizer.t(
+            "TraceFence \(updateService.currentVersion) · 官网版",
+            en: "TraceFence \(updateService.currentVersion) · Website Build",
+            zhHant: "TraceFence \(updateService.currentVersion) · 官網版",
+            ja: "TraceFence \(updateService.currentVersion) · 公式サイト版",
+            ko: "TraceFence \(updateService.currentVersion) · 웹사이트 버전",
+            mt: "TraceFence \(updateService.currentVersion) · Verżjoni tas-Sit"
+        )
+    }
+
+    private var installedChannelTitle: String {
+        if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+            return localizer.t(
+                "当前安装渠道：Mac App Store",
+                en: "Installed channel: Mac App Store",
+                zhHant: "目前安裝管道：Mac App Store",
+                ja: "インストール元：Mac App Store",
+                ko: "설치 채널: Mac App Store",
+                mt: "Kanal tal-installazzjoni: Mac App Store"
+            )
+        }
+        return localizer.t(
+            "当前安装渠道：TraceFence 官网",
+            en: "Installed channel: TraceFence Website",
+            zhHant: "目前安裝管道：TraceFence 官網",
+            ja: "インストール元：TraceFence 公式サイト",
+            ko: "설치 채널: TraceFence 웹사이트",
+            mt: "Kanal tal-installazzjoni: is-Sit ta' TraceFence"
+        )
+    }
+
+    private var subscriptionIntroText: String {
+        if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+            return localizer.t(
+                "请选择月度或年度自动续订方案。商品名称、订阅周期和所在商店的价格会在下方完整显示，购买由 Apple 处理。",
+                en: "Choose a monthly or yearly auto-renewable plan. The product name, subscription period, and storefront price are shown below, and Apple handles the purchase.",
+                zhHant: "請選擇月度或年度自動續訂方案。商品名稱、訂閱週期和所在商店的價格會在下方完整顯示，購買由 Apple 處理。",
+                ja: "月額または年額の自動更新プランを選択してください。商品名、期間、ストア価格は以下に表示され、購入は Apple が処理します。",
+                ko: "월간 또는 연간 자동 갱신 요금제를 선택하세요. 상품명, 구독 기간, 스토어 가격이 아래에 표시되며 결제는 Apple에서 처리합니다.",
+                mt: "Agħżel pjan li jiġġedded kull xahar jew kull sena. L-isem, il-perjodu u l-prezz tal-ħanut jidhru hawn taħt, u x-xiri jiġi pproċessat minn Apple."
+            )
+        }
+        return localizer.t(
+            "官网版提供 TraceFence 标准版月度和年度订阅，并使用许可证密钥激活。",
+            en: "The website build offers monthly and yearly TraceFence Standard subscriptions activated with a license key.",
+            zhHant: "官網版提供 TraceFence 標準版月度和年度訂閱，並使用授權金鑰啟用。",
+            ja: "公式サイト版では TraceFence Standard の月額・年額プランを提供し、ライセンスキーで有効化します。",
+            ko: "웹사이트 버전은 TraceFence Standard 월간 및 연간 구독을 제공하며 라이선스 키로 활성화합니다.",
+            mt: "Il-verżjoni tas-sit toffri abbonamenti TraceFence Standard ta' kull xahar u ta' kull sena, attivati b'ċavetta tal-liċenzja."
+        )
+    }
+
     private var channelDetailText: String {
         switch TraceFenceDistributionPolicy.currentChannel {
         case .appStore:
             return localizer.t(
-                "上架版使用 Apple 订阅，价格与官网标准版保持一致。它保留 Agent 时间线、AI 报告、iOS 远程审批和 hook-based 控制，但不承诺系统扩展级拦截。",
-                en: "The App Store build uses Apple subscriptions at the same price level as the website Standard tier. It includes agent timelines, AI reports, iOS remote approvals, and hook-based control, but does not promise system-extension-level interception."
+                "此版本仅使用 Apple 应用内购买，不显示官网结账或许可证密钥。订阅后可使用 Agent 时间线、AI 报告、iPhone 远程控制和审批功能。",
+                en: "This build uses Apple in-app purchases only and does not show website checkout or license keys. A subscription unlocks agent timelines, AI reports, iPhone remote control, and approvals.",
+                zhHant: "此版本僅使用 Apple App 內購買，不顯示官網結帳或授權金鑰。訂閱後可使用 Agent 時間線、AI 報告、iPhone 遠端控制和審批功能。",
+                ja: "このバージョンは Apple のアプリ内課金のみを使用し、公式サイトの決済やライセンスキーは表示しません。サブスクリプションで Agent タイムライン、AI レポート、iPhone 遠隔操作、承認機能を利用できます。",
+                ko: "이 버전은 Apple 앱 내 구입만 사용하며 웹사이트 결제나 라이선스 키를 표시하지 않습니다. 구독하면 Agent 타임라인, AI 보고서, iPhone 원격 제어 및 승인 기능을 사용할 수 있습니다.",
+                mt: "Din il-verżjoni tuża biss xiri fl-app ta' Apple u ma turix ħlas mis-sit jew ċwievet tal-liċenzja. Abbonament jiftaħ il-linja taż-żmien tal-Agent, rapporti tal-AI, kontroll mill-iPhone u approvazzjonijiet."
             )
         case .direct:
             return localizer.t(
-                "官网版使用 Lemon Squeezy 订阅。标准版与上架版同价同能力；增强版价格更高，用于高级策略、直发更新和未来系统扩展防火墙。",
-                en: "The website build uses Lemon Squeezy subscriptions. Standard matches the App Store price and feature level; Enhanced costs more and is reserved for advanced policies, direct updates, and future system-extension firewall capabilities."
+                "官网版当前只提供 TraceFence Standard，由 Dodo Payments 处理月付或年付订阅、税务和账单。",
+                en: "The website build currently offers TraceFence Standard only. Dodo Payments handles monthly or annual subscriptions, taxes, and billing.",
+                zhHant: "官網版目前只提供 TraceFence Standard，由 Dodo Payments 處理月付或年付訂閱、稅務和帳單。",
+                ja: "公式サイト版では現在 TraceFence Standard のみを提供し、月額・年額のサブスクリプション、税金、請求は Dodo Payments が処理します。",
+                ko: "웹사이트 버전은 현재 TraceFence Standard만 제공하며 월간 또는 연간 구독, 세금 및 청구는 Dodo Payments에서 처리합니다.",
+                mt: "Il-verżjoni tas-sit bħalissa toffri TraceFence Standard biss. Dodo Payments tipproċessa l-abbonamenti, it-taxxi u l-ħlasijiet."
             )
+        }
+    }
+
+    private var appStoreMonthlyTerm: String {
+        localizer.t(
+            "1 个月 · 每月自动续订",
+            en: "1 month · auto-renews monthly",
+            zhHant: "1 個月 · 每月自動續訂",
+            ja: "1か月 · 毎月自動更新",
+            ko: "1개월 · 매월 자동 갱신",
+            mt: "Xahar · jiġġedded kull xahar"
+        )
+    }
+
+    private var appStoreYearlyTerm: String {
+        localizer.t(
+            "1 年 · 每年自动续订",
+            en: "1 year · auto-renews yearly",
+            zhHant: "1 年 · 每年自動續訂",
+            ja: "1年 · 毎年自動更新",
+            ko: "1년 · 매년 자동 갱신",
+            mt: "Sena · jiġġedded kull sena"
+        )
+    }
+
+    private func appStoreProductTitle(_ productID: String) -> String {
+        let isMonthly = productID == TraceFenceDistributionPolicy.appStoreProductIDs.first
+        if isMonthly {
+            return localizer.t(
+                "TraceFence 标准版（月度）",
+                en: "TraceFence Standard Monthly",
+                zhHant: "TraceFence 標準版（月度）",
+                ja: "TraceFence Standard（月額）",
+                ko: "TraceFence Standard 월간",
+                mt: "TraceFence Standard ta' Kull Xahar"
+            )
+        }
+        return localizer.t(
+            "TraceFence 标准版（年度）",
+            en: "TraceFence Standard Yearly",
+            zhHant: "TraceFence 標準版（年度）",
+            ja: "TraceFence Standard（年額）",
+            ko: "TraceFence Standard 연간",
+            mt: "TraceFence Standard ta' Kull Sena"
+        )
+    }
+
+    private var appStoreNoticeText: String? {
+        guard let notice = appStoreSubscriptionService.notice else { return nil }
+        switch notice {
+        case .productsUnavailable:
+            return localizer.t(
+                "暂时无法从 Apple 载入价格。请检查网络后重试；月度和年度方案仍列在下方。",
+                en: "Apple prices are temporarily unavailable. Check the network and try again; both plans remain listed below.",
+                zhHant: "暫時無法從 Apple 載入價格。請檢查網路後重試；月度和年度方案仍列在下方。",
+                ja: "Apple の価格を一時的に読み込めません。ネットワークを確認して再試行してください。両方のプランは下に表示されています。",
+                ko: "Apple 가격을 일시적으로 불러올 수 없습니다. 네트워크를 확인한 후 다시 시도하세요. 두 요금제는 아래에 계속 표시됩니다.",
+                mt: "Il-prezzijiet ta' Apple mhumiex disponibbli bħalissa. Iċċekkja n-network u erġa' pprova; iż-żewġ pjanijiet jibqgħu jidhru hawn taħt."
+            )
+        case .subscriptionActive:
+            return localizer.t("订阅已激活。", en: "Subscription active.", zhHant: "訂閱已啟用。", ja: "サブスクリプションが有効になりました。", ko: "구독이 활성화되었습니다.", mt: "L-abbonament huwa attiv.")
+        case .purchaseCancelled:
+            return localizer.t("已取消购买。", en: "Purchase canceled.", zhHant: "已取消購買。", ja: "購入をキャンセルしました。", ko: "구입이 취소되었습니다.", mt: "Ix-xiri ġie kkanċellat.")
+        case .purchasePending:
+            return localizer.t("购买正在等待批准。", en: "Purchase is awaiting approval.", zhHant: "購買正在等待批准。", ja: "購入は承認待ちです。", ko: "구입이 승인 대기 중입니다.", mt: "Ix-xiri qed jistenna l-approvazzjoni.")
+        case .purchaseStateUnknown:
+            return localizer.t("暂时无法确认购买状态，请稍后刷新。", en: "The purchase status could not be confirmed. Refresh shortly.", zhHant: "暫時無法確認購買狀態，請稍後重新整理。", ja: "購入状態を確認できません。しばらくしてから更新してください。", ko: "구입 상태를 확인할 수 없습니다. 잠시 후 새로 고치세요.", mt: "L-istat tax-xiri ma setax jiġi kkonfermat. Aġġorna dalwaqt.")
+        case .subscriptionRestored:
+            return localizer.t("订阅已恢复。", en: "Subscription restored.", zhHant: "訂閱已恢復。", ja: "サブスクリプションを復元しました。", ko: "구독이 복원되었습니다.", mt: "L-abbonament ġie rrestawrat.")
+        case .noActiveSubscription:
+            return localizer.t("没有找到有效订阅。", en: "No active subscription was found.", zhHant: "沒有找到有效訂閱。", ja: "有効なサブスクリプションが見つかりません。", ko: "활성 구독을 찾을 수 없습니다.", mt: "Ma nstab ebda abbonament attiv.")
+        case .requestFailed:
+            return localizer.t("无法连接 Apple 购买服务，请检查网络后重试。", en: "Apple's purchase service could not be reached. Check the network and try again.", zhHant: "無法連接 Apple 購買服務，請檢查網路後重試。", ja: "Apple の購入サービスに接続できません。ネットワークを確認して再試行してください。", ko: "Apple 구입 서비스에 연결할 수 없습니다. 네트워크를 확인한 후 다시 시도하세요.", mt: "Ma setax jintlaħaq is-servizz tax-xiri ta' Apple. Iċċekkja n-network u erġa' pprova.")
         }
     }
 
     private var appStoreStatusTitle: String {
         if appStoreSubscriptionService.isSubscribed {
-            return localizer.t("App Store 订阅已激活", en: "App Store subscription active")
+            return localizer.t("App Store 订阅已激活", en: "App Store subscription active", zhHant: "App Store 訂閱已啟用", ja: "App Store サブスクリプション有効", ko: "App Store 구독 활성", mt: "L-abbonament tal-App Store huwa attiv")
         }
         if appStoreSubscriptionService.isLoading {
-            return localizer.t("正在同步订阅", en: "Syncing subscription")
+            return localizer.t("正在同步订阅", en: "Syncing subscription", zhHant: "正在同步訂閱", ja: "サブスクリプションを同期中", ko: "구독 동기화 중", mt: "Qed jiġi sinkronizzat l-abbonament")
         }
-        return localizer.t("尚未订阅", en: "Not subscribed")
+        return localizer.t("尚未订阅", en: "Not subscribed", zhHant: "尚未訂閱", ja: "未登録", ko: "구독하지 않음", mt: "Mhux abbonat")
     }
 
     private var appStoreStatusDetail: String {
@@ -1688,17 +2176,26 @@ struct SettingsView: View {
             let formatter = DateFormatter()
             formatter.dateStyle = .medium
             formatter.timeStyle = .none
+            formatter.locale = Locale(identifier: localizer.language.rawValue)
             return localizer.t(
-                "当前方案：\(appStoreSubscriptionService.activeProductID ?? "App Store")，有效期至 \(formatter.string(from: expiresAt))。",
-                en: "Current plan: \(appStoreSubscriptionService.activeProductID ?? "App Store"), valid until \(formatter.string(from: expiresAt))."
+                "当前方案：\(appStoreProductTitle(appStoreSubscriptionService.activeProductID ?? ""))，有效期至 \(formatter.string(from: expiresAt))。",
+                en: "Current plan: \(appStoreProductTitle(appStoreSubscriptionService.activeProductID ?? "")), valid until \(formatter.string(from: expiresAt)).",
+                zhHant: "目前方案：\(appStoreProductTitle(appStoreSubscriptionService.activeProductID ?? ""))，有效期至 \(formatter.string(from: expiresAt))。",
+                ja: "現在のプラン：\(appStoreProductTitle(appStoreSubscriptionService.activeProductID ?? ""))。有効期限：\(formatter.string(from: expiresAt))。",
+                ko: "현재 요금제: \(appStoreProductTitle(appStoreSubscriptionService.activeProductID ?? "")), 유효 기간: \(formatter.string(from: expiresAt)).",
+                mt: "Pjan attwali: \(appStoreProductTitle(appStoreSubscriptionService.activeProductID ?? "")), validu sa \(formatter.string(from: expiresAt))."
             )
         }
         if appStoreSubscriptionService.isSubscribed {
-            return localizer.t("Apple 已确认当前订阅有效。", en: "Apple confirmed the current subscription is active.")
+            return localizer.t("Apple 已确认当前订阅有效。", en: "Apple confirmed the current subscription is active.", zhHant: "Apple 已確認目前訂閱有效。", ja: "Apple が現在のサブスクリプションを有効と確認しました。", ko: "Apple에서 현재 구독이 유효함을 확인했습니다.", mt: "Apple ikkonfermat li l-abbonament attwali huwa attiv.")
         }
         return localizer.t(
             "按月或按年订阅后可解锁标准版能力；购买、退款和续订都由 Apple 处理。",
-            en: "Subscribe monthly or yearly to unlock Standard features. Purchases, refunds, and renewals are handled by Apple."
+            en: "Subscribe monthly or yearly to unlock Standard features. Purchases, refunds, and renewals are handled by Apple.",
+            zhHant: "按月或按年訂閱後可解鎖標準版功能；購買、退款和續訂都由 Apple 處理。",
+            ja: "月額または年額で登録すると Standard 機能を利用できます。購入、返金、更新は Apple が処理します。",
+            ko: "월간 또는 연간 구독으로 Standard 기능을 사용할 수 있습니다. 구입, 환불 및 갱신은 Apple에서 처리합니다.",
+            mt: "Abbona kull xahar jew kull sena biex tiftaħ il-karatteristiċi Standard. Ix-xiri, ir-rifużjonijiet u t-tiġdid jiġu pproċessati minn Apple."
         )
     }
 
@@ -1714,7 +2211,7 @@ struct SettingsView: View {
         switch plan.id {
         case .appStoreStandard:
             return appStoreSubscriptionService.isSubscribed
-        case .directStandard, .directEnhanced, .legacy:
+        case .directStandard:
             return licenseService.currentTier == plan.id
         case .none:
             return false
@@ -1749,12 +2246,8 @@ struct SettingsView: View {
         switch licenseService.snapshot.status {
         case .licensed:
             switch licenseService.currentTier {
-            case .directEnhanced:
-                return localizer.t("官网增强订阅已激活", en: "Website Enhanced active")
             case .directStandard:
                 return localizer.t("官网标准订阅已激活", en: "Website Standard active")
-            case .legacy:
-                return localizer.t("历史授权已激活", en: "Legacy license active")
             default:
                 return localizer.t("授权已激活", en: "License active", zhHant: "授權已啟用", ja: "ライセンス有効", ko: "라이선스 활성", mt: "License active")
             }
@@ -1777,16 +2270,15 @@ struct SettingsView: View {
         let snapshot = licenseService.snapshot
         switch snapshot.status {
         case .licensed:
-            if licenseService.currentTier == .directEnhanced {
-                return localizer.t(
-                    "这台 Mac 已绑定官网增强订阅。增强能力用于高级策略、直发更新和未来系统扩展防火墙。",
-                    en: "This Mac is activated with Website Enhanced. Enhanced capabilities cover advanced policies, direct updates, and future system-extension firewall support."
-                )
-            }
             if licenseService.currentTier == .directStandard {
+                let planName = snapshot.productName ?? "TraceFence Standard"
                 return localizer.t(
-                    "这台 Mac 已绑定官网标准订阅，能力与上架版订阅保持一致。",
-                    en: "This Mac is activated with Website Standard, matching the App Store subscription feature level."
+                    "这台 Mac 已通过 Dodo Payments 激活：\(planName)。",
+                    en: "This Mac is activated through Dodo Payments: \(planName).",
+                    zhHant: "這台 Mac 已透過 Dodo Payments 啟用：\(planName)。",
+                    ja: "この Mac は Dodo Payments 経由で有効化されています：\(planName)。",
+                    ko: "이 Mac은 Dodo Payments를 통해 활성화되었습니다: \(planName).",
+                    mt: "This Mac is activated through Dodo Payments: \(planName)."
                 )
             }
             if licenseService.licenseSyncedThisRun {
@@ -1821,15 +2313,15 @@ struct SettingsView: View {
             }
             if licenseService.isTrialExpired {
                 return localizer.t(
-                    "48 小时试用已结束。订阅官网标准版或增强版后可继续使用 TraceFence v2 能力。",
-                    en: "The 48-hour trial has ended. Subscribe to Website Standard or Enhanced to continue using TraceFence v2 capabilities.",
-                    zhHant: "48 小時試用已結束。訂閱官網標準版或增強版後可繼續使用 TraceFence v2 能力。",
-                    ja: "48時間トライアルは終了しました。Website Standard または Enhanced に登録すると TraceFence v2 機能を継続利用できます。",
-                    ko: "48시간 평가판이 종료되었습니다. Website Standard 또는 Enhanced를 구독하면 TraceFence v2 기능을 계속 사용할 수 있습니다.",
-                    mt: "The 48-hour trial has ended. Subscribe to Website Standard or Enhanced to continue using TraceFence v2 capabilities."
+                    "48 小时试用已结束。订阅官网 Standard 后可继续使用 TraceFence v2 能力。",
+                    en: "The 48-hour trial has ended. Subscribe to Website Standard to continue using TraceFence v2 capabilities.",
+                    zhHant: "48 小時試用已結束。訂閱官網 Standard 後可繼續使用 TraceFence v2 功能。",
+                    ja: "48時間トライアルは終了しました。Website Standard に登録すると TraceFence v2 機能を継続利用できます。",
+                    ko: "48시간 평가판이 종료되었습니다. Website Standard를 구독하면 TraceFence v2 기능을 계속 사용할 수 있습니다.",
+                    mt: "The 48-hour trial has ended. Subscribe to Website Standard to continue using TraceFence v2 capabilities."
                 )
             }
-            return localizer.t("订阅后粘贴 Lemon Squeezy 发出的 License Key 即可激活。", en: "After subscribing, paste the license key from Lemon Squeezy to activate.", zhHant: "訂閱後貼上 Lemon Squeezy 發出的 License Key 即可啟用。", ja: "登録後、Lemon Squeezy のライセンスキーを貼り付けて有効化します。", ko: "구독 후 Lemon Squeezy에서 받은 라이선스 키를 붙여 넣어 활성화하세요.", mt: "After subscribing, paste the license key from Lemon Squeezy to activate.")
+            return localizer.t("订阅后粘贴 Dodo Payments 发出的 License Key 即可激活。", en: "After subscribing, paste the license key from Dodo Payments to activate.", zhHant: "訂閱後貼上 Dodo Payments 發出的 License Key 即可啟用。", ja: "登録後、Dodo Payments のライセンスキーを貼り付けて有効化します。", ko: "구독 후 Dodo Payments에서 받은 라이선스 키를 붙여 넣어 활성화하세요.", mt: "After subscribing, paste the license key from Dodo Payments to activate.")
         default:
             return snapshot.licenseKeySuffix.map {
                 localizer.t("License Key：\($0)", en: "License key: \($0)", zhHant: "License Key：\($0)", ja: "ライセンスキー：\($0)", ko: "라이선스 키: \($0)", mt: "License key: \($0)")
@@ -1973,7 +2465,9 @@ struct SettingsView: View {
     private func saveSettings() {
         service.saveLocalAIConfig()
         if operationMonitorEnabled {
-            guard licenseService.canUseProFeatures else {
+            guard TraceFenceEntitlementPolicy.canUseProFeatures else {
+                operationMonitorEnabled = false
+                service.stopOperationMonitor()
                 selectedTab = .license
                 licenseService.refreshTrialState()
                 return

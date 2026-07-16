@@ -73,15 +73,22 @@ final class DirectUpdateService: ObservableObject {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
     }
 
-    private var releaseAPIURL: URL {
+    var currentBuildNumber: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+    }
+
+    private var releaseAPIURL: URL? {
+        guard TraceFenceDistributionPolicy.currentChannel.isDirect else { return nil }
         let configured = (Bundle.main.object(forInfoDictionaryKey: "TraceFenceUpdateAPIURL") as? String)
             ?? UserDefaults.standard.string(forKey: "traceFenceUpdateAPIURL")
         let rawValue = configured?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return URL(string: rawValue?.isEmpty == false ? rawValue! : "https://api.github.com/repos/AI-Scarlett/TraceFence/releases/latest")!
+        guard let rawValue, !rawValue.isEmpty else { return nil }
+        return URL(string: rawValue)
     }
 
-    private var releaseManifestURL: URL {
-        URL(string: "https://github.com/AI-Scarlett/TraceFence/releases/latest/download/tracefence-update.json")!
+    private var releaseManifestURL: URL? {
+        guard TraceFenceDistributionPolicy.currentChannel.isDirect else { return nil }
+        return URL(string: "https://github.com/AI-Scarlett/TraceFence/releases/latest/download/tracefence-update.json")
     }
 
     private var cliUpdateStrongReminderEnabled: Bool {
@@ -105,6 +112,12 @@ final class DirectUpdateService: ObservableObject {
 
     func checkForUpdates(userInitiated: Bool = false) async {
         guard !isInstalling else { return }
+        guard TraceFenceDistributionPolicy.currentChannel.isDirect else {
+            latestUpdate = nil
+            downloadedFileURL = nil
+            await refreshCLIToolUpdates(userInitiated: userInitiated, appUpdateMessage: nil)
+            return
+        }
         isChecking = true
         message = nil
         downloadedFileURL = nil
@@ -131,6 +144,7 @@ final class DirectUpdateService: ObservableObject {
     }
 
     func downloadLatestUpdate() async {
+        guard TraceFenceDistributionPolicy.currentChannel.isDirect else { return }
         guard let update = latestUpdate else {
             message = "当前没有可安装的更新。"
             return
@@ -172,6 +186,7 @@ final class DirectUpdateService: ObservableObject {
     }
 
     func openDownloadedUpdate() {
+        guard TraceFenceDistributionPolicy.currentChannel.isDirect else { return }
         guard let downloadedFileURL else { return }
         NSWorkspace.shared.open(downloadedFileURL)
     }
@@ -236,6 +251,7 @@ final class DirectUpdateService: ObservableObject {
     }
 
     private func loadGitHubUpdateInfo() async throws -> DirectUpdateInfo {
+        guard let releaseAPIURL else { throw DirectUpdateError.invalidResponse }
         var request = URLRequest(url: releaseAPIURL)
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -268,6 +284,7 @@ final class DirectUpdateService: ObservableObject {
     }
 
     private func loadManifestUpdateInfo() async throws -> DirectUpdateInfo {
+        guard let releaseManifestURL else { throw DirectUpdateError.invalidResponse }
         var request = URLRequest(url: releaseManifestURL)
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.setValue("application/json", forHTTPHeaderField: "Accept")

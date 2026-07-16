@@ -28,9 +28,9 @@ TraceFence 的核心目标是：
 | Agent 工具箱诊断和会话备份 | 支持安全模式能力 | 支持完整本机诊断 |
 | 强制关闭、重启 Agent 进程 | 通常不可用或受限 | 支持，执行前二次确认 |
 | Provider 官方额度监控 | 以当前构建能力为准 | 支持菜单栏额度监控 |
-| 48 小时试用、License Key 激活 | 不适用 | 支持 Lemon Squeezy 授权 |
+| 48 小时试用、License Key 激活 | 不适用 | 支持 Dodo Payments 授权 |
 | 自动检查、下载、安装并重启更新 | App Store 更新机制 | 支持 GitHub Releases 更新 |
-| 购买、税务、发票 | App Store 处理 | Lemon Squeezy 处理 |
+| 购买、税务、发票 | App Store 处理 | Dodo Payments 处理 |
 
 ## 3. 数据与隐私原则
 
@@ -428,12 +428,12 @@ TraceFence 可以常驻菜单栏，方便用户不打开主窗口也能查看状
 授权能力：
 
 - 48 小时试用。
-- 购买 TraceFence Pro。
+- 订阅 TraceFence Standard（月付或年付）。
 - 激活 License Key。
 - 重新校验授权。
 - 解绑当前 Mac。
 
-购买、税务、发票和支付由 Lemon Squeezy 处理。TraceFence 只保存本机授权状态并进行校验。
+购买、税务、发票和支付由 Dodo Payments 处理。TraceFence 只在钥匙串中保存 License Key 和本机激活实例，并通过 Dodo Payments 公共许可证接口校验授权；客户端不包含 Dodo API Secret。
 
 ### 6.3 外观
 
@@ -816,4 +816,3 @@ TraceFence 可以对外描述为：
 - Mac 清理、应用卸载和开发依赖管理。
 - 本机优先，不上传私密会话内容。
 - 独立分发版支持自动更新和 License Key 授权。
-

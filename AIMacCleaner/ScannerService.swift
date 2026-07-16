@@ -28,6 +28,7 @@ class ScannerService: ObservableObject {
     private var authorizedScanRoots: Set<String> = []
     private var hasRestoredScanBookmarks = false
     private var lastCachedSurfaceRefreshTime: Date = .distantPast
+    private let automaticCachedSurfaceRefreshInterval: TimeInterval = 6 * 60 * 60
     private let scannerFootprintCacheVersion = 2
     private let scannerCacheWriteQueue = DispatchQueue(
         label: "com.tracefence.scanner-cache",
@@ -76,6 +77,7 @@ class ScannerService: ObservableObject {
         diskInfo = cache.diskInfo
         hardwareInfo = cache.hardwareInfo
         installedApps = canReuseFootprintCache ? cache.installedApps : []
+        lastCachedSurfaceRefreshTime = cache.updatedAt
         if FileManager.default.fileExists(atPath: SandboxPaths.shared.operationsPath) {
             lastAgentHistoryImportTime = max(lastAgentHistoryImportTime, cache.updatedAt)
             UserDefaults.standard.set(lastAgentHistoryImportTime, forKey: agentHistoryImportTimestampKey)
@@ -684,13 +686,13 @@ class ScannerService: ObservableObject {
         return false
     }
 
-    func refreshCachedSurfacesInBackground(minInterval: TimeInterval = 120) {
-        guard Date().timeIntervalSince(lastCachedSurfaceRefreshTime) > minInterval else { return }
+    func refreshCachedSurfacesInBackground(minInterval: TimeInterval? = nil) {
+        let interval = minInterval ?? automaticCachedSurfaceRefreshInterval
+        guard !isScanning,
+              Date().timeIntervalSince(lastCachedSurfaceRefreshTime) > interval else { return }
         lastCachedSurfaceRefreshTime = Date()
         Task {
-            if !isScanning {
-                await scanLocal(promptForAccess: false)
-            }
+            await scanLocal(promptForAccess: false)
         }
     }
 
@@ -1875,6 +1877,11 @@ class ScannerService: ObservableObject {
     private var lastAlertTime: Date = .distantPast
     let operationMonitor = OperationMonitor()
     let guardFeature = AgentGuardFeature()
+    private let agentHistoryScanner = AgentSessionScanner()
+    private let agentHistoryScanQueue = DispatchQueue(
+        label: "com.tracefence.agent-history-scan",
+        qos: .utility
+    )
     @Published var isImportingAgentHistory = false
 
     weak var localizer: Localizer? {
@@ -1889,8 +1896,17 @@ class ScannerService: ObservableObject {
     private var processedOperationRecordIDs: Set<String> = []
     private let agentHistoryImportTimestampKey = "agentHistory.lastAutomaticImportAt"
     private let agentHistoryImportInterval: TimeInterval = 6 * 60 * 60
+    private let emptyAgentHistoryRetryInterval: TimeInterval = 5 * 60
+    private let recentAgentHistoryImportInterval: TimeInterval = 20
+    private let recentAgentHistoryOverlap: TimeInterval = 90
+    private let recentAgentHistoryAlertLookback: TimeInterval = 24 * 60 * 60
+    private let recentAgentHistoryNotificationWindow: TimeInterval = 2 * 60
+    private let agentGuardAnalyticsSignatureKey = "agentGuard.analyticsRecordSignature.v3"
     private var lastAgentHistoryImportTime: Date =
         (UserDefaults.standard.object(forKey: "agentHistory.lastAutomaticImportAt") as? Date) ?? .distantPast
+    private var lastAgentHistoryImportAttemptTime: Date = .distantPast
+    private var lastRecentAgentHistoryImportAttemptTime: Date = .distantPast
+    private var recentAgentHistoryCursor: Date = .distantPast
     private var operationRecordsSnapshotSignature = ""
     private var recordsClearCutoff: Date {
         if let d = UserDefaults.standard.object(forKey: "operationRecordsClearedAt") as? Date { return d }
@@ -1898,19 +1914,35 @@ class ScannerService: ObservableObject {
     }
 
     func startOperationMonitor() {
+        guard TraceFenceEntitlementPolicy.canUseProFeatures else {
+            stopOperationMonitor()
+            return
+        }
         if operationMonitor.isMonitoring {
+            initializeRecentAgentHistoryCursorIfNeeded()
             startOperationPolling()
             return
         }
         operationMonitor.start()
+        removeCodexFallbackTelemetry()
+        normalizeImportedCommandRecords()
         operationRecords = operationMonitor.records
         processedOperationRecordIDs = Set(operationRecords.map(\.id))
         operationRecordsSnapshotSignature = operationSnapshotSignature(operationRecords)
-        guardFeature.rebuildAnalytics(from: operationRecords)
+        let savedAnalyticsSignature = UserDefaults.standard.string(forKey: agentGuardAnalyticsSignatureKey)
+        if guardFeature.hourlyStats.isEmpty || savedAnalyticsSignature != operationRecordsSnapshotSignature {
+            guardFeature.rebuildAnalytics(from: operationRecords)
+            UserDefaults.standard.set(operationRecordsSnapshotSignature, forKey: agentGuardAnalyticsSignatureKey)
+        }
+        initializeRecentAgentHistoryCursorIfNeeded()
         startOperationPolling()
     }
 
     func ensureAgentGuardDataPipeline() {
+        guard TraceFenceEntitlementPolicy.canUseProFeatures else {
+            stopOperationMonitor()
+            return
+        }
         if !operationMonitor.isMonitoring {
             startOperationMonitor()
             UserDefaults.standard.set(true, forKey: "operationMonitorEnabled")
@@ -1922,10 +1954,12 @@ class ScannerService: ObservableObject {
                 processedOperationRecordIDs = Set(currentRecords.map(\.id))
                 operationRecordsSnapshotSignature = signature
                 guardFeature.rebuildAnalytics(from: currentRecords)
+                UserDefaults.standard.set(signature, forKey: agentGuardAnalyticsSignatureKey)
             }
             startOperationPolling()
         }
         importKnownAgentHistory()
+        importRecentAgentHistory(force: true)
     }
 
     func stopOperationMonitor() {
@@ -1936,29 +1970,89 @@ class ScannerService: ObservableObject {
     }
 
     func clearOperationRecords() {
-        UserDefaults.standard.set(Date(), forKey: "operationRecordsClearedAt")
+        let clearedAt = Date()
+        UserDefaults.standard.set(clearedAt, forKey: "operationRecordsClearedAt")
         operationMonitor.clearRecords()
         operationRecords = []
         processedOperationRecordIDs.removeAll()
         operationRecordsSnapshotSignature = ""
-        lastAgentHistoryImportTime = Date()
-        UserDefaults.standard.set(lastAgentHistoryImportTime, forKey: agentHistoryImportTimestampKey)
+        lastAgentHistoryImportTime = .distantPast
+        lastAgentHistoryImportAttemptTime = .distantPast
+        lastRecentAgentHistoryImportAttemptTime = .distantPast
+        recentAgentHistoryCursor = clearedAt
+        UserDefaults.standard.removeObject(forKey: agentHistoryImportTimestampKey)
         guardFeature.rebuildAnalytics(from: [])
+        UserDefaults.standard.set(operationSnapshotSignature([]), forKey: agentGuardAnalyticsSignatureKey)
         saveScannerCache()
     }
 
-    func ingestAgentSessionRecords(_ records: [AgentOpRecord]) {
+    @discardableResult
+    func ingestAgentSessionRecords(
+        _ records: [AgentOpRecord],
+        evaluateAlertsSince alertEvaluationStart: Date? = nil
+    ) -> [OperationRecord] {
         let cutoff = recordsClearCutoff
         let converted = records
             .filter { $0.timestamp >= cutoff }
             .compactMap { convertAgentSessionRecord($0) }
-        guard !converted.isEmpty else { return }
-        operationMonitor.mergeHistoricalRecords(converted)
+        guard !converted.isEmpty else { return [] }
+        let existingRecords = operationMonitor.records
+        let existingByID = Dictionary(uniqueKeysWithValues: existingRecords.map { ($0.id, $0) })
+        let changedRecords = converted.filter { existingByID[$0.id] != $0 }
+        guard !changedRecords.isEmpty else { return [] }
+        let existingIDs = Set(existingRecords.map(\.id))
+        let hasReplacements = changedRecords.contains { existingByID[$0.id] != nil }
+        operationMonitor.mergeHistoricalRecords(changedRecords)
         operationRecords = operationMonitor.records
+        let addedRecords = operationRecords
+            .filter { !existingIDs.contains($0.id) }
+            .sorted { $0.timestamp < $1.timestamp }
         processedOperationRecordIDs = Set(operationRecords.map(\.id))
         operationRecordsSnapshotSignature = operationSnapshotSignature(operationRecords)
-        guardFeature.rebuildAnalytics(from: operationRecords)
-        saveScannerCache()
+        let rebuiltAnalytics = hasReplacements || alertEvaluationStart == nil
+        if rebuiltAnalytics {
+            guardFeature.rebuildAnalytics(from: operationRecords)
+        } else {
+            for record in addedRecords {
+                guardFeature.recordStats(record)
+            }
+        }
+
+        if let alertEvaluationStart {
+            let evaluationCutoff = [
+                alertEvaluationStart.addingTimeInterval(-recentAgentHistoryOverlap),
+                Date().addingTimeInterval(-recentAgentHistoryAlertLookback),
+                cutoff
+            ].max() ?? alertEvaluationStart
+            var shouldPersistCommandRules = false
+            for record in addedRecords where record.timestamp >= evaluationCutoff {
+                let age = Date().timeIntervalSince(record.timestamp)
+                let isFresh = age >= -5 * 60 && age <= recentAgentHistoryNotificationWindow
+                evaluateGuardRecord(
+                    record,
+                    includeStats: false,
+                    sendNotification: isFresh,
+                    historicalCatchup: !isFresh
+                )
+                if !rebuiltAnalytics, record.operationType == .execute {
+                    let command = record.detail.isEmpty ? record.targetPath : record.detail
+                    _ = guardFeature.recordObservedCommand(
+                        command: command,
+                        agentName: record.agentName,
+                        timestamp: record.timestamp,
+                        shouldSave: isFresh
+                    )
+                    if !isFresh {
+                        shouldPersistCommandRules = true
+                    }
+                }
+            }
+            if shouldPersistCommandRules {
+                guardFeature.saveCommandRules()
+            }
+        }
+        UserDefaults.standard.set(operationRecordsSnapshotSignature, forKey: agentGuardAnalyticsSignatureKey)
+        return addedRecords
     }
 
     func ingestHookAuditRecord(_ record: OperationRecord) {
@@ -1975,6 +2069,7 @@ class ScannerService: ObservableObject {
         guard signature != operationRecordsSnapshotSignature else { return }
         operationRecordsSnapshotSignature = signature
         guardFeature.rebuildAnalytics(from: currentRecords)
+        UserDefaults.standard.set(signature, forKey: agentGuardAnalyticsSignatureKey)
         saveScannerCache()
     }
 
@@ -1985,20 +2080,139 @@ class ScannerService: ObservableObject {
         return "\(records.count)|\(head)"
     }
 
-    func importKnownAgentHistory() {
+    private func normalizeImportedCommandRecords() {
+        operationMonitor.normalizeHistoricalRecords { record in
+            guard record.id.hasPrefix("agent_session_") else {
+                return record
+            }
+            let processName = record.processName ?? ""
+            let process = processName.lowercased()
+            guard process.contains("exec") || process.contains("command") || process.contains("shell") || process.contains("bash") else {
+                return record
+            }
+            let normalizedDetail = normalizedAgentCommandDetail(record.detail, toolName: processName)
+            let correctedType = operationType(from: "", toolName: processName, detail: normalizedDetail)
+            guard correctedType != record.operationType || normalizedDetail != record.detail else { return record }
+            return OperationRecord(
+                id: record.id,
+                timestamp: record.timestamp,
+                agentName: record.agentName,
+                operationType: correctedType,
+                targetPath: record.targetPath,
+                detail: normalizedDetail,
+                fileSize: record.fileSize,
+                processName: record.processName,
+                toolInfo: record.toolInfo
+            )
+        }
+    }
+
+    private func removeCodexFallbackTelemetry() {
+        let removedRecordCount = operationMonitor.removeHistoricalRecords {
+            $0.id.hasPrefix("agent_session_codex_log_")
+        }
+        let removedAlertCount = guardFeature.removeAlerts { alert in
+            guard alert.agentName.caseInsensitiveCompare("Codex") == .orderedSame else { return false }
+            let target = alert.targetPath.lowercased()
+            return target.hasPrefix("sse event:")
+                || target.hasPrefix("session_loop{")
+                || target.contains("codex_core::")
+                || target.contains("codex_api::")
+                || target.contains("codex_models_manager::")
+                || target.contains("}:try_run_sampling_request")
+                || target.contains("}:built_tools")
+                || target.hasPrefix("{\"cell_id\"")
+                || (alert.alertType == .batchModify && target.contains("}:"))
+                || (alert.alertType == .sensitiveContent && (
+                    target.hasPrefix("const r = await tools.")
+                        || target.hasPrefix("const patch =")
+                        || alert.title == "未分类命令检测"
+                        || alert.title == "Unclassified Command"
+                ))
+        }
+        let removedCommandRuleCount = guardFeature.removeCommandRules { rule in
+            guard rule.source == .discovered else { return false }
+            let pattern = rule.pattern.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            return pattern.hasPrefix("{\"code\":")
+                || pattern.hasPrefix("app_server.")
+                || pattern == "-"
+                || pattern == "5."
+                || pattern == "const"
+        }
+        if removedRecordCount > 0 || removedAlertCount > 0 || removedCommandRuleCount > 0 {
+            UserDefaults.standard.removeObject(forKey: agentGuardAnalyticsSignatureKey)
+        }
+    }
+
+    private func initializeRecentAgentHistoryCursorIfNeeded() {
+        guard recentAgentHistoryCursor == .distantPast else { return }
+        let fallback = Date().addingTimeInterval(-5 * 60)
+        let newestRecord = operationMonitor.records.map(\.timestamp).max() ?? fallback
+        recentAgentHistoryCursor = max(recordsClearCutoff, min(newestRecord, Date()))
+    }
+
+    func importKnownAgentHistory(force: Bool = false) {
         guard !isImportingAgentHistory else { return }
-        guard Date().timeIntervalSince(lastAgentHistoryImportTime) > agentHistoryImportInterval else { return }
-        lastAgentHistoryImportTime = Date()
+        let now = Date()
+        let scheduledImportIsDue = now.timeIntervalSince(lastAgentHistoryImportTime) > agentHistoryImportInterval
+        let emptyStateRetryIsDue = operationRecords.isEmpty
+            && now.timeIntervalSince(lastAgentHistoryImportAttemptTime) > emptyAgentHistoryRetryInterval
+        guard force || scheduledImportIsDue || emptyStateRetryIsDue else { return }
+        let scanStartedAt = now
+        lastAgentHistoryImportAttemptTime = now
         isImportingAgentHistory = true
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let scanner = AgentSessionScanner()
+        let scanner = agentHistoryScanner
+        agentHistoryScanQueue.async { [weak self] in
             let records = scanner.collectAllAgentOps(limit: 1500, filesPerSourceLimit: 12)
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.ingestAgentSessionRecords(records)
+                self.recentAgentHistoryCursor = max(self.recentAgentHistoryCursor, scanStartedAt)
+                self.lastAgentHistoryImportTime = Date()
                 UserDefaults.standard.set(self.lastAgentHistoryImportTime, forKey: self.agentHistoryImportTimestampKey)
                 self.isImportingAgentHistory = false
             }
+        }
+    }
+
+    private func importRecentAgentHistory(force: Bool = false) {
+        guard !isImportingAgentHistory else { return }
+        initializeRecentAgentHistoryCursorIfNeeded()
+        let now = Date()
+        guard force || now.timeIntervalSince(lastRecentAgentHistoryImportAttemptTime) >= recentAgentHistoryImportInterval else {
+            return
+        }
+
+        let scanStartedAt = now
+        let scanStart = max(recordsClearCutoff, recentAgentHistoryCursor)
+        lastRecentAgentHistoryImportAttemptTime = now
+        isImportingAgentHistory = true
+        let scanner = agentHistoryScanner
+        agentHistoryScanQueue.async { [weak self] in
+            let records = scanner.collectRecentAgentOps(since: scanStart, limit: 1200, filesPerSourceLimit: 4)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.ingestAgentSessionRecords(records, evaluateAlertsSince: scanStart)
+                self.recentAgentHistoryCursor = max(self.recentAgentHistoryCursor, scanStartedAt)
+                self.isImportingAgentHistory = false
+            }
+        }
+    }
+
+    private func evaluateGuardRecord(
+        _ record: OperationRecord,
+        includeStats: Bool,
+        sendNotification: Bool = true,
+        historicalCatchup: Bool = false
+    ) {
+        guardFeature.checkBatchOperation(record: record, sendNotification: sendNotification)
+        guardFeature.checkDestructiveOperation(record: record, sendNotification: sendNotification)
+        if !historicalCatchup {
+            guardFeature.checkSensitiveFile(record: record)
+            guardFeature.checkProtectedDir(record: record)
+        }
+        if includeStats {
+            guardFeature.recordStats(record)
         }
     }
 
@@ -2007,15 +2221,16 @@ class ScannerService: ObservableObject {
         let detail = record.detail.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !target.isEmpty || !detail.isEmpty else { return nil }
 
-        let opType = operationType(from: record.opType, toolName: record.toolName, detail: detail)
-        let normalizedTarget = target.isEmpty ? detail : target
+        let normalizedDetail = normalizedAgentCommandDetail(detail, toolName: record.toolName)
+        let opType = operationType(from: record.opType, toolName: record.toolName, detail: normalizedDetail)
+        let normalizedTarget = target.isEmpty ? normalizedDetail : target
         return OperationRecord(
             id: "agent_session_\(record.id)",
             timestamp: record.timestamp,
             agentName: record.agentName,
             operationType: opType,
             targetPath: normalizedTarget,
-            detail: detail.isEmpty ? normalizedTarget : detail,
+            detail: normalizedDetail.isEmpty ? normalizedTarget : normalizedDetail,
             fileSize: 0,
             processName: record.toolName,
             toolInfo: record.sessionId
@@ -2023,29 +2238,165 @@ class ScannerService: ObservableObject {
     }
 
     private func operationType(from opType: String, toolName: String, detail: String) -> OperationRecord.OperationType {
-        let combined = "\(opType) \(toolName) \(detail)".lowercased()
-        if combined.contains("delete") || combined.contains("remove") || combined.contains("trash") || combined.contains("rm ") {
-            return .delete
-        }
-        if combined.contains("write") || combined.contains("create") || combined.contains("new_file") || combined.contains("touch ") || combined.contains("mkdir ") {
-            return .create
-        }
-        if combined.contains("edit") || combined.contains("modify") || combined.contains("update") || combined.contains("patch") {
+        let declared = opType.lowercased()
+        let tool = toolName.lowercased()
+        let detailLower = detail.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if detailLower.contains("tools.apply_patch(") || detailLower.hasPrefix("const patch =") {
             return .modify
         }
-        if combined.contains("rename") {
+        if declared.contains("delete") || declared.contains("remove") || declared.contains("trash") ||
+            tool.contains("delete") || tool.contains("remove") || tool.contains("trash") ||
+            (tool.contains("apply_patch") && detailLower.hasPrefix("delete file")) {
+            return .delete
+        }
+        if declared.contains("rename") || tool.contains("rename") {
             return .rename
         }
-        if combined.contains("move") || combined.contains(" mv ") {
+        if declared.contains("move") || tool.contains("move") || tool == "mv" {
             return .move
         }
-        if combined.contains("execute") || combined.contains("bash") || combined.contains("shell") || combined.contains("command") {
-            return .execute
+        if declared.contains("write") || declared.contains("create") || declared.contains("save") ||
+            tool.contains("write") || tool.contains("create") || tool.contains("new_file") || tool == "touch" || tool == "mkdir" {
+            return .create
         }
-        if combined.contains("read") || combined.contains("search") || combined.contains("grep") || combined.contains("glob") {
+        if declared.contains("edit") || declared.contains("modify") || declared.contains("update") || declared.contains("patch") ||
+            tool.contains("edit") || tool.contains("modify") || tool.contains("update") || tool.contains("patch") {
+            return .modify
+        }
+        if declared.contains("read") || declared.contains("search") || declared.contains("grep") || declared.contains("glob") ||
+            tool.contains("read") || tool.contains("search") || tool.contains("grep") || tool.contains("glob") || tool.contains("view") {
             return .read
         }
+        if declared.contains("execute") || declared.contains("bash") || declared.contains("shell") || declared.contains("command") ||
+            tool.contains("execute") || tool.contains("exec") || tool.contains("bash") || tool.contains("shell") || tool.contains("command") || tool == "js" {
+            return isDestructiveShellCommand(detail) ? .delete : .execute
+        }
+        if isDestructiveShellCommand(detail) {
+            return .delete
+        }
         return .modify
+    }
+
+    private func normalizedAgentCommandDetail(_ detail: String, toolName: String) -> String {
+        let tool = toolName.lowercased()
+        guard tool.contains("exec") || tool.contains("command") || tool.contains("shell") || tool.contains("bash") else {
+            return detail
+        }
+        let lowercasedDetail = detail.lowercased()
+        if lowercasedDetail.contains("tools.apply_patch(") || lowercasedDetail.hasPrefix("const patch =") {
+            return detail
+        }
+        return embeddedShellCommands(in: detail).first ?? detail
+    }
+
+    private func isDestructiveShellCommand(_ detail: String) -> Bool {
+        guard !detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        let embeddedCommands = embeddedShellCommands(in: detail)
+        let candidates = embeddedCommands.isEmpty ? [detail] : embeddedCommands
+        let destructivePrograms: Set<String> = ["rm", "unlink", "rmdir", "trash", "srm"]
+        let wrappers: Set<String> = ["sudo", "command", "builtin", "nohup", "env"]
+        let shellKeywords: Set<String> = ["then", "do", "else"]
+        let punctuation = CharacterSet(charactersIn: "\"'`(){}[],:\\")
+
+        func normalizedToken(_ token: Substring) -> String {
+            let value = String(token).trimmingCharacters(in: punctuation)
+            return (value as NSString).lastPathComponent.lowercased()
+        }
+
+        for candidate in candidates {
+            let segments = candidate.components(separatedBy: CharacterSet(charactersIn: ";&|\n"))
+            for rawSegment in segments {
+                let rawTokens = rawSegment.split(whereSeparator: { $0.isWhitespace })
+                guard !rawTokens.isEmpty else { continue }
+                var index = 0
+
+                while index < rawTokens.count {
+                    let token = normalizedToken(rawTokens[index])
+                    if shellKeywords.contains(token) || (token.contains("=") && !token.hasPrefix("-")) {
+                        index += 1
+                    } else {
+                        break
+                    }
+                }
+
+                while index < rawTokens.count && wrappers.contains(normalizedToken(rawTokens[index])) {
+                    index += 1
+                    while index < rawTokens.count && normalizedToken(rawTokens[index]).hasPrefix("-") {
+                        index += 1
+                    }
+                }
+                guard index < rawTokens.count else { continue }
+
+                let program = normalizedToken(rawTokens[index])
+                let arguments = rawTokens.dropFirst(index + 1).map(normalizedToken)
+                if destructivePrograms.contains(program) {
+                    return true
+                }
+                if program == "find" && arguments.contains("-delete") {
+                    return true
+                }
+                if program == "rsync" && arguments.contains("--delete") {
+                    return true
+                }
+                if program == "git" && arguments.first == "clean" {
+                    return true
+                }
+                if ["sh", "bash", "zsh"].contains(program),
+                   let commandFlag = arguments.firstIndex(of: "-c"),
+                   commandFlag + 1 < arguments.count {
+                    let nestedCommand = arguments.dropFirst(commandFlag + 1).joined(separator: " ")
+                    if nestedCommand != candidate && isDestructiveShellCommand(nestedCommand) {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
+    }
+
+    private func embeddedShellCommands(in text: String) -> [String] {
+        let markers: [(String, Character)] = [
+            ("cmd: \"", "\""),
+            ("cmd: '", "'"),
+            ("\"cmd\": \"", "\""),
+            ("\"cmd\":\"", "\""),
+            ("\\\"cmd\\\":\\\"", "\""),
+            ("command: \"", "\""),
+            ("\"command\": \"", "\"")
+        ]
+        var values: [String] = []
+
+        for (marker, quote) in markers {
+            var searchStart = text.startIndex
+            while searchStart < text.endIndex,
+                  let markerRange = text.range(of: marker, range: searchStart..<text.endIndex) {
+                let valueStart = markerRange.upperBound
+                var cursor = valueStart
+                var escaped = false
+                while cursor < text.endIndex {
+                    let character = text[cursor]
+                    if character == quote && !escaped {
+                        break
+                    }
+                    if character == "\\" {
+                        escaped.toggle()
+                    } else {
+                        escaped = false
+                    }
+                    cursor = text.index(after: cursor)
+                }
+                if cursor > valueStart {
+                    let value = String(text[valueStart..<cursor])
+                        .replacingOccurrences(of: "\\n", with: "\n")
+                        .replacingOccurrences(of: "\\\"", with: "\"")
+                    values.append(value)
+                }
+                searchStart = cursor < text.endIndex ? text.index(after: cursor) : text.endIndex
+            }
+        }
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
     }
 
     private var operationPollTimer: Timer?
@@ -2066,10 +2417,7 @@ class ScannerService: ObservableObject {
                     self.processedOperationRecordIDs.formUnion(newRecords.map(\.id))
                     self.operationRecordsSnapshotSignature = self.operationSnapshotSignature(currentRecords)
                     for record in newRecords {
-                        self.guardFeature.checkBatchOperation(record: record)
-                        self.guardFeature.checkSensitiveFile(record: record)
-                        self.guardFeature.checkProtectedDir(record: record)
-                        self.guardFeature.recordStats(record)
+                        self.evaluateGuardRecord(record, includeStats: true)
                     }
                 } else if currentRecords.count != self.operationRecords.count {
                     self.operationRecords = currentRecords
@@ -2077,6 +2425,7 @@ class ScannerService: ObservableObject {
                     self.operationRecordsSnapshotSignature = self.operationSnapshotSignature(currentRecords)
                 }
                 let now = Date()
+                self.importRecentAgentHistory()
                 if now.timeIntervalSince(self.lastProcessLifecycleCheckTime) >= self.processLifecycleCheckInterval {
                     self.guardFeature.checkProcessLifecycle(
                         currentPids: Set(self.operationMonitor.allPidCommMap.keys),
@@ -2338,6 +2687,10 @@ class ScannerService: ObservableObject {
     }
 
     func startMonitoring() {
+        guard TraceFenceEntitlementPolicy.canUseProFeatures else {
+            stopMonitoring()
+            return
+        }
         guard !isMonitoring else { return }
         stopMonitoring()
         refreshDiskInfo()

@@ -43,6 +43,7 @@ class OperationMonitor: ObservableObject {
     weak var guardFeature: AgentGuardFeature?
 
     private var streamRef: FSEventStreamRef?
+    private var isFSEventStreamRunning = false
     private var fileSnapshots: [String: FileSnapshot] = [:]
     private var accessTimes: [String: Date] = [:]
     private var hasBuiltInitialSnapshot = false
@@ -1273,7 +1274,8 @@ class OperationMonitor: ObservableObject {
                     self?.checkFSEventStreamHealth()
                 }
             }
-            if now.timeIntervalSince(self.lastSnapshotFallbackPoll) >= self.snapshotFallbackPollInterval {
+            if !self.isFSEventStreamRunning,
+               now.timeIntervalSince(self.lastSnapshotFallbackPoll) >= self.snapshotFallbackPollInterval {
                 self.lastSnapshotFallbackPoll = now
                 DispatchQueue.global(qos: .utility).async { [weak self] in
                     self?.pollSnapshotChanges()
@@ -1284,7 +1286,7 @@ class OperationMonitor: ObservableObject {
 
     private func checkFSEventStreamHealth() {
         guard isMonitoring else { return }
-        if streamRef == nil {
+        if streamRef == nil || !isFSEventStreamRunning {
             print("[AIMacCleaner] FSEventStream is nil, restarting on main queue...")
             DispatchQueue.main.async { [weak self] in
                 self?.stopFSEventStream()
@@ -1336,13 +1338,16 @@ class OperationMonitor: ObservableObject {
         if let stream = streamRef {
             FSEventStreamSetDispatchQueue(stream, processQueue)
             let started = FSEventStreamStart(stream)
+            isFSEventStreamRunning = started
             print("[AIMacCleaner] FSEventStream started: \(started), paths: \(watchPaths.count)")
         } else {
+            isFSEventStreamRunning = false
             print("[AIMacCleaner] FSEventStream creation FAILED!")
         }
     }
 
     private func stopFSEventStream() {
+        isFSEventStreamRunning = false
         if let stream = streamRef {
             FSEventStreamStop(stream)
             FSEventStreamInvalidate(stream)
@@ -1690,10 +1695,13 @@ class OperationMonitor: ObservableObject {
     private func recordsWithinRetention(_ input: [OperationRecord]) -> [OperationRecord] {
         let cutoff = Date().addingTimeInterval(-Double(recordRetentionHours) * 3600)
         var seen: Set<String> = []
+        var seenIDs: Set<String> = []
         let retained = input
             .filter { $0.timestamp >= cutoff }
             .sorted { $0.timestamp > $1.timestamp }
             .filter { record in
+                guard !seenIDs.contains(record.id) else { return false }
+                seenIDs.insert(record.id)
                 let key = recordFingerprint(record)
                 guard !seen.contains(key) else { return false }
                 seen.insert(key)
@@ -1778,20 +1786,74 @@ class OperationMonitor: ObservableObject {
         saveRecords()
     }
 
+    func normalizeHistoricalRecords(_ transform: (OperationRecord) -> OperationRecord) {
+        stateLock.lock()
+        var changed = false
+        let normalized = records.map { record in
+            let updated = transform(record)
+            if updated != record {
+                changed = true
+            }
+            return updated
+        }
+        guard changed else {
+            stateLock.unlock()
+            return
+        }
+        records = recordsWithinRetention(normalized)
+        rebuildRecordFingerprints()
+        stateLock.unlock()
+        saveRecords()
+    }
+
+    @discardableResult
+    func removeHistoricalRecords(where shouldRemove: (OperationRecord) -> Bool) -> Int {
+        stateLock.lock()
+        let previousCount = records.count
+        records.removeAll(where: shouldRemove)
+        let removedCount = previousCount - records.count
+        if removedCount > 0 {
+            rebuildRecordFingerprints()
+        }
+        stateLock.unlock()
+        if removedCount > 0 {
+            saveRecords()
+        }
+        return removedCount
+    }
+
     func mergeHistoricalRecords(_ historicalRecords: [OperationRecord]) {
         guard !historicalRecords.isEmpty else { return }
         stateLock.lock()
         if recordFingerprints.isEmpty, !records.isEmpty {
             rebuildRecordFingerprints()
         }
+        let recordIndexByID = Dictionary(uniqueKeysWithValues: records.enumerated().map { ($0.element.id, $0.offset) })
         var additions: [OperationRecord] = []
+        var additionIndexByID: [String: Int] = [:]
+        var replacedExistingRecord = false
         for record in historicalRecords {
+            if let existingIndex = recordIndexByID[record.id] {
+                if record.timestamp >= records[existingIndex].timestamp,
+                   record != records[existingIndex] {
+                    records[existingIndex] = record
+                    replacedExistingRecord = true
+                }
+                continue
+            }
+            if let additionIndex = additionIndexByID[record.id] {
+                if record.timestamp >= additions[additionIndex].timestamp {
+                    additions[additionIndex] = record
+                }
+                continue
+            }
             let key = recordFingerprint(record)
             guard !recordFingerprints.contains(key) else { continue }
             recordFingerprints.insert(key)
+            additionIndexByID[record.id] = additions.count
             additions.append(record)
         }
-        guard !additions.isEmpty else {
+        guard !additions.isEmpty || replacedExistingRecord else {
             stateLock.unlock()
             return
         }
@@ -1904,6 +1966,7 @@ class OperationMonitor: ObservableObject {
             "\(home)/.codex",
             "\(home)/.claude",
             "\(home)/.config/claude",
+            "\(home)/.grok",
             "\(home)/.cursor",
             "\(home)/.continue",
             "\(home)/.aider",
@@ -1931,6 +1994,7 @@ class OperationMonitor: ObservableObject {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
+        panel.showsHiddenFiles = true
         panel.directoryURL = URL(fileURLWithPath: home)
         panel.prompt = localizer?.reauthorize ?? "Re-authorize"
         panel.message = localizer?.selectMonitorDirs ?? "Choose directories to monitor. Hold ⌘ to select multiple folders such as Desktop, Documents, or Downloads."
