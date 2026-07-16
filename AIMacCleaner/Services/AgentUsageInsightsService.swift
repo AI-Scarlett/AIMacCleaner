@@ -351,6 +351,7 @@ struct AgentUsageSnapshot: Codable, Equatable, Sendable {
 enum AgentUsageLoadState: Equatable, Sendable {
     case idle
     case loading(previous: AgentUsageSnapshot?)
+    case paused(previous: AgentUsageSnapshot?)
     case ready
     case partial(message: String)
     case failed(message: String, previous: AgentUsageSnapshot?)
@@ -369,12 +370,136 @@ enum AgentUsageScanPhase: String, Codable, Equatable, Sendable {
     case failed
 }
 
+enum AgentUsageBackfillStage: String, Codable, Equatable, Sendable {
+    case inventory
+    case restoringCache
+    case fillingHistory
+    case finalizing
+    case paused
+    case completed
+    case failed
+}
+
+enum AgentUsageBackfillEndReason: String, Codable, Equatable, Sendable {
+    case allEligibleSessionsScanned
+    case timeBudgetReached
+    case readBudgetReached
+    case runLimitReached
+    case inventoryLimitReached
+    case pausedByUser
+    case scanFailed
+}
+
+/// A path-free, user-visible receipt for one local Codex detail pass.
+///
+/// `checkedSessions` describes inventory inspection, while
+/// `advancedThisRun` and `completedThisRun` describe real transcript IO. This
+/// distinction prevents a fast cache inventory pass from being presented as a
+/// completed historical scan.
+struct AgentUsageBackfillStatus: Codable, Equatable, Sendable {
+    let stage: AgentUsageBackfillStage
+    let checkedSessions: Int
+    let totalSessions: Int
+    let pendingAtStart: Int
+    let advancedThisRun: Int
+    let completedThisRun: Int
+    let skippedThisRun: Int
+    let failedThisRun: Int
+    let remainingSessions: Int
+    let excludedByInventoryLimit: Int
+    let aggregateOnlyHistorySessions: Int
+    let endReason: AgentUsageBackfillEndReason?
+    let completedAt: Date?
+
+    var hasRemainingWork: Bool {
+        remainingSessions > 0 || excludedByInventoryLimit > 0
+    }
+
+    var isRunning: Bool {
+        switch stage {
+        case .inventory, .restoringCache, .fillingHistory, .finalizing:
+            return true
+        case .paused, .completed, .failed:
+            return false
+        }
+    }
+
+    init(
+        stage: AgentUsageBackfillStage,
+        checkedSessions: Int = 0,
+        totalSessions: Int = 0,
+        pendingAtStart: Int = 0,
+        advancedThisRun: Int = 0,
+        completedThisRun: Int = 0,
+        skippedThisRun: Int = 0,
+        failedThisRun: Int = 0,
+        remainingSessions: Int = 0,
+        excludedByInventoryLimit: Int = 0,
+        aggregateOnlyHistorySessions: Int = 0,
+        endReason: AgentUsageBackfillEndReason? = nil,
+        completedAt: Date? = nil
+    ) {
+        self.stage = stage
+        self.checkedSessions = max(0, checkedSessions)
+        self.totalSessions = max(0, totalSessions)
+        self.pendingAtStart = max(0, pendingAtStart)
+        self.advancedThisRun = max(0, advancedThisRun)
+        self.completedThisRun = max(0, completedThisRun)
+        self.skippedThisRun = max(0, skippedThisRun)
+        self.failedThisRun = max(0, failedThisRun)
+        self.remainingSessions = max(0, remainingSessions)
+        self.excludedByInventoryLimit = max(0, excludedByInventoryLimit)
+        self.aggregateOnlyHistorySessions = max(0, aggregateOnlyHistorySessions)
+        self.endReason = endReason
+        self.completedAt = completedAt
+    }
+
+    func replacing(
+        stage: AgentUsageBackfillStage,
+        endReason: AgentUsageBackfillEndReason?,
+        completedAt: Date?
+    ) -> AgentUsageBackfillStatus {
+        AgentUsageBackfillStatus(
+            stage: stage,
+            checkedSessions: checkedSessions,
+            totalSessions: totalSessions,
+            pendingAtStart: pendingAtStart,
+            advancedThisRun: advancedThisRun,
+            completedThisRun: completedThisRun,
+            skippedThisRun: skippedThisRun,
+            failedThisRun: failedThisRun,
+            remainingSessions: remainingSessions,
+            excludedByInventoryLimit: excludedByInventoryLimit,
+            aggregateOnlyHistorySessions: aggregateOnlyHistorySessions,
+            endReason: endReason,
+            completedAt: completedAt
+        )
+    }
+}
+
 struct AgentUsageScanProgress: Codable, Equatable, Sendable {
     let phase: AgentUsageScanPhase
     let current: Int
     let total: Int
     let currentSource: String?
     let message: String
+    let backfill: AgentUsageBackfillStatus?
+
+    init(
+        phase: AgentUsageScanPhase,
+        current: Int,
+        total: Int,
+        currentSource: String?,
+        message: String,
+        backfill: AgentUsageBackfillStatus? = nil
+    ) {
+        self.phase = phase
+        self.current = current
+        self.total = total
+        self.currentSource = currentSource
+        self.message = message
+        self.backfill = backfill
+    }
 
     static let idle = AgentUsageScanProgress(phase: .idle, current: 0, total: 0, currentSource: nil, message: "")
     var fractionCompleted: Double? { total > 0 ? min(1, max(0, Double(current) / Double(total))) : nil }
@@ -396,6 +521,17 @@ struct AgentUsageDebugProbe: Codable, Equatable, Sendable {
     let sourceTokenEventCounts: [String: Int]
     let diagnosticCodes: [String]
     let selfTestFailures: [String]
+    let backfillCheckedSessions: Int
+    let backfillTotalSessions: Int
+    let backfillPendingAtStart: Int
+    let backfillAdvancedThisRun: Int
+    let backfillCompletedThisRun: Int
+    let backfillSkippedThisRun: Int
+    let backfillFailedThisRun: Int
+    let backfillRemainingSessions: Int
+    let backfillExcludedSessions: Int
+    let backfillAggregateOnlyHistorySessions: Int
+    let backfillEndReason: String?
     let error: String?
 }
 
@@ -418,12 +554,17 @@ final class AgentUsageInsightsService: ObservableObject {
     @Published private(set) var snapshot: AgentUsageSnapshot
     @Published private(set) var state: AgentUsageLoadState = .idle
     @Published private(set) var progress: AgentUsageScanProgress = .idle
+    @Published private(set) var backfillStatus: AgentUsageBackfillStatus? = nil
     @Published var scope: AgentUsageScope {
         didSet {
             UserDefaults.standard.set(scope.rawValue, forKey: Self.scopeDefaultsKey)
             if let existing = snapshots[scope] {
                 snapshot = existing
-                state = existing.isPartial ? .partial(message: Self.partialMessage(for: existing)) : .ready
+                if case .paused = state {
+                    state = .paused(previous: existing)
+                } else {
+                    state = existing.isPartial ? .partial(message: Self.partialMessage(for: existing)) : .ready
+                }
             } else if refreshTask == nil {
                 refresh(force: true)
             }
@@ -444,6 +585,8 @@ final class AgentUsageInsightsService: ObservableObject {
     private var scheduler: Timer?
     private var applicationIsActive = true
     private var lastRefreshAt: Date?
+    private var refreshPreviousSnapshot: AgentUsageSnapshot?
+    private var automaticRefreshPaused = false
 
     private init(defaults: UserDefaults = .standard) {
         Self.retireLegacyTokenScopeCache()
@@ -498,6 +641,7 @@ final class AgentUsageInsightsService: ObservableObject {
     }
 
     func refresh(force: Bool = false) {
+        guard force || !automaticRefreshPaused else { return }
         // Scheduled requests coalesce. A force request (for example a time-zone
         // preference change) cancels the old generation so stale boundaries can
         // never overwrite the newly-selected statistics mode.
@@ -514,6 +658,8 @@ final class AgentUsageInsightsService: ObservableObject {
         refreshGeneration &+= 1
         let generation = refreshGeneration
         let previous = snapshots[scope]
+        refreshPreviousSnapshot = previous
+        automaticRefreshPaused = false
         state = .loading(previous: previous)
         progress = AgentUsageScanProgress(
             phase: .readingCodexDatabase,
@@ -527,6 +673,9 @@ final class AgentUsageInsightsService: ObservableObject {
             Task { @MainActor in
                 guard let self, generation == self.refreshGeneration else { return }
                 self.progress = value
+                if let backfill = value.backfill {
+                    self.backfillStatus = backfill
+                }
             }
         }
 
@@ -542,8 +691,9 @@ final class AgentUsageInsightsService: ObservableObject {
 
             switch result {
             case let .success(loaded):
-                self.snapshots = loaded
-                let selected = loaded[self.scope] ?? .empty(scope: self.scope, timeZone: self.timeZoneMode.resolvedTimeZone)
+                self.snapshots = loaded.snapshots
+                self.backfillStatus = loaded.backfillStatus
+                let selected = loaded.snapshots[self.scope] ?? .empty(scope: self.scope, timeZone: self.timeZoneMode.resolvedTimeZone)
                 self.snapshot = selected
                 if selected.isPartial {
                     self.state = .partial(message: Self.partialMessage(for: selected))
@@ -557,8 +707,15 @@ final class AgentUsageInsightsService: ObservableObject {
                     currentSource: nil,
                     message: "Local usage scan complete"
                 )
+                self.refreshPreviousSnapshot = nil
             case let .failure(error):
                 self.state = .failed(message: error.localizedDescription, previous: previous)
+                let failedStatus = self.backfillStatus ?? AgentUsageBackfillStatus(stage: .failed)
+                self.backfillStatus = failedStatus.replacing(
+                    stage: .failed,
+                    endReason: .scanFailed,
+                    completedAt: Date()
+                )
                 self.progress = AgentUsageScanProgress(
                     phase: .failed,
                     current: self.progress.current,
@@ -567,8 +724,51 @@ final class AgentUsageInsightsService: ObservableObject {
                     message: error.localizedDescription
                 )
                 if let previous { self.snapshot = previous }
+                self.refreshPreviousSnapshot = nil
             }
         }
+    }
+
+    func continueBackfill() {
+        automaticRefreshPaused = false
+        refresh(force: true)
+    }
+
+    func retryScan() {
+        automaticRefreshPaused = false
+        refresh(force: true)
+    }
+
+    /// Stops an in-flight local pass without discarding the last published
+    /// snapshot or any cache chunks already committed by providers. Automatic
+    /// refresh remains paused until the user explicitly continues or retries.
+    func pauseScan() {
+        guard refreshTask != nil else { return }
+        refreshTask?.cancel()
+        refreshTask = nil
+        refreshGeneration &+= 1
+        automaticRefreshPaused = true
+
+        let previous = refreshPreviousSnapshot ?? snapshots[scope]
+        if let previous {
+            snapshot = previous
+        }
+        state = .paused(previous: previous)
+        let paused = backfillStatus ?? AgentUsageBackfillStatus(stage: .paused)
+        backfillStatus = paused.replacing(
+            stage: .paused,
+            endReason: .pausedByUser,
+            completedAt: Date()
+        )
+        progress = AgentUsageScanProgress(
+            phase: progress.phase,
+            current: progress.current,
+            total: progress.total,
+            currentSource: nil,
+            message: "Local detail scan paused",
+            backfill: backfillStatus
+        )
+        refreshPreviousSnapshot = nil
     }
 
     /// Removes only derived aggregate caches. Source transcripts and databases
@@ -582,6 +782,9 @@ final class AgentUsageInsightsService: ObservableObject {
         snapshot = .empty(scope: scope, timeZone: timeZoneMode.resolvedTimeZone)
         state = .idle
         progress = .idle
+        backfillStatus = nil
+        automaticRefreshPaused = false
+        refreshPreviousSnapshot = nil
         refresh(force: true)
     }
 
@@ -595,6 +798,7 @@ final class AgentUsageInsightsService: ObservableObject {
     }
 
     private func refreshIfDue() {
+        guard !automaticRefreshPaused else { return }
         let interval = applicationIsActive ? Self.foregroundInterval : Self.backgroundInterval
         guard lastRefreshAt.map({ Date().timeIntervalSince($0) >= interval }) ?? true else { return }
         refresh()
@@ -793,6 +997,7 @@ private struct AgentUsageRuntimeAggregate: Sendable {
     var sourceQuality: AgentUsageSourceQuality = .unavailable
     var available = false
     var partial = false
+    var backfillStatus: AgentUsageBackfillStatus?
 }
 
 private enum AgentUsageLoaderError: LocalizedError {
@@ -814,6 +1019,39 @@ private enum AgentUsageMath {
         let (value, overflow) = lhs.addingReportingOverflow(rhs)
         if !overflow { return value }
         return rhs >= 0 ? Int64.max : Int64.min
+    }
+}
+
+private enum AgentUsageBackfillOutcomePolicy {
+    /// Counts only work that entered this pass but produced neither a committed
+    /// cache advance nor a recorded failure. Candidates never reached because
+    /// a time/read budget ended remain visible solely in `remainingSessions`.
+    static func skippedCount(
+        attemptedThisRun: Int,
+        advancedThisRun: Int,
+        failedThisRun: Int
+    ) -> Int {
+        max(0, attemptedThisRun - advancedThisRun - failedThisRun)
+    }
+
+    static func resolve(
+        remainingSessions: Int,
+        excludedByInventoryLimit: Int,
+        cancelled: Bool,
+        stoppedByDeadline: Bool,
+        stoppedByReadBudget: Bool,
+        failedThisRun: Int
+    ) -> AgentUsageBackfillEndReason {
+        if cancelled { return .pausedByUser }
+        if remainingSessions <= 0 {
+            return excludedByInventoryLimit > 0
+                ? .inventoryLimitReached
+                : .allEligibleSessionsScanned
+        }
+        if stoppedByDeadline { return .timeBudgetReached }
+        if stoppedByReadBudget { return .readBudgetReached }
+        if failedThisRun > 0 { return .scanFailed }
+        return .runLimitReached
     }
 }
 
@@ -2762,7 +3000,9 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             }
             return true
         }
+        var excludedByInventoryLimit = 0
         if threads.count > 2_000 {
+            excludedByInventoryLimit = threads.count - 2_000
             threads.sort { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
             threads.removeSubrange(2_000..<threads.count)
             aggregate.partial = true
@@ -2770,7 +3010,7 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                 scope: .codex,
                 severity: .warning,
                 code: "codex_backfill_bounded",
-                message: "Codex history exceeds the 2,000-session local backfill limit; the newest sessions were loaded.",
+                message: "\(excludedByInventoryLimit) Codex sessions exceed the 2,000-session detail inventory limit; aggregate all-time totals still include older history.",
                 source: nil
             ))
         }
@@ -2784,7 +3024,14 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             current: 0,
             total: threads.count,
             currentSource: nil,
-            message: "Scanning Codex session metadata"
+            message: "Checking Codex detail inventory",
+            backfill: AgentUsageBackfillStatus(
+                stage: .inventory,
+                checkedSessions: 0,
+                totalSessions: threads.count,
+                excludedByInventoryLimit: excludedByInventoryLimit,
+                aggregateOnlyHistorySessions: oldThreadCount
+            )
         ))
 
         var cache = AgentUsageFileCacheStore.load(scope: .codex)
@@ -2819,10 +3066,19 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             if index == 0 || index == threads.count - 1 || index % 8 == 0 {
                 progress(AgentUsageScanProgress(
                     phase: .scanningCodexSessions,
-                    current: index,
+                    current: index + 1,
                     total: threads.count,
                     currentSource: url.lastPathComponent,
-                    message: "Reading Codex usage \(index + 1) of \(threads.count)"
+                    message: "Checking Codex detail inventory \(index + 1) of \(threads.count)",
+                    backfill: AgentUsageBackfillStatus(
+                        stage: .restoringCache,
+                        checkedSessions: index + 1,
+                        totalSessions: threads.count,
+                        pendingAtStart: partialKeys.count,
+                        remainingSessions: partialKeys.count,
+                        excludedByInventoryLimit: excludedByInventoryLimit,
+                        aggregateOnlyHistorySessions: oldThreadCount
+                    )
                 ))
             }
             let key = AgentUsagePrivacy.cacheKey(for: url)
@@ -2877,29 +3133,85 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
         }
 
         // Pass 2 spends a bounded IO budget on append, new, then backfill work.
+        // The receipt deliberately separates a checked inventory entry from an
+        // entry whose transcript bytes actually advanced during this pass.
+        let pendingAtStart = partialKeys.count
+        let inventoryFailures = failures
+        var attemptedThisRun = 0
+        var advancedThisRun = 0
+        var completedThisRun = 0
+        var stoppedByDeadline = false
+        var stoppedByReadBudget = false
+        progress(AgentUsageScanProgress(
+            phase: .scanningCodexSessions,
+            current: 0,
+            total: workItems.count,
+            currentSource: nil,
+            message: workItems.isEmpty ? "Codex detail cache is already complete" : "Starting bounded Codex detail backfill",
+            backfill: AgentUsageBackfillStatus(
+                stage: .fillingHistory,
+                checkedSessions: threads.count,
+                totalSessions: threads.count,
+                pendingAtStart: pendingAtStart,
+                remainingSessions: pendingAtStart,
+                excludedByInventoryLimit: excludedByInventoryLimit,
+                aggregateOnlyHistorySessions: oldThreadCount
+            )
+        ))
+
         for (workIndex, item) in workItems.enumerated() {
-            if Task.isCancelled || Date() >= scanDeadline || remainingReadBytes <= 0 { break }
+            if Task.isCancelled { break }
+            if Date() >= scanDeadline {
+                stoppedByDeadline = true
+                break
+            }
+            if remainingReadBytes <= 0 {
+                stoppedByReadBudget = true
+                break
+            }
+            attemptedThisRun += 1
             progress(AgentUsageScanProgress(
                 phase: .scanningCodexSessions,
-                current: min(threads.count, workIndex + summariesByKey.count),
-                total: threads.count,
+                current: workIndex + 1,
+                total: workItems.count,
                 currentSource: item.url.lastPathComponent,
-                message: "Updating bounded Codex usage cache"
+                message: "Backfilling Codex detail \(workIndex + 1) of \(workItems.count)",
+                backfill: AgentUsageBackfillStatus(
+                    stage: .fillingHistory,
+                    checkedSessions: threads.count,
+                    totalSessions: threads.count,
+                    pendingAtStart: pendingAtStart,
+                    advancedThisRun: advancedThisRun,
+                    completedThisRun: completedThisRun,
+                    failedThisRun: failures,
+                    remainingSessions: partialKeys.count,
+                    excludedByInventoryLimit: excludedByInventoryLimit,
+                    aggregateOnlyHistorySessions: oldThreadCount
+                )
             ))
 
             let upperBound: Int64
             let proposedStart: Int64
             switch item.mode {
             case .append:
-                guard let cached = item.cached else { continue }
+                guard let cached = item.cached else {
+                    failures += 1
+                    continue
+                }
                 let appendBytes = item.fingerprint.size - cached.size
                 guard appendBytes > 0,
                       appendBytes <= maximumReadBytesPerFile,
-                      appendBytes <= remainingReadBytes else { continue }
+                      appendBytes <= remainingReadBytes else {
+                    if appendBytes > remainingReadBytes { stoppedByReadBudget = true }
+                    continue
+                }
                 proposedStart = cached.size
                 upperBound = item.fingerprint.size
             case .backfill:
-                guard let cached = item.cached, cached.scannedFromOffset > 0 else { continue }
+                guard let cached = item.cached, cached.scannedFromOffset > 0 else {
+                    failures += 1
+                    continue
+                }
                 upperBound = cached.scannedFromOffset
                 proposedStart = max(
                     0,
@@ -2917,7 +3229,10 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                 upperBound: upperBound
             )
             let rangeBytes = max(0, upperBound - startingOffset)
-            guard rangeBytes > 0 || item.fingerprint.size == 0 else { continue }
+            guard rangeBytes > 0 || item.fingerprint.size == 0 else {
+                failures += 1
+                continue
+            }
             guard let parsed = parser.parse(
                 url: item.url,
                 source: item.thread,
@@ -2932,6 +3247,7 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             remainingReadBytes = max(0, remainingReadBytes - max(1, parsed.bytesRead))
             guard parsed.completedRequestedRange else {
                 // Never advance a cursor for a partially-read planned range.
+                failures += 1
                 continue
             }
 
@@ -2942,13 +3258,19 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             let scannedFromOffset: Int64
             switch item.mode {
             case .append:
-                guard let cached = item.cached else { continue }
+                guard let cached = item.cached else {
+                    failures += 1
+                    continue
+                }
                 diskSummary = cached.summary.merged(with: parsedDisk)
                 coverageIncomplete = cached.coverageIncomplete
                 skippedRelevantRecord = cached.skippedRelevantRecord || parsed.skippedRelevantRecord
                 scannedFromOffset = cached.scannedFromOffset
             case .backfill:
-                guard let cached = item.cached else { continue }
+                guard let cached = item.cached else {
+                    failures += 1
+                    continue
+                }
                 diskSummary = cached.summary.merged(with: parsedDisk)
                 coverageIncomplete = startingOffset > 0
                 skippedRelevantRecord = cached.skippedRelevantRecord || parsed.skippedRelevantRecord
@@ -2970,6 +3292,7 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             )
             cache.entries[item.key] = entry
             cacheChanged = true
+            advancedThisRun += 1
             summariesByKey[item.key] = diskSummary.rehydrated(
                 projectPath: item.thread.cwd,
                 sessionID: item.thread.id,
@@ -2979,8 +3302,49 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                 partialKeys.insert(item.key)
             } else {
                 partialKeys.remove(item.key)
+                completedThisRun += 1
             }
         }
+
+        let ioFailures = max(0, failures - inventoryFailures)
+        let failedThisRun = failures
+        let skippedThisRun = AgentUsageBackfillOutcomePolicy.skippedCount(
+            attemptedThisRun: attemptedThisRun,
+            advancedThisRun: advancedThisRun,
+            failedThisRun: ioFailures
+        )
+        let endReason = AgentUsageBackfillOutcomePolicy.resolve(
+            remainingSessions: partialKeys.count,
+            excludedByInventoryLimit: excludedByInventoryLimit,
+            cancelled: Task.isCancelled,
+            stoppedByDeadline: stoppedByDeadline,
+            stoppedByReadBudget: stoppedByReadBudget,
+            failedThisRun: failedThisRun
+        )
+        let finalBackfillStatus = AgentUsageBackfillStatus(
+            stage: Task.isCancelled ? .paused : .completed,
+            checkedSessions: threads.count,
+            totalSessions: threads.count,
+            pendingAtStart: pendingAtStart,
+            advancedThisRun: advancedThisRun,
+            completedThisRun: completedThisRun,
+            skippedThisRun: skippedThisRun,
+            failedThisRun: failedThisRun,
+            remainingSessions: partialKeys.count,
+            excludedByInventoryLimit: excludedByInventoryLimit,
+            aggregateOnlyHistorySessions: oldThreadCount,
+            endReason: endReason,
+            completedAt: Date()
+        )
+        aggregate.backfillStatus = finalBackfillStatus
+        progress(AgentUsageScanProgress(
+            phase: .scanningCodexSessions,
+            current: workItems.count,
+            total: workItems.count,
+            currentSource: nil,
+            message: "Codex detail pass finished",
+            backfill: finalBackfillStatus
+        ))
 
         let summaries = threads.compactMap { thread -> AgentUsageFileSummary? in
             guard let url = AgentUsagePathPolicy.normalizedRolloutURL(thread.rolloutPath) else { return nil }
@@ -2988,7 +3352,7 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
         }
         let cappedFiles = partialKeys.count
 
-        if !Task.isCancelled, cacheChanged, !AgentUsageFileCacheStore.save(cache, scope: .codex) {
+        if cacheChanged, !AgentUsageFileCacheStore.save(cache, scope: .codex) {
             cacheWriteFailed = true
         }
         if cacheWriteFailed {
@@ -3017,7 +3381,7 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                 scope: .codex,
                 severity: .warning,
                 code: "codex_scan_bounded",
-                message: "\(cappedFiles) large or not-yet-cached Codex sessions were bounded for responsiveness; later refreshes continue the local backfill.",
+                message: "\(cappedFiles) Codex sessions still need local detail backfill after this pass; \(advancedThisRun) advanced and \(completedThisRun) became complete.",
                 source: nil
             ))
         }
@@ -3691,6 +4055,11 @@ private enum AgentUsageProviderLoadResult: Sendable {
     case openClaw(AgentUsageRuntimeAggregate)
 }
 
+private struct AgentUsageInsightsLoadPayload: Sendable {
+    let snapshots: [AgentUsageScope: AgentUsageSnapshot]
+    let backfillStatus: AgentUsageBackfillStatus?
+}
+
 private struct AgentUsageInsightsLoader: Sendable {
     let context: AgentUsageStatisticsContext
     let progress: @Sendable (AgentUsageScanProgress) -> Void
@@ -3704,7 +4073,7 @@ private struct AgentUsageInsightsLoader: Sendable {
         self.progress = progress
     }
 
-    func load() async -> Result<[AgentUsageScope: AgentUsageSnapshot], AgentUsageLoaderError> {
+    func load() async -> Result<AgentUsageInsightsLoadPayload, AgentUsageLoaderError> {
         let lease = AgentUsageSecurityScopeLease.acquire()
         defer { lease.stop() }
         let skillIndex = AgentUsageSkillIndex.shared
@@ -3803,13 +4172,16 @@ private struct AgentUsageInsightsLoader: Sendable {
             message: "Aggregated OpenClaw / QClaw usage"
         ))
         let combinedSnapshot = builder.build(scope: .combined, providers: [codex, claude, openCode, openClaw])
-        return .success([
-            .codex: codexSnapshot,
-            .claude: claudeSnapshot,
-            .openCode: openCodeSnapshot,
-            .openClaw: openClawSnapshot,
-            .combined: combinedSnapshot
-        ])
+        return .success(AgentUsageInsightsLoadPayload(
+            snapshots: [
+                .codex: codexSnapshot,
+                .claude: claudeSnapshot,
+                .openCode: openCodeSnapshot,
+                .openClaw: openClawSnapshot,
+                .combined: combinedSnapshot
+            ],
+            backfillStatus: codex.backfillStatus
+        ))
     }
 }
 
@@ -4300,6 +4672,86 @@ extension AgentUsageInsightsService {
         expect(!AgentUsageDetailedSanity.isSuspicious(detailed: 2_000_000, approximate: 1_000_000), "normal detailed variance must remain accepted")
         expect(AgentUsageDetailedSanity.isSuspicious(detailed: 8_000_000_000, approximate: 1_000_000_000), "extreme detailed inflation must fail closed")
 
+        expect(
+            AgentUsageBackfillOutcomePolicy.resolve(
+                remainingSessions: 0,
+                excludedByInventoryLimit: 0,
+                cancelled: false,
+                stoppedByDeadline: false,
+                stoppedByReadBudget: false,
+                failedThisRun: 0
+            ) == .allEligibleSessionsScanned,
+            "a zero-remainder detail pass must report fully scanned"
+        )
+        expect(
+            AgentUsageBackfillOutcomePolicy.resolve(
+                remainingSessions: 12,
+                excludedByInventoryLimit: 0,
+                cancelled: false,
+                stoppedByDeadline: true,
+                stoppedByReadBudget: false,
+                failedThisRun: 0
+            ) == .timeBudgetReached,
+            "a bounded pass with remaining work must expose its time budget stop"
+        )
+        expect(
+            AgentUsageBackfillOutcomePolicy.resolve(
+                remainingSessions: 0,
+                excludedByInventoryLimit: 3,
+                cancelled: false,
+                stoppedByDeadline: false,
+                stoppedByReadBudget: false,
+                failedThisRun: 0
+            ) == .inventoryLimitReached,
+            "inventory exclusions must never be presented as fully scanned"
+        )
+        expect(
+            AgentUsageBackfillOutcomePolicy.skippedCount(
+                attemptedThisRun: 6,
+                advancedThisRun: 6,
+                failedThisRun: 0
+            ) == 0,
+            "budget-unattempted candidates must remain pending instead of becoming skipped"
+        )
+        expect(
+            AgentUsageBackfillOutcomePolicy.skippedCount(
+                attemptedThisRun: 5,
+                advancedThisRun: 2,
+                failedThisRun: 1
+            ) == 2,
+            "skipped must count only attempted work with no advance and no failure"
+        )
+        let statusReceipt = AgentUsageBackfillStatus(
+            stage: .completed,
+            checkedSessions: 20,
+            totalSessions: 20,
+            pendingAtStart: 5,
+            advancedThisRun: 2,
+            completedThisRun: 1,
+            skippedThisRun: 3,
+            remainingSessions: 4,
+            endReason: .readBudgetReached,
+            completedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        expect(statusReceipt.hasRemainingWork, "backfill receipt must retain a visible remaining-work signal")
+        expect(statusReceipt.checkedSessions == statusReceipt.totalSessions, "inventory completion must not erase detail remainder")
+        let pausedReceipt = statusReceipt.replacing(
+            stage: .paused,
+            endReason: .pausedByUser,
+            completedAt: Date(timeIntervalSince1970: 1_700_000_100)
+        )
+        expect(pausedReceipt.remainingSessions == 4, "pausing must preserve the exact remaining-session receipt")
+        expect(pausedReceipt.endReason == .pausedByUser, "pausing must expose a distinct user stop reason")
+        let aggregateOnlyReceipt = AgentUsageBackfillStatus(
+            stage: .completed,
+            checkedSessions: 20,
+            totalSessions: 20,
+            aggregateOnlyHistorySessions: 7,
+            endReason: .allEligibleSessionsScanned,
+            completedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        expect(!aggregateOnlyReceipt.hasRemainingWork, "aggregate-only old history must be disclosed without enabling a false continue action")
+
         let explicit = AgentUsageExplicitTokenNormalizer.totals(
             input: 100,
             cacheRead: 30,
@@ -4402,9 +4854,9 @@ extension AgentUsageInsightsService {
             let elapsed = max(0, Int(Date().timeIntervalSince(started) * 1_000))
             let selfTests = debugUsageInsightsSelfTestFailures()
             switch result {
-            case let .success(snapshots):
-                let snapshot = snapshots[.combined] ?? .empty(scope: .combined, now: started)
-                let sourceSnapshots = snapshots.filter { $0.key != .combined }
+            case let .success(loaded):
+                let snapshot = loaded.snapshots[.combined] ?? .empty(scope: .combined, now: started)
+                let sourceSnapshots = loaded.snapshots.filter { $0.key != .combined }
                 box.set(AgentUsageDebugProbe(
                     succeeded: true,
                     elapsedMilliseconds: elapsed,
@@ -4420,6 +4872,17 @@ extension AgentUsageInsightsService {
                     sourceTokenEventCounts: Dictionary(uniqueKeysWithValues: sourceSnapshots.map { ($0.key.rawValue, $0.value.tokenEventCount) }),
                     diagnosticCodes: snapshot.diagnostics.map(\.code).sorted(),
                     selfTestFailures: selfTests,
+                    backfillCheckedSessions: loaded.backfillStatus?.checkedSessions ?? 0,
+                    backfillTotalSessions: loaded.backfillStatus?.totalSessions ?? 0,
+                    backfillPendingAtStart: loaded.backfillStatus?.pendingAtStart ?? 0,
+                    backfillAdvancedThisRun: loaded.backfillStatus?.advancedThisRun ?? 0,
+                    backfillCompletedThisRun: loaded.backfillStatus?.completedThisRun ?? 0,
+                    backfillSkippedThisRun: loaded.backfillStatus?.skippedThisRun ?? 0,
+                    backfillFailedThisRun: loaded.backfillStatus?.failedThisRun ?? 0,
+                    backfillRemainingSessions: loaded.backfillStatus?.remainingSessions ?? 0,
+                    backfillExcludedSessions: loaded.backfillStatus?.excludedByInventoryLimit ?? 0,
+                    backfillAggregateOnlyHistorySessions: loaded.backfillStatus?.aggregateOnlyHistorySessions ?? 0,
+                    backfillEndReason: loaded.backfillStatus?.endReason?.rawValue,
                     error: nil
                 ))
             case let .failure(error):
@@ -4438,6 +4901,17 @@ extension AgentUsageInsightsService {
                     sourceTokenEventCounts: [:],
                     diagnosticCodes: [],
                     selfTestFailures: selfTests,
+                    backfillCheckedSessions: 0,
+                    backfillTotalSessions: 0,
+                    backfillPendingAtStart: 0,
+                    backfillAdvancedThisRun: 0,
+                    backfillCompletedThisRun: 0,
+                    backfillSkippedThisRun: 0,
+                    backfillFailedThisRun: 0,
+                    backfillRemainingSessions: 0,
+                    backfillExcludedSessions: 0,
+                    backfillAggregateOnlyHistorySessions: 0,
+                    backfillEndReason: AgentUsageBackfillEndReason.scanFailed.rawValue,
                     error: error.localizedDescription
                 ))
             }
@@ -4460,6 +4934,17 @@ extension AgentUsageInsightsService {
                 sourceTokenEventCounts: [:],
                 diagnosticCodes: ["usage_probe_timeout"],
                 selfTestFailures: debugUsageInsightsSelfTestFailures(),
+                backfillCheckedSessions: 0,
+                backfillTotalSessions: 0,
+                backfillPendingAtStart: 0,
+                backfillAdvancedThisRun: 0,
+                backfillCompletedThisRun: 0,
+                backfillSkippedThisRun: 0,
+                backfillFailedThisRun: 0,
+                backfillRemainingSessions: 0,
+                backfillExcludedSessions: 0,
+                backfillAggregateOnlyHistorySessions: 0,
+                backfillEndReason: AgentUsageBackfillEndReason.scanFailed.rawValue,
                 error: "Local usage probe timed out."
             )
         }

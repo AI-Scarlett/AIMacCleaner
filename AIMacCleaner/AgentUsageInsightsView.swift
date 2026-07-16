@@ -110,18 +110,12 @@ struct AgentUsageInsightsView: View {
                     statusBadge
 
                     Button {
-                        service.refresh(force: true)
+                        performScanAction()
                     } label: {
-                        Label(
-                            hasPendingBackfill
-                                ? localizer.t("继续补全", en: "Continue backfill")
-                                : localizer.t("刷新", en: "Refresh"),
-                            systemImage: "arrow.clockwise"
-                        )
+                        Label(scanActionTitle, systemImage: scanActionIcon)
                     }
                     .buttonStyle(BrandButtonStyle(variant: .secondary, minHeight: 30))
-                    .disabled(isLoading)
-                    .help(localizer.t("重新读取本地用量数据", en: "Read local usage data again"))
+                    .help(scanActionHelp)
                 }
 
                 Divider().overlay(Theme.Colors.separator)
@@ -184,21 +178,43 @@ struct AgentUsageInsightsView: View {
             )
         case .loading:
             scanProgressBanner
+        case .paused:
+            if let backfill = service.backfillStatus {
+                backfillStatusBanner(backfill)
+            } else {
+                AgentUsageMessageBanner(
+                    icon: "pause.circle.fill",
+                    color: Theme.Colors.warning,
+                    title: localizer.t("扫描已暂停", en: "Scan paused"),
+                    detail: localizer.t("已保留上次快照；点击“继续补全”后从本地缓存继续。", en: "The previous snapshot is preserved. Continue backfill resumes from the local cache.")
+                )
+            }
         case let .partial(message):
-            let warning = service.snapshot.diagnostics.first(where: { $0.severity != .info })
-            let isBackfill = warning.map(AgentUsageDiagnosticPresentation.isBackfill) ?? false
-            AgentUsageMessageBanner(
-                icon: "exclamationmark.triangle.fill",
-                color: Theme.Colors.warning,
-                title: isBackfill
-                    ? localizer.t("TraceFence 本机明细待续补", en: "TraceFence local detail backfill pending")
-                    : localizer.t("数据不完整", en: "Partial data"),
-                detail: warning.map {
-                    isBackfill
-                        ? AgentUsageDiagnosticPresentation.backfillExplanation($0, localizer: localizer)
-                        : AgentUsageDiagnosticPresentation.message($0, localizer: localizer)
-                } ?? message
-            )
+            if let backfill = service.backfillStatus {
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    backfillStatusBanner(backfill)
+                    if let warning = service.snapshot.diagnostics.first(where: {
+                        $0.severity != .info && !AgentUsageDiagnosticPresentation.isBackfill($0)
+                    }) {
+                        AgentUsageMessageBanner(
+                            icon: "exclamationmark.triangle.fill",
+                            color: Theme.Colors.warning,
+                            title: localizer.t("其它数据诊断", en: "Other data diagnostic"),
+                            detail: AgentUsageDiagnosticPresentation.message(warning, localizer: localizer)
+                        )
+                    }
+                }
+            } else {
+                let warning = service.snapshot.diagnostics.first(where: { $0.severity != .info })
+                AgentUsageMessageBanner(
+                    icon: "exclamationmark.triangle.fill",
+                    color: Theme.Colors.warning,
+                    title: localizer.t("数据不完整", en: "Partial data"),
+                    detail: warning.map {
+                        AgentUsageDiagnosticPresentation.message($0, localizer: localizer)
+                    } ?? message
+                )
+            }
         case let .failed(message, previous):
             AgentUsageMessageBanner(
                 icon: "xmark.octagon.fill",
@@ -209,7 +225,9 @@ struct AgentUsageInsightsView: View {
                 detail: message
             )
         case .ready:
-            if service.snapshot.diagnostics.contains(where: { $0.severity != .info }) {
+            if let backfill = service.backfillStatus {
+                backfillStatusBanner(backfill)
+            } else if service.snapshot.diagnostics.contains(where: { $0.severity != .info }) {
                 AgentUsageMessageBanner(
                     icon: "info.circle.fill",
                     color: Theme.Colors.info,
@@ -263,6 +281,10 @@ struct AgentUsageInsightsView: View {
                     .tint(Theme.Colors.accent)
             }
 
+            if let backfill = service.backfillStatus {
+                backfillMetrics(backfill, compact: true)
+            }
+
             if case let .loading(previous) = service.state, previous != nil {
                 Text(localizer.t("扫描期间继续显示上一次完整快照。", en: "The last complete snapshot remains visible while scanning."))
                     .font(Theme.Font.caption)
@@ -276,6 +298,129 @@ struct AgentUsageInsightsView: View {
             RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .stroke(Theme.Colors.accent.opacity(0.18), lineWidth: 1)
         )
+    }
+
+    private func backfillStatusBanner(_ status: AgentUsageBackfillStatus) -> some View {
+        let presentation = backfillStatusPresentation(status)
+        return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: presentation.icon)
+                    .foregroundStyle(presentation.color)
+                Text(presentation.title)
+                    .font(Theme.Font.subheadlineMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Spacer()
+                if let completedAt = status.completedAt {
+                    Label(
+                        localizer.t("结束于 ", en: "Ended ")
+                            + AgentUsageFormat.time(completedAt, timeZoneIdentifier: service.snapshot.timeZoneIdentifier),
+                        systemImage: "clock"
+                    )
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                }
+            }
+
+            Text(backfillEndReasonText(status))
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            backfillMetrics(status, compact: false)
+        }
+        .padding(Theme.Spacing.md)
+        .background(presentation.color.opacity(0.07))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(presentation.color.opacity(0.2), lineWidth: 1)
+        )
+    }
+
+    private func backfillMetrics(_ status: AgentUsageBackfillStatus, compact: Bool) -> some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: compact ? 105 : 118), spacing: 8)],
+            alignment: .leading,
+            spacing: 6
+        ) {
+            backfillMetric(
+                localizer.t("已检查", en: "Checked"),
+                "\(status.checkedSessions) / \(status.totalSessions)"
+            )
+            backfillMetric(localizer.t("本轮待处理", en: "Pending at start"), "\(status.pendingAtStart)")
+            backfillMetric(localizer.t("本轮已读取", en: "Advanced"), "\(status.advancedThisRun)")
+            backfillMetric(localizer.t("完整补全", en: "Completed"), "\(status.completedThisRun)")
+            backfillMetric(localizer.t("剩余", en: "Remaining"), "\(status.remainingSessions)")
+            backfillMetric(localizer.t("本轮跳过", en: "Skipped"), "\(status.skippedThisRun)")
+            backfillMetric(localizer.t("本轮失败", en: "Failed"), "\(status.failedThisRun)")
+            if status.excludedByInventoryLimit > 0 {
+                backfillMetric(localizer.t("明细范围外", en: "Outside detail range"), "\(status.excludedByInventoryLimit)")
+            }
+            if status.aggregateOnlyHistorySessions > 0 {
+                backfillMetric(localizer.t("仅总量历史", en: "Aggregate-only history"), "\(status.aggregateOnlyHistorySessions)")
+            }
+        }
+    }
+
+    private func backfillMetric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title)
+                .font(.system(size: 9))
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .lineLimit(1)
+            Text(value)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func backfillStatusPresentation(_ status: AgentUsageBackfillStatus) -> (title: String, icon: String, color: Color) {
+        switch status.stage {
+        case .inventory:
+            return (localizer.t("正在检查本机会话范围", en: "Checking local session inventory"), "list.bullet.clipboard", Theme.Colors.accent)
+        case .restoringCache:
+            return (localizer.t("正在核对本地明细缓存", en: "Checking local detail cache"), "externaldrive", Theme.Colors.accent)
+        case .fillingHistory:
+            return (localizer.t("正在补全本机历史明细", en: "Backfilling local history"), "arrow.down.doc", Theme.Colors.accent)
+        case .finalizing:
+            return (localizer.t("正在确认本轮结果", en: "Finalizing this pass"), "checklist", Theme.Colors.accent)
+        case .paused:
+            return (localizer.t("本机明细扫描已暂停", en: "Local detail scan paused"), "pause.circle.fill", Theme.Colors.warning)
+        case .failed:
+            return (localizer.t("本机明细扫描失败", en: "Local detail scan failed"), "xmark.octagon.fill", Theme.Colors.danger)
+        case .completed:
+            if status.hasRemainingWork {
+                return (localizer.t("本轮扫描已结束，仍有待补全", en: "Pass finished with detail remaining"), "exclamationmark.triangle.fill", Theme.Colors.warning)
+            }
+            return (localizer.t("当前明细范围已全部扫描", en: "Current detail range fully scanned"), "checkmark.circle.fill", Theme.Colors.success)
+        }
+    }
+
+    private func backfillEndReasonText(_ status: AgentUsageBackfillStatus) -> String {
+        guard let reason = status.endReason else {
+            return localizer.t("正在本机检查范围并读取未缓存的会话明细。", en: "TraceFence is checking the local inventory and reading uncached session detail.")
+        }
+        switch reason {
+        case .allEligibleSessionsScanned:
+            if status.aggregateOnlyHistorySessions > 0 {
+                return localizer.t("当前可补全范围已全部扫完；另有 \(status.aggregateOnlyHistorySessions) 个较早会话按 SQLite 全时间总量统计，不冒充已解析明细。", en: "The current backfillable range is complete. \(status.aggregateOnlyHistorySessions) older sessions remain represented by SQLite all-time totals and are not presented as parsed detail.")
+            }
+            return localizer.t("已检查当前全部可补全会话，没有剩余本机明细。", en: "Every currently eligible session was checked and no local detail remains to backfill.")
+        case .timeBudgetReached:
+            return localizer.t("本轮响应时间额度已到，仍有 \(status.remainingSessions) 个会话待补；点击“继续补全”会从缓存位置继续。", en: "This pass reached its responsiveness time budget with \(status.remainingSessions) sessions remaining. Continue backfill resumes from the cache.")
+        case .readBudgetReached:
+            return localizer.t("本轮本地读取额度已到，仍有 \(status.remainingSessions) 个会话待补；可继续下一轮。", en: "This pass reached its local read budget with \(status.remainingSessions) sessions remaining. Another pass can continue.")
+        case .runLimitReached:
+            return localizer.t("本轮有 \(status.remainingSessions) 个会话未处理完，可继续补全。", en: "This pass left \(status.remainingSessions) sessions unfinished. Continue backfill to resume.")
+        case .inventoryLimitReached:
+            return localizer.t("当前 2,000 个会话的明细已扫完；有 \(status.excludedByInventoryLimit) 个会话超出明细范围，另有 \(status.aggregateOnlyHistorySessions) 个较早会话仅纳入 SQLite 全时间总量，不冒充已解析明细。", en: "Detail is complete for the current 2,000-session inventory. \(status.excludedByInventoryLimit) sessions are outside that detail limit, and \(status.aggregateOnlyHistorySessions) older sessions remain represented only by SQLite all-time totals, not parsed detail.")
+        case .pausedByUser:
+            return localizer.t("扫描已按要求暂停，上次快照和已写入的本地缓存保留。", en: "The scan is paused. The previous snapshot and committed local cache progress are preserved.")
+        case .scanFailed:
+            return localizer.t("本轮遇到读取失败，已保留可用快照；点击“重试”重新检查。", en: "This pass encountered read failures. The usable snapshot is preserved; choose Retry to scan again.")
+        }
     }
 
     // MARK: Token and value overview
@@ -1209,7 +1354,53 @@ struct AgentUsageInsightsView: View {
     }
 
     private var hasPendingBackfill: Bool {
-        service.snapshot.diagnostics.contains(where: AgentUsageDiagnosticPresentation.isBackfill)
+        if let backfill = service.backfillStatus {
+            return backfill.remainingSessions > 0
+        }
+        return service.snapshot.diagnostics.contains(where: AgentUsageDiagnosticPresentation.isBackfill)
+    }
+
+    private var scanNeedsRetry: Bool {
+        if case .failed = service.state { return true }
+        return service.backfillStatus?.endReason == .scanFailed
+    }
+
+    private var scanActionTitle: String {
+        if isLoading { return localizer.t("暂停", en: "Pause") }
+        if scanNeedsRetry { return localizer.t("重试", en: "Retry") }
+        if hasPendingBackfill { return localizer.t("继续补全", en: "Continue backfill") }
+        return localizer.t("刷新", en: "Refresh")
+    }
+
+    private var scanActionIcon: String {
+        if isLoading { return "pause.fill" }
+        if scanNeedsRetry { return "arrow.counterclockwise" }
+        return "arrow.clockwise"
+    }
+
+    private var scanActionHelp: String {
+        if isLoading {
+            return localizer.t("暂停本轮本地扫描并保留已写入的缓存", en: "Pause this local pass and preserve committed cache progress")
+        }
+        if scanNeedsRetry {
+            return localizer.t("重试上次失败的本地扫描", en: "Retry the failed local scan")
+        }
+        if hasPendingBackfill {
+            return localizer.t("从本地缓存位置继续补全剩余会话", en: "Resume remaining sessions from the local cache")
+        }
+        return localizer.t("重新读取本地用量数据", en: "Read local usage data again")
+    }
+
+    private func performScanAction() {
+        if isLoading {
+            service.pauseScan()
+        } else if scanNeedsRetry {
+            service.retryScan()
+        } else if hasPendingBackfill {
+            service.continueBackfill()
+        } else {
+            service.refresh(force: true)
+        }
     }
 
     private var localizedProgressMessage: String {
@@ -1246,6 +1437,8 @@ struct AgentUsageInsightsView: View {
             return (localizer.t("待扫描", en: "Idle"), Theme.Colors.textTertiary)
         case .loading:
             return (localizer.t("正在扫描", en: "Scanning"), Theme.Colors.accent)
+        case .paused:
+            return (localizer.t("已暂停", en: "Paused"), Theme.Colors.warning)
         case .ready:
             return (localizer.t("已更新", en: "Up to date"), Theme.Colors.success)
         case .partial:

@@ -1019,7 +1019,8 @@ private struct ArtifactSidecarRootView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(item.title)
                             .font(.system(size: 12, weight: .medium))
-                            .lineLimit(1)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
                         Text(item.detail)
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
@@ -1051,7 +1052,8 @@ private struct ArtifactSidecarRootView: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 12)
-        .frame(minHeight: 46)
+        .padding(.vertical, 6)
+        .frame(minHeight: 52)
     }
 
     private func previewContents(_ preview: ArtifactSidecarPreviewItem) -> some View {
@@ -1161,8 +1163,7 @@ private struct ArtifactSidecarListItem: Identifiable {
     }
 
     var detail: String {
-        if kind == .url { return target }
-        return (target as NSString).deletingLastPathComponent
+        ArtifactShelfService.artifactSecondaryText(kind: kind, target: target)
     }
 
     var symbolName: String {

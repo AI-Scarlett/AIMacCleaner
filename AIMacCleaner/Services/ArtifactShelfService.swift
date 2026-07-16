@@ -6,7 +6,7 @@ import SQLite3
 
 private enum ArtifactShelfPatterns {
     static let markdownTarget = try! NSRegularExpression(
-        pattern: #"!?\[[^\]\r\n]*\]\(\s*(?:<([^>\r\n]+)>|([^\)\r\n]+))\s*\)"#
+        pattern: #"!?\[([^\]\r\n]*)\]\(\s*(?:<([^>\r\n]+)>|([^\)\r\n]+))\s*\)"#
     )
     static let rawTargets = [
         try! NSRegularExpression(
@@ -22,6 +22,11 @@ private enum ArtifactShelfPatterns {
         pattern: #"^(\.env(?:\..*)?|\.ssh|\.gnupg|\.aws|\.netrc|credentials?(?:\..*)?|secrets?(?:\..*)?|auth(?:\..*)?|tokens?(?:\..*)?|id_(?:rsa|ed25519)(?:\..*)?|.*private[_-]?key.*|.*api[_-]?key.*)$"#,
         options: .caseInsensitive
     )
+}
+
+private struct ArtifactShelfTargetReference: Hashable, Sendable {
+    let target: String
+    let label: String?
 }
 
 struct ArtifactShelfTask: Identifiable, Hashable, Sendable {
@@ -77,6 +82,7 @@ struct ArtifactShelfBookmark: Identifiable, Codable, Hashable {
     let kind: ArtifactShelfCandidate.Kind
     let target: String
     var title: String
+    var usesAutomaticTitle: Bool? = nil
     var sortOrder: Int
     let createdAt: Date
     var updatedAt: Date
@@ -144,6 +150,7 @@ final class ArtifactShelfService: ObservableObject {
         let size: Int64
         let modifiedAt: Date?
         let fileIdentifier: UInt64?
+        let titleContext: String
         let candidates: [ArtifactShelfCandidate]
         let scanState: RolloutScanState?
         var lastAccessedAt: Date
@@ -218,8 +225,8 @@ final class ArtifactShelfService: ObservableObject {
         guard let selectedTaskID else { return [] }
         let savedTargets = Set(bookmarks.lazy
             .filter { $0.taskID == selectedTaskID }
-            .map(\.target))
-        return candidates.filter { !savedTargets.contains($0.target) }
+            .map { Self.canonicalTargetKey($0.target) })
+        return candidates.filter { !savedTargets.contains(Self.canonicalTargetKey($0.target)) }
     }
 
     var bookmarksForSelectedTask: [ArtifactShelfBookmark] {
@@ -483,13 +490,22 @@ final class ArtifactShelfService: ObservableObject {
 
     func addBookmark(_ candidate: ArtifactShelfCandidate) {
         guard let selectedTaskID else { return }
-        if let index = bookmarks.firstIndex(where: { $0.taskID == selectedTaskID && $0.target == candidate.target }) {
+        let targetKey = Self.canonicalTargetKey(candidate.target)
+        if let index = bookmarks.firstIndex(where: {
+            $0.taskID == selectedTaskID && Self.canonicalTargetKey($0.target) == targetKey
+        }) {
+            if bookmarks[index].usesAutomaticTitle != false,
+               bookmarks[index].title != candidate.title {
+                bookmarks[index].title = candidate.title
+                bookmarks[index].usesAutomaticTitle = true
+            }
             bookmarks[index].updatedAt = Date()
         } else {
             let nextOrder = (bookmarks.filter { $0.taskID == selectedTaskID }.map(\.sortOrder).max() ?? -1) + 1
             bookmarks.append(.init(
                 id: UUID(), taskID: selectedTaskID, kind: candidate.kind, target: candidate.target,
-                title: candidate.title, sortOrder: nextOrder, createdAt: Date(), updatedAt: Date()
+                title: candidate.title, usesAutomaticTitle: true, sortOrder: nextOrder,
+                createdAt: Date(), updatedAt: Date()
             ))
         }
         saveBookmarks()
@@ -510,6 +526,7 @@ final class ArtifactShelfService: ObservableObject {
         let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, let index = bookmarks.firstIndex(where: { $0.id == bookmark.id }) else { return }
         bookmarks[index].title = String(value.prefix(160))
+        bookmarks[index].usesAutomaticTitle = false
         bookmarks[index].updatedAt = Date()
         saveBookmarks()
     }
@@ -689,6 +706,7 @@ final class ArtifactShelfService: ObservableObject {
         let totalBytes = size?.uint64Value ?? 0
         let modified = attributes?[.modificationDate] as? Date
         let fileIdentifier = (attributes?[.systemFileNumber] as? NSNumber)?.uint64Value
+        let titleContext = Self.sanitizedSemanticTitle(task.title) ?? ""
         let signature = "\(task.id)|\(size?.int64Value ?? 0)|\(modified?.timeIntervalSince1970 ?? 0)|\(task.updatedAt.timeIntervalSince1970)"
         guard force || signature != lastScannedSignature else { return }
         scanRequestGeneration &+= 1
@@ -699,6 +717,7 @@ final class ArtifactShelfService: ObservableObject {
            cached.size == (size?.int64Value ?? 0),
            cached.modifiedAt == modified,
            cached.fileIdentifier == nil || fileIdentifier == nil || cached.fileIdentifier == fileIdentifier,
+           cached.titleContext == titleContext,
            !requireCompleteHistory || cached.scanState?.historyComplete != false {
             cached.lastAccessedAt = Date()
             rolloutScanCache[path] = cached
@@ -706,6 +725,7 @@ final class ArtifactShelfService: ObservableObject {
                   scanRequestGeneration == requestGeneration,
                   selectedTaskID == task.id else { return }
             candidates = cached.candidates
+            reconcileAutomaticBookmarkTitles(with: cached.candidates)
             lastError = nil
             historyStatus = Self.historyStatus(for: cached.scanState, totalBytes: totalBytes)
             return
@@ -725,10 +745,11 @@ final class ArtifactShelfService: ObservableObject {
             ? .loadingComplete(totalBytes: totalBytes)
             : .loadingRecent(totalBytes: totalBytes)
 
-        let context = ScanContext(cwd: task.cwd, rolloutPath: path)
+        let context = ScanContext(cwd: task.cwd, rolloutPath: path, taskTitle: titleContext)
         var previousState: RolloutScanState?
         if let cached = rolloutScanCache[path],
            let cachedState = cached.scanState,
+           cached.titleContext == titleContext,
            !requireCompleteHistory || cachedState.historyComplete,
            let currentSize = size?.int64Value,
            currentSize > cached.size,
@@ -783,6 +804,7 @@ final class ArtifactShelfService: ObservableObject {
                 size: scannedSize,
                 modifiedAt: finalAttributes?[.modificationDate] as? Date ?? modified,
                 fileIdentifier: (finalAttributes?[.systemFileNumber] as? NSNumber)?.uint64Value ?? fileIdentifier,
+                titleContext: titleContext,
                 candidates: result,
                 scanState: rolloutState,
                 lastAccessedAt: Date()
@@ -793,6 +815,7 @@ final class ArtifactShelfService: ObservableObject {
               scanRequestGeneration == requestGeneration,
               selectedTaskID == task.id else { return }
         candidates = result
+        reconcileAutomaticBookmarkTitles(with: result)
         if hasRolloutPath {
             lastError = FileManager.default.fileExists(atPath: path) ? nil : "Task log is unavailable."
         } else {
@@ -822,6 +845,7 @@ final class ArtifactShelfService: ObservableObject {
     private struct ScanContext: Sendable {
         let cwd: String
         let rolloutPath: String
+        let taskTitle: String
     }
 
     nonisolated private static func scanArtifactMessages(
@@ -832,8 +856,8 @@ final class ArtifactShelfService: ObservableObject {
         for message in messages {
             guard message.isFinalAnswer else { continue }
             let discoveredAt = Date(timeIntervalSinceReferenceDate: TimeInterval(message.order))
-            for raw in extractTargets(from: message.text) {
-                guard let candidate = candidate(from: raw, discoveredAt: discoveredAt, context: context),
+            for reference in extractTargets(from: message.text) {
+                guard let candidate = candidate(from: reference, discoveredAt: discoveredAt, context: context),
                       isUserFacingArtifact(candidate) else { continue }
                 finalDeliveries[candidate.target] = candidate
             }
@@ -899,8 +923,8 @@ final class ArtifactShelfService: ObservableObject {
             let phase = (payload?["phase"] as? String ?? object["phase"] as? String ?? "").lowercased()
             let isFinalAnswer = phase == "final_answer" || phase == "finalanswer"
             var messageDeliveries: [String: ArtifactShelfCandidate] = [:]
-            for raw in extractTargets(from: selected) {
-                guard let candidate = candidate(from: raw, discoveredAt: discoveredAt, context: context),
+            for reference in extractTargets(from: selected) {
+                guard let candidate = candidate(from: reference, discoveredAt: discoveredAt, context: context),
                       isUserFacingArtifact(candidate) else { continue }
                 messageDeliveries[candidate.target] = candidate
             }
@@ -1052,56 +1076,73 @@ final class ArtifactShelfService: ObservableObject {
         return []
     }
 
-    nonisolated private static func extractTargets(from text: String) -> [String] {
+    nonisolated private static func extractTargets(from text: String) -> [ArtifactShelfTargetReference] {
         // Markdown links are an explicit presentation choice in the final
         // answer and most closely match Codex's own file cards. If at least
         // one local Markdown destination exists, ignore incidental bare paths
         // elsewhere in the prose.
         if !text.isEmpty {
             let range = NSRange(text.startIndex..., in: text)
-            let markdownTargets: [String] = ArtifactShelfPatterns.markdownTarget.matches(in: text, range: range).compactMap { match in
-                for captureIndex in 1..<match.numberOfRanges {
+            let markdownTargets: [ArtifactShelfTargetReference] = ArtifactShelfPatterns.markdownTarget.matches(in: text, range: range).compactMap { match in
+                let label: String? = {
+                    let capture = match.range(at: 1)
+                    guard capture.location != NSNotFound,
+                          let labelRange = Range(capture, in: text) else { return nil }
+                    let value = String(text[labelRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    return value.isEmpty ? nil : value
+                }()
+                for captureIndex in 2..<match.numberOfRanges {
                     let capture = match.range(at: captureIndex)
                     guard capture.location != NSNotFound,
                           let targetRange = Range(capture, in: text) else { continue }
                     let target = String(text[targetRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !target.isEmpty { return target }
+                    if !target.isEmpty { return ArtifactShelfTargetReference(target: target, label: label) }
                 }
                 return nil
             }
             let hasLocalMarkdownTarget = markdownTargets.contains {
-                let value = $0.lowercased()
+                let value = $0.target.lowercased()
                 return value.hasPrefix("/") || value.hasPrefix("file://")
             }
             if hasLocalMarkdownTarget {
                 var seen: Set<String> = []
-                return markdownTargets.filter { seen.insert($0).inserted }
+                return markdownTargets.filter {
+                    seen.insert(canonicalTargetKey($0.target)).inserted
+                }
             }
         }
 
-        var result: [String] = []
+        var result: [ArtifactShelfTargetReference] = []
         for regex in ArtifactShelfPatterns.rawTargets {
             let range = NSRange(text.startIndex..., in: text)
             for match in regex.matches(in: text, range: range) {
-                if let range = Range(match.range, in: text) { result.append(String(text[range])) }
+                if let range = Range(match.range, in: text) {
+                    result.append(.init(target: String(text[range]), label: nil))
+                }
             }
         }
         var seen: Set<String> = []
-        return result.filter { seen.insert($0).inserted }
+        return result.filter { seen.insert(canonicalTargetKey($0.target)).inserted }
     }
 
-    nonisolated private static func candidate(from raw: String, discoveredAt: Date, context: ScanContext?) -> ArtifactShelfCandidate? {
-        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    nonisolated private static func candidate(
+        from reference: ArtifactShelfTargetReference,
+        discoveredAt: Date,
+        context: ScanContext?
+    ) -> ArtifactShelfCandidate? {
+        var value = reference.target.trimmingCharacters(in: .whitespacesAndNewlines)
         value = value.trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?，。；：！？、)]}>）】》」』"))
         if isHTTPURL(value) {
             guard let url = URL(string: value), !isSensitive(url: url) else { return nil }
-            return .init(kind: .url, target: url.absoluteString, title: url.host ?? url.absoluteString, discoveredAt: discoveredAt, exists: true)
+            let title = sanitizedSemanticTitle(reference.label) ?? url.host ?? url.absoluteString
+            return .init(kind: .url, target: url.absoluteString, title: title, discoveredAt: discoveredAt, exists: true)
         }
         if value.hasPrefix("file://"), let url = URL(string: value) { value = url.path }
         value = value.replacingOccurrences(of: #"[#:]L?\d+(?::\d+)?$"#, with: "", options: .regularExpression)
         while !FileManager.default.fileExists(atPath: value), let space = value.lastIndex(of: " ") {
             value = String(value[..<space]).trimmingCharacters(in: .whitespacesAndNewlines)
         }
+        value = canonicalTargetKey(value)
         guard value.hasPrefix("/"), !isSensitive(path: value, context: context) else { return nil }
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: value, isDirectory: &isDirectory)
@@ -1110,7 +1151,260 @@ final class ArtifactShelfService: ObservableObject {
         let kind: ArtifactShelfCandidate.Kind = isDirectory.boolValue ? .directory
             : ["png", "jpg", "jpeg", "gif", "webp", "heic", "avif"].contains(ext) ? .image
             : ["html", "htm"].contains(ext) ? .html : .file
-        return .init(kind: kind, target: value, title: URL(fileURLWithPath: value).lastPathComponent, discoveredAt: discoveredAt, exists: exists)
+        let title = preferredSemanticTitle(
+            target: value,
+            kind: kind,
+            explicitLabel: reference.label,
+            taskTitle: context?.taskTitle,
+            contentTitle: kind == .html ? boundedHTMLTitle(at: value) : nil
+        )
+        return .init(kind: kind, target: value, title: title, discoveredAt: discoveredAt, exists: exists)
+    }
+
+    nonisolated private static func candidate(from raw: String, discoveredAt: Date, context: ScanContext?) -> ArtifactShelfCandidate? {
+        candidate(
+            from: ArtifactShelfTargetReference(target: raw, label: nil),
+            discoveredAt: discoveredAt,
+            context: context
+        )
+    }
+
+    /// Keeps the target as the identity while giving generic deliverables a
+    /// human-readable name. Explicit final-answer labels and bounded HTML
+    /// metadata are trusted before task/folder-derived fallbacks.
+    nonisolated private static func preferredSemanticTitle(
+        target: String,
+        kind: ArtifactShelfCandidate.Kind,
+        explicitLabel: String?,
+        taskTitle: String?,
+        contentTitle: String?
+    ) -> String {
+        let url = URL(fileURLWithPath: target)
+        let fileName = url.lastPathComponent
+        if let explicit = sanitizedSemanticTitle(explicitLabel),
+           !isGenericArtifactLabel(explicit, fileName: fileName) {
+            return explicit
+        }
+        if let content = sanitizedSemanticTitle(contentTitle),
+           !isGenericArtifactLabel(content, fileName: fileName) {
+            return content
+        }
+
+        if let filenameTitle = semanticFilenameTitle(fileName, kind: kind) {
+            return filenameTitle
+        }
+
+        let role = artifactRole(fileName: fileName, kind: kind)
+        let task = sanitizedSemanticTitle(taskTitle).flatMap {
+            isGenericTaskTitle($0) ? nil : $0
+        }
+        let parent = semanticParentTitle(for: target)
+        // A delivery folder usually names the concrete batch more accurately
+        // than a long-lived task title (one conversation can produce many
+        // unrelated packages). Fall back to the task only when the path has no
+        // useful semantic component.
+        let subject = parent ?? task
+        if let subject, let role,
+           !subject.localizedCaseInsensitiveContains(role) {
+            return clippedTitle("\(subject) · \(role)")
+        }
+        if let subject { return subject }
+        if let role { return role }
+        return fileName
+    }
+
+    /// Secondary text intentionally shows only the original filename and a
+    /// short tail path. It remains useful in a narrow panel without exposing a
+    /// username or the complete local directory hierarchy.
+    nonisolated static func artifactSecondaryText(
+        kind: ArtifactShelfCandidate.Kind,
+        target: String
+    ) -> String {
+        if isHTTPURL(target) {
+            return URL(string: target)?.host ?? "Web link"
+        }
+        let url = URL(fileURLWithPath: canonicalTargetKey(target))
+        let name = url.lastPathComponent
+        let parentComponents = url.deletingLastPathComponent().pathComponents.filter {
+            $0 != "/" && $0 != "Users" && $0 != FileManager.default.homeDirectoryForCurrentUser.lastPathComponent
+        }
+        let shortParent = parentComponents.suffix(2).joined(separator: "/")
+        if shortParent.isEmpty { return name }
+        return "\(name) · …/\(shortParent)"
+    }
+
+    nonisolated private static func boundedHTMLTitle(at path: String) -> String? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 128 * 1_024),
+              !data.isEmpty,
+              var html = String(data: data, encoding: .utf8) else { return nil }
+        if html.count > 128 * 1_024 { html = String(html.prefix(128 * 1_024)) }
+        guard let regex = try? NSRegularExpression(
+            pattern: #"<title\b[^>]*>(.*?)</title>"#,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        ) else { return nil }
+        let range = NSRange(html.startIndex..., in: html)
+        guard let match = regex.firstMatch(in: html, range: range),
+              let titleRange = Range(match.range(at: 1), in: html) else { return nil }
+        return decodedHTMLText(String(html[titleRange]))
+    }
+
+    nonisolated private static func decodedHTMLText(_ raw: String) -> String {
+        raw.replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "&amp;", with: "&", options: .caseInsensitive)
+            .replacingOccurrences(of: "&lt;", with: "<", options: .caseInsensitive)
+            .replacingOccurrences(of: "&gt;", with: ">", options: .caseInsensitive)
+            .replacingOccurrences(of: "&quot;", with: "\"", options: .caseInsensitive)
+            .replacingOccurrences(of: "&#39;", with: "'", options: .caseInsensitive)
+            .replacingOccurrences(of: "&nbsp;", with: " ", options: .caseInsensitive)
+    }
+
+    nonisolated private static func sanitizedSemanticTitle(_ raw: String?) -> String? {
+        guard var value = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+        value = decodedHTMLText(value)
+            // Preserve underscores: generic artifact names such as
+            // `copy_ready_embedded.html` rely on them for exact recognition
+            // before falling back to their semantic parent directory.
+            .replacingOccurrences(of: #"[*`#]+"#, with: "", options: .regularExpression)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-|·:： "))
+        value = value.replacingOccurrences(
+            of: #"(?i)^(?:打开|查看|下载|预览|点击(?:打开|查看)?|open|view|download|preview)\s*[:：\-]?\s*"#,
+            with: "",
+            options: .regularExpression
+        )
+        guard !value.isEmpty,
+              !value.hasPrefix("/"),
+              !value.lowercased().hasPrefix("file://"),
+              !value.contains("://") else { return nil }
+        let sensitivePatterns = [
+            #"(?i)(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|secret|bearer|authorization)\s*[:=]\s*\S+"#,
+            #"(?i)\bsk-[a-z0-9_-]{12,}\b"#,
+            #"\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}"#,
+            #"\b[0-9a-fA-F]{40,}\b"#
+        ]
+        guard !sensitivePatterns.contains(where: {
+            value.range(of: $0, options: .regularExpression) != nil
+        }) else { return nil }
+        return clippedTitle(value)
+    }
+
+    nonisolated private static func clippedTitle(_ value: String) -> String {
+        guard value.count > 96 else { return value }
+        return String(value.prefix(95)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+    }
+
+    nonisolated private static func isGenericArtifactLabel(_ label: String, fileName: String) -> Bool {
+        let normalized = label.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized == fileName.lowercased() { return true }
+        let generic: Set<String> = [
+            "file", "folder", "html", "image", "images", "index", "index.html",
+            "output", "artifact", "download", "open", "view", "preview", "report", "untitled",
+            "copy_ready", "copy_ready_embedded", "copy ready", "copy ready embedded",
+            "contact_sheet", "contact sheet",
+            "稿件", "公众号稿件", "正文", "内容页", "内容索引", "内容总目录", "总目录",
+            "更新后的内容总目录", "官网包", "安装包", "本篇头图", "本篇配图", "本篇结构图",
+            "文件", "文件夹", "网页", "图片", "下载", "打开", "查看", "预览", "产物", "交付物"
+        ]
+        if generic.contains(normalized) { return true }
+        return normalized.range(
+            of: #"^(?:本篇|当前|这篇).*(?:头图|配图|结构图|图片)$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    nonisolated private static func isGenericTaskTitle(_ title: String) -> Bool {
+        let normalized = title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let generic: Set<String> = [
+            "继续", "好了", "确认", "确认发送", "跟进监控", "每日简报",
+            "continue", "done", "ok", "yes", "new task", "codex task"
+        ]
+        return generic.contains(normalized) || normalized.count < 4
+    }
+
+    nonisolated private static func semanticFilenameTitle(
+        _ fileName: String,
+        kind: ArtifactShelfCandidate.Kind
+    ) -> String? {
+        guard kind != .directory else { return nil }
+        let url = URL(fileURLWithPath: fileName)
+        let stem = url.deletingPathExtension().lastPathComponent
+        let normalized = stem.lowercased()
+        let genericStems: Set<String> = [
+            "index", "content_index", "copy_ready", "copy_ready_embedded", "contact_sheet",
+            "cover", "images", "image", "output", "result", "report"
+        ]
+        if genericStems.contains(normalized) || normalized.range(of: #"^\d+[_-]?cover(?:[_-].*)?$"#, options: .regularExpression) != nil {
+            return nil
+        }
+        var humanized = stem.replacingOccurrences(
+            of: #"[_-]20\d{6}(?=$|[_-])"#,
+            with: "",
+            options: .regularExpression,
+            range: stem.startIndex..<stem.endIndex
+        )
+        humanized = humanized.replacingOccurrences(of: #"[_-]+"#, with: " ", options: .regularExpression)
+        guard let value = sanitizedSemanticTitle(humanized), value.count >= 4 else { return nil }
+        return value
+    }
+
+    nonisolated private static func artifactRole(
+        fileName: String,
+        kind: ArtifactShelfCandidate.Kind
+    ) -> String? {
+        let normalized = fileName.lowercased()
+        let stem = URL(fileURLWithPath: fileName).deletingPathExtension().lastPathComponent.lowercased()
+        if kind == .directory {
+            if ["images", "image", "photos", "assets"].contains(normalized) { return "图片目录" }
+            return "交付目录"
+        }
+        if stem == "copy_ready" || stem == "copy_ready_embedded" { return "可复制正文" }
+        if stem == "index" || stem == "content_index" { return "内容索引" }
+        if stem == "contact_sheet" { return "图片总览" }
+        if stem == "cover" || stem.range(of: #"^\d+[_-]?cover(?:[_-].*)?$"#, options: .regularExpression) != nil { return "封面图" }
+        return kind == .image ? "图片" : nil
+    }
+
+    nonisolated private static func semanticParentTitle(for target: String) -> String? {
+        let ignored: Set<String> = [
+            "users", "documents", "downloads", "desktop", "tmp", "private", "var", "docs",
+            "output", "outputs", "build", "dist", "export", "exports", "data", "assets",
+            "images", "image", "files", "content", "content_index"
+        ]
+        let parent = URL(fileURLWithPath: target).deletingLastPathComponent()
+        for raw in parent.pathComponents.reversed() where raw != "/" {
+            let lower = raw.lowercased()
+            if ignored.contains(lower) || lower.range(of: #"^20\d{6}(?:[_-]\d+)?$"#, options: .regularExpression) != nil {
+                continue
+            }
+            var humanized = raw.replacingOccurrences(
+                of: #"[_-]20\d{6}(?:[_-]\d+)?$"#,
+                with: "",
+                options: .regularExpression
+            )
+            humanized = humanized.replacingOccurrences(of: #"[_-]+"#, with: " ", options: .regularExpression)
+            if let value = sanitizedSemanticTitle(humanized), value.count >= 3 { return value }
+        }
+        return nil
+    }
+
+    nonisolated private static func canonicalTargetKey(_ raw: String) -> String {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isHTTPURL(value) {
+            guard var components = URLComponents(string: value) else { return value }
+            components.fragment = nil
+            return components.string ?? value
+        }
+        let path: String
+        if value.hasPrefix("file://"), let url = URL(string: value) {
+            path = url.path
+        } else {
+            path = value
+        }
+        return (path as NSString).standardizingPath
     }
 
     nonisolated private static func isSensitive(url: URL) -> Bool {
@@ -1397,6 +1691,49 @@ final class ArtifactShelfService: ObservableObject {
             task("worker", inheritedPrompt)
         ], subagentThreadIDs: ["worker"])
         expect(filteredWorkers.map(\.id) == ["parent"], "known subagent threads must not appear as user tasks")
+
+        let explicitReferences = extractTargets(
+            from: "[市县融媒体改革 28 篇总览](/tmp/media_reform_20260716/index.html)"
+        )
+        expect(explicitReferences.first?.label == "市县融媒体改革 28 篇总览", "Markdown delivery labels must be retained")
+
+        let explicitTitle = preferredSemanticTitle(
+            target: "/tmp/media_reform_20260716/index.html",
+            kind: .html,
+            explicitLabel: "市县融媒体改革 28 篇总览",
+            taskTitle: "继续",
+            contentTitle: nil
+        )
+        expect(explicitTitle == "市县融媒体改革 28 篇总览", "explicit semantic labels must outrank generic filenames")
+
+        let parentFallback = preferredSemanticTitle(
+            target: "/tmp/quota_reset_tibo_20260716/copy_ready_embedded.html",
+            kind: .html,
+            explicitLabel: "copy_ready_embedded.html",
+            taskTitle: "继续",
+            contentTitle: nil
+        )
+        expect(parentFallback == "quota reset tibo · 可复制正文", "generic filenames must receive a parent-derived semantic title")
+
+        let sensitiveFallback = preferredSemanticTitle(
+            target: "/tmp/safe_batch_20260716/index.html",
+            kind: .html,
+            explicitLabel: "Bearer: sk-12345678901234567890",
+            taskTitle: "继续",
+            contentTitle: nil
+        )
+        expect(!sensitiveFallback.localizedCaseInsensitiveContains("sk-"), "secret-like labels must never become visible titles")
+
+        let shortDetail = artifactSecondaryText(
+            kind: .html,
+            target: "/Users/zhouxiaoming/Documents/quota_reset_tibo_20260716/index.html"
+        )
+        expect(shortDetail.contains("index.html"), "secondary text must retain the original filename")
+        expect(!shortDetail.contains("zhouxiaoming"), "secondary text must not expose the local username")
+        expect(
+            canonicalTargetKey("/tmp/batch/../batch/index.html") == canonicalTargetKey("/tmp/batch/index.html"),
+            "standardized target spellings must deduplicate"
+        )
         return failures
     }
 #endif
@@ -1494,6 +1831,46 @@ final class ArtifactShelfService: ObservableObject {
         }
     }
 
+    private func reconcileAutomaticBookmarkTitles(with candidates: [ArtifactShelfCandidate]) {
+        guard let selectedTaskID else { return }
+        let byTarget = Dictionary(
+            candidates.map { (Self.canonicalTargetKey($0.target), $0) },
+            uniquingKeysWith: { existing, newer in
+                newer.discoveredAt >= existing.discoveredAt ? newer : existing
+            }
+        )
+        var changed = false
+        for index in bookmarks.indices where bookmarks[index].taskID == selectedTaskID {
+            let key = Self.canonicalTargetKey(bookmarks[index].target)
+            guard let candidate = byTarget[key] else { continue }
+            let isAutomatic = bookmarks[index].usesAutomaticTitle
+                ?? Self.isLegacyAutomaticTitle(bookmarks[index].title, target: bookmarks[index].target)
+            guard isAutomatic else {
+                if bookmarks[index].usesAutomaticTitle == nil {
+                    bookmarks[index].usesAutomaticTitle = false
+                    changed = true
+                }
+                continue
+            }
+            if bookmarks[index].title != candidate.title {
+                bookmarks[index].title = candidate.title
+                bookmarks[index].updatedAt = Date()
+                changed = true
+            }
+            if bookmarks[index].usesAutomaticTitle != true {
+                bookmarks[index].usesAutomaticTitle = true
+                changed = true
+            }
+        }
+        if changed { saveBookmarks() }
+    }
+
+    nonisolated private static func isLegacyAutomaticTitle(_ title: String, target: String) -> Bool {
+        let fileName = URL(fileURLWithPath: target).lastPathComponent
+        if title.caseInsensitiveCompare(fileName) == .orderedSame { return true }
+        return isGenericArtifactLabel(title, fileName: fileName)
+    }
+
     private func trimRolloutScanCache() {
         guard rolloutScanCache.count > 16 else { return }
         let overflow = rolloutScanCache.count - 16
@@ -1507,7 +1884,35 @@ final class ArtifactShelfService: ObservableObject {
     private func loadBookmarks() {
         let url = URL(fileURLWithPath: SandboxPaths.shared.artifactShelfPath)
         guard let data = try? Data(contentsOf: url), let decoded = try? decoder.decode([ArtifactShelfBookmark].self, from: data) else { return }
-        bookmarks = decoded
+        var result: [ArtifactShelfBookmark] = []
+        var indexByIdentity: [String: Int] = [:]
+        for original in decoded.sorted(by: {
+            if $0.taskID != $1.taskID { return $0.taskID < $1.taskID }
+            if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+            return $0.createdAt < $1.createdAt
+        }) {
+            var row = original
+            if row.usesAutomaticTitle == nil {
+                row.usesAutomaticTitle = Self.isLegacyAutomaticTitle(row.title, target: row.target)
+            }
+            let identity = row.taskID + "\u{1F}" + Self.canonicalTargetKey(row.target)
+            if let existingIndex = indexByIdentity[identity] {
+                // Preserve a user rename when older stores contain duplicate
+                // spellings of the same standardized path.
+                if result[existingIndex].usesAutomaticTitle != false,
+                   row.usesAutomaticTitle == false {
+                    result[existingIndex].title = row.title
+                    result[existingIndex].usesAutomaticTitle = false
+                    result[existingIndex].updatedAt = max(result[existingIndex].updatedAt, row.updatedAt)
+                }
+                continue
+            }
+            indexByIdentity[identity] = result.count
+            result.append(row)
+        }
+        bookmarks = result
+        for taskID in Set(bookmarks.map(\.taskID)) { normalizeOrders(for: taskID) }
+        if bookmarks != decoded { saveBookmarks() }
     }
 
     private func saveBookmarks() {

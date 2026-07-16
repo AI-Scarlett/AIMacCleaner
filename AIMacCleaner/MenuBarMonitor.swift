@@ -1,6 +1,15 @@
 import SwiftUI
 import Darwin
 
+struct MenuBarDeferredSelectionTicket<Selection: Equatable> {
+    let selection: Selection
+    let generation: UInt64
+
+    func isCurrent(selection currentSelection: Selection, generation currentGeneration: UInt64) -> Bool {
+        selection == currentSelection && generation == currentGeneration
+    }
+}
+
 struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
     @ObservedObject var quotaService: ProviderQuotaService
@@ -22,6 +31,8 @@ struct MenuBarMonitor: View {
     @State private var captureSection: CaptureSection = .artifacts
     @State private var renameBookmark: ArtifactShelfBookmark?
     @State private var renameText = ""
+    @State private var deferredMonitorGeneration: UInt64 = 0
+    @State private var deferredMonitorWorkItem: DispatchWorkItem?
 
     private enum CaptureSection: String, CaseIterable {
         case artifacts
@@ -89,6 +100,9 @@ struct MenuBarMonitor: View {
         .onChange(of: selectedTab) { _ in
             startDeferredMonitorForSelectedTab()
         }
+        .onDisappear {
+            cancelDeferredMonitorStart()
+        }
     }
 
     private var tabBar: some View {
@@ -107,8 +121,10 @@ struct MenuBarMonitor: View {
                             .minimumScaleFactor(0.72)
                     }
                     .foregroundStyle(isSelected ? .white : Theme.Colors.textSecondary)
+                    .frame(maxWidth: .infinity)
                     .padding(.horizontal, Theme.Spacing.md)
                     .padding(.vertical, Theme.Spacing.xs + 1)
+                    .contentShape(Rectangle())
                     .background {
                         if isSelected {
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
@@ -2565,8 +2581,19 @@ struct MenuBarMonitor: View {
     }
 
     private func startDeferredMonitorForSelectedTab() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            switch selectedTab {
+        deferredMonitorWorkItem?.cancel()
+        deferredMonitorGeneration &+= 1
+        let ticket = MenuBarDeferredSelectionTicket(
+            selection: selectedTab,
+            generation: deferredMonitorGeneration
+        )
+        let workItem = DispatchWorkItem {
+            guard ticket.isCurrent(
+                selection: selectedTab,
+                generation: deferredMonitorGeneration
+            ) else { return }
+
+            switch ticket.selection {
             case .overview:
                 guard monitoringEnabled else { return }
                 service.startMonitoring()
@@ -2581,7 +2608,34 @@ struct MenuBarMonitor: View {
                 captureService.start()
             }
         }
+        deferredMonitorWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
     }
+
+    private func cancelDeferredMonitorStart() {
+        deferredMonitorWorkItem?.cancel()
+        deferredMonitorWorkItem = nil
+        deferredMonitorGeneration &+= 1
+    }
+
+#if DEBUG
+    static func debugTabSelectionSelfTestFailures() -> [String] {
+        var failures: [String] = []
+        let quotaTicket = MenuBarDeferredSelectionTicket(selection: MonitorTab.quotas, generation: 1)
+        let usageTicket = MenuBarDeferredSelectionTicket(selection: MonitorTab.usage, generation: 2)
+
+        if quotaTicket.isCurrent(selection: .usage, generation: 2) {
+            failures.append("stale quota action survived a usage-tab selection")
+        }
+        if !usageTicket.isCurrent(selection: .usage, generation: 2) {
+            failures.append("current usage action was rejected")
+        }
+        if usageTicket.isCurrent(selection: .usage, generation: 3) {
+            failures.append("cancelled usage action survived a generation change")
+        }
+        return failures
+    }
+#endif
 
     private func settingsPath() -> String {
         SandboxPaths.shared.monitorPath

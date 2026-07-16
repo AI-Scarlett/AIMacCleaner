@@ -3,6 +3,19 @@ import Combine
 import Darwin
 import SwiftUI
 
+/// A menu-bar panel must be able to become key even though it deliberately
+/// does not activate the whole app. Otherwise AppKit consumes the first click
+/// to focus the panel before SwiftUI's tab button can receive it.
+private final class MenuBarPopoverPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
+/// Preserve the first click all the way through the AppKit/SwiftUI bridge.
+private final class MenuBarFirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 enum MenuBarStatusStyle: String, CaseIterable, Identifiable {
     case minimal
     case classic
@@ -359,13 +372,13 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
         closePopover()
 
         let panelSize = NSSize(width: 520, height: 640)
-        let hostingView = NSHostingView(
+        let hostingView = MenuBarFirstMouseHostingView(
             rootView: MenuBarMonitor(service: service, quotaService: quotaService, usageInsightsService: usageInsightsService, captureService: captureService)
                 .environmentObject(localizer)
         )
         hostingView.frame = NSRect(origin: .zero, size: panelSize)
 
-        let panel = NSPanel(
+        let panel = MenuBarPopoverPanel(
             contentRect: NSRect(origin: .zero, size: panelSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -378,12 +391,13 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = false
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.setFrameOrigin(panelOrigin(for: button, panelSize: panelSize))
 
         self.popoverPanel = panel
-        panel.orderFrontRegardless()
+        panel.makeKeyAndOrderFront(nil)
         installDismissMonitors(anchor: button)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             quotaService.start()

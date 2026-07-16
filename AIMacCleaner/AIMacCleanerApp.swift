@@ -29,20 +29,34 @@ struct AIMacCleanerApp: App {
 
     init() {
 #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--tracefence-menubar-tab-probe") {
+            let failures = MenuBarMonitor.debugTabSelectionSelfTestFailures()
+            let payload: [String: Any] = [
+                "menuBarTabSelfTestFailures": failures,
+                "succeeded": failures.isEmpty
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data("\n".utf8))
+            }
+            Darwin.exit(failures.isEmpty ? 0 : 2)
+        }
         if ProcessInfo.processInfo.arguments.contains("--tracefence-agent-usage-probe") {
             let probe = AgentUsageInsightsService.debugRunLocalUsageProbe(timeout: 180)
             let quotaFailures = ProviderQuotaService.debugQuotaSelfTestFailures()
             let taskCatalogFailures = ArtifactShelfService.debugTaskCatalogSelfTestFailures()
+            let menuBarTabFailures = MenuBarMonitor.debugTabSelectionSelfTestFailures()
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             if let data = try? encoder.encode(probe) {
                 FileHandle.standardOutput.write(data)
                 FileHandle.standardOutput.write(Data("\n".utf8))
             }
-            if !quotaFailures.isEmpty || !taskCatalogFailures.isEmpty,
+            if !quotaFailures.isEmpty || !taskCatalogFailures.isEmpty || !menuBarTabFailures.isEmpty,
                let data = try? JSONSerialization.data(withJSONObject: [
                    "quotaSelfTestFailures": quotaFailures,
-                   "taskCatalogSelfTestFailures": taskCatalogFailures
+                   "taskCatalogSelfTestFailures": taskCatalogFailures,
+                   "menuBarTabSelfTestFailures": menuBarTabFailures
                ], options: [.prettyPrinted, .sortedKeys]) {
                 FileHandle.standardOutput.write(data)
                 FileHandle.standardOutput.write(Data("\n".utf8))
@@ -52,6 +66,7 @@ struct AIMacCleanerApp: App {
                     && probe.selfTestFailures.isEmpty
                     && quotaFailures.isEmpty
                     && taskCatalogFailures.isEmpty
+                    && menuBarTabFailures.isEmpty
                     ? 0
                     : 2
             )
