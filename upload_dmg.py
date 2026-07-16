@@ -13,13 +13,16 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.72")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.73")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Makes current-task artifacts responsive even for near-gigabyte conversations by scanning only the latest 16 MiB on first open and loading complete history only when the user searches.\n"
+    "- Moves rollout-summary parsing off the main actor, caches unchanged logs by file identity, and reduces repeated catalog publication during background refreshes.\n"
+    "- Pauses task following and indexing while an artifact is being read, reuses Accessibility selections, and uses a lightweight private HTML preview for smoother scrolling.\n"
     "- Rebuilds iOS Remote Pairing QR codes with a compact pairing URI, a proper quiet zone, and pixel-aligned rendering for reliable scanning from the Mac display.\n"
     "- Prevents Agent Guard from automatically traversing protected Music, Movies, and Photos libraries when a parent Home folder was previously authorized.\n"
     "- Adds a compact TraceFence-icon artifact capsule that follows the active Codex, Claude, or Cursor task and expands only when needed.\n"

@@ -38,6 +38,12 @@ final class ArtifactSidecarController: NSObject, ObservableObject, NSWindowDeleg
     private var lastAgentPID: pid_t?
     private var lastAnchorFrame: NSRect?
     private var lastFocusedTaskSignature: String?
+    private var isPreviewActive = false
+    private var isPreviewPauseApplied = false
+    private var cachedFocusedTaskPID: pid_t?
+    private var cachedFocusedTaskButton: AXUIElement?
+    private var cachedFocusedTaskRow: AXUIElement?
+    private var cachedFocusedTaskProjectHint: String?
 
     private override init() {
         let defaults = UserDefaults.standard
@@ -56,13 +62,13 @@ final class ArtifactSidecarController: NSObject, ObservableObject, NSWindowDeleg
     func start() {
         guard SandboxPaths.isDirectDistribution, isEnabled, !isStarted else { return }
         isStarted = true
-        shelf.start()
+        shelf.start(for: .sidecar)
         installWorkspaceObservers()
 
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.updateAttachment() }
         }
-        RunLoop.main.add(timer, forMode: .common)
+        RunLoop.main.add(timer, forMode: .default)
         pollTimer = timer
         updateAttachment(forceShow: true)
     }
@@ -73,7 +79,9 @@ final class ArtifactSidecarController: NSObject, ObservableObject, NSWindowDeleg
         pollTimer?.invalidate()
         pollTimer = nil
         removeWorkspaceObservers()
-        panel?.orderOut(nil)
+        hidePanel()
+        clearFocusedTaskCache()
+        shelf.stop(for: .sidecar)
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -145,6 +153,27 @@ final class ArtifactSidecarController: NSObject, ObservableObject, NSWindowDeleg
             refreshFocusFromLastAgent()
             updateAttachment(forceShow: true)
         }
+    }
+
+    func setPreviewActive(_ active: Bool) {
+        guard isPreviewActive != active else { return }
+        isPreviewActive = active
+        applyPreviewPause(active)
+        if !active, isStarted {
+            clearFocusedTaskCache()
+            updateAttachment(forceShow: true)
+        }
+    }
+
+    private func applyPreviewPause(_ paused: Bool) {
+        guard isPreviewPauseApplied != paused else { return }
+        isPreviewPauseApplied = paused
+        shelf.setAutomaticRefreshPaused(paused, for: .sidecar)
+    }
+
+    private func hidePanel() {
+        applyPreviewPause(false)
+        panel?.orderOut(nil)
     }
 
     private func refreshFocusFromLastAgent() {
@@ -265,9 +294,12 @@ final class ArtifactSidecarController: NSObject, ObservableObject, NSWindowDeleg
         if let frontmost,
            let bundleID = frontBundleID,
            Self.supportedAgentBundleIDs.contains(bundleID) {
+            if lastAgentPID != frontmost.processIdentifier {
+                clearFocusedTaskCache()
+            }
             lastAgentPID = frontmost.processIdentifier
 
-            if !isFollowPaused {
+            if !isFollowPaused, !isPreviewActive {
                 if let frame = mainWindowFrame(for: frontmost.processIdentifier) {
                     lastAnchorFrame = frame
                 }
@@ -284,18 +316,26 @@ final class ArtifactSidecarController: NSObject, ObservableObject, NSWindowDeleg
                     lastFocusedTaskSignature = focusSignature
                     shelf.refresh(force: true)
                 }
+            } else if isPreviewActive {
+                if panel?.isVisible != true,
+                   let frame = mainWindowFrame(for: frontmost.processIdentifier) {
+                    lastAnchorFrame = frame
+                }
+                shelf.retainExternalFocus()
             }
         } else if frontBundleID == traceFenceBundleID {
             // Clicking the non-activating panel normally leaves the agent in front,
             // but controls such as a text field may briefly activate TraceFence.
             // Retain and refresh the previous anchor in that case.
-            if !isFollowPaused,
+            if isPreviewActive {
+                shelf.retainExternalFocus()
+            } else if !isFollowPaused,
                let pid = lastAgentPID,
                let running = NSRunningApplication(processIdentifier: pid),
                !running.isTerminated,
                !running.isHidden {
                 guard let frame = mainWindowFrame(for: pid) else {
-                    panel?.orderOut(nil)
+                    hidePanel()
                     return
                 }
                 lastAnchorFrame = frame
@@ -305,22 +345,27 @@ final class ArtifactSidecarController: NSObject, ObservableObject, NSWindowDeleg
                 // a different active task on the shelf refresh timer.
                 shelf.retainExternalFocus()
             } else if !isFollowPaused {
-                panel?.orderOut(nil)
+                hidePanel()
                 return
             }
         } else {
-            panel?.orderOut(nil)
+            hidePanel()
             return
         }
 
         guard let anchorFrame = lastAnchorFrame else {
-            panel?.orderOut(nil)
+            hidePanel()
             return
         }
 
         let panel = makePanelIfNeeded()
         position(panel, beside: anchorFrame)
-        panel.orderFrontRegardless()
+        if forceShow || !panel.isVisible {
+            panel.orderFrontRegardless()
+            if isPreviewActive {
+                applyPreviewPause(true)
+            }
+        }
     }
 
     private struct FocusedAgentTask {
@@ -333,6 +378,18 @@ final class ArtifactSidecarController: NSObject, ObservableObject, NSWindowDeleg
     /// selection when they do not expose this DOM-backed structure.
     private func focusedTaskInAgent(pid: pid_t) -> FocusedAgentTask? {
         guard hasAccessibilityPermission else { return nil }
+
+        if cachedFocusedTaskPID == pid,
+           let button = cachedFocusedTaskButton,
+           let row = cachedFocusedTaskRow,
+           axStringArray(button, attribute: "AXDOMClassList" as CFString)
+                .contains(where: { $0 == "bg-token-list-hover-background" }) {
+            var inspected = 0
+            if let title = firstStaticText(in: row, inspected: &inspected, limit: 120) {
+                return FocusedAgentTask(title: title, projectHint: cachedFocusedTaskProjectHint)
+            }
+        }
+        clearFocusedTaskCache()
 
         struct PendingNode {
             let element: AXUIElement
@@ -373,6 +430,10 @@ final class ArtifactSidecarController: NSObject, ObservableObject, NSWindowDeleg
                     .contains(where: { $0 == "bg-token-list-hover-background" }),
                let row,
                let title = firstStaticText(in: row, inspected: &inspected, limit: maximumNodes) {
+                cachedFocusedTaskPID = pid
+                cachedFocusedTaskButton = pending.element
+                cachedFocusedTaskRow = row
+                cachedFocusedTaskProjectHint = listHint
                 return FocusedAgentTask(title: title, projectHint: listHint)
             }
 
@@ -385,6 +446,13 @@ final class ArtifactSidecarController: NSObject, ObservableObject, NSWindowDeleg
             }
         }
         return nil
+    }
+
+    private func clearFocusedTaskCache() {
+        cachedFocusedTaskPID = nil
+        cachedFocusedTaskButton = nil
+        cachedFocusedTaskRow = nil
+        cachedFocusedTaskProjectHint = nil
     }
 
     private func firstStaticText(in root: AXUIElement, inspected: inout Int, limit: Int) -> String? {
@@ -588,6 +656,12 @@ private struct ArtifactSidecarRootView: View {
             }
         }
         .onChange(of: shelf.selectedTaskID) { _ in previewStack.removeAll() }
+        .onChange(of: controller.isCollapsed) { collapsed in
+            if collapsed { previewStack.removeAll() }
+        }
+        .onChange(of: previewStack.isEmpty) { isEmpty in
+            controller.setPreviewActive(!isEmpty)
+        }
     }
 
     private var compactShelf: some View {
@@ -908,7 +982,13 @@ private struct ArtifactSidecarRootView: View {
                 ArtifactSidecarDirectoryView(directoryURL: preview.url) { child in
                     open(child)
                 }
-            case .file, .image, .html:
+            case .html:
+                if FileManager.default.fileExists(atPath: preview.url.path) {
+                    ArtifactSidecarLocalHTMLPreview(url: preview.url)
+                } else {
+                    previewError("文件已移动或删除")
+                }
+            case .file, .image:
                 if FileManager.default.fileExists(atPath: preview.url.path) {
                     ArtifactSidecarQuickLookPreview(url: preview.url)
                 } else {
@@ -1037,6 +1117,11 @@ private struct ArtifactSidecarQuickLookPreview: NSViewRepresentable {
         view.previewItem = url as NSURL
         view.refreshPreviewItem()
     }
+
+    static func dismantleNSView(_ view: QLPreviewView, coordinator: ()) {
+        view.autostarts = false
+        view.previewItem = nil
+    }
 }
 
 private struct ArtifactSidecarWebPreview: NSViewRepresentable {
@@ -1054,6 +1139,35 @@ private struct ArtifactSidecarWebPreview: NSViewRepresentable {
     func updateNSView(_ view: WKWebView, context: Context) {
         guard view.url != url else { return }
         view.load(URLRequest(url: url))
+    }
+
+    static func dismantleNSView(_ view: WKWebView, coordinator: ()) {
+        view.stopLoading()
+        view.navigationDelegate = nil
+    }
+}
+
+private struct ArtifactSidecarLocalHTMLPreview: NSViewRepresentable {
+    let url: URL
+
+    func makeNSView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        let view = WKWebView(frame: .zero, configuration: configuration)
+        view.allowsMagnification = true
+        view.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        return view
+    }
+
+    func updateNSView(_ view: WKWebView, context: Context) {
+        guard view.url?.standardizedFileURL != url.standardizedFileURL else { return }
+        view.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+    }
+
+    static func dismantleNSView(_ view: WKWebView, coordinator: ()) {
+        view.stopLoading()
+        view.navigationDelegate = nil
     }
 }
 

@@ -1,7 +1,28 @@
 import AppKit
 import CryptoKit
 import Foundation
+import ImageIO
 import SQLite3
+
+private enum ArtifactShelfPatterns {
+    static let markdownTarget = try! NSRegularExpression(
+        pattern: #"!?\[[^\]\r\n]*\]\(\s*(?:<([^>\r\n]+)>|([^\)\r\n]+))\s*\)"#
+    )
+    static let rawTargets = [
+        try! NSRegularExpression(
+            pattern: #"https?://[^\s<>\"'`\u3000-\u9fff\uff00-\uffef]+"#,
+            options: [.caseInsensitive]
+        ),
+        try! NSRegularExpression(
+            pattern: #"(?:file://)?/(?:Users|home|tmp|private|var|Volumes|Applications|opt|workspace|root)/[^\n\r\t\"'`<>|{}\[\]]+"#,
+            options: [.caseInsensitive]
+        )
+    ]
+    static let sensitivePathComponent = try! NSRegularExpression(
+        pattern: #"^(\.env(?:\..*)?|\.ssh|\.gnupg|\.aws|\.netrc|credentials?(?:\..*)?|secrets?(?:\..*)?|auth(?:\..*)?|tokens?(?:\..*)?|id_(?:rsa|ed25519)(?:\..*)?|.*private[_-]?key.*|.*api[_-]?key.*)$"#,
+        options: .caseInsensitive
+    )
+}
 
 struct ArtifactShelfTask: Identifiable, Hashable, Sendable {
     let id: String
@@ -61,13 +82,31 @@ final class ArtifactShelfService: ObservableObject {
     static let shared = ArtifactShelfService()
     private static let selectedTaskDefaultsKey = "artifactShelfSelectedTaskID"
     private static let defaultVisibleCandidateLimit = 12
-    private static let nativeHistoryReadLimit: Int64 = 8 * 1_024 * 1_024
+    private static let initialRolloutReadLimit: UInt64 = 16 * 1_024 * 1_024
+    private static let taskCatalogRefreshInterval: TimeInterval = 12
+
+    enum Consumer: Hashable {
+        case sidecar
+        case taskArtifactsView
+    }
 
     @Published private(set) var tasks: [ArtifactShelfTask] = []
     @Published private(set) var candidates: [ArtifactShelfCandidate] = []
     @Published private(set) var bookmarks: [ArtifactShelfBookmark] = []
     @Published var selectedTaskID: String?
-    @Published var searchText = ""
+    @Published var searchText = "" {
+        didSet {
+            let oldQueryWasEmpty = oldValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let newQueryIsEmpty = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if oldQueryWasEmpty, !newQueryIsEmpty, let selectedTaskID {
+                scanTaskSelection(id: selectedTaskID, requireCompleteHistory: true)
+            } else if !oldQueryWasEmpty, newQueryIsEmpty, let selectedTaskID {
+                // Abandon an expensive full-history search as soon as the user
+                // clears the query and return to the bounded recent scan.
+                scanTaskSelection(id: selectedTaskID)
+            }
+        }
+    }
     @Published private(set) var isRefreshing = false
     @Published private(set) var isScanningSelectedTask = false
     @Published private(set) var lastError: String?
@@ -76,6 +115,12 @@ final class ArtifactShelfService: ObservableObject {
     @Published private(set) var focusMatchIsExact = false
 
     private var refreshTimer: Timer?
+    private var activeConsumers: Set<Consumer> = []
+    private var pausedAutomaticRefreshConsumers: Set<Consumer> = []
+    private var refreshTask: Task<Void, Never>?
+    private var refreshGeneration: UInt64 = 0
+    private var lastTaskCatalogRefreshAt: Date?
+    private var restoredSelectionPending = false
     private var lastScannedSignature = ""
     private var selectionGeneration: UInt64 = 0
     private var scanRequestGeneration: UInt64 = 0
@@ -87,6 +132,7 @@ final class ArtifactShelfService: ObservableObject {
     private var activeRolloutScanTask: Task<RolloutScanState?, Never>?
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
+    private let thumbnailCache = NSCache<NSString, NSImage>()
 
     private struct RolloutScanCacheEntry {
         let size: Int64
@@ -104,15 +150,21 @@ final class ArtifactShelfService: ObservableObject {
         var pendingLine: Data
         var pendingLineWasConsumed: Bool
         var skippingOversizedLine: Bool
+        var historyComplete: Bool
     }
 
     private init() {
         if let savedTaskID = UserDefaults.standard.string(forKey: Self.selectedTaskDefaultsKey),
            !savedTaskID.isEmpty {
             selectedTaskID = savedTaskID
-            manualSelectionUntil = Date().addingTimeInterval(10 * 60)
+            // A selection restored from a previous launch is only a visual
+            // fallback. Treating it as a fresh manual lock can pin the shelf to
+            // an old, very large rollout instead of the current conversation.
+            restoredSelectionPending = true
         }
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        thumbnailCache.countLimit = 48
+        thumbnailCache.totalCostLimit = 32 * 1_024 * 1_024
         loadBookmarks()
     }
 
@@ -159,64 +211,149 @@ final class ArtifactShelfService: ObservableObject {
             }
     }
 
-    func start() {
+    func start(for consumer: Consumer) {
         guard SandboxPaths.isDirectDistribution else { return }
-        refresh()
+        activeConsumers.insert(consumer)
+        if !automaticRefreshPaused { refresh() }
         guard refreshTimer == nil else { return }
         let timer = Timer(timeInterval: 4, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor in
+                guard let self, !self.automaticRefreshPaused else { return }
+                self.refresh()
+            }
         }
-        RunLoop.main.add(timer, forMode: .common)
+        RunLoop.main.add(timer, forMode: .default)
         refreshTimer = timer
     }
 
+    func stop(for consumer: Consumer) {
+        let wasPaused = automaticRefreshPaused
+        activeConsumers.remove(consumer)
+        pausedAutomaticRefreshConsumers.remove(consumer)
+        if activeConsumers.isEmpty {
+            stopAllWork()
+        } else if !wasPaused, automaticRefreshPaused {
+            cancelAutomaticWork()
+        }
+    }
+
     func stop() {
-        refreshTimer?.invalidate()
-        refreshTimer = nil
+        activeConsumers.removeAll()
+        pausedAutomaticRefreshConsumers.removeAll()
+        stopAllWork()
+    }
+
+    func setAutomaticRefreshPaused(_ paused: Bool, for consumer: Consumer) {
+        let wasPaused = automaticRefreshPaused
+        if paused {
+            pausedAutomaticRefreshConsumers.insert(consumer)
+        } else {
+            pausedAutomaticRefreshConsumers.remove(consumer)
+        }
+        let isPaused = automaticRefreshPaused
+        guard wasPaused != isPaused else { return }
+        if isPaused {
+            cancelAutomaticWork()
+        } else if !activeConsumers.isEmpty {
+            refresh()
+        }
+    }
+
+    private var automaticRefreshPaused: Bool {
+        !activeConsumers.isEmpty
+            && activeConsumers.isSubset(of: pausedAutomaticRefreshConsumers)
+    }
+
+    private func cancelAutomaticWork() {
+        refreshGeneration &+= 1
+        refreshTask?.cancel()
+        refreshTask = nil
+        isRefreshing = false
         selectionScanTask?.cancel()
         selectionScanTask = nil
         activeRolloutScanTask?.cancel()
         activeRolloutScanTask = nil
+        isScanningSelectedTask = false
+        lastScannedSignature = ""
+    }
+
+    private func stopAllWork() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        cancelAutomaticWork()
     }
 
     func refresh(force: Bool = false) {
-        guard SandboxPaths.isDirectDistribution, !isRefreshing else { return }
+        guard SandboxPaths.isDirectDistribution,
+              !activeConsumers.isEmpty,
+              (force || !automaticRefreshPaused) else { return }
+        if isRefreshing {
+            guard force else { return }
+            // A newly focused Agent task is more important than an older
+            // periodic refresh. Upgrade the in-flight request so the forced
+            // catalog lookup is not delayed until the next 12-second window.
+            cancelAutomaticWork()
+        }
         isRefreshing = true
-        Task { [weak self] in
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
+        let task = Task { [weak self] in
             guard let self else { return }
-            let snapshots = await CodexControlPlaneService.shared.sessionSnapshots()
-            let snapshotTasks = snapshots.map {
-                ArtifactShelfTask(id: $0.id, title: $0.preview, cwd: $0.cwd, rolloutPath: $0.sourcePath, updatedAt: $0.updatedAt, phase: $0.phase)
-            }
-            let localCodexTasks = await Task.detached(priority: .utility) {
-                Self.loadLocalCodexTasks()
-            }.value
-            var merged = Dictionary(uniqueKeysWithValues: snapshotTasks.map { ($0.id, $0) })
-            for local in localCodexTasks {
-                if let live = merged[local.id] {
-                    let liveTitle = live.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let genericLiveTitle = liveTitle.isEmpty || ["codex 会话", "codex session"].contains(liveTitle.lowercased())
-                    merged[local.id] = ArtifactShelfTask(
-                        id: local.id,
-                        title: genericLiveTitle ? local.title : live.title,
-                        cwd: local.cwd.isEmpty ? live.cwd : local.cwd,
-                        rolloutPath: local.rolloutPath.isEmpty ? live.rolloutPath : local.rolloutPath,
-                        updatedAt: max(local.updatedAt, live.updatedAt),
-                        phase: live.phase
-                    )
-                } else {
-                    merged[local.id] = local
+            defer {
+                if self.refreshGeneration == generation {
+                    self.isRefreshing = false
+                    self.refreshTask = nil
                 }
             }
-            let nextTasks = merged.values.sorted { $0.updatedAt > $1.updatedAt }
-            self.tasks = nextTasks
-            self.followCurrentTask(in: nextTasks)
+            let now = Date()
+            let shouldRefreshCatalog = force
+                || self.tasks.isEmpty
+                || self.lastTaskCatalogRefreshAt.map {
+                    now.timeIntervalSince($0) >= Self.taskCatalogRefreshInterval
+                } != false
+
+            if shouldRefreshCatalog {
+                let snapshots = await CodexControlPlaneService.shared.sessionSnapshots()
+                guard !Task.isCancelled, self.refreshGeneration == generation else { return }
+                let snapshotTasks = snapshots.map {
+                    ArtifactShelfTask(id: $0.id, title: $0.preview, cwd: $0.cwd, rolloutPath: $0.sourcePath, updatedAt: $0.updatedAt, phase: $0.phase)
+                }
+                let localCodexTasks = await Task.detached(priority: .utility) {
+                    Self.loadLocalCodexTasks()
+                }.value
+                guard !Task.isCancelled, self.refreshGeneration == generation else { return }
+                var merged = Dictionary(uniqueKeysWithValues: snapshotTasks.map { ($0.id, $0) })
+                for local in localCodexTasks {
+                    if let live = merged[local.id] {
+                        let liveTitle = live.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let genericLiveTitle = liveTitle.isEmpty || ["codex 会话", "codex session"].contains(liveTitle.lowercased())
+                        merged[local.id] = ArtifactShelfTask(
+                            id: local.id,
+                            title: genericLiveTitle ? local.title : live.title,
+                            cwd: local.cwd.isEmpty ? live.cwd : local.cwd,
+                            rolloutPath: local.rolloutPath.isEmpty ? live.rolloutPath : local.rolloutPath,
+                            updatedAt: max(local.updatedAt, live.updatedAt),
+                            phase: live.phase
+                        )
+                    } else {
+                        merged[local.id] = local
+                    }
+                }
+                let nextTasks = merged.values.sorted { $0.updatedAt > $1.updatedAt }
+                if self.tasks != nextTasks {
+                    self.tasks = nextTasks
+                }
+                self.followCurrentTask(in: nextTasks)
+                self.lastTaskCatalogRefreshAt = now
+            }
+            guard !Task.isCancelled, self.refreshGeneration == generation else { return }
             await self.scanSelectedTask(force: force)
-            self.isRefreshing = false
         }
+        refreshTask = task
     }
 
     func selectTask(_ id: String) {
+        restoredSelectionPending = false
         updateSelectedTaskID(id)
         UserDefaults.standard.set(id, forKey: Self.selectedTaskDefaultsKey)
         manualSelectionUntil = Date().addingTimeInterval(10 * 60)
@@ -235,7 +372,7 @@ final class ArtifactShelfService: ObservableObject {
             // paused state has a chance to take effect.
             externallyFocusedTaskID = nil
             externalFocusUpdatedAt = nil
-            focusMatchIsExact = false
+            setFocusMatchIsExact(false)
         } else if !locked {
             manualSelectionUntil = nil
         }
@@ -243,13 +380,15 @@ final class ArtifactShelfService: ObservableObject {
 
     func focusTask(title: String?, projectHint: String?, bundleIdentifier: String) {
         let agentID = Self.agentID(for: bundleIdentifier)
-        focusedAgentName = Self.agentDisplayName(for: agentID)
+        let nextAgentName = Self.agentDisplayName(for: agentID)
+        if focusedAgentName != nextAgentName { focusedAgentName = nextAgentName }
         let trimmedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        focusedTaskTitle = trimmedTitle.isEmpty ? nil : trimmedTitle
+        let nextFocusedTitle = trimmedTitle.isEmpty ? nil : trimmedTitle
+        if focusedTaskTitle != nextFocusedTitle { focusedTaskTitle = nextFocusedTitle }
 
         let agentTasks = tasks.filter { $0.agentID == agentID }
         guard !agentTasks.isEmpty else {
-            focusMatchIsExact = false
+            setFocusMatchIsExact(false)
             externallyFocusedTaskID = nil
             externalFocusUpdatedAt = Date()
             // focusTask can run before the first asynchronous task refresh.
@@ -283,7 +422,7 @@ final class ArtifactShelfService: ObservableObject {
                 return
             }
 
-            focusMatchIsExact = false
+            setFocusMatchIsExact(false)
             externalFocusUpdatedAt = Date()
             if let manualSelectionUntil, manualSelectionUntil > Date(),
                let selectedTask, selectedTask.agentID == agentID {
@@ -296,7 +435,7 @@ final class ArtifactShelfService: ObservableObject {
 
         if let manualSelectionUntil, manualSelectionUntil > Date(),
            let selectedTask, selectedTask.agentID == agentID {
-            focusMatchIsExact = false
+            setFocusMatchIsExact(false)
             return
         }
 
@@ -381,8 +520,26 @@ final class ArtifactShelfService: ObservableObject {
     }
 
     private func thumbnail(kind: ArtifactShelfCandidate.Kind, target: String) -> NSImage? {
-        guard kind == .image, FileManager.default.fileExists(atPath: target) else { return nil }
-        return NSImage(contentsOfFile: target)
+        guard kind == .image,
+              let attributes = try? FileManager.default.attributesOfItem(atPath: target) else { return nil }
+        let modifiedAt = (attributes[.modificationDate] as? Date)?.timeIntervalSinceReferenceDate ?? 0
+        let fileSize = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        let key = "\(target)|\(modifiedAt)|\(fileSize)" as NSString
+        if let cached = thumbnailCache.object(forKey: key) { return cached }
+        let url = URL(fileURLWithPath: target) as CFURL
+        guard let source = CGImageSourceCreateWithURL(url, [
+            kCGImageSourceShouldCache: false
+        ] as CFDictionary),
+        let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 192,
+            kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary) else { return nil }
+        let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        let cost = min(Int.max, cgImage.bytesPerRow * cgImage.height)
+        thumbnailCache.setObject(image, forKey: key, cost: cost)
+        return image
     }
 
     private func followCurrentTask(in nextTasks: [ArtifactShelfTask]) {
@@ -404,6 +561,12 @@ final class ArtifactShelfService: ObservableObject {
            let selectedTaskID, nextTasks.contains(where: { $0.id == selectedTaskID }) {
             return
         }
+        if restoredSelectionPending {
+            restoredSelectionPending = false
+            let current = nextTasks.first(where: { Self.activePhases.contains($0.phase) }) ?? nextTasks[0]
+            updateSelectedTaskID(current.id)
+            return
+        }
         if let selectedTaskID, nextTasks.contains(where: { $0.id == selectedTaskID }) {
             let active = nextTasks.first { Self.activePhases.contains($0.phase) }
             if let active, selectedTask?.phase == "idle", active.id != selectedTaskID {
@@ -417,13 +580,17 @@ final class ArtifactShelfService: ObservableObject {
     private func applyExternalFocus(_ task: ArtifactShelfTask, exact: Bool) {
         externalFocusUpdatedAt = Date()
         externallyFocusedTaskID = task.id
-        focusMatchIsExact = exact
+        setFocusMatchIsExact(exact)
         if exact {
             UserDefaults.standard.set(task.id, forKey: Self.selectedTaskDefaultsKey)
         }
         guard selectedTaskID != task.id else { return }
         updateSelectedTaskID(task.id)
         scanTaskSelection(id: task.id)
+    }
+
+    private func setFocusMatchIsExact(_ exact: Bool) {
+        if focusMatchIsExact != exact { focusMatchIsExact = exact }
     }
 
     @discardableResult
@@ -443,15 +610,21 @@ final class ArtifactShelfService: ObservableObject {
         return true
     }
 
-    private func scanTaskSelection(id: String) {
+    private func scanTaskSelection(id: String, requireCompleteHistory: Bool? = nil) {
         selectionScanTask?.cancel()
         activeRolloutScanTask?.cancel()
         selectionGeneration &+= 1
         let generation = selectionGeneration
+        let shouldRequireCompleteHistory = requireCompleteHistory
+            ?? !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         isScanningSelectedTask = true
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.scanSelectedTask(force: true, selectionGeneration: generation)
+            await self.scanSelectedTask(
+                force: true,
+                selectionGeneration: generation,
+                requireCompleteHistory: shouldRequireCompleteHistory
+            )
             if self.selectionGeneration == generation, self.selectedTaskID == id {
                 self.isScanningSelectedTask = false
                 self.selectionScanTask = nil
@@ -460,7 +633,13 @@ final class ArtifactShelfService: ObservableObject {
         selectionScanTask = task
     }
 
-    private func scanSelectedTask(force: Bool, selectionGeneration expectedSelectionGeneration: UInt64? = nil) async {
+    private func scanSelectedTask(
+        force: Bool,
+        selectionGeneration expectedSelectionGeneration: UInt64? = nil,
+        requireCompleteHistory requestedCompleteHistory: Bool? = nil
+    ) async {
+        let requireCompleteHistory = requestedCompleteHistory
+            ?? !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let selectionGenerationAtStart = expectedSelectionGeneration ?? selectionGeneration
         guard let task = selectedTask else {
             if selectionGeneration == selectionGenerationAtStart {
@@ -485,7 +664,8 @@ final class ArtifactShelfService: ObservableObject {
         if hasRolloutPath, var cached = rolloutScanCache[path],
            cached.size == (size?.int64Value ?? 0),
            cached.modifiedAt == modified,
-           cached.fileIdentifier == nil || fileIdentifier == nil || cached.fileIdentifier == fileIdentifier {
+           cached.fileIdentifier == nil || fileIdentifier == nil || cached.fileIdentifier == fileIdentifier,
+           !requireCompleteHistory || cached.scanState?.historyComplete != false {
             cached.lastAccessedAt = Date()
             rolloutScanCache[path] = cached
             guard selectionGeneration == selectionGenerationAtStart,
@@ -500,57 +680,45 @@ final class ArtifactShelfService: ObservableObject {
         var previousState: RolloutScanState?
         if let cached = rolloutScanCache[path],
            let cachedState = cached.scanState,
+           !requireCompleteHistory || cachedState.historyComplete,
            let currentSize = size?.int64Value,
            currentSize > cached.size,
            cached.fileIdentifier == nil || fileIdentifier == nil || cached.fileIdentifier == fileIdentifier {
             previousState = cachedState
         }
-        let codexThreadID = task.agentID == "codex" ? Self.nativeThreadID(from: task.id) : nil
-        let nativeMessages: [CodexArtifactMessageSnapshot]
-        // thread/read returns a task's entire history as one JSON-RPC line.
-        // Large historical tasks can therefore block the app-server decoder
-        // and UI for minutes. Their local rollout is already authoritative
-        // for final-answer links, so stream that file off-main instead.
-        // Without a readable local rollout there is no safe way to estimate
-        // thread/read's response size. Do not risk decoding an unbounded JSON
-        // line on the main actor merely as a fallback.
-        let canReadNativeHistory = hasRolloutPath
-            && attributes != nil
-            && (size?.int64Value ?? 0) <= Self.nativeHistoryReadLimit
-            && previousState == nil
-        if let codexThreadID, canReadNativeHistory {
-            nativeMessages = await CodexControlPlaneService.shared.artifactMessageSnapshots(threadId: codexThreadID)
-        } else {
-            nativeMessages = []
-        }
-        guard !Task.isCancelled else { return }
+        // The local JSONL is the authoritative source and can be streamed on a
+        // utility executor. Avoid thread/read here: it returns the entire task
+        // as one JSON-RPC record and its decoder can stall the main actor even
+        // for apparently small rollouts.
         var result: [ArtifactShelfCandidate] = []
-        if !nativeMessages.isEmpty {
-            result = await Task.detached(priority: .utility) {
-                Self.scanArtifactMessages(nativeMessages, context: context)
-            }.value
-        }
         guard !Task.isCancelled else { return }
         var rolloutState: RolloutScanState?
         if hasRolloutPath {
             activeRolloutScanTask?.cancel()
+            let initialReadLimit: UInt64? = requireCompleteHistory ? nil : Self.initialRolloutReadLimit
             let scanTask = Task.detached(priority: .utility) {
-                Self.scanRollout(path: path, context: context, previousState: previousState)
+                Self.scanRollout(
+                    path: path,
+                    context: context,
+                    previousState: previousState,
+                    initialReadLimit: initialReadLimit
+                )
             }
             activeRolloutScanTask = scanTask
             rolloutState = await scanTask.value
             if scanRequestGeneration == requestGeneration {
                 activeRolloutScanTask = nil
             }
-            guard !Task.isCancelled, let rolloutState else { return }
-            let rolloutCandidates = Self.candidates(from: rolloutState)
-            // Keep the first small-history result aligned with Codex's native
-            // cards, while still caching local parser state. Once the file
-            // appends, advance that state from the old EOF instead of issuing
-            // another whole-history thread/read.
-            if result.isEmpty || previousState != nil {
-                result = rolloutCandidates
+            guard !Task.isCancelled, let rolloutState else {
+                if scanRequestGeneration == requestGeneration,
+                   selectionGeneration == selectionGenerationAtStart,
+                   selectedTaskID == task.id {
+                    lastScannedSignature = ""
+                }
+                return
             }
+            let rolloutCandidates = Self.candidates(from: rolloutState)
+            result = rolloutCandidates
         }
         if hasRolloutPath {
             let finalAttributes = try? FileManager.default.attributesOfItem(atPath: path)
@@ -573,7 +741,7 @@ final class ArtifactShelfService: ObservableObject {
         if hasRolloutPath {
             lastError = FileManager.default.fileExists(atPath: path) ? nil : "Task log is unavailable."
         } else {
-            lastError = nativeMessages.isEmpty ? "Task history is unavailable." : nil
+            lastError = "Task history is unavailable."
         }
     }
 
@@ -602,7 +770,8 @@ final class ArtifactShelfService: ObservableObject {
     nonisolated private static func scanRollout(
         path: String,
         context: ScanContext,
-        previousState: RolloutScanState?
+        previousState: RolloutScanState?,
+        initialReadLimit: UInt64?
     ) -> RolloutScanState? {
         guard !Task.isCancelled,
               let handle = FileHandle(forReadingAtPath: path) else { return nil }
@@ -613,13 +782,19 @@ final class ArtifactShelfService: ObservableObject {
             lastUnphasedDeliveries: [:],
             pendingLine: Data(),
             pendingLineWasConsumed: false,
-            skippingOversizedLine: false
+            skippingOversizedLine: false,
+            historyComplete: true
         )
         var state = previousState ?? emptyState
         do {
             let currentFileSize = try handle.seekToEnd()
+            let needsFreshScan = previousState == nil || currentFileSize < state.scannedOffset
             if currentFileSize < state.scannedOffset {
                 state = emptyState
+            }
+            if needsFreshScan, let initialReadLimit, currentFileSize > initialReadLimit {
+                state.scannedOffset = currentFileSize - initialReadLimit
+                state.historyComplete = false
             }
             try handle.seek(toOffset: state.scannedOffset)
         } catch {
@@ -806,11 +981,9 @@ final class ArtifactShelfService: ObservableObject {
         // answer and most closely match Codex's own file cards. If at least
         // one local Markdown destination exists, ignore incidental bare paths
         // elsewhere in the prose.
-        let markdownPattern = #"!?\[[^\]\r\n]*\]\(\s*(?:<([^>\r\n]+)>|([^\)\r\n]+))\s*\)"#
-        if let markdownRegex = try? NSRegularExpression(pattern: markdownPattern),
-           !text.isEmpty {
+        if !text.isEmpty {
             let range = NSRange(text.startIndex..., in: text)
-            let markdownTargets: [String] = markdownRegex.matches(in: text, range: range).compactMap { match in
+            let markdownTargets: [String] = ArtifactShelfPatterns.markdownTarget.matches(in: text, range: range).compactMap { match in
                 for captureIndex in 1..<match.numberOfRanges {
                     let capture = match.range(at: captureIndex)
                     guard capture.location != NSNotFound,
@@ -831,12 +1004,7 @@ final class ArtifactShelfService: ObservableObject {
         }
 
         var result: [String] = []
-        let patterns = [
-            #"https?://[^\s<>\"'`\u3000-\u9fff\uff00-\uffef]+"#,
-            #"(?:file://)?/(?:Users|home|tmp|private|var|Volumes|Applications|opt|workspace|root)/[^\n\r\t\"'`<>|{}\[\]]+"#
-        ]
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
+        for regex in ArtifactShelfPatterns.rawTargets {
             let range = NSRange(text.startIndex..., in: text)
             for match in regex.matches(in: text, range: range) {
                 if let range = Range(match.range, in: text) { result.append(String(text[range])) }
@@ -880,8 +1048,12 @@ final class ArtifactShelfService: ObservableObject {
         let lower = path.lowercased().replacingOccurrences(of: "\\", with: "/")
         let parts = lower.split(separator: "/").map(String.init)
         if parts.contains(where: { $0.hasPrefix(".") && $0 != ".well-known" }) { return true }
-        let sensitive = try? NSRegularExpression(pattern: #"^(\.env(?:\..*)?|\.ssh|\.gnupg|\.aws|\.netrc|credentials?(?:\..*)?|secrets?(?:\..*)?|auth(?:\..*)?|tokens?(?:\..*)?|id_(?:rsa|ed25519)(?:\..*)?|.*private[_-]?key.*|.*api[_-]?key.*)$"#, options: .caseInsensitive)
-        if parts.contains(where: { sensitive?.firstMatch(in: $0, range: NSRange($0.startIndex..., in: $0)) != nil }) { return true }
+        if parts.contains(where: {
+            ArtifactShelfPatterns.sensitivePathComponent.firstMatch(
+                in: $0,
+                range: NSRange($0.startIndex..., in: $0)
+            ) != nil
+        }) { return true }
         if lower.contains("/node_modules/") || lower.contains("/.git/") || lower.contains("/.codex/sessions/") || lower.contains("/.codex/plugins/cache/") { return true }
         if lower.range(of: #"\.(sqlite3?|db)(-(wal|shm))?$"#, options: .regularExpression) != nil { return true }
         if let context, path == context.cwd || path == context.rolloutPath { return true }

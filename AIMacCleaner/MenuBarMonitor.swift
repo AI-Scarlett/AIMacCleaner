@@ -334,7 +334,19 @@ struct MenuBarMonitor: View {
         .onAppear {
             captureService.start()
             captureService.refreshScreenCaptureAccess()
-            artifactShelfService.start()
+            if captureSection == .artifacts {
+                artifactShelfService.start(for: .taskArtifactsView)
+            }
+        }
+        .onChange(of: captureSection) { section in
+            if section == .artifacts {
+                artifactShelfService.start(for: .taskArtifactsView)
+            } else {
+                artifactShelfService.stop(for: .taskArtifactsView)
+            }
+        }
+        .onDisappear {
+            artifactShelfService.stop(for: .taskArtifactsView)
         }
         .alert(localizer.t("重命名收藏", en: "Rename Bookmark", zhHant: "重新命名收藏", ja: "名前を変更", ko: "이름 변경", mt: "Rename Bookmark"), isPresented: Binding(
             get: { renameBookmark != nil },

@@ -1,6 +1,175 @@
 import Foundation
 import Darwin
 
+private struct RolloutSummary: Sendable {
+    var phase = "idle"
+    var activeTurnId: String?
+    var lastResponse = ""
+    var lastUserMessage = ""
+}
+
+/// Keeps rollout file I/O and JSON parsing off the main actor. The file
+/// signature makes repeated session refreshes cheap while a rollout is idle.
+private actor RolloutSummaryCache {
+    private struct FileSignature: Equatable, Sendable {
+        let size: UInt64
+        let modificationTime: TimeInterval
+        let fileNumber: UInt64
+    }
+
+    private struct Entry: Sendable {
+        let signature: FileSignature
+        let summary: RolloutSummary
+        let accessOrder: UInt64
+    }
+
+    private let maxEntries = 120
+    private var entries: [String: Entry] = [:]
+    private var accessOrder: UInt64 = 0
+
+    func summaries(for paths: [String]) -> [String: RolloutSummary] {
+        var result: [String: RolloutSummary] = [:]
+        var seen = Set<String>()
+
+        for path in paths where !path.isEmpty {
+            guard seen.insert(path).inserted else { continue }
+            guard seen.count <= maxEntries else { break }
+            result[path] = summary(for: path)
+        }
+        return result
+    }
+
+    func summary(for path: String) -> RolloutSummary {
+        guard !path.isEmpty, let signature = fileSignature(path: path) else {
+            if !path.isEmpty {
+                entries.removeValue(forKey: path)
+            }
+            return RolloutSummary()
+        }
+
+        accessOrder &+= 1
+        if let cached = entries[path], cached.signature == signature {
+            entries[path] = Entry(
+                signature: cached.signature,
+                summary: cached.summary,
+                accessOrder: accessOrder
+            )
+            return cached.summary
+        }
+
+        let parsed = Self.readRolloutSummary(path: path)
+        entries[path] = Entry(
+            signature: signature,
+            summary: parsed,
+            accessOrder: accessOrder
+        )
+        pruneIfNeeded()
+        return parsed
+    }
+
+    private func fileSignature(path: String) -> FileSignature? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = (attributes[.size] as? NSNumber)?.uint64Value,
+              let modificationDate = attributes[.modificationDate] as? Date else {
+            return nil
+        }
+        return FileSignature(
+            size: size,
+            modificationTime: modificationDate.timeIntervalSinceReferenceDate,
+            fileNumber: (attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
+        )
+    }
+
+    private func pruneIfNeeded() {
+        guard entries.count > maxEntries else { return }
+        let overflow = entries.count - maxEntries
+        let oldestPaths = entries
+            .sorted { $0.value.accessOrder < $1.value.accessOrder }
+            .prefix(overflow)
+            .map(\.key)
+        for path in oldestPaths {
+            entries.removeValue(forKey: path)
+        }
+    }
+
+    private static func readRolloutSummary(path: String) -> RolloutSummary {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return RolloutSummary() }
+        defer { try? handle.close() }
+        let end = (try? handle.seekToEnd()) ?? 0
+        let maxBytes: UInt64 = 96 * 1_024
+        let offset = end > maxBytes ? end - maxBytes : 0
+        try? handle.seek(toOffset: offset)
+        guard var data = try? handle.readToEnd(), !data.isEmpty else {
+            return RolloutSummary()
+        }
+        if offset > 0 {
+            guard let newline = data.firstIndex(of: 0x0A) else { return RolloutSummary() }
+            let next = data.index(after: newline)
+            data = next < data.endIndex ? Data(data[next...]) : Data()
+        }
+        let text = String(decoding: data, as: UTF8.self)
+
+        var summary = RolloutSummary()
+        var lastLifecycleIndex = -1
+        for (index, rawLine) in text.split(separator: "\n").enumerated() {
+            guard let data = rawLine.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = object["type"] as? String,
+                  let payload = object["payload"] as? [String: Any]
+            else {
+                continue
+            }
+
+            if type == "event_msg", let eventType = payload["type"] as? String {
+                switch eventType {
+                case "task_started":
+                    if index >= lastLifecycleIndex {
+                        summary.phase = "processing"
+                        summary.activeTurnId = payload["turn_id"] as? String
+                        lastLifecycleIndex = index
+                    }
+                case "task_complete":
+                    if index >= lastLifecycleIndex {
+                        summary.phase = "idle"
+                        summary.activeTurnId = nil
+                        lastLifecycleIndex = index
+                    }
+                case "turn_aborted", "task_interrupted":
+                    if index >= lastLifecycleIndex {
+                        summary.phase = "interrupted"
+                        summary.activeTurnId = nil
+                        lastLifecycleIndex = index
+                    }
+                case "agent_message":
+                    if let message = payload["message"] as? String, !message.isEmpty {
+                        summary.lastResponse = String(message.suffix(1_200))
+                    }
+                case "user_message":
+                    if let message = payload["message"] as? String, !message.isEmpty {
+                        summary.lastUserMessage = String(message.suffix(1_200))
+                    }
+                default:
+                    break
+                }
+            }
+
+            if type == "response_item", payload["type"] as? String == "message",
+               let role = payload["role"] as? String {
+                let content = payload["content"] as? [[String: Any]] ?? []
+                let message = content.compactMap { item in
+                    item["text"] as? String ?? item["input_text"] as? String ?? item["output_text"] as? String
+                }.joined(separator: "\n")
+                if role == "assistant", !message.isEmpty {
+                    summary.lastResponse = String(message.suffix(1_200))
+                } else if role == "user", !message.isEmpty, !message.hasPrefix("<environment_context>") {
+                    summary.lastUserMessage = String(message.suffix(1_200))
+                }
+            }
+        }
+        return summary
+    }
+}
+
 struct CodexSessionSnapshot: Identifiable {
     let id: String
     let preview: String
@@ -67,13 +236,6 @@ final class CodexControlPlaneService {
         let questionDefaults: [String: String]
     }
 
-    private struct RolloutSummary {
-        var phase = "idle"
-        var activeTurnId: String?
-        var lastResponse = ""
-        var lastUserMessage = ""
-    }
-
     private var process: Process?
     private var inputHandle: FileHandle?
     private var outputBuffer = Data()
@@ -86,8 +248,14 @@ final class CodexControlPlaneService {
     private var pendingApprovals: [String: PendingApproval] = [:]
     private var cachedSessions: [CodexSessionSnapshot] = []
     private var desktopSessions: [String: CodexSessionSnapshot] = [:]
+    private var desktopRolloutSummaries: [String: RolloutSummary] = [:]
+    private var latestDesktopStates: [String: [String: Any]] = [:]
+    private var desktopRolloutRefreshTasks: [String: Task<Void, Never>] = [:]
+    private var desktopRolloutRefreshTokens: [String: UUID] = [:]
+    private var desktopRolloutRefreshVersions: [String: UInt64] = [:]
     private var lastSessionRefresh: Date?
     private let maxCachedSessions = 120
+    private let rolloutSummaryCache = RolloutSummaryCache()
 
     private init() {
         DesktopCodexIPC.startObserver { [weak self] message in
@@ -110,7 +278,16 @@ final class CodexControlPlaneService {
 
         var coreSnapshots: [CodexSessionSnapshot] = []
         if let coreRows = await TraceFenceAgentCoreClient.shared.listSessions() {
-            coreSnapshots = coreRows.compactMap(sessionSnapshot(from:))
+            let rolloutSummaries = await rolloutSummaryCache.summaries(
+                for: coreRows.map(Self.sourcePath(from:))
+            )
+            coreSnapshots = coreRows.compactMap { row in
+                let sourcePath = Self.sourcePath(from: row)
+                return sessionSnapshot(
+                    from: row,
+                    rollout: rolloutSummaries[sourcePath] ?? RolloutSummary()
+                )
+            }
             for row in coreRows {
                 if let threadId = row["id"] as? String {
                     captureDesktopApprovals(from: row, threadId: threadId)
@@ -140,7 +317,17 @@ final class CodexControlPlaneService {
                 pageCount += 1
             } while cursor != nil && pageCount < 2 && rows.count < maxCachedSessions
 
-            let snapshots = rows.compactMap(sessionSnapshot(from:))
+            let limitedRows = Array(rows.prefix(maxCachedSessions))
+            let rolloutSummaries = await rolloutSummaryCache.summaries(
+                for: limitedRows.map(Self.sourcePath(from:))
+            )
+            let snapshots = limitedRows.compactMap { row in
+                let sourcePath = Self.sourcePath(from: row)
+                return sessionSnapshot(
+                    from: row,
+                    rollout: rolloutSummaries[sourcePath] ?? RolloutSummary()
+                )
+            }
             let merged = mergeDesktopSessions(with: mergeCoreSessions(coreSnapshots, native: snapshots))
             cachedSessions = Array(merged.prefix(maxCachedSessions))
             lastSessionRefresh = Date()
@@ -231,15 +418,65 @@ final class CodexControlPlaneService {
               let change = params["change"] as? [String: Any],
               change["type"] as? String == "snapshot",
               let state = change["conversationState"] as? [String: Any],
-              let snapshot = desktopSessionSnapshot(from: state) else {
+              let threadId = state["id"] as? String else {
             return
         }
 
+        let sourcePath = state["rolloutPath"] as? String ?? ""
+        let rollout = desktopRolloutSummaries[sourcePath] ?? RolloutSummary()
+        guard let snapshot = desktopSessionSnapshot(from: state, rollout: rollout) else { return }
+
         desktopSessions[snapshot.id] = snapshot
+        latestDesktopStates[threadId] = state
+        desktopRolloutRefreshVersions[threadId, default: 0] &+= 1
         pruneDesktopSessions()
         cachedSessions = Array(mergeDesktopSessions(with: cachedSessions).prefix(maxCachedSessions))
         captureDesktopApprovals(from: state, threadId: snapshot.id)
         lastSessionRefresh = Date()
+        scheduleDesktopRolloutRefresh(threadId: threadId)
+    }
+
+    /// Desktop broadcasts can arrive several times per second while a turn is
+    /// streaming. Update their in-memory state immediately, then coalesce the
+    /// rollout refresh so no broadcast performs synchronous disk work.
+    private func scheduleDesktopRolloutRefresh(threadId: String) {
+        guard desktopRolloutRefreshTasks[threadId] == nil else { return }
+
+        let token = UUID()
+        desktopRolloutRefreshTokens[threadId] = token
+        desktopRolloutRefreshTasks[threadId] = Task { @MainActor [weak self] in
+            guard let self else { return }
+            var shouldReschedule = false
+            defer {
+                if self.desktopRolloutRefreshTokens[threadId] == token {
+                    self.desktopRolloutRefreshTasks[threadId] = nil
+                    self.desktopRolloutRefreshTokens[threadId] = nil
+                    if shouldReschedule {
+                        self.scheduleDesktopRolloutRefresh(threadId: threadId)
+                    }
+                }
+            }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled,
+                  let state = self.latestDesktopStates[threadId] else { return }
+
+            let refreshVersion = self.desktopRolloutRefreshVersions[threadId] ?? 0
+            let sourcePath = state["rolloutPath"] as? String ?? ""
+            let rollout = await self.rolloutSummaryCache.summary(for: sourcePath)
+            guard !Task.isCancelled else { return }
+
+            self.desktopRolloutSummaries[sourcePath] = rollout
+            if let latestState = self.latestDesktopStates[threadId],
+               let snapshot = self.desktopSessionSnapshot(from: latestState, rollout: rollout) {
+                self.desktopSessions[snapshot.id] = snapshot
+                self.pruneDesktopSessions()
+                self.cachedSessions = Array(
+                    self.mergeDesktopSessions(with: self.cachedSessions).prefix(self.maxCachedSessions)
+                )
+                self.lastSessionRefresh = Date()
+            }
+            shouldReschedule = self.desktopRolloutRefreshVersions[threadId] != refreshVersion
+        }
     }
 
     private func pruneDesktopSessions() {
@@ -248,13 +485,26 @@ final class CodexControlPlaneService {
             .sorted { $0.updatedAt > $1.updatedAt }
             .prefix(maxCachedSessions)
         desktopSessions = Dictionary(uniqueKeysWithValues: retained.map { ($0.id, $0) })
+
+        let retainedIDs = Set(desktopSessions.keys)
+        let removedIDs = latestDesktopStates.keys.filter { !retainedIDs.contains($0) }
+        for threadId in removedIDs {
+            latestDesktopStates.removeValue(forKey: threadId)
+            desktopRolloutRefreshTasks.removeValue(forKey: threadId)?.cancel()
+            desktopRolloutRefreshTokens.removeValue(forKey: threadId)
+            desktopRolloutRefreshVersions.removeValue(forKey: threadId)
+        }
+        let retainedPaths = Set(latestDesktopStates.values.compactMap { $0["rolloutPath"] as? String })
+        desktopRolloutSummaries = desktopRolloutSummaries.filter { retainedPaths.contains($0.key) }
     }
 
-    private func desktopSessionSnapshot(from state: [String: Any]) -> CodexSessionSnapshot? {
+    private func desktopSessionSnapshot(
+        from state: [String: Any],
+        rollout: RolloutSummary
+    ) -> CodexSessionSnapshot? {
         guard let id = state["id"] as? String else { return nil }
         let cwd = state["cwd"] as? String ?? ""
         let sourcePath = state["rolloutPath"] as? String ?? ""
-        let rollout = Self.readRolloutSummary(path: sourcePath)
         let created = Self.date(from: state["createdAt"]) ?? Date()
         let updated = Self.date(from: state["updatedAt"] ?? state["recencyAt"]) ?? created
         let requests = state["requests"] as? [[String: Any]] ?? []
@@ -790,21 +1040,23 @@ final class CodexControlPlaneService {
         })?["id"] as? String
     }
 
-    private func sessionSnapshot(from row: [String: Any]) -> CodexSessionSnapshot? {
+    private func sessionSnapshot(
+        from row: [String: Any],
+        rollout: RolloutSummary
+    ) -> CodexSessionSnapshot? {
         guard
             let id = row["id"] as? String,
             let cwd = row["cwd"] as? String
         else {
             return nil
         }
-        let sourcePath = (row["path"] as? String) ?? (row["sourcePath"] as? String) ?? ""
+        let sourcePath = Self.sourcePath(from: row)
         let preview = (row["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
             ?? (row["preview"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
             ?? "Codex 会话"
         let created = Self.date(from: row["createdAt"]) ?? Date()
         let updated = Self.date(from: row["recencyAt"] ?? row["updatedAt"]) ?? created
         let statusType = (row["status"] as? [String: Any])?["type"] as? String
-        let rollout = Self.readRolloutSummary(path: sourcePath)
         let knownActiveTurn = activeTurns[id]
         let source = row["source"] as? String ?? "app-server"
         let corePhase = row["phase"] as? String
@@ -1177,6 +1429,10 @@ final class CodexControlPlaneService {
         return String(describing: value)
     }
 
+    private static func sourcePath(from row: [String: Any]) -> String {
+        (row["path"] as? String) ?? (row["sourcePath"] as? String) ?? ""
+    }
+
     private static func date(from value: Any?) -> Date? {
         guard let number = value as? NSNumber else { return nil }
         let raw = number.doubleValue
@@ -1216,77 +1472,6 @@ final class CodexControlPlaneService {
         return labels
     }
 
-    private static func readRolloutSummary(path: String) -> RolloutSummary {
-        guard let handle = FileHandle(forReadingAtPath: path) else { return RolloutSummary() }
-        defer { try? handle.close() }
-        let end = (try? handle.seekToEnd()) ?? 0
-        let maxBytes: UInt64 = 96 * 1_024
-        let offset = end > maxBytes ? end - maxBytes : 0
-        try? handle.seek(toOffset: offset)
-        guard let data = try? handle.readToEnd(), !data.isEmpty,
-              let text = String(data: data, encoding: .utf8) else {
-            return RolloutSummary()
-        }
-
-        var summary = RolloutSummary()
-        var lastLifecycleIndex = -1
-        for (index, rawLine) in text.split(separator: "\n").enumerated() {
-            guard let data = rawLine.data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let type = object["type"] as? String,
-                  let payload = object["payload"] as? [String: Any]
-            else {
-                continue
-            }
-
-            if type == "event_msg", let eventType = payload["type"] as? String {
-                switch eventType {
-                case "task_started":
-                    if index >= lastLifecycleIndex {
-                        summary.phase = "processing"
-                        summary.activeTurnId = payload["turn_id"] as? String
-                        lastLifecycleIndex = index
-                    }
-                case "task_complete":
-                    if index >= lastLifecycleIndex {
-                        summary.phase = "idle"
-                        summary.activeTurnId = nil
-                        lastLifecycleIndex = index
-                    }
-                case "turn_aborted", "task_interrupted":
-                    if index >= lastLifecycleIndex {
-                        summary.phase = "interrupted"
-                        summary.activeTurnId = nil
-                        lastLifecycleIndex = index
-                    }
-                case "agent_message":
-                    if let message = payload["message"] as? String, !message.isEmpty {
-                        summary.lastResponse = String(message.suffix(1_200))
-                    }
-                case "user_message":
-                    if let message = payload["message"] as? String, !message.isEmpty {
-                        summary.lastUserMessage = String(message.suffix(1_200))
-                    }
-                default:
-                    break
-                }
-            }
-
-            if type == "response_item", payload["type"] as? String == "message",
-               let role = payload["role"] as? String {
-                let content = payload["content"] as? [[String: Any]] ?? []
-                let message = content.compactMap { item in
-                    item["text"] as? String ?? item["input_text"] as? String ?? item["output_text"] as? String
-                }.joined(separator: "\n")
-                if role == "assistant", !message.isEmpty {
-                    summary.lastResponse = String(message.suffix(1_200))
-                } else if role == "user", !message.isEmpty, !message.hasPrefix("<environment_context>") {
-                    summary.lastUserMessage = String(message.suffix(1_200))
-                }
-            }
-        }
-        return summary
-    }
 }
 
 private enum CodexControlPlaneError: LocalizedError {

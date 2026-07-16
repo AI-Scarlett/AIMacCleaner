@@ -88,7 +88,6 @@ struct AIMacCleanerApp: App {
                     captureShelfService.start()
                     providerQuotaService.start()
                     if SandboxPaths.isDirectDistribution {
-                        ArtifactShelfService.shared.start()
                         artifactSidecarController.start()
                     }
                     AgentGeoMirrorService.shared.refreshEnabledProfileInBackground()
