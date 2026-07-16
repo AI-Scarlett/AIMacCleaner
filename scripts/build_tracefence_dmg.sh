@@ -119,13 +119,27 @@ codesign --force \
   "$PROVIDER_ENGINE"
 
 codesign --force \
-  --deep \
   --options runtime \
   --timestamp \
   --entitlements "$ENTITLEMENTS" \
   --sign "$SIGN_IDENTITY" \
   "$BUILT_APP"
 codesign --verify --deep --strict --verbose=2 "$BUILT_APP"
+
+# The iOS Remote Pairing listener belongs to the main app only. Signing the
+# outer bundle with --deep would re-sign codexbar using the main app's
+# entitlements and incorrectly grant the helper network.server. Keep nested
+# code explicitly signed above, then sign only the outer bundle here.
+MAIN_ENTITLEMENTS_OUTPUT="$(codesign -d --entitlements :- "$BUILT_APP" 2>&1 || true)"
+HELPER_ENTITLEMENTS_OUTPUT="$(codesign -d --entitlements :- "$PROVIDER_ENGINE" 2>&1 || true)"
+[[ "$MAIN_ENTITLEMENTS_OUTPUT" == *"com.apple.security.network.server"* ]] || {
+  echo "Main TraceFence app is missing com.apple.security.network.server" >&2
+  exit 1
+}
+[[ "$HELPER_ENTITLEMENTS_OUTPUT" != *"com.apple.security.network.server"* ]] || {
+  echo "Bundled codexbar helper must not receive com.apple.security.network.server" >&2
+  exit 1
+}
 
 if [ "$NOTARIZE" = "1" ]; then
   ditto -c -k --keepParent "$BUILT_APP" "$OUTPUT_ZIP"
