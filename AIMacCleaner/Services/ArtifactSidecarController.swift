@@ -775,6 +775,10 @@ private struct ArtifactSidecarRootView: View {
             }
             controls
             Divider()
+            historyStatusStrip
+            if shelf.historyStatus != .idle {
+                Divider()
+            }
 
             if shelf.tasks.isEmpty {
                 emptyState(
@@ -783,11 +787,11 @@ private struct ArtifactSidecarRootView: View {
                     detail: "切换到 Codex、Claude 或 Cursor 后会自动匹配。"
                 )
             } else if savedItems.isEmpty && discoveredArtifactItems.isEmpty {
-                if shelf.isLoadingCandidates {
+                if isReadingHistory {
                     emptyState(
                         icon: "arrow.triangle.2.circlepath",
                         title: "正在查找最终交付…",
-                        detail: "正在读取当前会话的完整历史。"
+                        detail: historyLoadingDetail
                     )
                 } else if !shelf.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     emptyState(
@@ -840,6 +844,111 @@ private struct ArtifactSidecarRootView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var historyStatusStrip: some View {
+        switch shelf.historyStatus {
+        case .idle:
+            EmptyView()
+        case .loadingRecent(let totalBytes):
+            historyStatusRow(
+                icon: "clock.arrow.circlepath",
+                message: "正在读取最近记录（任务日志 \(formattedByteCount(totalBytes))）…",
+                isLoading: true
+            )
+        case .recentOnly(let loadedBytes, let totalBytes):
+            historyStatusRow(
+                icon: "clock.badge.exclamationmark",
+                message: "已读取最近 \(formattedByteCount(loadedBytes)) / 共 \(formattedByteCount(totalBytes))，找到 \(shelf.candidates.count) 项；搜索仅覆盖已加载内容。",
+                actionTitle: "加载完整历史",
+                action: shelf.loadCompleteHistory
+            )
+        case .loadingComplete(let totalBytes):
+            historyStatusRow(
+                icon: "arrow.triangle.2.circlepath",
+                message: "正在后台读取完整历史（\(formattedByteCount(totalBytes))）；当前 \(shelf.candidates.count) 项仍可使用。",
+                isLoading: true
+            )
+        case .pausedRecent:
+            historyStatusRow(
+                icon: "pause.circle",
+                message: "最近记录读取已暂停；返回产物列表后会自动继续。",
+                actionTitle: "继续",
+                action: shelf.retryHistoryScan
+            )
+        case .pausedComplete:
+            historyStatusRow(
+                icon: "pause.circle",
+                message: "完整历史读取已暂停；已加载结果仍然保留。",
+                actionTitle: "继续",
+                action: shelf.retryHistoryScan
+            )
+        case .complete:
+            historyStatusRow(
+                icon: "checkmark.circle.fill",
+                message: "完整历史已加载 · 找到 \(shelf.candidates.count) 项"
+            )
+        case .failed(let message):
+            historyStatusRow(
+                icon: "exclamationmark.triangle.fill",
+                message: "读取失败：\(message)",
+                actionTitle: "重试",
+                action: shelf.retryHistoryScan
+            )
+        }
+    }
+
+    private var isReadingHistory: Bool {
+        switch shelf.historyStatus {
+        case .loadingRecent, .loadingComplete:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private var historyLoadingDetail: String {
+        switch shelf.historyStatus {
+        case .loadingComplete:
+            return "正在后台读取完整历史；已加载结果会立即保留显示。"
+        default:
+            return "正在读取最近记录；完成后会明确标注读取范围。"
+        }
+    }
+
+    private func historyStatusRow(
+        icon: String,
+        message: String,
+        isLoading: Bool = false,
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
+    ) -> some View {
+        HStack(spacing: 8) {
+            if isLoading {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: icon)
+                    .foregroundStyle(.secondary)
+            }
+            Text(message)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .controlSize(.mini)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Color.accentColor.opacity(0.05))
+    }
+
+    private func formattedByteCount(_ bytes: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file)
     }
 
     private var controls: some View {

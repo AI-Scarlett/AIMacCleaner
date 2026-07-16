@@ -1192,7 +1192,7 @@ extension Localizer {
     var protectedDirAlertTitle: String { t("保护目录访问", en: "Protected Directory Access", zhHant: "保護目錄訪問", ja: "保護ディレクトリアクセス", ko: "보호 디렉토리 접근", mt: "Protected Directory Access") }
     var protectedDirAlertMsg: String { t("Agent 在保护目录中执行了操作", en: "Agent performed an operation in a protected directory", zhHant: "Agent 在保護目錄中執行了操作", ja: "Agentが保護ディレクトリで操作を実行しました", ko: "Agent가 보호 디렉토리에서 작업을 실행했습니다", mt: "Agent performed an operation in a protected directory") }
     var processLaunchAlertTitle: String { t("Agent 进程启动", en: "Agent Process Launched", zhHant: "Agent 程序啟動", ja: "Agentプロセス起動", ko: "Agent 프로세스 시작", mt: "Agent Process Launched") }
-    var processLaunchAlertMsg: String { t("检测到新的 Agent 进程", en: "New agent process detected", zhHant: "檢測到新的 Agent 程序", ja: "新しいAgentプロセスを検出", ko: "새로운 Agent 프로세스 감지", mt: "New agent process detected") }
+    var processLaunchAlertMsg: String { t("检测到 %@ 启动（PID：%d）", en: "%@ started (PID: %d)", zhHant: "偵測到 %@ 啟動（PID：%d）", ja: "%@ が起動しました（PID: %d）", ko: "%@ 시작 감지(PID: %d)", mt: "%@ started (PID: %d)") }
     var batchDeleteThreshold: String { t("批量删除阈值", en: "Batch Delete Threshold", zhHant: "批次刪除閾值", ja: "一括削除しきい値", ko: "대량 삭제 임계값", mt: "Batch Delete Threshold") }
     var batchModifyThreshold: String { t("批量修改阈值", en: "Batch Modify Threshold", zhHant: "批次修改閾值", ja: "一括変更しきい値", ko: "대량 수정 임계값", mt: "Batch Modify Threshold") }
     var timeWindowSeconds: String { t("时间窗口(秒)", en: "Time Window (sec)", zhHant: "時間視窗(秒)", ja: "時間ウィンドウ（秒）", ko: "시간 창（초）", mt: "Time Window (sec)") }

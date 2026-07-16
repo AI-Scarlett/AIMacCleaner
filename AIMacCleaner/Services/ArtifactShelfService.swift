@@ -77,6 +77,17 @@ struct ArtifactShelfBookmark: Identifiable, Codable, Hashable {
     var updatedAt: Date
 }
 
+enum ArtifactShelfHistoryStatus: Equatable, Sendable {
+    case idle
+    case loadingRecent(totalBytes: UInt64)
+    case recentOnly(loadedBytes: UInt64, totalBytes: UInt64)
+    case loadingComplete(totalBytes: UInt64)
+    case pausedRecent(totalBytes: UInt64)
+    case pausedComplete(totalBytes: UInt64)
+    case complete(totalBytes: UInt64)
+    case failed(message: String)
+}
+
 @MainActor
 final class ArtifactShelfService: ObservableObject {
     static let shared = ArtifactShelfService()
@@ -94,22 +105,11 @@ final class ArtifactShelfService: ObservableObject {
     @Published private(set) var candidates: [ArtifactShelfCandidate] = []
     @Published private(set) var bookmarks: [ArtifactShelfBookmark] = []
     @Published var selectedTaskID: String?
-    @Published var searchText = "" {
-        didSet {
-            let oldQueryWasEmpty = oldValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            let newQueryIsEmpty = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            if oldQueryWasEmpty, !newQueryIsEmpty, let selectedTaskID {
-                scanTaskSelection(id: selectedTaskID, requireCompleteHistory: true)
-            } else if !oldQueryWasEmpty, newQueryIsEmpty, let selectedTaskID {
-                // Abandon an expensive full-history search as soon as the user
-                // clears the query and return to the bounded recent scan.
-                scanTaskSelection(id: selectedTaskID)
-            }
-        }
-    }
+    @Published var searchText = ""
     @Published private(set) var isRefreshing = false
     @Published private(set) var isScanningSelectedTask = false
     @Published private(set) var lastError: String?
+    @Published private(set) var historyStatus: ArtifactShelfHistoryStatus = .idle
     @Published private(set) var focusedAgentName = "Codex"
     @Published private(set) var focusedTaskTitle: String?
     @Published private(set) var focusMatchIsExact = false
@@ -128,6 +128,7 @@ final class ArtifactShelfService: ObservableObject {
     private var externalFocusUpdatedAt: Date?
     private var manualSelectionUntil: Date?
     private var rolloutScanCache: [String: RolloutScanCacheEntry] = [:]
+    private var completeHistoryRequestedTaskIDs: Set<String> = []
     private var selectionScanTask: Task<Void, Never>?
     private var activeRolloutScanTask: Task<RolloutScanState?, Never>?
     private let decoder = JSONDecoder()
@@ -144,6 +145,7 @@ final class ArtifactShelfService: ObservableObject {
     }
 
     private struct RolloutScanState: Sendable {
+        var historyStartOffset: UInt64
         var scannedOffset: UInt64
         var finalDeliveries: [String: ArtifactShelfCandidate]
         var lastUnphasedDeliveries: [String: ArtifactShelfCandidate]
@@ -174,6 +176,19 @@ final class ArtifactShelfService: ObservableObject {
 
     var isLoadingCandidates: Bool {
         isRefreshing || isScanningSelectedTask
+    }
+
+    func loadCompleteHistory() {
+        guard let selectedTaskID else { return }
+        completeHistoryRequestedTaskIDs.insert(selectedTaskID)
+        lastScannedSignature = ""
+        scanTaskSelection(id: selectedTaskID, requireCompleteHistory: true)
+    }
+
+    func retryHistoryScan() {
+        guard let selectedTaskID else { return }
+        lastScannedSignature = ""
+        scanTaskSelection(id: selectedTaskID)
     }
 
     var visibleCandidates: [ArtifactShelfCandidate] {
@@ -265,6 +280,14 @@ final class ArtifactShelfService: ObservableObject {
     }
 
     private func cancelAutomaticWork() {
+        switch historyStatus {
+        case .loadingRecent(let totalBytes):
+            historyStatus = .pausedRecent(totalBytes: totalBytes)
+        case .loadingComplete(let totalBytes):
+            historyStatus = .pausedComplete(totalBytes: totalBytes)
+        default:
+            break
+        }
         refreshGeneration &+= 1
         refreshTask?.cancel()
         refreshTask = nil
@@ -606,6 +629,7 @@ final class ArtifactShelfService: ObservableObject {
         selectedTaskID = id
         candidates = []
         lastError = nil
+        historyStatus = .idle
         lastScannedSignature = ""
         return true
     }
@@ -616,7 +640,7 @@ final class ArtifactShelfService: ObservableObject {
         selectionGeneration &+= 1
         let generation = selectionGeneration
         let shouldRequireCompleteHistory = requireCompleteHistory
-            ?? !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ?? completeHistoryRequestedTaskIDs.contains(id)
         isScanningSelectedTask = true
         let task = Task { [weak self] in
             guard let self else { return }
@@ -639,11 +663,12 @@ final class ArtifactShelfService: ObservableObject {
         requireCompleteHistory requestedCompleteHistory: Bool? = nil
     ) async {
         let requireCompleteHistory = requestedCompleteHistory
-            ?? !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ?? (selectedTaskID.map(completeHistoryRequestedTaskIDs.contains) ?? false)
         let selectionGenerationAtStart = expectedSelectionGeneration ?? selectionGeneration
         guard let task = selectedTask else {
             if selectionGeneration == selectionGenerationAtStart {
                 candidates = []
+                historyStatus = .idle
             }
             return
         }
@@ -653,6 +678,7 @@ final class ArtifactShelfService: ObservableObject {
             ? (try? FileManager.default.attributesOfItem(atPath: path))
             : nil
         let size = attributes?[.size] as? NSNumber
+        let totalBytes = size?.uint64Value ?? 0
         let modified = attributes?[.modificationDate] as? Date
         let fileIdentifier = (attributes?[.systemFileNumber] as? NSNumber)?.uint64Value
         let signature = "\(task.id)|\(size?.int64Value ?? 0)|\(modified?.timeIntervalSince1970 ?? 0)|\(task.updatedAt.timeIntervalSince1970)"
@@ -673,8 +699,23 @@ final class ArtifactShelfService: ObservableObject {
                   selectedTaskID == task.id else { return }
             candidates = cached.candidates
             lastError = nil
+            historyStatus = Self.historyStatus(for: cached.scanState, totalBytes: totalBytes)
             return
         }
+
+        guard hasRolloutPath else {
+            if selectionGeneration == selectionGenerationAtStart,
+               scanRequestGeneration == requestGeneration,
+               selectedTaskID == task.id {
+                lastError = "Task history is unavailable."
+                historyStatus = .failed(message: "Task history is unavailable.")
+            }
+            return
+        }
+
+        historyStatus = requireCompleteHistory
+            ? .loadingComplete(totalBytes: totalBytes)
+            : .loadingRecent(totalBytes: totalBytes)
 
         let context = ScanContext(cwd: task.cwd, rolloutPath: path)
         var previousState: RolloutScanState?
@@ -691,6 +732,7 @@ final class ArtifactShelfService: ObservableObject {
         // as one JSON-RPC record and its decoder can stall the main actor even
         // for apparently small rollouts.
         var result: [ArtifactShelfCandidate] = []
+        var finalTotalBytes = totalBytes
         guard !Task.isCancelled else { return }
         var rolloutState: RolloutScanState?
         if hasRolloutPath {
@@ -714,6 +756,10 @@ final class ArtifactShelfService: ObservableObject {
                    selectionGeneration == selectionGenerationAtStart,
                    selectedTaskID == task.id {
                     lastScannedSignature = ""
+                    if !Task.isCancelled {
+                        lastError = "Task log could not be read."
+                        historyStatus = .failed(message: "Task log could not be read.")
+                    }
                 }
                 return
             }
@@ -723,6 +769,7 @@ final class ArtifactShelfService: ObservableObject {
         if hasRolloutPath {
             let finalAttributes = try? FileManager.default.attributesOfItem(atPath: path)
             let finalSize = (finalAttributes?[.size] as? NSNumber)?.int64Value ?? size?.int64Value ?? 0
+            finalTotalBytes = UInt64(max(0, finalSize))
             let scannedSize = rolloutState.map { Int64(clamping: $0.scannedOffset) } ?? finalSize
             rolloutScanCache[path] = RolloutScanCacheEntry(
                 size: scannedSize,
@@ -743,6 +790,25 @@ final class ArtifactShelfService: ObservableObject {
         } else {
             lastError = "Task history is unavailable."
         }
+        if let lastError {
+            historyStatus = .failed(message: lastError)
+        } else if let rolloutState {
+            historyStatus = Self.historyStatus(for: rolloutState, totalBytes: finalTotalBytes)
+        }
+    }
+
+    nonisolated private static func historyStatus(
+        for state: RolloutScanState?,
+        totalBytes: UInt64
+    ) -> ArtifactShelfHistoryStatus {
+        guard let state else { return .complete(totalBytes: totalBytes) }
+        if state.historyComplete {
+            return .complete(totalBytes: totalBytes)
+        }
+        let loadedBytes = state.scannedOffset >= state.historyStartOffset
+            ? state.scannedOffset - state.historyStartOffset
+            : 0
+        return .recentOnly(loadedBytes: loadedBytes, totalBytes: totalBytes)
     }
 
     private struct ScanContext: Sendable {
@@ -777,6 +843,7 @@ final class ArtifactShelfService: ObservableObject {
               let handle = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? handle.close() }
         let emptyState = RolloutScanState(
+            historyStartOffset: 0,
             scannedOffset: 0,
             finalDeliveries: [:],
             lastUnphasedDeliveries: [:],
@@ -794,6 +861,7 @@ final class ArtifactShelfService: ObservableObject {
             }
             if needsFreshScan, let initialReadLimit, currentFileSize > initialReadLimit {
                 state.scannedOffset = currentFileSize - initialReadLimit
+                state.historyStartOffset = state.scannedOffset
                 state.historyComplete = false
             }
             try handle.seek(toOffset: state.scannedOffset)

@@ -393,6 +393,8 @@ struct MenuBarMonitor: View {
             TextField(localizer.t("搜索文件、目录或链接", en: "Search files, folders, or links", zhHant: "搜尋檔案、目錄或連結", ja: "ファイル・フォルダ・リンクを検索", ko: "파일, 폴더 또는 링크 검색", mt: "Search files, folders, or links"), text: $artifactShelfService.searchText)
                 .textFieldStyle(.roundedBorder)
 
+            artifactHistoryStatusStrip
+
             artifactSectionHeader(
                 localizer.t("已收藏", en: "Saved", zhHant: "已收藏", ja: "保存済み", ko: "저장됨", mt: "Saved"),
                 icon: "star.fill",
@@ -422,10 +424,10 @@ struct MenuBarMonitor: View {
             )
 
             if artifactShelfService.visibleCandidates.isEmpty {
-                if artifactShelfService.isLoadingCandidates {
+                if artifactHistoryIsLoading {
                     artifactEmptyState(
                         title: localizer.t("正在扫描", en: "Scanning", zhHant: "正在掃描", ja: "スキャン中", ko: "검색 중", mt: "Scanning"),
-                        detail: localizer.t("正在读取完整任务历史。", en: "Reading the complete task history.", zhHant: "正在讀取完整任務歷史。", ja: "タスク履歴全体を読み込んでいます。", ko: "전체 작업 기록을 읽는 중입니다.", mt: "Reading the complete task history.")
+                        detail: artifactHistoryLoadingDetail
                     )
                 } else if !artifactShelfService.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     artifactEmptyState(
@@ -492,6 +494,141 @@ struct MenuBarMonitor: View {
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
         }
+    }
+
+    @ViewBuilder
+    private var artifactHistoryStatusStrip: some View {
+        switch artifactShelfService.historyStatus {
+        case .idle:
+            EmptyView()
+        case .loadingRecent(let totalBytes):
+            artifactHistoryStatusRow(
+                icon: "clock.arrow.circlepath",
+                message: localizer.t(
+                    "正在读取最近记录（任务日志 \(artifactFormattedByteCount(totalBytes))）…",
+                    en: "Reading recent records (task log: \(artifactFormattedByteCount(totalBytes)))…",
+                    zhHant: "正在讀取最近記錄（任務記錄 \(artifactFormattedByteCount(totalBytes))）…",
+                    ja: "最近の記録を読み込み中（タスクログ：\(artifactFormattedByteCount(totalBytes))）…",
+                    ko: "최근 기록을 읽는 중입니다(작업 로그: \(artifactFormattedByteCount(totalBytes)))…",
+                    mt: "Reading recent records (task log: \(artifactFormattedByteCount(totalBytes)))…"
+                ),
+                isLoading: true
+            )
+        case .recentOnly(let loadedBytes, let totalBytes):
+            artifactHistoryStatusRow(
+                icon: "clock.badge.exclamationmark",
+                message: localizer.t(
+                    "当前仅显示最近 \(artifactFormattedByteCount(loadedBytes)) / 共 \(artifactFormattedByteCount(totalBytes))，找到 \(artifactShelfService.candidates.count) 项；搜索只覆盖已加载内容。",
+                    en: "Showing only the latest \(artifactFormattedByteCount(loadedBytes)) of \(artifactFormattedByteCount(totalBytes)); \(artifactShelfService.candidates.count) outputs found. Search covers loaded content only.",
+                    zhHant: "目前只顯示最近 \(artifactFormattedByteCount(loadedBytes)) / 共 \(artifactFormattedByteCount(totalBytes))，找到 \(artifactShelfService.candidates.count) 項；搜尋只涵蓋已載入內容。",
+                    ja: "全 \(artifactFormattedByteCount(totalBytes)) のうち最新 \(artifactFormattedByteCount(loadedBytes)) のみ表示し、\(artifactShelfService.candidates.count) 件を検出しました。検索対象は読み込み済みの内容のみです。",
+                    ko: "전체 \(artifactFormattedByteCount(totalBytes)) 중 최근 \(artifactFormattedByteCount(loadedBytes))만 표시하며 \(artifactShelfService.candidates.count)개 결과를 찾았습니다. 검색은 로드된 내용만 포함합니다.",
+                    mt: "Showing only the latest \(artifactFormattedByteCount(loadedBytes)) of \(artifactFormattedByteCount(totalBytes)); \(artifactShelfService.candidates.count) outputs found. Search covers loaded content only."
+                ),
+                actionTitle: localizer.t("加载完整历史", en: "Load Full History", zhHant: "載入完整歷史", ja: "全履歴を読み込む", ko: "전체 기록 로드", mt: "Load Full History"),
+                action: artifactShelfService.loadCompleteHistory
+            )
+        case .loadingComplete(let totalBytes):
+            artifactHistoryStatusRow(
+                icon: "arrow.triangle.2.circlepath",
+                message: localizer.t(
+                    "正在后台读取完整历史（\(artifactFormattedByteCount(totalBytes))）；当前 \(artifactShelfService.candidates.count) 项仍可使用。",
+                    en: "Loading the full history in the background (\(artifactFormattedByteCount(totalBytes))); the current \(artifactShelfService.candidates.count) outputs remain available.",
+                    zhHant: "正在背景讀取完整歷史（\(artifactFormattedByteCount(totalBytes))）；目前 \(artifactShelfService.candidates.count) 項仍可使用。",
+                    ja: "全履歴をバックグラウンドで読み込み中（\(artifactFormattedByteCount(totalBytes))）。現在の \(artifactShelfService.candidates.count) 件は引き続き利用できます。",
+                    ko: "전체 기록을 백그라운드에서 읽는 중입니다(\(artifactFormattedByteCount(totalBytes))). 현재 \(artifactShelfService.candidates.count)개 결과는 계속 사용할 수 있습니다.",
+                    mt: "Loading the full history in the background (\(artifactFormattedByteCount(totalBytes))); the current \(artifactShelfService.candidates.count) outputs remain available."
+                ),
+                isLoading: true
+            )
+        case .pausedRecent:
+            artifactHistoryStatusRow(
+                icon: "pause.circle",
+                message: localizer.t("最近记录读取已暂停；返回产物列表后会继续。", en: "Reading recent records is paused and will resume when you return to the output list.", zhHant: "最近記錄讀取已暫停；返回產物清單後會繼續。", ja: "最近の記録の読み込みは一時停止中です。成果物一覧に戻ると再開します。", ko: "최근 기록 읽기가 일시 중지되었습니다. 결과 목록으로 돌아가면 계속됩니다.", mt: "Reading recent records is paused and will resume when you return to the output list."),
+                actionTitle: localizer.t("继续", en: "Resume", zhHant: "繼續", ja: "再開", ko: "계속", mt: "Resume"),
+                action: artifactShelfService.retryHistoryScan
+            )
+        case .pausedComplete:
+            artifactHistoryStatusRow(
+                icon: "pause.circle",
+                message: localizer.t("完整历史读取已暂停；已加载结果仍然保留。", en: "Full-history loading is paused; loaded outputs are preserved.", zhHant: "完整歷史讀取已暫停；已載入結果仍會保留。", ja: "全履歴の読み込みは一時停止中です。読み込み済みの成果物は保持されます。", ko: "전체 기록 읽기가 일시 중지되었습니다. 로드된 결과는 유지됩니다.", mt: "Full-history loading is paused; loaded outputs are preserved."),
+                actionTitle: localizer.t("继续", en: "Resume", zhHant: "繼續", ja: "再開", ko: "계속", mt: "Resume"),
+                action: artifactShelfService.retryHistoryScan
+            )
+        case .complete:
+            artifactHistoryStatusRow(
+                icon: "checkmark.circle.fill",
+                message: localizer.t(
+                    "完整历史已加载 · 找到 \(artifactShelfService.candidates.count) 项",
+                    en: "Full history loaded · \(artifactShelfService.candidates.count) outputs found",
+                    zhHant: "完整歷史已載入 · 找到 \(artifactShelfService.candidates.count) 項",
+                    ja: "全履歴を読み込み済み · \(artifactShelfService.candidates.count) 件を検出",
+                    ko: "전체 기록 로드됨 · \(artifactShelfService.candidates.count)개 결과 발견",
+                    mt: "Full history loaded · \(artifactShelfService.candidates.count) outputs found"
+                )
+            )
+        case .failed:
+            artifactHistoryStatusRow(
+                icon: "exclamationmark.triangle.fill",
+                message: localizer.t("任务历史读取失败，请重试。", en: "Task history could not be read. Try again.", zhHant: "任務歷史讀取失敗，請重試。", ja: "タスク履歴を読み込めませんでした。再試行してください。", ko: "작업 기록을 읽지 못했습니다. 다시 시도하세요.", mt: "Task history could not be read. Try again."),
+                actionTitle: localizer.t("重试", en: "Retry", zhHant: "重試", ja: "再試行", ko: "다시 시도", mt: "Retry"),
+                action: artifactShelfService.retryHistoryScan
+            )
+        }
+    }
+
+    private var artifactHistoryIsLoading: Bool {
+        switch artifactShelfService.historyStatus {
+        case .loadingRecent, .loadingComplete:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private var artifactHistoryLoadingDetail: String {
+        switch artifactShelfService.historyStatus {
+        case .loadingComplete:
+            return localizer.t("正在后台读取完整历史；已加载结果会保持可用。", en: "Full history is loading in the background; loaded outputs stay available.", zhHant: "正在背景讀取完整歷史；已載入結果會保持可用。", ja: "全履歴をバックグラウンドで読み込み中です。読み込み済みの成果物は引き続き利用できます。", ko: "전체 기록을 백그라운드에서 읽는 중이며 로드된 결과는 계속 사용할 수 있습니다.", mt: "Full history is loading in the background; loaded outputs stay available.")
+        default:
+            return localizer.t("正在读取最近记录；完成后会标明读取范围。", en: "Reading recent records; the loaded range will be shown when finished.", zhHant: "正在讀取最近記錄；完成後會標明讀取範圍。", ja: "最近の記録を読み込み中です。完了後に読み込み範囲を表示します。", ko: "최근 기록을 읽는 중이며 완료되면 읽은 범위가 표시됩니다.", mt: "Reading recent records; the loaded range will be shown when finished.")
+        }
+    }
+
+    private func artifactHistoryStatusRow(
+        icon: String,
+        message: String,
+        isLoading: Bool = false,
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
+    ) -> some View {
+        HStack(alignment: .center, spacing: Theme.Spacing.sm) {
+            if isLoading {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: icon)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            }
+            Text(message)
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+        }
+        .padding(Theme.Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.accent.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    private func artifactFormattedByteCount(_ bytes: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file)
     }
 
     private func artifactSectionHeader(_ title: String, icon: String, count: Int) -> some View {

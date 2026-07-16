@@ -203,6 +203,14 @@ struct ProcessLifecycleEvent: Identifiable, Codable {
     }
 }
 
+private struct DetectedAgentProcess {
+    let pid: pid_t
+    let ppid: pid_t
+    let comm: String
+    let args: String
+    let agentName: String
+}
+
 struct HourlyStats: Identifiable, Codable {
     let id: String
     let hour: Date
@@ -254,8 +262,8 @@ class AgentGuardFeature: ObservableObject {
     private var recentDeleteEvents: [Date] = []
     private var recentModifyEvents: [Date] = []
     private var lastAlertTimes: [String: Date] = [:]
-    private var knownPids: Set<pid_t> = []
-    private var knownAgentPids: [pid_t: String] = [:]
+    private var knownAgentProcesses: [pid_t: DetectedAgentProcess] = [:]
+    private var hasProcessLifecycleBaseline = false
     private var lastStatsSaveTime: Date = .distantPast
     private var lastProtectedTrashReminderTime: Date = .distantPast
     private var protectedDirectorySnapshots: [String: [String: ProtectedPathSnapshot]] = [:]
@@ -284,6 +292,7 @@ class AgentGuardFeature: ObservableObject {
         loadProtectedDirs()
         loadProtectedTrashItems()
         loadLifecycleEvents()
+        migrateLegacyProcessLifecycleDataIfNeeded()
         loadHourlyStats()
         loadCommandRules()
         if commandRules.isEmpty {
@@ -533,108 +542,262 @@ class AgentGuardFeature: ObservableObject {
 
     // MARK: - F04 Process Lifecycle
 
-    func checkProcessLifecycle(currentPids: Set<pid_t>, pidCommMap: [pid_t: String], pidArgsMap: [pid_t: String], ppidMap: [pid_t: pid_t], agentKeywords: [(String, [String])]) {
-        if knownPids.isEmpty {
-            knownPids = currentPids
-            for pid in currentPids {
-                if let comm = pidCommMap[pid] {
-                    let args = pidArgsMap[pid] ?? ""
-                    let lowerAll = (comm + " " + args).lowercased()
-                    for (displayName, kws) in agentKeywords {
-                        for kw in kws {
-                            if lowerAll.contains(kw) {
-                                knownAgentPids[pid] = displayName
-                                break
-                            }
-                        }
-                        if knownAgentPids[pid] != nil { break }
-                    }
-                }
-            }
+    func checkProcessLifecycle(
+        currentPids: Set<pid_t>,
+        pidCommMap: [pid_t: String],
+        pidArgsMap: [pid_t: String],
+        ppidMap: [pid_t: pid_t],
+        agentKeywords _: [(String, [String])]
+    ) {
+        let detectedProcesses = currentPids.reduce(into: [pid_t: DetectedAgentProcess]()) { result, pid in
+            guard let comm = pidCommMap[pid],
+                  let agentName = lifecycleAgentName(
+                    pid: pid,
+                    comm: comm,
+                    args: pidArgsMap[pid] ?? "",
+                    pidCommMap: pidCommMap,
+                    pidArgsMap: pidArgsMap,
+                    ppidMap: ppidMap
+                  ) else { return }
+
+            result[pid] = DetectedAgentProcess(
+                pid: pid,
+                ppid: ppidMap[pid] ?? 0,
+                comm: comm,
+                args: pidArgsMap[pid] ?? "",
+                agentName: agentName
+            )
+        }
+
+        // Runtime PIDs are never restored from disk. The first sample only builds a
+        // baseline so relaunching TraceFence cannot report every running app as new.
+        guard hasProcessLifecycleBaseline else {
+            hasProcessLifecycleBaseline = true
+            knownAgentProcesses = detectedProcesses
             return
         }
 
-        let newPids = currentPids.subtracting(knownPids)
-        let exitedPids = knownPids.subtracting(currentPids)
+        let previousByAgent = Dictionary(grouping: knownAgentProcesses.values, by: \.agentName)
+        let currentByAgent = Dictionary(grouping: detectedProcesses.values, by: \.agentName)
+        let launchedAgentNames = Set(currentByAgent.keys).subtracting(previousByAgent.keys)
+        let exitedAgentNames = Set(previousByAgent.keys).subtracting(currentByAgent.keys)
+        var didAppendEvent = false
 
-        for pid in newPids {
-            guard let comm = pidCommMap[pid] else { continue }
-            let args = pidArgsMap[pid] ?? ""
-            let ppid = ppidMap[pid] ?? 0
-            let agentName = resolveAgentName(comm: comm, args: args, ppid: ppid, pidCommMap: pidCommMap, pidArgsMap: pidArgsMap, ppidMap: ppidMap, agentKeywords: agentKeywords)
-
-            let lowerAll = (comm + " " + args).lowercased()
-            let isAgent = agentKeywords.contains { _, kws in kws.contains { lowerAll.contains($0) } }
-            guard isAgent else { continue }
-
-            knownAgentPids[pid] = agentName
-
-            let event = ProcessLifecycleEvent(
-                id: UUID().uuidString,
-                timestamp: Date(),
-                eventType: .launch,
-                pid: pid,
-                ppid: ppid,
-                comm: comm,
-                args: String(args.prefix(200)),
-                agentName: agentName
+        // A desktop Agent may create dozens of helpers at once. Record one transition
+        // when the Agent changes from absent to present, rather than one per helper PID.
+        for agentName in launchedAgentNames.sorted() {
+            guard let process = currentByAgent[agentName]?.min(by: { $0.pid < $1.pid }) else { continue }
+            let timestamp = Date()
+            let displayTarget = Self.lifecycleDisplayTarget(
+                agentName: agentName,
+                args: process.args,
+                comm: process.comm
             )
-            processLifecycleEvents.insert(event, at: 0)
+            processLifecycleEvents.insert(
+                ProcessLifecycleEvent(
+                    id: UUID().uuidString,
+                    timestamp: timestamp,
+                    eventType: .launch,
+                    pid: process.pid,
+                    ppid: process.ppid,
+                    comm: process.comm,
+                    args: displayTarget,
+                    agentName: agentName
+                ),
+                at: 0
+            )
+            didAppendEvent = true
 
             if alertRule.processLaunchAlertEnabled {
                 let key = "process_launch_\(agentName)"
-                if shouldFireAlert(key: key) {
+                if shouldFireAlert(key: key, timestamp: timestamp) {
                     let alert = GuardAlert(
                         id: UUID().uuidString,
-                        timestamp: Date(),
+                        timestamp: timestamp,
                         alertType: .processLaunch,
                         severity: .info,
                         title: localizer?.processLaunchAlertTitle ?? "Agent Process Launched",
-                        message: String(format: localizer?.processLaunchAlertMsg ?? "%@ started (PID: %d)", agentName, pid),
+                        message: String(
+                            format: localizer?.processLaunchAlertMsg ?? "%@ started (PID: %d)",
+                            agentName,
+                            process.pid
+                        ),
                         agentName: agentName,
-                        targetPath: comm,
-                        detail: "PPID: \(ppid) Comm: \(comm)"
+                        targetPath: displayTarget,
+                        detail: "PPID: \(process.ppid) Comm: \(process.comm)"
                     )
                     fireAlert(alert)
                 }
             }
         }
 
-        for pid in exitedPids {
-            guard let agentName = knownAgentPids[pid] else { continue }
-            knownAgentPids.removeValue(forKey: pid)
-            let comm = pidCommMap[pid] ?? "PID:\(pid)"
-            let event = ProcessLifecycleEvent(
-                id: UUID().uuidString,
-                timestamp: Date(),
-                eventType: .exit,
-                pid: pid,
-                ppid: ppidMap[pid] ?? 0,
-                comm: comm,
-                args: "",
-                agentName: agentName
+        for agentName in exitedAgentNames.sorted() {
+            guard let process = previousByAgent[agentName]?.min(by: { $0.pid < $1.pid }) else { continue }
+            processLifecycleEvents.insert(
+                ProcessLifecycleEvent(
+                    id: UUID().uuidString,
+                    timestamp: Date(),
+                    eventType: .exit,
+                    pid: process.pid,
+                    ppid: process.ppid,
+                    comm: process.comm,
+                    args: "",
+                    agentName: agentName
+                ),
+                at: 0
             )
-            processLifecycleEvents.insert(event, at: 0)
+            didAppendEvent = true
         }
 
+        knownAgentProcesses = detectedProcesses
+
+        guard didAppendEvent else { return }
         if processLifecycleEvents.count > maxLifecycleEvents {
             processLifecycleEvents = Array(processLifecycleEvents.prefix(maxLifecycleEvents))
         }
-
-        knownPids = currentPids
         saveLifecycleEvents()
     }
 
-    private func resolveAgentName(comm: String, args: String, ppid: pid_t, pidCommMap: [pid_t: String], pidArgsMap: [pid_t: String], ppidMap: [pid_t: pid_t], agentKeywords: [(String, [String])]) -> String {
-        let combined = (comm + " " + args).lowercased()
-        for (displayName, keywords) in agentKeywords {
-            for kw in keywords {
-                if combined.contains(kw) {
-                    return displayName
-                }
-            }
+    private static let lifecycleAppEntrypoints: [(agentName: String, executableSuffix: String)] = [
+        ("Trae", "/trae.app/contents/macos/trae"),
+        ("Claude", "/claude.app/contents/macos/claude"),
+        ("Cursor", "/cursor.app/contents/macos/cursor"),
+        ("Windsurf", "/windsurf.app/contents/macos/windsurf"),
+        ("CodeBuddy", "/codebuddy.app/contents/macos/codebuddy"),
+        ("Doubao", "/doubao.app/contents/macos/doubao"),
+        ("Kimi", "/kimi.app/contents/macos/kimi"),
+        ("DeepSeek", "/deepseek.app/contents/macos/deepseek"),
+        ("ChatGPT", "/chatgpt.app/contents/macos/chatgpt"),
+        ("Gemini", "/gemini.app/contents/macos/gemini"),
+        ("Copilot", "/copilot.app/contents/macos/copilot"),
+        ("Cline", "/cline.app/contents/macos/cline"),
+        ("OpenClaw", "/openclaw.app/contents/macos/openclaw"),
+        ("QClaw", "/qclaw.app/contents/macos/qclaw"),
+        ("Hermes", "/hermes.app/contents/macos/hermes"),
+        ("Codex", "/codex.app/contents/macos/codex"),
+        ("Augment", "/augment.app/contents/macos/augment"),
+        ("CodeArts", "/codearts.app/contents/macos/codearts"),
+        ("Aider", "/aider.app/contents/macos/aider"),
+        ("Roo Code", "/roo code.app/contents/macos/roo code"),
+        ("Tabby", "/tabby.app/contents/macos/tabby"),
+        ("Cody", "/cody.app/contents/macos/cody"),
+        ("OpenHands", "/openhands.app/contents/macos/openhands")
+    ]
+
+    private static let lifecycleCLIEntrypoints: [String: String] = [
+        "trae": "Trae", "trae-cn": "Trae",
+        "claude": "Claude", "claude-code": "Claude",
+        "cursor": "Cursor", "windsurf": "Windsurf",
+        "codebuddy": "CodeBuddy", "codebuddy-cn": "CodeBuddy",
+        "doubao": "Doubao", "kimi": "Kimi", "deepseek": "DeepSeek",
+        "chatgpt": "ChatGPT", "gemini": "Gemini",
+        "copilot": "Copilot", "github-copilot": "Copilot",
+        "cline": "Cline", "openclaw": "OpenClaw", "qclaw": "QClaw",
+        "hermes": "Hermes", "codex": "Codex", "augment": "Augment",
+        "codearts": "CodeArts", "aider": "Aider", "roocode": "Roo Code",
+        "roo-code": "Roo Code", "tabby": "Tabby", "cody": "Cody",
+        "openhands": "OpenHands"
+    ]
+
+    private static let lifecycleHelperMarkers = [
+        "/contents/frameworks/", "/contents/plugins/", ".appex/",
+        "/contents/resources/", "/helpers/", "browser_crashpad_handler",
+        "codex-code-mode-host", "node_repl", "app-server", "--type=renderer",
+        "--type=utility", "--type=gpu-process", "--type=crashpad-handler"
+    ]
+
+    private func lifecycleAgentName(
+        pid: pid_t,
+        comm: String,
+        args: String,
+        pidCommMap: [pid_t: String],
+        pidArgsMap: [pid_t: String],
+        ppidMap: [pid_t: pid_t]
+    ) -> String? {
+        let trimmedArgs = args.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowerArgs = trimmedArgs.lowercased()
+        guard !Self.lifecycleHelperMarkers.contains(where: lowerArgs.contains) else { return nil }
+        guard !isTraceFenceOwnedProcess(
+            pid: pid,
+            pidCommMap: pidCommMap,
+            pidArgsMap: pidArgsMap,
+            ppidMap: ppidMap
+        ) else { return nil }
+
+        for entry in Self.lifecycleAppEntrypoints where Self.commandStartsWithAppEntrypoint(lowerArgs, suffix: entry.executableSuffix) {
+            return entry.agentName
         }
-        return (comm as NSString).lastPathComponent
+
+        let rawExecutable = trimmedArgs.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? comm
+        let executableName = (rawExecutable.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) as NSString)
+            .lastPathComponent
+            .lowercased()
+        guard let agentName = Self.lifecycleCLIEntrypoints[executableName] else { return nil }
+
+        let arguments = trimmedArgs.split(whereSeparator: \.isWhitespace).dropFirst().map { $0.lowercased() }
+        guard !Self.isLifecycleInspectionCommand(agentName: agentName, arguments: arguments) else { return nil }
+        return agentName
+    }
+
+    private static func commandStartsWithAppEntrypoint(_ command: String, suffix: String) -> Bool {
+        guard let range = command.range(of: suffix) else { return false }
+        let before = command[..<range.lowerBound]
+        guard !before.contains(where: \.isWhitespace) else { return false }
+        let after = command[range.upperBound...]
+        return after.isEmpty || after.first?.isWhitespace == true
+    }
+
+    private static func isLifecycleInspectionCommand(agentName: String, arguments: [String]) -> Bool {
+        guard let first = arguments.first else { return false }
+        if ["--version", "-v", "version", "--help", "-h", "help"].contains(first) {
+            return true
+        }
+        switch agentName {
+        case "Claude":
+            return ["auth", "agents", "doctor", "update", "mcp", "plugin"].contains(first)
+        case "Codex":
+            return ["app-server", "login", "logout", "mcp-server"].contains(first)
+        default:
+            return first == "status"
+        }
+    }
+
+    private static func lifecycleDisplayTarget(agentName: String, args: String, comm: String) -> String {
+        let trimmedArgs = args.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowerArgs = trimmedArgs.lowercased()
+        if lifecycleAppEntrypoints.contains(where: {
+            $0.agentName == agentName && commandStartsWithAppEntrypoint(lowerArgs, suffix: $0.executableSuffix)
+        }) {
+            return "\(agentName).app"
+        }
+        let executable = trimmedArgs.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
+        return executable.isEmpty ? comm : executable
+    }
+
+    private func isTraceFenceOwnedProcess(
+        pid: pid_t,
+        pidCommMap: [pid_t: String],
+        pidArgsMap: [pid_t: String],
+        ppidMap: [pid_t: pid_t]
+    ) -> Bool {
+        var currentPid = pid
+        var visited = Set<pid_t>()
+        for _ in 0..<12 {
+            guard visited.insert(currentPid).inserted else { break }
+            let processText = ((pidCommMap[currentPid] ?? "") + " " + (pidArgsMap[currentPid] ?? "")).lowercased()
+            if processText.contains("/tracefence.app/") ||
+                processText.contains("/aimaccleaner.app/") ||
+                processText.contains("/application support/tracefence/") ||
+                processText.contains("tracefenceagentcore") ||
+                processText.contains("tracefenceclaudeadapter") ||
+                processText.contains("tracefenceuniversaladapter") ||
+                processText.contains("/codexbar ") {
+                return true
+            }
+            guard let parentPid = ppidMap[currentPid], parentPid > 0 else { break }
+            currentPid = parentPid
+        }
+        return false
     }
 
     // MARK: - F36 Hourly Stats
@@ -1771,10 +1934,21 @@ class AgentGuardFeature: ObservableObject {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: lifecyclePath)),
               let decoded = try? JSONDecoder().decode([ProcessLifecycleEvent].self, from: data) else { return }
         processLifecycleEvents = decoded
-        knownPids = Set(decoded.filter { $0.eventType == .launch }.map { $0.pid })
-        for event in decoded where event.eventType == .launch {
-            knownAgentPids[event.pid] = event.agentName
-        }
+    }
+
+    private func migrateLegacyProcessLifecycleDataIfNeeded() {
+        let defaultsKey = "traceFence.processLifecycleClassifierVersion"
+        let currentVersion = 2
+        guard UserDefaults.standard.integer(forKey: defaultsKey) < currentVersion else { return }
+
+        // Legacy records used substring matching against the entire command line.
+        // Because the stored `comm` value was truncated, valid roots cannot be
+        // distinguished reliably from security/spctl/helper false positives.
+        alerts.removeAll { $0.alertType == .processLaunch || $0.alertType == .processExit }
+        processLifecycleEvents.removeAll()
+        saveAlerts()
+        saveLifecycleEvents()
+        UserDefaults.standard.set(currentVersion, forKey: defaultsKey)
     }
 
     func saveLifecycleEvents() {
