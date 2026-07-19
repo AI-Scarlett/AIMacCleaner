@@ -13,14 +13,18 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.73")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.82")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
-    "- Adds local Codex and Claude Code usage insights with today, 7-day, monthly, and all-time token totals, input/cache/output/reasoning breakdowns, and clearly labeled API-equivalent value estimates.\n"
+    "- Unifies Overview and Token & Usage on one combined local snapshot across Codex, Claude Code, OpenCode / MiniMax, and OpenClaw / QClaw, with consistent B/M/K formatting and exact token counts.\n"
+    "- Persists final aggregate snapshots so large local histories render immediately, while cheap source fingerprints and per-file parser caches limit refresh work to changed data.\n"
+    "- Completes explicitly requested Codex history backfill in one cancellable pass and reports checked, remaining, skipped, and failed sessions instead of ending with ambiguous progress.\n"
+    "- Restores automatic Grok quota discovery in the main window and menu bar when Grok is installed locally.\n"
+    "- Caps universal Agent approval hooks at five seconds and lets timed-out read/list/search operations continue, preventing TraceFence from freezing Grok file tools.\n"
     "- Adds a 180-day activity heatmap, 7-day comparison, project/tool/Skill rankings, and a four-lane current-task board without storing prompts, replies, tool bodies, or credentials.\n"
     "- Adds visible local-scan progress, bounded incremental caches, system/UTC/fixed-IANA day boundaries, diagnostics, cache clearing, and redacted JSON export.\n"
     "- Adds icon-only, single-metric, and detailed menu-bar modes with used/remaining quota choice, today-token metrics, and reset countdowns.\n"
