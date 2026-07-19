@@ -205,7 +205,9 @@ final class ProviderQuotaService: ObservableObject {
     @Published private(set) var snapshots: [ProviderQuotaSnapshot] = []
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastRefreshDate: Date?
+    @Published private(set) var lastRefreshRequestedDate: Date?
 
+    private static let minimumRefreshInterval: TimeInterval = 20
     private let provider = CodexBarQuotaProvider()
     private let logger = Logger(subsystem: "com.tracefence.app", category: "provider-quota")
     private var timer: Timer?
@@ -482,9 +484,17 @@ final class ProviderQuotaService: ObservableObject {
         timer = nil
     }
 
-    func refresh() {
+    func refresh(force: Bool = false) {
         guard !isRefreshing else { return }
+        if let lastRefreshDate, !force {
+            let interval = Date().timeIntervalSince(lastRefreshDate)
+            if interval < Self.minimumRefreshInterval {
+                logger.debug("Quota refresh skipped by cooldown: remaining=\(Self.minimumRefreshInterval - interval, privacy: .public)")
+                return
+            }
+        }
         isRefreshing = true
+        lastRefreshRequestedDate = Date()
         logger.info("Quota refresh started")
 
         DispatchQueue.global(qos: .utility).async { [provider] in
@@ -507,6 +517,11 @@ final class ProviderQuotaService: ObservableObject {
                 }
             }
         }
+    }
+
+    func refreshCooldownRemaining() -> TimeInterval {
+        guard let lastRefreshDate else { return 0 }
+        return max(0, Self.minimumRefreshInterval - Date().timeIntervalSince(lastRefreshDate))
     }
 }
 
@@ -929,7 +944,11 @@ private struct CodexBarQuotaProvider {
             .filter { $0.enabled || $0.defaultEnabled }
             .map(\.provider)
         let installed = configs.keys.filter { isProviderLikelyInstalled($0) }
-        return stableUnique(["codex"] + configured + installed)
+        let fallbackInstalled = [
+            "codex", "claude", "cursor", "grok", "gemini", "openrouter",
+            "qwen", "amp", "opencode", "goose", "aider"
+        ].filter(isProviderLikelyInstalled)
+        return stableUnique(["codex"] + configured + installed + fallbackInstalled)
     }
 
     private func stableUnique(_ values: [String]) -> [String] {

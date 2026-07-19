@@ -41,8 +41,13 @@ struct AIMacCleanerApp: App {
             }
             Darwin.exit(failures.isEmpty ? 0 : 2)
         }
-        if ProcessInfo.processInfo.arguments.contains("--tracefence-agent-usage-probe") {
-            let probe = AgentUsageInsightsService.debugRunLocalUsageProbe(timeout: 180)
+        if ProcessInfo.processInfo.arguments.contains("--tracefence-agent-usage-probe")
+            || ProcessInfo.processInfo.arguments.contains("--tracefence-agent-usage-complete-probe") {
+            let completePendingBackfill = ProcessInfo.processInfo.arguments.contains("--tracefence-agent-usage-complete-probe")
+            let probe = AgentUsageInsightsService.debugRunLocalUsageProbe(
+                timeout: 180,
+                completePendingBackfill: completePendingBackfill
+            )
             let quotaFailures = ProviderQuotaService.debugQuotaSelfTestFailures()
             let taskCatalogFailures = ArtifactShelfService.debugTaskCatalogSelfTestFailures()
             let menuBarTabFailures = MenuBarMonitor.debugTabSelectionSelfTestFailures()

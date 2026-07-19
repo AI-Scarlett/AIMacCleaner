@@ -20,7 +20,8 @@ if CommandLine.arguments.contains("--hook") {
         writeJSONResponse(ok: false, error: "invalid_hook_input")
         exit(2)
     }
-    let status = UniversalHookBridge(profile: profile, store: store).run(input: input)
+    let timeout = hookTimeoutFromEnvironment(defaultValue: 5.0)
+    let status = UniversalHookBridge(profile: profile, store: store).run(input: input, timeout: timeout)
     exit(status)
 }
 
@@ -41,6 +42,19 @@ guard requestData.count <= 1_048_576,
       let method = request["method"] as? String else {
     writeJSONResponse(ok: false, error: "invalid_adapter_request")
     exit(2)
+}
+
+private func hookTimeoutFromEnvironment(defaultValue: TimeInterval) -> TimeInterval {
+    let environment = ProcessInfo.processInfo.environment
+    if let secondsText = environment["TRACEFENCE_UNIVERSAL_HOOK_TIMEOUT_SECONDS"],
+       let value = TimeInterval(secondsText), value > 0 {
+        return min(max(value, 0.5), 60)
+    }
+    if let millisecondsText = environment["TRACEFENCE_UNIVERSAL_HOOK_TIMEOUT_MS"],
+       let value = TimeInterval(millisecondsText), value > 0 {
+        return min(max(value / 1_000, 0.5), 60)
+    }
+    return defaultValue
 }
 
 let params = request["params"] as? [String: Any] ?? [:]

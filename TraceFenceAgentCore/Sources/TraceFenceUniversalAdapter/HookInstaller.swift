@@ -4,6 +4,8 @@ struct UniversalHookInstaller {
     let profile: UniversalAdapterProfile
     let executablePath: String
     private let fileManager = FileManager.default
+    private let hookTimeoutSeconds = 5
+    private let hookTimeoutMilliseconds = 5_000
 
     func install() throws -> [String: Any] {
         switch profile.id {
@@ -35,7 +37,7 @@ struct UniversalHookInstaller {
                     "hooks": [[
                         "type": "command",
                         "command": command,
-                        "timeout": 21_600
+                        "timeout": hookTimeoutSeconds
                     ]]
                 ]]
             ]
@@ -58,7 +60,7 @@ struct UniversalHookInstaller {
                 "hooks": [[
                     "type": "command",
                     "command": command,
-                    "timeout": 21_600,
+                    "timeout": hookTimeoutSeconds,
                     "name": "TraceFence Sentinel remote approval"
                 ]]
             ]
@@ -85,7 +87,7 @@ struct UniversalHookInstaller {
                 "hooks": [[
                     "type": "command",
                     "command": command,
-                    "timeout": 21_600_000,
+                    "timeout": hookTimeoutMilliseconds,
                     "name": "TraceFence Sentinel remote approval"
                 ]]
             ]
@@ -107,7 +109,7 @@ struct UniversalHookInstaller {
         entries.append([
             "command": command,
             "matcher": "*",
-            "timeout": 21_600,
+            "timeout": hookTimeoutSeconds,
             "failClosed": true
         ])
         hooks["preToolUse"] = entries

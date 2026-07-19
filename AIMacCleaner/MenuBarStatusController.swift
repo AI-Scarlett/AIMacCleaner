@@ -254,7 +254,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
             if let weekly = tightestWindow(kind: .weekly, in: windows) {
                 parts.append(formatQuota(weekly, displayMode: displayMode))
             }
-            if let today = usageInsightsService?.snapshot.today.total, today > 0 {
+            if let today = usageInsightsService?.snapshot(for: .combined).today.total, today > 0 {
                 parts.append("T \(Self.compactCount(today))")
             }
             let showResetCountdown = defaults.object(forKey: MenuBarStatusPreferences.showResetCountdownKey) == nil
@@ -290,7 +290,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
             return tightestWindow(kind: .weekly, in: windows)
                 .map { formatQuota($0, displayMode: displayMode) }
         case .todayTokens:
-            guard let total = usageInsightsService?.snapshot.today.total, total > 0 else { return nil }
+            guard let total = usageInsightsService?.snapshot(for: .combined).today.total, total > 0 else { return nil }
             return "T \(Self.compactCount(total))"
         }
     }
@@ -320,16 +320,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
     }
 
     private static func compactCount(_ value: Int64) -> String {
-        switch value {
-        case 1_000_000_000...:
-            return String(format: "%.1fB", Double(value) / 1_000_000_000)
-        case 1_000_000...:
-            return String(format: "%.1fM", Double(value) / 1_000_000)
-        case 1_000...:
-            return String(format: "%.1fK", Double(value) / 1_000)
-        default:
-            return "\(value)"
-        }
+        AgentUsageTokenFormatter.string(value)
     }
 
     private static func compactCountdown(to date: Date) -> String {

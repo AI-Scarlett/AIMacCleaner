@@ -1442,7 +1442,10 @@ struct AgentUsageInsightsView: View {
         case .ready:
             return (localizer.t("已更新", en: "Up to date"), Theme.Colors.success)
         case .partial:
-            return (localizer.t("本机待续补", en: "Local backfill pending"), Theme.Colors.warning)
+            if hasPendingBackfill {
+                return (localizer.t("本机待续补", en: "Local backfill pending"), Theme.Colors.warning)
+            }
+            return (localizer.t("部分来源无明细", en: "Some sources lack detail"), Theme.Colors.warning)
         case .failed:
             return (localizer.t("读取失败", en: "Failed"), Theme.Colors.danger)
         }
@@ -1868,6 +1871,12 @@ private struct AgentUsageTokenCard: View {
                     .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .monospacedDigit()
+                Text(exactTokenCaption)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .help(exactTokenCaption)
                 if unattributedTotal > 0 {
                     VStack(alignment: .leading, spacing: 5) {
                         breakdown(
@@ -1909,6 +1918,18 @@ private struct AgentUsageTokenCard: View {
 
     private var resolvedDetailedTotal: Int64 {
         min(totals.total, max(0, detailedTotal ?? totals.total))
+    }
+
+    private var exactTokenCaption: String {
+        let exact = AgentUsageTokenFormatter.exactString(totals.total)
+        return localizer.t(
+            "\(exact) Token · B = 十亿",
+            en: "\(exact) tokens · B = billion",
+            zhHant: "\(exact) Token · B = 十億",
+            ja: "\(exact) トークン · B = 10億",
+            ko: "\(exact) 토큰 · B = 10억",
+            mt: "\(exact) tokens · B = billion"
+        )
     }
 
     private var unattributedTotal: Int64 {
@@ -2136,7 +2157,7 @@ private struct AgentUsageProjectRow: View {
 
 private enum AgentUsageDiagnosticPresentation {
     static func isBackfill(_ diagnostic: AgentUsageDiagnostic) -> Bool {
-        diagnostic.code == "codex_scan_bounded"
+        diagnostic.code == "codex_scan_bounded" || diagnostic.code == "codex_backfill_bounded"
     }
 
     static func message(_ diagnostic: AgentUsageDiagnostic, localizer: Localizer) -> String {
@@ -2328,13 +2349,7 @@ private struct AgentUsageDashboardAlert: Identifiable {
 
 private enum AgentUsageFormat {
     static func tokens(_ value: Int64) -> String {
-        let amount = Double(max(0, value))
-        switch amount {
-        case 1_000_000_000...: return String(format: "%.2fB", amount / 1_000_000_000)
-        case 1_000_000...: return String(format: "%.2fM", amount / 1_000_000)
-        case 1_000...: return String(format: "%.1fK", amount / 1_000)
-        default: return String(Int64(amount))
-        }
+        AgentUsageTokenFormatter.string(value)
     }
 
     static func currency(_ value: Double) -> String {

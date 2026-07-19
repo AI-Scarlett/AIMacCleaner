@@ -167,7 +167,7 @@ final class UniversalHookBridge {
         self.store = store
     }
 
-    func run(input: [String: Any], timeout: TimeInterval = 21_600) -> Int32 {
+    func run(input: [String: Any], timeout: TimeInterval = 5.0) -> Int32 {
         let event = string(input, keys: ["hookEventName", "hook_event_name", "event", "eventName"], fallback: "PreToolUse")
         let sessionId = string(input, keys: ["sessionId", "session_id", "conversation_id"], fallback: "hook-\(UUID().uuidString.lowercased())")
         let cwd = string(input, keys: ["cwd", "workspaceRoot", "workspace_root"], fallback: "")
@@ -199,9 +199,24 @@ final class UniversalHookBridge {
             usleep(200_000)
         }
 
+        let autoAllowOnTimeout = shouldAutoAllowOnTimeout(event: event, tool: tool, command: command)
         store.finishApproval(requestId: requestId)
+        if autoAllowOnTimeout {
+            emitHookDecision(allow: true, event: event, reason: "TraceFence remote approval timed out. Continuing without remote intervention.")
+            return 0
+        }
         emitHookDecision(allow: false, event: event, reason: "TraceFence remote approval timed out.")
         return 2
+    }
+
+    private func shouldAutoAllowOnTimeout(event: String, tool: String, command: String) -> Bool {
+        guard event.localizedCaseInsensitiveContains("PreToolUse") || event == "pre_tool_use" else { return false }
+        let normalizedTool = tool.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if ["read", "read_file", "list", "ls", "list_dir", "grep"].contains(normalizedTool) {
+            return true
+        }
+        let normalizedCommand = command.lowercased()
+        return normalizedCommand.hasPrefix("ls ") || normalizedCommand.contains(" rg ") || normalizedCommand == "ls"
     }
 
     private func emitHookDecision(allow: Bool, event: String, reason: String? = nil) {

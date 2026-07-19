@@ -127,6 +127,36 @@ struct AgentUsageTokenTotals: Codable, Equatable, Sendable {
     }
 }
 
+/// Canonical formatter for token headlines across Overview, Token & Usage,
+/// and the menu bar. A shared formatter prevents the same snapshot from being
+/// presented with different units or rounding on different surfaces.
+enum AgentUsageTokenFormatter {
+    static func string(_ value: Int64) -> String {
+        let amount = Double(max(0, value))
+        switch amount {
+        case 1_000_000_000...:
+            return String(format: "%.2fB", amount / 1_000_000_000)
+        case 1_000_000...:
+            return String(format: "%.2fM", amount / 1_000_000)
+        case 1_000...:
+            return String(format: "%.1fK", amount / 1_000)
+        default:
+            return String(Int64(amount))
+        }
+    }
+
+    static func exactString(_ value: Int64) -> String {
+        let digits = String(max(0, value))
+        var grouped: [Character] = []
+        grouped.reserveCapacity(digits.count + digits.count / 3)
+        for (index, character) in digits.reversed().enumerated() {
+            if index > 0, index % 3 == 0 { grouped.append(",") }
+            grouped.append(character)
+        }
+        return String(grouped.reversed())
+    }
+}
+
 struct AgentUsageValueEstimate: Codable, Equatable, Sendable {
     let todayUSD: Double
     let last7DaysUSD: Double
@@ -550,6 +580,7 @@ final class AgentUsageInsightsService: ObservableObject {
     private static let timeZoneDefaultsKey = "traceFence.agentUsage.timeZone"
     private static let foregroundInterval: TimeInterval = 5 * 60
     private static let backgroundInterval: TimeInterval = 15 * 60
+    private static let maximumAutomaticSnapshotAge: TimeInterval = 6 * 60 * 60
 
     @Published private(set) var snapshot: AgentUsageSnapshot
     @Published private(set) var state: AgentUsageLoadState = .idle
@@ -587,9 +618,11 @@ final class AgentUsageInsightsService: ObservableObject {
     private var lastRefreshAt: Date?
     private var refreshPreviousSnapshot: AgentUsageSnapshot?
     private var automaticRefreshPaused = false
+    private var snapshotSourceSignatures: [String: String] = [:]
 
     private init(defaults: UserDefaults = .standard) {
         Self.retireLegacyTokenScopeCache()
+        let persisted = AgentUsageSnapshotCacheStore.load()
         let initialScope = defaults.string(forKey: Self.scopeDefaultsKey)
             .flatMap(AgentUsageScope.init(rawValue:)) ?? .combined
         let initialTimeZoneMode = AgentUsageTimeZoneMode(
@@ -597,7 +630,30 @@ final class AgentUsageInsightsService: ObservableObject {
         )
         scope = initialScope
         timeZoneMode = initialTimeZoneMode
-        snapshot = .empty(scope: initialScope, timeZone: initialTimeZoneMode.resolvedTimeZone)
+        if let persisted {
+            snapshots = Dictionary(uniqueKeysWithValues: persisted.snapshots.compactMap { rawScope, value in
+                guard let parsedScope = AgentUsageScope(rawValue: rawScope),
+                      value.timeZoneIdentifier == initialTimeZoneMode.resolvedTimeZone.identifier else { return nil }
+                return (parsedScope, value)
+            })
+            snapshotSourceSignatures = persisted.sourceSignatures
+            lastRefreshAt = persisted.lastRefreshAt
+            backfillStatus = persisted.backfillStatus
+        }
+        if let cached = snapshots[initialScope] {
+            snapshot = cached
+            state = cached.isPartial ? .partial(message: Self.partialMessage(for: cached)) : .ready
+            progress = AgentUsageScanProgress(
+                phase: .completed,
+                current: cached.parsedFileCount,
+                total: cached.parsedFileCount,
+                currentSource: nil,
+                message: "Using cached local usage snapshot",
+                backfill: backfillStatus
+            )
+        } else {
+            snapshot = .empty(scope: initialScope, timeZone: initialTimeZoneMode.resolvedTimeZone)
+        }
     }
 
     nonisolated private static func retireLegacyTokenScopeCache() {
@@ -611,7 +667,7 @@ final class AgentUsageInsightsService: ObservableObject {
     func startScheduling() {
         Self.retireLegacyTokenScopeCache()
         guard scheduler == nil else { return }
-        refresh()
+        refreshIfDue()
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshIfDue()
@@ -640,7 +696,7 @@ final class AgentUsageInsightsService: ObservableObject {
         return .empty(scope: scope, timeZone: timeZoneMode.resolvedTimeZone)
     }
 
-    func refresh(force: Bool = false) {
+    func refresh(force: Bool = false, completePendingBackfill: Bool = false) {
         guard force || !automaticRefreshPaused else { return }
         // Scheduled requests coalesce. A force request (for example a time-zone
         // preference change) cancels the old generation so stale boundaries can
@@ -652,6 +708,10 @@ final class AgentUsageInsightsService: ObservableObject {
             refreshGeneration &+= 1
         }
         if !force, let lastRefreshAt, Date().timeIntervalSince(lastRefreshAt) < 20 {
+            return
+        }
+        if !force, snapshotCanBeReused(currentSignatures: AgentUsageSourceFingerprint.currentSignatures()) {
+            publishCachedState()
             return
         }
 
@@ -683,7 +743,8 @@ final class AgentUsageInsightsService: ObservableObject {
             let result = await AgentUsageInsightsLoader(
                 timeZoneMode: mode,
                 now: Date(),
-                progress: progressSink
+                progress: progressSink,
+                completePendingBackfill: completePendingBackfill
             ).load()
             guard let self, generation == self.refreshGeneration else { return }
             self.refreshTask = nil
@@ -693,6 +754,15 @@ final class AgentUsageInsightsService: ObservableObject {
             case let .success(loaded):
                 self.snapshots = loaded.snapshots
                 self.backfillStatus = loaded.backfillStatus
+                self.snapshotSourceSignatures = AgentUsageSourceFingerprint.currentSignatures()
+                _ = AgentUsageSnapshotCacheStore.save(AgentUsageSnapshotCache(
+                    version: 1,
+                    generatedAt: Date(),
+                    lastRefreshAt: self.lastRefreshAt,
+                    sourceSignatures: self.snapshotSourceSignatures,
+                    snapshots: Dictionary(uniqueKeysWithValues: loaded.snapshots.map { ($0.key.rawValue, $0.value) }),
+                    backfillStatus: loaded.backfillStatus
+                ))
                 let selected = loaded.snapshots[self.scope] ?? .empty(scope: self.scope, timeZone: self.timeZoneMode.resolvedTimeZone)
                 self.snapshot = selected
                 if selected.isPartial {
@@ -731,7 +801,7 @@ final class AgentUsageInsightsService: ObservableObject {
 
     func continueBackfill() {
         automaticRefreshPaused = false
-        refresh(force: true)
+        refresh(force: true, completePendingBackfill: true)
     }
 
     func retryScan() {
@@ -778,6 +848,8 @@ final class AgentUsageInsightsService: ObservableObject {
         refreshTask = nil
         refreshGeneration &+= 1
         AgentUsageFileCacheStore.clearAll()
+        AgentUsageSnapshotCacheStore.clear()
+        snapshotSourceSignatures.removeAll()
         snapshots.removeAll()
         snapshot = .empty(scope: scope, timeZone: timeZoneMode.resolvedTimeZone)
         state = .idle
@@ -799,9 +871,35 @@ final class AgentUsageInsightsService: ObservableObject {
 
     private func refreshIfDue() {
         guard !automaticRefreshPaused else { return }
+        if snapshotCanBeReused(currentSignatures: AgentUsageSourceFingerprint.currentSignatures()) {
+            publishCachedState()
+            return
+        }
         let interval = applicationIsActive ? Self.foregroundInterval : Self.backgroundInterval
         guard lastRefreshAt.map({ Date().timeIntervalSince($0) >= interval }) ?? true else { return }
         refresh()
+    }
+
+    private func snapshotCanBeReused(currentSignatures: [String: String]) -> Bool {
+        guard !snapshots.isEmpty,
+              let lastRefreshAt,
+              Date().timeIntervalSince(lastRefreshAt) < Self.maximumAutomaticSnapshotAge,
+              snapshotSourceSignatures == currentSignatures else { return false }
+        return snapshots[scope]?.timeZoneIdentifier == timeZoneMode.resolvedTimeZone.identifier
+    }
+
+    private func publishCachedState() {
+        guard let cached = snapshots[scope] else { return }
+        snapshot = cached
+        state = cached.isPartial ? .partial(message: Self.partialMessage(for: cached)) : .ready
+        progress = AgentUsageScanProgress(
+            phase: .completed,
+            current: cached.parsedFileCount,
+            total: cached.parsedFileCount,
+            currentSource: nil,
+            message: "Using cached local usage snapshot",
+            backfill: backfillStatus
+        )
     }
 
     private static func partialMessage(for snapshot: AgentUsageSnapshot) -> String {
@@ -1377,6 +1475,184 @@ private final class AgentUsageSkillIndex: @unchecked Sendable {
             expanded = path
         }
         return AgentUsagePathPolicy.normalizedSkillURL(URL(fileURLWithPath: expanded))
+    }
+}
+
+/// Final aggregate snapshots are intentionally cached separately from the
+/// per-transcript parser cache. This lets a 10 GB Codex history render its last
+/// verified totals immediately instead of replaying the inventory whenever the
+/// app or page is opened.
+private struct AgentUsageSnapshotCache: Codable {
+    let version: Int
+    let generatedAt: Date
+    let lastRefreshAt: Date?
+    let sourceSignatures: [String: String]
+    let snapshots: [String: AgentUsageSnapshot]
+    let backfillStatus: AgentUsageBackfillStatus?
+}
+
+private extension AgentUsageSnapshot {
+    func compactForSnapshotCache() -> AgentUsageSnapshot {
+        AgentUsageSnapshot(
+            scope: scope,
+            generatedAt: generatedAt,
+            timeZoneIdentifier: timeZoneIdentifier,
+            sourceQuality: sourceQuality,
+            isPartial: isPartial,
+            today: today,
+            last7Days: last7Days,
+            currentMonth: currentMonth,
+            allTime: allTime,
+            allTimeDetailed: allTimeDetailed,
+            estimatedAPIValueUSD: estimatedAPIValueUSD,
+            dailyBuckets: Array(dailyBuckets.suffix(365)),
+            weekdayHourHeatmap: Array(weekdayHourHeatmap.prefix(300)),
+            heatmapThresholds: heatmapThresholds,
+            previous7DayComparison: previous7DayComparison,
+            projectRankings7Days: Array(projectRankings7Days.prefix(80)),
+            projectRankingsAllTime: Array(projectRankingsAllTime.prefix(160)),
+            modelRankings: Array(modelRankings.prefix(120)),
+            recentSessions: Array(recentSessions.prefix(40)),
+            sourceSummaries: sourceSummaries,
+            topTools: Array(topTools.prefix(60)),
+            topSkills: Array(topSkills.prefix(80)),
+            tasks: AgentUsageTaskBoard(
+                active: Array(tasks.active.prefix(24)),
+                pending: Array(tasks.pending.prefix(24)),
+                scheduled: Array(tasks.scheduled.prefix(24)),
+                done: Array(tasks.done.prefix(24))
+            ),
+            diagnostics: Array(diagnostics.prefix(40)),
+            parsedFileCount: parsedFileCount,
+            tokenEventCount: tokenEventCount
+        )
+    }
+}
+
+private enum AgentUsageSnapshotCacheStore {
+    private static let version = 1
+    private static let maximumEncodedBytes = 32 * 1_024 * 1_024
+
+    static func load() -> AgentUsageSnapshotCache? {
+        let cacheURL = url
+        guard let values = try? cacheURL.resourceValues(forKeys: [.fileSizeKey]),
+              let fileSize = values.fileSize,
+              fileSize > 0,
+              fileSize <= maximumEncodedBytes,
+              let data = try? Data(contentsOf: cacheURL, options: [.mappedIfSafe]),
+              let decoded = try? JSONDecoder().decode(AgentUsageSnapshotCache.self, from: data),
+              decoded.version == version,
+              !decoded.snapshots.isEmpty else { return nil }
+        return decoded
+    }
+
+    static func save(_ cache: AgentUsageSnapshotCache) -> Bool {
+        do {
+            let normalized = AgentUsageSnapshotCache(
+                version: version,
+                generatedAt: cache.generatedAt,
+                lastRefreshAt: cache.lastRefreshAt,
+                sourceSignatures: cache.sourceSignatures,
+                snapshots: Dictionary(uniqueKeysWithValues: cache.snapshots.compactMap { rawScope, snapshot in
+                    AgentUsageScope(rawValue: rawScope).map { ($0.rawValue, snapshot.compactForSnapshotCache()) }
+                }),
+                backfillStatus: cache.backfillStatus
+            )
+            let encoded = try JSONEncoder().encode(normalized)
+            guard encoded.count <= maximumEncodedBytes else { return false }
+            let directory = url.deletingLastPathComponent()
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            try encoded.write(to: url, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    static func clear() {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    private static var url: URL {
+        URL(fileURLWithPath: SandboxPaths.shared.agentUsageSnapshotCachePath)
+    }
+}
+
+/// A cheap source fingerprint avoids opening thousands of transcripts merely
+/// to discover that nothing changed. Database WAL files are included because
+/// active Codex/OpenCode sessions often update there before the main database.
+private enum AgentUsageSourceFingerprint {
+    static func currentSignatures() -> [String: String] {
+        let values: [AgentUsageScope: String] = [
+            .codex: signature(for: .codex),
+            .claude: signature(for: .claude),
+            .openCode: signature(for: .openCode),
+            .openClaw: signature(for: .openClaw)
+        ]
+        var result = Dictionary(uniqueKeysWithValues: values.map { ($0.key.rawValue, $0.value) })
+        let combined = values.keys.sorted { $0.rawValue < $1.rawValue }
+            .compactMap { values[$0] }
+            .joined(separator: "|")
+        result[AgentUsageScope.combined.rawValue] = digest("combined|\(combined)")
+        return result
+    }
+
+    private static func signature(for scope: AgentUsageScope) -> String {
+        let roots: [URL]
+        switch scope {
+        case .codex:
+            roots = databaseFamily(AgentUsagePathPolicy.codexRoot.appendingPathComponent("state_5.sqlite"))
+                + databaseFamily(AgentUsagePathPolicy.codexRoot.appendingPathComponent("sqlite/state_5.sqlite"))
+                + [
+                    AgentUsagePathPolicy.codexRoot.appendingPathComponent("sessions", isDirectory: true),
+                    AgentUsagePathPolicy.codexRoot.appendingPathComponent("archived_sessions", isDirectory: true)
+                ]
+        case .claude:
+            roots = [
+                AgentUsagePathPolicy.claudeRoot.appendingPathComponent("projects", isDirectory: true),
+                AgentUsagePathPolicy.claudeRoot.appendingPathComponent("history.jsonl"),
+                AgentUsagePathPolicy.claudeRoot.appendingPathComponent("stats-cache.json"),
+                AgentUsagePathPolicy.home.appendingPathComponent(".claude.json")
+            ]
+        case .openCode:
+            roots = databaseFamily(AgentUsagePathPolicy.openCodeRoot.appendingPathComponent("opencode.db"))
+                + databaseFamily(AgentUsagePathPolicy.miniMaxRoot.appendingPathComponent("sqlite.db"))
+        case .openClaw:
+            roots = [AgentUsagePathPolicy.qClawRoot, AgentUsagePathPolicy.openClawRoot]
+        case .combined:
+            return currentSignatures()[AgentUsageScope.combined.rawValue] ?? ""
+        }
+        return digest(scope.rawValue + "|" + roots.map(fileSignature).joined(separator: "|"))
+    }
+
+    private static func databaseFamily(_ database: URL) -> [URL] {
+        [
+            database,
+            URL(fileURLWithPath: database.path + "-wal"),
+            URL(fileURLWithPath: database.path + "-shm")
+        ]
+    }
+
+    private static func fileSignature(_ url: URL) -> String {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
+            return "missing"
+        }
+        let type = (attributes[.type] as? FileAttributeType) == .typeDirectory ? "dir" : "file"
+        let size = (attributes[.size] as? NSNumber)?.int64Value ?? -1
+        let modified = Int64(((attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0) * 1_000_000_000)
+        return "\(type):\(size):\(modified)"
+    }
+
+    private static func digest(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8)).prefix(16)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
 
@@ -2135,7 +2411,8 @@ private final class AgentUsageCodexSessionParser {
         startingAtOffset: Int64 = 0,
         startsAtLineBoundary: Bool = false,
         maximumBytes: Int64? = nil,
-        deadline: Date? = nil
+        deadline: Date? = nil,
+        allowCompleteTokenScan: Bool = false
     ) -> AgentUsageParsedFile? {
         var counterState = AgentUsageCounterState()
         var events = AgentUsageEventAccumulator()
@@ -2219,7 +2496,7 @@ private final class AgentUsageCodexSessionParser {
                 let last = (info["last_token_usage"] as? [String: Any]).map(AgentUsageValues.counterSample)
                 guard cumulative != nil || last != nil else { return }
                 tokenRecordCount += 1
-                if tokenRecordCount > 250_000 {
+                if !allowCompleteTokenScan, tokenRecordCount > 250_000 {
                     wasBounded = true
                     throw AgentUsageParserStop.bounded
                 }
@@ -2976,15 +3253,18 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
     private let context: AgentUsageStatisticsContext
     private let progress: @Sendable (AgentUsageScanProgress) -> Void
     private let skillIndex: AgentUsageSkillIndex
+    private let completePendingBackfill: Bool
 
     init(
         context: AgentUsageStatisticsContext,
         skillIndex: AgentUsageSkillIndex,
-        progress: @escaping @Sendable (AgentUsageScanProgress) -> Void
+        progress: @escaping @Sendable (AgentUsageScanProgress) -> Void,
+        completePendingBackfill: Bool = false
     ) {
         self.context = context
         self.skillIndex = skillIndex
         self.progress = progress
+        self.completePendingBackfill = completePendingBackfill
     }
 
     func load() -> AgentUsageRuntimeAggregate {
@@ -3095,9 +3375,15 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
         var failures = 0
         var cacheWriteFailed = false
         let hasWarmCache = !cache.entries.isEmpty
-        var remainingReadBytes: Int64 = (hasWarmCache ? 16 : 192) * 1_024 * 1_024
-        let maximumReadBytesPerFile: Int64 = (hasWarmCache ? 8 : 32) * 1_024 * 1_024
-        let scanDeadline = Date().addingTimeInterval(hasWarmCache ? 1.0 : 10)
+        var remainingReadBytes: Int64 = completePendingBackfill
+            ? Int64.max / 4
+            : (hasWarmCache ? 16 : 192) * 1_024 * 1_024
+        let maximumReadBytesPerFile: Int64 = completePendingBackfill
+            ? Int64.max / 4
+            : (hasWarmCache ? 8 : 32) * 1_024 * 1_024
+        let scanDeadline: Date? = completePendingBackfill
+            ? nil
+            : Date().addingTimeInterval(hasWarmCache ? 1.0 : 10)
 
         // Pass 1 is budget-free: every valid cached aggregate is restored before
         // any new IO. A deadline can therefore never make displayed totals drop.
@@ -3206,7 +3492,7 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
 
         workLoop: for (workIndex, item) in workItems.enumerated() {
             if Task.isCancelled { break }
-            if Date() >= scanDeadline {
+            if let scanDeadline, Date() >= scanDeadline {
                 stoppedByDeadline = true
                 break
             }
@@ -3294,7 +3580,8 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                 startingAtOffset: startingOffset,
                 startsAtLineBoundary: true,
                 maximumBytes: rangeBytes > 0 ? rangeBytes : nil,
-                deadline: nil
+                deadline: nil,
+                allowCompleteTokenScan: completePendingBackfill
             ) else {
                 failures += 1
                 continue workLoop
@@ -4093,14 +4380,17 @@ private struct AgentUsageInsightsLoadPayload: Sendable {
 private struct AgentUsageInsightsLoader: Sendable {
     let context: AgentUsageStatisticsContext
     let progress: @Sendable (AgentUsageScanProgress) -> Void
+    let completePendingBackfill: Bool
 
     init(
         timeZoneMode: AgentUsageTimeZoneMode,
         now: Date,
-        progress: @escaping @Sendable (AgentUsageScanProgress) -> Void
+        progress: @escaping @Sendable (AgentUsageScanProgress) -> Void,
+        completePendingBackfill: Bool = false
     ) {
         context = AgentUsageStatisticsContext(mode: timeZoneMode, now: now)
         self.progress = progress
+        self.completePendingBackfill = completePendingBackfill
     }
 
     func load() async -> Result<AgentUsageInsightsLoadPayload, AgentUsageLoaderError> {
@@ -4117,7 +4407,8 @@ private struct AgentUsageInsightsLoader: Sendable {
                 .codex(AgentUsageCodexProvider(
                     context: context,
                     skillIndex: skillIndex,
-                    progress: progress
+                    progress: progress,
+                    completePendingBackfill: completePendingBackfill
                 ).load())
             }
             group.addTask(priority: .utility) {
@@ -4939,6 +5230,10 @@ extension AgentUsageInsightsService {
         )
         expect(combinedReconciliation.reported.total == 1_200, "combined all-time inventory must add provider headlines once")
         expect(combinedReconciliation.detailed.total == 200, "combined parsed detail must add provider detail once")
+        expect(AgentUsageTokenFormatter.string(40_254_839_013) == "40.25B", "shared token formatter must use the B unit consistently")
+        expect(AgentUsageTokenFormatter.string(250_000_000) == "250.00M", "shared token formatter must use the M unit consistently")
+        expect(AgentUsageTokenFormatter.string(-10) == "0", "shared token formatter must clamp invalid negative totals")
+        expect(AgentUsageTokenFormatter.exactString(40_747_845_038) == "40,747,845,038", "exact token formatter must preserve every digit")
         return failures
     }
 
@@ -4946,7 +5241,10 @@ extension AgentUsageInsightsService {
     /// returned Codable value contains no source paths, titles, or identifiers.
     /// This synchronous wrapper is intended for a DEBUG launch argument or a
     /// command-line regression harness, never for the main-thread UI path.
-    nonisolated static func debugRunLocalUsageProbe(timeout: TimeInterval = 120) -> AgentUsageDebugProbe {
+    nonisolated static func debugRunLocalUsageProbe(
+        timeout: TimeInterval = 120,
+        completePendingBackfill: Bool = false
+    ) -> AgentUsageDebugProbe {
         retireLegacyTokenScopeCache()
         let started = Date()
         let semaphore = DispatchSemaphore(value: 0)
@@ -4955,7 +5253,8 @@ extension AgentUsageInsightsService {
             let result = await AgentUsageInsightsLoader(
                 timeZoneMode: .system,
                 now: started,
-                progress: { _ in }
+                progress: { _ in },
+                completePendingBackfill: completePendingBackfill
             ).load()
             let elapsed = max(0, Int(Date().timeIntervalSince(started) * 1_000))
             let selfTests = debugUsageInsightsSelfTestFailures()

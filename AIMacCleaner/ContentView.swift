@@ -6165,9 +6165,7 @@ struct AppOverviewTab: View {
     }
 
     private func compactCount(_ value: Int) -> String {
-        if value >= 1_000_000 { return String(format: "%.1fM", Double(value) / 1_000_000.0) }
-        if value >= 1_000 { return String(format: "%.1fK", Double(value) / 1_000.0) }
-        return "\(value)"
+        AgentUsageTokenFormatter.string(Int64(value))
     }
 
     private func formatBytes(_ value: Int64) -> String {
@@ -6930,9 +6928,7 @@ private struct AgentCommandCenterView: View {
     }
 
     private func compactCount(_ value: Int) -> String {
-        if value >= 1_000_000 { return String(format: "%.1fM", Double(value) / 1_000_000.0) }
-        if value >= 1_000 { return String(format: "%.1fK", Double(value) / 1_000.0) }
-        return "\(value)"
+        AgentUsageTokenFormatter.string(Int64(value))
     }
 
     private func contextColor(_ progress: Double) -> Color {
@@ -7552,12 +7548,24 @@ private struct AgentCommandDashboardView: View {
             heroMetricChart(
                 title: localizer.t("全部可信 Agent · 全部时间 Token", en: "All Trusted Agents · All-time Tokens", zhHant: "全部可信 Agent · 全部時間 Token", ja: "信頼済み Agent · 全期間 Token", ko: "신뢰할 수 있는 Agent · 전체 기간 Token", mt: "All Trusted Agents · All-time Tokens"),
                 value: compactCount(data.totalTokens),
-                detail: localizer.t("与 Token 与用量页面同口径", en: "Same source as Token & Usage", zhHant: "與 Token 與用量頁面同口徑", ja: "Token と使用量と同じ集計", ko: "Token 및 사용량과 동일한 기준", mt: "Same source as Token & Usage"),
+                detail: overviewTokenDetail(data.totalTokens),
                 icon: "sum",
                 color: Theme.Colors.purple,
                 values: data.tokenChartValues
             )
         }
+    }
+
+    private func overviewTokenDetail(_ total: Int) -> String {
+        let exact = AgentUsageTokenFormatter.exactString(Int64(total))
+        return localizer.t(
+            "\(exact) Token · B=十亿 · 同 Token 页",
+            en: "\(exact) tokens · B=billion · same as Token page",
+            zhHant: "\(exact) Token · B=十億 · 同 Token 頁",
+            ja: "\(exact) トークン · B=10億 · Token画面と同一",
+            ko: "\(exact) 토큰 · B=10억 · Token 페이지와 동일",
+            mt: "\(exact) tokens · B=billion · same as Token page"
+        )
     }
 
     private func heroMetricChart(title: String, value: String, detail: String, icon: String, color: Color, values: [Double]) -> some View {
@@ -7823,7 +7831,7 @@ private struct AgentCommandDashboardView: View {
     private var metricStrip: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 118), spacing: Theme.Spacing.sm), count: 5), spacing: Theme.Spacing.sm) {
             metricCard(icon: "rectangle.3.group", title: localizer.overviewSessions, value: "\(allSessions.count)", detail: localizer.overviewLiveAndHistory, color: Theme.Colors.accent)
-            metricCard(icon: "chart.bar.xaxis", title: localizer.overviewTokensTotal, value: compactCount(totalTokens), detail: localizer.overviewInputOutputCache, color: Theme.Colors.info)
+            metricCard(icon: "chart.bar.xaxis", title: localizer.overviewTokensTotal, value: compactCount(totalTokens), detail: exactTokenHeadline, color: Theme.Colors.info)
             metricCard(icon: "bubble.left.and.bubble.right.fill", title: localizer.overviewRealtimeConversations, value: "\(realtimeConversationCount)", detail: selectedActiveSession?.projectName ?? localizer.overviewWaitingSessions, color: Theme.Colors.info)
             metricCard(icon: "wrench.and.screwdriver.fill", title: localizer.overviewRealtimeToolCalls, value: "\(realtimeToolCallCount)", detail: activeSessions.isEmpty ? localizer.overviewWaitingSessions : localizer.overviewLiveActivity, color: Theme.Colors.warning)
             metricCard(icon: "cpu.fill", title: localizer.overviewRealtimeAgentRuns, value: "\(realtimeAgentRunCount)", detail: activeSessions.isEmpty ? localizer.overviewWaitingSessions : "\(activeSessions.count) \(localizer.overviewSessions)", color: Theme.Colors.purple)
@@ -7868,6 +7876,18 @@ private struct AgentCommandDashboardView: View {
                 .stroke(Theme.Colors.separator, lineWidth: 1)
         )
         .shadow(color: Theme.Shadow.mdColor, radius: 12, y: 6)
+    }
+
+    private var exactTokenHeadline: String {
+        let exact = AgentUsageTokenFormatter.exactString(Int64(totalTokens))
+        return localizer.t(
+            "\(exact) Token（B=十亿）",
+            en: "\(exact) tokens (B=billion)",
+            zhHant: "\(exact) Token（B=十億）",
+            ja: "\(exact) トークン（B=10億）",
+            ko: "\(exact) 토큰 (B=10억)",
+            mt: "\(exact) tokens (B=billion)"
+        )
     }
 
     private func sessionHudButton(icon: String, color: Color, disabled: Bool, help: String, action: @escaping () -> Void) -> some View {
@@ -8696,9 +8716,7 @@ private struct AgentCommandDashboardView: View {
     }
 
     private func compactCount(_ value: Int) -> String {
-        if value >= 1_000_000 { return String(format: "%.1fM", Double(value) / 1_000_000.0) }
-        if value >= 1_000 { return String(format: "%.1fK", Double(value) / 1_000.0) }
-        return "\(value)"
+        AgentUsageTokenFormatter.string(Int64(value))
     }
 
     private func contextColor(_ progress: Double) -> Color {
@@ -11108,9 +11126,7 @@ struct OperationLogTab: View {
     }
 
     private func compactCount(_ value: Int) -> String {
-        if value >= 1_000_000 { return String(format: "%.1fM", Double(value) / 1_000_000.0) }
-        if value >= 1_000 { return String(format: "%.1fK", Double(value) / 1_000.0) }
-        return "\(value)"
+        AgentUsageTokenFormatter.string(Int64(value))
     }
 
     private func contextColor(_ progress: Double) -> Color {
