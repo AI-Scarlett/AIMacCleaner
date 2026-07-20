@@ -13,13 +13,16 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.83")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.84")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Stabilizes iOS Remote Pairing by preventing separate TraceFence processes with different pairing tokens from sharing the same TCP listener port.\n"
+    "- Keeps trying the paired Mac's foreground and background gateways when one stale endpoint rejects an old token, instead of turning endpoint startup races into intermittent disconnects.\n"
+    "- Clears stale remote status immediately when a new pairing code is imported, so old online indicators cannot mask a failed re-pair.\n"
     "- Rebuilds the menu-bar panel as a continuous-corner live deck with glass telemetry cards, clearer hierarchy, and reliable first-click navigation.\n"
     "- Merges the sparse Usage tab into Provider Quota so live local Token totals, cache status, and provider reset windows share one actionable page.\n"
     "- Unifies Overview and Token & Usage on one combined local snapshot across Codex, Claude Code, OpenCode / MiniMax, and OpenClaw / QClaw, with consistent B/M/K formatting and exact token counts.\n"
