@@ -63,6 +63,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
     private var globalDismissMonitor: Any?
     private var localDismissMonitor: Any?
     private var isEnabled = false
+    private var didAutoOpenPopoverForUITest = false
 
     func configure(
         service: ScannerService,
@@ -86,9 +87,19 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
         if enabled {
             ensureStatusItem()
             updateButtonLabel()
+            autoOpenPopoverForUITestIfNeeded()
         } else {
             closePopover()
             removeStatusItem()
+        }
+    }
+
+    private func autoOpenPopoverForUITestIfNeeded() {
+        guard !didAutoOpenPopoverForUITest,
+              ProcessInfo.processInfo.arguments.contains("--tracefence-open-menu-bar") else { return }
+        didAutoOpenPopoverForUITest = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self?.showPopover()
         }
     }
 
@@ -368,6 +379,10 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
                 .environmentObject(localizer)
         )
         hostingView.frame = NSRect(origin: .zero, size: panelSize)
+        hostingView.wantsLayer = true
+        hostingView.layer?.cornerRadius = 26
+        hostingView.layer?.cornerCurve = .continuous
+        hostingView.layer?.masksToBounds = true
 
         let panel = MenuBarPopoverPanel(
             contentRect: NSRect(origin: .zero, size: panelSize),
@@ -377,7 +392,8 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
         )
         panel.delegate = self
         panel.contentView = hostingView
-        panel.backgroundColor = .windowBackgroundColor
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
         panel.hasShadow = true
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false

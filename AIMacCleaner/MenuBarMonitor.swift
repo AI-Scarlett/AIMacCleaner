@@ -10,6 +10,60 @@ struct MenuBarDeferredSelectionTicket<Selection: Equatable> {
     }
 }
 
+private struct MenuBarTechBackdrop: View {
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        Theme.Colors.surface,
+                        Theme.Colors.background,
+                        Theme.Colors.accent.opacity(0.055)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                Circle()
+                    .fill(Theme.Colors.accent.opacity(0.12))
+                    .frame(width: 230, height: 230)
+                    .blur(radius: 52)
+                    .offset(x: proxy.size.width * 0.42, y: -proxy.size.height * 0.42)
+
+                Circle()
+                    .fill(Theme.Colors.purple.opacity(0.075))
+                    .frame(width: 260, height: 260)
+                    .blur(radius: 64)
+                    .offset(x: -proxy.size.width * 0.42, y: proxy.size.height * 0.38)
+
+                Path { path in
+                    let step: CGFloat = 28
+                    var x: CGFloat = 0
+                    while x <= proxy.size.width {
+                        path.move(to: CGPoint(x: x, y: 0))
+                        path.addLine(to: CGPoint(x: x, y: proxy.size.height))
+                        x += step
+                    }
+                    var y: CGFloat = 0
+                    while y <= proxy.size.height {
+                        path.move(to: CGPoint(x: 0, y: y))
+                        path.addLine(to: CGPoint(x: proxy.size.width, y: y))
+                        y += step
+                    }
+                }
+                .stroke(Theme.Colors.accent.opacity(0.035), lineWidth: 0.5)
+
+                LinearGradient(
+                    colors: [Color.white.opacity(0.055), .clear, Theme.Colors.accent.opacity(0.025)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
     @ObservedObject var quotaService: ProviderQuotaService
@@ -41,15 +95,13 @@ struct MenuBarMonitor: View {
 
     enum MonitorTab: String, CaseIterable {
         case quotas = "quotas"
-        case usage = "usage"
         case capture = "capture"
         case operations = "operations"
         case overview = "overview"
 
         func label(_ localizer: Localizer) -> String {
             switch self {
-            case .quotas: return localizer.t("额度", en: "Quota", zhHant: "額度", ja: "クォータ", ko: "할당량", mt: "Quota")
-            case .usage: return localizer.t("用量", en: "Usage", zhHant: "用量", ja: "使用量", ko: "사용량", mt: "Usage")
+            case .quotas: return localizer.t("额度 / 用量", en: "Quota / Usage", zhHant: "額度 / 用量", ja: "クォータ / 使用量", ko: "할당량 / 사용량", mt: "Quota / Usage")
             case .capture: return localizer.t("采集", en: "Capture", zhHant: "採集", ja: "収集", ko: "캡처", mt: "Capture")
             case .operations: return localizer.agentMonitorTitle
             case .overview: return localizer.systemMonitorTitle
@@ -58,8 +110,7 @@ struct MenuBarMonitor: View {
 
         var icon: String {
             switch self {
-            case .quotas: return "gauge.with.dots.needle.67percent"
-            case .usage: return "chart.xyaxis.line"
+            case .quotas: return "waveform.path.ecg.rectangle"
             case .capture: return "viewfinder"
             case .operations: return "chart.bar"
             case .overview: return "gauge.open.with.lines.needle.84percent"
@@ -68,31 +119,36 @@ struct MenuBarMonitor: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            tabBar
-            Divider()
+        ZStack {
+            MenuBarTechBackdrop()
 
-            Group {
-                switch selectedTab {
-                case .quotas:
-                    quotaContent
-                case .usage:
-                    AgentUsageRuntimeSummaryView()
-                        .environmentObject(usageInsightsService)
-                case .capture:
-                    captureContent
-                case .overview:
-                    overviewContent
-                case .operations:
-                    operationsContent
+            VStack(spacing: 0) {
+                commandHeader
+                tabBar
+
+                Group {
+                    switch selectedTab {
+                    case .quotas:
+                        quotaContent
+                    case .capture:
+                        captureContent
+                    case .overview:
+                        overviewContent
+                    case .operations:
+                        operationsContent
+                    }
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-            Divider()
-            popoverFooter
+                popoverFooter
+            }
         }
         .frame(width: 520, height: 640)
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(Theme.Gradients.glassStroke, lineWidth: 1)
+        }
         .onAppear {
             loadSettings()
             startDeferredMonitorForSelectedTab()
@@ -105,8 +161,59 @@ struct MenuBarMonitor: View {
         }
     }
 
+    private var commandHeader: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                    .fill(Theme.Gradients.hero)
+                    .shadow(color: Theme.Colors.accent.opacity(0.26), radius: 10, y: 4)
+                MenuBarShieldEyeIcon(color: .white)
+                    .frame(width: 20, height: 20)
+            }
+            .frame(width: 38, height: 38)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("TRACEFENCE // LIVE DECK")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .tracking(0.7)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(localizer.t("本机安全与 Agent 实时态势", en: "Local security and live Agent telemetry", zhHant: "本機安全與 Agent 即時態勢", ja: "ローカルセキュリティと Agent テレメトリ", ko: "로컬 보안 및 Agent 실시간 상태", mt: "Local security and live Agent telemetry"))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+
+            Spacer()
+
+            HStack(spacing: 6) {
+                ZStack {
+                    Circle()
+                        .fill(Theme.Colors.success.opacity(0.20))
+                        .frame(width: 15, height: 15)
+                    Circle()
+                        .fill(Theme.Colors.success)
+                        .frame(width: 6, height: 6)
+                }
+                Text("LIVE")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .tracking(0.8)
+                    .foregroundStyle(Theme.Colors.success)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(Theme.Colors.success.opacity(0.09))
+            .clipShape(Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(Theme.Colors.success.opacity(0.18), lineWidth: 1)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.top, Theme.Spacing.md)
+        .padding(.bottom, Theme.Spacing.sm)
+    }
+
     private var tabBar: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: Theme.Spacing.xs) {
             ForEach(MonitorTab.allCases, id: \.self) { tab in
                 let isSelected = selectedTab == tab
                 Button {
@@ -114,23 +221,24 @@ struct MenuBarMonitor: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: tab.icon)
-                            .font(Theme.Font.caption)
+                            .font(.system(size: 11, weight: .semibold))
                         Text(tab.label(localizer))
-                            .font(Theme.Font.captionMedium)
+                            .font(.system(size: 10, weight: .semibold))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.72)
+                            .minimumScaleFactor(0.68)
                     }
                     .foregroundStyle(isSelected ? .white : Theme.Colors.textSecondary)
                     .frame(maxWidth: .infinity)
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, Theme.Spacing.xs + 1)
-                    .contentShape(Rectangle())
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, 7)
+                    .contentShape(Capsule())
                     .background {
                         if isSelected {
-                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            Capsule()
                                 .fill(Theme.Gradients.accent)
+                                .shadow(color: Theme.Colors.accent.opacity(0.24), radius: 7, y: 3)
                         } else {
-                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                            Capsule()
                                 .fill(Color.clear)
                         }
                     }
@@ -140,57 +248,63 @@ struct MenuBarMonitor: View {
         }
         .padding(Theme.Spacing.xs)
         .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .fill(Theme.Colors.cardBg)
+            RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
+                .fill(Theme.Colors.elevatedCardBg.opacity(0.74))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
+                .stroke(Theme.Colors.separator.opacity(0.72), lineWidth: 1)
         )
-        .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.top, Theme.Spacing.md)
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.bottom, Theme.Spacing.sm)
     }
 
     private var popoverFooter: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: Theme.Spacing.sm) {
-                Button {
-                    dismissMenuBarPopoverSoon()
-                    if let appDelegate = NSApp.delegate as? AppDelegate {
-                        appDelegate.presentMainWindow(reason: "menu-bar-popover")
-                    }
-                } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        MenuBarShieldEyeIcon(color: .white)
-                            .frame(width: 14, height: 14)
-                        Text(localizer.openAIMacCleaner)
-                    }
-                    .font(Theme.Font.captionMedium)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Theme.Spacing.xs + 1)
-                    .background(Theme.Colors.accent.opacity(0.85))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+        VStack(spacing: Theme.Spacing.sm) {
+            Button {
+                dismissMenuBarPopoverSoon()
+                if let appDelegate = NSApp.delegate as? AppDelegate {
+                    appDelegate.presentMainWindow(reason: "menu-bar-popover")
                 }
-                .buttonStyle(.plain)
+            } label: {
+                HStack(spacing: Theme.Spacing.sm) {
+                    MenuBarShieldEyeIcon(color: .white)
+                        .frame(width: 14, height: 14)
+                    Text(localizer.t("打开 TraceFence 主控台", en: "Open TraceFence Console", zhHant: "打開 TraceFence 主控台", ja: "TraceFence コンソールを開く", ko: "TraceFence 콘솔 열기", mt: "Open TraceFence Console"))
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, 8)
+                .background(Theme.Gradients.hero)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                        .stroke(Color.white.opacity(0.20), lineWidth: 1)
+                }
+                .shadow(color: Theme.Colors.accent.opacity(0.18), radius: 8, y: 3)
             }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.top, Theme.Spacing.sm)
+            .buttonStyle(.plain)
 
-            HStack(spacing: Theme.Spacing.md) {
-                HStack(spacing: Theme.Spacing.xs) {
+            HStack(spacing: Theme.Spacing.sm) {
+                HStack(spacing: 5) {
                     Circle()
                         .fill(networkMode == "internet" ? Theme.Colors.success : Theme.Colors.warning)
                         .frame(width: 5, height: 5)
                     Text(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus)
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.Colors.textTertiary)
                 }
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Theme.Colors.cardBg.opacity(0.60))
+                .clipShape(Capsule())
 
-                Spacer()
-
-                Text("v\(service.currentVersion)")
-                    .font(Theme.Font.caption)
+                Text("BUILD \(service.currentVersion)")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Theme.Colors.textTertiary)
 
                 Spacer()
@@ -203,7 +317,7 @@ struct MenuBarMonitor: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .frame(width: 72)
+                .frame(width: 76)
 
                 Button {
                     if let appDelegate = NSApp.delegate as? AppDelegate {
@@ -212,21 +326,32 @@ struct MenuBarMonitor: View {
                         Darwin.exit(0)
                     }
                 } label: {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Image(systemName: "power")
-                        Text(localizer.quitApp)
-                    }
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.Colors.danger)
-                    .padding(.horizontal, Theme.Spacing.sm)
-                    .padding(.vertical, 2)
-                    .background(Theme.Colors.danger.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                    Image(systemName: "power")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.danger)
+                        .frame(width: 26, height: 26)
+                        .background(Theme.Colors.danger.opacity(0.10))
+                        .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .help(localizer.quitApp)
+                .accessibilityLabel(localizer.quitApp)
             }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.vertical, Theme.Spacing.sm)
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.top, Theme.Spacing.sm)
+        .padding(.bottom, Theme.Spacing.md)
+        .background(
+            LinearGradient(
+                colors: [Theme.Colors.elevatedCardBg.opacity(0.28), Theme.Colors.accent.opacity(0.035)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Theme.Colors.separator.opacity(0.62))
+                .frame(height: 1)
         }
     }
 
@@ -269,15 +394,27 @@ struct MenuBarMonitor: View {
     private var quotaContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                AgentUsageRuntimeSummaryView(service: usageInsightsService)
+
                 HStack(alignment: .top, spacing: Theme.Spacing.md) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label(localizer.t("Provider 额度监控", en: "Provider Quota Monitor", zhHant: "Provider 額度監控", ja: "Provider クォータ監視", ko: "Provider 할당량 모니터", mt: "Provider Quota Monitor"), systemImage: "speedometer")
+                    HStack(spacing: Theme.Spacing.sm) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(Theme.Colors.info.opacity(0.11))
+                            Image(systemName: "gauge.with.dots.needle.67percent")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Theme.Colors.info)
+                        }
+                        .frame(width: 30, height: 30)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(localizer.t("Provider 额度", en: "Provider Quotas", zhHant: "Provider 額度", ja: "Provider クォータ", ko: "Provider 할당량", mt: "Provider Quotas"))
                             .font(Theme.Font.subheadlineMedium)
                             .foregroundStyle(Theme.Colors.textPrimary)
-                        Text(localizer.t("使用官方 provider API 读取 5 小时、周/月窗口和重置时间。", en: "Reads 5-hour, weekly/monthly windows and reset times through provider APIs.", zhHant: "使用官方 provider API 讀取 5 小時、週/月窗口與重置時間。", ja: "Provider API で 5 時間、週/月ウィンドウとリセット時刻を読み取ります。", ko: "Provider API로 5시간, 주간/월간 창과 재설정 시간을 읽습니다.", mt: "Reads 5-hour, weekly/monthly windows and reset times through provider APIs."))
-                            .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                            Text(localizer.t("官方窗口 · 重置时间 · 可信缓存", en: "Official windows · reset times · trusted cache", zhHant: "官方窗口 · 重置時間 · 可信快取", ja: "公式ウィンドウ · リセット · 信頼キャッシュ", ko: "공식 창 · 재설정 · 신뢰 캐시", mt: "Official windows · reset times · trusted cache"))
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        }
                     }
 
                     Spacer()
@@ -2601,9 +2738,7 @@ struct MenuBarMonitor: View {
                 guard operationMonitorEnabled else { return }
                 service.startOperationMonitor()
             case .quotas:
-                break
-            case .usage:
-                usageInsightsService.refresh()
+                usageInsightsService.startScheduling()
             case .capture:
                 captureService.start()
             }
@@ -2622,16 +2757,16 @@ struct MenuBarMonitor: View {
     static func debugTabSelectionSelfTestFailures() -> [String] {
         var failures: [String] = []
         let quotaTicket = MenuBarDeferredSelectionTicket(selection: MonitorTab.quotas, generation: 1)
-        let usageTicket = MenuBarDeferredSelectionTicket(selection: MonitorTab.usage, generation: 2)
+        let captureTicket = MenuBarDeferredSelectionTicket(selection: MonitorTab.capture, generation: 2)
 
-        if quotaTicket.isCurrent(selection: .usage, generation: 2) {
-            failures.append("stale quota action survived a usage-tab selection")
+        if quotaTicket.isCurrent(selection: .capture, generation: 2) {
+            failures.append("stale quota action survived a capture-tab selection")
         }
-        if !usageTicket.isCurrent(selection: .usage, generation: 2) {
-            failures.append("current usage action was rejected")
+        if !captureTicket.isCurrent(selection: .capture, generation: 2) {
+            failures.append("current capture action was rejected")
         }
-        if usageTicket.isCurrent(selection: .usage, generation: 3) {
-            failures.append("cancelled usage action survived a generation change")
+        if captureTicket.isCurrent(selection: .capture, generation: 3) {
+            failures.append("cancelled capture action survived a generation change")
         }
         return failures
     }

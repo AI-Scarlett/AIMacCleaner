@@ -13,13 +13,15 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.82")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.83")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Rebuilds the menu-bar panel as a continuous-corner live deck with glass telemetry cards, clearer hierarchy, and reliable first-click navigation.\n"
+    "- Merges the sparse Usage tab into Provider Quota so live local Token totals, cache status, and provider reset windows share one actionable page.\n"
     "- Unifies Overview and Token & Usage on one combined local snapshot across Codex, Claude Code, OpenCode / MiniMax, and OpenClaw / QClaw, with consistent B/M/K formatting and exact token counts.\n"
     "- Persists final aggregate snapshots so large local histories render immediately, while cheap source fingerprints and per-file parser caches limit refresh work to changed data.\n"
     "- Completes explicitly requested Codex history backfill in one cancellable pass and reports checked, remaining, skipped, and failed sessions instead of ending with ambiguous progress.\n"

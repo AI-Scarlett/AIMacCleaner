@@ -1648,24 +1648,38 @@ struct AgentUsageRuntimeSummaryView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             HStack(spacing: Theme.Spacing.sm) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Theme.Colors.accent.opacity(0.12))
-                    Image(systemName: "chart.xyaxis.line")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.accent)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Theme.Gradients.hero)
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
                 }
-                .frame(width: 30, height: 30)
+                .frame(width: 34, height: 34)
+                .shadow(color: Theme.Colors.accent.opacity(0.22), radius: 7, y: 3)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(localizer.t("Agent 用量", en: "Agent usage"))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localizer.t("实时 Token 用量", en: "Live Token Usage", zhHant: "即時 Token 用量", ja: "リアルタイム Token 使用量", ko: "실시간 Token 사용량", mt: "Live Token Usage"))
                         .font(Theme.Font.subheadlineMedium)
                         .foregroundStyle(Theme.Colors.textPrimary)
-                    Text(localizedScope)
-                        .font(Theme.Font.caption)
+                    Text("\(localizedScope)  ·  \(statusText)")
+                        .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(Theme.Colors.textTertiary)
                 }
 
                 Spacer()
+
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 5, height: 5)
+                    Text(statusText.uppercased())
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                }
+                .foregroundStyle(statusColor)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 5)
+                .background(statusColor.opacity(0.09))
+                .clipShape(Capsule())
 
                 Menu {
                     ForEach(AgentUsageScope.allCases) { scope in
@@ -1681,16 +1695,24 @@ struct AgentUsageRuntimeSummaryView: View {
                     }
                 } label: {
                     Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Theme.Colors.textSecondary)
+                        .frame(width: 24, height: 24)
+                        .background(Theme.Colors.textPrimary.opacity(0.045))
+                        .clipShape(Circle())
                 }
                 .menuStyle(.borderlessButton)
-                .frame(width: 22)
+                .frame(width: 24)
 
                 Button {
                     service.refresh(force: true)
                 } label: {
                     Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Theme.Colors.textSecondary)
+                        .frame(width: 24, height: 24)
+                        .background(Theme.Colors.textPrimary.opacity(0.045))
+                        .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .disabled(isLoading)
@@ -1722,24 +1744,40 @@ struct AgentUsageRuntimeSummaryView: View {
             }
 
             HStack(spacing: Theme.Spacing.sm) {
-                tokenChip("I", service.snapshot.today.input, Theme.Colors.info)
-                tokenChip("C", service.snapshot.today.cached, Theme.Colors.teal)
-                tokenChip("O", service.snapshot.today.output, Theme.Colors.purple)
-                tokenChip("R", service.snapshot.today.reasoning, Theme.Colors.warning)
-                Spacer()
-                Text(AgentUsageFormat.time(service.snapshot.generatedAt, timeZoneIdentifier: service.snapshot.timeZoneIdentifier))
-                    .font(.system(size: 9))
-                    .foregroundStyle(Theme.Colors.textTertiary)
-                    .lineLimit(1)
+                tokenChip("IN", service.snapshot.today.input, Theme.Colors.info)
+                tokenChip("CACHE", service.snapshot.today.cached, Theme.Colors.teal)
+                tokenChip("OUT", service.snapshot.today.output, Theme.Colors.purple)
+                tokenChip("THINK", service.snapshot.today.reasoning, Theme.Colors.warning)
             }
+
+            HStack(spacing: 5) {
+                Image(systemName: "internaldrive")
+                    .font(.system(size: 8, weight: .semibold))
+                Text(localizer.t("本地缓存", en: "Local cache", zhHant: "本機快取", ja: "ローカルキャッシュ", ko: "로컬 캐시", mt: "Local cache"))
+                Text("·")
+                Text(AgentUsageFormat.time(service.snapshot.generatedAt, timeZoneIdentifier: service.snapshot.timeZoneIdentifier))
+            }
+            .font(.system(size: 8, weight: .medium, design: .monospaced))
+            .foregroundStyle(Theme.Colors.textTertiary)
         }
         .padding(Theme.Spacing.md)
-        .background(Theme.Colors.cardBg.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(Theme.Colors.separator.opacity(0.75), lineWidth: 1)
-        )
+        .background {
+            ZStack {
+                RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
+                    .fill(Theme.Colors.elevatedCardBg.opacity(0.82))
+                LinearGradient(
+                    colors: [Theme.Colors.accent.opacity(0.10), .clear, Theme.Colors.purple.opacity(0.04)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
+                .stroke(Theme.Gradients.glassStroke, lineWidth: 1)
+        }
+        .shadow(color: Theme.Colors.shadowTint.opacity(0.08), radius: 9, y: 4)
         .onAppear { service.startScheduling() }
     }
 
@@ -1801,11 +1839,42 @@ struct AgentUsageRuntimeSummaryView: View {
     }
 
     private func tokenChip(_ label: String, _ value: Int64, _ color: Color) -> some View {
-        HStack(spacing: 3) {
-            Text(label).font(.system(size: 8, weight: .bold)).foregroundStyle(color)
-            Text(AgentUsageFormat.tokens(value)).font(.system(size: 8, design: .rounded)).foregroundStyle(Theme.Colors.textSecondary)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 7, weight: .bold, design: .monospaced))
+                .foregroundStyle(color)
+            Text(AgentUsageFormat.tokens(value))
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(Theme.Colors.textSecondary)
         }
         .monospacedDigit()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .background(color.opacity(0.055))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private var statusText: String {
+        switch service.state {
+        case .idle: return localizer.t("待更新", en: "Pending")
+        case .loading: return localizer.t("扫描中", en: "Scanning")
+        case .paused: return localizer.t("已暂停", en: "Paused")
+        case .ready: return localizer.t("缓存就绪", en: "Cached")
+        case .partial: return localizer.t("部分数据", en: "Partial")
+        case .failed: return localizer.t("异常", en: "Issue")
+        }
+    }
+
+    private var statusColor: Color {
+        switch service.state {
+        case .idle: return Theme.Colors.textTertiary
+        case .loading: return Theme.Colors.accent
+        case .paused: return Theme.Colors.warning
+        case .ready: return Theme.Colors.success
+        case .partial: return Theme.Colors.warning
+        case .failed: return Theme.Colors.danger
+        }
     }
 
     private var comparisonText: String {

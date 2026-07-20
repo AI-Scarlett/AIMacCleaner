@@ -2,7 +2,7 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
-## [Unreleased] - 2026-07-16
+## [Unreleased] - 2026-07-20
 
 ### Added
 - Codex、Claude Code、OpenCode / MiniMax、OpenClaw / QClaw 本地用量洞察：Token 分项、180 天热力图、7 日对比、模型/会话排行和来源诊断。
@@ -11,6 +11,8 @@ All notable changes to AIMacCleaner will be documented in this file.
 - 主窗口置顶、启动自动检查更新开关、快捷键恢复默认和冲突/系统保留组合校验。
 
 ### Improved
+- 重做菜单栏弹窗为 26pt 连续圆角的实时控制舱：增加玻璃卡片、弱网格背景、实时状态灯和更清晰的四入口导航。
+- 取消信息稀疏的独立“用量”页，将本地 Token 快照、缓存/扫描状态与 Provider 额度、重置时间合并到“额度 / 用量”首页。
 - Codex 官方额度严格按 300/10080 分钟识别；临时刷新失败时保留并标注上一次可信额度。
 - 大型 JSONL 采用有界流式读取与文件指纹缓存，统计任务离开主线程，缓存不保存提示词或回复正文。
 - “Token 统计”与“用量洞察”合并为单一“Token 与用量”入口；模型、会话、来源诊断共用同一规范化事件快照，项目排行和任务归入 Agent 监控。
@@ -20,6 +22,7 @@ All notable changes to AIMacCleaner will be documented in this file.
 - 用量补全显示本轮检查、实际读取、完整补全、剩余、跳过、失败、结束原因和完成时间，并区分响应额度结束与真正全部扫描完成。
 
 ### Fixed
+- 菜单栏 AppKit Panel 改为透明背景并对 Hosting View 做连续圆角裁切，消除原来四个直角。
 - 修复主场景无法在首次启动时创建，以及关闭主窗口后 Dock 与菜单栏“打开 TraceFence”只能寻找旧窗口的问题；恢复启动场景、统一窗口重开动作，并清理失效窗口引用与重复窗口。
 - 当前会话产物的任务目录不再把子 Agent 线程重复列为独立任务；传输别名按原生 thread ID 合并，长提示词型标题压缩为稳定短标题，同时保留同名的真实短任务。
 - 修复普通授权目录被注入每一种 Agent 扫描根、同一批日志被重复归因并由旧缓存永久放大的问题；旧污染缓存与第二套 TokenScope 派生缓存会自动淘汰。
