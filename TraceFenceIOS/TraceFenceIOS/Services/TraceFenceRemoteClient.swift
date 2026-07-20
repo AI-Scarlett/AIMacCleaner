@@ -2,6 +2,7 @@ import Foundation
 
 struct TraceFenceRemoteClient {
     var fetchStatus: (TraceFenceConnection) async throws -> TraceFenceStatusResponse
+    var probeStatus: (TraceFenceConnection, String) async throws -> TraceFenceStatusResponse
     var fetchAgentControl: (TraceFenceConnection) async throws -> TraceFenceAgentControlResponse
     var fetchSessions: (TraceFenceConnection, String?, String, String, Int) async throws -> AgentSessionPageResponse
     var fetchSessionContext: (TraceFenceConnection, String, String?, Int) async throws -> AgentSessionContextResponse
@@ -16,6 +17,12 @@ extension TraceFenceRemoteClient {
     static let live = TraceFenceRemoteClient(
         fetchStatus: { connection in
             try await LiveTraceFenceRemoteClient().status(connection: connection)
+        },
+        probeStatus: { connection, endpoint in
+            try await LiveTraceFenceRemoteClient().status(
+                connection: connection,
+                exactEndpoint: endpoint
+            )
         },
         fetchAgentControl: { connection in
             try await LiveTraceFenceRemoteClient().agentControl(connection: connection)
@@ -88,6 +95,21 @@ private struct LiveTraceFenceRemoteClient {
 
     func status(connection: TraceFenceConnection) async throws -> TraceFenceStatusResponse {
         try await send(connection: connection, path: "/v1/status", method: "GET")
+    }
+
+    func status(
+        connection: TraceFenceConnection,
+        exactEndpoint: String
+    ) async throws -> TraceFenceStatusResponse {
+        var candidate = connection
+        candidate.endpoint = exactEndpoint
+        let request = try makeRequest(
+            connection: candidate,
+            path: "/v1/status",
+            method: "GET",
+            body: nil
+        )
+        return try await send(request)
     }
 
     func agentControl(connection: TraceFenceConnection) async throws -> TraceFenceAgentControlResponse {

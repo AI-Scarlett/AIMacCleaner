@@ -106,7 +106,7 @@ Privacy Policy: https://ai-scarlett.github.io/TraceFence/privacy-policy.html
 Terms of Use (Apple Standard EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"""
 
 if PAIRING_DEMO_VIDEO_URL:
-    REVIEW_NOTES += f"\n\nPhysical Mac + iPhone pairing demo video (build 74 / iOS build 23 workflow):\n{PAIRING_DEMO_VIDEO_URL}"
+    REVIEW_NOTES += f"\n\nPhysical Mac + iPhone pairing demo video (build 74 / iOS build 24 workflow):\n{PAIRING_DEMO_VIDEO_URL}"
 
 
 def first(api: ASC, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:

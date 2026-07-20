@@ -1184,16 +1184,14 @@ final class ConnectionStore: ObservableObject {
         let outcome = await withTaskGroup(of: EndpointProbeResult.self, returning: EndpointProbeResult?.self) { group in
             for endpoint in candidates {
                 group.addTask { @MainActor [client] in
-                    var probe = original
-                    probe.endpoint = endpoint
-                    probe.localHostName = nil
-                    probe.localAddresses = []
-                    probe.accessEndpoints = []
-                    probe.lastResolvedEndpoint = nil
                     do {
                         return EndpointProbeResult(
                             endpoint: endpoint,
-                            status: try await client.fetchStatus(probe),
+                            // Probe exactly the endpoint attributed to this task.
+                            // The normal client deliberately performs endpoint
+                            // failover, which would otherwise report a fallback
+                            // Core success as a foreground gateway success.
+                            status: try await client.probeStatus(original, endpoint),
                             error: nil
                         )
                     } catch {
