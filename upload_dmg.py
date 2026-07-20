@@ -320,7 +320,7 @@ def clean_release_assets(token, release):
 
 def release_version_key(release):
     tag = release.get("tag_name", "")
-    match = re.search(r"v?(\d+)\.(\d+)\.(\d+)", tag)
+    match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", tag)
     if not match:
         return (-1, -1, -1)
     return tuple(int(part) for part in match.groups())
@@ -336,13 +336,20 @@ def clean_historical_release_assets(token, keep_release_id, keep_count=3):
         all_releases.extend(releases)
         page += 1
 
+    # Only direct-download app releases use semantic vX.Y.Z tags. Stable
+    # component channels such as agent-core-stable have their own lifecycle
+    # and must never be pruned by a DMG publication.
+    direct_releases = [
+        release for release in all_releases
+        if release_version_key(release) != (-1, -1, -1)
+    ]
     latest_release_ids = {keep_release_id}
-    for release in sorted(all_releases, key=release_version_key, reverse=True):
+    for release in sorted(direct_releases, key=release_version_key, reverse=True):
         if len(latest_release_ids) >= keep_count:
             break
         latest_release_ids.add(release["id"])
 
-    for release in all_releases:
+    for release in direct_releases:
         if release["id"] in latest_release_ids:
             print(f"Keeping release assets: {release.get('tag_name', release['id'])}")
             continue
