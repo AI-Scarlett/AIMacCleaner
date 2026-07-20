@@ -21,7 +21,7 @@ from scripts.appstoreconnect.sync_tracefence_sentinel_submission import ASC, KEY
 
 APP_ID = "6772386897"
 VERSION = "3.1.8"
-BUILD = os.environ.get("TRACEFENCE_MAC_BUILD", "73")
+BUILD = os.environ.get("TRACEFENCE_MAC_BUILD", "74")
 SCREENSHOT_DIR = ROOT / "build/TraceFence-AppStore-Screenshots/APP_DESKTOP"
 REVIEW_ATTACHMENT = Path(os.environ.get(
     "TRACEFENCE_REVIEW_ATTACHMENT",
@@ -43,7 +43,7 @@ Agent Monitor
 
 Approvals and iPhone companion
 - Review hook-based permission and command requests.
-- Pair TraceFence Sentinel directly over the same LAN or a user-owned VPN such as Tailscale.
+- Pair TraceFence Sentinel directly over the same LAN or an existing private network path configured independently by the user.
 - Pause, resume, stop, or send follow-up instructions when the connected agent integration supports that control.
 - TraceFence does not operate a cloud relay or require a TraceFence account.
 
@@ -54,7 +54,7 @@ Provider quota and local diagnostics
 
 Privacy and App Store boundaries
 - Agent prompts, project paths, and session data remain on the Mac and paired iPhone.
-- No ads, tracking, analytics, root certificates, VPN interception, or unrelated traffic capture.
+- No ads, tracking, analytics, root certificates, network tunnels, packet inspection, or unrelated traffic capture.
 - The App Store build uses Apple subscriptions, sandbox-compatible hook-based controls, and a bundled sandbox-inheriting one-shot quota reader. Direct-only control helpers, self-updates, and external control-plane processes are not included.
 
 Privacy Policy: https://ai-scarlett.github.io/TraceFence/privacy-policy.html
@@ -76,8 +76,9 @@ WHATS_NEW = """- Adds the project-based Agent Monitor with live, scheduled, bloc
 
 REVIEW_NOTES = """TraceFence is a sandboxed local-first developer utility. No account is required.
 
-July 15 review fixes in build 73:
+Review fixes in build 74:
 - The iOS pairing QR now uses a short pairing URI with a 256-bit token, an integer-pixel render, and a four-module quiet zone.
+- The pairing listener no longer permits two installed TraceFence variants to share port 17895 with different tokens, eliminating intermittent authentication failures during upgrades.
 - Agent Guard no longer traverses Music, Movies, or Photos libraries when a parent Home folder was authorized.
 - NSAppleMusicUsageDescription now explains the only supported media-library access: a user explicitly choosing Music for a local file scan. TraceFence reads local file names, sizes, and modification dates for cleanup candidates and does not upload library contents.
 
@@ -91,7 +92,9 @@ Subscription review flow:
 
 Alternative path: click the Settings gear, then select Subscription in the Settings sidebar.
 
-No account or demo credentials are required. The subscriptions are not restricted by storefront or device configuration. Product names and prices may be localized by the Apple sandbox storefront. iPhone pairing is optional and requires TraceFence Sentinel plus the same LAN or the reviewer's own VPN. To test it, click the crossed-out iPhone button labeled Disconnected at the bottom of the main sidebar, enable iOS Remote Pairing, then scan the displayed pairing QR code in TraceFence Sentinel. The listener is off by default and stops immediately when the switch is turned off.
+No account or demo credentials are required. The subscriptions are not restricted by storefront or device configuration. Product names and prices may be localized by the Apple sandbox storefront. iPhone pairing is optional and requires TraceFence Sentinel plus the same LAN or another existing private network path configured independently by the reviewer. To test it, click the crossed-out iPhone button labeled Disconnected at the bottom of the main sidebar, enable iOS Remote Pairing, then scan the displayed pairing QR code in TraceFence Sentinel. The listener is off by default and stops immediately when the switch is turned off.
+
+TraceFence does not contain VPN functionality. It does not create or manage a VPN, install a Network Extension, route device traffic, inspect packets, or collect information through a VPN. The Mac listener accepts only direct, token-authenticated requests from the paired iPhone over the network path already selected by macOS. No Agent, prompt, project, command, pairing, or network data is sent to TraceFence or any third party; there is no TraceFence relay or cloud storage.
 
 Provider quota testing is optional. For Grok quota, click Authorize Data in the quota panel and select the review Mac's Home folder or ~/.grok, then refresh. TraceFence keeps only a security-scoped bookmark and reads the reviewer's own local Grok login data.
 
@@ -103,7 +106,7 @@ Privacy Policy: https://ai-scarlett.github.io/TraceFence/privacy-policy.html
 Terms of Use (Apple Standard EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"""
 
 if PAIRING_DEMO_VIDEO_URL:
-    REVIEW_NOTES += f"\n\nPhysical Mac + iPhone pairing demo video (build 73 workflow):\n{PAIRING_DEMO_VIDEO_URL}"
+    REVIEW_NOTES += f"\n\nPhysical Mac + iPhone pairing demo video (build 74 / iOS build 23 workflow):\n{PAIRING_DEMO_VIDEO_URL}"
 
 
 def first(api: ASC, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:

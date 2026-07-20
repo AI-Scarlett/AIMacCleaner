@@ -79,7 +79,9 @@ final class AgentCoreHTTPGateway {
         }
 
         let parameters = NWParameters.tcp
-        parameters.allowLocalEndpointReuse = true
+        // A stale Core process must fail visibly instead of sharing the gateway
+        // port with a replacement that may be using a different pairing token.
+        parameters.allowLocalEndpointReuse = false
         let listener = try NWListener(using: parameters, on: port)
         listener.newConnectionHandler = { [weak self] connection in
             self?.accept(connection)

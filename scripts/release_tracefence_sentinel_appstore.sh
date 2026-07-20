@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-BUILD_NUMBER="${1:-22}"
+BUILD_NUMBER="${1:-23}"
 VERSION="1.0.0"
 ARCHIVE_PATH="build/TraceFenceSentinel-iOS-${VERSION}-${BUILD_NUMBER}.xcarchive"
 EXPORT_PATH="build/TraceFenceSentinel-iOS-${VERSION}-${BUILD_NUMBER}-AppStore"
@@ -65,7 +65,7 @@ xcrun altool --validate-app --type ios -f "$IPA_PATH" --apiKey "$ASC_KEY_ID" --a
 xcrun altool --upload-app --wait --type ios -f "$IPA_PATH" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
 
 if [[ "${TRACEFENCE_REPLACE_SENTINEL_REVIEW_BUILD:-0}" == "1" ]]; then
-  CONFIRMATION="REPLACE_IOS_${VERSION}_BUILD_${TRACEFENCE_SENTINEL_OLD_BUILD:-21}_WITH_${BUILD_NUMBER}"
+  CONFIRMATION="REPLACE_IOS_${VERSION}_BUILD_${TRACEFENCE_SENTINEL_OLD_BUILD:-22}_WITH_${BUILD_NUMBER}"
   TRACEFENCE_SENTINEL_BUILD="$BUILD_NUMBER" \
     python3 scripts/appstoreconnect/replace_tracefence_sentinel_review_build.py \
       --execute \

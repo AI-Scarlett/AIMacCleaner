@@ -136,6 +136,7 @@ final class ConnectionStore: ObservableObject {
         announce(.progress, ConnectionFeedbackCopy.verifying)
         do {
             let connection = try parsePairingText(text)
+            resetRemoteSnapshotForNewPairing()
             save(connection)
             let connected = await refresh()
             announce(
@@ -160,6 +161,7 @@ final class ConnectionStore: ObservableObject {
         }
         announce(.progress, ConnectionFeedbackCopy.verifying)
         let normalized = normalizedEndpoint(trimmedEndpoint)
+        resetRemoteSnapshotForNewPairing()
         save(TraceFenceConnection(
             endpoint: normalized,
             token: trimmedToken,
@@ -1142,6 +1144,20 @@ final class ConnectionStore: ObservableObject {
         }
     }
 
+    private func resetRemoteSnapshotForNewPairing() {
+        status = nil
+        agentControl = nil
+        sessionCatalog = []
+        sessionCatalogTotal = 0
+        sessionCatalogHasMore = false
+        sessionCatalogLoading = false
+        sessionCatalogError = nil
+        sessionCatalogCursor = nil
+        sessionCatalogRequestKey = ""
+        sessionContexts = [:]
+        lastUpdated = nil
+    }
+
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
               let decoded = try? JSONDecoder().decode(TraceFenceConnection.self, from: data) else {
@@ -1187,6 +1203,7 @@ final class ConnectionStore: ObservableObject {
             }
 
             var firstFailure: EndpointProbeResult?
+            var authenticationFailure: EndpointProbeResult?
             while let result = await group.next() {
                 if result.status != nil {
                     group.cancelAll()
@@ -1198,11 +1215,16 @@ final class ConnectionStore: ObservableObject {
                 if let error = result.error as? TraceFenceRemoteClientError,
                    case .httpStatus(let status, _) = error,
                    status == 401 || status == 402 {
-                    group.cancelAll()
-                    return result
+                    // Other candidates may be the same Mac's foreground app or
+                    // background Core gateway and can already have the fresh token.
+                    // Preserve the auth error for reporting only if every candidate
+                    // fails instead of turning endpoint race timing into disconnects.
+                    if authenticationFailure == nil || status == 402 {
+                        authenticationFailure = result
+                    }
                 }
             }
-            return firstFailure
+            return authenticationFailure ?? firstFailure
         }
 
         if let outcome, let status = outcome.status {

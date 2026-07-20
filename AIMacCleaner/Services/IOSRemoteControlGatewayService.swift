@@ -239,7 +239,11 @@ final class IOSRemoteControlGatewayService: ObservableObject {
 
         do {
             let parameters = NWParameters.tcp
-            parameters.allowLocalEndpointReuse = true
+            // Website and App Store builds have different bundle identifiers and
+            // may briefly coexist during an upgrade. Never let two processes share
+            // the pairing port: SO_REUSEPORT would load-balance requests across
+            // listeners with different tokens and cause intermittent 401 responses.
+            parameters.allowLocalEndpointReuse = false
             let newListener = try NWListener(using: parameters, on: nwPort)
             newListener.service = NWListener.Service(
                 name: Self.bonjourServiceName,

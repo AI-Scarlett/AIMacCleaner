@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-BUILD_NUMBER="${1:-73}"
+BUILD_NUMBER="${1:-74}"
 VERSION="3.1.8"
 ARCHIVE_PATH="build/TraceFence-AppStore-${VERSION}-${BUILD_NUMBER}.xcarchive"
 EXPORT_PATH="build/TraceFence-AppStore-${VERSION}-${BUILD_NUMBER}"
@@ -135,7 +135,7 @@ xcrun altool --validate-app --type macos -f "$PKG_PATH" --apiKey "$ASC_KEY_ID" -
 xcrun altool --upload-app --wait --type macos -f "$PKG_PATH" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
 
 if [[ "${TRACEFENCE_REPLACE_REVIEW_BUILD:-0}" == "1" ]]; then
-  CONFIRMATION="REPLACE_MAC_${VERSION}_BUILD_${TRACEFENCE_MAC_OLD_BUILD:-72}_WITH_${BUILD_NUMBER}"
+  CONFIRMATION="REPLACE_MAC_${VERSION}_BUILD_${TRACEFENCE_MAC_OLD_BUILD:-73}_WITH_${BUILD_NUMBER}"
   TRACEFENCE_MAC_BUILD="$BUILD_NUMBER" \
     python3 scripts/appstoreconnect/replace_tracefence_mac_review_build.py \
       --execute \

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safely move TraceFence Sentinel build 22 into TestFlight and App Review.
+"""Safely move TraceFence Sentinel build 23 into TestFlight and App Review.
 
 The default mode is read-only. Mutating App Store Connect requires both
 ``--execute`` and an exact ``--confirm`` value printed by the dry run.
@@ -30,8 +30,8 @@ from scripts.appstoreconnect.sync_tracefence_sentinel_submission import (  # noq
 APP_ID = "6789015094"
 VERSION = "1.0.0"
 PLATFORM = "IOS"
-BUILD = os.environ.get("TRACEFENCE_SENTINEL_BUILD", "22")
-EXPECTED_CURRENT_BUILD = os.environ.get("TRACEFENCE_SENTINEL_OLD_BUILD", "21")
+BUILD = os.environ.get("TRACEFENCE_SENTINEL_BUILD", "23")
+EXPECTED_CURRENT_BUILD = os.environ.get("TRACEFENCE_SENTINEL_OLD_BUILD", "22")
 BETA_GROUP_ID = os.environ.get(
     "TRACEFENCE_SENTINEL_PUBLIC_BETA_GROUP",
     "a4e065ba-de28-40e9-957f-f7ae01e9cff2",
@@ -212,9 +212,13 @@ def active_submissions(api: ASC) -> list[dict[str, Any]]:
     ]
 
 
-def cancel_waiting_submission(api: ASC, submission: dict[str, Any]) -> None:
+def cancel_active_submission(api: ASC, submission: dict[str, Any]) -> None:
     state = submission["attributes"].get("state")
-    if state != "WAITING_FOR_REVIEW":
+    if state == "IN_REVIEW":
+        raise RuntimeError(
+            f"Refusing to cancel review {submission['id']} while it is IN_REVIEW"
+        )
+    if state not in {"READY_FOR_REVIEW", "WAITING_FOR_REVIEW", "UNRESOLVED_ISSUES"}:
         raise RuntimeError(
             f"Refusing to cancel review {submission['id']} in unexpected state {state}"
         )
@@ -299,18 +303,33 @@ def create_or_resume_submission(
     )["data"]
     linked_versions = {item_version_id(api, item["id"]) for item in items}
     if version_id not in linked_versions:
-        api.json(
-            "POST",
-            "/reviewSubmissionItems",
-            ok=(201,),
-            json=body(
-                "reviewSubmissionItems",
-                relationships={
-                    "reviewSubmission": rel("reviewSubmissions", submission["id"]),
-                    "appStoreVersion": rel("appStoreVersions", version_id),
-                },
-            ),
-        )
+        deadline = time.time() + 600
+        while True:
+            try:
+                api.json(
+                    "POST",
+                    "/reviewSubmissionItems",
+                    ok=(201,),
+                    json=body(
+                        "reviewSubmissionItems",
+                        relationships={
+                            "reviewSubmission": rel("reviewSubmissions", submission["id"]),
+                            "appStoreVersion": rel("appStoreVersions", version_id),
+                        },
+                    ),
+                )
+                break
+            except RuntimeError as error:
+                if (
+                    "ITEM_PART_OF_ANOTHER_SUBMISSION" not in str(error)
+                    or time.time() >= deadline
+                ):
+                    raise
+                print(
+                    "Waiting for the canceled iOS review to release the version item...",
+                    flush=True,
+                )
+                time.sleep(15)
 
     submitted = api.json(
         "PATCH",
@@ -419,7 +438,7 @@ def main() -> int:
 
     submissions = active_submissions(api)
     if current_build_number == EXPECTED_CURRENT_BUILD and submissions:
-        cancel_waiting_submission(api, submissions[0])
+        cancel_active_submission(api, submissions[0])
         submissions = []
     elif current_build_number == EXPECTED_CURRENT_BUILD:
         submissions = []

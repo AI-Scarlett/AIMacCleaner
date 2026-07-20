@@ -303,6 +303,7 @@ private struct LiveTraceFenceRemoteClient {
     ) async throws -> T {
         var attemptedEndpoints: [String] = []
         var lastError: Error?
+        var authenticationError: TraceFenceRemoteClientError?
 
         for endpoint in connection.candidateEndpoints {
             var candidate = connection
@@ -313,7 +314,14 @@ private struct LiveTraceFenceRemoteClient {
                 return try await send(request)
             } catch let error as TraceFenceRemoteClientError {
                 if case .httpStatus(let status, _) = error, status == 401 || status == 402 {
-                    throw error
+                    // A paired Mac can expose both the background Core gateway and
+                    // the foreground app gateway. During startup, token rotation, or
+                    // migration from an older install, one endpoint can briefly have
+                    // stale credentials while the other is already valid. Do not let
+                    // the first fast 401/402 prevent a healthy endpoint from winning.
+                    if authenticationError == nil || status == 402 {
+                        authenticationError = error
+                    }
                 }
                 lastError = error
             } catch {
@@ -321,6 +329,9 @@ private struct LiveTraceFenceRemoteClient {
             }
         }
 
+        if let authenticationError {
+            throw authenticationError
+        }
         if let urlError = lastError as? URLError {
             throw TraceFenceRemoteClientError.unreachable(attemptedEndpoints, urlError.code)
         }
