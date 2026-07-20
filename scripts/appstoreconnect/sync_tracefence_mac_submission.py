@@ -21,7 +21,7 @@ from scripts.appstoreconnect.sync_tracefence_sentinel_submission import ASC, KEY
 
 APP_ID = "6772386897"
 VERSION = "3.1.8"
-BUILD = os.environ.get("TRACEFENCE_MAC_BUILD", "74")
+BUILD = os.environ.get("TRACEFENCE_MAC_BUILD", "75")
 SCREENSHOT_DIR = ROOT / "build/TraceFence-AppStore-Screenshots/APP_DESKTOP"
 REVIEW_ATTACHMENT = Path(os.environ.get(
     "TRACEFENCE_REVIEW_ATTACHMENT",
@@ -76,9 +76,10 @@ WHATS_NEW = """- Adds the project-based Agent Monitor with live, scheduled, bloc
 
 REVIEW_NOTES = """TraceFence is a sandboxed local-first developer utility. No account is required.
 
-Review fixes in build 74:
+Review fixes in build 75:
 - The iOS pairing QR now uses a short pairing URI with a 256-bit token, an integer-pixel render, and a four-module quiet zone.
 - The pairing listener no longer permits two installed TraceFence variants to share port 17895 with different tokens, eliminating intermittent authentication failures during upgrades.
+- Pairing identity is no longer replaced by a stale coexisting direct-download process; only the explicit Reset Pairing action rotates the App Store listener token.
 - Agent Guard no longer traverses Music, Movies, or Photos libraries when a parent Home folder was authorized.
 - NSAppleMusicUsageDescription now explains the only supported media-library access: a user explicitly choosing Music for a local file scan. TraceFence reads local file names, sizes, and modification dates for cleanup candidates and does not upload library contents.
 
@@ -106,7 +107,7 @@ Privacy Policy: https://ai-scarlett.github.io/TraceFence/privacy-policy.html
 Terms of Use (Apple Standard EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"""
 
 if PAIRING_DEMO_VIDEO_URL:
-    REVIEW_NOTES += f"\n\nPhysical Mac + iPhone pairing demo video (build 74 / iOS build 24 workflow):\n{PAIRING_DEMO_VIDEO_URL}"
+    REVIEW_NOTES += f"\n\nPhysical Mac + iPhone pairing demo video (build 75 / iOS build 24 workflow):\n{PAIRING_DEMO_VIDEO_URL}"
 
 
 def first(api: ASC, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:

@@ -13,13 +13,16 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.84")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.85")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Preserves one shared 256-bit iPhone pairing token between the direct-download Mac app and its independently installed Agent Core, so app or Core upgrades cannot invalidate an existing pairing.\n"
+    "- Keeps the background Core status endpoint responsive while optional Agent adapters are slow or unhealthy, preventing heartbeat timeouts from appearing as intermittent disconnects.\n"
+    "- Replaces same-version Agent Core bundles through a clean verified staging directory so stale backup files cannot corrupt an update signature.\n"
     "- Stabilizes iOS Remote Pairing by preventing separate TraceFence processes with different pairing tokens from sharing the same TCP listener port.\n"
     "- Keeps trying the paired Mac's foreground and background gateways when one stale endpoint rejects an old token, instead of turning endpoint startup races into intermittent disconnects.\n"
     "- Clears stale remote status immediately when a new pairing code is imported, so old online indicators cannot mask a failed re-pair.\n"

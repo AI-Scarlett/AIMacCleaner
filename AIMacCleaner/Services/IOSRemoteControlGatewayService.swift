@@ -35,6 +35,9 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     private let defaultPort = 17895
     private var keepAwakeProcess: Process?
     private var lastAgentCoreConfigData: Data?
+    private var didReconcileAgentCorePairingToken = false
+    private var listenerRetryTask: Task<Void, Never>?
+    private var listenerRetryAttempt = 0
 
     private init() {
         UserDefaults.standard.register(defaults: [Self.keepMacAwakeKey: true])
@@ -99,6 +102,7 @@ final class IOSRemoteControlGatewayService: ObservableObject {
         }
 
         if enabled {
+            listenerRetryAttempt = 0
             start(port: port ?? configuredPort)
         } else {
             stop()
@@ -114,6 +118,7 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     func restart(port: Int) {
         let normalized = Self.normalizedPort(port)
         UserDefaults.standard.set(normalized, forKey: Self.portKey)
+        listenerRetryAttempt = 0
         guard UserDefaults.standard.bool(forKey: Self.enabledKey) else {
             refreshEndpoint()
             return
@@ -122,6 +127,9 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     }
 
     func stop() {
+        listenerRetryTask?.cancel()
+        listenerRetryTask = nil
+        listenerRetryAttempt = 0
         listener?.cancel()
         listener = nil
         listeningPort = nil
@@ -133,6 +141,9 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     }
 
     func rotatePairingToken() {
+        // A user-requested reset must replace the shared Core token instead of
+        // adopting it again during the following config sync.
+        didReconcileAgentCorePairingToken = true
         UserDefaults.standard.set(Self.randomToken(), forKey: Self.tokenKey)
         syncAgentCoreRemoteGatewayConfig()
         if isRunning {
@@ -275,21 +286,28 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             isRunning = false
             statusMessage = "Could not start remote API: \(error.localizedDescription)"
             refreshEndpoint()
+            scheduleListenerRetry(port: normalized)
         }
     }
 
     private func handleListenerState(_ state: NWListener.State) {
         switch state {
         case .ready:
+            listenerRetryTask?.cancel()
+            listenerRetryTask = nil
+            listenerRetryAttempt = 0
             UserDefaults.standard.set("ready", forKey: "traceFenceIOSRemoteGatewayLastListenerState")
             isRunning = true
             statusMessage = "Remote API is listening on \(endpoint)."
         case .failed(let error):
             UserDefaults.standard.set("failed: \(error.localizedDescription)", forKey: "traceFenceIOSRemoteGatewayLastListenerState")
             isRunning = false
+            let failedPort = listeningPort ?? configuredPort
+            listener?.cancel()
             listener = nil
             listeningPort = nil
-            statusMessage = "Remote API failed: \(error.localizedDescription)"
+            statusMessage = "Remote API failed: \(error.localizedDescription). Retrying…"
+            scheduleListenerRetry(port: failedPort)
         case .cancelled:
             UserDefaults.standard.set("cancelled", forKey: "traceFenceIOSRemoteGatewayLastListenerState")
             isRunning = false
@@ -298,6 +316,27 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             statusMessage = "Remote API is off."
         default:
             break
+        }
+    }
+
+    private func scheduleListenerRetry(port: Int) {
+        guard UserDefaults.standard.bool(forKey: Self.enabledKey) else { return }
+        listenerRetryTask?.cancel()
+        let attempt = listenerRetryAttempt
+        listenerRetryAttempt += 1
+        let delays: [UInt64] = [500_000_000, 1_000_000_000, 2_000_000_000, 4_000_000_000, 8_000_000_000, 15_000_000_000]
+        let delay = delays[min(attempt, delays.count - 1)]
+        listenerRetryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard
+                !Task.isCancelled,
+                let self,
+                UserDefaults.standard.bool(forKey: Self.enabledKey),
+                self.listener == nil,
+                self.configuredPort == port
+            else { return }
+            self.listenerRetryTask = nil
+            self.start(port: port)
         }
     }
 
@@ -2979,6 +3018,16 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     }
 
     private var currentToken: String {
+        if !didReconcileAgentCorePairingToken {
+            didReconcileAgentCorePairingToken = true
+            if let sharedToken = agentCorePairingToken() {
+                // Direct and App Store builds have different bundle identifiers,
+                // but the independently installed Agent Core is shared. Preserve
+                // an existing phone pairing when the user switches channels.
+                UserDefaults.standard.set(sharedToken, forKey: Self.tokenKey)
+                return sharedToken
+            }
+        }
         if let token = UserDefaults.standard.string(forKey: Self.tokenKey), token.count >= 32 {
             return token
         }
@@ -2999,9 +3048,8 @@ final class IOSRemoteControlGatewayService: ObservableObject {
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) else { return }
 
-        let directory = URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true)
-            .appendingPathComponent("Library/Application Support/TraceFence/Core", isDirectory: true)
-        let configURL = directory.appendingPathComponent("remote-gateway.json")
+        let configURL = agentCoreRemoteGatewayConfigURL
+        let directory = configURL.deletingLastPathComponent()
         if data == lastAgentCoreConfigData, FileManager.default.fileExists(atPath: configURL.path) {
             return
         }
@@ -3012,6 +3060,27 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             lastAgentCoreConfigData = data
         } catch {
             // App Store sandbox builds may only use a separately installed Core configuration.
+        }
+    }
+
+    private var agentCoreRemoteGatewayConfigURL: URL {
+        URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true)
+            .appendingPathComponent("Library/Application Support/TraceFence/Core/remote-gateway.json")
+    }
+
+    private func agentCorePairingToken() -> String? {
+        guard
+            let data = try? Data(contentsOf: agentCoreRemoteGatewayConfigURL),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let token = object["token"] as? String,
+            Self.isValidPairingToken(token)
+        else { return nil }
+        return token
+    }
+
+    private static func isValidPairingToken(_ token: String) -> Bool {
+        token.utf8.count == 64 && token.utf8.allSatisfy { byte in
+            (48...57).contains(byte) || (65...70).contains(byte) || (97...102).contains(byte)
         }
     }
 

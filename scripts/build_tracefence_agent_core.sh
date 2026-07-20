@@ -24,13 +24,26 @@ CORE_BUILD="$(sed -n 's/^private let coreBuild = \([0-9][0-9]*\)/\1/p' "$CORE_SO
 RELEASE_OUTPUT_DIR="$ROOT_DIR/build/TraceFenceAgentCore-$CORE_VERSION"
 RELEASE_DIR="$INSTALL_DIR/releases/$CORE_VERSION-$CORE_BUILD"
 RELEASE_BUNDLE="$RELEASE_DIR/TraceFenceAgentCore.bundle"
+STAGED_RELEASE_DIR="$INSTALL_DIR/releases/.staged-$CORE_VERSION-$CORE_BUILD-$$"
+PREVIOUS_RELEASE_DIR="$INSTALL_DIR/releases/.previous-$CORE_VERSION-$CORE_BUILD-$$"
+
+cleanup_release_staging() {
+  rm -rf "$STAGED_RELEASE_DIR" "$PREVIOUS_RELEASE_DIR"
+}
+trap cleanup_release_staging EXIT
 
 TRACEFENCE_CORE_RELEASE_OUTPUT_DIR="$RELEASE_OUTPUT_DIR" "$ROOT_DIR/scripts/build_tracefence_agent_core_release.sh"
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/releases"
-mkdir -p "$RELEASE_DIR"
-ditto "$RELEASE_OUTPUT_DIR/TraceFenceAgentCore.bundle" "$RELEASE_BUNDLE"
-codesign --verify --deep --strict --verbose=2 "$RELEASE_BUNDLE"
+rm -rf "$STAGED_RELEASE_DIR" "$PREVIOUS_RELEASE_DIR"
+mkdir -p "$STAGED_RELEASE_DIR"
+ditto "$RELEASE_OUTPUT_DIR/TraceFenceAgentCore.bundle" "$STAGED_RELEASE_DIR/TraceFenceAgentCore.bundle"
+codesign --verify --deep --strict --verbose=2 "$STAGED_RELEASE_DIR/TraceFenceAgentCore.bundle"
+if [ -e "$RELEASE_DIR" ]; then
+  mv "$RELEASE_DIR" "$PREVIOUS_RELEASE_DIR"
+fi
+mv "$STAGED_RELEASE_DIR" "$RELEASE_DIR"
+rm -rf "$PREVIOUS_RELEASE_DIR"
 
 install_core_link() {
   name="$1"
@@ -61,17 +74,42 @@ if [ ! -f "$UPDATE_CONFIG_PATH" ]; then
 fi
 chmod 600 "$UPDATE_CONFIG_PATH"
 
-TOKEN="$(defaults read com.tracefence.app traceFenceIOSRemoteGatewayToken 2>/dev/null || true)"
-if [ "$(printf '%s' "$TOKEN" | wc -c | tr -d ' ')" -lt 32 ]; then
-  TOKEN="$(openssl rand -hex 32)"
-  defaults write com.tracefence.app traceFenceIOSRemoteGatewayToken "$TOKEN"
-fi
-REMOTE_ENABLED="$(defaults read com.tracefence.app traceFenceIOSRemoteGatewayEnabled 2>/dev/null || echo 0)"
-if [ "$REMOTE_ENABLED" = "1" ]; then
-  REMOTE_ENABLED_JSON=true
+is_valid_pairing_token() {
+  candidate="$1"
+  [ "$(printf '%s' "$candidate" | wc -c | tr -d ' ')" -eq 64 ] || return 1
+  case "$candidate" in
+    *[!0-9a-fA-F]*) return 1 ;;
+  esac
+  return 0
+}
+
+# The Agent Core configuration is shared by the direct and App Store builds,
+# whose UserDefaults suites are not shared. Keep an existing Core token so a
+# Core upgrade or channel switch cannot silently invalidate the paired phone.
+CORE_TOKEN="$(plutil -extract token raw "$HTTP_CONFIG_PATH" 2>/dev/null || true)"
+DIRECT_TOKEN="$(defaults read com.tracefence.app traceFenceIOSRemoteGatewayToken 2>/dev/null || true)"
+if is_valid_pairing_token "$CORE_TOKEN"; then
+  TOKEN="$CORE_TOKEN"
+elif is_valid_pairing_token "$DIRECT_TOKEN"; then
+  TOKEN="$DIRECT_TOKEN"
 else
-  REMOTE_ENABLED_JSON=false
+  TOKEN="$(openssl rand -hex 32)"
 fi
+defaults write com.tracefence.app traceFenceIOSRemoteGatewayToken "$TOKEN"
+
+CORE_ENABLED="$(plutil -extract enabled raw "$HTTP_CONFIG_PATH" 2>/dev/null || true)"
+case "$CORE_ENABLED" in
+  true|false) REMOTE_ENABLED_JSON="$CORE_ENABLED" ;;
+  *)
+    REMOTE_ENABLED="$(defaults read com.tracefence.app traceFenceIOSRemoteGatewayEnabled 2>/dev/null || echo 0)"
+    if [ "$REMOTE_ENABLED" = "1" ]; then
+      REMOTE_ENABLED_JSON=true
+    else
+      REMOTE_ENABLED_JSON=false
+    fi
+    ;;
+esac
+defaults write com.tracefence.app traceFenceIOSRemoteGatewayEnabled -bool "$REMOTE_ENABLED_JSON"
 CONTROL_ALLOWED="$(plutil -extract controlAllowed raw "$HTTP_CONFIG_PATH" 2>/dev/null || echo false)"
 case "$CONTROL_ALLOWED" in
   true|false) ;;
@@ -181,19 +219,31 @@ rm -rf "$INSTALL_DIR/TraceFence Codex Adapter.app"
 pkill -f "TraceFenceCodexAdapterHost" >/dev/null 2>&1 || true
 pkill -f "codex app-server --listen ws://127.0.0.1:17897" >/dev/null 2>&1 || true
 
+CODEX_DAEMON_READY=false
 if [ -x "$MANAGED_CODEX" ]; then
-  "$MANAGED_CODEX" app-server daemon bootstrap >/dev/null
-  CODEX_DAEMON_READY=false
-  for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    if [ -S "$HOME/.codex/app-server-control/app-server-control.sock" ]; then
-      CODEX_DAEMON_READY=true
-      break
+  CODEX_CONTROL_SOCKET="$HOME/.codex/app-server-control/app-server-control.sock"
+  if [ -S "$CODEX_CONTROL_SOCKET" ]; then
+    CODEX_DAEMON_READY=true
+  else
+    "$MANAGED_CODEX" app-server daemon bootstrap >/dev/null 2>&1 &
+    CODEX_BOOTSTRAP_PID=$!
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+      if [ -S "$CODEX_CONTROL_SOCKET" ]; then
+        CODEX_DAEMON_READY=true
+        break
+      fi
+      if ! kill -0 "$CODEX_BOOTSTRAP_PID" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+    if kill -0 "$CODEX_BOOTSTRAP_PID" >/dev/null 2>&1; then
+      kill "$CODEX_BOOTSTRAP_PID" >/dev/null 2>&1 || true
     fi
-    sleep 1
-  done
+    wait "$CODEX_BOOTSTRAP_PID" >/dev/null 2>&1 || true
+  fi
   if [ "$CODEX_DAEMON_READY" != "true" ]; then
-    printf '%s\n' "Official Codex app-server daemon did not become ready." >&2
-    exit 1
+    printf '%s\n' "Official Codex app-server daemon is unavailable; Core installation will continue with local session fallback." >&2
   fi
 else
   printf '%s\n' "Codex control requires the official standalone CLI: https://chatgpt.com/codex/install.sh" >&2
@@ -243,8 +293,10 @@ launchctl kickstart "gui/$(id -u)/com.tracefence.agent-core"
 
 printf '%s\n' "Installed TraceFence Agent Core at $INSTALL_DIR/TraceFenceAgentCore"
 printf '%s\n' "Started persistent service com.tracefence.agent-core"
-if [ -x "$MANAGED_CODEX" ]; then
+if [ "$CODEX_DAEMON_READY" = "true" ]; then
   printf '%s\n' "Connected to the official Codex standalone daemon over its local user socket"
+elif [ -x "$MANAGED_CODEX" ]; then
+  printf '%s\n' "Installed with local Codex session fallback; native daemon control is currently unavailable"
 fi
 printf '%s\n' "Started independently upgradable Claude Code adapter and installed permission hooks"
 printf '%s\n' "Registered independently upgradable adapters for Grok, Qwen, Cursor, Trae, CodeBuddy, OpenClaw, Hermes, MiniMax, Gemini, OpenCode, Kiro, Aider, Amp, Goose, Copilot CLI, and Droid"

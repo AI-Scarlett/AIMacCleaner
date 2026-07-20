@@ -3,8 +3,8 @@ import Network
 import Darwin
 
 private let protocolVersion = 1
-private let coreVersion = "1.6.4"
-private let coreBuild = 1604
+private let coreVersion = "1.6.5"
+private let coreBuild = 1605
 private let maxCachedCodexSessions = 120
 private let maxScannedRolloutFiles = 100
 private let maxCoreRequestBytes = 512 * 1024
@@ -185,7 +185,17 @@ private final class ExternalAdapterRunner {
             return AdapterInvocationResult(ok: false, result: [:], error: "adapter_launch_failed:\(error.localizedDescription)")
         }
 
-        let timeout = method == "control" ? 75 : defaultTimeout
+        let timeout: TimeInterval
+        switch method {
+        case "control":
+            timeout = 75
+        case "health":
+            // Health is used to refresh dashboard metadata. A broken optional
+            // adapter must never stall the Core or the iOS status endpoint.
+            timeout = 3
+        default:
+            timeout = defaultTimeout
+        }
         if finished.wait(timeout: .now() + timeout) == .timedOut {
             process.terminate()
             if finished.wait(timeout: .now() + 1) == .timedOut {
@@ -1294,22 +1304,36 @@ private final class CoreDaemon {
 
     private func adapterMetadata() -> [[String: Any]] {
         adapterMetadataLock.lock()
+        let cached = adapterMetadataSnapshot
+        adapterMetadataLock.unlock()
+        if !cached.isEmpty { return cached }
+
+        // The RPC and HTTP status paths must remain instant even while an
+        // optional adapter is unhealthy. Seed a capability snapshot without
+        // launching adapter processes; the background refresh enriches it.
+        let seeded = loadManifests().map(baseAdapterMetadata)
+        adapterMetadataLock.lock()
+        if adapterMetadataSnapshot.isEmpty {
+            adapterMetadataSnapshot = seeded
+        }
+        let snapshot = adapterMetadataSnapshot
+        adapterMetadataLock.unlock()
+        return snapshot
+    }
+
+    private func refreshedAdapterMetadata() -> [[String: Any]] {
+        adapterMetadataLock.lock()
         if !adapterMetadataSnapshot.isEmpty,
            Date().timeIntervalSince(adapterMetadataUpdatedAt) < 20 {
             let snapshot = adapterMetadataSnapshot
             adapterMetadataLock.unlock()
             return snapshot
         }
+        adapterMetadataLock.unlock()
+
         let metadata = loadManifests().map { adapter in
-            let isBuiltIn = adapter.manifest.id == "codex" && adapter.manifest.executable == nil
-            var metadata: [String: Any] = [
-                "id": adapter.manifest.id,
-                "version": adapter.manifest.version,
-                "displayName": adapter.manifest.displayName,
-                "capabilities": adapter.manifest.capabilities,
-                "transport": adapter.manifest.transport ?? (isBuiltIn ? "builtin" : "process"),
-                "operational": isBuiltIn ? codexAdapter.isOperational : externalAdapterRunner.isOperational(adapter)
-            ]
+            let isBuiltIn = isBuiltInAdapter(adapter)
+            var metadata = baseAdapterMetadata(adapter)
             if isBuiltIn {
                 metadata["message"] = codexAdapter.isOperational
                     ? "Codex 官方 app-server 已连接。"
@@ -1325,10 +1349,27 @@ private final class CoreDaemon {
             }
             return metadata
         }
+        adapterMetadataLock.lock()
         adapterMetadataSnapshot = metadata
         adapterMetadataUpdatedAt = Date()
         adapterMetadataLock.unlock()
         return metadata
+    }
+
+    private func baseAdapterMetadata(_ adapter: LoadedAdapter) -> [String: Any] {
+        let isBuiltIn = isBuiltInAdapter(adapter)
+        return [
+            "id": adapter.manifest.id,
+            "version": adapter.manifest.version,
+            "displayName": adapter.manifest.displayName,
+            "capabilities": adapter.manifest.capabilities,
+            "transport": adapter.manifest.transport ?? (isBuiltIn ? "builtin" : "process"),
+            "operational": isBuiltIn ? codexAdapter.isOperational : externalAdapterRunner.isOperational(adapter)
+        ]
+    }
+
+    private func isBuiltInAdapter(_ adapter: LoadedAdapter) -> Bool {
+        adapter.manifest.id == "codex" && adapter.manifest.executable == nil
     }
 
     private func allAdapterSessions() -> [[String: Any]] {
@@ -1382,19 +1423,20 @@ private final class CoreDaemon {
     }
 
     private func refreshAdapterSessions() {
-        let sessions = collectAdapterSessions()
+        let metadata = refreshedAdapterMetadata()
+        let sessions = collectAdapterSessions(metadata: metadata)
         adapterSessionLock.lock()
         adapterSessionSnapshot = sessions
         adapterSessionLock.unlock()
     }
 
-    private func collectAdapterSessions() -> [[String: Any]] {
+    private func collectAdapterSessions(metadata: [[String: Any]]) -> [[String: Any]] {
         var sessions = codexAdapter.listSessions().map { session -> [String: Any] in
             var value = session
             value["adapterId"] = "codex"
             return value
         }
-        let metadataById = Dictionary(uniqueKeysWithValues: adapterMetadata().compactMap { value -> (String, [String: Any])? in
+        let metadataById = Dictionary(uniqueKeysWithValues: metadata.compactMap { value -> (String, [String: Any])? in
             guard let id = value["id"] as? String else { return nil }
             return (id, value)
         })
