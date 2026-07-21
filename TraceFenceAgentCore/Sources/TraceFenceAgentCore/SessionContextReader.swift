@@ -66,6 +66,7 @@ final class SessionContextReader {
     private let retainedMessageTrimBatch = 500
     private let maxLineBytes = 4 * 1_024 * 1_024
     private let readChunkBytes = 128 * 1_024
+    private let maxTailReadBytes = 16 * 1_024 * 1_024
 
     func contextAvailable(sourcePath: String) -> Bool {
         securedTranscriptURL(sourcePath) != nil
@@ -105,7 +106,7 @@ final class SessionContextReader {
             lock.unlock()
         } else {
             lock.unlock()
-            let parsed = try parse(url: url, adapterId: adapterId)
+            let parsed = try parse(url: url, adapterId: adapterId, fileSize: fileSize)
             lock.lock()
             cache[cacheKey] = CacheEntry(
                 fileSize: fileSize,
@@ -146,14 +147,24 @@ final class SessionContextReader {
         )
     }
 
-    private func parse(url: URL, adapterId: String) throws -> (messages: [MessageRecord], truncated: Bool) {
+    private func parse(url: URL, adapterId: String, fileSize: Int) throws -> (messages: [MessageRecord], truncated: Bool) {
         guard let handle = try? FileHandle(forReadingFrom: url) else { throw ReaderError.unreadable }
         defer { try? handle.close() }
 
         var messages: [MessageRecord] = []
-        var truncated = false
+        let readStart = max(0, fileSize - maxTailReadBytes)
+        var truncated = readStart > 0
         var buffer = Data()
-        var lineNumber = 0
+        var bufferStartOffset = readStart
+        var shouldDiscardLeadingPartialLine = readStart > 0
+
+        if readStart > 0 {
+            do {
+                try handle.seek(toOffset: UInt64(readStart))
+            } catch {
+                throw ReaderError.unreadable
+            }
+        }
 
         func retain(_ newRecords: [MessageRecord]) {
             guard !newRecords.isEmpty else { return }
@@ -173,16 +184,24 @@ final class SessionContextReader {
                 buffer.append(chunk)
                 while let newline = buffer.firstIndex(of: 0x0A) {
                     let line = Data(buffer[..<newline])
-                    buffer.removeSubrange(...newline)
-                    lineNumber += 1
-                    if line.count <= maxLineBytes {
-                        retain(parseLine(line, adapterId: adapterId, lineNumber: lineNumber))
+                    let consumedBytes = buffer.distance(from: buffer.startIndex, to: newline) + 1
+                    buffer.removeSubrange(buffer.startIndex...newline)
+                    let lineOffset = bufferStartOffset
+                    bufferStartOffset += consumedBytes
+                    if shouldDiscardLeadingPartialLine {
+                        shouldDiscardLeadingPartialLine = false
+                    } else if line.count <= maxLineBytes {
+                        // Absolute byte offsets stay stable as an active transcript
+                        // grows, unlike line numbers derived from a moving tail.
+                        retain(parseLine(line, adapterId: adapterId, lineNumber: lineOffset))
                     } else {
                         truncated = true
                     }
                 }
                 if buffer.count > maxLineBytes {
+                    bufferStartOffset += buffer.count
                     buffer.removeAll(keepingCapacity: true)
+                    shouldDiscardLeadingPartialLine = true
                     truncated = true
                 }
             }
@@ -190,9 +209,8 @@ final class SessionContextReader {
             throw ReaderError.unreadable
         }
 
-        if !buffer.isEmpty, buffer.count <= maxLineBytes {
-            lineNumber += 1
-            retain(parseLine(buffer, adapterId: adapterId, lineNumber: lineNumber))
+        if !shouldDiscardLeadingPartialLine, !buffer.isEmpty, buffer.count <= maxLineBytes {
+            retain(parseLine(buffer, adapterId: adapterId, lineNumber: bufferStartOffset))
         }
         return (assignTurnIdentifiers(messages), truncated)
     }

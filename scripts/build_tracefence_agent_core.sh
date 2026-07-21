@@ -32,6 +32,25 @@ cleanup_release_staging() {
 }
 trap cleanup_release_staging EXIT
 
+bootstrap_launch_agent() {
+  domain="$1"
+  plist_path="$2"
+  label="$3"
+  attempt=1
+  while [ "$attempt" -le 5 ]; do
+    if launchctl bootstrap "$domain" "$plist_path"; then
+      return 0
+    fi
+    if launchctl print "$domain/$label" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$attempt"
+    attempt=$((attempt + 1))
+  done
+  printf '%s\n' "Could not bootstrap $label after 5 attempts." >&2
+  return 1
+}
+
 TRACEFENCE_CORE_RELEASE_OUTPUT_DIR="$RELEASE_OUTPUT_DIR" "$ROOT_DIR/scripts/build_tracefence_agent_core_release.sh"
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/releases"
@@ -252,7 +271,7 @@ fi
 launchctl bootout "gui/$(id -u)/com.tracefence.adapter.claude" >/dev/null 2>&1 || true
 pkill -f "$INSTALL_DIR/adapters/TraceFenceClaudeAdapter --daemon" >/dev/null 2>&1 || true
 rm -f "$CLAUDE_ADAPTER_SOCKET_PATH" "$CLAUDE_HOOK_SOCKET_PATH"
-launchctl bootstrap "gui/$(id -u)" "$CLAUDE_ADAPTER_LAUNCH_AGENT_PATH"
+bootstrap_launch_agent "gui/$(id -u)" "$CLAUDE_ADAPTER_LAUNCH_AGENT_PATH" "com.tracefence.adapter.claude"
 launchctl enable "gui/$(id -u)/com.tracefence.adapter.claude"
 launchctl kickstart "gui/$(id -u)/com.tracefence.adapter.claude"
 
@@ -287,7 +306,7 @@ fi
 
 launchctl bootout "gui/$(id -u)/com.tracefence.agent-core" >/dev/null 2>&1 || true
 pkill -f "$INSTALL_DIR/TraceFenceAgentCore --socket $SOCKET_PATH" >/dev/null 2>&1 || true
-launchctl bootstrap "gui/$(id -u)" "$LAUNCH_AGENT_PATH"
+bootstrap_launch_agent "gui/$(id -u)" "$LAUNCH_AGENT_PATH" "com.tracefence.agent-core"
 launchctl enable "gui/$(id -u)/com.tracefence.agent-core"
 launchctl kickstart "gui/$(id -u)/com.tracefence.agent-core"
 

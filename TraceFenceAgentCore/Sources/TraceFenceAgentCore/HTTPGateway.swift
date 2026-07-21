@@ -45,6 +45,11 @@ final class AgentCoreHTTPGateway {
     private let controlHandler: ([String: Any]) -> ControlResult
     private let contextHandler: ([String: Any]) -> ControlResult
     private let queue = DispatchQueue(label: "com.tracefence.agent-core.http")
+    private let contextQueue = DispatchQueue(
+        label: "com.tracefence.agent-core.http.context",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
     private let maxRequestBytes = 256 * 1_024
     private let contextReader = SessionContextReader()
     private var listener: NWListener?
@@ -185,7 +190,10 @@ final class AgentCoreHTTPGateway {
         case ("GET", "/v1/sessions"):
             sendJSON(sessionCatalogPayload(query: request.query), status: 200, on: connection)
         case ("POST", "/v1/sessions/context"):
-            sendSessionContext(request.body, on: connection)
+            let body = request.body
+            contextQueue.async { [weak self] in
+                self?.sendSessionContext(body, on: connection)
+            }
         case ("POST", "/v1/monitor/start"), ("POST", "/v1/monitor/stop"):
             sendJSON(statusPayload(config: config), status: 200, on: connection)
         case ("POST", "/v1/sessions/resume"):
