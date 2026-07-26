@@ -1,6 +1,10 @@
 import Foundation
 import Darwin
+import CommonCrypto
+import LocalAuthentication
 import os
+import Security
+import SQLite3
 import SwiftUI
 
 struct ProviderQuotaWindow: Identifiable, Codable, Equatable {
@@ -464,8 +468,20 @@ final class ProviderQuotaService: ObservableObject {
         )
         expect(noticeResult.count == 1 && !noticeResult[0].hasReadableQuotaData,
                "setup notices must never count as available quota data")
+        failures.append(contentsOf: ClaudeDesktopQuotaReader.debugSelfTestFailures())
         return failures
     }
+
+#if DEBUG
+    static func debugClaudeDesktopQuotaProbe() -> (snapshot: ProviderQuotaSnapshot?, diagnostic: String?) {
+        switch ClaudeDesktopQuotaReader().fetchSnapshot() {
+        case .snapshot(let snapshot):
+            return (snapshot, nil)
+        case .unavailable(let diagnostic):
+            return (nil, diagnostic)
+        }
+    }
+#endif
 
     func start() {
         logger.info("Quota service start requested; snapshots=\(self.snapshots.count, privacy: .public) refreshing=\(self.isRefreshing, privacy: .public)")
@@ -777,11 +793,32 @@ private struct CodexBarQuotaProvider {
                 with: readCodexWebPayloads(from: executable, decoder: decoder)
             )
         }
-        let snapshots = payloads.compactMap { payload -> ProviderQuotaSnapshot? in
+        var snapshots = payloads.compactMap { payload -> ProviderQuotaSnapshot? in
             if let snapshot = makeSnapshot(from: payload, configs: configs) {
                 return snapshot
             }
             return nil
+        }
+        if SandboxPaths.isDirectDistribution,
+           isProviderLikelyInstalled("claude"),
+           !snapshots.contains(where: {
+               $0.providerName.caseInsensitiveCompare("Claude") == .orderedSame
+                   && $0.hasReadableQuotaData
+           })
+        {
+            switch ClaudeDesktopQuotaReader().fetchSnapshot() {
+            case .snapshot(let desktopSnapshot):
+                snapshots.removeAll {
+                    $0.providerName.caseInsensitiveCompare("Claude") == .orderedSame
+                        && !$0.hasReadableQuotaData
+                }
+                snapshots.append(desktopSnapshot)
+                logger.info(
+                    "Claude Desktop quota fallback returned \(desktopSnapshot.windows.count, privacy: .public) windows"
+                )
+            case .unavailable(let reason):
+                logger.info("Claude Desktop quota fallback unavailable: \(reason, privacy: .public)")
+            }
         }
         let codexSnapshots = snapshots.filter { $0.providerName.caseInsensitiveCompare("Codex") == .orderedSame }
         let sparkWindowCount = codexSnapshots.reduce(into: 0) { count, snapshot in
@@ -1737,6 +1774,680 @@ private struct CodexBarQuotaProvider {
             return date
         }
         throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid ISO8601 date: \(value)")
+    }
+}
+
+private struct ClaudeDesktopQuotaReader {
+    private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest,
+            completionHandler: @escaping (URLRequest?) -> Void
+        ) {
+            completionHandler(nil)
+        }
+    }
+
+    enum ReadResult {
+        case snapshot(ProviderQuotaSnapshot)
+        case unavailable(String)
+    }
+
+    private struct Organization: Decodable {
+        let uuid: String?
+        let id: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case uuid
+            case id
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            uuid = try? container.decodeIfPresent(String.self, forKey: .uuid)
+            if let stringID = try? container.decodeIfPresent(String.self, forKey: .id) {
+                id = stringID
+            } else if let integerID = try? container.decodeIfPresent(Int64.self, forKey: .id) {
+                id = String(integerID)
+            } else {
+                id = nil
+            }
+        }
+
+        var identifier: String? {
+            let candidate = uuid ?? id
+            guard let candidate, !candidate.isEmpty else { return nil }
+            return candidate
+        }
+    }
+
+    private struct UsageWindow: Decodable {
+        let utilization: Double?
+        let resetsAt: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case utilization
+            case resetsAt = "resets_at"
+        }
+    }
+
+    private struct UsageLimitScope: Decodable {
+        struct Model: Decodable {
+            let displayName: String?
+
+            private enum CodingKeys: String, CodingKey {
+                case displayName = "display_name"
+            }
+        }
+
+        let model: Model?
+    }
+
+    private struct UsageLimit: Decodable {
+        let group: String?
+        let kind: String?
+        let percent: Double?
+        let resetsAt: String?
+        let scope: UsageLimitScope?
+
+        private enum CodingKeys: String, CodingKey {
+            case group
+            case kind
+            case percent
+            case resetsAt = "resets_at"
+            case scope
+        }
+    }
+
+    private struct UsageResponse: Decodable {
+        let fiveHour: UsageWindow?
+        let sevenDay: UsageWindow?
+        let sevenDaySonnet: UsageWindow?
+        let sevenDayOpus: UsageWindow?
+        let sevenDayCowork: UsageWindow?
+        let sevenDayOAuthApps: UsageWindow?
+        let limits: [UsageLimit]?
+
+        private enum CodingKeys: String, CodingKey {
+            case fiveHour = "five_hour"
+            case sevenDay = "seven_day"
+            case sevenDaySonnet = "seven_day_sonnet"
+            case sevenDayOpus = "seven_day_opus"
+            case sevenDayCowork = "seven_day_cowork"
+            case sevenDayOAuthApps = "seven_day_oauth_apps"
+            case limits
+        }
+    }
+
+    private enum ReaderError: Error {
+        case cookieDatabaseUnavailable
+        case safeStorageKeyUnavailable
+        case sessionCookieUnavailable
+        case desktopUserAgentUnavailable
+        case organizationsUnavailable
+        case activeOrganizationUnavailable
+        case usageUnavailable
+        case requestTimedOut
+        case httpStatus(Int)
+
+        var diagnosticCode: String {
+            switch self {
+            case .cookieDatabaseUnavailable: return "cookie-db-unavailable"
+            case .safeStorageKeyUnavailable: return "safe-storage-key-unavailable"
+            case .sessionCookieUnavailable: return "session-cookie-unavailable"
+            case .desktopUserAgentUnavailable: return "desktop-user-agent-unavailable"
+            case .organizationsUnavailable: return "organizations-unavailable"
+            case .activeOrganizationUnavailable: return "active-organization-unavailable"
+            case .usageUnavailable: return "usage-unavailable"
+            case .requestTimedOut: return "request-timeout"
+            case .httpStatus(let status): return "http-\(status)"
+            }
+        }
+    }
+
+    private static let allowedCookieNames = Set([
+        "sessionKey",
+        "sessionKeyLC",
+        "cf_clearance",
+        "routingHint",
+        "__cf_bm",
+        "__ssid",
+        "lastActiveOrg",
+        "anthropic-device-id"
+    ])
+
+    func fetchSnapshot() -> ReadResult {
+        do {
+            let cookies = try readCookies()
+            guard cookies["sessionKey"]?.hasPrefix("sk-ant-") == true else {
+                throw ReaderError.sessionCookieUnavailable
+            }
+            guard let userAgent = claudeDesktopUserAgent() else {
+                throw ReaderError.desktopUserAgentUnavailable
+            }
+            let cookieHeader = Self.allowedCookieNames
+                .sorted()
+                .compactMap { name -> String? in
+                    guard let value = cookies[name], !value.isEmpty else { return nil }
+                    return "\(name)=\(value)"
+                }
+                .joined(separator: "; ")
+
+            let organizationsData = try requestJSON(
+                URL(string: "https://claude.ai/api/organizations")!,
+                cookieHeader: cookieHeader,
+                userAgent: userAgent
+            )
+            guard let organizations = try? JSONDecoder().decode([Organization].self, from: organizationsData),
+                  !organizations.isEmpty else {
+                throw ReaderError.organizationsUnavailable
+            }
+
+            let activeCookie = cookies["lastActiveOrg"]?.removingPercentEncoding ?? ""
+            let organization = organizations.first(where: { organization in
+                guard let identifier = organization.identifier else { return false }
+                return activeCookie.contains(identifier)
+            }) ?? organizations[0]
+            guard let organizationID = organization.identifier,
+                  let encodedID = organizationID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+                  let usageURL = URL(string: "https://claude.ai/api/organizations/\(encodedID)/usage") else {
+                throw ReaderError.activeOrganizationUnavailable
+            }
+
+            let usageData = try requestJSON(
+                usageURL,
+                cookieHeader: cookieHeader,
+                userAgent: userAgent
+            )
+            guard let usage = try? JSONDecoder().decode(UsageResponse.self, from: usageData) else {
+                throw ReaderError.usageUnavailable
+            }
+            let windows = Self.makeWindows(from: usage)
+            guard !windows.isEmpty else { throw ReaderError.usageUnavailable }
+
+            return .snapshot(ProviderQuotaSnapshot(
+                id: "claude-desktop-current",
+                providerName: "Claude",
+                planName: nil,
+                accountLabel: "Claude Desktop",
+                credits: nil,
+                windows: windows,
+                resetCredits: nil,
+                updatedAt: Date(),
+                source: "claude-desktop",
+                errorMessage: nil,
+                setupHint: nil,
+                isSetupNotice: false,
+                quotaReadSucceeded: true
+            ))
+        } catch let error as ReaderError {
+            return .unavailable(error.diagnosticCode)
+        } catch {
+            return .unavailable("unexpected-error")
+        }
+    }
+
+    static func debugSelfTestFailures() -> [String] {
+        let organizationFixture = Data("[{\"uuid\":\"org-test\",\"id\":123}]".utf8)
+        guard let organizations = try? JSONDecoder().decode([Organization].self, from: organizationFixture),
+              organizations.first?.identifier == "org-test" else {
+            return ["Claude Desktop organization IDs did not decode"]
+        }
+        let fixture = Data("""
+        {
+          "five_hour": {
+            "utilization": 34,
+            "resets_at": "2026-07-26T13:19:59.308945+00:00"
+          },
+          "limits": [
+            {
+              "group": "session",
+              "kind": "session",
+              "percent": 34,
+              "resets_at": "2026-07-26T13:19:59.308945+00:00",
+              "scope": null
+            },
+            {
+              "group": "weekly",
+              "kind": "weekly_scoped",
+              "percent": 17,
+              "resets_at": "2026-07-26T17:59:59.309307+00:00",
+              "scope": {"model": {"display_name": "Fable"}}
+            }
+          ]
+        }
+        """.utf8)
+        guard let usage = try? JSONDecoder().decode(UsageResponse.self, from: fixture) else {
+            return ["Claude Desktop quota fixture did not decode"]
+        }
+        let windows = makeWindows(from: usage)
+        var failures: [String] = []
+        if windows.filter({ $0.id == "primary" }).count != 1 {
+            failures.append("Claude Desktop session quota was duplicated or missing")
+        }
+        if windows.first(where: { $0.id == "primary" })?.usedPercent != 34 {
+            failures.append("Claude Desktop session utilization was not preserved")
+        }
+        if !windows.contains(where: {
+            $0.id == "claude-weekly-fable" && $0.usedPercent == 17 && $0.resetsAt != nil
+        }) {
+            failures.append("Claude Desktop model-scoped weekly quota was not preserved")
+        }
+        return failures
+    }
+
+    private func readCookies() throws -> [String: String] {
+        let home = URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true)
+        let databaseURL = home.appendingPathComponent("Library/Application Support/Claude/Cookies")
+        guard FileManager.default.isReadableFile(atPath: databaseURL.path) else {
+            throw ReaderError.cookieDatabaseUnavailable
+        }
+        guard let safeStoragePassword = readSafeStoragePassword() else {
+            throw ReaderError.safeStorageKeyUnavailable
+        }
+        guard let key = deriveCookieKey(from: safeStoragePassword) else {
+            throw ReaderError.safeStorageKeyUnavailable
+        }
+
+        var database: OpaquePointer?
+        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
+        guard sqlite3_open_v2(databaseURL.path, &database, flags, nil) == SQLITE_OK,
+              let database else {
+            if database != nil { sqlite3_close_v2(database) }
+            throw ReaderError.cookieDatabaseUnavailable
+        }
+        defer { sqlite3_close_v2(database) }
+        sqlite3_busy_timeout(database, 500)
+
+        let names = Self.allowedCookieNames
+            .sorted()
+            .map { "'\($0.replacingOccurrences(of: "'", with: "''"))'" }
+            .joined(separator: ",")
+        let sql = """
+        SELECT host_key, name, value, encrypted_value, expires_utc
+        FROM cookies
+        WHERE host_key IN ('.claude.ai', 'claude.ai')
+          AND name IN (\(names))
+        ORDER BY CASE WHEN host_key = '.claude.ai' THEN 0 ELSE 1 END,
+                 expires_utc DESC
+        """
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+              let statement else {
+            throw ReaderError.cookieDatabaseUnavailable
+        }
+        defer { sqlite3_finalize(statement) }
+
+        let chromeEpochOffset: TimeInterval = 11_644_473_600
+        let nowChromeMicroseconds = Int64((Date().timeIntervalSince1970 + chromeEpochOffset) * 1_000_000)
+        var cookies: [String: String] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let expiresAt = sqlite3_column_int64(statement, 4)
+            if expiresAt != 0, expiresAt <= nowChromeMicroseconds { continue }
+            guard let hostPointer = sqlite3_column_text(statement, 0),
+                  let namePointer = sqlite3_column_text(statement, 1) else { continue }
+            let host = String(cString: hostPointer)
+            let name = String(cString: namePointer)
+            guard cookies[name] == nil else { continue }
+
+            let plainValue = sqlite3_column_text(statement, 2).map { String(cString: $0) } ?? ""
+            if !plainValue.isEmpty {
+                cookies[name] = plainValue
+                continue
+            }
+            guard let blob = sqlite3_column_blob(statement, 3) else { continue }
+            let byteCount = Int(sqlite3_column_bytes(statement, 3))
+            guard byteCount > 3 else { continue }
+            let encrypted = Data(bytes: blob, count: byteCount)
+            if let value = decryptCookie(encrypted, host: host, key: key), !value.isEmpty {
+                cookies[name] = value
+            }
+        }
+        guard cookies["sessionKey"] != nil else { throw ReaderError.sessionCookieUnavailable }
+        return cookies
+    }
+
+    private func readSafeStoragePassword() -> Data? {
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "Claude Safe Storage",
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnData as String: true,
+            kSecUseAuthenticationContext as String: context
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data,
+              !data.isEmpty else { return nil }
+        return data
+    }
+
+    private func deriveCookieKey(from password: Data) -> Data? {
+        let salt = Data("saltysalt".utf8)
+        var derived = [UInt8](repeating: 0, count: kCCKeySizeAES128)
+        let derivedCount = derived.count
+        let status = password.withUnsafeBytes { passwordBytes in
+            salt.withUnsafeBytes { saltBytes in
+                derived.withUnsafeMutableBytes { derivedBytes in
+                    CCKeyDerivationPBKDF(
+                        CCPBKDFAlgorithm(kCCPBKDF2),
+                        passwordBytes.bindMemory(to: Int8.self).baseAddress,
+                        password.count,
+                        saltBytes.bindMemory(to: UInt8.self).baseAddress,
+                        salt.count,
+                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA1),
+                        1003,
+                        derivedBytes.bindMemory(to: UInt8.self).baseAddress,
+                        derivedCount
+                    )
+                }
+            }
+        }
+        guard status == kCCSuccess else { return nil }
+        return Data(derived)
+    }
+
+    private func decryptCookie(_ encrypted: Data, host: String, key: Data) -> String? {
+        guard encrypted.count > 3,
+              encrypted.prefix(3) == Data("v10".utf8)
+                || encrypted.prefix(3) == Data("v11".utf8) else { return nil }
+        let ciphertext = Data(encrypted.dropFirst(3))
+        let iv = Data(repeating: 0x20, count: kCCBlockSizeAES128)
+        var output = [UInt8](repeating: 0, count: ciphertext.count + kCCBlockSizeAES128)
+        var outputLength = 0
+        let status = key.withUnsafeBytes { keyBytes in
+            iv.withUnsafeBytes { ivBytes in
+                ciphertext.withUnsafeBytes { inputBytes in
+                    output.withUnsafeMutableBytes { outputBytes in
+                        CCCrypt(
+                            CCOperation(kCCDecrypt),
+                            CCAlgorithm(kCCAlgorithmAES),
+                            CCOptions(kCCOptionPKCS7Padding),
+                            keyBytes.baseAddress,
+                            key.count,
+                            ivBytes.baseAddress,
+                            inputBytes.baseAddress,
+                            ciphertext.count,
+                            outputBytes.baseAddress,
+                            outputBytes.count,
+                            &outputLength
+                        )
+                    }
+                }
+            }
+        }
+        guard status == kCCSuccess else { return nil }
+        var plaintext = Data(output.prefix(outputLength))
+        let hostDigest = sha256(Data(host.utf8))
+        if plaintext.starts(with: hostDigest) {
+            plaintext.removeFirst(hostDigest.count)
+        }
+        return String(data: plaintext, encoding: .utf8)
+    }
+
+    private func sha256(_ data: Data) -> Data {
+        var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        data.withUnsafeBytes { inputBytes in
+            digest.withUnsafeMutableBytes { digestBytes in
+                _ = CC_SHA256(
+                    inputBytes.baseAddress,
+                    CC_LONG(data.count),
+                    digestBytes.bindMemory(to: UInt8.self).baseAddress
+                )
+            }
+        }
+        return Data(digest)
+    }
+
+    private func requestJSON(
+        _ url: URL,
+        cookieHeader: String,
+        userAgent: String
+    ) throws -> Data {
+        guard url.scheme == "https", url.host == "claude.ai" else {
+            throw ReaderError.usageUnavailable
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 12
+        let session = URLSession(
+            configuration: configuration,
+            delegate: NoRedirectDelegate(),
+            delegateQueue: nil
+        )
+        defer { session.finishTasksAndInvalidate() }
+
+        var request = URLRequest(url: url)
+        request.httpShouldHandleCookies = false
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("https://claude.ai", forHTTPHeaderField: "Origin")
+        request.setValue("https://claude.ai/", forHTTPHeaderField: "Referer")
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+
+        let semaphore = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var responseData: Data?
+        var responseStatus: Int?
+        var responseError: Error?
+        let task = session.dataTask(with: request) { data, response, error in
+            lock.lock()
+            responseData = data
+            responseStatus = (response as? HTTPURLResponse)?.statusCode
+            responseError = error
+            lock.unlock()
+            semaphore.signal()
+        }
+        task.resume()
+        guard semaphore.wait(timeout: .now() + 13) == .success else {
+            task.cancel()
+            throw ReaderError.requestTimedOut
+        }
+        lock.lock()
+        let data = responseData
+        let status = responseStatus
+        let error = responseError
+        lock.unlock()
+        if error != nil { throw ReaderError.usageUnavailable }
+        guard let status else { throw ReaderError.usageUnavailable }
+        guard (200..<300).contains(status) else { throw ReaderError.httpStatus(status) }
+        guard let data, !data.isEmpty else { throw ReaderError.usageUnavailable }
+        return data
+    }
+
+    private static let cachedClaudeDesktopUserAgent: String? = resolveClaudeDesktopUserAgent()
+
+    private func claudeDesktopUserAgent() -> String? {
+        Self.cachedClaudeDesktopUserAgent
+    }
+
+    private static func resolveClaudeDesktopUserAgent() -> String? {
+        let homeApplications = URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true)
+            .appendingPathComponent("Applications/Claude.app", isDirectory: true)
+        let candidates = [URL(fileURLWithPath: "/Applications/Claude.app", isDirectory: true), homeApplications]
+        guard let appURL = candidates.first(where: {
+            Bundle(url: $0)?.bundleIdentifier == "com.anthropic.claudefordesktop"
+        }),
+        let appBundle = Bundle(url: appURL),
+        let appVersion = appBundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else {
+            return nil
+        }
+
+        let frameworkURL = appURL.appendingPathComponent(
+            "Contents/Frameworks/Electron Framework.framework/Versions/A",
+            isDirectory: true
+        )
+        let frameworkInfoURL = frameworkURL.appendingPathComponent("Resources/Info.plist")
+        guard let frameworkInfoData = try? Data(contentsOf: frameworkInfoURL),
+              let frameworkInfo = try? PropertyListSerialization.propertyList(
+                from: frameworkInfoData,
+                options: [],
+                format: nil
+              ) as? [String: Any],
+              let electronVersion = frameworkInfo["CFBundleVersion"] as? String,
+              let chromeVersion = chromeVersion(
+                in: frameworkURL.appendingPathComponent("Electron Framework")
+              ) else { return nil }
+
+        return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            + "AppleWebKit/537.36 (KHTML, like Gecko) "
+            + "Claude/\(appVersion) Chrome/\(chromeVersion) "
+            + "Electron/\(electronVersion) Safari/537.36"
+    }
+
+    private static func chromeVersion(in executableURL: URL) -> String? {
+        guard let data = try? Data(contentsOf: executableURL, options: [.mappedIfSafe]) else { return nil }
+        let marker = Data("Chrome/".utf8)
+        var searchStart = data.startIndex
+        while searchStart < data.endIndex,
+              let range = data.range(of: marker, in: searchStart..<data.endIndex) {
+            let limit = min(data.endIndex, range.upperBound + 40)
+            let versionBytes = data[range.upperBound..<limit].prefix { byte in
+                (byte >= 48 && byte <= 57) || byte == 46
+            }
+            if let version = String(data: versionBytes, encoding: .utf8),
+               version.split(separator: ".").count == 4 {
+                return version
+            }
+            searchStart = range.upperBound
+        }
+        return nil
+    }
+
+    private static func makeWindows(from usage: UsageResponse) -> [ProviderQuotaWindow] {
+        var windows: [ProviderQuotaWindow] = []
+
+        func appendWindow(
+            id: String,
+            title: String,
+            kind: ProviderQuotaWindow.Kind,
+            minutes: Int?,
+            payload: UsageWindow?
+        ) {
+            guard let payload, let utilization = payload.utilization else { return }
+            windows.append(ProviderQuotaWindow(
+                id: id,
+                kind: kind,
+                title: title,
+                usedPercent: max(0, min(100, utilization)),
+                resetsAt: parseDate(payload.resetsAt),
+                windowMinutes: minutes
+            ))
+        }
+
+        appendWindow(
+            id: "primary",
+            title: "5-hour quota",
+            kind: .fiveHour,
+            minutes: 300,
+            payload: usage.fiveHour
+        )
+        appendWindow(
+            id: "secondary",
+            title: "Weekly quota",
+            kind: .weekly,
+            minutes: 10_080,
+            payload: usage.sevenDay
+        )
+        appendWindow(
+            id: "claude-weekly-sonnet",
+            title: "Current week (Sonnet)",
+            kind: .extra,
+            minutes: 10_080,
+            payload: usage.sevenDaySonnet
+        )
+        appendWindow(
+            id: "claude-weekly-opus",
+            title: "Current week (Opus)",
+            kind: .extra,
+            minutes: 10_080,
+            payload: usage.sevenDayOpus
+        )
+        appendWindow(
+            id: "claude-weekly-cowork",
+            title: "Current week (Cowork)",
+            kind: .extra,
+            minutes: 10_080,
+            payload: usage.sevenDayCowork
+        )
+        appendWindow(
+            id: "claude-weekly-oauth-apps",
+            title: "Current week (OAuth apps)",
+            kind: .extra,
+            minutes: 10_080,
+            payload: usage.sevenDayOAuthApps
+        )
+
+        for limit in usage.limits ?? [] {
+            guard let percent = limit.percent else { continue }
+            let normalizedKind = limit.kind?.lowercased() ?? ""
+            let normalizedGroup = limit.group?.lowercased() ?? ""
+            if normalizedKind == "session" || normalizedGroup == "session" {
+                guard !windows.contains(where: { $0.id == "primary" }) else { continue }
+                windows.append(ProviderQuotaWindow(
+                    id: "primary",
+                    kind: .fiveHour,
+                    title: "5-hour quota",
+                    usedPercent: max(0, min(100, percent)),
+                    resetsAt: parseDate(limit.resetsAt),
+                    windowMinutes: 300
+                ))
+                continue
+            }
+
+            let modelName = limit.scope?.model?.displayName?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if normalizedKind == "weekly_scoped", let modelName, !modelName.isEmpty {
+                let slug = modelName.lowercased()
+                    .unicodeScalars
+                    .map { CharacterSet.alphanumerics.contains($0) ? Character($0) : "-" }
+                    .map(String.init)
+                    .joined()
+                    .split(separator: "-")
+                    .joined(separator: "-")
+                let id = "claude-weekly-\(slug)"
+                guard !windows.contains(where: { $0.id == id }) else { continue }
+                windows.append(ProviderQuotaWindow(
+                    id: id,
+                    kind: .extra,
+                    title: "Current week (\(modelName))",
+                    usedPercent: max(0, min(100, percent)),
+                    resetsAt: parseDate(limit.resetsAt),
+                    windowMinutes: 10_080
+                ))
+                continue
+            }
+
+            if normalizedKind.contains("weekly") || normalizedGroup == "weekly" {
+                guard !windows.contains(where: { $0.id == "secondary" }) else { continue }
+                windows.append(ProviderQuotaWindow(
+                    id: "secondary",
+                    kind: .weekly,
+                    title: "Weekly quota",
+                    usedPercent: max(0, min(100, percent)),
+                    resetsAt: parseDate(limit.resetsAt),
+                    windowMinutes: 10_080
+                ))
+            }
+        }
+        return windows
+    }
+
+    private static func parseDate(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 }
 

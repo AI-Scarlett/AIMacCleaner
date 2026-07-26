@@ -29,6 +29,42 @@ struct AIMacCleanerApp: App {
 
     init() {
 #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--tracefence-quota-self-test") {
+            let failures = ProviderQuotaService.debugQuotaSelfTestFailures()
+            let payload: [String: Any] = [
+                "succeeded": failures.isEmpty,
+                "failures": failures
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data("\n".utf8))
+            }
+            Darwin.exit(failures.isEmpty ? 0 : 2)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--tracefence-claude-quota-probe") {
+            let result = ProviderQuotaService.debugClaudeDesktopQuotaProbe()
+            let windows: [[String: Any]] = (result.snapshot?.windows ?? []).map { window in
+                [
+                    "id": window.id,
+                    "title": window.title,
+                    "usedPercent": window.usedPercent,
+                    "windowMinutes": window.windowMinutes as Any? ?? NSNull(),
+                    "hasResetDate": window.resetsAt != nil
+                ]
+            }
+            let payload: [String: Any] = [
+                "succeeded": result.snapshot != nil,
+                "provider": result.snapshot?.providerName as Any? ?? NSNull(),
+                "source": result.snapshot?.source as Any? ?? NSNull(),
+                "diagnostic": result.diagnostic as Any? ?? NSNull(),
+                "windows": windows
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data("\n".utf8))
+            }
+            Darwin.exit(result.snapshot == nil ? 2 : 0)
+        }
         if ProcessInfo.processInfo.arguments.contains("--tracefence-menubar-tab-probe") {
             let failures = MenuBarMonitor.debugTabSelectionSelfTestFailures()
             let payload: [String: Any] = [

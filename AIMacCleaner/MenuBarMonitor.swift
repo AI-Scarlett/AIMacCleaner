@@ -1440,6 +1440,7 @@ struct MenuBarMonitor: View {
         case "oauth": return "OAuth"
         case "api": return "API"
         case "web": return localizer.t("网页会话", en: "Web session", zhHant: "網頁會話", ja: "Web セッション", ko: "웹 세션", mt: "Web session")
+        case "claude-desktop": return "Claude Desktop"
         case "cli": return "CLI"
         case "auto": return localizer.t("自动读取", en: "Auto", zhHant: "自動讀取", ja: "自動読み取り", ko: "자동 읽기", mt: "Auto")
         case "setup": return localizer.t("可选配置", en: "Optional setup", zhHant: "可選配置", ja: "任意設定", ko: "선택 설정", mt: "Optional setup")
