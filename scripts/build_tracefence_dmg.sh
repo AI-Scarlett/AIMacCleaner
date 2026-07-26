@@ -10,6 +10,8 @@ SCHEME="AIMacCleaner"
 CONFIGURATION="Release"
 BUILD_ROOT="${TRACEFENCE_BUILD_ROOT:-$PROJECT_DIR/build/.TraceFence-release-build}"
 STAGING_DIR="${TRACEFENCE_STAGING_DIR:-$PROJECT_DIR/build/.TraceFence-dmg-staging}"
+
+python3 "$PROJECT_DIR/scripts/verify_scan_rules.py"
 OUTPUT_DIR="${TRACEFENCE_OUTPUT_DIR:-$PROJECT_DIR/build/${APP_NAME}-${VERSION}}"
 OUTPUT_APP="$OUTPUT_DIR/${APP_NAME}.app"
 OUTPUT_DMG="$OUTPUT_DIR/${APP_NAME}-${TAG}-arm64.dmg"

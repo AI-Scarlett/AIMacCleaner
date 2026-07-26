@@ -859,16 +859,16 @@ struct IntelAppInfo: Identifiable {
 
     enum ReplaceState: Int {
         case idle = 0
-        case uninstalling = 1
-        case installing = 2
+        case searchingReplacement = 1
+        case awaitingVerification = 2
         case completed = 3
         case failed = 4
 
         var label: String {
             switch self {
             case .idle: return ""
-            case .uninstalling: return "正在查找替代版本..."
-            case .installing: return "等待安装并验证"
+            case .searchingReplacement: return "正在查找替代版本..."
+            case .awaitingVerification: return "等待安装并验证"
             case .completed: return "已完成"
             case .failed: return "失败"
             }
@@ -877,8 +877,8 @@ struct IntelAppInfo: Identifiable {
         func localizedLabel(_ localizer: Localizer) -> String {
             switch self {
             case .idle: return ""
-            case .uninstalling: return localizer.t("正在查找替代版本…", en: "Finding a replacement…")
-            case .installing: return localizer.t("等待安装并验证", en: "Awaiting installation and verification")
+            case .searchingReplacement: return localizer.t("正在查找替代版本…", en: "Finding a replacement…")
+            case .awaitingVerification: return localizer.t("等待安装并验证", en: "Awaiting installation and verification")
             case .completed: return localizer.completed
             case .failed: return localizer.failed
             }
@@ -887,8 +887,8 @@ struct IntelAppInfo: Identifiable {
         var color: Color {
             switch self {
             case .idle: return .secondary
-            case .uninstalling: return .orange
-            case .installing: return .blue
+            case .searchingReplacement: return .orange
+            case .awaitingVerification: return .blue
             case .completed: return .green
             case .failed: return .red
             }

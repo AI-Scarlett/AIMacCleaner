@@ -2,7 +2,15 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
-## [Unreleased] - 2026-07-20
+## [Unreleased] - 2026-07-26
+
+### Security
+- 清理规则只允许明确的缓存、日志和构建产物子目录；新增构建期规则校验与删除前二次路径护栏，拒绝用户资料根目录、整个应用容器、Docker 虚拟磁盘和越界 AI 建议。
+- iOS Remote Pairing 改用带时间戳与 nonce 的 HMAC-SHA256 请求认证，拒绝重放、过期请求、公网来源、远程通用 shell 和旧 Bearer 认证；仅健康检查允许匿名访问。
+- AI API Key、配对密钥与 Webhook secret 迁入 Keychain；只有安全写入成功后才删除旧明文，避免迁移失败导致配置丢失。
+- Webhook 使用真实 HMAC 签名并限制为安全 HTTPS 目标；本地代理镜像移除通配 CORS、原始配置路由与代理凭据暴露。
+- Hook socket 迁入权限为 0700 的用户 Application Support 目录，socket 权限收紧为 0600；Hook 配置解析失败时拒绝覆盖并保留首份备份。
+- 直发构建入口统一走 Developer ID、Hardened Runtime、严格签名校验、公证与 staple 流程。
 
 ### Added
 - Codex、Claude Code、OpenCode / MiniMax、OpenClaw / QClaw 本地用量洞察：Token 分项、180 天热力图、7 日对比、模型/会话排行和来源诊断。

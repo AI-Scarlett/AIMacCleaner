@@ -122,9 +122,9 @@ class ScannerService: ObservableObject {
             let usedPct = totalBytes > 0 ? Double(usedBytes) / Double(totalBytes) * 100.0 : 0
             return DiskInfo(
                 total: totalBytes, used: usedBytes, free: freeBytes,
-                totalGb: Double(totalBytes) / 1_073_741_824.0,
-                usedGb: Double(usedBytes) / 1_073_741_824.0,
-                freeGb: Double(freeBytes) / 1_073_741_824.0,
+                totalGb: Double(totalBytes) / 1_000_000_000.0,
+                usedGb: Double(usedBytes) / 1_000_000_000.0,
+                freeGb: Double(freeBytes) / 1_000_000_000.0,
                 usedPct: usedPct
             )
         }
@@ -144,9 +144,9 @@ class ScannerService: ObservableObject {
                 let usedPct = totalBytes > 0 ? Double(usedBytes) / Double(totalBytes) * 100.0 : 0
                 return DiskInfo(
                     total: totalBytes, used: usedBytes, free: freeBytes,
-                    totalGb: Double(totalBytes) / 1_073_741_824.0,
-                    usedGb: Double(usedBytes) / 1_073_741_824.0,
-                    freeGb: Double(freeBytes) / 1_073_741_824.0,
+                    totalGb: Double(totalBytes) / 1_000_000_000.0,
+                    usedGb: Double(usedBytes) / 1_000_000_000.0,
+                    freeGb: Double(freeBytes) / 1_000_000_000.0,
                     usedPct: usedPct
                 )
             }
@@ -1174,10 +1174,11 @@ class ScannerService: ObservableObject {
             return
         }
         let legacyKey = config.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var migratedLegacyKey = false
         if let legacyKey, !legacyKey.isEmpty {
-            storeAIAPIKey(legacyKey)
+            migratedLegacyKey = storeAIAPIKey(legacyKey)
         }
-        let key = readAIAPIKey()
+        let key = readAIAPIKey() ?? legacyKey
         aiConfig = AIConfig(
             apiBase: config.apiBase,
             apiKey: key,
@@ -1185,7 +1186,7 @@ class ScannerService: ObservableObject {
             hasKey: key?.isEmpty == false,
             mode: config.mode
         )
-        if legacyKey?.isEmpty == false {
+        if migratedLegacyKey {
             saveAIConfigMetadata(aiConfig ?? config)
         }
     }
@@ -1231,7 +1232,7 @@ class ScannerService: ObservableObject {
     private func saveAIConfigMetadata(_ config: AIConfig) {
         let key = config.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let key, !key.isEmpty {
-            storeAIAPIKey(key)
+            guard storeAIAPIKey(key) else { return }
         } else {
             deleteAIAPIKey()
         }
@@ -1266,7 +1267,8 @@ class ScannerService: ObservableObject {
         return value
     }
 
-    private func storeAIAPIKey(_ value: String) {
+    @discardableResult
+    private func storeAIAPIKey(_ value: String) -> Bool {
         let key = Data(value.utf8)
         let identity: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -1277,12 +1279,12 @@ class ScannerService: ObservableObject {
             identity as CFDictionary,
             [kSecValueData as String: key] as CFDictionary
         )
-        if status == errSecItemNotFound {
-            var item = identity
-            item[kSecValueData as String] = key
-            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            SecItemAdd(item as CFDictionary, nil)
-        }
+        if status == errSecSuccess { return true }
+        guard status == errSecItemNotFound else { return false }
+        var item = identity
+        item[kSecValueData as String] = key
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 
     private func deleteAIAPIKey() {
@@ -3582,9 +3584,9 @@ class ScannerService: ObservableObject {
     // MARK: - Utility
 
     func formatSize(_ bytes: Int64) -> String {
-        if bytes >= 1073741824 { return String(format: "%.1f GB", Double(bytes) / 1073741824.0) }
-        if bytes >= 1048576 { return String(format: "%.1f MB", Double(bytes) / 1048576.0) }
-        if bytes >= 1024 { return String(format: "%.1f KB", Double(bytes) / 1024.0) }
+        if bytes >= 1_000_000_000 { return String(format: "%.1f GB", Double(bytes) / 1_000_000_000.0) }
+        if bytes >= 1_000_000 { return String(format: "%.1f MB", Double(bytes) / 1_000_000.0) }
+        if bytes >= 1_000 { return String(format: "%.1f KB", Double(bytes) / 1_000.0) }
         return "\(bytes) B"
     }
 

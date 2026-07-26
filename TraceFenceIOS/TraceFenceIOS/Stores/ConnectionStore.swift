@@ -1177,6 +1177,11 @@ final class ConnectionStore: ObservableObject {
             // Migrate pairing data written by older builds out of UserDefaults.
             if storePairingToken(decoded.token) {
                 token = decoded.token
+            } else {
+                // Preserve the legacy record until Keychain accepts the secure
+                // replacement; deleting it here would silently unpair the Mac.
+                connection = migrateLoadedConnection(decoded)
+                return
             }
         }
         guard let token, !token.isEmpty else {

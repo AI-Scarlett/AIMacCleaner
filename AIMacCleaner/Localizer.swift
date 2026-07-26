@@ -767,7 +767,7 @@ extension Localizer {
     var allAdapted: String { t("所有应用均已适配 Apple Silicon", en: "All apps are adapted for Apple Silicon", zhHant: "所有應用均已適配 Apple Silicon", ja: "すべてのアプリがApple Siliconに適応済み", ko: "모든 앱이 Apple Silicon에 적응됨", mt: "All apps are adapted for Apple Silicon") }
     var noIntelApps: String { t("您的 Mac 上没有需要适配的 Intel 应用", en: "No Intel apps need adaptation on your Mac", zhHant: "您的 Mac 上沒有需要適配的 Intel 應用", ja: "Macに適応が必要なIntelアプリはありません", ko: "Mac에 적응이 필요한 Intel 앱이 없습니다", mt: "No Intel apps need adaptation on your Mac") }
     var needAdapt: String { t("需适配", en: "Needs Adaptation", zhHant: "需適配", ja: "要適応", ko: "적응 필요", mt: "Needs Adaptation") }
-    var replaceBtn: String { t("替换", en: "Replace", zhHant: "替換", ja: "置換", ko: "교체", mt: "Replace") }
+    var replaceBtn: String { t("查找替代版本", en: "Find Replacement", zhHant: "尋找替代版本", ja: "代替版を探す", ko: "대체 버전 찾기", mt: "Find Replacement") }
     var confirmUninstall: String { t("确认卸载", en: "Confirm Uninstall", zhHant: "確認解除安裝", ja: "アンインストール確認", ko: "제거 확인", mt: "Confirm Uninstall") }
     var replaceARMVersion: String { t("替换为 ARM 版本", en: "Replace with ARM Version", zhHant: "替換為 ARM 版本", ja: "ARM版に置換", ko: "ARM 버전으로 교체", mt: "Replace with ARM Version") }
     var uninstallBtn: String { t("卸载", en: "Uninstall", zhHant: "解除安裝", ja: "アンインストール", ko: "제거", mt: "Uninstall") }
@@ -906,7 +906,7 @@ extension Localizer {
     var armNative: String { t("ARM 原生", en: "ARM Native", zhHant: "ARM 原生", ja: "ARMネイティブ", ko: "ARM 네이티브", mt: "ARM Native") }
     var releasableSpace: String { t("可释放空间", en: "Releasable Space", zhHant: "可釋放空間", ja: "解放可能容量", ko: "해제 가능 공간", mt: "Releasable Space") }
     var showIntelOnly: String { t("仅显示需适配", en: "Show Intel Only", zhHant: "僅顯示需適配", ja: "Intel版のみ表示", ko: "Intel 버전만 표시", mt: "Show Intel Only") }
-    var uninstallIntelAndInstallARM: String { t("卸载 Intel 版本并安装 ARM 版本", en: "Uninstall Intel version and install ARM version", zhHant: "解除安裝 Intel 版本並安裝 ARM 版本", ja: "Intel版をアンインストールしARM版をインストール", ko: "Intel 버전 제거 후 ARM 버전 설치", mt: "Uninstall Intel version and install ARM version") }
+    var uninstallIntelAndInstallARM: String { t("打开替代版本页面；不会删除当前版本", en: "Open a replacement page without removing the current version", zhHant: "開啟替代版本頁面；不會刪除目前版本", ja: "現在の版を削除せず代替版ページを開く", ko: "현재 버전을 삭제하지 않고 대체 버전 페이지 열기", mt: "Open a replacement page without removing the current version") }
     var searchARMDownload: String { t("搜索 ARM 版本下载链接", en: "Search ARM version download link", zhHant: "搜尋 ARM 版本下載連結", ja: "ARM版ダウンロードリンクを検索", ko: "ARM 버전 다운로드 링크 검색", mt: "Search ARM version download link") }
     var searchPureARM: String { t("搜索纯 ARM 版本", en: "Search pure ARM version", zhHant: "搜尋純 ARM 版本", ja: "純ARM版を検索", ko: "순수 ARM 버전 검색", mt: "Search pure ARM version") }
     var openDownloadLink: String { t("打开下载链接", en: "Open download link", zhHant: "開啟下載連結", ja: "ダウンロードリンクを開く", ko: "다운로드 링크 열기", mt: "Open download link") }

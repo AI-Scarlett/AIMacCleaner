@@ -111,14 +111,15 @@ actor WebhookNotifier {
     }
 
     func updateConfig(_ newConfig: WebhookConfig) {
-        config = newConfig
+        var candidate = newConfig
         if let secret = newConfig.secret?.trimmingCharacters(in: .whitespacesAndNewlines), !secret.isEmpty {
-            storeSecret(secret)
-            config.secret = secret
+            guard storeSecret(secret) else { return }
+            candidate.secret = secret
         } else {
             deleteSecret()
-            config.secret = nil
+            candidate.secret = nil
         }
+        config = candidate
         saveConfig()
     }
 
@@ -236,7 +237,7 @@ actor WebhookNotifier {
               let decoded = try? JSONDecoder().decode(WebhookConfig.self, from: data) else { return }
         config = decoded
         if let legacySecret = decoded.secret?.trimmingCharacters(in: .whitespacesAndNewlines), !legacySecret.isEmpty {
-            storeSecret(legacySecret)
+            guard storeSecret(legacySecret) else { return }
         }
         config.secret = loadSecret() ?? decoded.secret
         if decoded.secret?.isEmpty == false {
@@ -269,7 +270,8 @@ actor WebhookNotifier {
         return secret
     }
 
-    private func storeSecret(_ secret: String) {
+    @discardableResult
+    private func storeSecret(_ secret: String) -> Bool {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: keychainService,
@@ -277,12 +279,12 @@ actor WebhookNotifier {
         ]
         let attributes: [CFString: Any] = [kSecValueData: Data(secret.utf8)]
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if status == errSecItemNotFound {
-            var item = query
-            item[kSecValueData] = Data(secret.utf8)
-            item[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            SecItemAdd(item as CFDictionary, nil)
-        }
+        if status == errSecSuccess { return true }
+        guard status == errSecItemNotFound else { return false }
+        var item = query
+        item[kSecValueData] = Data(secret.utf8)
+        item[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 
     private func deleteSecret() {

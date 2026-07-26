@@ -21,6 +21,8 @@ fail() {
   exit 1
 }
 
+python3 "$ROOT/scripts/verify_scan_rules.py"
+
 verify_engine_minos() {
   local binary="$1"
   local label="$2"

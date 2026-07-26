@@ -307,10 +307,10 @@ class IntelMigrationScanner: ObservableObject {
         return (url.absoluteString, nil)
     }
 
-    func uninstallAndReplace(item: IntelAppInfo) {
+    func openReplacementPage(for item: IntelAppInfo) {
         guard let idx = items.firstIndex(where: { $0.id == item.id }) else { return }
 
-        items[idx].replaceState = .uninstalling
+        items[idx].replaceState = .searchingReplacement
         items[idx].replaceProgress = 0.1
 
         let displayName = items[idx].displayName
@@ -332,7 +332,7 @@ class IntelMigrationScanner: ObservableObject {
                 guard let urlString = downloadURL,
                       let url = URL(string: urlString),
                       let scheme = url.scheme?.lowercased(),
-                      scheme == "https" || scheme == "http" else {
+                      scheme == "https" else {
                     self.items[idx2].replaceProgress = 1.0
                     self.items[idx2].replaceState = .failed
                     return
@@ -342,7 +342,7 @@ class IntelMigrationScanner: ObservableObject {
                 // Opening a candidate download page is not proof that a native
                 // replacement was installed. Keep the old item and wait for the
                 // user to install and verify it before using Uninstall.
-                self.items[idx2].replaceState = .installing
+                self.items[idx2].replaceState = .awaitingVerification
             }
         }
     }

@@ -806,7 +806,7 @@ private final class AgentToolkitModel: ObservableObject {
 
         let homeURL = URL(fileURLWithPath: SandboxPaths.realHomeDirectory)
         let capacity = try? homeURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage
-        let freeGB = Double(capacity ?? 0) / 1_073_741_824
+        let freeGB = Double(capacity ?? 0) / 1_000_000_000
         result.append(AgentDiagnosticItem(
             kind: .storage(freeGB: freeGB),
             status: freeGB >= 5 ? .healthy : .warning

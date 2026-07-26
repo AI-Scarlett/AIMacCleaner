@@ -120,7 +120,7 @@ struct IntelMigrationTab: View {
             Button(localizer.cancelBtn, role: .cancel) {}
             Button(localizer.replaceBtn) {
                 if let app = pendingReplaceApp {
-                    scanner.uninstallAndReplace(item: app)
+                    scanner.openReplacementPage(for: app)
                 }
             }
         } message: {
@@ -392,7 +392,7 @@ struct IntelAppRow: View {
                         .frame(width: 20)
                 }
 
-                if item.replaceState == .uninstalling || item.replaceState == .installing {
+                if item.replaceState == .searchingReplacement || item.replaceState == .awaitingVerification {
                     ProgressRing(progress: item.replaceProgress, lineWidth: 2, size: 22, color: item.replaceState.color, bgColor: Color.gray.opacity(0.2), showLabel: false)
                     Text(item.replaceState.localizedLabel(localizer))
                         .font(Theme.Font.caption)
