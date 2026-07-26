@@ -1,31 +1,30 @@
 import Foundation
 import Combine
-import CoreGraphics
+import CoreAudio
+import CoreMediaIO
 
-class SensorMonitor: ObservableObject {
+@MainActor
+final class SensorMonitor: ObservableObject {
     @Published var events: [SensorEvent] = []
-    @Published var isMonitoring: Bool = false
-    @Published var cameraActive: Bool = false
-    @Published var microphoneActive: Bool = false
+    @Published var isMonitoring = false
+    @Published var cameraActive = false
+    @Published var microphoneActive = false
     @Published var cameraProcess: String?
     @Published var microphoneProcess: String?
 
     private var timer: Timer?
-    private var knownCameraApps: Set<Int32> = []
-    private var knownMicApps: Set<Int32> = []
+    private var isChecking = false
     private let maxEvents = 500
 
     func start() {
         guard !isMonitoring else { return }
         isMonitoring = true
-        timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
-            DispatchQueue.global(qos: .utility).async {
-                self?.checkSensors()
+        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                await self?.refreshSensors()
             }
         }
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            self?.checkSensors()
-        }
+        Task { await refreshSensors() }
     }
 
     func stop() {
@@ -36,149 +35,181 @@ class SensorMonitor: ObservableObject {
         microphoneActive = false
         cameraProcess = nil
         microphoneProcess = nil
-        knownCameraApps.removeAll()
-        knownMicApps.removeAll()
     }
 
     func clearEvents() {
         events.removeAll()
     }
 
-    private func checkSensors() {
-        let cameraApps = getCameraUsingApps()
-        let micApps = getMicrophoneUsingApps()
+    private func refreshSensors() async {
+        guard isMonitoring, !isChecking else { return }
+        isChecking = true
+        defer { isChecking = false }
 
-        let newCamera = cameraApps.filter { !knownCameraApps.contains($0.pid) }
-        let newMic = micApps.filter { !knownMicApps.contains($0.pid) }
-
-        var newEvents: [SensorEvent] = []
-        for app in newCamera {
-            let event = SensorEvent(
-                timestamp: Date(),
-                sensorType: .camera,
-                processName: app.name,
-                pid: app.pid,
-                bundleId: app.bundleId
+        let state = await Task.detached(priority: .utility) {
+            SensorState(
+                cameraActive: Self.cameraIsActive(),
+                microphoneActive: Self.microphoneIsActive()
             )
-            newEvents.append(event)
+        }.value
+        guard isMonitoring else { return }
+
+        if state.cameraActive && !cameraActive {
+            appendEvent(type: .camera, processName: "macOS camera client")
+        }
+        if state.microphoneActive && !microphoneActive {
+            appendEvent(type: .microphone, processName: "macOS microphone client")
         }
 
-        for app in newMic {
-            let event = SensorEvent(
-                timestamp: Date(),
-                sensorType: .microphone,
-                processName: app.name,
-                pid: app.pid,
-                bundleId: app.bundleId
+        cameraActive = state.cameraActive
+        microphoneActive = state.microphoneActive
+        cameraProcess = state.cameraActive ? "macOS camera client" : nil
+        microphoneProcess = state.microphoneActive ? "macOS microphone client" : nil
+    }
+
+    private func appendEvent(type: SensorEvent.SensorType, processName: String) {
+        events.append(SensorEvent(
+            timestamp: Date(),
+            sensorType: type,
+            processName: processName,
+            pid: 0,
+            bundleId: nil
+        ))
+        if events.count > maxEvents {
+            events = Array(events.suffix(maxEvents))
+        }
+    }
+
+    nonisolated private static func cameraIsActive() -> Bool {
+        var devicesAddress = CMIOObjectPropertyAddress(
+            mSelector: CMIOObjectPropertySelector(kCMIOHardwarePropertyDevices),
+            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
+        )
+        var dataSize: UInt32 = 0
+        guard CMIOObjectGetPropertyDataSize(
+            CMIOObjectID(kCMIOObjectSystemObject),
+            &devicesAddress,
+            0,
+            nil,
+            &dataSize
+        ) == noErr, dataSize >= UInt32(MemoryLayout<CMIODeviceID>.size) else {
+            return false
+        }
+
+        var devices = [CMIODeviceID](
+            repeating: 0,
+            count: Int(dataSize) / MemoryLayout<CMIODeviceID>.size
+        )
+        var dataUsed = dataSize
+        guard CMIOObjectGetPropertyData(
+            CMIOObjectID(kCMIOObjectSystemObject),
+            &devicesAddress,
+            0,
+            nil,
+            dataSize,
+            &dataUsed,
+            &devices
+        ) == noErr else {
+            return false
+        }
+
+        for device in devices {
+            var runningAddress = CMIOObjectPropertyAddress(
+                mSelector: CMIOObjectPropertySelector(kCMIODevicePropertyDeviceIsRunningSomewhere),
+                mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+                mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
             )
-            newEvents.append(event)
-        }
-
-        knownCameraApps = Set(cameraApps.map(\.pid))
-        knownMicApps = Set(micApps.map(\.pid))
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.cameraActive = !cameraApps.isEmpty
-            self.microphoneActive = !micApps.isEmpty
-            self.cameraProcess = cameraApps.first?.name
-            self.microphoneProcess = micApps.first?.name
-            if !newEvents.isEmpty {
-                self.events.append(contentsOf: newEvents)
-                if self.events.count > self.maxEvents {
-                    self.events = Array(self.events.suffix(self.maxEvents))
-                }
+            var running: UInt32 = 0
+            let runningSize = UInt32(MemoryLayout<UInt32>.size)
+            var runningUsed = runningSize
+            if CMIOObjectGetPropertyData(
+                device,
+                &runningAddress,
+                0,
+                nil,
+                runningSize,
+                &runningUsed,
+                &running
+            ) == noErr, running != 0 {
+                return true
             }
         }
+        return false
     }
 
-    private struct AppInfo {
-        let pid: Int32
-        let name: String
-        let bundleId: String?
-    }
+    nonisolated private static func microphoneIsActive() -> Bool {
+        var devicesAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var dataSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject),
+            &devicesAddress,
+            0,
+            nil,
+            &dataSize
+        ) == noErr, dataSize >= UInt32(MemoryLayout<AudioDeviceID>.size) else {
+            return false
+        }
 
-    private func getCameraUsingApps() -> [AppInfo] {
-        var result: [AppInfo] = []
-        let windowList = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
-        let cameraIndicators = ["FaceTime", "Zoom", "Microsoft Teams", "Google Meet", "Webex", "Skype", "OBS", "Discord", "Slack", "Tencent Meeting", "DingTalk", "Feishu"]
+        var devices = [AudioDeviceID](
+            repeating: 0,
+            count: Int(dataSize) / MemoryLayout<AudioDeviceID>.size
+        )
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &devicesAddress,
+            0,
+            nil,
+            &dataSize,
+            &devices
+        ) == noErr else {
+            return false
+        }
 
-        for window in windowList {
-            guard let pid = window[kCGWindowOwnerPID as String] as? Int32,
-                  let name = window[kCGWindowOwnerName as String] as? String else { continue }
+        for device in devices {
+            var inputStreamsAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreams,
+                mScope: kAudioDevicePropertyScopeInput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var inputStreamsSize: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(
+                device,
+                &inputStreamsAddress,
+                0,
+                nil,
+                &inputStreamsSize
+            ) == noErr, inputStreamsSize > 0 else {
+                continue
+            }
 
-            if cameraIndicators.contains(where: { name.contains($0) }) {
-                let bundleId = getBundleId(for: pid)
-                result.append(AppInfo(pid: pid, name: name, bundleId: bundleId))
+            var runningAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var running: UInt32 = 0
+            var runningSize = UInt32(MemoryLayout<UInt32>.size)
+            if AudioObjectGetPropertyData(
+                device,
+                &runningAddress,
+                0,
+                nil,
+                &runningSize,
+                &running
+            ) == noErr, running != 0 {
+                return true
             }
         }
-
-        let lsofResult = runProcess("/usr/sbin/lsof", arguments: ["/dev/video0"])
-        if !lsofResult.isEmpty {
-            for line in lsofResult.components(separatedBy: "\n").dropFirst() {
-                let parts = line.split(separator: " ", omittingEmptySubsequences: true)
-                if parts.count >= 2, let pid = Int32(parts[1]) {
-                    let name = String(parts[0])
-                    if !result.contains(where: { $0.pid == pid }) {
-                        result.append(AppInfo(pid: pid, name: name, bundleId: getBundleId(for: pid)))
-                    }
-                }
-            }
-        }
-
-        return result
+        return false
     }
+}
 
-    private func getMicrophoneUsingApps() -> [AppInfo] {
-        var result: [AppInfo] = []
-        let micIndicators = ["FaceTime", "Zoom", "Microsoft Teams", "Google Meet", "Webex", "Skype", "Discord", "Slack", "Tencent Meeting", "DingTalk", "Feishu", "OBS", "GarageBand", "Logic Pro", "VoiceMemos", "Voice Memos"]
-
-        let windowList = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
-        for window in windowList {
-            guard let pid = window[kCGWindowOwnerPID as String] as? Int32,
-                  let name = window[kCGWindowOwnerName as String] as? String else { continue }
-            if micIndicators.contains(where: { name.contains($0) }) {
-                let bundleId = getBundleId(for: pid)
-                result.append(AppInfo(pid: pid, name: name, bundleId: bundleId))
-            }
-        }
-
-        let lsofResult = runProcess("/usr/sbin/lsof", arguments: ["-c", "coreaudio"])
-        if !lsofResult.isEmpty {
-            for line in lsofResult.components(separatedBy: "\n").dropFirst() {
-                let parts = line.split(separator: " ", omittingEmptySubsequences: true)
-                if parts.count >= 2, let pid = Int32(parts[1]) {
-                    let name = String(parts[0])
-                    if !result.contains(where: { $0.pid == pid }) {
-                        result.append(AppInfo(pid: pid, name: name, bundleId: getBundleId(for: pid)))
-                    }
-                }
-            }
-        }
-
-        return result
-    }
-
-    private func getBundleId(for pid: Int32) -> String? {
-        let result = runProcess("/usr/bin/ps", arguments: ["-o", "bundleidentifier=", "-p", "\(pid)"])
-        let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private func runProcess(_ path: String, arguments: [String]) -> String {
-        let pipe = Pipe()
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: path)
-        proc.arguments = arguments
-        proc.standardOutput = pipe
-        proc.standardError = FileHandle.nullDevice
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8) ?? ""
-        } catch {
-            return ""
-        }
-    }
+private struct SensorState: Sendable {
+    let cameraActive: Bool
+    let microphoneActive: Bool
 }

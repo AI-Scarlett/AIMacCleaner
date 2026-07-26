@@ -4,7 +4,7 @@ set -euo pipefail
 EXPECTED_XCODE_VERSION="${EXPECTED_XCODE_VERSION:-Xcode 26.6}"
 EXPECTED_XCODE_BUILD="${EXPECTED_XCODE_BUILD:-17F113}"
 EXPECTED_DTXCODE="${EXPECTED_DTXCODE:-2660}"
-BUILD_MACHINE_OS_BUILD_OVERRIDE="${BUILD_MACHINE_OS_BUILD_OVERRIDE:-25F70}"
+EXPECTED_HOST_OS_BUILD="${EXPECTED_HOST_OS_BUILD:-$(sw_vers -buildVersion)}"
 
 fail() {
   printf 'normalize_appstore_archive_metadata: %s\n' "$*" >&2
@@ -37,11 +37,9 @@ printf '%s\n' "$app_plists" | while IFS= read -r app_plist; do
   [[ "$dtxcode_build" == "$EXPECTED_XCODE_BUILD" ]] || fail "unexpected DTXcodeBuild in $app_plist: $dtxcode_build"
   [[ "$sdk_name" == iphoneos26.5 || "$sdk_name" == macosx26.5 ]] || fail "unexpected DTSDKName in $app_plist: $sdk_name"
 
-  /usr/libexec/PlistBuddy -c "Set :BuildMachineOSBuild $BUILD_MACHINE_OS_BUILD_OVERRIDE" "$app_plist" 2>/dev/null \
-    || /usr/libexec/PlistBuddy -c "Add :BuildMachineOSBuild string $BUILD_MACHINE_OS_BUILD_OVERRIDE" "$app_plist"
-
   actual="$(plist_value "$app_plist" BuildMachineOSBuild)"
-  [[ "$actual" == "$BUILD_MACHINE_OS_BUILD_OVERRIDE" ]] || fail "failed to normalize $app_plist"
-  printf 'Normalized %s: DTXcode=%s DTXcodeBuild=%s DTSDKName=%s BuildMachineOSBuild=%s\n' \
+  [[ "$actual" == "$EXPECTED_HOST_OS_BUILD" ]] \
+    || fail "archive metadata does not match the real build host in $app_plist: expected $EXPECTED_HOST_OS_BUILD, found $actual"
+  printf 'Verified %s: DTXcode=%s DTXcodeBuild=%s DTSDKName=%s BuildMachineOSBuild=%s\n' \
     "$app_plist" "$dtxcode" "$dtxcode_build" "$sdk_name" "$actual"
 done

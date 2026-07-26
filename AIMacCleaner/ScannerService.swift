@@ -5,6 +5,8 @@ import AppKit
 import LocalAuthentication
 import IOKit
 import IOKit.ps
+import Security
+import Darwin
 
 @MainActor
 class ScannerService: ObservableObject {
@@ -23,9 +25,12 @@ class ScannerService: ObservableObject {
     private var ignoredIds: Set<String> = []
     private var ignoreFilePath: String { SandboxPaths.shared.ignoreListPath }
     private var aiConfigFilePath: String { SandboxPaths.shared.aiConfigPath }
+    private let aiKeychainService = "com.tracefence.ai-provider"
+    private let aiKeychainAccount = "api-key"
     private var scanBookmarksPath: String { SandboxPaths.shared.scanBookmarksPath }
     private var scannerCachePath: String { SandboxPaths.shared.scannerCachePath }
     private var authorizedScanRoots: Set<String> = []
+    private var aiScanAllowedPaths: Set<String> = []
     private var hasRestoredScanBookmarks = false
     private var lastCachedSurfaceRefreshTime: Date = .distantPast
     private let automaticCachedSurfaceRefreshInterval: TimeInterval = 6 * 60 * 60
@@ -73,7 +78,10 @@ class ScannerService: ObservableObject {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: scannerCachePath)),
               let cache = try? JSONDecoder().decode(ScannerCache.self, from: data) else { return }
         let canReuseFootprintCache = cache.version >= scannerFootprintCacheVersion
-        scanItems = canReuseFootprintCache ? cache.scanItems : []
+        // AI recommendations are valid only for the exact filesystem snapshot
+        // supplied to the model. Never revive them after a restart without that
+        // allow-list; local rules can be safely restored from cache.
+        scanItems = canReuseFootprintCache ? cache.scanItems.filter { $0.sourceType != .ai } : []
         diskInfo = cache.diskInfo
         hardwareInfo = cache.hardwareInfo
         installedApps = canReuseFootprintCache ? cache.installedApps : []
@@ -114,9 +122,9 @@ class ScannerService: ObservableObject {
             let usedPct = totalBytes > 0 ? Double(usedBytes) / Double(totalBytes) * 100.0 : 0
             return DiskInfo(
                 total: totalBytes, used: usedBytes, free: freeBytes,
-                totalGb: Double(totalBytes) / 1_000_000_000.0,
-                usedGb: Double(usedBytes) / 1_000_000_000.0,
-                freeGb: Double(freeBytes) / 1_000_000_000.0,
+                totalGb: Double(totalBytes) / 1_073_741_824.0,
+                usedGb: Double(usedBytes) / 1_073_741_824.0,
+                freeGb: Double(freeBytes) / 1_073_741_824.0,
                 usedPct: usedPct
             )
         }
@@ -136,9 +144,9 @@ class ScannerService: ObservableObject {
                 let usedPct = totalBytes > 0 ? Double(usedBytes) / Double(totalBytes) * 100.0 : 0
                 return DiskInfo(
                     total: totalBytes, used: usedBytes, free: freeBytes,
-                    totalGb: Double(totalBytes) / 1_000_000_000.0,
-                    usedGb: Double(usedBytes) / 1_000_000_000.0,
-                    freeGb: Double(freeBytes) / 1_000_000_000.0,
+                    totalGb: Double(totalBytes) / 1_073_741_824.0,
+                    usedGb: Double(usedBytes) / 1_073_741_824.0,
+                    freeGb: Double(freeBytes) / 1_073_741_824.0,
                     usedPct: usedPct
                 )
             }
@@ -318,10 +326,14 @@ class ScannerService: ObservableObject {
 
             info.memoryUsed = active + wired + compressed
             info.memoryFree = free + speculative + inactive
-            info.swapUsed = Int64(vmStats.swapouts) * pageSize
-
             let usedPct = total > 0 ? Double(info.memoryUsed) / Double(total) * 100.0 : 0
             info.memoryPressure = usedPct
+        }
+
+        var swapUsage = xsw_usage()
+        var swapSize = MemoryLayout<xsw_usage>.size
+        if sysctlbyname("vm.swapusage", &swapUsage, &swapSize, nil, 0) == 0 {
+            info.swapUsed = Int64(swapUsage.xsu_used)
         }
     }
 
@@ -350,13 +362,10 @@ class ScannerService: ObservableObject {
     }
 
     private nonisolated static func getSystemStats(_ info: inout HardwareInfo) {
-        var procCount: Int32 = 0
-        var size = MemoryLayout<Int32>.size
-        sysctlbyname("kern.num_processes", &procCount, &size, nil, 0)
-        info.processCount = Int(procCount)
+        info.processCount = max(0, Int(proc_listallpids(nil, 0)))
 
         var threadCount: Int32 = 0
-        size = MemoryLayout<Int32>.size
+        var size = MemoryLayout<Int32>.size
         sysctlbyname("kern.num_threads", &threadCount, &size, nil, 0)
         if threadCount > 0 {
             info.threadCount = Int(threadCount)
@@ -836,7 +845,7 @@ class ScannerService: ObservableObject {
         var fileCount = 0
 
         guard let enumerator = fm.enumerator(at: URL(fileURLWithPath: path),
-                                              includingPropertiesForKeys: [.fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .isRegularFileKey],
+                                              includingPropertiesForKeys: [.fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .isRegularFileKey, .isSymbolicLinkKey],
                                               options: [.skipsHiddenFiles],
                                               errorHandler: nil) else {
             return (0, 0)
@@ -844,7 +853,11 @@ class ScannerService: ObservableObject {
 
         for case let url as URL in enumerator {
             do {
-                let values = try url.resourceValues(forKeys: [.fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .isRegularFileKey])
+                let values = try url.resourceValues(forKeys: [.fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
+                if values.isSymbolicLink == true {
+                    enumerator.skipDescendants()
+                    continue
+                }
                 if values.isRegularFile == true {
                     totalSize += Self.diskAllocatedSize(from: values)
                     fileCount += 1
@@ -872,6 +885,20 @@ class ScannerService: ObservableObject {
 
         let itemsToDelete = scanItems.filter { ids.contains($0.id) }
         let targetPaths = itemsToDelete.flatMap { pathsToDelete(for: $0) }
+
+        let unsafeResults = itemsToDelete.flatMap { item in
+            pathsToDelete(for: item).compactMap { path -> DeleteItemResult? in
+                guard let issue = deletionSafetyIssue(for: path, source: item.sourceType) else { return nil }
+                return DeleteItemResult(id: item.id, path: path, success: false, message: issue)
+            }
+        }
+        guard unsafeResults.isEmpty else {
+            errorMessage = localizer?.t(
+                "安全校验拒绝了一个或多个清理路径；未移动任何文件。",
+                en: "Safety validation rejected one or more cleanup paths; no files were moved."
+            ) ?? "Safety validation rejected one or more cleanup paths."
+            return DeleteResult(success: false, results: unsafeResults, deleted: 0, failed: unsafeResults.count)
+        }
 
         guard await authorizeProtectedDeletionIfNeeded(paths: targetPaths) else {
             let failures = targetPaths.filter { guardFeature.isPathProtected($0) }.map {
@@ -913,6 +940,17 @@ class ScannerService: ObservableObject {
 
     func deleteAdvisedPaths(_ targets: [(id: String, path: String, size: Int64, fileCount: Int)]) async -> DeleteResult {
         let targetPaths = targets.map(\.path)
+        let unsafeResults = targets.compactMap { target -> DeleteItemResult? in
+            guard let issue = deletionSafetyIssue(for: target.path, source: .local) else { return nil }
+            return DeleteItemResult(id: target.id, path: target.path, success: false, message: issue)
+        }
+        guard unsafeResults.isEmpty else {
+            errorMessage = localizer?.t(
+                "安全校验拒绝了一个或多个清理路径；未移动任何文件。",
+                en: "Safety validation rejected one or more cleanup paths; no files were moved."
+            ) ?? "Safety validation rejected one or more cleanup paths."
+            return DeleteResult(success: false, results: unsafeResults, deleted: 0, failed: unsafeResults.count)
+        }
         guard await authorizeProtectedDeletionIfNeeded(paths: targetPaths) else {
             let failures = targetPaths.filter { guardFeature.isPathProtected($0) }.map {
                 DeleteItemResult(
@@ -964,6 +1002,98 @@ class ScannerService: ObservableObject {
             return [realPath]
         }
         return [Self.expandUserPath(item.path)]
+    }
+
+    private func deletionSafetyIssue(for rawPath: String, source: ScanItem.SourceType) -> String? {
+        guard let normalized = Self.normalizedAbsolutePath(rawPath) else {
+            return localizer?.t("路径无效，已拒绝清理。", en: "The path is invalid and was rejected.") ?? "Invalid cleanup path."
+        }
+
+        let url = URL(fileURLWithPath: normalized)
+        let canonical = url.resolvingSymlinksInPath().standardizedFileURL.path
+        guard canonical == normalized else {
+            return localizer?.t("路径包含符号链接，已拒绝清理。", en: "Paths containing symbolic links are not eligible for cleanup.") ?? "Symbolic-link path rejected."
+        }
+
+        let home = URL(fileURLWithPath: SandboxPaths.realHomeDirectory).standardizedFileURL.path
+        guard normalized == home || normalized.hasPrefix(home + "/") else {
+            return localizer?.t("仅允许清理当前用户目录内的项目。", en: "Only items inside the current user folder can be cleaned.") ?? "Path is outside the user folder."
+        }
+
+        let protectedExactPaths = [
+            home,
+            home + "/Desktop",
+            home + "/Documents",
+            home + "/Downloads",
+            home + "/Pictures",
+            home + "/Music",
+            home + "/Movies",
+            home + "/Library",
+            home + "/Library/Application Support",
+            home + "/Library/Containers",
+            home + "/Library/Group Containers"
+        ]
+        guard !protectedExactPaths.contains(normalized) else {
+            return localizer?.t("不能把用户资料根目录或系统数据根目录作为清理项。", en: "User-data and system-data root folders cannot be cleanup targets.") ?? "Protected root path rejected."
+        }
+
+        let dockerVMRoot = home + "/Library/Containers/com.docker.docker/Data/vms"
+        guard normalized != dockerVMRoot, !normalized.hasPrefix(dockerVMRoot + "/") else {
+            return localizer?.t("Docker 虚拟磁盘包含镜像、容器和卷数据，不能由缓存清理删除。", en: "Docker virtual disks contain image, container, and volume data and cannot be removed as cache.") ?? "Docker VM data rejected."
+        }
+
+        guard !Self.isBroadApplicationDataRoot(normalized, home: home) else {
+            return localizer?.t("不能把整个应用容器或应用数据目录作为缓存清理。", en: "An entire app container or app-data directory cannot be removed as cache.") ?? "Broad application data path rejected."
+        }
+
+        if source == .ai {
+            guard aiScanAllowedPaths.contains(normalized) else {
+                return localizer?.t("AI 建议的路径不在本次扫描快照中，已拒绝清理。", en: "The AI path was not present in this scan snapshot and was rejected.") ?? "AI path is outside the scan snapshot."
+            }
+            guard Self.isWithinAISafeRoot(normalized, home: home) else {
+                return localizer?.t("AI 只能建议清理明确的缓存、日志或构建产物目录。", en: "AI cleanup is limited to explicit cache, log, and build-output directories.") ?? "AI path is outside safe cleanup roots."
+            }
+        }
+
+        return nil
+    }
+
+    nonisolated private static func normalizedAbsolutePath(_ rawPath: String) -> String? {
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("\0") else { return nil }
+        guard trimmed == "~" || trimmed.hasPrefix("~/") || trimmed.hasPrefix("/") else { return nil }
+        let expanded = expandUserPath(trimmed)
+        return URL(fileURLWithPath: expanded).standardizedFileURL.path
+    }
+
+    nonisolated private static func isBroadApplicationDataRoot(_ path: String, home: String) -> Bool {
+        let prefixes = [
+            home + "/Library/Application Support/",
+            home + "/Library/Containers/",
+            home + "/Library/Group Containers/"
+        ]
+        for prefix in prefixes where path.hasPrefix(prefix) {
+            let remainder = String(path.dropFirst(prefix.count))
+            let components = remainder.split(separator: "/").map(String.init)
+            if prefix.contains("Application Support") {
+                if components.count <= 1 { return true }
+            } else if components.count <= 1 {
+                return true
+            } else if prefix.contains("/Containers/"), components.count <= 3,
+                      Array(components.dropFirst()) == Array(["Data", "Library"].prefix(components.count - 1)) {
+                return true
+            } else if prefix.contains("/Group Containers/"), components.count <= 2,
+                      Array(components.dropFirst()) == Array(["Library"].prefix(components.count - 1)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    nonisolated private static func isWithinAISafeRoot(_ path: String, home: String) -> Bool {
+        aiSafeRootPaths(home: home).contains { root in
+            path.hasPrefix(root + "/")
+        }
     }
 
     private func authorizeProtectedDeletionIfNeeded(paths: [String]) async -> Bool {
@@ -1043,7 +1173,21 @@ class ScannerService: ObservableObject {
             aiConfig = defaultAIConfig()
             return
         }
-        aiConfig = config
+        let legacyKey = config.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let legacyKey, !legacyKey.isEmpty {
+            storeAIAPIKey(legacyKey)
+        }
+        let key = readAIAPIKey()
+        aiConfig = AIConfig(
+            apiBase: config.apiBase,
+            apiKey: key,
+            model: config.model,
+            hasKey: key?.isEmpty == false,
+            mode: config.mode
+        )
+        if legacyKey?.isEmpty == false {
+            saveAIConfigMetadata(aiConfig ?? config)
+        }
     }
 
     func saveLocalAIConfig() {
@@ -1085,11 +1229,77 @@ class ScannerService: ObservableObject {
     }
 
     private func saveAIConfigMetadata(_ config: AIConfig) {
-        guard let data = try? JSONEncoder().encode(config) else { return }
-        try? data.write(to: URL(fileURLWithPath: aiConfigFilePath))
+        let key = config.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let key, !key.isEmpty {
+            storeAIAPIKey(key)
+        } else {
+            deleteAIAPIKey()
+        }
+        let metadata = AIConfig(
+            apiBase: config.apiBase,
+            apiKey: nil,
+            model: config.model,
+            hasKey: key?.isEmpty == false,
+            mode: config.mode
+        )
+        guard let data = try? JSONEncoder().encode(metadata) else { return }
+        let url = URL(fileURLWithPath: aiConfigFilePath)
+        guard (try? data.write(to: url, options: .atomic)) != nil else { return }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    private func readAIAPIKey() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: aiKeychainService,
+            kSecAttrAccount as String: aiKeychainAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data,
+              let value = String(data: data, encoding: .utf8),
+              !value.isEmpty else {
+            return nil
+        }
+        return value
+    }
+
+    private func storeAIAPIKey(_ value: String) {
+        let key = Data(value.utf8)
+        let identity: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: aiKeychainService,
+            kSecAttrAccount as String: aiKeychainAccount
+        ]
+        let status = SecItemUpdate(
+            identity as CFDictionary,
+            [kSecValueData as String: key] as CFDictionary
+        )
+        if status == errSecItemNotFound {
+            var item = identity
+            item[kSecValueData as String] = key
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            SecItemAdd(item as CFDictionary, nil)
+        }
+    }
+
+    private func deleteAIAPIKey() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: aiKeychainService,
+            kSecAttrAccount as String: aiKeychainAccount
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 
     // MARK: - AI Scan
+
+    private struct AIScanSnapshot {
+        let prompt: String
+        let allowedPaths: Set<String>
+    }
 
     func startAiScan() async {
         isAiScanning = true
@@ -1099,9 +1309,27 @@ class ScannerService: ObservableObject {
             en: "Analyzing local directories with Apple Intelligence..."
         ) ?? "Analyzing local directories with Apple Intelligence..."
 
+        restoreScanAccessFromBookmarks()
+        if authorizedScanRoots.isEmpty, !requestLocalScanAccess() {
+            isAiScanning = false
+            aiStatusMessage = ""
+            errorMessage = localizer?.selectMonitorDirs ?? "Please select folders to scan"
+            return
+        }
+
         let config = aiConfig ?? defaultAIConfig()
-        let dirInfo = collectDirInfo()
-        let result = await callLLM(config: config, dirInfo: dirInfo)
+        let snapshot = collectDirInfo()
+        aiScanAllowedPaths = snapshot.allowedPaths
+        guard !snapshot.allowedPaths.isEmpty else {
+            isAiScanning = false
+            aiStatusMessage = ""
+            errorMessage = localizer?.t(
+                "授权目录内没有发现可交给 AI 判断的缓存、日志或构建产物。",
+                en: "No cache, log, or build-output candidates were found in the authorized folders."
+            ) ?? "No eligible AI cleanup candidates were found."
+            return
+        }
+        let result = await callLLM(config: config, dirInfo: snapshot.prompt)
         guard result.success, let analyzedItems = result.items else {
             isAiScanning = false
             errorMessage = result.error ?? (localizer?.aiResponseFormatError ?? "AI response format error")
@@ -2987,25 +3215,26 @@ class ScannerService: ObservableObject {
         return false
     }
 
-    private func collectDirInfo() -> String {
+    private func collectDirInfo() -> AIScanSnapshot {
         var lines: [String] = []
+        var allowedPaths = Set<String>()
         let scanDirs: [(String, String, Int)] = [
             ("~/Library/Caches", "User Caches", 100),
-            ("~/Library/Application Support", "App Support", 80),
             ("~/Library/Logs", "User Logs", 50),
-            ("~/Library/Containers", "App Containers", 50),
-            ("~/Library/Developer", "Developer", 50),
+            ("~/Library/Developer/Xcode/DerivedData", "Xcode DerivedData", 80),
+            ("~/Library/Developer/CoreSimulator/Caches", "Simulator Caches", 50),
             ("~/.cache", "Dot Cache", 50),
-            ("~/.npm", "npm", 20),
-            ("~/Library/Application Support/Google/Chrome/Default", "Chrome Default Profile", 30),
-            ("~/Library/Application Support/LarkShell", "Lark/飞书", 20),
-            ("~/Library/Application Support/Claude-3p", "Claude Code", 20),
+            ("~/.npm/_cacache", "npm Cache", 50),
+            ("~/.pnpm-store", "pnpm Store", 50),
+            ("~/.gradle/caches", "Gradle Cache", 50),
+            ("~/.cargo/registry", "Cargo Registry Cache", 50),
         ]
 
         let fm = FileManager.default
 
         for (dirPath, label, maxEntries) in scanDirs {
-            let expanded = NSString(string: dirPath).expandingTildeInPath
+            let expanded = Self.expandUserPath(dirPath)
+            guard Self.isPathWithinAuthorizedRoots(expanded, roots: authorizedScanRoots) else { continue }
             lines.append("\n## \(label) (\(dirPath))")
 
             var isDir: ObjCBool = false
@@ -3018,22 +3247,40 @@ class ScannerService: ObservableObject {
                 continue
             }
 
-            var entries: [(String, Int64)] = []
+            var entries: [(String, String, Int64)] = []
             for name in contents.prefix(maxEntries) {
                 let fullPath = (expanded as NSString).appendingPathComponent(name)
+                guard let normalized = Self.normalizedAbsolutePath(fullPath),
+                      Self.isWithinAISafeRoot(normalized, home: SandboxPaths.realHomeDirectory) else {
+                    continue
+                }
+                let url = URL(fileURLWithPath: normalized)
+                let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey, .isRegularFileKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .fileSizeKey])
+                guard values?.isSymbolicLink != true,
+                      values?.isDirectory == true || values?.isRegularFile == true else {
+                    continue
+                }
                 let (size, _) = Self.calculateDirectorySizeStatic(at: fullPath)
-                if size > 0 {
-                    entries.append((name, size))
+                let itemSize: Int64
+                if values?.isRegularFile == true {
+                    itemSize = Self.diskAllocatedSize(from: values ?? URLResourceValues())
+                } else {
+                    itemSize = size
+                }
+                if itemSize > 0 {
+                    entries.append((name, normalized, itemSize))
+                    allowedPaths.insert(normalized)
                 }
             }
-            entries.sort { $0.1 > $1.1 }
+            entries.sort { $0.2 > $1.2 }
 
-            for (name, size) in entries {
-                lines.append("  \(formatSize(size))  \(name)")
+            for (name, path, size) in entries {
+                let displayPath = path.replacingOccurrences(of: SandboxPaths.realHomeDirectory, with: "~", options: [.anchored])
+                lines.append("  \(formatSize(size))  \(name)  [path: \(displayPath)]")
             }
         }
 
-        return lines.joined(separator: "\n")
+        return AIScanSnapshot(prompt: lines.joined(separator: "\n"), allowedPaths: allowedPaths)
     }
 
     private func callLLM(config: AIConfig, dirInfo: String) async -> (success: Bool, items: [ScanItem]?, error: String?) {
@@ -3274,15 +3521,28 @@ class ScannerService: ObservableObject {
         let fm = FileManager.default
 
         for (i, item) in items.enumerated() {
-            let path = (item["path"] as? String ?? "").replacingOccurrences(of: "~", with: SandboxPaths.realHomeDirectory)
-            let expanded = NSString(string: path).expandingTildeInPath
+            let rawPath = item["path"] as? String ?? ""
+            guard let expanded = Self.normalizedAbsolutePath(rawPath),
+                  aiScanAllowedPaths.contains(expanded),
+                  Self.isWithinAISafeRoot(expanded, home: SandboxPaths.realHomeDirectory) else {
+                continue
+            }
             var size: Int64 = 0
             var fileCount = 0
 
             var isDir: ObjCBool = false
-            if fm.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue {
+            guard fm.fileExists(atPath: expanded, isDirectory: &isDir) else { continue }
+            let url = URL(fileURLWithPath: expanded)
+            let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .fileSizeKey])
+            guard values?.isSymbolicLink != true,
+                  url.resolvingSymlinksInPath().standardizedFileURL.path == expanded else { continue }
+            if isDir.boolValue {
                 (size, fileCount) = Self.calculateDirectorySizeStatic(at: expanded)
+            } else {
+                size = Self.diskAllocatedSize(from: values ?? URLResourceValues())
+                fileCount = 1
             }
+            guard size > 0 else { continue }
 
             results.append(ScanItem(
                 id: "ai_\(i)",
@@ -3291,7 +3551,7 @@ class ScannerService: ObservableObject {
                 app: item["app"] as? String ?? "Unknown",
                 risk: item["risk"] as? String ?? "caution",
                 riskDesc: item["risk_desc"] as? String ?? "",
-                path: item["path"] as? String ?? "",
+                path: rawPath,
                 realPath: expanded,
                 size: size,
                 fileCount: fileCount,
@@ -3303,6 +3563,20 @@ class ScannerService: ObservableObject {
 
         results.sort { $0.size > $1.size }
         return (success: true, items: results, error: nil)
+    }
+
+    nonisolated private static func aiSafeRootPaths(home: String) -> [String] {
+        [
+            home + "/Library/Caches",
+            home + "/Library/Logs",
+            home + "/Library/Developer/Xcode/DerivedData",
+            home + "/Library/Developer/CoreSimulator/Caches",
+            home + "/.cache",
+            home + "/.npm/_cacache",
+            home + "/.pnpm-store",
+            home + "/.gradle/caches",
+            home + "/.cargo/registry"
+        ].map { URL(fileURLWithPath: $0).standardizedFileURL.path }
     }
 
     // MARK: - Utility

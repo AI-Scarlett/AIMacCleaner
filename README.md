@@ -208,11 +208,10 @@ AIMacCleaner/
 | 分类 | 覆盖内容 |
 |------|----------|
 | 浏览器 | Google Chrome, 夸克 |
-| 办公 | 飞书/Lark, 钉钉, WPS Office, XMind |
+| 办公 | 飞书/Lark |
 | AI Agent | Trae, CodeBuddy, Claude, Codex, Hermes, yi-code, Cline, MiniMax, Cherry Studio, LM Studio, OpenClaw, QClaw, CodeArts, Kimi, DeepSeek, 豆包, 通义千问, Augment, Copilot, Aider, Cody, Tabby, Warp, ChatGPT, Gemini, 智谱AI, 讯飞星火, 通义灵码, Whitzard, Cursor, Windsurf, Roo Code, Continue, Amazon Q, Tabnine, Lingma, OpenHands, CrewAI, AutoGen, MetaGPT, CAMEL, DeerFlow, Dify, BrowserUse, Huginn, AgentGPT, LobeHub, LangGraph, Swarm, AgentScope, UI-TARS 等 50+ |
 | 开发 | Electron, Python/pip, Homebrew, npm, pnpm, CocoaPods, Gradle, Maven, Cargo, Go, Conda, Julia, pyenv, NVM, Android SDK, OpenHarmony SDK, HarmonyOS SDK, VS Code, IntelliJ 等 |
 | 系统 | macOS 照片分析, 系统日志, 地理位置服务 |
-| 社交 | 微信, QQ |
 
 ### 风险等级说明
 

@@ -901,14 +901,19 @@ private enum DiskAdvisorAIClient {
     private static func recommendation(from value: Any?) -> DiskAdvisorRecommendation? {
         guard let raw = stringValue(value)?.lowercased() else { return nil }
         if let exact = DiskAdvisorRecommendation(rawValue: raw) { return exact }
-        if raw.contains("clean") || raw.contains("delete") || raw.contains("remove") || raw.contains("trash") || raw.contains("safe") {
-            return .clean
+        if containsAnyPhrase(raw, [
+            "do not delete", "don't delete", "dont delete", "not safe",
+            "unsafe", "must keep", "should keep", "keep", "retain",
+            "preserve", "danger"
+        ]) {
+            return .keep
         }
-        if raw.contains("review") || raw.contains("check") || raw.contains("confirm") || raw.contains("caution") {
+        let tokens = wordTokens(raw)
+        if !tokens.isDisjoint(with: ["review", "check", "confirm", "caution"]) {
             return .review
         }
-        if raw.contains("keep") || raw.contains("retain") || raw.contains("preserve") || raw.contains("danger") {
-            return .keep
+        if !tokens.isDisjoint(with: ["clean", "delete", "remove", "trash"]) {
+            return .clean
         }
         return nil
     }
@@ -916,19 +921,31 @@ private enum DiskAdvisorAIClient {
     private static func risk(from value: Any?) -> DiskAdvisorRisk? {
         guard let raw = stringValue(value)?.lowercased() else { return nil }
         if let exact = DiskAdvisorRisk(rawValue: raw) { return exact }
-        if raw.contains("safe") || raw == "low" {
-            return .safe
-        }
-        if raw.contains("caution") || raw.contains("medium") || raw.contains("review") {
-            return .caution
-        }
-        if raw.contains("danger") || raw.contains("high") || raw.contains("risky") {
+        if containsAnyPhrase(raw, ["not safe", "unsafe"]) {
             return .danger
         }
-        if raw.contains("unknown") || raw.contains("unclear") {
+        let tokens = wordTokens(raw)
+        if !tokens.isDisjoint(with: ["danger", "dangerous", "high", "risky"]) {
+            return .danger
+        }
+        if !tokens.isDisjoint(with: ["caution", "medium", "review"]) {
+            return .caution
+        }
+        if !tokens.isDisjoint(with: ["safe", "low"]) {
+            return .safe
+        }
+        if !tokens.isDisjoint(with: ["unknown", "unclear"]) {
             return .unknown
         }
         return nil
+    }
+
+    private static func containsAnyPhrase(_ text: String, _ phrases: [String]) -> Bool {
+        phrases.contains { text.contains($0) }
+    }
+
+    private static func wordTokens(_ text: String) -> Set<String> {
+        Set(text.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty })
     }
 
     private static func confidence(from value: Any?) -> Double? {

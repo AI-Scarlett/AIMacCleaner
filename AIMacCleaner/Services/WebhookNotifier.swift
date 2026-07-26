@@ -1,4 +1,61 @@
 import Foundation
+import CryptoKit
+import Security
+
+private enum WebhookURLPolicy {
+    static func allows(_ url: URL?) -> Bool {
+        guard let url,
+              url.scheme?.lowercased() == "https",
+              url.user == nil,
+              url.password == nil,
+              url.fragment == nil,
+              let host = url.host?.lowercased(),
+              !host.isEmpty else {
+            return false
+        }
+
+        if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") {
+            return false
+        }
+        var unwrapped = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        if unwrapped.hasPrefix("::ffff:") {
+            unwrapped = String(unwrapped.dropFirst("::ffff:".count))
+        }
+        if unwrapped == "::" || unwrapped == "::1" || unwrapped.hasPrefix("fe80:") || unwrapped.hasPrefix("fc") || unwrapped.hasPrefix("fd") || unwrapped.hasPrefix("ff") {
+            return false
+        }
+        if unwrapped.allSatisfy(\.isNumber) || unwrapped.hasPrefix("0x") {
+            return false
+        }
+        let octets = unwrapped.split(separator: ".").compactMap { Int($0) }
+        if octets.count == 4 {
+            guard octets.allSatisfy({ (0...255).contains($0) }) else { return false }
+            switch (octets[0], octets[1]) {
+            case (0, _), (10, _), (127, _), (169, 254), (192, 168):
+                return false
+            case (100, 64...127), (172, 16...31), (198, 18...19):
+                return false
+            case (224...255, _):
+                return false
+            default:
+                break
+            }
+        }
+        return true
+    }
+}
+
+private final class WebhookSessionDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(WebhookURLPolicy.allows(request.url) ? request : nil)
+    }
+}
 
 struct WebhookConfig: Codable {
     var enabled: Bool = false
@@ -21,18 +78,25 @@ struct WebhookPayload: Codable {
 actor WebhookNotifier {
     private var config: WebhookConfig = WebhookConfig()
     private let configPath = NSHomeDirectory() + "/.tracefence_webhook_config.json"
+    private let keychainService = "com.tracefence.webhook"
+    private let keychainAccount = "hmac-secret"
+    private let sessionDelegate: WebhookSessionDelegate
     private var session: URLSession
 
     init() {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 10
-        session = URLSession(configuration: configuration)
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieStorage = nil
+        let delegate = WebhookSessionDelegate()
+        sessionDelegate = delegate
+        session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         Task { await loadConfig() }
     }
 
     func notify(for event: AgentHookEvent) {
         guard config.enabled, !config.url.isEmpty else { return }
-        guard let url = URL(string: config.url) else { return }
+        guard let url = URL(string: config.url), WebhookURLPolicy.allows(url) else { return }
 
         let eventName = eventName(for: event)
         if !config.eventFilter.isEmpty && !config.eventFilter.contains(eventName) {
@@ -48,6 +112,13 @@ actor WebhookNotifier {
 
     func updateConfig(_ newConfig: WebhookConfig) {
         config = newConfig
+        if let secret = newConfig.secret?.trimmingCharacters(in: .whitespacesAndNewlines), !secret.isEmpty {
+            storeSecret(secret)
+            config.secret = secret
+        } else {
+            deleteSecret()
+            config.secret = nil
+        }
         saveConfig()
     }
 
@@ -155,17 +226,71 @@ actor WebhookNotifier {
     }
 
     private func hmacSHA256(body: Data, secret: String) -> String {
-        return "sha256=none"
+        let key = SymmetricKey(data: Data(secret.utf8))
+        let signature = HMAC<SHA256>.authenticationCode(for: body, using: key)
+        return "sha256=" + signature.map { String(format: "%02x", $0) }.joined()
     }
 
     private func loadConfig() {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
               let decoded = try? JSONDecoder().decode(WebhookConfig.self, from: data) else { return }
         config = decoded
+        if let legacySecret = decoded.secret?.trimmingCharacters(in: .whitespacesAndNewlines), !legacySecret.isEmpty {
+            storeSecret(legacySecret)
+        }
+        config.secret = loadSecret() ?? decoded.secret
+        if decoded.secret?.isEmpty == false {
+            saveConfig()
+        }
     }
 
     private func saveConfig() {
-        guard let data = try? JSONEncoder().encode(config) else { return }
-        try? data.write(to: URL(fileURLWithPath: configPath))
+        var metadata = config
+        metadata.secret = nil
+        guard let data = try? JSONEncoder().encode(metadata) else { return }
+        let url = URL(fileURLWithPath: configPath)
+        guard (try? data.write(to: url, options: .atomic)) != nil else { return }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    private func loadSecret() -> String? {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: keychainService,
+            kSecAttrAccount: keychainAccount,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data,
+              let secret = String(data: data, encoding: .utf8),
+              !secret.isEmpty else { return nil }
+        return secret
+    }
+
+    private func storeSecret(_ secret: String) {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: keychainService,
+            kSecAttrAccount: keychainAccount
+        ]
+        let attributes: [CFString: Any] = [kSecValueData: Data(secret.utf8)]
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = query
+            item[kSecValueData] = Data(secret.utf8)
+            item[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            SecItemAdd(item as CFDictionary, nil)
+        }
+    }
+
+    private func deleteSecret() {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: keychainService,
+            kSecAttrAccount: keychainAccount
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }

@@ -114,7 +114,6 @@ elif is_valid_pairing_token "$DIRECT_TOKEN"; then
 else
   TOKEN="$(openssl rand -hex 32)"
 fi
-defaults write com.tracefence.app traceFenceIOSRemoteGatewayToken "$TOKEN"
 
 CORE_ENABLED="$(plutil -extract enabled raw "$HTTP_CONFIG_PATH" 2>/dev/null || true)"
 case "$CORE_ENABLED" in

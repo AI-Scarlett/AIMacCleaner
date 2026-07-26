@@ -8,6 +8,17 @@ enum HookInstallHealth {
     case settingsCorrupted
 }
 
+enum HookInstallerError: LocalizedError {
+    case invalidJSON(URL)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidJSON(let url):
+            return "TraceFence did not modify \(url.path) because it is not a valid JSON object. Repair the file and try again; the existing settings were preserved."
+        }
+    }
+}
+
 actor HookInstaller {
     private let blockStart = "# [AGENTGUARD-START]"
     private let blockEnd = "# [AGENTGUARD-END]"
@@ -54,7 +65,7 @@ actor HookInstaller {
             fallbackBridgeMarker,
             "log_dir=\"${HOME}/.agentguard\"",
             "log_file=\"${log_dir}/bridge.log\"",
-            "socket=\"${AGENTGUARD_SOCKET:-/tmp/agentguard.sock}\"",
+            "socket=\"${AGENTGUARD_SOCKET:-\(AgentHookSocket.path)}\"",
             "payload=\"$(cat)\"",
             "if [ -z \"$payload\" ]; then",
             "  exit 0",
@@ -131,7 +142,7 @@ actor HookInstaller {
 
     func hookCommand(bridgePath: String, label: String, agentId: String) -> String {
         let env = "/usr/bin/env"
-        let socket = "AGENTGUARD_SOCKET=\(shellQuote("/tmp/agentguard.sock"))"
+        let socket = "AGENTGUARD_SOCKET=\(shellQuote(AgentHookSocket.path))"
         let agLabel = "AGENTGUARD_AGENT=\(shellQuote(label))"
         let agId = "AGENTGUARD_ENGINE_ID=\(shellQuote(agentId))"
         let bridge = shellQuote(bridgePath)
@@ -139,7 +150,7 @@ actor HookInstaller {
     }
 
     func injectJSONHooks(at configPath: URL, events: [HookEventDescriptor], hookCommand: String) throws {
-        var config = readJSON(at: configPath)
+        var config = try readJSON(at: configPath)
         var hooks = config["hooks"] as? [String: [[String: Any]]] ?? [:]
 
         for event in events {
@@ -156,7 +167,7 @@ actor HookInstaller {
     }
 
     func removeJSONHooks(at configPath: URL) throws {
-        var config = readJSON(at: configPath)
+        var config = try readJSON(at: configPath)
         guard var hooks = config["hooks"] as? [String: [[String: Any]]] else { return }
 
         for (eventName, var entries) in hooks {
@@ -232,10 +243,12 @@ actor HookInstaller {
         }
     }
 
-    private func readJSON(at path: URL) -> [String: Any] {
-        guard let data = try? Data(contentsOf: path),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return [:]
+    private func readJSON(at path: URL) throws -> [String: Any] {
+        guard FileManager.default.fileExists(atPath: path.path) else { return [:] }
+        let data = try Data(contentsOf: path)
+        guard !data.isEmpty,
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw HookInstallerError.invalidJSON(path)
         }
         return json
     }
@@ -313,6 +326,14 @@ actor HookInstaller {
     private func atomicWrite(_ content: String, to path: URL) throws {
         let dir = path.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: path.path) {
+            let backupPath = path.appendingPathExtension("agentguard.bak")
+            if !FileManager.default.fileExists(atPath: backupPath.path) {
+                // Keep the first known-good pre-TraceFence configuration as the
+                // recovery copy instead of overwriting it on every hook refresh.
+                try FileManager.default.copyItem(at: path, to: backupPath)
+            }
+        }
         let tmpPath = path.appendingPathExtension("tmp")
         try content.write(to: tmpPath, atomically: true, encoding: .utf8)
         if FileManager.default.fileExists(atPath: path.path) {

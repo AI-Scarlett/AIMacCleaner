@@ -1246,13 +1246,29 @@ private struct AgentUsageStatisticsContext: Sendable {
 private struct AgentUsageModelPrice {
     let inputPerMillion: Double
     let cachedInputPerMillion: Double
+    let cacheWrite5mPerMillion: Double
+    let cacheWrite1hPerMillion: Double
     let outputPerMillion: Double
+
+    init(
+        inputPerMillion: Double,
+        cachedInputPerMillion: Double,
+        cacheWrite5mPerMillion: Double? = nil,
+        cacheWrite1hPerMillion: Double? = nil,
+        outputPerMillion: Double
+    ) {
+        self.inputPerMillion = inputPerMillion
+        self.cachedInputPerMillion = cachedInputPerMillion
+        self.cacheWrite5mPerMillion = cacheWrite5mPerMillion ?? inputPerMillion
+        self.cacheWrite1hPerMillion = cacheWrite1hPerMillion ?? inputPerMillion
+        self.outputPerMillion = outputPerMillion
+    }
 }
 
 /// Centralized API-equivalent reference prices. Values are estimates used only
 /// for local comparison; they are not invoices and unknown models are omitted.
 private enum AgentUsagePricingCatalog {
-    static func price(scope: AgentUsageScope, model: String?) -> AgentUsageModelPrice? {
+    static func price(scope: AgentUsageScope, model: String?, at date: Date? = nil) -> AgentUsageModelPrice? {
         let value = (model ?? "").lowercased()
         guard !value.isEmpty else { return nil }
 
@@ -1288,14 +1304,30 @@ private enum AgentUsagePricingCatalog {
             }
             return nil
         case .claude:
+            if containsClaudeVersion(value, family: "opus", versions: ["4-5", "4-6", "4-7", "4-8"]) {
+                return AgentUsageModelPrice(inputPerMillion: 5, cachedInputPerMillion: 0.5, cacheWrite5mPerMillion: 6.25, cacheWrite1hPerMillion: 10, outputPerMillion: 25)
+            }
             if value.contains("opus") {
-                return AgentUsageModelPrice(inputPerMillion: 15, cachedInputPerMillion: 1.5, outputPerMillion: 75)
+                return AgentUsageModelPrice(inputPerMillion: 15, cachedInputPerMillion: 1.5, cacheWrite5mPerMillion: 18.75, cacheWrite1hPerMillion: 30, outputPerMillion: 75)
+            }
+            if containsClaudeVersion(value, family: "sonnet", versions: ["5", "5-0"]) {
+                let introductoryPriceEnds = Date(timeIntervalSince1970: 1_788_220_800) // 2026-09-01 00:00:00 UTC
+                if (date ?? Date()) < introductoryPriceEnds {
+                    return AgentUsageModelPrice(inputPerMillion: 2, cachedInputPerMillion: 0.2, cacheWrite5mPerMillion: 2.5, cacheWrite1hPerMillion: 4, outputPerMillion: 10)
+                }
+                return AgentUsageModelPrice(inputPerMillion: 3, cachedInputPerMillion: 0.3, cacheWrite5mPerMillion: 3.75, cacheWrite1hPerMillion: 6, outputPerMillion: 15)
             }
             if value.contains("sonnet") {
-                return AgentUsageModelPrice(inputPerMillion: 3, cachedInputPerMillion: 0.3, outputPerMillion: 15)
+                return AgentUsageModelPrice(inputPerMillion: 3, cachedInputPerMillion: 0.3, cacheWrite5mPerMillion: 3.75, cacheWrite1hPerMillion: 6, outputPerMillion: 15)
+            }
+            if containsClaudeVersion(value, family: "haiku", versions: ["4-5"]) {
+                return AgentUsageModelPrice(inputPerMillion: 1, cachedInputPerMillion: 0.1, cacheWrite5mPerMillion: 1.25, cacheWrite1hPerMillion: 2, outputPerMillion: 5)
+            }
+            if containsClaudeVersion(value, family: "haiku", versions: ["3-5"]) {
+                return AgentUsageModelPrice(inputPerMillion: 0.8, cachedInputPerMillion: 0.08, cacheWrite5mPerMillion: 1, cacheWrite1hPerMillion: 1.6, outputPerMillion: 4)
             }
             if value.contains("haiku") {
-                return AgentUsageModelPrice(inputPerMillion: 0.8, cachedInputPerMillion: 0.08, outputPerMillion: 4)
+                return AgentUsageModelPrice(inputPerMillion: 0.25, cachedInputPerMillion: 0.03, cacheWrite5mPerMillion: 0.3, cacheWrite1hPerMillion: 0.5, outputPerMillion: 1.25)
             }
             return nil
         case .openCode, .openClaw:
@@ -1308,8 +1340,40 @@ private enum AgentUsagePricingCatalog {
         }
     }
 
-    static func estimatedCost(tokens: AgentUsageTokenTotals, price: AgentUsageModelPrice?) -> (Double, Bool) {
+    private static func containsClaudeVersion(_ value: String, family: String, versions: [String]) -> Bool {
+        versions.contains { version in
+            let dotted = version.replacingOccurrences(of: "-", with: ".")
+            return value.contains("\(family)-\(version)")
+                || value.contains("\(family)_\(version)")
+                || value.contains("\(family) \(version)")
+                || value.contains("\(family)-\(dotted)")
+                || value.contains("\(family)_\(dotted)")
+                || value.contains("\(family) \(dotted)")
+        }
+    }
+
+    static func estimatedCost(
+        tokens: AgentUsageTokenTotals,
+        price: AgentUsageModelPrice?,
+        cacheReadTokens: Int64? = nil,
+        cacheWriteTokens: Int64 = 0,
+        cacheWriteOneHourTokens: Int64 = 0
+    ) -> (Double, Bool) {
         guard let price else { return (0, false) }
+        if let cacheReadTokens {
+            let inputTokens = max(0, tokens.input)
+            let readTokens = min(max(0, cacheReadTokens), inputTokens)
+            let writeTokens = min(max(0, cacheWriteTokens), max(0, inputTokens - readTokens))
+            let oneHourTokens = min(max(0, cacheWriteOneHourTokens), writeTokens)
+            let fiveMinuteTokens = max(0, writeTokens - oneHourTokens)
+            let uncachedTokens = max(0, inputTokens - readTokens - writeTokens)
+            let input = Double(uncachedTokens) / 1_000_000 * price.inputPerMillion
+            let read = Double(readTokens) / 1_000_000 * price.cachedInputPerMillion
+            let write5m = Double(fiveMinuteTokens) / 1_000_000 * price.cacheWrite5mPerMillion
+            let write1h = Double(oneHourTokens) / 1_000_000 * price.cacheWrite1hPerMillion
+            let output = Double(max(0, tokens.output)) / 1_000_000 * price.outputPerMillion
+            return (input + read + write5m + write1h + output, true)
+        }
         let input = Double(max(0, tokens.uncachedInput)) / 1_000_000 * price.inputPerMillion
         let cached = Double(max(0, min(tokens.cached, tokens.input))) / 1_000_000 * price.cachedInputPerMillion
         let output = Double(max(0, tokens.output)) / 1_000_000 * price.outputPerMillion
@@ -2686,8 +2750,21 @@ private final class AgentUsageClaudeTranscriptParser {
                     ?? AgentUsageValues.string(object["id"])
                 if let messageID, !seenMessageIDs.insert(messageID).inserted { return }
 
-                let price = AgentUsagePricingCatalog.price(scope: .claude, model: currentModel)
-                let estimated = AgentUsagePricingCatalog.estimatedCost(tokens: tokens, price: price)
+                let price = AgentUsagePricingCatalog.price(scope: .claude, model: currentModel, at: date)
+                let cacheRead = max(0, AgentUsageValues.int64(usage["cache_read_input_tokens"]) ?? 0)
+                let cacheWrite = max(0, AgentUsageValues.int64(usage["cache_creation_input_tokens"]) ?? 0)
+                let cacheCreation = usage["cache_creation"] as? [String: Any]
+                let cacheWriteOneHour = max(
+                    0,
+                    AgentUsageValues.int64(cacheCreation?["ephemeral_1h_input_tokens"]) ?? 0
+                )
+                let estimated = AgentUsagePricingCatalog.estimatedCost(
+                    tokens: tokens,
+                    price: price,
+                    cacheReadTokens: cacheRead,
+                    cacheWriteTokens: cacheWrite,
+                    cacheWriteOneHourTokens: cacheWriteOneHour
+                )
                 events.add(AgentUsageEvent(
                     id: messageID.map(AgentUsagePrivacy.digest),
                     date: date,
@@ -5234,6 +5311,22 @@ extension AgentUsageInsightsService {
         expect(AgentUsageTokenFormatter.string(250_000_000) == "250.00M", "shared token formatter must use the M unit consistently")
         expect(AgentUsageTokenFormatter.string(-10) == "0", "shared token formatter must clamp invalid negative totals")
         expect(AgentUsageTokenFormatter.exactString(40_747_845_038) == "40,747,845,038", "exact token formatter must preserve every digit")
+        let opus48 = AgentUsagePricingCatalog.price(scope: .claude, model: "claude-opus-4-8")
+        expect(opus48?.inputPerMillion == 5 && opus48?.outputPerMillion == 25, "Claude Opus 4.8 must use its current model-specific price")
+        let sonnet5Intro = AgentUsagePricingCatalog.price(
+            scope: .claude,
+            model: "claude-sonnet-5",
+            at: Date(timeIntervalSince1970: 1_785_000_000)
+        )
+        expect(sonnet5Intro?.inputPerMillion == 2 && sonnet5Intro?.outputPerMillion == 10, "Claude Sonnet 5 introductory pricing must apply to usage before September 2026")
+        let sonnet5Standard = AgentUsagePricingCatalog.price(
+            scope: .claude,
+            model: "claude-sonnet-5",
+            at: Date(timeIntervalSince1970: 1_788_220_800)
+        )
+        expect(sonnet5Standard?.inputPerMillion == 3 && sonnet5Standard?.outputPerMillion == 15, "Claude Sonnet 5 standard pricing must apply after the introductory period")
+        let haiku45 = AgentUsagePricingCatalog.price(scope: .claude, model: "claude-haiku-4-5")
+        expect(haiku45?.inputPerMillion == 1 && haiku45?.outputPerMillion == 5, "Claude Haiku 4.5 must not inherit the older Haiku 3.5 price")
         return failures
     }
 

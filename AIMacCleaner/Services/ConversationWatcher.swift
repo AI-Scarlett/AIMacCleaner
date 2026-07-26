@@ -219,7 +219,12 @@ class ConversationWatcher: ObservableObject {
     }
 
     private func mergeDiscoveredConversations(_ found: [ConversationFile]) {
-        var mergedByID = Dictionary(uniqueKeysWithValues: discoveredConversations.map { ($0.id, $0) })
+        // A scan is also a reconciliation pass: never keep rows whose source
+        // file has already been removed or rotated by the Agent.
+        let existingFiles = discoveredConversations.filter {
+            FileManager.default.fileExists(atPath: $0.path)
+        }
+        var mergedByID = Dictionary(uniqueKeysWithValues: existingFiles.map { ($0.id, $0) })
         for conv in found {
             if let existing = mergedByID[conv.id], existing.timestamp > conv.timestamp {
                 continue

@@ -174,9 +174,6 @@ final class DirectUpdateService: ObservableObject {
                 } else {
                     NSApp.terminate(nil)
                 }
-                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 2.0) {
-                    Darwin.exit(0)
-                }
             }
         } catch {
             isDownloading = false

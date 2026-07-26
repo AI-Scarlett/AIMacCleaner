@@ -430,6 +430,7 @@ final class AgentGeoMirrorService {
     private func writeProfileJSON(_ profile: AgentGeoMirrorProfile, to url: URL) throws {
         let data = try encoder.encode(profile)
         try data.write(to: url, options: .atomic)
+        try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
     private func writePortableProfileFiles(_ profile: AgentGeoMirrorProfile, rootURL: URL, assets: AgentGeoMirrorGeneratedAssets) throws {
@@ -449,6 +450,9 @@ final class AgentGeoMirrorService {
         TRACEFENCE_PROFILE_CONTEXT_PATH=\(assets.profileContextURL.path)
         TRACEFENCE_RAW_PROFILE_PATH=\(assets.rawProfileURL.path)
         """.write(to: assets.profileLinksURL, atomically: true, encoding: .utf8)
+        for url in [assets.portableProfileURL, assets.profileContextURL, assets.profileLinksURL] {
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        }
     }
 
     private func portableProfile(
@@ -486,7 +490,7 @@ final class AgentGeoMirrorService {
                 accuracyMeters: profile.accuracyMeters
             ),
             proxy: AgentGeoMirrorPortableProfile.Proxy(
-                url: profile.proxyURL,
+                url: redactedProxyURL(profile.proxyURL),
                 noProxy: noProxy
             ),
             environment: [
@@ -531,7 +535,7 @@ final class AgentGeoMirrorService {
         - Region: \(profile.region)
         - City: \(profile.city)
         - Location: \(profile.latitude), \(profile.longitude) (+/- \(profile.accuracyMeters)m)
-        - Proxy: \(profile.proxyURL)
+        - Proxy: \(redactedProxyURL(profile.proxyURL))
         - NO_PROXY: \(normalizedNoProxy(profile.noProxy))
 
         ## How agents should use this
@@ -543,6 +547,13 @@ final class AgentGeoMirrorService {
 
         If an agent cannot read the local URL, read `TRACEFENCE_PROFILE_PATH` or `TRACEFENCE_PROFILE_CONTEXT_PATH` from the environment instead.
         """
+    }
+
+    private func redactedProxyURL(_ rawValue: String) -> String {
+        guard var components = URLComponents(string: rawValue) else { return "" }
+        components.user = nil
+        components.password = nil
+        return components.string ?? ""
     }
 
     private func defaultsBool(_ key: String, fallback: Bool) -> Bool {
@@ -894,6 +905,7 @@ final class AgentGeoMirrorService {
         if !fileManager.fileExists(atPath: url.path) {
             try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
         }
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
     }
 
     private func writeExecutable(_ content: String, to url: URL) throws {
@@ -1735,10 +1747,6 @@ final class AgentGeoMirrorProfileServer {
         }
 
         let method = parts[0].uppercased()
-        if method == "OPTIONS" {
-            send(status: "204 No Content", contentType: "text/plain; charset=utf-8", body: Data(), on: connection)
-            return
-        }
         guard method == "GET" || method == "HEAD" else {
             send(status: "405 Method Not Allowed", contentType: "text/plain; charset=utf-8", body: Data("Method Not Allowed\n".utf8), on: connection)
             return
@@ -1782,31 +1790,32 @@ final class AgentGeoMirrorProfileServer {
 
     private func route(for path: String) -> (url: URL, contentType: String)? {
         let parts = path.split(separator: "/").map(String.init)
-        var profileID = AgentGeoMirrorProfileAccess.profileID(activeProfileName)
-        var resource = parts.last ?? "agent-profile.md"
+        let activeProfileID = AgentGeoMirrorProfileAccess.profileID(activeProfileName)
+        let resource: String
 
-        if parts.count >= 3, parts[0] == "profiles" {
-            profileID = parts[1]
+        if parts.count == 3, parts[0] == "profiles" {
+            guard parts[1] == activeProfileID,
+                  AgentGeoMirrorProfileAccess.profileID(parts[1]) == parts[1] else {
+                return nil
+            }
             resource = parts[2]
         } else if parts == [".well-known", "tracefence-profile.json"] {
             resource = "agent-profile.json"
         } else if parts.isEmpty {
             resource = "agent-profile.md"
+        } else {
+            return nil
         }
 
         let rootURL = URL(fileURLWithPath: SandboxPaths.shared.dataDirectory)
             .appendingPathComponent("AgentGeoMirror", isDirectory: true)
-            .appendingPathComponent(profileID, isDirectory: true)
+            .appendingPathComponent(activeProfileID, isDirectory: true)
 
         switch resource {
         case "agent-profile.json", "profile":
             return (rootURL.appendingPathComponent("agent-profile.json"), "application/json; charset=utf-8")
-        case "profile.json", "raw-profile.json":
-            return (rootURL.appendingPathComponent("profile.json"), "application/json; charset=utf-8")
         case "agent-profile.md", "context.md", "context":
             return (rootURL.appendingPathComponent("agent-profile.md"), "text/markdown; charset=utf-8")
-        case "profile-url.txt", "urls.txt":
-            return (rootURL.appendingPathComponent("profile-url.txt"), "text/plain; charset=utf-8")
         default:
             return nil
         }
@@ -1818,9 +1827,6 @@ final class AgentGeoMirrorProfileServer {
         Content-Type: \(contentType)\r
         Content-Length: \(body.count)\r
         Cache-Control: no-store\r
-        Access-Control-Allow-Origin: *\r
-        Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r
-        Access-Control-Allow-Headers: *\r
         Connection: close\r
         \r
 

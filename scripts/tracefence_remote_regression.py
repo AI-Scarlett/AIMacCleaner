@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
+import hashlib
+import hmac
 import json
 import os
+import secrets
 import subprocess
 import sys
 import time
 from collections import Counter
+from pathlib import Path
 from typing import Optional
 import urllib.error
 import urllib.request
@@ -25,13 +29,42 @@ def defaults_read(key: str) -> str:
     ).strip()
 
 
+def pairing_token() -> str:
+    explicit = os.environ.get("TRACEFENCE_REMOTE_TOKEN", "").strip()
+    if explicit:
+        return explicit
+
+    config_path = Path.home() / "Library/Application Support/TraceFence/Core/remote-gateway.json"
+    try:
+        token = str(json.loads(config_path.read_text(encoding="utf-8")).get("token") or "").strip()
+        if token:
+            return token
+    except (OSError, ValueError, TypeError):
+        pass
+
+    # Backward-compatible fallback for an installed pre-Keychain build.
+    return defaults_read("traceFenceIOSRemoteGatewayToken")
+
+
 def request(path: str, method: str = "GET", body: Optional[dict] = None) -> dict:
-    token = os.environ.get("TRACEFENCE_REMOTE_TOKEN") or defaults_read("traceFenceIOSRemoteGatewayToken")
+    token = pairing_token()
     payload = None
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    headers = {"Accept": "application/json"}
     if body is not None:
         payload = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
+    body_bytes = payload or b""
+    timestamp = str(int(time.time()))
+    nonce = secrets.token_hex(16)
+    body_digest = hashlib.sha256(body_bytes).hexdigest()
+    canonical = "\n".join((method.upper(), path, timestamp, nonce, body_digest)).encode("utf-8")
+    signature = hmac.new(token.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+    headers.update({
+        "X-TraceFence-Timestamp": timestamp,
+        "X-TraceFence-Nonce": nonce,
+        "X-TraceFence-Signature": signature,
+        "X-TraceFence-Authentication": "hmac-sha256-v1",
+    })
     req = urllib.request.Request(BASE_URL + path, data=payload, headers=headers, method=method)
     timeout = 60 if method != "GET" else 40
     try:
@@ -251,7 +284,7 @@ def main() -> int:
     if os.environ.get("TRACEFENCE_CODEX_APPROVAL_LIFECYCLE") == "1":
         stamp = int(time.time())
         marker = f"TRACEFENCE_CODEX_APPROVAL_{stamp}"
-        probe_path = f"/Users/zhouxiaoming/Downloads/.tracefence-approval-{stamp}"
+        probe_path = str(Path.home() / "Downloads" / f".tracefence-approval-{stamp}")
         send_instruction(
             session_id,
             "TraceFence approval lifecycle regression. Use the shell tool once to run exactly "

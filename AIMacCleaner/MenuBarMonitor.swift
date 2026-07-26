@@ -2091,7 +2091,7 @@ struct MenuBarMonitor: View {
                 }
                 .cardStyle(padding: Theme.Spacing.md)
 
-                if disk.freeGb < Double(100 * Int(alertThreshold) / 100) || disk.usedPct > (100 - alertThreshold) {
+                if disk.usedPct > (100 - alertThreshold) {
                     HStack(spacing: Theme.Spacing.sm) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(Theme.Colors.warning)

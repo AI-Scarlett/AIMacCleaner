@@ -1,8 +1,20 @@
 import Foundation
 import Network
+import Darwin
+
+enum AgentHookSocket {
+    static var directoryURL: URL {
+        URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true)
+            .appendingPathComponent("Library/Application Support/TraceFence/HookTransport", isDirectory: true)
+    }
+
+    static var path: String {
+        directoryURL.appendingPathComponent("agentguard.sock").path
+    }
+}
 
 actor HookServer {
-    private let socketPath = "/tmp/agentguard.sock"
+    private let socketPath = AgentHookSocket.path
     private let maxRawEventsPerSession = 200
     private let maxRawEventSessions = 200
 
@@ -35,13 +47,23 @@ actor HookServer {
     }
 
     func start() throws {
+        try FileManager.default.createDirectory(
+            at: AgentHookSocket.directoryURL,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: AgentHookSocket.directoryURL.path
+        )
         unlink(socketPath)
 
         let unixParams = NWParameters.tcp
         unixParams.requiredLocalEndpoint = NWEndpoint.unix(path: socketPath)
         unixListener = try NWListener(using: unixParams)
         unixListener?.stateUpdateHandler = { [socketPath] state in
-            if case .failed(let error) = state {
+            if case .ready = state {
+                chmod(socketPath, S_IRUSR | S_IWUSR)
+            } else if case .failed(let error) = state {
                 print("[AgentGuard] Unix listener failed on \(socketPath): \(error)")
             }
         }
@@ -77,7 +99,7 @@ actor HookServer {
     private func handleConnection(_ connection: NWConnection, label: String) {
         connection.start(queue: .global())
 
-        var buffer = ""
+        var buffer = Data()
         func receiveNext() {
             connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
                 guard let self = self else { return }
@@ -88,22 +110,29 @@ actor HookServer {
                     return
                 }
 
-                if let data = data, let chunk = String(data: data, encoding: .utf8) {
-                    buffer += chunk
-                    let lines = buffer.components(separatedBy: "\n")
-                    buffer = lines.last ?? ""
-
-                    for i in 0..<(lines.count - 1) {
-                        let line = lines[i].trimmingCharacters(in: .whitespacesAndNewlines)
+                if let data {
+                    buffer.append(data)
+                    while let newline = buffer.firstIndex(of: 0x0A) {
+                        let lineData = buffer[..<newline]
+                        buffer.removeSubrange(...newline)
+                        guard let decoded = String(data: lineData, encoding: .utf8) else {
+                            connection.cancel()
+                            return
+                        }
+                        let line = decoded.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !line.isEmpty else { continue }
                         Task { await self.processLine(line, connection: connection) }
                     }
                 }
 
                 if isComplete {
-                    let line = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !line.isEmpty {
-                        Task { await self.processLine(line, connection: connection) }
+                    if let decoded = String(data: buffer, encoding: .utf8) {
+                        let line = decoded.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !line.isEmpty {
+                            Task { await self.processLine(line, connection: connection) }
+                        }
+                    } else if !buffer.isEmpty {
+                        print("[AgentGuard] Rejected invalid UTF-8 hook payload (\(label))")
                     }
                     connection.cancel()
                     return

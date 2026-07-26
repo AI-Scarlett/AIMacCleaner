@@ -73,24 +73,10 @@ class IntelMigrationScanner: ObservableObject {
                     arch = self.detectAppArchitecture(appPath: app.appPath)
                     appType = .app
                 } else if app.appPath.contains("Cellar") || app.appPath.contains("homebrew") || app.subCategory.contains("Package Manager") {
-                    if app.appPath.contains("/usr/local/Cellar") || app.appPath.contains("/usr/local/Homebrew") {
-                        arch = .x86_64
-                    } else if app.appPath.contains("/opt/homebrew/Cellar") || app.appPath.contains("/opt/homebrew") {
-                        arch = .arm64
-                    } else {
-                        arch = self.detectBinaryArchitecture(binaryPath: app.appPath)
-                    }
+                    arch = self.detectBinaryArchitecture(binaryPath: app.appPath)
                     appType = .homebrew
                 } else if app.subCategory.contains("CLI") || app.subCategory.contains("AI Agent") || app.appType == .other {
-                    if app.appPath.hasPrefix("/usr/local/") {
-                        arch = self.detectBinaryArchitecture(binaryPath: app.appPath)
-                        if arch == .unknown { arch = .x86_64 }
-                    } else if app.appPath.hasPrefix("/opt/homebrew/") {
-                        arch = self.detectBinaryArchitecture(binaryPath: app.appPath)
-                        if arch == .unknown { arch = .arm64 }
-                    } else {
-                        arch = self.detectBinaryArchitecture(binaryPath: app.appPath)
-                    }
+                    arch = self.detectBinaryArchitecture(binaryPath: app.appPath)
                     appType = .cli
                 } else {
                     arch = self.detectBinaryArchitecture(binaryPath: app.appPath)
@@ -327,7 +313,6 @@ class IntelMigrationScanner: ObservableObject {
         items[idx].replaceState = .uninstalling
         items[idx].replaceProgress = 0.1
 
-        let appPath = items[idx].path
         let displayName = items[idx].displayName
         let appType = items[idx].appType
         let bundleId = items[idx].bundleId
@@ -336,116 +321,28 @@ class IntelMigrationScanner: ObservableObject {
 
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
-            var success = false
 
             if downloadURL == nil {
                 let searchResult = Self.performSearchStatic(name: displayName, bundleId: bundleId, appType: appType)
                 downloadURL = searchResult.0
             }
 
-            switch appType {
-            case .homebrew:
-                await MainActor.run {
-                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
-                        self.items[idx2].replaceProgress = 0.3
-                        self.items[idx2].replaceState = .installing
-                    }
-                }
-                if let urlStr = downloadURL, let url = URL(string: urlStr) {
-                    await MainActor.run { _ = NSWorkspace.shared.open(url) }
-                    success = true
-                } else {
-                    success = false
-                }
-
-            case .app:
-                await MainActor.run {
-                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
-                        self.items[idx2].replaceProgress = 0.3
-                    }
-                }
-
-                if let urlStr = downloadURL, let url = URL(string: urlStr) {
-                    await MainActor.run { _ = NSWorkspace.shared.open(url) }
-                }
-
-                await MainActor.run {
-                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
-                        self.items[idx2].replaceProgress = 0.5
-                    }
-                }
-
-                var resultURL: NSURL?
-                try? FileManager.default.trashItem(at: URL(fileURLWithPath: appPath), resultingItemURL: &resultURL)
-
-                await MainActor.run {
-                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
-                        self.items[idx2].replaceProgress = 0.8
-                        self.items[idx2].replaceState = .installing
-                    }
-                }
-
-                success = downloadURL != nil
-
-            case .cli:
-                try? FileManager.default.trashItem(at: URL(fileURLWithPath: appPath), resultingItemURL: nil)
-
-                await MainActor.run {
-                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
-                        self.items[idx2].replaceProgress = 0.5
-                        self.items[idx2].replaceState = .installing
-                    }
-                }
-
-                if let urlStr = downloadURL, let url = URL(string: urlStr) {
-                    await MainActor.run { _ = NSWorkspace.shared.open(url) }
-                    success = true
-                } else {
-                    success = false
-                }
-
-            case .framework:
-                await MainActor.run {
-                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
-                        self.items[idx2].replaceProgress = 0.3
-                    }
-                }
-
-                if let urlStr = downloadURL, let url = URL(string: urlStr) {
-                    await MainActor.run { _ = NSWorkspace.shared.open(url) }
-                }
-
-                await MainActor.run {
-                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
-                        self.items[idx2].replaceProgress = 0.5
-                    }
-                }
-
-                var resultURL: NSURL?
-                try? FileManager.default.trashItem(at: URL(fileURLWithPath: appPath), resultingItemURL: &resultURL)
-
-                await MainActor.run {
-                    if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
-                        self.items[idx2].replaceProgress = 0.8
-                        self.items[idx2].replaceState = .installing
-                    }
-                }
-
-                success = downloadURL != nil
-            }
-
-            let finalSuccess = success
             await MainActor.run {
-                if let idx2 = self.items.firstIndex(where: { $0.id == itemId }) {
+                guard let idx2 = self.items.firstIndex(where: { $0.id == itemId }) else { return }
+                guard let urlString = downloadURL,
+                      let url = URL(string: urlString),
+                      let scheme = url.scheme?.lowercased(),
+                      scheme == "https" || scheme == "http" else {
                     self.items[idx2].replaceProgress = 1.0
-                    self.items[idx2].replaceState = finalSuccess ? .completed : .failed
-                    if finalSuccess {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            self.items.removeAll { $0.id == itemId }
-                            self.intelOnlyCount = max(0, self.intelOnlyCount - 1)
-                        }
-                    }
+                    self.items[idx2].replaceState = .failed
+                    return
                 }
+                _ = NSWorkspace.shared.open(url)
+                self.items[idx2].replaceProgress = 1.0
+                // Opening a candidate download page is not proof that a native
+                // replacement was installed. Keep the old item and wait for the
+                // user to install and verify it before using Uninstall.
+                self.items[idx2].replaceState = .installing
             }
         }
     }

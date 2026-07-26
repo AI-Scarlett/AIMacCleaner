@@ -13,6 +13,7 @@ EXPORT_OPTIONS="AppStoreExportOptions.plist"
 ASC_KEY_ID="JHKYSFS5HM"
 ASC_ISSUER_ID="69a6de85-f729-47e3-e053-5b8c7c11a4d1"
 ASC_KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+EXPECTED_HOST_OS_BUILD="${EXPECTED_HOST_OS_BUILD:-$(sw_vers -buildVersion)}"
 
 fail() {
   printf 'release_tracefence_sentinel_appstore: %s\n' "$*" >&2
@@ -56,10 +57,10 @@ VERIFY_DIR="$(mktemp -d /tmp/tracefence-sentinel-ipa.XXXXXX)"
 trap 'rm -rf "$VERIFY_DIR"' EXIT
 unzip -q "$IPA_PATH" -d "$VERIFY_DIR"
 APP_PLIST="$VERIFY_DIR/Payload/TraceFence Sentinel.app/Info.plist"
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :BuildMachineOSBuild' "$APP_PLIST")" == "25F70" ]] || fail "exported IPA contains unsupported host metadata"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :BuildMachineOSBuild' "$APP_PLIST")" == "$EXPECTED_HOST_OS_BUILD" ]] || fail "exported IPA metadata does not match the build host"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PLIST")" == "$VERSION" ]] || fail "exported IPA has the wrong marketing version"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PLIST")" == "$BUILD_NUMBER" ]] || fail "exported IPA has the wrong build number"
-printf 'Verified IPA build %s with BuildMachineOSBuild=25F70\n' "$BUILD_NUMBER"
+printf 'Verified IPA build %s with BuildMachineOSBuild=%s\n' "$BUILD_NUMBER" "$EXPECTED_HOST_OS_BUILD"
 
 xcrun altool --validate-app --type ios -f "$IPA_PATH" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
 xcrun altool --upload-app --wait --type ios -f "$IPA_PATH" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"

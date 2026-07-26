@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct TraceFenceRemoteClient {
     var fetchStatus: (TraceFenceConnection) async throws -> TraceFenceStatusResponse
@@ -290,12 +291,33 @@ private struct LiveTraceFenceRemoteClient {
         }
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.httpMethod = method
-        request.setValue("Bearer \(connection.token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let bodyData: Data
         if let body {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            bodyData = try JSONSerialization.data(withJSONObject: body)
+            request.httpBody = bodyData
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        } else {
+            bodyData = Data()
         }
+        let timestamp = String(Int(Date().timeIntervalSince1970))
+        let nonce = UUID().uuidString.lowercased()
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let encodedPath = components?.percentEncodedPath.isEmpty == false ? components!.percentEncodedPath : "/"
+        let target = components?.percentEncodedQuery.map { "\(encodedPath)?\($0)" } ?? encodedPath
+        let bodyDigest = SHA256.hash(data: bodyData)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let canonical = [method.uppercased(), target, timestamp, nonce, bodyDigest]
+            .joined(separator: "\n")
+        let signature = HMAC<SHA256>.authenticationCode(
+            for: Data(canonical.utf8),
+            using: SymmetricKey(data: Data(connection.token.utf8))
+        ).map { String(format: "%02x", $0) }.joined()
+        request.setValue(timestamp, forHTTPHeaderField: "X-TraceFence-Timestamp")
+        request.setValue(nonce, forHTTPHeaderField: "X-TraceFence-Nonce")
+        request.setValue(signature, forHTTPHeaderField: "X-TraceFence-Signature")
+        request.setValue("hmac-sha256-v1", forHTTPHeaderField: "X-TraceFence-Authentication")
         return request
     }
 

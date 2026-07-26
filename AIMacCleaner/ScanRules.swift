@@ -39,7 +39,7 @@ let SCAN_RULES: [ScanRule] = [
         "~/Library/Application Support/Claude-3p/GPUCache",
     ]),
     ScanRule(id: "cache_photo_analysis", name: "照片分析索引缓存", category: "系统", app: "macOS 照片", risk: "safe", riskDesc: "相册人脸识别、场景分类的索引缓存，删除后系统会自动重建（耗时较长），不影响照片本身。", paths: [
-        "~/Library/Containers/com.apple.mediaanalysisd",
+        "~/Library/Containers/com.apple.mediaanalysisd/Data/Library/Caches",
     ]),
     ScanRule(id: "cache_updater_packages", name: "Agent 更新包缓存", category: "AI Agent", app: "多个 Agent", risk: "safe", riskDesc: "已安装的旧版本更新下载包，全部可安全删除，下次更新时会重新下载。", paths: [
         "~/Library/Caches/cn.trae.app.ShipIt",
@@ -70,6 +70,7 @@ let SCAN_RULES: [ScanRule] = [
     ]),
     ScanRule(id: "cache_pip", name: "Python pip 下载缓存", category: "开发", app: "Python/pip", risk: "safe", riskDesc: "pip 已下载的安装包缓存，删除后下次 pip install 会重新下载，不影响已安装的包。", paths: [
         "~/Library/Caches/pip",
+        "~/.cache/pip",
     ]),
     ScanRule(id: "cache_homebrew", name: "Homebrew 下载缓存", category: "开发", app: "Homebrew", risk: "safe", riskDesc: "brew 已下载的安装包缓存，删除后下次 brew install 会重新下载，不影响已安装的包。", paths: [
         "~/Library/Caches/Homebrew",
@@ -79,18 +80,10 @@ let SCAN_RULES: [ScanRule] = [
     ]),
     ScanRule(id: "cache_pnpm", name: "pnpm 包缓存", category: "开发", app: "Node.js/pnpm", risk: "safe", riskDesc: "pnpm 已下载的包缓存，删除后下次 pnpm install 会重新下载。", paths: [
         "~/Library/Caches/pnpm",
+        "~/.pnpm-store",
     ]),
     ScanRule(id: "cache_quark", name: "夸克浏览器缓存", category: "浏览器", app: "夸克", risk: "safe", riskDesc: "夸克浏览器缓存数据，删除后不影响书签和设置。", paths: [
         "~/Library/Caches/Quark",
-    ]),
-    ScanRule(id: "cache_wechat", name: "微信缓存", category: "社交", app: "微信", risk: "caution", riskDesc: "微信聊天中的图片、视频、文件缓存。删除后聊天记录中的媒体文件需重新下载，不影响文字消息。", paths: [
-        "~/Library/Containers/com.tencent.xinWeChat",
-    ]),
-    ScanRule(id: "cache_qq", name: "QQ 缓存", category: "社交", app: "QQ", risk: "caution", riskDesc: "QQ 聊天中的图片、视频、文件缓存。删除后部分媒体文件需重新下载。", paths: [
-        "~/Library/Containers/com.tencent.qq",
-    ]),
-    ScanRule(id: "cache_wps", name: "WPS 缓存", category: "办公", app: "WPS Office", risk: "safe", riskDesc: "WPS 临时缓存文件，删除后不影响文档。", paths: [
-        "~/Library/Containers/com.kingsoft.wpsoffice.mac",
     ]),
     ScanRule(id: "system_logs", name: "系统日志", category: "系统", app: "macOS", risk: "safe", riskDesc: "系统运行日志，删除后不影响使用，会自动重建。", paths: [
         "~/Library/Logs",
@@ -104,49 +97,50 @@ let SCAN_RULES: [ScanRule] = [
     ScanRule(id: "cache_hap_installer", name: "HAP 安装器缓存", category: "开发", app: "HarmonyOS", risk: "safe", riskDesc: "鸿蒙应用安装缓存，删除后不影响已安装的应用。", paths: [
         "~/Library/Caches/hap_installer",
     ]),
-    ScanRule(id: "data_trae_solo", name: "Trae SOLO 数据", category: "AI Agent", app: "Trae SOLO CN", risk: "caution", riskDesc: "Trae SOLO 版运行数据，如果不再使用可删除，删除后 SOLO 版需重新配置。", paths: [
-        "~/Library/Application Support/TRAE SOLO CN",
+    ScanRule(id: "cache_doubao", name: "豆包可重建缓存", category: "AI Agent", app: "豆包", risk: "caution", riskDesc: "只清理缓存、代码缓存和 GPU 缓存；不会选择整个应用数据目录。退出豆包后再清理。", paths: [
+        "~/Library/Application Support/Doubao/Cache",
+        "~/Library/Application Support/Doubao/Code Cache",
+        "~/Library/Application Support/Doubao/GPUCache",
+        "~/Library/Application Support/Doubao/CachedData",
     ]),
-    ScanRule(id: "cache_doubao", name: "豆包缓存", category: "AI Agent", app: "豆包", risk: "safe", riskDesc: "豆包 AI 缓存数据，删除后首次启动会稍慢。", paths: [
-        "~/Library/Application Support/Doubao",
+    ScanRule(id: "cache_qianwen", name: "通义千问可重建缓存", category: "AI Agent", app: "通义千问", risk: "caution", riskDesc: "只清理缓存、代码缓存和 GPU 缓存；不会选择整个应用数据目录。退出应用后再清理。", paths: [
+        "~/Library/Application Support/Qianwen/Cache",
+        "~/Library/Application Support/Qianwen/Code Cache",
+        "~/Library/Application Support/Qianwen/GPUCache",
+        "~/Library/Application Support/Qianwen/CachedData",
     ]),
-    ScanRule(id: "cache_qianwen", name: "通义千问缓存", category: "AI Agent", app: "通义千问", risk: "safe", riskDesc: "通义千问缓存数据，删除后首次启动会稍慢。", paths: [
-        "~/Library/Application Support/Qianwen",
+    ScanRule(id: "cache_crebee", name: "Crebee 可重建缓存", category: "AI Agent", app: "Crebee", risk: "caution", riskDesc: "只清理缓存、代码缓存和 GPU 缓存；不会选择整个应用数据目录。退出应用后再清理。", paths: [
+        "~/Library/Application Support/crebee/Cache",
+        "~/Library/Application Support/crebee/Code Cache",
+        "~/Library/Application Support/crebee/GPUCache",
+        "~/Library/Application Support/crebee/CachedData",
     ]),
-    ScanRule(id: "cache_crebee", name: "Crebee 缓存", category: "AI Agent", app: "Crebee", risk: "safe", riskDesc: "Crebee 缓存数据，删除后首次启动会稍慢。", paths: [
-        "~/Library/Application Support/crebee",
+    ScanRule(id: "cache_codebuddy_ext", name: "CodeBuddy 扩展可重建缓存", category: "AI Agent", app: "CodeBuddy", risk: "caution", riskDesc: "只清理扩展的明确缓存子目录；不会选择整个扩展数据目录。退出 CodeBuddy 后再清理。", paths: [
+        "~/Library/Application Support/CodeBuddyExtension/Cache",
+        "~/Library/Application Support/CodeBuddyExtension/Code Cache",
+        "~/Library/Application Support/CodeBuddyExtension/GPUCache",
+        "~/Library/Application Support/CodeBuddyExtension/CachedData",
     ]),
-    ScanRule(id: "cache_codebuddy_ext", name: "CodeBuddy 扩展缓存", category: "AI Agent", app: "CodeBuddy", risk: "safe", riskDesc: "CodeBuddy 扩展数据缓存，删除后不影响核心功能。", paths: [
-        "~/Library/Application Support/CodeBuddyExtension",
+    ScanRule(id: "cache_codearts", name: "CodeArts Agent 可重建缓存", category: "AI Agent", app: "CodeArts Agent", risk: "caution", riskDesc: "只清理明确的缓存子目录；不会选择整个应用数据目录。退出应用后再清理。", paths: [
+        "~/Library/Application Support/CodeArts Agent/Cache",
+        "~/Library/Application Support/CodeArts Agent/Code Cache",
+        "~/Library/Application Support/CodeArts Agent/GPUCache",
+        "~/Library/Application Support/CodeArts Agent/CachedData",
     ]),
-    ScanRule(id: "cache_codearts", name: "CodeArts Agent 缓存", category: "AI Agent", app: "CodeArts Agent", risk: "safe", riskDesc: "CodeArts Agent 缓存数据，删除后首次启动会稍慢。", paths: [
-        "~/Library/Application Support/CodeArts Agent",
+    ScanRule(id: "cache_master_desktop", name: "Master Desktop 可重建缓存", category: "AI Agent", app: "Master Desktop", risk: "caution", riskDesc: "只清理明确的缓存子目录；不会选择整个应用数据目录。退出应用后再清理。", paths: [
+        "~/Library/Application Support/master-desktop/Cache",
+        "~/Library/Application Support/master-desktop/Code Cache",
+        "~/Library/Application Support/master-desktop/GPUCache",
+        "~/Library/Application Support/master-desktop/CachedData",
     ]),
-    ScanRule(id: "cache_master_desktop", name: "Master Desktop 缓存", category: "AI Agent", app: "Master Desktop", risk: "safe", riskDesc: "Master Desktop 缓存数据，删除后首次启动会稍慢。", paths: [
-        "~/Library/Application Support/master-desktop",
-    ]),
-    ScanRule(id: "cache_qclaw", name: "QClaw 缓存", category: "AI Agent", app: "QClaw", risk: "safe", riskDesc: "QClaw 缓存数据，删除后首次启动会稍慢。", paths: [
-        "~/Library/Application Support/QClaw",
-    ]),
-    ScanRule(id: "cache_dingtalk", name: "钉钉缓存", category: "办公", app: "钉钉", risk: "safe", riskDesc: "钉钉缓存数据，删除后不影响聊天记录。", paths: [
-        "~/Library/Application Support/DingTalkMac",
-    ]),
-    ScanRule(id: "cache_xmind", name: "XMind 缓存", category: "办公", app: "XMind", risk: "safe", riskDesc: "XMind 临时缓存，删除后不影响思维导图文件。", paths: [
-        "~/Library/Application Support/Xmind",
-    ]),
-
-    ScanRule(id: "cache_npm", name: "npm 缓存", category: "开发", app: "Node.js / npm", risk: "safe", riskDesc: "npm 包缓存，删除后下次安装包时会重新下载。", paths: [
-        "~/.npm/_cacache",
-    ]),
-    ScanRule(id: "cache_pnpm", name: "pnpm 缓存", category: "开发", app: "pnpm", risk: "safe", riskDesc: "pnpm 包缓存，删除后下次安装包时会重新下载。", paths: [
-        "~/.pnpm-store",
+    ScanRule(id: "cache_qclaw", name: "QClaw 可重建缓存", category: "AI Agent", app: "QClaw", risk: "caution", riskDesc: "只清理明确的缓存子目录；不会选择整个应用数据目录。退出应用后再清理。", paths: [
+        "~/Library/Application Support/QClaw/Cache",
+        "~/Library/Application Support/QClaw/Code Cache",
+        "~/Library/Application Support/QClaw/GPUCache",
+        "~/Library/Application Support/QClaw/CachedData",
     ]),
     ScanRule(id: "cache_yarn", name: "Yarn 缓存", category: "开发", app: "Yarn", risk: "safe", riskDesc: "Yarn 包缓存，删除后下次安装包时会重新下载。", paths: [
         "~/Library/Caches/Yarn",
-    ]),
-    ScanRule(id: "cache_pip", name: "pip 缓存", category: "开发", app: "Python / pip", risk: "safe", riskDesc: "pip 包缓存，删除后下次安装包时会重新下载。", paths: [
-        "~/.cache/pip",
-        "~/Library/Caches/pip",
     ]),
     ScanRule(id: "cache_cargo", name: "Cargo 缓存", category: "开发", app: "Rust / Cargo", risk: "safe", riskDesc: "Cargo 包缓存和编译产物，删除后下次编译会重新下载。", paths: [
         "~/.cargo/registry",
@@ -166,8 +160,10 @@ let SCAN_RULES: [ScanRule] = [
         "~/Library/Caches/go-build",
         "~/go/pkg/mod/cache",
     ]),
-    ScanRule(id: "cache_docker", name: "Docker 镜像和容器", category: "开发", app: "Docker", risk: "caution", riskDesc: "Docker 镜像、容器和构建缓存，删除后需重新拉取镜像。", paths: [
-        "~/Library/Containers/com.docker.docker/Data/vms",
+    ScanRule(id: "cache_docker", name: "Docker Desktop 日志与缓存", category: "开发", app: "Docker", risk: "caution", riskDesc: "只清理 Docker Desktop 的日志和可重建缓存；不会选择虚拟磁盘、镜像、容器或 volume 数据。退出 Docker Desktop 后再清理。", paths: [
+        "~/Library/Caches/com.docker.docker",
+        "~/Library/Containers/com.docker.docker/Data/log",
+        "~/Library/Containers/com.docker.docker/Data/logs",
     ]),
     ScanRule(id: "cache_xcode_derived", name: "Xcode DerivedData", category: "开发", app: "Xcode", risk: "safe", riskDesc: "Xcode 编译产物和索引缓存，删除后下次编译会重新生成。", paths: [
         "~/Library/Developer/Xcode/DerivedData",

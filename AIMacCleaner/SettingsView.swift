@@ -144,6 +144,7 @@ struct SettingsView: View {
                 VStack(spacing: Theme.Spacing.xs) {
                     ForEach(SettingsTab.allCases, id: \.self) { tab in
                         Button {
+                            stopShortcutRecording()
                             selectedTab = tab
                         } label: {
                             HStack(spacing: Theme.Spacing.sm) {
@@ -211,6 +212,7 @@ struct SettingsView: View {
                         }
                     }
                     .onChange(of: selectedTab) { _ in
+                        stopShortcutRecording()
                         proxy.scrollTo("settingsContentTop", anchor: .top)
                     }
                 }
@@ -241,6 +243,9 @@ struct SettingsView: View {
         }
         .onAppear {
             selectedTab = initialTab
+        }
+        .onDisappear {
+            stopShortcutRecording()
         }
         .task {
             licenseService.refreshTrialState()
@@ -2527,6 +2532,7 @@ struct SettingsView: View {
         shortcutMessage = localizer.t("请按下至少两个修饰键，并包含 ⌘ 或 ⌃。", en: "Press a combo with at least two modifiers, including Command or Control.", zhHant: "請按下至少兩個修飾鍵，並包含 ⌘ 或 ⌃。", ja: "2つ以上の修飾キーを使い、Command または Control を含めてください。", ko: "보조 키를 2개 이상 누르고 Command 또는 Control을 포함하세요.", mt: "Press a combo with at least two modifiers, including Command or Control.")
         recordingShortcutAction = action
         shortcutRecorderMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard recordingShortcutAction != nil else { return event }
             handleShortcutRecordingEvent(event)
             return nil
         }

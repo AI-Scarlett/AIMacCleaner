@@ -28,6 +28,8 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
     weak var localizer: Localizer?
 
     private let fileManager = FileManager.default
+    private let scanStateLock = NSRecursiveLock()
+    private let parserLock = NSRecursiveLock()
     private var dataSources: [AgentDataSource] = []
     private var isScanningAgents = false
     private var isScanningOps = false
@@ -201,37 +203,48 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
     }
 
     func registerSource(_ source: AgentDataSource) {
+        scanStateLock.lock()
+        defer { scanStateLock.unlock() }
         dataSources.removeAll { $0.agentName == source.agentName && $0.isCustom == source.isCustom }
         dataSources.append(source)
     }
 
     func removeDataSource(forAgentName name: String) {
+        scanStateLock.lock()
+        defer { scanStateLock.unlock() }
         dataSources.removeAll { $0.agentName == name && $0.isCustom }
     }
 
     func scanAllAgents() {
+        scanStateLock.lock()
         guard !isScanningAgents else {
+            scanStateLock.unlock()
             print("[AgentSessionScanner] scanAllAgents already in progress, skipping")
             return
         }
-
         isScanningAgents = true
+        let sources = dataSources
+        scanStateLock.unlock()
         isScanning = true
         scanError = ""
 
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
+            self.parserLock.lock()
 
             defer {
+                self.parserLock.unlock()
+                self.scanStateLock.lock()
+                self.isScanningAgents = false
+                self.scanStateLock.unlock()
                 DispatchQueue.main.async {
-                    self.isScanningAgents = false
                     self.isScanning = false
                 }
             }
 
             var merged: [String: DiscoveredAgent] = [:]
 
-            for source in self.dataSources {
+            for source in sources {
                 if source.agentName == "Codex" {
                     if let codexAgent = self.discoverCodexAgent() {
                         merged[codexAgent.name] = codexAgent
@@ -353,6 +366,20 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
     }
 
     func scanAgentOps(agentName: String) {
+        scanStateLock.lock()
+        guard !isScanningOps else {
+            scanStateLock.unlock()
+            scanError = localizer?.t(
+                "另一个 Agent 审计仍在解析，请稍后重试。",
+                en: "Another agent audit is still parsing. Try again in a moment."
+            ) ?? "Another agent audit is still parsing. Try again in a moment."
+            isScanning = false
+            return
+        }
+        isScanningOps = true
+        let matchingSources = dataSources.filter { $0.agentName == agentName }
+        scanStateLock.unlock()
+
         DispatchQueue.main.async {
             self.opRecords = []
             self.scanError = ""
@@ -361,21 +388,12 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-
-            guard !self.isScanningOps else {
-                print("[AgentSessionScanner] scanAgentOps already in progress, skipping")
-                DispatchQueue.main.async {
-                    self.scanError = self.localizer?.t(
-                        "另一个 Agent 审计仍在解析，请稍后重试。",
-                        en: "Another agent audit is still parsing. Try again in a moment."
-                    ) ?? "Another agent audit is still parsing. Try again in a moment."
-                    self.isScanning = false
-                }
-                return
-            }
-            self.isScanningOps = true
+            self.parserLock.lock()
             defer {
+                self.parserLock.unlock()
+                self.scanStateLock.lock()
                 self.isScanningOps = false
+                self.scanStateLock.unlock()
                 DispatchQueue.main.async { self.isScanning = false }
             }
 
@@ -386,7 +404,6 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
             var candidateCount = 0
             var parsedFileCount = 0
 
-            let matchingSources = self.dataSources.filter { $0.agentName == agentName }
             print("[AgentSessionScanner] scanAgentOps: \(agentName), found \(matchingSources.count) data sources")
 
             for source in matchingSources {
@@ -469,10 +486,15 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
     }
 
     func collectAllAgentOps(limit: Int = 10000, filesPerSourceLimit: Int? = nil) -> [AgentOpRecord] {
+        parserLock.lock()
+        defer { parserLock.unlock() }
+        scanStateLock.lock()
+        let sources = dataSources
+        scanStateLock.unlock()
         var allRecords: [AgentOpRecord] = []
         let fileLimit = max(1, filesPerSourceLimit ?? operationFilesPerSourceLimit)
-        let sourceRecordLimit = max(100, min(limit, (limit / max(1, min(dataSources.count, 8))) * 2))
-        for source in dataSources {
+        let sourceRecordLimit = max(100, min(limit, (limit / max(1, min(sources.count, 8))) * 2))
+        for source in sources {
             allRecords.append(contentsOf: collectAgentOps(
                 for: source,
                 fileLimit: fileLimit,
@@ -491,13 +513,18 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
     }
 
     func collectRecentAgentOps(since: Date, limit: Int = 1200, filesPerSourceLimit: Int = 4) -> [AgentOpRecord] {
+        parserLock.lock()
+        defer { parserLock.unlock() }
+        scanStateLock.lock()
+        let sources = dataSources
+        scanStateLock.unlock()
         usesIncrementalReadWindow = true
         defer { usesIncrementalReadWindow = false }
         // Session writers can append a JSONL record while a scan is reading the file.
         // Revisit a short time window so the completed record is picked up next pass.
         let toleratedSince = since.addingTimeInterval(-recentOperationTimestampOverlap)
         var allRecords: [AgentOpRecord] = []
-        for source in dataSources {
+        for source in sources {
             allRecords.append(contentsOf: collectAgentOps(
                 for: source,
                 fileLimit: max(1, filesPerSourceLimit),

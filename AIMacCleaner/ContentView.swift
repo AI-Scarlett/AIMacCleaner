@@ -10127,7 +10127,7 @@ struct OperationLogTab: View {
         .onChange(of: usageInsightsService.snapshot.generatedAt) { _ in
             rebuildProjectSnapshotCache(force: true)
         }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
+        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { now in
             guard viewMode != 2, autoRefreshSeconds > 0 else { return }
             guard now.timeIntervalSince(lastAutoRefresh) >= Double(autoRefreshSeconds) else { return }
             lastAutoRefresh = now

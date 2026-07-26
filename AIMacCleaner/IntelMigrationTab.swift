@@ -118,14 +118,17 @@ struct IntelMigrationTab: View {
         }
         .alert(localizer.replaceARMVersion, isPresented: $showReplaceConfirm) {
             Button(localizer.cancelBtn, role: .cancel) {}
-            Button(localizer.replaceBtn, role: .destructive) {
+            Button(localizer.replaceBtn) {
                 if let app = pendingReplaceApp {
                     scanner.uninstallAndReplace(item: app)
                 }
             }
         } message: {
             if let app = pendingReplaceApp {
-                Text("\(localizer.willUninstallIntel)「\(app.displayName)」\(localizer.intelVersionMsg)")
+                Text(localizer.t(
+                    "TraceFence 只会为「\(app.displayName)」打开替代版本页面，不会删除当前版本。请先安装并验证新版本，再单独卸载旧版本。",
+                    en: "TraceFence will only open a replacement page for “\(app.displayName)”. It will not remove the current version. Install and verify the replacement before uninstalling the old version."
+                ))
             }
         }
     }

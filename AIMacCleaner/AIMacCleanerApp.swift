@@ -482,11 +482,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: .traceFenceMainWindowLevelChanged,
             object: nil
         )
-        Task { @MainActor in
-            ArtifactSidecarController.shared.stop()
-            ArtifactShelfService.shared.stop()
-            cleanupAgentCenterServices()
-        }
+        ArtifactSidecarController.shared.stop()
+        ArtifactShelfService.shared.stop()
+        cleanupAgentCenterServices()
         service?.operationMonitor.saveRecords()
         service?.guardFeature.saveHourlyStats()
         service?.guardFeature.saveAlerts()
@@ -741,9 +739,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         service?.guardFeature.saveAlerts()
         cleanupAgentCenterServices()
         NSApp.terminate(nil)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            Darwin.exit(0)
-        }
     }
 
     @MainActor

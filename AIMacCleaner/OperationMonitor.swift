@@ -500,7 +500,7 @@ class OperationMonitor: ObservableObject {
     }
 
     private var bookmarksPath: String { SandboxPaths.shared.bookmarksPath }
-    private let stateLock = NSLock()
+    private let stateLock = NSRecursiveLock()
     private let processQueue = DispatchQueue(label: "com.aimacleaner.monitor.process", qos: .utility)
 
     init() {
@@ -1741,10 +1741,14 @@ class OperationMonitor: ObservableObject {
     }
 
     private func rebuildRecordFingerprints() {
+        stateLock.lock()
+        defer { stateLock.unlock() }
         recordFingerprints = Set(records.map { recordFingerprint($0) })
     }
 
     private func pruneRecordsToRetention() {
+        stateLock.lock()
+        defer { stateLock.unlock() }
         records = recordsWithinRetention(records)
         rebuildRecordFingerprints()
     }
@@ -1795,11 +1799,13 @@ class OperationMonitor: ObservableObject {
         stateLock.lock()
         let batch = pendingRecords
         pendingRecords = []
-        stateLock.unlock()
-
-        guard !batch.isEmpty else { return }
+        guard !batch.isEmpty else {
+            stateLock.unlock()
+            return
+        }
         records.insert(contentsOf: batch.reversed(), at: 0)
         pruneRecordsToRetention()
+        stateLock.unlock()
         scheduleRecordsSave()
     }
 
@@ -1898,8 +1904,10 @@ class OperationMonitor: ObservableObject {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: recordsPath)),
               let decoded = try? JSONDecoder().decode([OperationRecord].self, from: data) else { return }
         let cleaned = decoded.filter { !shouldSkipPath($0.targetPath) && !isLowConfidenceFallback($0) }
+        stateLock.lock()
         records = recordsWithinRetention(cleaned)
         rebuildRecordFingerprints()
+        stateLock.unlock()
         if records.count != decoded.count {
             saveRecords()
         }

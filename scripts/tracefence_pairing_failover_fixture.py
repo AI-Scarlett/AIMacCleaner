@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -15,7 +18,7 @@ class Handler(BaseHTTPRequestHandler):
         print(f"FIXTURE {self.command} {self.path} " + (format % args), flush=True)
 
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
-        if self.headers.get("Authorization") != f"Bearer {self.server.pairing_token}":  # type: ignore[attr-defined]
+        if not self.is_authorized():
             self.send_json(401, {"ok": False, "error": "unauthorized"})
             return
 
@@ -23,6 +26,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {
                 "ok": True,
                 "version": 2,
+                "authentication": "hmac-sha256-v1",
                 "app": {"name": "TraceFence Failover Fixture", "version": "1.0", "build": "1"},
                 "gateway": {
                     "running": True,
@@ -55,6 +59,26 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         self.send_json(404, {"ok": False, "error": "not_found"})
+
+    def is_authorized(self) -> bool:
+        timestamp = self.headers.get("X-TraceFence-Timestamp", "")
+        nonce = self.headers.get("X-TraceFence-Nonce", "")
+        signature = self.headers.get("X-TraceFence-Signature", "").lower()
+        try:
+            if abs(time.time() - int(timestamp)) > 300:
+                return False
+        except ValueError:
+            return False
+        if len(nonce) < 16 or len(nonce) > 128:
+            return False
+        body_digest = hashlib.sha256(b"").hexdigest()
+        canonical = "\n".join((self.command, self.path, timestamp, nonce, body_digest)).encode()
+        expected = hmac.new(
+            self.server.pairing_token.encode(),  # type: ignore[attr-defined]
+            canonical,
+            hashlib.sha256,
+        ).hexdigest()
+        return hmac.compare_digest(signature, expected)
 
     def send_json(self, status: int, payload: dict[str, object]) -> None:
         body = json.dumps(payload, separators=(",", ":")).encode()

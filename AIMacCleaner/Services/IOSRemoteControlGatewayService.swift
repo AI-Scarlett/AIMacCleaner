@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Security
+import CryptoKit
 import Darwin
 
 @MainActor
@@ -11,9 +12,12 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     static let tokenKey = "traceFenceIOSRemoteGatewayToken"
     static let keepMacAwakeKey = "traceFenceIOSRemoteKeepMacAwake"
     static let backgroundCorePort = 17896
+    private static let pairingTokenKeychainService = "com.tracefence.remote-pairing"
+    private static let pairingTokenKeychainAccount = "mac-gateway-token"
     private static let maxHTTPRequestBytes = 256 * 1_024
     private static let maxRemoteSessions = 50
     private static let maxRemoteAllSessions = 80
+    private static let requestClockSkew: TimeInterval = 5 * 60
 
     @Published private(set) var isRunning = false
     @Published private(set) var statusMessage = "Remote API is off."
@@ -36,6 +40,8 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     private var keepAwakeProcess: Process?
     private var lastAgentCoreConfigData: Data?
     private var didReconcileAgentCorePairingToken = false
+    private var acceptedRequestNonces: [String: Date] = [:]
+    private var cachedPairingToken: String?
     private var listenerRetryTask: Task<Void, Never>?
     private var listenerRetryAttempt = 0
 
@@ -144,7 +150,11 @@ final class IOSRemoteControlGatewayService: ObservableObject {
         // A user-requested reset must replace the shared Core token instead of
         // adopting it again during the following config sync.
         didReconcileAgentCorePairingToken = true
-        UserDefaults.standard.set(Self.randomToken(), forKey: Self.tokenKey)
+        let token = Self.randomToken()
+        cachedPairingToken = token
+        if storePairingToken(token) {
+            UserDefaults.standard.removeObject(forKey: Self.tokenKey)
+        }
         syncAgentCoreRemoteGatewayConfig()
         if isRunning {
             start(port: configuredPort)
@@ -171,8 +181,9 @@ final class IOSRemoteControlGatewayService: ObservableObject {
 
     var pairingPayloadText: String {
         let payload: [String: Any] = [
-            "version": 1,
+            "version": 2,
             "service": "TraceFence iOS Remote Control",
+            "authentication": "hmac-sha256-v1",
             "endpoint": endpoint,
             "token": currentToken,
             "port": configuredPort,
@@ -274,7 +285,11 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             }
             newListener.newConnectionHandler = { [weak self] connection in
                 Task { @MainActor in
-                    self?.handleConnection(connection)
+                    guard let self, Self.isPrivateRemoteEndpoint(connection.endpoint) else {
+                        connection.cancel()
+                        return
+                    }
+                    self.handleConnection(connection)
                 }
             }
             listener = newListener
@@ -342,10 +357,10 @@ final class IOSRemoteControlGatewayService: ObservableObject {
 
     private func handleConnection(_ connection: NWConnection) {
         connection.start(queue: listenerQueue)
-        receiveRequest(on: connection, buffer: "")
+        receiveRequest(on: connection, buffer: Data())
     }
 
-    private func receiveRequest(on connection: NWConnection, buffer: String) {
+    private func receiveRequest(on connection: NWConnection, buffer: Data) {
         let maxRequestBytes = Self.maxHTTPRequestBytes
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] data, _, isComplete, error in
             guard let self else { return }
@@ -355,11 +370,9 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             }
 
             var nextBuffer = buffer
-            if let data, let chunk = String(data: data, encoding: .utf8) {
-                nextBuffer += chunk
-            }
+            if let data { nextBuffer.append(data) }
 
-            guard nextBuffer.utf8.count <= maxRequestBytes else {
+            guard nextBuffer.count <= maxRequestBytes else {
                 Task { @MainActor in
                     self.sendJSON(["ok": false, "error": "request_too_large"], status: 413, connection: connection)
                 }
@@ -378,23 +391,23 @@ final class IOSRemoteControlGatewayService: ObservableObject {
         }
     }
 
-    private func route(rawRequest: String, connection: NWConnection) {
+    private func route(rawRequest: Data, connection: NWConnection) {
         guard let request = RemoteHTTPRequest(raw: rawRequest) else {
             sendJSON(["ok": false, "error": "bad_request"], status: 400, connection: connection)
             return
         }
 
-        if request.method == "OPTIONS" {
-            sendJSON(["ok": true], status: 204, connection: connection)
-            return
-        }
-
         if request.path == "/v1/health" {
-            sendJSON(["ok": true, "service": "TraceFence iOS Remote Control", "version": 1], status: 200, connection: connection)
+            sendJSON([
+                "ok": true,
+                "service": "TraceFence iOS Remote Control",
+                "version": 2,
+                "authentication": "hmac-sha256-v1"
+            ], status: 200, connection: connection)
             return
         }
 
-        guard isAuthorized(request.headers) else {
+        guard isAuthorized(request) else {
             sendJSON(["ok": false, "error": "unauthorized"], status: 401, connection: connection)
             return
         }
@@ -665,19 +678,41 @@ final class IOSRemoteControlGatewayService: ObservableObject {
         TraceFenceDistributionPolicy.currentChannel.isDirect
     }
 
-    private func isAuthorized(_ headers: [String: String]) -> Bool {
-        guard let authorization = headers["authorization"] else { return false }
-        let prefix = "bearer "
-        let normalized = authorization.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard normalized.lowercased().hasPrefix(prefix) else { return false }
-        let provided = String(normalized.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
-        return provided == currentToken
+    private func isAuthorized(_ request: RemoteHTTPRequest) -> Bool {
+        let token = currentToken
+        guard let timestamp = request.headers["x-tracefence-timestamp"],
+              let timestampValue = TimeInterval(timestamp),
+              abs(Date().timeIntervalSince1970 - timestampValue) <= Self.requestClockSkew,
+              let nonce = request.headers["x-tracefence-nonce"],
+              nonce.count >= 16,
+              nonce.count <= 128,
+              let providedSignature = request.headers["x-tracefence-signature"] else {
+            return false
+        }
+
+        let bodyDigest = SHA256.hash(data: request.bodyData)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let canonical = [request.method, request.target, timestamp, nonce, bodyDigest]
+            .joined(separator: "\n")
+        let expected = HMAC<SHA256>.authenticationCode(
+            for: Data(canonical.utf8),
+            using: SymmetricKey(data: Data(token.utf8))
+        ).map { String(format: "%02x", $0) }.joined()
+        guard Self.constantTimeEqual(providedSignature.lowercased(), expected) else { return false }
+
+        let now = Date()
+        acceptedRequestNonces = acceptedRequestNonces.filter { $0.value > now }
+        guard acceptedRequestNonces[nonce] == nil else { return false }
+        acceptedRequestNonces[nonce] = now.addingTimeInterval(Self.requestClockSkew)
+        return true
     }
 
     private func statusPayload(extra: [String: Any] = [:]) -> [String: Any] {
         var body: [String: Any] = [
             "ok": true,
-            "version": 1,
+            "version": 2,
+            "authentication": "hmac-sha256-v1",
             "app": [
                 "name": Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "TraceFence",
                 "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
@@ -841,7 +876,7 @@ final class IOSRemoteControlGatewayService: ObservableObject {
                 "sessionLimit": Self.maxRemoteSessions,
                 "allSessionLimit": Self.maxRemoteAllSessions
             ],
-            "launchTargets": supportsExternalControlPlane ? AgentPTYRuntimeService.shared.launchTargets.map(ptyLaunchTargetPayload(_:)) : [],
+            "launchTargets": supportsExternalControlPlane ? remoteLaunchTargets.map(ptyLaunchTargetPayload(_:)) : [],
             "pendingApprovals": approvals,
             "controlPlane": controlPlanePayload(),
             "recentEvents": (codexEventSnapshots(from: codexSessions, limit: 24) + ptyEventSnapshots(from: ptySessions, limit: 24) + eventSnapshots(from: sessions, limit: 24) + monitorEventSnapshots(from: monitorSessions, limit: 24))
@@ -1893,7 +1928,13 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     }
 
     private func installedPTYLaunchTarget(id: String) -> AgentPTYLaunchTargetSnapshot? {
-        AgentPTYRuntimeService.shared.launchTargets.first { $0.id == id && $0.installed }
+        remoteLaunchTargets.first { $0.id == id && $0.installed }
+    }
+
+    private var remoteLaunchTargets: [AgentPTYLaunchTargetSnapshot] {
+        AgentPTYRuntimeService.shared.launchTargets.filter {
+            $0.id != CLIAgentLaunchTarget.shell.id
+        }
     }
 
     private func relaunchWorkingDirectory(_ cwd: String) -> String {
@@ -3003,9 +3044,6 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             "Content-Type: application/json; charset=utf-8",
             "Content-Length: \(data.count)",
             "Connection: close",
-            "Access-Control-Allow-Origin: *",
-            "Access-Control-Allow-Headers: Authorization, Content-Type",
-            "Access-Control-Allow-Methods: GET, POST, OPTIONS",
             "",
             ""
         ].joined(separator: "\r\n")
@@ -3018,22 +3056,78 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     }
 
     private var currentToken: String {
+        if let cachedPairingToken {
+            return cachedPairingToken
+        }
         if !didReconcileAgentCorePairingToken {
             didReconcileAgentCorePairingToken = true
             if let sharedToken = agentCorePairingToken() {
                 // Direct and App Store builds have different bundle identifiers,
                 // but the independently installed Agent Core is shared. Preserve
                 // an existing phone pairing when the user switches channels.
-                UserDefaults.standard.set(sharedToken, forKey: Self.tokenKey)
+                cachedPairingToken = sharedToken
+                if storePairingToken(sharedToken) {
+                    UserDefaults.standard.removeObject(forKey: Self.tokenKey)
+                }
                 return sharedToken
             }
         }
+        if let token = loadPairingToken(), token.count >= 32 {
+            cachedPairingToken = token
+            return token
+        }
         if let token = UserDefaults.standard.string(forKey: Self.tokenKey), token.count >= 32 {
+            // Migrate pairing data written by older builds out of UserDefaults.
+            cachedPairingToken = token
+            if storePairingToken(token) {
+                UserDefaults.standard.removeObject(forKey: Self.tokenKey)
+            }
             return token
         }
         let token = Self.randomToken()
-        UserDefaults.standard.set(token, forKey: Self.tokenKey)
+        cachedPairingToken = token
+        if storePairingToken(token) {
+            UserDefaults.standard.removeObject(forKey: Self.tokenKey)
+        }
         return token
+    }
+
+    private func loadPairingToken() -> String? {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: Self.pairingTokenKeychainService,
+            kSecAttrAccount: Self.pairingTokenKeychainAccount,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data,
+              let token = String(data: data, encoding: .utf8),
+              !token.isEmpty else {
+            return nil
+        }
+        return token
+    }
+
+    @discardableResult
+    private func storePairingToken(_ token: String) -> Bool {
+        guard let data = token.data(using: .utf8), !data.isEmpty else { return false }
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: Self.pairingTokenKeychainService,
+            kSecAttrAccount: Self.pairingTokenKeychainAccount
+        ]
+        let update: [CFString: Any] = [kSecValueData: data]
+        let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+        if updateStatus == errSecSuccess {
+            return true
+        }
+        guard updateStatus == errSecItemNotFound else { return false }
+        var item = query
+        item[kSecValueData] = data
+        item[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 
     private func syncAgentCoreRemoteGatewayConfig() {
@@ -3219,6 +3313,43 @@ final class IOSRemoteControlGatewayService: ObservableObject {
         return 60
     }
 
+    private static func isPrivateRemoteEndpoint(_ endpoint: NWEndpoint) -> Bool {
+        guard case .hostPort(let host, _) = endpoint else { return false }
+        var value = String(describing: host).lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        if let zone = value.firstIndex(of: "%") {
+            value = String(value[..<zone])
+        }
+        if value == "localhost" || value == "::1" { return true }
+        if value.hasPrefix("fe80:") || value.hasPrefix("fc") || value.hasPrefix("fd") { return true }
+        if value.hasPrefix("::ffff:") {
+            value = String(value.dropFirst("::ffff:".count))
+        }
+        let octets = value.split(separator: ".").compactMap { Int($0) }
+        guard octets.count == 4, octets.allSatisfy({ (0...255).contains($0) }) else { return false }
+        switch (octets[0], octets[1]) {
+        case (10, _), (127, _), (169, 254), (192, 168):
+            return true
+        case (172, 16...31), (100, 64...127):
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
+        let left = Array(lhs.utf8)
+        let right = Array(rhs.utf8)
+        let count = max(left.count, right.count)
+        var difference = UInt64(left.count ^ right.count)
+        for index in 0..<count {
+            let leftByte = index < left.count ? left[index] : 0
+            let rightByte = index < right.count ? right[index] : 0
+            difference |= UInt64(leftByte ^ rightByte)
+        }
+        return difference == 0
+    }
+
     private static func normalizedPort(_ port: Int) -> Int {
         min(65_535, max(1_024, port))
     }
@@ -3400,16 +3531,17 @@ private struct TraceFenceSessionControlCapability {
 
 private struct RemoteHTTPRequest {
     let method: String
+    let target: String
     let path: String
     let headers: [String: String]
     let body: String
+    let bodyData: Data
     let jsonBody: [String: Any]
 
-    init?(raw: String) {
-        let normalized = raw.replacingOccurrences(of: "\r\n", with: "\n")
-        let headerEnd = normalized.range(of: "\n\n")
-        let headerText = headerEnd.map { String(normalized[..<$0.lowerBound]) } ?? normalized
-        body = headerEnd.map { String(normalized[$0.upperBound...]) } ?? ""
+    init?(raw: Data) {
+        guard let split = Self.split(raw),
+              let rawHeaderText = String(data: split.header, encoding: .utf8) else { return nil }
+        let headerText = rawHeaderText.replacingOccurrences(of: "\r\n", with: "\n")
         let lines = headerText.components(separatedBy: "\n")
         guard let firstLine = lines.first else { return nil }
         let parts = firstLine.split(separator: " ")
@@ -3417,6 +3549,7 @@ private struct RemoteHTTPRequest {
 
         method = parts[0].uppercased()
         let rawPath = String(parts[1])
+        target = rawPath
         path = rawPath.components(separatedBy: "?").first ?? rawPath
 
         var parsedHeaders: [String: String] = [:]
@@ -3430,20 +3563,25 @@ private struct RemoteHTTPRequest {
         }
         headers = parsedHeaders
 
-        if let data = body.data(using: .utf8),
-           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        let contentLength = Int(parsedHeaders["content-length"] ?? "0") ?? -1
+        guard contentLength >= 0,
+              raw.count >= split.bodyStart + contentLength else { return nil }
+        bodyData = Data(raw[split.bodyStart..<(split.bodyStart + contentLength)])
+        guard let decodedBody = String(data: bodyData, encoding: .utf8) else { return nil }
+        body = decodedBody
+
+        if let parsed = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] {
             jsonBody = parsed
         } else {
             jsonBody = [:]
         }
     }
 
-    static func hasCompleteRequest(_ raw: String) -> Bool {
-        let normalized = raw.replacingOccurrences(of: "\r\n", with: "\n")
-        guard let headerEnd = normalized.range(of: "\n\n") else { return false }
-        let headerText = String(normalized[..<headerEnd.lowerBound])
-        let body = String(normalized[headerEnd.upperBound...])
-        let lines = headerText.components(separatedBy: "\n")
+    static func hasCompleteRequest(_ rawData: Data) -> Bool {
+        guard let split = split(rawData),
+              let rawHeaderText = String(data: split.header, encoding: .utf8) else { return false }
+        let lines = rawHeaderText.replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: "\n")
         let contentLength = lines.dropFirst().compactMap { line -> Int? in
             let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
             guard parts.count == 2,
@@ -3452,6 +3590,15 @@ private struct RemoteHTTPRequest {
             }
             return Int(parts[1].trimmingCharacters(in: .whitespacesAndNewlines))
         }.first ?? 0
-        return body.utf8.count >= contentLength
+        return contentLength >= 0 && rawData.count >= split.bodyStart + contentLength
+    }
+
+    private static func split(_ rawData: Data) -> (header: Data, bodyStart: Int)? {
+        for separator in [Data("\r\n\r\n".utf8), Data("\n\n".utf8)] {
+            if let range = rawData.range(of: separator) {
+                return (Data(rawData[..<range.lowerBound]), range.upperBound)
+            }
+        }
+        return nil
     }
 }

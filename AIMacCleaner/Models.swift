@@ -867,8 +867,8 @@ struct IntelAppInfo: Identifiable {
         var label: String {
             switch self {
             case .idle: return ""
-            case .uninstalling: return "正在卸载..."
-            case .installing: return "正在安装..."
+            case .uninstalling: return "正在查找替代版本..."
+            case .installing: return "等待安装并验证"
             case .completed: return "已完成"
             case .failed: return "失败"
             }
@@ -877,8 +877,8 @@ struct IntelAppInfo: Identifiable {
         func localizedLabel(_ localizer: Localizer) -> String {
             switch self {
             case .idle: return ""
-            case .uninstalling: return localizer.uninstalling
-            case .installing: return localizer.installing
+            case .uninstalling: return localizer.t("正在查找替代版本…", en: "Finding a replacement…")
+            case .installing: return localizer.t("等待安装并验证", en: "Awaiting installation and verification")
             case .completed: return localizer.completed
             case .failed: return localizer.failed
             }

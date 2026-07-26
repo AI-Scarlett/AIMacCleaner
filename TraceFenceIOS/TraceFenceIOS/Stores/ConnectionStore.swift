@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 struct AgentSessionContextSnapshot: Equatable {
     var session: AgentSessionSummary
@@ -93,6 +94,8 @@ final class ConnectionStore: ObservableObject {
 
     private let client: TraceFenceRemoteClient
     private let storageKey = "TraceFenceIOS.savedConnection.v1"
+    private let pairingTokenKeychainService = "com.tracefence.sentinel.pairing"
+    private let pairingTokenKeychainAccount = "saved-mac-token"
     private var bonjourResolver: TraceFenceBonjourResolver?
     private var discoveredBonjourEndpoints: [String] = []
     private var refreshTask: Task<Void, Never>?
@@ -678,6 +681,7 @@ final class ConnectionStore: ObservableObject {
 
     func clearConnection() {
         UserDefaults.standard.removeObject(forKey: storageKey)
+        deletePairingToken()
         connection = nil
         status = nil
         agentControl = nil
@@ -1139,7 +1143,12 @@ final class ConnectionStore: ObservableObject {
 
     private func save(_ connection: TraceFenceConnection) {
         self.connection = connection
-        if let data = try? JSONEncoder().encode(connection) {
+        if !connection.token.isEmpty {
+            _ = storePairingToken(connection.token)
+        }
+        var metadata = connection
+        metadata.token = ""
+        if let data = try? JSONEncoder().encode(metadata) {
             UserDefaults.standard.set(data, forKey: storageKey)
         }
     }
@@ -1160,14 +1169,70 @@ final class ConnectionStore: ObservableObject {
 
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let decoded = try? JSONDecoder().decode(TraceFenceConnection.self, from: data) else {
+              var decoded = try? JSONDecoder().decode(TraceFenceConnection.self, from: data) else {
             return
         }
-        let migrated = migrateLoadedConnection(decoded)
-        connection = migrated
-        if migrated != decoded {
-            save(migrated)
+        var token = loadPairingToken()
+        if !decoded.token.isEmpty {
+            // Migrate pairing data written by older builds out of UserDefaults.
+            if storePairingToken(decoded.token) {
+                token = decoded.token
+            }
         }
+        guard let token, !token.isEmpty else {
+            UserDefaults.standard.removeObject(forKey: storageKey)
+            return
+        }
+        decoded.token = token
+        let migrated = migrateLoadedConnection(decoded)
+        save(migrated)
+    }
+
+    private func loadPairingToken() -> String? {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: pairingTokenKeychainService,
+            kSecAttrAccount: pairingTokenKeychainAccount,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data,
+              let token = String(data: data, encoding: .utf8),
+              !token.isEmpty else {
+            return nil
+        }
+        return token
+    }
+
+    @discardableResult
+    private func storePairingToken(_ token: String) -> Bool {
+        guard let data = token.data(using: .utf8), !data.isEmpty else { return false }
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: pairingTokenKeychainService,
+            kSecAttrAccount: pairingTokenKeychainAccount
+        ]
+        let update: [CFString: Any] = [kSecValueData: data]
+        let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+        if updateStatus == errSecSuccess {
+            return true
+        }
+        guard updateStatus == errSecItemNotFound else { return false }
+        var item = query
+        item[kSecValueData] = data
+        item[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+    }
+
+    private func deletePairingToken() {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: pairingTokenKeychainService,
+            kSecAttrAccount: pairingTokenKeychainAccount
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 
     private func resolveReachableConnection(

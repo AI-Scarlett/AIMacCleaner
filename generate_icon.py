@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import math
+from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 SIZE = 1024
@@ -170,7 +171,7 @@ def resize_and_save(img, size, path):
 if __name__ == '__main__':
     icon = create_icon()
 
-    base = '/Users/zhouxiaoming/Downloads/MacCleaner/AIMacCleaner/Assets.xcassets/AppIcon.appiconset'
+    base = Path(__file__).resolve().parent / 'AIMacCleaner/Assets.xcassets/AppIcon.appiconset'
     sizes = {
         'icon_16.png': 16,
         'icon_16_2x.png': 32,
@@ -185,7 +186,7 @@ if __name__ == '__main__':
     }
 
     for name, size in sizes.items():
-        path = f'{base}/{name}'
+        path = base / name
         resize_and_save(icon, size, path)
         print(f'Saved {name} ({size}x{size})')
 

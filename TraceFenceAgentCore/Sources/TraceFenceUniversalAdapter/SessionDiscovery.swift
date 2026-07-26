@@ -285,7 +285,7 @@ final class SessionDiscovery {
     private func grokSessions() -> [[String: Any]] {
         let root = URL(fileURLWithPath: expandPath("~/.grok/sessions"), isDirectory: true)
         return recentFiles(root: root, matching: { $0.lastPathComponent == "summary.json" }, maxDepth: 4, limit: 100).compactMap { url in
-            guard let data = try? Data(contentsOf: url), let object = jsonObject(data) else { return nil }
+            guard let data = boundedData(contentsOf: url), let object = jsonObject(data) else { return nil }
             let info = object["info"] as? [String: Any] ?? [:]
             let id = info["id"] as? String ?? url.deletingLastPathComponent().lastPathComponent
             let cwd = info["cwd"] as? String ?? ""
@@ -379,7 +379,7 @@ final class SessionDiscovery {
         guard let directories = try? fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else { return [] }
         return directories.compactMap { directory -> [String: Any]? in
             let workspace = directory.appendingPathComponent("workspace.json")
-            guard let data = try? Data(contentsOf: workspace), let object = jsonObject(data) else { return nil }
+            guard let data = boundedData(contentsOf: workspace), let object = jsonObject(data) else { return nil }
             let folder = object["folder"] as? String ?? ""
             let cwd: String
             if let url = URL(string: folder), url.isFileURL { cwd = url.path } else { cwd = folder }
@@ -402,7 +402,7 @@ final class SessionDiscovery {
         let workspace = URL(fileURLWithPath: expandPath("~/Library/Application Support/Cursor/User/workspaceStorage"), isDirectory: true)
             .appendingPathComponent(id, isDirectory: true)
             .appendingPathComponent("workspace.json")
-        guard let data = try? Data(contentsOf: workspace), let object = jsonObject(data),
+        guard let data = boundedData(contentsOf: workspace), let object = jsonObject(data),
               let folder = object["folder"] as? String else { return "" }
         if let url = URL(string: folder), url.isFileURL { return url.path }
         return folder.removingPercentEncoding ?? folder
@@ -517,7 +517,7 @@ final class SessionDiscovery {
         for rootPath in roots {
             let root = URL(fileURLWithPath: rootPath, isDirectory: true)
             for url in recentFiles(root: root, matching: { $0.pathExtension == "json" }, maxDepth: 1, limit: 40) {
-                guard let data = try? Data(contentsOf: url), let object = jsonObject(data),
+                guard let data = boundedData(contentsOf: url), let object = jsonObject(data),
                       let conversations = object["conversations"] as? [String: Any] else { continue }
                 for (key, rawConversation) in conversations {
                     let conversation = rawConversation as? [String: Any] ?? [:]
@@ -557,7 +557,7 @@ final class SessionDiscovery {
 
     private func vscodeWorkspacePath(directory: URL) -> String {
         let workspace = directory.appendingPathComponent("workspace.json")
-        guard let data = try? Data(contentsOf: workspace), let object = jsonObject(data),
+        guard let data = boundedData(contentsOf: workspace), let object = jsonObject(data),
               let folder = object["folder"] as? String else { return "" }
         if let url = URL(string: folder), url.isFileURL { return url.path }
         return folder.removingPercentEncoding ?? folder
@@ -573,7 +573,7 @@ final class SessionDiscovery {
         let stores = recentFiles(root: root, matching: { $0.lastPathComponent == "sessions.json" }, maxDepth: 4, limit: 30)
         var rows: [[String: Any]] = []
         for storeURL in stores {
-            guard let data = try? Data(contentsOf: storeURL), let raw = try? JSONSerialization.jsonObject(with: data) else { continue }
+            guard let data = boundedData(contentsOf: storeURL), let raw = try? JSONSerialization.jsonObject(with: data) else { continue }
             let agentId = storeURL.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
             let entries: [[String: Any]]
             if let object = raw as? [String: Any], let sessions = object["sessions"] as? [[String: Any]] {
@@ -861,7 +861,7 @@ final class SessionDiscovery {
     }
 
     private func parseCodeBuddyContext(path: String, sessionId: String) -> [[String: Any]] {
-        guard !path.isEmpty, let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+        guard !path.isEmpty, let data = boundedData(contentsOf: URL(fileURLWithPath: path)),
               let object = jsonObject(data),
               let conversations = object["conversations"] as? [String: Any],
               let conversation = conversations[sessionId] as? [String: Any] else { return [] }
@@ -1172,6 +1172,21 @@ final class SessionDiscovery {
         if let value = value as? NSNumber { return value.intValue }
         if let value = value as? String { return Int(value) ?? 0 }
         return 0
+    }
+
+    private func boundedData(contentsOf url: URL, limit: Int = 16 * 1_024 * 1_024) -> Data? {
+        guard limit > 0 else { return nil }
+        if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+           size > limit {
+            return nil
+        }
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: limit + 1),
+              data.count <= limit else {
+            return nil
+        }
+        return data
     }
 }
 

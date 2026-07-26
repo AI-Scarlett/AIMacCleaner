@@ -58,20 +58,20 @@ Initial local API endpoints:
 | Endpoint | Auth | Purpose |
 | --- | --- | --- |
 | `GET /v1/health` | None | Basic reachability check. |
-| `GET /v1/status` | Bearer pairing token | App/channel/subscription/system status and supported no-backend connectivity modes. |
-| `GET /v1/agents` | Bearer pairing token + active entitlement | Active Hook sessions, monitor snapshots, pending approvals, recent activity, and per-session control capabilities. |
-| `GET /v1/events` | Bearer pairing token + active entitlement | Recent Agent activity timeline. |
-| `GET /v1/approvals` | Bearer pairing token + active entitlement | Pending Hook permission, question, and plan approvals. |
-| `POST /v1/approvals/approve` | Bearer pairing token + active entitlement | Approve a pending Hook request and resume its blocked continuation. |
-| `POST /v1/approvals/deny` | Bearer pairing token + active entitlement | Deny a pending Hook request. |
-| `POST /v1/sessions/launch` | Bearer pairing token + active entitlement | Launch a CLI Agent through TraceFence-owned PTY so iOS can truly interrupt, continue, and inject instructions. |
-| `POST /v1/sessions/interrupt` | Bearer pairing token + active entitlement | Interrupt a session only when the Mac reports a controllable runtime target. |
-| `POST /v1/sessions/resume` | Bearer pairing token + active entitlement | Continue a session only through Hook continuation, writable tty, or process resume capability. |
-| `POST /v1/sessions/terminate` | Bearer pairing token + active entitlement | End a TraceFence-owned PTY session or a safely attached CLI runtime. |
-| `POST /v1/monitor/start` | Bearer pairing token + active entitlement | Start Mac monitoring from iOS. |
-| `POST /v1/monitor/stop` | Bearer pairing token + active entitlement | Stop Mac monitoring from iOS. |
+| `GET /v1/status` | Pairing-secret HMAC | App/channel/subscription/system status and supported no-backend connectivity modes. |
+| `GET /v1/agents` | Pairing-secret HMAC + active entitlement | Active Hook sessions, monitor snapshots, pending approvals, recent activity, and per-session control capabilities. |
+| `GET /v1/events` | Pairing-secret HMAC + active entitlement | Recent Agent activity timeline. |
+| `GET /v1/approvals` | Pairing-secret HMAC + active entitlement | Pending Hook permission, question, and plan approvals. |
+| `POST /v1/approvals/approve` | Pairing-secret HMAC + active entitlement | Approve a pending Hook request and resume the waiting Agent continuation. |
+| `POST /v1/approvals/deny` | Pairing-secret HMAC + active entitlement | Deny a pending Hook request. |
+| `POST /v1/sessions/launch` | Pairing-secret HMAC + active entitlement | Launch an allowlisted Agent CLI through TraceFence-owned PTY. Generic shells are never exposed remotely. |
+| `POST /v1/sessions/interrupt` | Pairing-secret HMAC + active entitlement | Interrupt a session only when the Mac reports a controllable runtime target. |
+| `POST /v1/sessions/resume` | Pairing-secret HMAC + active entitlement | Continue a session only through Hook continuation, writable tty, or process resume capability. |
+| `POST /v1/sessions/terminate` | Pairing-secret HMAC + active entitlement | End a TraceFence-owned PTY session or a safely attached CLI runtime. |
+| `POST /v1/monitor/start` | Pairing-secret HMAC + active entitlement | Start Mac monitoring from iOS. |
+| `POST /v1/monitor/stop` | Pairing-secret HMAC + active entitlement | Stop Mac monitoring from iOS. |
 
-The pairing payload copied from Settings includes the endpoint, token, channel, local addresses, and user-owned connectivity requirements. It is intentionally local-first and does not contact a TraceFence backend.
+The pairing payload copied from Settings includes the endpoint, 256-bit signing secret, channel, local addresses, and user-owned connectivity requirements. The client signs the method, request target, timestamp, nonce, and body digest. The secret is never transmitted after pairing, nonces cannot be replayed, and public source addresses are rejected. It is intentionally local-first and does not contact a TraceFence backend.
 
 ## Control Plane Contract
 

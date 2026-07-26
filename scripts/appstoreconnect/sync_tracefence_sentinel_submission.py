@@ -309,9 +309,22 @@ def sync_version(api: ASC, version_id: str, info_id: str, build_id: str) -> None
     api.json("PATCH", f"/ageRatingDeclarations/{rating['id']}", json=body("ageRatingDeclarations", rating["id"], rating_attrs))
 
     review = api.json("GET", f"/appStoreVersions/{version_id}/appStoreReviewDetail")["data"]
+    contact = {
+        key: os.environ.get(env_name, "").strip()
+        for key, env_name in {
+            "contactFirstName": "TRACEFENCE_REVIEW_FIRST_NAME",
+            "contactLastName": "TRACEFENCE_REVIEW_LAST_NAME",
+            "contactPhone": "TRACEFENCE_REVIEW_PHONE",
+            "contactEmail": "TRACEFENCE_REVIEW_EMAIL",
+        }.items()
+    }
+    missing = [key for key, value in contact.items() if not value]
+    if missing:
+        raise RuntimeError(
+            "Missing App Review contact environment variables: " + ", ".join(missing)
+        )
     review_attrs = {
-        "contactFirstName": "Zhou", "contactLastName": "Xiaoming", "contactPhone": "15827658181",
-        "contactEmail": "76462245@qq.com", "demoAccountRequired": False, "demoAccountName": None,
+        **contact, "demoAccountRequired": False, "demoAccountName": None,
         "demoAccountPassword": None, "notes": REVIEW_NOTES,
     }
     if review:

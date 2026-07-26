@@ -17,10 +17,12 @@ final class AgentCoreHTTPGateway {
 
     private struct Request {
         var method: String
+        var target: String
         var path: String
         var query: [String: String]
         var headers: [String: String]
         var body: [String: Any]
+        var bodyData: Data
     }
 
     private struct PendingApprovalRecord {
@@ -51,11 +53,13 @@ final class AgentCoreHTTPGateway {
         attributes: .concurrent
     )
     private let maxRequestBytes = 256 * 1_024
+    private let requestClockSkew: TimeInterval = 5 * 60
     private let contextReader = SessionContextReader()
     private var listener: NWListener?
     private var pendingApprovals: [String: PendingApprovalRecord] = [:]
     private var resolvedApprovalIds: [String: Date] = [:]
     private var completedOperations: [String: CompletedOperation] = [:]
+    private var acceptedRequestNonces: [String: Date] = [:]
 
     init(
         configPath: String,
@@ -89,7 +93,11 @@ final class AgentCoreHTTPGateway {
         parameters.allowLocalEndpointReuse = false
         let listener = try NWListener(using: parameters, on: port)
         listener.newConnectionHandler = { [weak self] connection in
-            self?.accept(connection)
+            guard let self, Self.isPrivateRemoteEndpoint(connection.endpoint) else {
+                connection.cancel()
+                return
+            }
+            self.accept(connection)
         }
         listener.stateUpdateHandler = { state in
             if case .failed(let error) = state {
@@ -159,21 +167,30 @@ final class AgentCoreHTTPGateway {
         for item in components?.queryItems ?? [] {
             if let value = item.value { query[item.name] = value }
         }
-        return Request(method: parts[0], path: path, query: query, headers: headers, body: body)
+        return Request(
+            method: parts[0].uppercased(),
+            target: target,
+            path: path,
+            query: query,
+            headers: headers,
+            body: body,
+            bodyData: Data(bodyData)
+        )
     }
 
     private func route(_ request: Request, on connection: NWConnection) {
         if request.path == "/v1/health" {
             sendJSON([
                 "ok": true,
-                "version": 1,
+                "version": 2,
+                "authentication": "hmac-sha256-v1",
                 "service": "TraceFence Agent Core Remote Gateway",
                 "coreVersion": coreVersion
             ], status: 200, on: connection)
             return
         }
 
-        guard let config = loadConfig(), isAuthorized(request.headers, token: config.token) else {
+        guard let config = loadConfig(), isAuthorized(request, token: config.token) else {
             sendJSON(["ok": false, "error": "unauthorized", "message": "Invalid pairing token."], status: 401, on: connection)
             return
         }
@@ -357,7 +374,8 @@ final class AgentCoreHTTPGateway {
         let addresses = localAddresses()
         return [
             "ok": true,
-            "version": 1,
+            "version": 2,
+            "authentication": "hmac-sha256-v1",
             "app": ["name": "TraceFence Agent Core", "version": coreVersion, "build": coreVersion],
             "gateway": ["running": config.enabled != false, "endpoint": "", "port": config.port, "lastRequest": "background-core"],
             "subscription": [
@@ -986,20 +1004,70 @@ final class AgentCoreHTTPGateway {
         return config
     }
 
-    private func isAuthorized(_ headers: [String: String], token: String) -> Bool {
-        guard let value = headers["authorization"] else { return false }
-        let components = value.split(separator: " ", maxSplits: 1).map(String.init)
-        guard components.count == 2, components[0].lowercased() == "bearer" else { return false }
-        return constantTimeEqual(components[1], token)
+    private func isAuthorized(_ request: Request, token: String) -> Bool {
+        guard let timestamp = request.headers["x-tracefence-timestamp"],
+              let timestampValue = TimeInterval(timestamp),
+              abs(Date().timeIntervalSince1970 - timestampValue) <= requestClockSkew,
+              let nonce = request.headers["x-tracefence-nonce"],
+              nonce.count >= 16,
+              nonce.count <= 128,
+              let providedSignature = request.headers["x-tracefence-signature"] else {
+            return false
+        }
+
+        let bodyDigest = SHA256.hash(data: request.bodyData)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let canonical = [request.method, request.target, timestamp, nonce, bodyDigest]
+            .joined(separator: "\n")
+        let expected = HMAC<SHA256>.authenticationCode(
+            for: Data(canonical.utf8),
+            using: SymmetricKey(data: Data(token.utf8))
+        ).map { String(format: "%02x", $0) }.joined()
+        guard constantTimeEqual(providedSignature.lowercased(), expected) else { return false }
+
+        let now = Date()
+        acceptedRequestNonces = acceptedRequestNonces.filter { $0.value > now }
+        guard acceptedRequestNonces[nonce] == nil else { return false }
+        acceptedRequestNonces[nonce] = now.addingTimeInterval(requestClockSkew)
+        return true
     }
 
     private func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
         let left = Array(lhs.utf8)
         let right = Array(rhs.utf8)
-        guard left.count == right.count else { return false }
-        var difference: UInt8 = 0
-        for index in left.indices { difference |= left[index] ^ right[index] }
+        let count = max(left.count, right.count)
+        var difference = UInt64(left.count ^ right.count)
+        for index in 0..<count {
+            let leftByte = index < left.count ? left[index] : 0
+            let rightByte = index < right.count ? right[index] : 0
+            difference |= UInt64(leftByte ^ rightByte)
+        }
         return difference == 0
+    }
+
+    private static func isPrivateRemoteEndpoint(_ endpoint: NWEndpoint) -> Bool {
+        guard case .hostPort(let host, _) = endpoint else { return false }
+        var value = String(describing: host).lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        if let zone = value.firstIndex(of: "%") {
+            value = String(value[..<zone])
+        }
+        if value == "localhost" || value == "::1" { return true }
+        if value.hasPrefix("fe80:") || value.hasPrefix("fc") || value.hasPrefix("fd") { return true }
+        if value.hasPrefix("::ffff:") {
+            value = String(value.dropFirst("::ffff:".count))
+        }
+        let octets = value.split(separator: ".").compactMap { Int($0) }
+        guard octets.count == 4, octets.allSatisfy({ (0...255).contains($0) }) else { return false }
+        switch (octets[0], octets[1]) {
+        case (10, _), (127, _), (169, 254), (192, 168):
+            return true
+        case (172, 16...31), (100, 64...127):
+            return true
+        default:
+            return false
+        }
     }
 
     private func sendJSON(_ body: [String: Any], status: Int, on connection: NWConnection) {
