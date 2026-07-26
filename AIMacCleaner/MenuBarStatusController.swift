@@ -35,6 +35,7 @@ enum MenuBarPrimaryMetric: String, CaseIterable, Identifiable {
     case tightest
     case fiveHour
     case weekly
+    case fable
     case todayTokens
 
     var id: String { rawValue }
@@ -252,9 +253,9 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
         let windows = quotaService?.snapshots
             .filter { !$0.isSetupNotice }
             .flatMap(\.windows)
-            .filter { ["primary", "secondary", "tertiary"].contains($0.id) } ?? []
+            .filter(\.isAllowanceWindow) ?? []
         let staleSuffix = quotaService?.snapshots.contains(where: {
-            $0.isStale && $0.windows.contains(where: { ["primary", "secondary", "tertiary"].contains($0.id) })
+            $0.isStale && $0.windows.contains(where: { $0.isAllowanceWindow })
         }) == true ? " ~" : ""
 
         if style == .detailed {
@@ -264,6 +265,11 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
             }
             if let weekly = tightestWindow(kind: .weekly, in: windows) {
                 parts.append(formatQuota(weekly, displayMode: displayMode))
+            }
+            for scopedWeekly in windows
+                .filter(\.isScopedWeeklyAllowanceWindow)
+                .sorted(by: { $0.remainingPercent < $1.remainingPercent }) {
+                parts.append(formatQuota(scopedWeekly, displayMode: displayMode))
             }
             if let today = usageInsightsService?.snapshot(for: .combined).today.total, today > 0 {
                 parts.append("T \(Self.compactCount(today))")
@@ -298,7 +304,13 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
             return tightestWindow(kind: .fiveHour, in: windows)
                 .map { formatQuota($0, displayMode: displayMode) }
         case .weekly:
-            return tightestWindow(kind: .weekly, in: windows)
+            return windows
+                .filter { $0.kind == .weekly || $0.isScopedWeeklyAllowanceWindow }
+                .min { $0.remainingPercent < $1.remainingPercent }
+                .map { formatQuota($0, displayMode: displayMode) }
+        case .fable:
+            return windows
+                .first { $0.id == "claude-weekly-fable" }
                 .map { formatQuota($0, displayMode: displayMode) }
         case .todayTokens:
             guard let total = usageInsightsService?.snapshot(for: .combined).today.total, total > 0 else { return nil }
@@ -325,7 +337,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
         case .fiveHour: title = "5h"
         case .weekly: title = "7d"
         case .monthly: title = "30d"
-        case .extra: title = window.title
+        case .extra: title = window.scopedWeeklyAllowanceDisplayName ?? window.title
         }
         return "\(title) \(Int(percent.rounded()))%\(suffix)"
     }

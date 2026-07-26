@@ -65,6 +65,30 @@ struct AIMacCleanerApp: App {
             }
             Darwin.exit(result.snapshot == nil ? 2 : 0)
         }
+        if ProcessInfo.processInfo.arguments.contains("--tracefence-provider-quota-probe") {
+            let snapshots: [[String: Any]] = ProviderQuotaService.debugProviderQuotaProbe().map { snapshot in
+                [
+                    "id": snapshot.id,
+                    "provider": snapshot.providerName,
+                    "source": snapshot.source,
+                    "readable": snapshot.quotaReadSucceeded,
+                    "windows": snapshot.windows.map { window in
+                        [
+                            "id": window.id,
+                            "title": window.title,
+                            "usedPercent": window.usedPercent,
+                            "windowMinutes": window.windowMinutes as Any? ?? NSNull(),
+                            "hasResetDate": window.resetsAt != nil
+                        ]
+                    }
+                ]
+            }
+            if let data = try? JSONSerialization.data(withJSONObject: ["snapshots": snapshots], options: [.prettyPrinted, .sortedKeys]) {
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data("\n".utf8))
+            }
+            Darwin.exit(0)
+        }
         if ProcessInfo.processInfo.arguments.contains("--tracefence-menubar-tab-probe") {
             let failures = MenuBarMonitor.debugTabSelectionSelfTestFailures()
             let payload: [String: Any] = [

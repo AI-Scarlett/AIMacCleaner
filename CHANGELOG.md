@@ -2,6 +2,12 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.0.88] - 2026-07-26
+
+### Fixed
+- Claude Fable 独立周额度不再被菜单栏摘要过滤；最紧额度、详细模式和每周额度都会纳入 Fable 的剩余比例与重置时间。
+- 菜单栏主指标新增独立的 “Fable” 选项，额度弹窗使用明确的 “Claude Fable 每周额度” 标题。
+
 ## [1.0.87] - 2026-07-26
 
 ### Security

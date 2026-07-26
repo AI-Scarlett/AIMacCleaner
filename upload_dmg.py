@@ -13,13 +13,14 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.87")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.88")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Promotes Claude Fable to a first-class weekly quota in the menu-bar title, detailed quota deck, and primary-metric settings, including its own remaining percentage and reset time.\n"
     "- Removes legacy WeChat, QQ, DingTalk, WPS, and XMind cleanup targets; TraceFence has no integration with those apps and no longer scans their containers.\n"
     "- Adds strict cleanup-path allowlists, symlink and protected-root checks, and a build-time rule audit to prevent broad app-container or user-data deletion.\n"
     "- Replaces iOS Remote Pairing Bearer requests with timestamp- and nonce-bound HMAC-SHA256 authentication, replay protection, private-source checks, and removal of the remote generic-shell target.\n"

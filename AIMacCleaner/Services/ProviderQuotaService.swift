@@ -219,7 +219,7 @@ final class ProviderQuotaService: ObservableObject {
     var menuBarSummary: String? {
         snapshots
             .flatMap(\.windows)
-            .filter(\.isPrimaryAllowanceWindow)
+            .filter(\.isAllowanceWindow)
             .min { lhs, rhs in lhs.remainingPercent < rhs.remainingPercent }
             .map { window in
                 "\(window.shortTitle) \(Int(window.remainingPercent.rounded()))%"
@@ -481,6 +481,10 @@ final class ProviderQuotaService: ObservableObject {
             return (nil, diagnostic)
         }
     }
+
+    static func debugProviderQuotaProbe() -> [ProviderQuotaSnapshot] {
+        CodexBarQuotaProvider().fetch()
+    }
 #endif
 
     func start() {
@@ -679,12 +683,38 @@ private func normalizedQuotaAccount(_ accountLabel: String?, source: String) -> 
     return anonymousLabels.contains(normalized) ? nil : normalized
 }
 
-private extension ProviderQuotaWindow {
+extension ProviderQuotaWindow {
     var isPrimaryAllowanceWindow: Bool {
         id == "primary" || id == "secondary" || id == "tertiary"
     }
 
+    var isScopedWeeklyAllowanceWindow: Bool {
+        kind == .extra && windowMinutes == 10_080 && id.hasPrefix("claude-weekly-")
+    }
+
+    var isAllowanceWindow: Bool {
+        isPrimaryAllowanceWindow || isScopedWeeklyAllowanceWindow
+    }
+
+    var scopedWeeklyAllowanceDisplayName: String? {
+        guard isScopedWeeklyAllowanceWindow else { return nil }
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let opening = trimmedTitle.lastIndex(of: "("),
+           trimmedTitle.last == ")",
+           opening < trimmedTitle.index(before: trimmedTitle.endIndex) {
+            let start = trimmedTitle.index(after: opening)
+            let end = trimmedTitle.index(before: trimmedTitle.endIndex)
+            let candidate = trimmedTitle[start..<end].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !candidate.isEmpty { return candidate }
+        }
+
+        let suffix = id.dropFirst("claude-weekly-".count)
+        let words = suffix.split(separator: "-").map { String($0).capitalized }
+        return words.isEmpty ? nil : words.joined(separator: " ")
+    }
+
     var shortTitle: String {
+        if let scopedName = scopedWeeklyAllowanceDisplayName { return scopedName }
         switch kind {
         case .fiveHour: return "5h"
         case .weekly: return "7d"
@@ -2034,6 +2064,14 @@ private struct ClaudeDesktopQuotaReader {
             $0.id == "claude-weekly-fable" && $0.usedPercent == 17 && $0.resetsAt != nil
         }) {
             failures.append("Claude Desktop model-scoped weekly quota was not preserved")
+        }
+        if let fable = windows.first(where: { $0.id == "claude-weekly-fable" }) {
+            if !fable.isAllowanceWindow || !fable.isScopedWeeklyAllowanceWindow {
+                failures.append("Claude Desktop Fable quota was not classified as a visible allowance")
+            }
+            if fable.scopedWeeklyAllowanceDisplayName != "Fable" {
+                failures.append("Claude Desktop Fable quota display name was not preserved")
+            }
         }
         return failures
     }

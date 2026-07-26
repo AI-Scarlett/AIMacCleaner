@@ -509,6 +509,7 @@ struct SettingsView: View {
                             Text(localizer.t("最紧额度", en: "Tightest quota", zhHant: "最緊額度", ja: "最小クォータ", ko: "가장 낮은 할당량", mt: "Tightest quota")).tag(MenuBarPrimaryMetric.tightest.rawValue)
                             Text("5h").tag(MenuBarPrimaryMetric.fiveHour.rawValue)
                             Text("7d").tag(MenuBarPrimaryMetric.weekly.rawValue)
+                            Text("Fable").tag(MenuBarPrimaryMetric.fable.rawValue)
                             Text(localizer.t("今日 Token", en: "Today's tokens", zhHant: "今日 Token", ja: "今日のトークン", ko: "오늘 토큰", mt: "Today's tokens")).tag(MenuBarPrimaryMetric.todayTokens.rawValue)
                         }
                         .labelsHidden()

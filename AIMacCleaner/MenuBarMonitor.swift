@@ -1464,6 +1464,16 @@ struct MenuBarMonitor: View {
     }
 
     private func quotaWindowTitle(_ window: ProviderQuotaWindow) -> String {
+        if let scopedName = window.scopedWeeklyAllowanceDisplayName {
+            return localizer.t(
+                "Claude \(scopedName) 每周额度",
+                en: "Claude \(scopedName) weekly quota",
+                zhHant: "Claude \(scopedName) 每週額度",
+                ja: "Claude \(scopedName) 週間クォータ",
+                ko: "Claude \(scopedName) 주간 할당량",
+                mt: "Claude \(scopedName) weekly quota"
+            )
+        }
         if isCodexSparkQuotaWindow(window) {
             switch window.kind {
             case .fiveHour:
