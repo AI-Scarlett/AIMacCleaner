@@ -1726,10 +1726,10 @@ final class ArtifactShelfService: ObservableObject {
 
         let shortDetail = artifactSecondaryText(
             kind: .html,
-            target: "/Users/zhouxiaoming/Documents/quota_reset_tibo_20260716/index.html"
+            target: "/Users/example/Documents/quota_reset_tibo_20260716/index.html"
         )
         expect(shortDetail.contains("index.html"), "secondary text must retain the original filename")
-        expect(!shortDetail.contains("zhouxiaoming"), "secondary text must not expose the local username")
+        expect(!shortDetail.contains("example"), "secondary text must not expose the local username")
         expect(
             canonicalTargetKey("/tmp/batch/../batch/index.html") == canonicalTargetKey("/tmp/batch/index.html"),
             "standardized target spellings must deduplicate"
