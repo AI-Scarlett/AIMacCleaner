@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safely move TraceFence Sentinel build 24 into TestFlight and App Review.
+"""Safely move TraceFence Sentinel build 25 into TestFlight and App Review.
 
 The default mode is read-only. Mutating App Store Connect requires both
 ``--execute`` and an exact ``--confirm`` value printed by the dry run.
@@ -30,8 +30,8 @@ from scripts.appstoreconnect.sync_tracefence_sentinel_submission import (  # noq
 APP_ID = "6789015094"
 VERSION = "1.0.0"
 PLATFORM = "IOS"
-BUILD = os.environ.get("TRACEFENCE_SENTINEL_BUILD", "24")
-EXPECTED_CURRENT_BUILD = os.environ.get("TRACEFENCE_SENTINEL_OLD_BUILD", "23")
+BUILD = os.environ.get("TRACEFENCE_SENTINEL_BUILD", "25")
+EXPECTED_CURRENT_BUILD = os.environ.get("TRACEFENCE_SENTINEL_OLD_BUILD", "24")
 BETA_GROUP_ID = os.environ.get(
     "TRACEFENCE_SENTINEL_PUBLIC_BETA_GROUP",
     "a4e065ba-de28-40e9-957f-f7ae01e9cff2",

@@ -2,7 +2,7 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
-## [Unreleased] - 2026-07-26
+## [1.0.87] - 2026-07-26
 
 ### Security
 - 清理规则只允许明确的缓存、日志和构建产物子目录；新增构建期规则校验与删除前二次路径护栏，拒绝用户资料根目录、整个应用容器、Docker 虚拟磁盘和越界 AI 建议。
@@ -30,7 +30,7 @@ All notable changes to AIMacCleaner will be documented in this file.
 - 用量补全显示本轮检查、实际读取、完整补全、剩余、跳过、失败、结束原因和完成时间，并区分响应额度结束与真正全部扫描完成。
 
 ### Fixed
-- 官网版可只读复用本机 Claude Desktop 登录会话查询官方 5 小时与周额度；凭据仅在内存中用于 `claude.ai` 请求，不写入缓存或日志，App Store 包不启用该回退。
+- 官网版可只读复用本机 Claude Desktop 登录会话查询官方 5 小时、总周额度以及 Fable 等模型独立周额度；每个窗口单独显示用量与重置时间。凭据仅在内存中用于 `claude.ai` 请求，不写入缓存或日志，App Store 包不启用该回退。
 - iOS Remote Pairing 不再允许不同配对密钥的 TraceFence 进程共享同一监听端口，避免同一二维码随机命中旧密钥并在在线/断开之间跳变。
 - iOS 客户端遇到单个旧端点返回 401/402 时会继续验证同一 Mac 的其余网关；重新配对时立即清空旧在线快照，避免假在线状态。
 - 菜单栏 AppKit Panel 改为透明背景并对 Hosting View 做连续圆角裁切，消除原来四个直角。

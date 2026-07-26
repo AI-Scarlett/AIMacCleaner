@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-BUILD_NUMBER="${1:-24}"
+BUILD_NUMBER="${1:-25}"
 VERSION="1.0.0"
 ARCHIVE_PATH="build/TraceFenceSentinel-iOS-${VERSION}-${BUILD_NUMBER}.xcarchive"
 EXPORT_PATH="build/TraceFenceSentinel-iOS-${VERSION}-${BUILD_NUMBER}-AppStore"

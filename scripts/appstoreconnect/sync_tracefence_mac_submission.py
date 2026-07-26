@@ -21,7 +21,7 @@ from scripts.appstoreconnect.sync_tracefence_sentinel_submission import ASC, KEY
 
 APP_ID = "6772386897"
 VERSION = "3.1.8"
-BUILD = os.environ.get("TRACEFENCE_MAC_BUILD", "75")
+BUILD = os.environ.get("TRACEFENCE_MAC_BUILD", "76")
 SCREENSHOT_DIR = ROOT / "build/TraceFence-AppStore-Screenshots/APP_DESKTOP"
 REVIEW_ATTACHMENT = Path(os.environ.get(
     "TRACEFENCE_REVIEW_ATTACHMENT",
@@ -76,12 +76,14 @@ WHATS_NEW = """- Adds the project-based Agent Monitor with live, scheduled, bloc
 
 REVIEW_NOTES = """TraceFence is a sandboxed local-first developer utility. No account is required.
 
-Review fixes in build 75:
+Review fixes in build 76:
 - The iOS pairing QR now uses a short pairing URI with a 256-bit token, an integer-pixel render, and a four-module quiet zone.
 - The pairing listener no longer permits two installed TraceFence variants to share port 17895 with different tokens, eliminating intermittent authentication failures during upgrades.
 - Pairing identity is no longer replaced by a stale coexisting direct-download process; only the explicit Reset Pairing action rotates the App Store listener token.
 - Agent Guard no longer traverses Music, Movies, or Photos libraries when a parent Home folder was authorized.
 - NSAppleMusicUsageDescription now explains the only supported media-library access: a user explicitly choosing Music for a local file scan. TraceFence reads local file names, sizes, and modification dates for cleanup candidates and does not upload library contents.
+- Remote Pairing requests now use timestamp- and nonce-bound HMAC-SHA256 authentication. Replay, stale, public-source, legacy Bearer, and generic remote-shell requests are rejected; only the health check is unauthenticated.
+- Legacy third-party-app cleanup rules were removed. TraceFence has no WeChat, QQ, DingTalk, WPS, or XMind integration and does not scan those app containers.
 
 Subscription review flow:
 1. Launch TraceFence.
@@ -95,7 +97,7 @@ Alternative path: click the Settings gear, then select Subscription in the Setti
 
 No account or demo credentials are required. The subscriptions are not restricted by storefront or device configuration. Product names and prices may be localized by the Apple sandbox storefront. iPhone pairing is optional and requires TraceFence Sentinel plus the same LAN or another existing private network path configured independently by the reviewer. To test it, click the crossed-out iPhone button labeled Disconnected at the bottom of the main sidebar, enable iOS Remote Pairing, then scan the displayed pairing QR code in TraceFence Sentinel. The listener is off by default and stops immediately when the switch is turned off.
 
-TraceFence does not contain VPN functionality. It does not create or manage a VPN, install a Network Extension, route device traffic, inspect packets, or collect information through a VPN. The Mac listener accepts only direct, token-authenticated requests from the paired iPhone over the network path already selected by macOS. No Agent, prompt, project, command, pairing, or network data is sent to TraceFence or any third party; there is no TraceFence relay or cloud storage.
+TraceFence does not contain VPN functionality. It does not create or manage a VPN, install a Network Extension, route device traffic, inspect packets, or collect information through a VPN. The Mac listener accepts only direct, HMAC-authenticated requests from the paired iPhone over the network path already selected by macOS. No Agent, prompt, project, command, pairing, or network data is sent to TraceFence or any third party; there is no TraceFence relay or cloud storage.
 
 Provider quota testing is optional. For Grok quota, click Authorize Data in the quota panel and select the review Mac's Home folder or ~/.grok, then refresh. TraceFence keeps only a security-scoped bookmark and reads the reviewer's own local Grok login data.
 
@@ -107,7 +109,7 @@ Privacy Policy: https://ai-scarlett.github.io/TraceFence/privacy-policy.html
 Terms of Use (Apple Standard EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"""
 
 if PAIRING_DEMO_VIDEO_URL:
-    REVIEW_NOTES += f"\n\nPhysical Mac + iPhone pairing demo video (build 75 / iOS build 24 workflow):\n{PAIRING_DEMO_VIDEO_URL}"
+    REVIEW_NOTES += f"\n\nPhysical Mac + iPhone pairing demo video (build 76 / iOS build 25 workflow):\n{PAIRING_DEMO_VIDEO_URL}"
 
 
 def first(api: ASC, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:

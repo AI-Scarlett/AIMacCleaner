@@ -13,13 +13,19 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.85")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.0.87")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Removes legacy WeChat, QQ, DingTalk, WPS, and XMind cleanup targets; TraceFence has no integration with those apps and no longer scans their containers.\n"
+    "- Adds strict cleanup-path allowlists, symlink and protected-root checks, and a build-time rule audit to prevent broad app-container or user-data deletion.\n"
+    "- Replaces iOS Remote Pairing Bearer requests with timestamp- and nonce-bound HMAC-SHA256 authentication, replay protection, private-source checks, and removal of the remote generic-shell target.\n"
+    "- Moves pairing, AI-provider, and webhook secrets to Keychain with migration safeguards that preserve the old record if secure storage fails.\n"
+    "- Hardens webhooks, local profile serving, hook configuration writes, sensor detection, and direct-download signing and notarization gates.\n"
+    "- Reads Claude Desktop's official 5-hour, weekly, and model-scoped weekly windows such as Fable as separate quota rows with their own reset times; credentials stay in memory and are sent only to claude.ai.\n"
     "- Preserves one shared 256-bit iPhone pairing token between the direct-download Mac app and its independently installed Agent Core, so app or Core upgrades cannot invalidate an existing pairing.\n"
     "- Keeps the background Core status endpoint responsive while optional Agent adapters are slow or unhealthy, preventing heartbeat timeouts from appearing as intermittent disconnects.\n"
     "- Replaces same-version Agent Core bundles through a clean verified staging directory so stale backup files cannot corrupt an update signature.\n"
