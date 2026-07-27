@@ -48,6 +48,25 @@ enum DiskAdvisorRisk: String, Codable, CaseIterable, Sendable {
     }
 }
 
+enum DiskAdvisorRationale: String, Codable, Sendable, CaseIterable {
+    case credentials
+    case personalFiles
+    case projectData
+    case aiAgentData
+    case hiddenAppData
+    case simulatorDevices
+    case simulatorDyldCache
+    case temporaryFiles
+    case generatedTaskData
+    case generatedMedia
+    case appUpdateCache
+    case xcodeArchives
+    case cacheOrLogs
+    case buildArtifact
+    case downloadArchive
+    case unknownLargeItem
+}
+
 struct DiskAdvisorCandidate: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let name: String
@@ -65,6 +84,7 @@ struct DiskAdvisorCandidate: Identifiable, Hashable, Codable, Sendable {
     var confidence: Double
     var source: String
     var analyzedAt: Date?
+    var rationale: DiskAdvisorRationale?
 
     var displayPath: String {
         path.replacingOccurrences(of: SandboxPaths.realHomeDirectory, with: "~")
@@ -186,11 +206,14 @@ final class DiskAdvisorLabStore: ObservableObject {
             if let risk = result.risk {
                 updated.risk = risk
             }
-            if let reason = result.reason?.trimmingCharacters(in: .whitespacesAndNewlines), !reason.isEmpty {
-                updated.reason = reason
-            }
-            if let impact = result.impact?.trimmingCharacters(in: .whitespacesAndNewlines), !impact.isEmpty {
-                updated.impact = impact
+            let reason = result.reason?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let impact = result.impact?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let hasReason = reason?.isEmpty == false
+            let hasImpact = impact?.isEmpty == false
+            if hasReason || hasImpact {
+                updated.rationale = nil
+                updated.reason = hasReason ? (reason ?? "") : ""
+                updated.impact = hasImpact ? (impact ?? "") : ""
             }
             updated.confidence = min(max(result.confidence ?? updated.confidence, 0), 1)
             updated.source = source
@@ -220,7 +243,7 @@ struct DiskAdvisorLabView: View {
             $0.name.lowercased().contains(query)
                 || $0.displayPath.lowercased().contains(query)
                 || $0.category.lowercased().contains(query)
-                || $0.reason.lowercased().contains(query)
+                || displayReason(for: $0).lowercased().contains(query)
         }
     }
 
@@ -518,7 +541,7 @@ struct DiskAdvisorLabView: View {
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .lineLimit(1)
 
-                    Text(candidate.reason)
+                    Text(displayReason(for: candidate))
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -534,8 +557,9 @@ struct DiskAdvisorLabView: View {
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
 
-                    if !candidate.impact.isEmpty {
-                        Text(candidate.impact)
+                    let impactText = displayImpact(for: candidate)
+                    if !impactText.isEmpty {
+                        Text(impactText)
                             .font(Theme.Font.caption)
                             .foregroundStyle(candidate.risk.color)
                             .fixedSize(horizontal: false, vertical: true)
@@ -705,6 +729,20 @@ struct DiskAdvisorLabView: View {
 
     private func confidenceText(_ confidence: Double) -> String {
         "\(Int((confidence * 100).rounded()))%"
+    }
+
+    private func displayReason(for candidate: DiskAdvisorCandidate) -> String {
+        if let rationale = candidate.rationale {
+            return localizer.diskAdvisorReason(rationale)
+        }
+        return candidate.reason
+    }
+
+    private func displayImpact(for candidate: DiskAdvisorCandidate) -> String {
+        if let rationale = candidate.rationale {
+            return localizer.diskAdvisorImpact(rationale)
+        }
+        return candidate.impact
     }
 }
 
@@ -1246,61 +1284,62 @@ private enum DiskAdvisorScanner {
             impact: classification.impact,
             confidence: classification.confidence,
             source: "Local Rules",
-            analyzedAt: nil
+            analyzedAt: nil,
+            rationale: classification.rationale
         ))
     }
 
-    private static func classify(url: URL, category: String, modified: Date?) -> (recommendation: DiskAdvisorRecommendation, risk: DiskAdvisorRisk, hint: String, impact: String, confidence: Double) {
+    private static func classify(url: URL, category: String, modified: Date?) -> (recommendation: DiskAdvisorRecommendation, risk: DiskAdvisorRisk, rationale: DiskAdvisorRationale, hint: String, impact: String, confidence: Double) {
         let path = url.path.lowercased()
         let name = url.lastPathComponent.lowercased()
         let old = modified.map { Date().timeIntervalSince($0) > 7 * 24 * 60 * 60 } ?? false
 
         if sensitiveNames.contains(where: { path.contains($0) }) {
-            return (.keep, .danger, "路径像凭据、密钥或私密数据，默认保留。", "删除可能导致登录、签名或账户恢复问题。", 0.85)
+            return (.keep, .danger, .credentials, "路径像凭据、密钥或私密数据，默认保留。", "删除可能导致登录、签名或账户恢复问题。", 0.85)
         }
         if category == "Personal Files" {
-            return (.keep, .danger, "这是用户个人资料目录，默认只做占用提示，不建议自动清理。", "删除可能造成个人文件或照片资料丢失。", 0.92)
+            return (.keep, .danger, .personalFiles, "这是用户个人资料目录，默认只做占用提示，不建议自动清理。", "删除可能造成个人文件或照片资料丢失。", 0.92)
         }
         if category == "Project Data" {
-            return (.keep, .danger, "这是项目根目录，可能包含源码、配置和生成内容；应只清理明确的缓存子目录。", "删除整个项目会造成源码和工作文件丢失。", 0.88)
+            return (.keep, .danger, .projectData, "这是项目根目录，可能包含源码、配置和生成内容；应只清理明确的缓存子目录。", "删除整个项目会造成源码和工作文件丢失。", 0.88)
         }
         if category == "AI Agent Data" {
-            return (.review, .caution, "AI Agent 数据通常包含会话历史、索引或本地状态，删除前应确认是否还需要追溯记录。", "删除后可能丢失历史会话、项目上下文或本地 agent 状态。", 0.78)
+            return (.review, .caution, .aiAgentData, "AI Agent 数据通常包含会话历史、索引或本地状态，删除前应确认是否还需要追溯记录。", "删除后可能丢失历史会话、项目上下文或本地 agent 状态。", 0.78)
         }
         if category == "Hidden App Data" {
-            return (.review, .caution, "这是用户目录下的大型隐藏应用数据，可能是 Agent、开发工具、包管理器或其它本地状态。", "删除前需要确认来源；它可能包含会话历史、索引、缓存或账户状态。", 0.7)
+            return (.review, .caution, .hiddenAppData, "这是用户目录下的大型隐藏应用数据，可能是 Agent、开发工具、包管理器或其它本地状态。", "删除前需要确认来源；它可能包含会话历史、索引、缓存或账户状态。", 0.7)
         }
         if category == "Simulator Devices" {
-            return (.review, .caution, "模拟器设备可能包含安装的 App、数据容器和调试状态，可按设备选择删除。", "删除后对应模拟器设备和其中 App 数据会消失，需要重新创建或安装。", 0.76)
+            return (.review, .caution, .simulatorDevices, "模拟器设备可能包含安装的 App、数据容器和调试状态，可按设备选择删除。", "删除后对应模拟器设备和其中 App 数据会消失，需要重新创建或安装。", 0.76)
         }
         if category == "Simulator dyld Cache" {
-            return (.review, .caution, "模拟器 dyld 缓存通常可重建，但位于系统级开发者目录，可能需要权限。", "下次启动模拟器可能重新生成缓存，清理操作也可能被系统权限拒绝。", 0.74)
+            return (.review, .caution, .simulatorDyldCache, "模拟器 dyld 缓存通常可重建，但位于系统级开发者目录，可能需要权限。", "下次启动模拟器可能重新生成缓存，清理操作也可能被系统权限拒绝。", 0.74)
         }
         if category == "Temporary Files" {
-            return (old ? .clean : .review, old ? .safe : .caution, "系统临时目录常见于测试、构建和中间文件，旧文件通常值得清理。", "仍在运行的任务可能依赖近期临时文件；清理前建议关闭相关构建或测试进程。", old ? 0.84 : 0.66)
+            return (old ? .clean : .review, old ? .safe : .caution, .temporaryFiles, "系统临时目录常见于测试、构建和中间文件，旧文件通常值得清理。", "仍在运行的任务可能依赖近期临时文件；清理前建议关闭相关构建或测试进程。", old ? 0.84 : 0.66)
         }
         if category == "Generated Media Cache" || category == "Generated Task Data" {
-            return (.review, .caution, "这是生成视频或任务缓存，通常占用较大，适合用户确认后清理。", "删除后相关生成任务、缓存视频或中间结果可能无法继续复用。", 0.8)
+            return (.review, .caution, .generatedTaskData, "这是生成视频或任务缓存，通常占用较大，适合用户确认后清理。", "删除后相关生成任务、缓存视频或中间结果可能无法继续复用。", 0.8)
         }
         if category == "Generated Media" {
-            return (.review, .caution, "这是生成的视频输出目录，可能既有缓存也有用户想保留的成品。", "删除后可能丢失已经生成的视频结果。", 0.72)
+            return (.review, .caution, .generatedMedia, "这是生成的视频输出目录，可能既有缓存也有用户想保留的成品。", "删除后可能丢失已经生成的视频结果。", 0.72)
         }
         if category == "App Update Cache" {
-            return (.clean, .safe, "应用更新缓存通常可以重新下载。", "下次更新可能需要重新下载安装包。", 0.86)
+            return (.clean, .safe, .appUpdateCache, "应用更新缓存通常可以重新下载。", "下次更新可能需要重新下载安装包。", 0.86)
         }
         if category == "Xcode Archives" || name.hasSuffix(".xcarchive") {
-            return (.review, .caution, "Xcode archive 可能用于重新上传、符号化或回溯版本，删除前需要确认。", "删除后可能无法重新提交或定位线上问题。", 0.74)
+            return (.review, .caution, .xcodeArchives, "Xcode archive 可能用于重新上传、符号化或回溯版本，删除前需要确认。", "删除后可能无法重新提交或定位线上问题。", 0.74)
         }
         if category.contains("Cache") || category == "Logs" || category == "Xcode DerivedData" || category == "Simulator Cache" {
-            return (old ? .clean : .review, old ? .safe : .caution, "缓存、日志或派生数据通常可以重建。", "首次重新打开相关工具时可能需要重新索引或下载。", old ? 0.82 : 0.68)
+            return (old ? .clean : .review, old ? .safe : .caution, .cacheOrLogs, "缓存、日志或派生数据通常可以重建。", "首次重新打开相关工具时可能需要重新索引或下载。", old ? 0.82 : 0.68)
         }
         if category == "Build Artifact" {
-            return (old ? .clean : .review, old ? .safe : .caution, "构建产物通常可以由源码重新生成。", "下次构建可能变慢，未提交生成物请先确认。", old ? 0.78 : 0.64)
+            return (old ? .clean : .review, old ? .safe : .caution, .buildArtifact, "构建产物通常可以由源码重新生成。", "下次构建可能变慢，未提交生成物请先确认。", old ? 0.78 : 0.64)
         }
         if ["dmg", "pkg", "zip", "tar", "gz", "xz", "rar", "7z"].contains(url.pathExtension.lowercased()) {
-            return (.review, .caution, "下载的安装包或压缩包可能已经不再需要。", "删除后如需安装或恢复内容，需要重新下载。", 0.62)
+            return (.review, .caution, .downloadArchive, "下载的安装包或压缩包可能已经不再需要。", "删除后如需安装或恢复内容，需要重新下载。", 0.62)
         }
-        return (.review, .caution, "这是较大的磁盘项目，建议让 AI 进一步判断用途。", "删除前请确认是否仍在使用。", 0.52)
+        return (.review, .caution, .unknownLargeItem, "这是较大的磁盘项目，建议让 AI 进一步判断用途。", "删除前请确认是否仍在使用。", 0.52)
     }
 
     private static func sizeOfItem(_ url: URL) -> (Int64, Int) {

@@ -405,6 +405,81 @@ extension Localizer {
     var clearSearch: String { t("清除搜索", en: "Clear search", zhHant: "清除搜尋", ja: "検索をクリア", ko: "검색 지우기", mt: "Clear search") }
     var cleanComplete: String { t("🎉 清理完成", en: "🎉 Clean Complete", zhHant: "🎉 清理完成", ja: "🎉 クリーンアップ完了", ko: "🎉 정리 완료", mt: "🎉 Clean Complete") }
     var cleanCompleteMsg: String { t("本次清理释放了", en: "This cleanup freed up", zhHant: "本次清理釋放了", ja: "今回のクリーンアップで解放しました", ko: "이번 정리로 확보됨", mt: "This cleanup freed up") }
+
+    func diskAdvisorReason(_ rationale: DiskAdvisorRationale) -> String {
+        switch rationale {
+        case .credentials:
+            return t("路径像凭据、密钥或私密数据，默认保留。", en: "This path looks like credentials, keys, or private data, so it is kept by default.", zhHant: "路徑像憑證、金鑰或私密資料，預設保留。", ja: "認証情報や鍵、機密データと思われるパスのため、既定で保持します。", ko: "자격 증명·키·비공개 데이터로 보이는 경로여서 기본적으로 유지합니다.")
+        case .personalFiles:
+            return t("这是用户个人资料目录，默认只做占用提示，不建议自动清理。", en: "This is a personal files folder. TraceFence only reports its size and does not recommend cleaning it automatically.", zhHant: "這是使用者個人資料目錄，預設只做佔用提示，不建議自動清理。", ja: "個人ファイルのフォルダです。使用量の表示のみで、自動削除は推奨しません。", ko: "개인 파일 폴더입니다. 사용량만 표시하며 자동 정리를 권장하지 않습니다.")
+        case .projectData:
+            return t("这是项目根目录，可能包含源码、配置和生成内容；应只清理明确的缓存子目录。", en: "This is a project root that may hold source, configuration, and generated output. Clean only clearly identified cache subfolders.", zhHant: "這是專案根目錄，可能包含原始碼、設定和產生內容；應只清理明確的快取子目錄。", ja: "ソース・設定・生成物を含む可能性のあるプロジェクトのルートです。明確なキャッシュのサブフォルダのみ削除してください。", ko: "소스·설정·생성물이 있을 수 있는 프로젝트 루트입니다. 명확한 캐시 하위 폴더만 정리하세요.")
+        case .aiAgentData:
+            return t("AI Agent 数据通常包含会话历史、索引或本地状态，删除前应确认是否还需要追溯记录。", en: "AI agent data usually holds session history, indexes, or local state. Confirm you no longer need the history first.", zhHant: "AI Agent 資料通常包含工作階段歷史、索引或本機狀態，刪除前應確認是否還需要追溯記錄。", ja: "AI エージェントのデータには会話履歴・インデックス・ローカル状態が含まれます。履歴が不要か確認してください。", ko: "AI 에이전트 데이터에는 세션 기록·인덱스·로컬 상태가 있습니다. 기록이 더 필요 없는지 확인하세요.")
+        case .hiddenAppData:
+            return t("这是用户目录下的大型隐藏应用数据，可能是 Agent、开发工具、包管理器或其它本地状态。", en: "Large hidden app data in your home folder. It may belong to an agent, dev tool, package manager, or other local state.", zhHant: "這是使用者目錄下的大型隱藏應用程式資料，可能是 Agent、開發工具、套件管理器或其它本機狀態。", ja: "ホーム直下の大きな隠しアプリデータです。エージェント・開発ツール・パッケージマネージャ等の可能性があります。", ko: "홈 폴더의 큰 숨김 앱 데이터입니다. 에이전트·개발 도구·패키지 관리자 등의 상태일 수 있습니다.")
+        case .simulatorDevices:
+            return t("模拟器设备可能包含安装的 App、数据容器和调试状态，可按设备选择删除。", en: "Simulator devices contain installed apps, data containers, and debug state. Remove them device by device.", zhHant: "模擬器裝置可能包含已安裝的 App、資料容器和除錯狀態，可依裝置選擇刪除。", ja: "シミュレータのデバイスにはアプリ・データコンテナ・デバッグ状態が含まれます。デバイス単位で削除してください。", ko: "시뮬레이터 기기에는 앱·데이터 컨테이너·디버그 상태가 있습니다. 기기 단위로 삭제하세요.")
+        case .simulatorDyldCache:
+            return t("模拟器 dyld 缓存通常可重建，但位于系统级开发者目录，可能需要权限。", en: "The simulator dyld cache is normally rebuildable, but it lives in a system developer folder and may require permission.", zhHant: "模擬器 dyld 快取通常可重建，但位於系統層級開發者目錄，可能需要權限。", ja: "シミュレータの dyld キャッシュは再生成されますが、システムの開発者フォルダにあり権限が必要な場合があります。", ko: "시뮬레이터 dyld 캐시는 보통 재생성되지만 시스템 개발자 폴더에 있어 권한이 필요할 수 있습니다.")
+        case .temporaryFiles:
+            return t("系统临时目录常见于测试、构建和中间文件，旧文件通常值得清理。", en: "System temp folders hold test, build, and intermediate files. Older entries are usually worth clearing.", zhHant: "系統暫存目錄常見於測試、建置和中間檔案，舊檔案通常值得清理。", ja: "システムの一時フォルダにはテスト・ビルド・中間ファイルがあります。古いものは削除して構いません。", ko: "시스템 임시 폴더에는 테스트·빌드·중간 파일이 있습니다. 오래된 항목은 대개 정리해도 됩니다.")
+        case .generatedTaskData:
+            return t("这是生成视频或任务缓存，通常占用较大，适合用户确认后清理。", en: "Generated video or task cache. It is usually large and safe to clear once you confirm.", zhHant: "這是產生影片或任務快取，通常佔用較大，適合使用者確認後清理。", ja: "生成された動画やタスクのキャッシュです。容量が大きく、確認のうえ削除できます。", ko: "생성된 영상 또는 작업 캐시입니다. 용량이 크며 확인 후 정리할 수 있습니다.")
+        case .generatedMedia:
+            return t("这是生成的视频输出目录，可能既有缓存也有用户想保留的成品。", en: "Generated video output folder. It may mix cache with finished files you want to keep.", zhHant: "這是產生的影片輸出目錄，可能既有快取也有想保留的成品。", ja: "生成された動画の出力フォルダです。キャッシュと残したい完成物が混在している場合があります。", ko: "생성된 영상 출력 폴더입니다. 캐시와 보관하려는 결과물이 섞여 있을 수 있습니다.")
+        case .appUpdateCache:
+            return t("应用更新缓存通常可以重新下载。", en: "App update caches can be downloaded again.", zhHant: "應用程式更新快取通常可以重新下載。", ja: "アプリの更新キャッシュは再ダウンロードできます。", ko: "앱 업데이트 캐시는 다시 내려받을 수 있습니다.")
+        case .xcodeArchives:
+            return t("Xcode archive 可能用于重新上传、符号化或回溯版本，删除前需要确认。", en: "Xcode archives are used for resubmission, symbolication, and version history. Confirm before removing.", zhHant: "Xcode archive 可能用於重新上傳、符號化或回溯版本，刪除前需要確認。", ja: "Xcode のアーカイブは再提出・シンボル化・過去バージョンの参照に使います。削除前に確認してください。", ko: "Xcode 아카이브는 재제출·심볼리케이션·이전 버전 확인에 쓰입니다. 삭제 전 확인하세요.")
+        case .cacheOrLogs:
+            return t("缓存、日志或派生数据通常可以重建。", en: "Caches, logs, and derived data are normally rebuilt automatically.", zhHant: "快取、日誌或衍生資料通常可以重建。", ja: "キャッシュ・ログ・派生データは通常自動的に再生成されます。", ko: "캐시·로그·파생 데이터는 대개 자동으로 다시 생성됩니다.")
+        case .buildArtifact:
+            return t("构建产物通常可以由源码重新生成。", en: "Build artifacts can normally be regenerated from source.", zhHant: "建置產物通常可以由原始碼重新產生。", ja: "ビルド成果物は通常ソースから再生成できます。", ko: "빌드 산출물은 대개 소스에서 다시 만들 수 있습니다.")
+        case .downloadArchive:
+            return t("下载的安装包或压缩包可能已经不再需要。", en: "A downloaded installer or archive that may no longer be needed.", zhHant: "下載的安裝包或壓縮檔可能已經不再需要。", ja: "ダウンロード済みのインストーラや書庫で、不要になっている可能性があります。", ko: "더 이상 필요하지 않을 수 있는 내려받은 설치 파일 또는 압축 파일입니다.")
+        case .unknownLargeItem:
+            return t("这是较大的磁盘项目，建议让 AI 进一步判断用途。", en: "A large item on disk. Let the AI analysis identify what it is used for.", zhHant: "這是較大的磁碟項目，建議讓 AI 進一步判斷用途。", ja: "ディスク上の大きな項目です。用途は AI 分析で確認してください。", ko: "디스크의 큰 항목입니다. 용도는 AI 분석으로 확인하세요.")
+        }
+    }
+
+    func diskAdvisorImpact(_ rationale: DiskAdvisorRationale) -> String {
+        switch rationale {
+        case .credentials:
+            return t("删除可能导致登录、签名或账户恢复问题。", en: "Deleting this can break sign-in, signing, or account recovery.", zhHant: "刪除可能導致登入、簽章或帳戶復原問題。", ja: "削除するとサインイン・署名・アカウント復旧に支障が出る可能性があります。", ko: "삭제하면 로그인·서명·계정 복구에 문제가 생길 수 있습니다.")
+        case .personalFiles:
+            return t("删除可能造成个人文件或照片资料丢失。", en: "Deleting this can lose personal files or photo data.", zhHant: "刪除可能造成個人檔案或照片資料遺失。", ja: "個人ファイルや写真データを失う可能性があります。", ko: "개인 파일이나 사진 데이터가 손실될 수 있습니다.")
+        case .projectData:
+            return t("删除整个项目会造成源码和工作文件丢失。", en: "Deleting the whole project loses source and working files.", zhHant: "刪除整個專案會造成原始碼和工作檔案遺失。", ja: "プロジェクト全体を削除するとソースと作業ファイルを失います。", ko: "프로젝트 전체를 삭제하면 소스와 작업 파일이 사라집니다.")
+        case .aiAgentData:
+            return t("删除后可能丢失历史会话、项目上下文或本地 agent 状态。", en: "You may lose past sessions, project context, or local agent state.", zhHant: "刪除後可能遺失歷史工作階段、專案脈絡或本機 agent 狀態。", ja: "過去の会話・プロジェクトの文脈・ローカル状態を失う可能性があります。", ko: "이전 세션·프로젝트 맥락·로컬 에이전트 상태를 잃을 수 있습니다.")
+        case .hiddenAppData:
+            return t("删除前需要确认来源；它可能包含会话历史、索引、缓存或账户状态。", en: "Identify the owner first; it may hold session history, indexes, caches, or account state.", zhHant: "刪除前需要確認來源；它可能包含工作階段歷史、索引、快取或帳戶狀態。", ja: "所有元を確認してください。履歴・インデックス・キャッシュ・アカウント状態を含む場合があります。", ko: "소유 앱을 먼저 확인하세요. 기록·인덱스·캐시·계정 상태가 있을 수 있습니다.")
+        case .simulatorDevices:
+            return t("删除后对应模拟器设备和其中 App 数据会消失，需要重新创建或安装。", en: "The simulator device and the app data inside it are removed and must be recreated.", zhHant: "刪除後對應模擬器裝置和其中 App 資料會消失，需要重新建立或安裝。", ja: "対象のシミュレータと中のアプリデータが消え、作り直しが必要になります。", ko: "해당 시뮬레이터와 내부 앱 데이터가 사라져 다시 만들어야 합니다.")
+        case .simulatorDyldCache:
+            return t("下次启动模拟器可能重新生成缓存，清理操作也可能被系统权限拒绝。", en: "The cache is regenerated on next launch, and the removal itself may be denied by system permissions.", zhHant: "下次啟動模擬器可能重新產生快取，清理操作也可能被系統權限拒絕。", ja: "次回起動時に再生成され、削除自体がシステム権限で拒否される場合があります。", ko: "다음 실행 시 다시 생성되며, 삭제 자체가 시스템 권한으로 거부될 수 있습니다.")
+        case .temporaryFiles:
+            return t("仍在运行的任务可能依赖近期临时文件；清理前建议关闭相关构建或测试进程。", en: "Running tasks may depend on recent temp files. Close related build or test processes first.", zhHant: "仍在執行的工作可能依賴近期暫存檔；清理前建議關閉相關建置或測試程序。", ja: "実行中の処理が最近の一時ファイルを使用している場合があります。関連するビルドやテストを終了してください。", ko: "실행 중인 작업이 최근 임시 파일에 의존할 수 있습니다. 관련 빌드·테스트를 먼저 종료하세요.")
+        case .generatedTaskData:
+            return t("删除后相关生成任务、缓存视频或中间结果可能无法继续复用。", en: "Generated tasks, cached video, and intermediate results can no longer be reused.", zhHant: "刪除後相關產生任務、快取影片或中間結果可能無法繼續複用。", ja: "生成タスク・キャッシュ動画・中間結果を再利用できなくなります。", ko: "생성 작업·캐시 영상·중간 결과를 다시 사용할 수 없게 됩니다.")
+        case .generatedMedia:
+            return t("删除后可能丢失已经生成的视频结果。", en: "Finished video output may be lost.", zhHant: "刪除後可能遺失已經產生的影片結果。", ja: "生成済みの動画を失う可能性があります。", ko: "이미 생성된 영상 결과물이 사라질 수 있습니다.")
+        case .appUpdateCache:
+            return t("下次更新可能需要重新下载安装包。", en: "The next update will download the installer again.", zhHant: "下次更新可能需要重新下載安裝包。", ja: "次回の更新時にインストーラを再ダウンロードします。", ko: "다음 업데이트에서 설치 파일을 다시 내려받습니다.")
+        case .xcodeArchives:
+            return t("删除后可能无法重新提交或定位线上问题。", en: "You may be unable to resubmit a build or symbolicate production crashes.", zhHant: "刪除後可能無法重新提交或定位線上問題。", ja: "再提出や本番クラッシュの解析ができなくなる可能性があります。", ko: "빌드 재제출이나 운영 크래시 분석이 불가능해질 수 있습니다.")
+        case .cacheOrLogs:
+            return t("首次重新打开相关工具时可能需要重新索引或下载。", en: "The related tool may need to re-index or re-download on next launch.", zhHant: "首次重新開啟相關工具時可能需要重新索引或下載。", ja: "次回起動時に再インデックスや再ダウンロードが必要になる場合があります。", ko: "다음 실행 시 다시 인덱싱하거나 내려받아야 할 수 있습니다.")
+        case .buildArtifact:
+            return t("下次构建可能变慢，未提交生成物请先确认。", en: "The next build will be slower. Check for generated output you have not committed.", zhHant: "下次建置可能變慢，未提交產生物請先確認。", ja: "次回のビルドが遅くなります。未コミットの生成物がないか確認してください。", ko: "다음 빌드가 느려집니다. 커밋하지 않은 생성물이 없는지 확인하세요.")
+        case .downloadArchive:
+            return t("删除后如需安装或恢复内容，需要重新下载。", en: "You will need to download it again to install or restore its contents.", zhHant: "刪除後如需安裝或還原內容，需要重新下載。", ja: "再インストールや復元が必要になった場合は再ダウンロードが必要です。", ko: "다시 설치하거나 복원하려면 새로 내려받아야 합니다.")
+        case .unknownLargeItem:
+            return t("删除前请确认是否仍在使用。", en: "Confirm it is no longer in use before deleting.", zhHant: "刪除前請確認是否仍在使用。", ja: "削除前に使用中でないか確認してください。", ko: "삭제 전에 아직 사용 중인지 확인하세요.")
+        }
+    }
+
     var cleanFailed: String { t("清理失败", en: "Clean Failed", zhHant: "清理失敗", ja: "クリーンアップに失敗しました", ko: "정리 실패", mt: "Clean Failed") }
     var cleanFailedCount: String { t("失败项目：", en: "Failed items:", zhHant: "失敗項目：", ja: "失敗した項目:", ko: "실패한 항목:", mt: "Failed items:") }
     var confirmDelete: String { t("确认删除", en: "Confirm Delete", zhHant: "確認刪除", ja: "削除の確認", ko: "삭제 확인", mt: "Confirm Delete") }
