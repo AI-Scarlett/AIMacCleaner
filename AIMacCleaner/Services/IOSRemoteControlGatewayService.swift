@@ -3044,6 +3044,7 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             "Content-Type: application/json; charset=utf-8",
             "Content-Length: \(data.count)",
             "Connection: close",
+            "X-Content-Type-Options: nosniff",
             "",
             ""
         ].joined(separator: "\r\n")
