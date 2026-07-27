@@ -405,6 +405,8 @@ extension Localizer {
     var clearSearch: String { t("清除搜索", en: "Clear search", zhHant: "清除搜尋", ja: "検索をクリア", ko: "검색 지우기", mt: "Clear search") }
     var cleanComplete: String { t("🎉 清理完成", en: "🎉 Clean Complete", zhHant: "🎉 清理完成", ja: "🎉 クリーンアップ完了", ko: "🎉 정리 완료", mt: "🎉 Clean Complete") }
     var cleanCompleteMsg: String { t("本次清理释放了", en: "This cleanup freed up", zhHant: "本次清理釋放了", ja: "今回のクリーンアップで解放しました", ko: "이번 정리로 확보됨", mt: "This cleanup freed up") }
+    var cleanFailed: String { t("清理失败", en: "Clean Failed", zhHant: "清理失敗", ja: "クリーンアップに失敗しました", ko: "정리 실패", mt: "Clean Failed") }
+    var cleanFailedCount: String { t("失败项目：", en: "Failed items:", zhHant: "失敗項目：", ja: "失敗した項目:", ko: "실패한 항목:", mt: "Failed items:") }
     var confirmDelete: String { t("确认删除", en: "Confirm Delete", zhHant: "確認刪除", ja: "削除の確認", ko: "삭제 확인", mt: "Confirm Delete") }
     var deleteBtn: String { t("删除", en: "Delete", zhHant: "刪除", ja: "削除", ko: "삭제", mt: "Delete") }
     var ok: String { t("确定", en: "OK", zhHant: "確定", ja: "OK", ko: "확인", mt: "OK") }

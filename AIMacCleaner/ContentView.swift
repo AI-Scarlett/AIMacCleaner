@@ -5851,6 +5851,7 @@ private struct OverviewBarsCard: View {
 struct AppOverviewTab: View {
     @EnvironmentObject var localizer: Localizer
     @EnvironmentObject var service: ScannerService
+    @EnvironmentObject var usageInsightsService: AgentUsageInsightsService
     @ObservedObject var overviewStore: AgentMonitorOverviewStore
     @StateObject private var sessionScanner = AgentSessionScanner()
     @State private var didStartScan = false
@@ -5898,7 +5899,9 @@ struct AppOverviewTab: View {
     private var totalSessions: Int { rows.reduce(0) { $0 + $1.sessionCount } }
     private var totalPorts: Int { rows.reduce(0) { $0 + $1.portCount } }
     private var totalOperations: Int { rows.reduce(0) { $0 + $1.operationCount } }
-    private var totalTokens: Int { rows.reduce(0) { $0 + $1.totalTokens } }
+    private var totalTokens: Int {
+        Int(clamping: usageInsightsService.snapshot(for: .combined).allTime.total)
+    }
     private var cleanupTotalSize: Int64 { cappedCleanupSize(service.scanItems.reduce(0) { $0 + $1.size }) }
     private var appTotalSize: Int64 { service.installedApps.reduce(0) { $0 + $1.totalSize } }
 
@@ -12406,6 +12409,8 @@ struct MacCleanerTab: View {
     @State private var showCleanResult = false
     @State private var cleanedSize: Int64 = 0
     @State private var cleanedCount = 0
+    @State private var cleanFailedCount = 0
+    @State private var cleanFailureDetail = ""
     @State private var searchText = ""
     @State private var paywallMessage = ""
 
@@ -12691,11 +12696,15 @@ struct MacCleanerTab: View {
         }
         .sheet(isPresented: $showCleanResult) {
             VStack(spacing: Theme.Spacing.xl) {
-                Image(systemName: "checkmark.circle.fill")
+                Image(systemName: cleanFailedCount > 0
+                      ? (cleanedCount > 0 ? "exclamationmark.triangle.fill" : "xmark.circle.fill")
+                      : "checkmark.circle.fill")
                     .font(.system(size: 48))
-                    .foregroundStyle(Theme.Colors.success)
+                    .foregroundStyle(cleanFailedCount > 0
+                                     ? (cleanedCount > 0 ? Theme.Colors.warning : Theme.Colors.danger)
+                                     : Theme.Colors.success)
 
-                Text(localizer.cleanComplete)
+                Text(cleanFailedCount > 0 && cleanedCount == 0 ? localizer.cleanFailed : localizer.cleanComplete)
                     .font(Theme.Font.title2Bold)
                     .foregroundStyle(Theme.Colors.textPrimary)
 
@@ -12703,11 +12712,24 @@ struct MacCleanerTab: View {
                     VStack(spacing: Theme.Spacing.md) {
                         Text(service.formatSize(cleanedSize))
                             .font(.system(size: 36, weight: .bold, design: .rounded))
-                            .foregroundStyle(Theme.Colors.success)
+                            .foregroundStyle(cleanedCount > 0 ? Theme.Colors.success : Theme.Colors.textSecondary)
 
                         Text("\(localizer.total) \(cleanedCount) \(localizer.itemsLabel)")
                             .font(Theme.Font.subheadline)
                             .foregroundStyle(Theme.Colors.textSecondary)
+
+                        if cleanFailedCount > 0 {
+                            Text("\(localizer.cleanFailedCount) \(cleanFailedCount)")
+                                .font(Theme.Font.subheadline)
+                                .foregroundStyle(Theme.Colors.danger)
+                            if !cleanFailureDetail.isEmpty {
+                                Text(cleanFailureDetail)
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                    .multilineTextAlignment(.center)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
                     }
                     .frame(maxWidth: 240)
                 }
@@ -13057,10 +13079,14 @@ struct MacCleanerTab: View {
     private func confirmDeleteSelected() { deleteTargetIds = Array(selectedIds); showDeleteConfirm = true }
     private func confirmDeleteSingle(_ item: ScanItem) { deleteTargetIds = [item.id]; showDeleteConfirm = true }
     private func performDelete() {
-        let targets = service.scanItems.filter { deleteTargetIds.contains($0.id) }
+        let requestedIDs = deleteTargetIds
+        let targets = service.scanItems.filter { requestedIDs.contains($0.id) }
         Task {
-            let result = await service.deleteItems(ids: deleteTargetIds)
-            let succeededIds = Set((result.results ?? []).filter { $0.success == true }.compactMap { $0.id })
+            let result = await service.deleteItems(ids: requestedIDs)
+            let entries = result.results ?? []
+            let explicitlyFailedIDs = Set(entries.filter { $0.success != true }.compactMap { $0.id })
+            let succeededIds = Set(entries.filter { $0.success == true }.compactMap { $0.id })
+                .subtracting(explicitlyFailedIDs)
             let cleanedItems = targets.filter { succeededIds.contains($0.id) }
             service.removeScannedItems(ids: Array(succeededIds))
             selectedIds.subtract(succeededIds)
@@ -13071,6 +13097,9 @@ struct MacCleanerTab: View {
             service.refreshDiskInfo()
             cleanedSize = cleanedItems.reduce(Int64(0)) { $0 + $1.size }
             cleanedCount = cleanedItems.count
+            cleanFailedCount = max(0, requestedIDs.count - succeededIds.count)
+            cleanFailureDetail = entries.first(where: { $0.success != true })?.message
+                ?? (cleanFailedCount > 0 ? (service.errorMessage ?? "") : "")
             showCleanResult = true
         }
     }

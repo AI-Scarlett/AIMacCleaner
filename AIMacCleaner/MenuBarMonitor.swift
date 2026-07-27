@@ -87,6 +87,7 @@ struct MenuBarMonitor: View {
     @State private var renameText = ""
     @State private var deferredMonitorGeneration: UInt64 = 0
     @State private var deferredMonitorWorkItem: DispatchWorkItem?
+    @State private var quotaRefreshClock = Date()
 
     private enum CaptureSection: String, CaseIterable {
         case artifacts
@@ -441,12 +442,19 @@ struct MenuBarMonitor: View {
                         Button {
                             quotaService.refresh()
                         } label: {
-                            Label(quotaService.isRefreshing ? localizer.tokenScopeScanning : localizer.refresh, systemImage: "arrow.clockwise")
+                            Label(quotaRefreshButtonTitle(), systemImage: "arrow.clockwise")
                                 .font(Theme.Font.captionMedium)
                         }
                         .buttonStyle(.bordered)
-                        .disabled(quotaService.isRefreshing)
+                        .disabled(quotaService.isRefreshing || quotaService.refreshCooldownRemaining() > 0)
                     }
+                }
+
+                if let status = quotaRefreshStatusText() {
+                    Text(status)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
 
                 if quotaService.snapshots.isEmpty {
@@ -463,6 +471,9 @@ struct MenuBarMonitor: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             quotaService.start()
+        }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
+            quotaRefreshClock = now
         }
     }
 
@@ -1305,15 +1316,72 @@ struct MenuBarMonitor: View {
                 Button {
                     quotaService.refresh()
                 } label: {
-                    Label(localizer.t("立即检查", en: "Check now", zhHant: "立即檢查", ja: "今すぐ確認", ko: "지금 확인", mt: "Check now"), systemImage: "arrow.clockwise")
+                    Label(quotaRefreshButtonTitle(), systemImage: "arrow.clockwise")
                         .font(Theme.Font.captionMedium)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
+                .disabled(quotaService.refreshCooldownRemaining() > 0)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardStyle(padding: Theme.Spacing.lg)
+    }
+
+    private func quotaRefreshButtonTitle() -> String {
+        _ = quotaRefreshClock
+        if quotaService.isRefreshing {
+            return localizer.tokenScopeScanning
+        }
+        let remaining = Int(ceil(quotaService.refreshCooldownRemaining()))
+        guard remaining > 0 else { return localizer.refresh }
+        return localizer.t(
+            "等 \(remaining) 秒后刷新",
+            en: "Refresh in \(remaining)s",
+            zhHant: "等 \(remaining) 秒後刷新",
+            ja: "\(remaining) 秒後に更新",
+            ko: "\(remaining)초 후 새로고침",
+            mt: "Refresh in \(remaining)s"
+        )
+    }
+
+    private func quotaRefreshStatusText() -> String? {
+        _ = quotaRefreshClock
+        if quotaService.isRefreshing {
+            if let lastStart = quotaService.lastRefreshRequestedDate {
+                let lastStartText = relativeTimeText(for: lastStart)
+                return localizer.t(
+                    "额度扫描进行中，\(lastStartText)开始",
+                    en: "Quota scan running, started \(lastStartText)",
+                    zhHant: "額度掃描進行中，\(lastStartText)開始",
+                    ja: "クォータスキャン実行中（\(lastStartText)開始）",
+                    ko: "할당량 스캔 진행 중, \(lastStartText) 시작",
+                    mt: "Quota scan running, started \(lastStartText)"
+                )
+            }
+            return localizer.t("额度扫描进行中", en: "Quota scan running", zhHant: "額度掃描進行中", ja: "クォータスキャン実行中", ko: "할당량 스캔 진행 중", mt: "Quota scan running")
+        }
+        guard let lastRefreshDate = quotaService.lastRefreshDate else { return nil }
+        let refreshAgo = relativeTimeText(for: lastRefreshDate)
+        let remaining = Int(ceil(quotaService.refreshCooldownRemaining()))
+        if remaining > 0 {
+            return localizer.t(
+                "上次更新：\(refreshAgo)，\(remaining) 秒后可再刷新",
+                en: "Updated \(refreshAgo), refresh again in \(remaining)s",
+                zhHant: "上次更新：\(refreshAgo)，\(remaining) 秒後可再刷新",
+                ja: "最終更新: \(refreshAgo)、\(remaining)秒後に再更新",
+                ko: "마지막 업데이트: \(refreshAgo), \(remaining)초 후 다시 새로고침",
+                mt: "Updated \(refreshAgo), refresh again in \(remaining)s"
+            )
+        }
+        return localizer.t(
+            "上次更新：\(refreshAgo)",
+            en: "Updated \(refreshAgo)",
+            zhHant: "上次更新：\(refreshAgo)",
+            ja: "最終更新: \(refreshAgo)",
+            ko: "마지막 업데이트: \(refreshAgo)",
+            mt: "Updated \(refreshAgo)"
+        )
     }
 
     private func quotaProviderCard(_ snapshot: ProviderQuotaSnapshot) -> some View {
@@ -1525,6 +1593,18 @@ struct MenuBarMonitor: View {
         if value.isEmpty {
             return "Quota monitor engine stopped before returning data. Please update or reinstall TraceFence."
         }
+        let normalized = value.lowercased()
+        if normalized.contains("inherited-sandbox")
+            || normalized.contains("not in an inherited sandbox") {
+            return localizer.t(
+                "额度监控引擎无法启动：当前 TraceFence 与当前分发渠道的 Helper 沙箱不匹配。请使用同分发渠道的配套安装包或重装 TraceFence。",
+                en: "Quota monitor helper cannot start: helper sandbox mode does not match the current TraceFence distribution channel. Use the matching release package or reinstall TraceFence.",
+                zhHant: "額度監控引擎無法啟動：目前 TraceFence 與當前發佈渠道的 Helper 沙盒不匹配。請使用同渠道的配套安裝包或重新安裝 TraceFence。",
+                ja: "クォータ監視ヘルパーを起動できません。現在の TraceFence と配信チャンネルの Helper サンドボックスが一致しません。対応する配布パッケージを使用するか再インストールしてください。",
+                ko: "할당량 모니터 헬퍼를 시작할 수 없습니다. 현재 TraceFence와 배포 채널의 헬퍼 샌드박스가 일치하지 않습니다. 동일 채널 설치본을 사용하거나 TraceFence를 재설치하세요.",
+                mt: "Quota monitor helper cannot start: helper sandbox mode does not match the current TraceFence distribution channel. Use the matching release package or reinstall TraceFence."
+            )
+        }
         return value
     }
 
@@ -1553,6 +1633,8 @@ struct MenuBarMonitor: View {
             return localizer.t("安装/登录对应 Agent，或启用 provider 后，TraceFence 会显示具体诊断。", en: "Install or log in to the matching Agent, or enable its provider to show detailed diagnostics.", zhHant: "安裝/登入對應 Agent，或啟用 provider 後，TraceFence 會顯示具體診斷。", ja: "該当 Agent をインストールまたはログインするか、Provider を有効にすると詳細な診断が表示されます。", ko: "해당 Agent를 설치/로그인하거나 provider를 활성화하면 자세한 진단이 표시됩니다.", mt: "Install or log in to the matching Agent, or enable its provider to show detailed diagnostics.")
         case "Quota monitor engine timed out. TraceFence stopped this read automatically.", "额度监控引擎响应超时，TraceFence 已自动结束本次读取。":
             return localizer.t("额度监控引擎响应超时，TraceFence 已自动结束本次读取。", en: "Quota monitor engine timed out. TraceFence stopped this read automatically.", zhHant: "額度監控引擎回應逾時，TraceFence 已自動結束本次讀取。", ja: "クォータ監視エンジンがタイムアウトしました。TraceFence は今回の読み取りを自動停止しました。", ko: "할당량 모니터 엔진 응답 시간이 초과되어 TraceFence가 이번 읽기를 자동으로 중지했습니다.", mt: "Quota monitor engine timed out. TraceFence stopped this read automatically.")
+        case "Quota monitor engine cannot run due inherited-sandbox mismatch", "Quota monitor engine cannot run in this build context due inherited-sandbox mismatch.":
+            return localizer.t("额度监控引擎无法启动：当前 TraceFence 与当前分发渠道的 Helper 沙箱不匹配。请使用同分发渠道的配套安装包或重装 TraceFence。", en: "Quota monitor helper cannot start: helper sandbox mode does not match the current TraceFence distribution channel. Use the matching release package or reinstall TraceFence.", zhHant: "額度監控引擎無法啟動：目前 TraceFence 與當前發佈渠道的 Helper 沙盒不匹配。請使用同渠道的配套安裝包或重新安裝 TraceFence。", ja: "クォータ監視ヘルパーを起動できません。現在の TraceFence と配信チャンネルの Helper サンドボックスが一致しません。対応する配布パッケージを使用するか再インストールしてください。", ko: "할당량 모니터 헬퍼를 시작할 수 없습니다. 현재 TraceFence와 배포 채널의 헬퍼 샌드박스가 일치하지 않습니다. 동일 채널 설치본을 사용하거나 TraceFence를 재설치하세요.", mt: "Quota monitor helper cannot start: helper sandbox mode does not match the current TraceFence distribution channel. Use the matching release package or reinstall TraceFence.")
         case "Quota monitor engine produced no output.", "额度监控引擎没有输出。":
             return localizer.t("额度监控引擎没有输出。", en: "Quota monitor engine produced no output.", zhHant: "額度監控引擎沒有輸出。", ja: "クォータ監視エンジンから出力がありません。", ko: "할당량 모니터 엔진 출력이 없습니다.", mt: "Quota monitor engine produced no output.")
         case "Quota monitor engine stopped before returning data. Please update or reinstall TraceFence.", "额度监控引擎启动失败，请更新或重新安装 TraceFence。":
