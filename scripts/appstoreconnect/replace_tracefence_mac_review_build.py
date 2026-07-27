@@ -24,7 +24,7 @@ from scripts.appstoreconnect import sync_tracefence_mac_submission as mac_sync
 
 APP_ID = "6772386897"
 VERSION = "3.1.8"
-BUILD = os.environ.get("TRACEFENCE_MAC_BUILD", "76")
+BUILD = os.environ.get("TRACEFENCE_MAC_BUILD", "77")
 EXPECTED_CURRENT_BUILD = os.environ.get("TRACEFENCE_MAC_OLD_BUILD", "73")
 PLATFORM = "MAC_OS"
 CONFIRMATION = f"REPLACE_MAC_{VERSION}_BUILD_{EXPECTED_CURRENT_BUILD}_WITH_{BUILD}"

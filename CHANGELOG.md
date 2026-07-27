@@ -2,6 +2,19 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.1.0] - 2026-07-27
+
+### Security
+- Agent Hook、Webhook、本地 Profile 服务与受保护内容扫描增加输入、路径和状态校验；Hook 超时时，安全的读取、列举和搜索操作不再被长期卡住。
+- 收紧 iOS 本地网络传输配置，同时保持现有紧凑配对二维码与配对身份兼容。
+
+### Fixed
+- 概览、Token 与用量、菜单栏统一使用同一份缓存聚合快照，修复总量长期不一致，并明确显示刷新与历史补全状态。
+- 完成磁盘建议结论与解释的本地化，避免语言切换后出现混合语言。
+
+### Improved
+- Agent Environment Profile 与内容扫描使用更严格的边界和更清晰的运行状态，减少错误扫描与无反馈等待。
+
 ## [1.0.88] - 2026-07-26
 
 ### Fixed
