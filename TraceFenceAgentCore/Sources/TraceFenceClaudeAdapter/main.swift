@@ -745,11 +745,31 @@ private final class ClaudeAdapterDaemon {
 private func installClaudeHooks(adapterPath: String, hookSocketPath: String) throws {
     let settingsURL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/settings.json")
     var settings: [String: Any] = [:]
-    if let data = try? Data(contentsOf: settingsURL),
-       let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+    if FileManager.default.fileExists(atPath: settingsURL.path) {
+        let data = try Data(contentsOf: settingsURL)
+        guard !data.isEmpty,
+              let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw NSError(
+                domain: "TraceFenceClaudeAdapter",
+                code: 10,
+                userInfo: [NSLocalizedDescriptionKey: "Refusing to modify \(settingsURL.path): it is not a readable JSON object. Repair the file and install hooks again."]
+            )
+        }
         settings = existing
+        let backupURL = settingsURL.appendingPathExtension("tracefence-backup")
+        if !FileManager.default.fileExists(atPath: backupURL.path) {
+            try data.write(to: backupURL, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: backupURL.path)
+        }
     }
-    var hooks = settings["hooks"] as? [String: [[String: Any]]] ?? [:]
+    let existingHooks = settings["hooks"] as? [String: Any] ?? [:]
+    var hooks: [String: [[String: Any]]] = [:]
+    for (event, value) in existingHooks {
+        if let entries = value as? [[String: Any]] {
+            hooks[event] = entries
+        }
+    }
+    let preservedHooks = existingHooks.filter { hooks[$0.key] == nil }
     let command = "/usr/bin/env TRACEFENCE_CLAUDE_HOOK_SOCKET=\(shellQuote(hookSocketPath)) \(shellQuote(adapterPath)) --hook"
     let events: [(String, Bool, Int?)] = [
         ("UserPromptSubmit", false, nil), ("PreToolUse", true, nil), ("PostToolUse", true, nil),
@@ -774,11 +794,16 @@ private func installClaudeHooks(adapterPath: String, hookSocketPath: String) thr
         }
         hooks[event] = entries
     }
-    settings["hooks"] = hooks
+    var mergedHooks = preservedHooks
+    for (event, entries) in hooks {
+        mergedHooks[event] = entries
+    }
+    settings["hooks"] = mergedHooks
     let directory = settingsURL.deletingLastPathComponent()
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let data = try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     try data.write(to: settingsURL, options: .atomic)
+    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settingsURL.path)
 }
 
 private func runHookClient(socketPath: String) -> Int32 {

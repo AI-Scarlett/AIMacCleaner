@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import Security
+import os
 
 private enum WebhookURLPolicy {
     static func allows(_ url: URL?) -> Bool {
@@ -76,6 +77,7 @@ struct WebhookPayload: Codable {
 }
 
 actor WebhookNotifier {
+    private static let log = Logger(subsystem: "com.tracefence.app", category: "webhook")
     private var config: WebhookConfig = WebhookConfig()
     private let configPath = NSHomeDirectory() + "/.tracefence_webhook_config.json"
     private let keychainService = "com.tracefence.webhook"
@@ -149,11 +151,14 @@ actor WebhookNotifier {
                     return
                 }
             } catch {
-                if attempt < retryCount {
-                    try? await Task.sleep(nanoseconds: config.retryDelayMs * 1_000_000)
-                }
+                // The same backoff below applies to transport and HTTP failures.
+            }
+            if attempt < retryCount {
+                let multiplier = UInt64(1 << min(attempt, 5))
+                try? await Task.sleep(nanoseconds: config.retryDelayMs * 1_000_000 * multiplier)
             }
         }
+        Self.log.error("Webhook delivery failed after \(retryCount + 1) attempts")
     }
 
     private func buildPayload(for event: AgentHookEvent) -> WebhookPayload {

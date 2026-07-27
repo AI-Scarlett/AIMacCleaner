@@ -132,6 +132,21 @@ actor HookInstaller {
         return !content.hasPrefix("#!/bin/sh") || content.contains(fallbackBridgeMarker)
     }
 
+    private func yamlDoubleQuoted(_ value: String) -> String {
+        var escaped = ""
+        for character in value {
+            switch character {
+            case "\\": escaped += "\\\\"
+            case "\"": escaped += "\\\""
+            case "\n": escaped += "\\n"
+            case "\r": escaped += "\\r"
+            case "\t": escaped += "\\t"
+            default: escaped.append(character)
+            }
+        }
+        return "\"\(escaped)\""
+    }
+
     func shellQuote(_ value: String) -> String {
         if value.isEmpty { return "''" }
         if value.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "/._-:=@".contains($0)) }) {
@@ -151,7 +166,7 @@ actor HookInstaller {
 
     func injectJSONHooks(at configPath: URL, events: [HookEventDescriptor], hookCommand: String) throws {
         var config = try readJSON(at: configPath)
-        var hooks = config["hooks"] as? [String: [[String: Any]]] ?? [:]
+        var (hooks, preservedHooks) = partitionHooks(in: config)
 
         for event in events {
             var entries = hooks[event.name] ?? []
@@ -162,13 +177,14 @@ actor HookInstaller {
             hooks[event.name] = entries
         }
 
-        config["hooks"] = hooks
+        config["hooks"] = mergeHooks(hooks, preserved: preservedHooks)
         try writeJSON(config, at: configPath)
     }
 
     func removeJSONHooks(at configPath: URL) throws {
         var config = try readJSON(at: configPath)
-        guard var hooks = config["hooks"] as? [String: [[String: Any]]] else { return }
+        var (hooks, preservedHooks) = partitionHooks(in: config)
+        guard !hooks.isEmpty else { return }
 
         for (eventName, var entries) in hooks {
             entries.removeAll { entry in
@@ -181,7 +197,7 @@ actor HookInstaller {
             }
         }
 
-        config["hooks"] = hooks.isEmpty ? nil : hooks
+        config["hooks"] = mergeHooks(hooks, preserved: preservedHooks)
         try writeJSON(config, at: configPath)
     }
 
@@ -192,7 +208,7 @@ actor HookInstaller {
         var lines = [blockStart, "hooks:"]
         for event in events {
             lines.append("  \(event.name):")
-            lines.append("    - command: \"\(hookCommand)\"")
+            lines.append("    - command: \(yamlDoubleQuoted(hookCommand))")
         }
         lines.append(blockEnd)
 
@@ -251,6 +267,28 @@ actor HookInstaller {
             throw HookInstallerError.invalidJSON(path)
         }
         return json
+    }
+
+    private func partitionHooks(in config: [String: Any]) -> (managed: [String: [[String: Any]]], preserved: [String: Any]) {
+        let rawHooks = config["hooks"] as? [String: Any] ?? [:]
+        var managed: [String: [[String: Any]]] = [:]
+        for (event, value) in rawHooks {
+            if let entries = value as? [[String: Any]] {
+                managed[event] = entries
+            }
+        }
+        return (managed, rawHooks.filter { managed[$0.key] == nil })
+    }
+
+    private func mergeHooks(
+        _ managed: [String: [[String: Any]]],
+        preserved: [String: Any]
+    ) -> [String: Any]? {
+        var merged = preserved
+        for (event, entries) in managed where !entries.isEmpty {
+            merged[event] = entries
+        }
+        return merged.isEmpty ? nil : merged
     }
 
     private func jsonHookEntry(for event: HookEventDescriptor, hookCommand: String) -> [String: Any] {

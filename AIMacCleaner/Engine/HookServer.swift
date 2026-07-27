@@ -17,6 +17,7 @@ actor HookServer {
     private let socketPath = AgentHookSocket.path
     private let maxRawEventsPerSession = 200
     private let maxRawEventSessions = 200
+    private let maxBufferedLineBytes = 4 * 1024 * 1024
 
     private var unixListener: NWListener?
 
@@ -122,6 +123,11 @@ actor HookServer {
                         let line = decoded.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !line.isEmpty else { continue }
                         Task { await self.processLine(line, connection: connection) }
+                    }
+                    if buffer.count > self.maxBufferedLineBytes {
+                        print("[AgentGuard] Dropping connection (\(label)): unterminated line exceeded \(self.maxBufferedLineBytes) bytes")
+                        connection.cancel()
+                        return
                     }
                 }
 
@@ -350,6 +356,9 @@ actor HookServer {
         let sessionId = rawString(raw, keys: ["session_id", "sessionId", "conversation_id", "conversationId", "id"])
 
         return await withCheckedContinuation { continuation in
+            if let superseded = pendingQuestions[sessionId] {
+                superseded.continuation.resume(returning: QuestionResponse(answer: ""))
+            }
             pendingQuestions[sessionId] = PendingQuestionEntry(continuation: continuation)
 
             Task { @MainActor in
@@ -372,6 +381,12 @@ actor HookServer {
         let sessionId = rawString(raw, keys: ["session_id", "sessionId", "conversation_id", "conversationId", "id"])
 
         return await withCheckedContinuation { continuation in
+            if let superseded = pendingPlans[sessionId] {
+                superseded.continuation.resume(returning: PlanResponse(
+                    mode: "cancel",
+                    message: "Superseded by a newer plan approval request"
+                ))
+            }
             pendingPlans[sessionId] = PendingPlanEntry(continuation: continuation)
 
             Task { @MainActor in

@@ -138,8 +138,12 @@ final class AdapterStateStore {
         let temp = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
         do {
             try data.write(to: temp, options: .atomic)
-            if fileManager.fileExists(atPath: url.path) { try fileManager.removeItem(at: url) }
-            try fileManager.moveItem(at: temp, to: url)
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temp.path)
+            if fileManager.fileExists(atPath: url.path) {
+                _ = try fileManager.replaceItemAt(url, withItemAt: temp)
+            } else {
+                try fileManager.moveItem(at: temp, to: url)
+            }
             try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         } catch {
             try? fileManager.removeItem(at: temp)
@@ -209,14 +213,28 @@ final class UniversalHookBridge {
         return 2
     }
 
+    private static let commandChainingCharacters = CharacterSet(charactersIn: ";|&`$(){}<>\n\r\\")
+    private static let readOnlyExecutables: Set<String> = [
+        "ls", "rg", "grep", "cat", "head", "tail", "wc", "pwd", "stat", "file"
+    ]
+
     private func shouldAutoAllowOnTimeout(event: String, tool: String, command: String) -> Bool {
         guard event.localizedCaseInsensitiveContains("PreToolUse") || event == "pre_tool_use" else { return false }
         let normalizedTool = tool.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if ["read", "read_file", "list", "ls", "list_dir", "grep"].contains(normalizedTool) {
             return true
         }
-        let normalizedCommand = command.lowercased()
-        return normalizedCommand.hasPrefix("ls ") || normalizedCommand.contains(" rg ") || normalizedCommand == "ls"
+
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              trimmed.rangeOfCharacter(from: Self.commandChainingCharacters) == nil,
+              let executable = trimmed.split(separator: " ", maxSplits: 1).first else {
+            return false
+        }
+        let executableName = executable.hasPrefix("/")
+            ? String(executable.split(separator: "/").last ?? "").lowercased()
+            : String(executable).lowercased()
+        return Self.readOnlyExecutables.contains(executableName)
     }
 
     private func emitHookDecision(allow: Bool, event: String, reason: String? = nil) {
