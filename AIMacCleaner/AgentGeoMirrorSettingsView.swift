@@ -33,6 +33,7 @@ struct AgentGeoMirrorSettingsView: View {
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var showRestartPrompt = false
+    @State private var pendingRestartTarget: DesktopAgentLaunchTarget?
 
     private var profile: AgentGeoMirrorProfile {
         AgentGeoMirrorProfile(
@@ -133,6 +134,28 @@ struct AgentGeoMirrorSettingsView: View {
         } message: {
             Text(localizer.t("TraceFence 已生成本地画像，但已经运行的 Agent/CLI 不会自动继承新的语言、时区和本地探测覆盖。选择“强制重启”会关闭并重新打开检测到的 Agent；选择“手动重启”则需要你自己重启。", en: "TraceFence generated the local profile, but already-running agents and CLIs do not automatically inherit the new language, timezone, and local-probe overrides. Force Restart closes and reopens detected agents; Restart Manually leaves that to you."))
         }
+        .alert(
+            localizer.t("重启 \(pendingRestartTarget?.displayName ?? "")？", en: "Restart \(pendingRestartTarget?.displayName ?? "")?"),
+            isPresented: Binding(
+                get: { pendingRestartTarget != nil },
+                set: { if !$0 { pendingRestartTarget = nil } }
+            )
+        ) {
+            Button(localizer.t("重启", en: "Restart"), role: .destructive) {
+                if let target = pendingRestartTarget {
+                    launchDesktopAgent(target, terminateExisting: true)
+                }
+                pendingRestartTarget = nil
+            }
+            Button(localizer.cancelBtn, role: .cancel) {
+                pendingRestartTarget = nil
+            }
+        } message: {
+            Text(localizer.t(
+                "TraceFence 会先请求退出，若无响应则强制结束该应用。未保存的内容会丢失。",
+                en: "TraceFence asks the app to quit and force-terminates it if it does not respond. Unsaved work will be lost."
+            ))
+        }
     }
 
     private var headerToggle: some View {
@@ -213,7 +236,7 @@ struct AgentGeoMirrorSettingsView: View {
 
                     ForEach(AgentIntegrationCatalog.installedPrimaryDesktopAgents) { target in
                         Button {
-                            launchDesktopAgent(target, terminateExisting: true)
+                            pendingRestartTarget = target
                         } label: {
                             Label(localizer.t("重启 \(target.displayName)", en: "Restart \(target.displayName)"), systemImage: "arrow.clockwise")
                         }
@@ -508,7 +531,7 @@ struct AgentGeoMirrorSettingsView: View {
                         .disabled(!canLaunchDesktopAgent(target))
 
                         Button {
-                            launchDesktopAgent(target, terminateExisting: true)
+                            pendingRestartTarget = target
                         } label: {
                             Label(localizer.t("重启 \(target.displayName)", en: "Restart \(target.displayName)"), systemImage: "arrow.clockwise")
                         }
@@ -561,7 +584,7 @@ struct AgentGeoMirrorSettingsView: View {
                         .disabled(!canLaunchDesktopAgent(target))
 
                         Button {
-                            launchDesktopAgent(target, terminateExisting: true)
+                            pendingRestartTarget = target
                         } label: {
                             Label(localizer.t("重启 \(target.displayName)", en: "Restart \(target.displayName)"), systemImage: "arrow.clockwise")
                         }

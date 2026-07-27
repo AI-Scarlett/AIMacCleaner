@@ -1827,6 +1827,7 @@ final class AgentGeoMirrorProfileServer {
         Content-Type: \(contentType)\r
         Content-Length: \(body.count)\r
         Cache-Control: no-store\r
+        X-Content-Type-Options: nosniff\r
         Connection: close\r
         \r
 

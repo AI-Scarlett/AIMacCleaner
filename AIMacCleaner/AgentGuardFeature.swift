@@ -462,9 +462,10 @@ class AgentGuardFeature: ObservableObject {
         let ext = (record.targetPath as NSString).pathExtension.lowercased()
         guard textExtensions.contains(ext) || ext.isEmpty else { return }
 
-        guard let content = try? String(contentsOfFile: expanded, encoding: .utf8) else { return }
-        let contentLower = content.lowercased()
-        let limitedContent = String(contentLower.prefix(50000))
+        guard let handle = FileHandle(forReadingAtPath: expanded) else { return }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 64 * 1024), !data.isEmpty else { return }
+        let limitedContent = String(decoding: data, as: UTF8.self).lowercased()
 
         let sensitivePatterns: [(String, String)] = [
             ("sk-", "OpenAI API Key"),
