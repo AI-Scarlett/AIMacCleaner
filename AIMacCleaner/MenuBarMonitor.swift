@@ -69,6 +69,7 @@ struct MenuBarMonitor: View {
     @ObservedObject var quotaService: ProviderQuotaService
     @ObservedObject var usageInsightsService: AgentUsageInsightsService
     @ObservedObject var captureService: CaptureShelfService
+    let openMainConsole: () -> Void
     @ObservedObject private var artifactShelfService = ArtifactShelfService.shared
     @ObservedObject private var artifactSidecarController = ArtifactSidecarController.shared
     @EnvironmentObject var localizer: Localizer
@@ -263,10 +264,7 @@ struct MenuBarMonitor: View {
     private var popoverFooter: some View {
         VStack(spacing: Theme.Spacing.sm) {
             Button {
-                dismissMenuBarPopoverSoon()
-                if let appDelegate = NSApp.delegate as? AppDelegate {
-                    appDelegate.presentMainWindow(reason: "menu-bar-popover")
-                }
+                openMainConsole()
             } label: {
                 HStack(spacing: Theme.Spacing.sm) {
                     MenuBarShieldEyeIcon(color: .white)
@@ -2558,14 +2556,7 @@ struct MenuBarMonitor: View {
 
                 if !displayableOperationRecords.isEmpty {
                     Button {
-                        if let appDelegate = NSApp.delegate as? AppDelegate {
-                            appDelegate.presentMainWindow(reason: "menu-bar-operations")
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            if let menuWindow = NSApp.windows.first(where: { $0.isFloatingPanel || $0.level == .floating }) {
-                                menuWindow.orderOut(nil)
-                            }
-                        }
+                        openMainConsole()
                     } label: {
                         HStack(spacing: 2) {
                             Text("\(displayableOperationRecords.count) \(localizer.recordsUnit)")
@@ -2798,16 +2789,6 @@ struct MenuBarMonitor: View {
     private func agentStatColor(index: Int) -> Color {
         let colors: [Color] = [.blue, .purple, .green, .orange, .cyan, .pink, .indigo, .teal]
         return colors[index % colors.count]
-    }
-
-    private func dismissMenuBarPopoverSoon() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            for window in NSApp.windows {
-                if window.isFloatingPanel || window.level != .normal {
-                    window.orderOut(nil)
-                }
-            }
-        }
     }
 
     private func startDeferredMonitorForSelectedTab() {

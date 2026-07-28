@@ -13,13 +13,14 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.0")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.1")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Fixes the menu-bar Open TraceFence Console action so a closed main window is reliably recreated, activated, and brought to the front.\n"
     "- Aligns Overview, Token & Usage, and the menu-bar snapshot on the same cached aggregate, with visible refresh and backfill status.\n"
     "- Hardens Agent hooks, webhook delivery, local profile serving, and protected-content scanning while keeping read/list/search tools responsive when a hook times out.\n"
     "- Tightens iOS local-network transport defaults without changing the compact pairing QR or existing pairing identity.\n"

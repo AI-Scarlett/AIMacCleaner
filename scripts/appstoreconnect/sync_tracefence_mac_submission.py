@@ -21,7 +21,7 @@ from scripts.appstoreconnect.sync_tracefence_sentinel_submission import ASC, KEY
 
 APP_ID = "6772386897"
 VERSION = "3.1.8"
-BUILD = os.environ.get("TRACEFENCE_MAC_BUILD", "77")
+BUILD = os.environ.get("TRACEFENCE_MAC_BUILD", "111")
 SCREENSHOT_DIR = ROOT / "build/TraceFence-AppStore-Screenshots/APP_DESKTOP"
 REVIEW_ATTACHMENT = Path(os.environ.get(
     "TRACEFENCE_REVIEW_ATTACHMENT",
@@ -61,6 +61,7 @@ Privacy Policy: https://ai-scarlett.github.io/TraceFence/privacy-policy.html
 Terms of Use (Apple Standard EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"""
 
 WHATS_NEW = """- Adds the project-based Agent Monitor with live, scheduled, blocked, paused, and recently completed work.
+- Fixes the menu-bar Open TraceFence Console action after the main window has been closed.
 - Fixes empty real-time project and recent-completion sections.
 - Fixes Grok quota discovery in the sandboxed App Store build and adds an authorization prompt for provider data.
 - Adds monthly and yearly TraceFence Standard subscriptions through Apple.
@@ -76,7 +77,8 @@ WHATS_NEW = """- Adds the project-based Agent Monitor with live, scheduled, bloc
 
 REVIEW_NOTES = """TraceFence is a sandboxed local-first developer utility. No account is required.
 
-Review fixes in build 77:
+Review fixes in build 111:
+- The menu-bar Open TraceFence Console action now closes the panel synchronously, restores the regular foreground activation policy, and reliably recreates or raises the main window.
 - Overview, Token & Usage, and the menu-bar snapshot now use the same cached aggregate and expose the active refresh/backfill state.
 - Agent hook timeouts no longer block supported read/list/search operations, and hook/webhook/profile handling has additional validation.
 - Local pairing transport defaults are stricter while the compact QR format and existing pairing identity remain compatible.
@@ -112,7 +114,7 @@ Privacy Policy: https://ai-scarlett.github.io/TraceFence/privacy-policy.html
 Terms of Use (Apple Standard EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"""
 
 if PAIRING_DEMO_VIDEO_URL:
-    REVIEW_NOTES += f"\n\nPhysical Mac + iPhone pairing demo video (build 77 / iOS build 25 workflow):\n{PAIRING_DEMO_VIDEO_URL}"
+    REVIEW_NOTES += f"\n\nPhysical Mac + iPhone pairing demo video (build 111 / iOS build 25 workflow):\n{PAIRING_DEMO_VIDEO_URL}"
 
 
 def first(api: ASC, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:

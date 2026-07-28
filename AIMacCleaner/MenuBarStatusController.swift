@@ -50,6 +50,7 @@ enum MenuBarStatusPreferences {
 
 @MainActor
 final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegate {
+    private weak var appDelegate: AppDelegate?
     private weak var service: ScannerService?
     private weak var quotaService: ProviderQuotaService?
     private weak var usageInsightsService: AgentUsageInsightsService?
@@ -65,8 +66,12 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
     private var localDismissMonitor: Any?
     private var isEnabled = false
     private var didAutoOpenPopoverForUITest = false
+#if DEBUG
+    private var didRunMainConsoleSelfTest = false
+#endif
 
     func configure(
+        appDelegate: AppDelegate,
         service: ScannerService,
         quotaService: ProviderQuotaService,
         usageInsightsService: AgentUsageInsightsService,
@@ -74,6 +79,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
         localizer: Localizer,
         isEnabled: Bool
     ) {
+        self.appDelegate = appDelegate
         self.service = service
         self.quotaService = quotaService
         self.usageInsightsService = usageInsightsService
@@ -96,13 +102,57 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
     }
 
     private func autoOpenPopoverForUITestIfNeeded() {
+        let launchArguments = ProcessInfo.processInfo.arguments
+        let shouldRunMainConsoleSelfTest = launchArguments.contains("--tracefence-menu-console-self-test")
         guard !didAutoOpenPopoverForUITest,
-              ProcessInfo.processInfo.arguments.contains("--tracefence-open-menu-bar") else { return }
+              launchArguments.contains("--tracefence-open-menu-bar") || shouldRunMainConsoleSelfTest else { return }
         didAutoOpenPopoverForUITest = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-            self?.showPopover()
+            guard let self else { return }
+            self.showPopover()
+#if DEBUG
+            if shouldRunMainConsoleSelfTest {
+                self.runMainConsoleSelfTest()
+            }
+#endif
         }
     }
+
+#if DEBUG
+    private func runMainConsoleSelfTest() {
+        guard !didRunMainConsoleSelfTest else { return }
+        didRunMainConsoleSelfTest = true
+
+        for window in NSApp.windows where !window.isFloatingPanel && window.title == "TraceFence" {
+            window.orderOut(nil)
+        }
+        NSApp.setActivationPolicy(.accessory)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self else { return }
+            self.openMainWindow(reason: "menu-bar-self-test")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                let mainWindowVisible = NSApp.windows.contains { window in
+                    !window.isFloatingPanel && window.title == "TraceFence" && window.isVisible
+                }
+                let popoverClosed = !NSApp.windows.contains { $0.isFloatingPanel && $0.isVisible }
+                let activationRestored = NSApp.activationPolicy() == .regular
+                let succeeded = mainWindowVisible && popoverClosed && activationRestored
+                let payload: [String: Any] = [
+                    "succeeded": succeeded,
+                    "mainWindowVisible": mainWindowVisible,
+                    "popoverClosed": popoverClosed,
+                    "activationRestored": activationRestored
+                ]
+                if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) {
+                    FileHandle.standardOutput.write(data)
+                    FileHandle.standardOutput.write(Data("\n".utf8))
+                }
+                Darwin.exit(succeeded ? 0 : 2)
+            }
+        }
+    }
+#endif
 
     private func bindPublishersIfNeeded() {
         guard cancellables.isEmpty else { return }
@@ -387,7 +437,15 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
 
         let panelSize = NSSize(width: 520, height: 640)
         let hostingView = MenuBarFirstMouseHostingView(
-            rootView: MenuBarMonitor(service: service, quotaService: quotaService, usageInsightsService: usageInsightsService, captureService: captureService)
+            rootView: MenuBarMonitor(
+                service: service,
+                quotaService: quotaService,
+                usageInsightsService: usageInsightsService,
+                captureService: captureService,
+                openMainConsole: { [weak self] in
+                    self?.openMainWindow(reason: "menu-bar-popover")
+                }
+            )
                 .environmentObject(localizer)
         )
         hostingView.frame = NSRect(origin: .zero, size: panelSize)
@@ -547,10 +605,12 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
     }
 
     @objc private func openMainWindowFromMenu() {
+        openMainWindow(reason: "menu-bar")
+    }
+
+    private func openMainWindow(reason: String) {
         closePopover()
-        if let appDelegate = NSApp.delegate as? AppDelegate {
-            appDelegate.presentMainWindow(reason: "menu-bar")
-        }
+        appDelegate?.presentMainWindow(reason: reason)
     }
 
     @objc private func repairMenuBarFromMenu() {

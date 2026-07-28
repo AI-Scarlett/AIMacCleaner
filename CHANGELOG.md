@@ -2,6 +2,11 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.1.1] - 2026-07-28
+
+### Fixed
+- 菜单栏弹窗的“打开 TraceFence 主控台”、Agent 记录跳转和右键应急菜单统一使用受控窗口重开链路；关闭主窗口后可靠恢复前台，并避免延迟隐藏逻辑误伤置顶主窗口。
+
 ## [1.1.0] - 2026-07-27
 
 ### Security

@@ -252,6 +252,7 @@ struct AIMacCleanerApp: App {
                         Task { await updateService.checkForUpdates() }
                     }
                     menuBarController.configure(
+                        appDelegate: appDelegate,
                         service: service,
                         quotaService: providerQuotaService,
                         usageInsightsService: agentUsageInsightsService,
@@ -440,6 +441,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private weak var localizerContext: Localizer?
     private var didPresentInitialLaunchSurface = false
     private var didRequestLaunchReopen = false
+    private var mainWindowPresentationGeneration: UInt64 = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -545,6 +547,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @discardableResult
     func presentMainWindow(reason: String) -> Bool {
+        mainWindowPresentationGeneration &+= 1
+        let generation = mainWindowPresentationGeneration
         NSApp.setActivationPolicy(.regular)
         NSApp.unhide(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -557,6 +561,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard let openMainWindowAction else {
             if requestNativeMainWindowCreation(reason: reason) {
+                scheduleMainWindowPresentationRetry(
+                    reason: reason,
+                    generation: generation,
+                    attempt: 1
+                )
                 return true
             }
             ensureLaunchSurfaceVisible(reason: reason)
@@ -566,7 +575,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindow = nil
         openMainWindowAction(id: "main")
         NSApp.activate(ignoringOtherApps: true)
+        scheduleMainWindowPresentationRetry(
+            reason: reason,
+            generation: generation,
+            attempt: 1
+        )
         return true
+    }
+
+    @MainActor
+    private func scheduleMainWindowPresentationRetry(
+        reason: String,
+        generation: UInt64,
+        attempt: Int
+    ) {
+        guard generation == mainWindowPresentationGeneration, attempt <= 10 else { return }
+        let delay = min(0.08 + (Double(attempt) * 0.05), 0.35)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self,
+                  generation == self.mainWindowPresentationGeneration else { return }
+
+            self.reconcileMainWindows()
+            if let window = self.bestMainWindow() {
+                self.show(window: window, reason: reason)
+                return
+            }
+
+            if attempt == 4 {
+                _ = self.requestNativeMainWindowCreation(reason: "\(reason)-retry")
+            }
+            self.scheduleMainWindowPresentationRetry(
+                reason: reason,
+                generation: generation,
+                attempt: attempt + 1
+            )
+        }
     }
 
     @MainActor
