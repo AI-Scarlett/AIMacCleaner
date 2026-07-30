@@ -64,6 +64,7 @@ class SandboxPaths {
     var tokenScopeBookmarksPath: String { dataDirectory + "/tokenscope_bookmarks.json" }
     var scannerCachePath: String { dataDirectory + "/scanner_cache_v1.json" }
     var storageOptimizerCachePath: String { dataDirectory + "/storage_optimizer_cache_v1.json" }
+    var diskFileInventoryCachePath: String { dataDirectory + "/disk_file_inventory_cache_v1.json" }
     var tokenScopeCachePath: String { dataDirectory + "/tokenscope_cache_v1.json" }
     var agentUsageSnapshotCachePath: String { dataDirectory + "/agent_usage_snapshot_cache_v1.json" }
     var agentMonitorCachePath: String { dataDirectory + "/agent_monitor_cache_v1.json" }
@@ -103,6 +104,7 @@ class SandboxPaths {
             (home + "/.aimaccleaner_tokenscope_bookmarks.json", shared.tokenScopeBookmarksPath),
             (home + "/.aimaccleaner_scanner_cache_v1.json", shared.scannerCachePath),
             (home + "/.aimaccleaner_storage_optimizer_cache_v1.json", shared.storageOptimizerCachePath),
+            (home + "/.aimaccleaner_disk_file_inventory_cache_v1.json", shared.diskFileInventoryCachePath),
             (home + "/.aimaccleaner_tokenscope_cache_v1.json", shared.tokenScopeCachePath),
             (home + "/.aimaccleaner_agent_monitor_cache_v1.json", shared.agentMonitorCachePath),
             (home + "/.aimaccleaner_last_response.txt", shared.lastResponsePath),
@@ -125,6 +127,7 @@ class SandboxPaths {
             (home + "/.tracefence_tokenscope_bookmarks.json", shared.tokenScopeBookmarksPath),
             (home + "/.tracefence_scanner_cache_v1.json", shared.scannerCachePath),
             (home + "/.tracefence_storage_optimizer_cache_v1.json", shared.storageOptimizerCachePath),
+            (home + "/.tracefence_disk_file_inventory_cache_v1.json", shared.diskFileInventoryCachePath),
             (home + "/.tracefence_tokenscope_cache_v1.json", shared.tokenScopeCachePath),
             (home + "/.tracefence_agent_monitor_cache_v1.json", shared.agentMonitorCachePath),
             (home + "/.tracefence_last_response.txt", shared.lastResponsePath),
@@ -161,6 +164,7 @@ class SandboxPaths {
         "tokenscope_bookmarks.json",
         "scanner_cache_v1.json",
         "storage_optimizer_cache_v1.json",
+        "disk_file_inventory_cache_v1.json",
         "tokenscope_cache_v1.json",
         "agent_monitor_cache_v1.json",
         "last_response.txt",

@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import QuickLookUI
 
 enum DiskAdvisorRecommendation: String, Codable, CaseIterable, Sendable {
     case clean
@@ -118,6 +119,9 @@ final class DiskAdvisorLabStore: ObservableObject {
     @Published var cleanedSize: Int64 = 0
     @Published var cleanedCount = 0
     @Published var optimizationSummary: StorageOptimizationSummary?
+    @Published var fileInventory: [DiskFileRecord] = []
+    @Published var fileInventorySummary: DiskFileInventorySummary?
+    @Published var selectedFileIDs: Set<String> = []
 
     var selectedCandidates: [DiskAdvisorCandidate] {
         candidates.filter { selectedIDs.contains($0.id) }
@@ -133,6 +137,14 @@ final class DiskAdvisorLabStore: ObservableObject {
 
     var suggestedCleanCount: Int {
         candidates.filter(\.isAISafeClean).count
+    }
+
+    var selectedFiles: [DiskFileRecord] {
+        fileInventory.filter { selectedFileIDs.contains($0.id) }
+    }
+
+    var selectedFileSize: Int64 {
+        selectedFiles.reduce(Int64(0)) { $0 + $1.size }
     }
 
     func scan(authorizedRoots: Set<String>? = nil, localizer: Localizer) async {
@@ -162,24 +174,45 @@ final class DiskAdvisorLabStore: ObservableObject {
                 retainBuildCount: 3
             )
         }.value
+
+        statusMessage = localizer.t(
+            "正在建立文件分类并读取最后打开、访问和修改时间...",
+            en: "Building the file inventory and reading last-opened, accessed, and modified dates..."
+        )
+        let inventoryCacheURL = URL(fileURLWithPath: SandboxPaths.shared.diskFileInventoryCachePath)
+        let inventory = await Task.detached(priority: .utility) {
+            DiskFileInventoryCore.scan(
+                homeDirectory: home,
+                authorizedRoots: roots,
+                isSandboxed: SandboxPaths.isSandboxed,
+                cacheURL: inventoryCacheURL
+            )
+        }.value
         let found = merge(genericCandidates: genericCandidates, optimization: optimization)
 
         candidates = found
         optimizationSummary = optimization.summary
+        fileInventory = inventory.files
+        fileInventorySummary = inventory.summary
         selectedIDs.removeAll()
+        selectedFileIDs.removeAll()
         let fingerprintedSize = ByteCountFormatter.string(
             fromByteCount: optimization.summary.fingerprintedBytes,
             countStyle: .file
         )
+        let inventoryNote = localizer.t(
+            "文件索引 \(inventory.summary.returnedFileCount) 项，元数据缓存命中 \(inventory.summary.cacheHitCount) 项",
+            en: "\(inventory.summary.returnedFileCount) files indexed with \(inventory.summary.cacheHitCount) metadata cache hits"
+        )
         if found.isEmpty {
             statusMessage = localizer.t(
-                "扫描完成，没有发现可列出的清理候选；Agent 原始会话未修改。",
-                en: "Scan complete. No cleanup candidates were found; original Agent sessions were not modified."
+                "扫描完成，没有发现目录级清理候选；\(inventoryNote)。Agent 原始会话未修改。",
+                en: "Scan complete. No directory-level cleanup candidates were found; \(inventoryNote). Original Agent sessions were not modified."
             )
         } else {
             statusMessage = localizer.t(
-                "扫描完成：\(found.count) 个候选；Agent 指纹缓存命中 \(optimization.summary.cacheHitCount) 个，本次增量读取 \(optimization.summary.hashedFileCount) 个 / \(fingerprintedSize)。原始会话未修改。",
-                en: "Scan complete: \(found.count) candidates; \(optimization.summary.cacheHitCount) Agent fingerprint cache hits and \(optimization.summary.hashedFileCount) files / \(fingerprintedSize) read incrementally. Original sessions were not modified."
+                "扫描完成：\(found.count) 个候选；\(inventoryNote)；Agent 指纹缓存命中 \(optimization.summary.cacheHitCount) 个，本次增量读取 \(optimization.summary.hashedFileCount) 个 / \(fingerprintedSize)。原始会话未修改。",
+                en: "Scan complete: \(found.count) candidates; \(inventoryNote); \(optimization.summary.cacheHitCount) Agent fingerprint cache hits and \(optimization.summary.hashedFileCount) files / \(fingerprintedSize) read incrementally. Original sessions were not modified."
             )
         }
     }
@@ -263,11 +296,49 @@ final class DiskAdvisorLabStore: ObservableObject {
         selectedIDs.removeAll()
     }
 
+    func clearFileSelection() {
+        selectedFileIDs.removeAll()
+    }
+
     func removeCleaned(ids: Set<String>, cleanedSize: Int64) {
         candidates.removeAll { ids.contains($0.id) }
         selectedIDs.subtract(ids)
         self.cleanedSize = cleanedSize
         cleanedCount = ids.count
+    }
+
+    func removeCleanedFiles(ids: Set<String>, cleanedSize: Int64) {
+        let removedCount = fileInventory.filter { ids.contains($0.id) }.count
+        fileInventory.removeAll { ids.contains($0.id) }
+        selectedFileIDs.subtract(ids)
+        self.cleanedSize = cleanedSize
+        cleanedCount = ids.count
+        if let summary = fileInventorySummary {
+            let breakdown = Dictionary(grouping: fileInventory, by: \.category)
+                .map { category, files in
+                    DiskFileCategoryBreakdown(
+                        category: category,
+                        fileCount: files.count,
+                        totalBytes: files.reduce(Int64(0)) { $0 + $1.size }
+                    )
+                }
+                .sorted { $0.totalBytes > $1.totalBytes }
+            fileInventorySummary = DiskFileInventorySummary(
+                eligibleFileCount: max(summary.eligibleFileCount - removedCount, 0),
+                eligibleBytes: max(summary.eligibleBytes - cleanedSize, 0),
+                returnedFileCount: fileInventory.count,
+                returnedBytes: fileInventory.reduce(Int64(0)) { $0 + $1.size },
+                visitedEntryCount: summary.visitedEntryCount,
+                cacheHitCount: summary.cacheHitCount,
+                metadataReadCount: summary.metadataReadCount,
+                unreadableEntryCount: summary.unreadableEntryCount,
+                wasTruncated: summary.wasTruncated,
+                minimumFileSize: summary.minimumFileSize,
+                scanDuration: summary.scanDuration,
+                completedAt: summary.completedAt,
+                categoryBreakdown: breakdown
+            )
+        }
     }
 
     private func apply(results: [DiskAdvisorLLMResult], source: String, localizer: Localizer) {
@@ -303,6 +374,46 @@ final class DiskAdvisorLabStore: ObservableObject {
     }
 }
 
+private enum DiskAdvisorSection: String, CaseIterable {
+    case cleanup
+    case files
+}
+
+private enum DiskFileAgeFilter: String, CaseIterable {
+    case all
+    case days7
+    case days30
+    case days90
+    case unknown
+
+    func includes(_ marker: DiskFileActivityMarker) -> Bool {
+        switch self {
+        case .all:
+            return true
+        case .days7:
+            return marker == .days7 || marker == .days30 || marker == .days90
+        case .days30:
+            return marker == .days30 || marker == .days90
+        case .days90:
+            return marker == .days90
+        case .unknown:
+            return marker == .unknown
+        }
+    }
+}
+
+private enum DiskFileSort: String, CaseIterable {
+    case sizeDescending
+    case oldestActivity
+    case newestActivity
+    case name
+}
+
+private enum DiskAdvisorDeleteScope {
+    case cleanupCandidates
+    case inventoryFiles
+}
+
 struct DiskAdvisorLabView: View {
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
@@ -315,6 +426,13 @@ struct DiskAdvisorLabView: View {
     @State private var showExternalAIConsent = false
     @State private var showCleanResult = false
     @State private var paywallMessage = ""
+    @State private var section: DiskAdvisorSection = .cleanup
+    @State private var selectedFileCategory: DiskFileCategory?
+    @State private var fileAgeFilter: DiskFileAgeFilter = .all
+    @State private var fileSort: DiskFileSort = .sizeDescending
+    @State private var inventoryVisibleLimit = 300
+    @State private var previewFile: DiskFileRecord?
+    @State private var deleteScope: DiskAdvisorDeleteScope = .cleanupCandidates
 
     private var filteredCandidates: [DiskAdvisorCandidate] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -327,23 +445,56 @@ struct DiskAdvisorLabView: View {
         }
     }
 
+    private var filteredInventoryFiles: [DiskFileRecord] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let now = Date()
+        var files = store.fileInventory.filter { file in
+            let matchesCategory = selectedFileCategory == nil || file.category == selectedFileCategory
+            let matchesAge = fileAgeFilter.includes(file.activityMarker(at: now))
+            let matchesSearch = query.isEmpty
+                || file.name.lowercased().contains(query)
+                || file.path.lowercased().contains(query)
+                || file.fileExtension.lowercased().contains(query)
+            return matchesCategory && matchesAge && matchesSearch
+        }
+        switch fileSort {
+        case .sizeDescending:
+            break // DiskFileInventoryCore already returns size-descending records.
+        case .oldestActivity:
+            files.sort {
+                ($0.lastActivityDate ?? .distantPast) < ($1.lastActivityDate ?? .distantPast)
+            }
+        case .newestActivity:
+            files.sort {
+                ($0.lastActivityDate ?? .distantPast) > ($1.lastActivityDate ?? .distantPast)
+            }
+        case .name:
+            files.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        }
+        return files
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             PageHeader(
-                icon: "sparkles",
-                title: localizer.t("AI 磁盘顾问", en: "AI Disk Advisor"),
-                subtitle: SandboxPaths.isSandboxed
-                    ? localizer.t("扫描用户授权目录，并用 AI 判断可清理项", en: "Scan user-authorized folders and review cleanup candidates with AI")
-                    : localizer.t("用 Apple Intelligence 或自定义模型判断可清理项", en: "Use Apple Intelligence or your model to review cleanup candidates"),
+                icon: section == .files ? "doc.text.magnifyingglass" : "sparkles",
+                title: localizer.t("磁盘分析与清理", en: "Disk Analysis & Cleanup"),
+                subtitle: section == .files
+                    ? localizer.t("按格式、大小和最后活动时间分析用户文件", en: "Analyze user files by type, size, and last activity")
+                    : (SandboxPaths.isSandboxed
+                        ? localizer.t("扫描用户授权目录，并用 AI 判断可清理项", en: "Scan user-authorized folders and review cleanup candidates with AI")
+                        : localizer.t("用 Apple Intelligence 或自定义模型判断可清理项", en: "Use Apple Intelligence or your model to review cleanup candidates")),
                 color: Theme.Colors.purple
             ) {
                 HStack(spacing: Theme.Spacing.sm) {
-                    Button {
-                        showAISettings = true
-                    } label: {
-                        Label(localizer.t("AI 设置", en: "AI Settings"), systemImage: "slider.horizontal.3")
+                    if section == .cleanup {
+                        Button {
+                            showAISettings = true
+                        } label: {
+                            Label(localizer.t("AI 设置", en: "AI Settings"), systemImage: "slider.horizontal.3")
+                        }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .secondary, minHeight: 34))
                     }
-                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .secondary, minHeight: 34))
 
                     Button {
                         Task { await scanWithAuthorization(promptForAccess: true) }
@@ -353,25 +504,35 @@ struct DiskAdvisorLabView: View {
                     .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 34))
                     .disabled(store.isScanning || store.isAnalyzing)
 
-                    Button {
-                        requestAIAnalysis()
-                    } label: {
-                        Label(store.isAnalyzing ? localizer.t("分析中", en: "Analyzing") : localizer.t("AI 分析", en: "AI Analyze"), systemImage: "sparkles")
+                    if section == .cleanup {
+                        Button {
+                            requestAIAnalysis()
+                        } label: {
+                            Label(store.isAnalyzing ? localizer.t("分析中", en: "Analyzing") : localizer.t("AI 分析", en: "AI Analyze"), systemImage: "sparkles")
+                        }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.purple, variant: .primary, minHeight: 34))
+                        .disabled(store.isScanning || store.isAnalyzing)
                     }
-                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.purple, variant: .primary, minHeight: 34))
-                    .disabled(store.isScanning || store.isAnalyzing)
                 }
             }
 
             ScrollView {
                 VStack(spacing: Theme.Spacing.lg) {
                     statusStrip
-                    if let summary = store.optimizationSummary {
-                        storageOptimizationOverview(summary)
+                    sectionSelector
+                    if section == .cleanup {
+                        if let summary = store.optimizationSummary {
+                            storageOptimizationOverview(summary)
+                        }
+                        summaryGrid
+                        actionBar
+                        candidateList
+                    } else {
+                        if let summary = store.fileInventorySummary {
+                            fileInventoryOverview(summary)
+                        }
+                        fileInventoryContent
                     }
-                    summaryGrid
-                    actionBar
-                    candidateList
                 }
                 .padding(Theme.Spacing.xl)
             }
@@ -415,8 +576,8 @@ struct DiskAdvisorLabView: View {
             }
         } message: {
             Text(localizer.t(
-                "将 \(store.selectedCandidates.count) 个项目移到废纸篓，预计释放 \(service.formatSize(store.selectedSize))。请确认这些项目不再需要。",
-                en: "Move \(store.selectedCandidates.count) items to Trash, estimated \(service.formatSize(store.selectedSize)). Confirm these items are no longer needed."
+                "将 \(pendingDeleteCount) 个项目移到废纸篓，预计释放 \(service.formatSize(pendingDeleteSize))。请确认这些项目不再需要。",
+                en: "Move \(pendingDeleteCount) items to Trash, estimated \(service.formatSize(pendingDeleteSize)). Confirm these items are no longer needed."
             ))
         }
         .alert(localizer.t("提示", en: "Notice"), isPresented: Binding(
@@ -443,11 +604,17 @@ struct DiskAdvisorLabView: View {
         .sheet(isPresented: $showCleanResult) {
             cleanResultSheet
         }
+        .sheet(item: $previewFile) { file in
+            diskFilePreviewSheet(file)
+        }
         .onAppear {
             licenseService.refreshTrialState()
             if store.candidates.isEmpty {
                 Task { await scanWithAuthorization(promptForAccess: false) }
             }
+        }
+        .onChange(of: searchText) { _ in
+            if section == .files { inventoryVisibleLimit = 300 }
         }
     }
 
@@ -461,7 +628,7 @@ struct DiskAdvisorLabView: View {
                     } else {
                         Circle()
                             .fill(Theme.Colors.purple.opacity(0.12))
-                        Image(systemName: "brain.head.profile")
+                        Image(systemName: section == .files ? "doc.text.magnifyingglass" : "brain.head.profile")
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(Theme.Colors.purple)
                     }
@@ -469,7 +636,9 @@ struct DiskAdvisorLabView: View {
                 .frame(width: 46, height: 46)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(activeModelText)
+                    Text(section == .files
+                        ? localizer.t("本地文件元数据分析", en: "Local File Metadata Analysis")
+                        : activeModelText)
                         .font(Theme.Font.subheadlineMedium)
                         .foregroundStyle(Theme.Colors.textPrimary)
                     Text(store.statusMessage.isEmpty ? AppleIntelligenceService.availabilitySummary() : store.statusMessage)
@@ -486,6 +655,397 @@ struct DiskAdvisorLabView: View {
                         ScanningProgressCaption(detail: diskAdvisorActivityDetail, color: diskAdvisorActivityColor)
                     }
                     .frame(minWidth: 220, maxWidth: 340, alignment: .trailing)
+                }
+            }
+        }
+    }
+
+    private var sectionSelector: some View {
+        CardView(padding: 6, cornerRadius: Theme.Radius.lg, showShadow: false) {
+            HStack(spacing: 6) {
+                sectionButton(
+                    .cleanup,
+                    title: localizer.t("清理建议", en: "Cleanup Advice"),
+                    icon: "sparkles"
+                )
+                sectionButton(
+                    .files,
+                    title: localizer.t("文件分析", en: "File Analysis"),
+                    icon: "doc.text.magnifyingglass"
+                )
+            }
+        }
+    }
+
+    private func sectionButton(_ target: DiskAdvisorSection, title: String, icon: String) -> some View {
+        Button {
+            section = target
+            searchText = ""
+            inventoryVisibleLimit = 300
+        } label: {
+            Label(title, systemImage: icon)
+                .font(Theme.Font.subheadlineMedium)
+                .foregroundStyle(section == target ? Color.white : Theme.Colors.textSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 9)
+                .background(section == target ? Theme.Colors.purple : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func fileInventoryOverview(_ summary: DiskFileInventorySummary) -> some View {
+        let inactive90 = inventoryStats(minimumDays: 90)
+        return CardView(padding: Theme.Spacing.lg, cornerRadius: Theme.Radius.lg) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.info)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(localizer.t("文件活动分析", en: "File Activity Analysis"))
+                            .font(Theme.Font.subheadlineMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text(localizer.t(
+                            "活动时间取最后打开、文件系统访问和修改时间中的最新值；只读取元数据，不读取文件内容。",
+                            en: "Activity uses the newest last-opened, filesystem-accessed, or modified date. Only metadata is read, never file contents."
+                        ))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    }
+                    Spacer()
+                    Text(shortDateTime(summary.completedAt))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
+
+                Divider().overlay(Theme.Colors.separator)
+
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: Theme.Spacing.md), count: 4),
+                    spacing: Theme.Spacing.md
+                ) {
+                    optimizationMetric(
+                        icon: "doc.on.doc.fill",
+                        color: Theme.Colors.info,
+                        title: localizer.t("已索引文件", en: "Indexed Files"),
+                        value: "\(summary.returnedFileCount)",
+                        subtitle: service.formatSize(summary.returnedBytes)
+                    )
+                    optimizationMetric(
+                        icon: "calendar.badge.exclamationmark",
+                        color: Theme.Colors.warning,
+                        title: localizer.t("90 天未活动", en: "Inactive 90+ Days"),
+                        value: "\(inactive90.count)",
+                        subtitle: service.formatSize(inactive90.bytes)
+                    )
+                    optimizationMetric(
+                        icon: "bolt.horizontal.circle.fill",
+                        color: Theme.Colors.success,
+                        title: localizer.t("元数据缓存", en: "Metadata Cache"),
+                        value: "\(summary.cacheHitCount)",
+                        subtitle: localizer.t("本次命中", en: "hits this scan")
+                    )
+                    optimizationMetric(
+                        icon: "timer",
+                        color: Theme.Colors.purple,
+                        title: localizer.t("扫描耗时", en: "Scan Time"),
+                        value: formatDuration(summary.scanDuration),
+                        subtitle: localizer.t("访问 \(summary.visitedEntryCount) 项", en: "\(summary.visitedEntryCount) entries visited")
+                    )
+                }
+
+                if !summary.categoryBreakdown.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            ForEach(summary.categoryBreakdown, id: \.category) { item in
+                                Button {
+                                    selectedFileCategory = selectedFileCategory == item.category ? nil : item.category
+                                    inventoryVisibleLimit = 300
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: fileCategoryIcon(item.category))
+                                        Text(fileCategoryLabel(item.category))
+                                        Text("\(item.fileCount)")
+                                            .foregroundStyle(Theme.Colors.textTertiary)
+                                        Text(service.formatSize(item.totalBytes))
+                                            .fontWeight(.semibold)
+                                    }
+                                    .font(Theme.Font.caption)
+                                    .foregroundStyle(selectedFileCategory == item.category ? Color.white : fileCategoryColor(item.category))
+                                    .padding(.horizontal, Theme.Spacing.sm)
+                                    .padding(.vertical, 7)
+                                    .background(selectedFileCategory == item.category ? fileCategoryColor(item.category) : fileCategoryColor(item.category).opacity(0.08))
+                                    .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
+                HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+                    Image(systemName: "scope")
+                        .foregroundStyle(Theme.Colors.info)
+                    Text(localizer.t(
+                        "为聚焦可释放空间，文件清单只索引 \(service.formatSize(summary.minimumFileSize)) 以上的普通文件；隐藏文件、Agent 历史、系统目录、依赖缓存和符号链接不会列入。",
+                        en: "To focus on reclaimable space, the inventory includes regular files of at least \(service.formatSize(summary.minimumFileSize)). Hidden files, Agent history, system folders, dependency caches, and symbolic links are excluded."
+                    ))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                }
+
+                if summary.wasTruncated || summary.unreadableEntryCount > 0 {
+                    HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(Theme.Colors.warning)
+                        Text(inventoryCoverageMessage(summary))
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var fileInventoryContent: some View {
+        let filtered = filteredInventoryFiles
+        let visible = Array(filtered.prefix(inventoryVisibleLimit))
+        return VStack(spacing: Theme.Spacing.md) {
+            fileInventoryActionBar(filtered: filtered, visible: visible)
+            fileInventoryList(filtered: filtered, visible: visible)
+        }
+    }
+
+    private func fileInventoryActionBar(
+        filtered: [DiskFileRecord],
+        visible: [DiskFileRecord]
+    ) -> some View {
+        CardView(padding: Theme.Spacing.md, cornerRadius: Theme.Radius.lg, showShadow: false) {
+            VStack(spacing: Theme.Spacing.sm) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    FilterSearchBar(
+                        placeholder: localizer.t("搜索文件名、路径或扩展名", en: "Search name, path, or extension"),
+                        text: $searchText
+                    )
+                    .frame(maxWidth: 360)
+
+                    inventoryFilterMenu(
+                        title: selectedFileCategory.map(fileCategoryLabel) ?? localizer.t("全部格式", en: "All Types"),
+                        icon: "square.grid.2x2"
+                    ) {
+                        Button(localizer.t("全部格式", en: "All Types")) {
+                            selectedFileCategory = nil
+                            inventoryVisibleLimit = 300
+                        }
+                        ForEach(DiskFileCategory.allCases, id: \.self) { category in
+                            Button(fileCategoryLabel(category)) {
+                                selectedFileCategory = category
+                                inventoryVisibleLimit = 300
+                            }
+                        }
+                    }
+
+                    inventoryFilterMenu(title: fileAgeFilterLabel(fileAgeFilter), icon: "calendar") {
+                        ForEach(DiskFileAgeFilter.allCases, id: \.self) { filter in
+                            Button(fileAgeFilterLabel(filter)) {
+                                fileAgeFilter = filter
+                                inventoryVisibleLimit = 300
+                            }
+                        }
+                    }
+
+                    inventoryFilterMenu(title: fileSortLabel(fileSort), icon: "arrow.up.arrow.down") {
+                        ForEach(DiskFileSort.allCases, id: \.self) { sort in
+                            Button(fileSortLabel(sort)) {
+                                fileSort = sort
+                                inventoryVisibleLimit = 300
+                            }
+                        }
+                    }
+
+                    Spacer()
+                }
+
+                HStack(spacing: Theme.Spacing.sm) {
+                    Text(localizer.t(
+                        "筛选结果 \(filtered.count) 项 · 已显示 \(visible.count) 项",
+                        en: "\(filtered.count) results · \(visible.count) shown"
+                    ))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+
+                    Spacer()
+
+                    Button {
+                        store.selectedFileIDs.formUnion(visible.map(\.id))
+                    } label: {
+                        Label(localizer.t("选择当前页", en: "Select Page"), systemImage: "checkmark.square")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 32))
+                    .disabled(visible.isEmpty)
+
+                    Button {
+                        store.clearFileSelection()
+                    } label: {
+                        Label(localizer.t("清空选择", en: "Clear"), systemImage: "xmark.circle")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 32))
+                    .disabled(store.selectedFileIDs.isEmpty)
+
+                    Button {
+                        deleteScope = .inventoryFiles
+                        confirmDelete()
+                    } label: {
+                        Label(
+                            localizer.t("清理所选 \(store.selectedFileIDs.count)", en: "Clean Selected \(store.selectedFileIDs.count)"),
+                            systemImage: "trash"
+                        )
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .primary, minHeight: 32))
+                    .disabled(store.selectedFileIDs.isEmpty)
+                }
+            }
+        }
+    }
+
+    private func inventoryFilterMenu<Content: View>(
+        title: String,
+        icon: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Menu(content: content) {
+            Label(title, systemImage: icon)
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .background(Theme.Colors.surface)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
+                        .stroke(Theme.Colors.separator, lineWidth: 1)
+                )
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private func fileInventoryList(
+        filtered: [DiskFileRecord],
+        visible: [DiskFileRecord]
+    ) -> some View {
+        LazyVStack(spacing: Theme.Spacing.md) {
+            if visible.isEmpty {
+                CardView(padding: Theme.Spacing.xl, cornerRadius: Theme.Radius.lg) {
+                    VStack(spacing: Theme.Spacing.md) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 34, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                        Text(localizer.t("没有符合筛选条件的文件", en: "No files match these filters"))
+                            .font(Theme.Font.subheadlineMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text(localizer.t("调整格式、未活动时间或搜索条件。", en: "Change the type, inactivity, or search filters."))
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            } else {
+                ForEach(visible) { file in
+                    fileInventoryRow(file)
+                }
+
+                if visible.count < filtered.count {
+                    Button {
+                        inventoryVisibleLimit += 300
+                    } label: {
+                        Label(localizer.t("再显示 300 项", en: "Show 300 More"), systemImage: "chevron.down.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 38))
+                }
+            }
+        }
+    }
+
+    private func fileInventoryRow(_ file: DiskFileRecord) -> some View {
+        let marker = file.activityMarker()
+        return CardView(padding: Theme.Spacing.lg, cornerRadius: Theme.Radius.lg, showShadow: false) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                Button {
+                    if store.selectedFileIDs.contains(file.id) {
+                        store.selectedFileIDs.remove(file.id)
+                    } else {
+                        store.selectedFileIDs.insert(file.id)
+                    }
+                } label: {
+                    Image(systemName: store.selectedFileIDs.contains(file.id) ? "checkmark.square.fill" : "square")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(store.selectedFileIDs.contains(file.id) ? Theme.Colors.accent : Theme.Colors.textTertiary)
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(.plain)
+
+                Image(systemName: fileCategoryIcon(file.category))
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(fileCategoryColor(file.category))
+                    .frame(width: 30, height: 30)
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Text(file.name)
+                            .font(Theme.Font.subheadlineMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .lineLimit(1)
+                        PillBadge(text: fileFormatLabel(file), color: fileCategoryColor(file.category), size: .medium)
+                        PillBadge(text: activityMarkerLabel(marker), color: activityMarkerColor(marker), size: .medium)
+                        Spacer()
+                        Text(service.formatSize(file.size))
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                    }
+
+                    Text(fileDisplayPath(file))
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+
+                    HStack(spacing: Theme.Spacing.md) {
+                        metadataDateLabel(
+                            localizer.t("最后打开", en: "Opened"),
+                            date: file.lastOpenedDate,
+                            icon: "eye"
+                        )
+                        metadataDateLabel(
+                            localizer.t("最后使用/访问", en: "Accessed"),
+                            date: file.accessedDate,
+                            icon: "hand.point.up.left"
+                        )
+                        metadataDateLabel(
+                            localizer.t("最后修改", en: "Modified"),
+                            date: file.modifiedDate,
+                            icon: "pencil"
+                        )
+                    }
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                }
+
+                VStack(alignment: .trailing, spacing: Theme.Spacing.sm) {
+                    Button {
+                        previewFile = file
+                    } label: {
+                        Label(localizer.t("预览", en: "Preview"), systemImage: "eye")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 30))
+
+                    Button {
+                        revealFile(file)
+                    } label: {
+                        Label("Finder", systemImage: "folder")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.textSecondary, variant: .ghost, minHeight: 30))
                 }
             }
         }
@@ -684,6 +1244,7 @@ struct DiskAdvisorLabView: View {
                 .disabled(store.selectedIDs.isEmpty)
 
                 Button {
+                    deleteScope = .cleanupCandidates
                     confirmDelete()
                 } label: {
                     Label(localizer.t("清理所选", en: "Clean Selected"), systemImage: "trash")
@@ -901,18 +1462,17 @@ struct DiskAdvisorLabView: View {
     }
 
     private func confirmDelete() {
+        guard pendingDeleteCount > 0 else { return }
         licenseService.refreshTrialState()
         guard TraceFenceEntitlementPolicy.canUseProFeatures else {
             if TraceFenceDistributionPolicy.currentChannel.isAppStore {
-                paywallMessage = localizer.t(
-                    "订阅 TraceFence Standard 后可执行 AI 建议的清理操作。",
-                    en: "Subscribe to TraceFence Standard to run cleanup actions recommended by AI Disk Advisor."
-                )
+                paywallMessage = deleteScope == .inventoryFiles
+                    ? localizer.t("订阅 TraceFence Standard 后可将勾选文件移入废纸篓。", en: "Subscribe to TraceFence Standard to move selected files to Trash.")
+                    : localizer.t("订阅 TraceFence Standard 后可执行 AI 建议的清理操作。", en: "Subscribe to TraceFence Standard to run cleanup actions recommended by AI Disk Advisor.")
             } else {
-                paywallMessage = localizer.t(
-                    "试用期可以扫描、浏览和预览 AI 建议；执行清理需要激活 TraceFence Standard。",
-                    en: "The trial can scan, browse, and preview AI suggestions. Cleanup execution requires TraceFence Standard."
-                )
+                paywallMessage = deleteScope == .inventoryFiles
+                    ? localizer.t("试用期可以扫描、筛选和预览文件；执行清理需要激活 TraceFence Standard。", en: "The trial can scan, filter, and preview files. Cleanup execution requires TraceFence Standard.")
+                    : localizer.t("试用期可以扫描、浏览和预览 AI 建议；执行清理需要激活 TraceFence Standard。", en: "The trial can scan, browse, and preview AI suggestions. Cleanup execution requires TraceFence Standard.")
             }
             return
         }
@@ -920,19 +1480,221 @@ struct DiskAdvisorLabView: View {
     }
 
     private func performDelete() {
-        let selected = store.selectedCandidates
-        let targets = selected.map { (id: $0.id, path: $0.path, size: $0.size, fileCount: $0.fileCount) }
+        let scope = deleteScope
+        let candidateSelection = scope == .cleanupCandidates ? store.selectedCandidates : []
+        let fileSelection = scope == .inventoryFiles ? store.selectedFiles : []
+        let targets: [(id: String, path: String, size: Int64, fileCount: Int)]
+        switch scope {
+        case .cleanupCandidates:
+            targets = candidateSelection.map { (id: $0.id, path: $0.path, size: $0.size, fileCount: $0.fileCount) }
+        case .inventoryFiles:
+            targets = fileSelection.map { (id: $0.id, path: $0.path, size: $0.size, fileCount: 1) }
+        }
         Task {
             let result = await service.deleteAdvisedPaths(targets)
             let succeededIDs = Set((result.results ?? []).filter { $0.success == true }.compactMap { $0.id })
-            let cleaned = selected.filter { succeededIDs.contains($0.id) }.reduce(Int64(0)) { $0 + $1.size }
-            store.removeCleaned(ids: succeededIDs, cleanedSize: cleaned)
+            let cleaned: Int64
+            switch scope {
+            case .cleanupCandidates:
+                cleaned = candidateSelection.filter { succeededIDs.contains($0.id) }.reduce(Int64(0)) { $0 + $1.size }
+                store.removeCleaned(ids: succeededIDs, cleanedSize: cleaned)
+            case .inventoryFiles:
+                cleaned = fileSelection.filter { succeededIDs.contains($0.id) }.reduce(Int64(0)) { $0 + $1.size }
+                store.removeCleanedFiles(ids: succeededIDs, cleanedSize: cleaned)
+            }
             service.refreshDiskInfo()
             showCleanResult = !succeededIDs.isEmpty
             if (result.failed ?? 0) > 0 {
                 store.errorMessage = localizer.t("部分项目未能移到废纸篓，请检查权限或文件是否仍存在。", en: "Some items could not be moved to Trash. Check permissions or whether they still exist.")
             }
         }
+    }
+
+    private var pendingDeleteCount: Int {
+        switch deleteScope {
+        case .cleanupCandidates: return store.selectedCandidates.count
+        case .inventoryFiles: return store.selectedFiles.count
+        }
+    }
+
+    private var pendingDeleteSize: Int64 {
+        switch deleteScope {
+        case .cleanupCandidates: return store.selectedSize
+        case .inventoryFiles: return store.selectedFileSize
+        }
+    }
+
+    private func inventoryStats(minimumDays: Int) -> (count: Int, bytes: Int64) {
+        let now = Date()
+        let files = store.fileInventory.filter { file in
+            guard let activity = file.lastActivityDate else { return false }
+            return now.timeIntervalSince(activity) >= TimeInterval(minimumDays) * 86_400
+        }
+        return (files.count, files.reduce(Int64(0)) { $0 + $1.size })
+    }
+
+    private func inventoryCoverageMessage(_ summary: DiskFileInventorySummary) -> String {
+        var messages: [String] = []
+        if summary.wasTruncated {
+            messages.append(localizer.t(
+                "扫描达到有边界上限，当前清单保留体积最大的 \(summary.returnedFileCount) 个文件；可缩小授权目录后再次扫描。",
+                en: "The bounded scan limit was reached. The list keeps the largest \(summary.returnedFileCount) files; select a narrower folder and scan again for complete coverage."
+            ))
+        }
+        if summary.unreadableEntryCount > 0 {
+            messages.append(localizer.t(
+                "另有 \(summary.unreadableEntryCount) 个位置因权限或瞬时文件变化未能读取。",
+                en: "\(summary.unreadableEntryCount) locations could not be read because of permissions or transient file changes."
+            ))
+        }
+        return messages.joined(separator: " ")
+    }
+
+    private func fileCategoryLabel(_ category: DiskFileCategory) -> String {
+        switch category {
+        case .image: return localizer.t("图片", en: "Images")
+        case .video: return localizer.t("视频", en: "Videos")
+        case .audio: return localizer.t("音频", en: "Audio")
+        case .document: return localizer.t("文档", en: "Documents")
+        case .archive: return localizer.t("压缩包", en: "Archives")
+        case .installer: return localizer.t("安装与分发包", en: "Installers")
+        case .code: return localizer.t("代码文件", en: "Code")
+        case .other: return localizer.t("其它文件", en: "Other")
+        }
+    }
+
+    private func fileCategoryIcon(_ category: DiskFileCategory) -> String {
+        switch category {
+        case .image: return "photo.fill"
+        case .video: return "film.fill"
+        case .audio: return "waveform"
+        case .document: return "doc.text.fill"
+        case .archive: return "archivebox.fill"
+        case .installer: return "shippingbox.fill"
+        case .code: return "chevron.left.forwardslash.chevron.right"
+        case .other: return "doc.fill"
+        }
+    }
+
+    private func fileCategoryColor(_ category: DiskFileCategory) -> Color {
+        switch category {
+        case .image: return Theme.Colors.purple
+        case .video: return Theme.Colors.danger
+        case .audio: return Theme.Colors.accent
+        case .document: return Theme.Colors.info
+        case .archive: return Theme.Colors.warning
+        case .installer: return Theme.Colors.success
+        case .code: return Theme.Colors.info
+        case .other: return Theme.Colors.textSecondary
+        }
+    }
+
+    private func fileAgeFilterLabel(_ filter: DiskFileAgeFilter) -> String {
+        switch filter {
+        case .all: return localizer.t("全部活动时间", en: "All Activity")
+        case .days7: return localizer.t("7 天以上未活动", en: "Inactive 7+ Days")
+        case .days30: return localizer.t("30 天以上未活动", en: "Inactive 30+ Days")
+        case .days90: return localizer.t("90 天以上未活动", en: "Inactive 90+ Days")
+        case .unknown: return localizer.t("无活动记录", en: "No Activity Record")
+        }
+    }
+
+    private func fileSortLabel(_ sort: DiskFileSort) -> String {
+        switch sort {
+        case .sizeDescending: return localizer.t("按大小", en: "Size")
+        case .oldestActivity: return localizer.t("最久未活动", en: "Oldest Activity")
+        case .newestActivity: return localizer.t("最近活动", en: "Newest Activity")
+        case .name: return localizer.t("按名称", en: "Name")
+        }
+    }
+
+    private func activityMarkerLabel(_ marker: DiskFileActivityMarker) -> String {
+        switch marker {
+        case .recent: return localizer.t("7 天内有活动", en: "Active within 7d")
+        case .days7: return localizer.t("7–29 天未活动", en: "Inactive 7–29d")
+        case .days30: return localizer.t("30–89 天未活动", en: "Inactive 30–89d")
+        case .days90: return localizer.t("90 天以上未活动", en: "Inactive 90+d")
+        case .unknown: return localizer.t("无活动记录", en: "No activity record")
+        }
+    }
+
+    private func activityMarkerColor(_ marker: DiskFileActivityMarker) -> Color {
+        switch marker {
+        case .recent: return Theme.Colors.success
+        case .days7: return Theme.Colors.info
+        case .days30: return Theme.Colors.warning
+        case .days90: return Theme.Colors.danger
+        case .unknown: return Theme.Colors.textSecondary
+        }
+    }
+
+    private func fileFormatLabel(_ file: DiskFileRecord) -> String {
+        file.fileExtension.isEmpty
+            ? localizer.t("无扩展名", en: "NO EXT")
+            : file.fileExtension.uppercased()
+    }
+
+    private func fileDisplayPath(_ file: DiskFileRecord) -> String {
+        file.path.replacingOccurrences(of: SandboxPaths.realHomeDirectory, with: "~")
+    }
+
+    private func metadataDateLabel(_ title: String, date: Date?, icon: String) -> some View {
+        Label(
+            "\(title) \(date.map(shortDateTime) ?? localizer.t("无记录", en: "No record"))",
+            systemImage: icon
+        )
+    }
+
+    private func revealFile(_ file: DiskFileRecord) {
+        let url = URL(fileURLWithPath: file.path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            store.errorMessage = localizer.t("文件已不存在，请重新扫描。", en: "The file no longer exists. Run the scan again.")
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private func diskFilePreviewSheet(_ file: DiskFileRecord) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: Theme.Spacing.md) {
+                Image(systemName: fileCategoryIcon(file.category))
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(fileCategoryColor(file.category))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(file.name)
+                        .font(Theme.Font.subheadlineMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(1)
+                    Text(fileDisplayPath(file))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Text(service.formatSize(file.size))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                Button {
+                    revealFile(file)
+                } label: {
+                    Label("Finder", systemImage: "folder")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 32))
+                Button {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: file.path))
+                } label: {
+                    Label(localizer.t("打开原文件", en: "Open Original"), systemImage: "arrow.up.forward.app")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.purple, variant: .primary, minHeight: 32))
+            }
+            .padding(Theme.Spacing.lg)
+
+            Divider().overlay(Theme.Colors.separator)
+
+            DiskAdvisorQuickLookPreview(url: URL(fileURLWithPath: file.path))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(minWidth: 760, minHeight: 560)
+        .background(Theme.Colors.background)
     }
 
     private func shortDate(_ date: Date) -> String {
@@ -1678,5 +2440,28 @@ private enum DiskAdvisorScanner {
 
     private static var resourceKeys: [URLResourceKey] {
         [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey, .fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey]
+    }
+}
+
+private struct DiskAdvisorQuickLookPreview: NSViewRepresentable {
+    let url: URL
+
+    func makeNSView(context: Context) -> QLPreviewView {
+        let view = QLPreviewView(frame: .zero, style: .normal)!
+        view.autostarts = true
+        view.previewItem = url as NSURL
+        return view
+    }
+
+    func updateNSView(_ view: QLPreviewView, context: Context) {
+        let currentURL = (view.previewItem as? NSURL) as URL?
+        guard currentURL != url else { return }
+        view.previewItem = url as NSURL
+        view.refreshPreviewItem()
+    }
+
+    static func dismantleNSView(_ view: QLPreviewView, coordinator: ()) {
+        view.autostarts = false
+        view.previewItem = nil
     }
 }
