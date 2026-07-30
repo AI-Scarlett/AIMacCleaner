@@ -416,6 +416,8 @@ extension Localizer {
             return t("这是项目根目录，可能包含源码、配置和生成内容；应只清理明确的缓存子目录。", en: "This is a project root that may hold source, configuration, and generated output. Clean only clearly identified cache subfolders.", zhHant: "這是專案根目錄，可能包含原始碼、設定和產生內容；應只清理明確的快取子目錄。", ja: "ソース・設定・生成物を含む可能性のあるプロジェクトのルートです。明確なキャッシュのサブフォルダのみ削除してください。", ko: "소스·설정·생성물이 있을 수 있는 프로젝트 루트입니다. 명확한 캐시 하위 폴더만 정리하세요.")
         case .aiAgentData:
             return t("AI Agent 数据通常包含会话历史、索引或本地状态，删除前应确认是否还需要追溯记录。", en: "AI agent data usually holds session history, indexes, or local state. Confirm you no longer need the history first.", zhHant: "AI Agent 資料通常包含工作階段歷史、索引或本機狀態，刪除前應確認是否還需要追溯記錄。", ja: "AI エージェントのデータには会話履歴・インデックス・ローカル状態が含まれます。履歴が不要か確認してください。", ko: "AI 에이전트 데이터에는 세션 기록·인덱스·로컬 상태가 있습니다. 기록이 더 필요 없는지 확인하세요.")
+        case .agentDuplicateMedia:
+            return t("Agent 会话中存在按内容哈希确认的重复图片、音频、视频或附件；当前只统计可优化上限，不改写原始会话。", en: "Agent sessions contain media or attachments confirmed identical by content hash. TraceFence reports the optimization ceiling without rewriting source sessions.", zhHant: "Agent 工作階段中存在依內容雜湊確認的重複圖片、音訊、影片或附件；目前只統計可最佳化上限，不改寫原始工作階段。", ja: "Agent セッション内に内容ハッシュが同一のメディアや添付ファイルがあります。現時点では削減可能量のみを表示し、元のセッションは変更しません。", ko: "Agent 세션에 콘텐츠 해시가 같은 미디어 또는 첨부 파일이 있습니다. 현재는 최적화 가능 용량만 표시하고 원본 세션은 변경하지 않습니다.")
         case .hiddenAppData:
             return t("这是用户目录下的大型隐藏应用数据，可能是 Agent、开发工具、包管理器或其它本地状态。", en: "Large hidden app data in your home folder. It may belong to an agent, dev tool, package manager, or other local state.", zhHant: "這是使用者目錄下的大型隱藏應用程式資料，可能是 Agent、開發工具、套件管理器或其它本機狀態。", ja: "ホーム直下の大きな隠しアプリデータです。エージェント・開発ツール・パッケージマネージャ等の可能性があります。", ko: "홈 폴더의 큰 숨김 앱 데이터입니다. 에이전트·개발 도구·패키지 관리자 등의 상태일 수 있습니다.")
         case .simulatorDevices:
@@ -436,6 +438,10 @@ extension Localizer {
             return t("缓存、日志或派生数据通常可以重建。", en: "Caches, logs, and derived data are normally rebuilt automatically.", zhHant: "快取、日誌或衍生資料通常可以重建。", ja: "キャッシュ・ログ・派生データは通常自動的に再生成されます。", ko: "캐시·로그·파생 데이터는 대개 자동으로 다시 생성됩니다.")
         case .buildArtifact:
             return t("构建产物通常可以由源码重新生成。", en: "Build artifacts can normally be regenerated from source.", zhHant: "建置產物通常可以由原始碼重新產生。", ja: "ビルド成果物は通常ソースから再生成できます。", ko: "빌드 산출물은 대개 소스에서 다시 만들 수 있습니다.")
+        case .historicalBuild:
+            return t("这是同一项目或构建组中较旧的历史产物；TraceFence 已保护最近 3 次构建。", en: "This is an older item in the same project or build group. TraceFence has protected the newest 3 builds.", zhHant: "這是同一專案或建置群組中較舊的歷史產物；TraceFence 已保護最近 3 次建置。", ja: "同じプロジェクトまたはビルドグループの古い成果物です。最新3件は保護されています。", ko: "같은 프로젝트 또는 빌드 그룹의 이전 산출물입니다. 최신 3개 빌드는 보호됩니다.")
+        case .installerArtifact:
+            return t("这是可安装或用于分发的构建结果，只有用户主动勾选后才会移入废纸篓。", en: "This is an installable or distributable build result. It is moved to Trash only when you select it explicitly.", zhHant: "這是可安裝或用於散佈的建置結果，只有使用者主動勾選後才會移入垃圾桶。", ja: "インストールまたは配布用のビルド成果物です。明示的に選択した場合のみゴミ箱へ移動します。", ko: "설치 또는 배포 가능한 빌드 결과입니다. 사용자가 직접 선택한 경우에만 휴지통으로 이동합니다.")
         case .downloadArchive:
             return t("下载的安装包或压缩包可能已经不再需要。", en: "A downloaded installer or archive that may no longer be needed.", zhHant: "下載的安裝包或壓縮檔可能已經不再需要。", ja: "ダウンロード済みのインストーラや書庫で、不要になっている可能性があります。", ko: "더 이상 필요하지 않을 수 있는 내려받은 설치 파일 또는 압축 파일입니다.")
         case .unknownLargeItem:
@@ -453,6 +459,8 @@ extension Localizer {
             return t("删除整个项目会造成源码和工作文件丢失。", en: "Deleting the whole project loses source and working files.", zhHant: "刪除整個專案會造成原始碼和工作檔案遺失。", ja: "プロジェクト全体を削除するとソースと作業ファイルを失います。", ko: "프로젝트 전체를 삭제하면 소스와 작업 파일이 사라집니다.")
         case .aiAgentData:
             return t("删除后可能丢失历史会话、项目上下文或本地 agent 状态。", en: "You may lose past sessions, project context, or local agent state.", zhHant: "刪除後可能遺失歷史工作階段、專案脈絡或本機 agent 狀態。", ja: "過去の会話・プロジェクトの文脈・ローカル状態を失う可能性があります。", ko: "이전 세션·프로젝트 맥락·로컬 에이전트 상태를 잃을 수 있습니다.")
+        case .agentDuplicateMedia:
+            return t("当前不会删除任何 Agent 会话；未来冷归档也必须先校验并支持恢复。", en: "No Agent session is deleted. Any future cold archive must be verified and restorable first.", zhHant: "目前不會刪除任何 Agent 工作階段；未來冷封存也必須先校驗並支援還原。", ja: "Agent セッションは削除されません。将来のコールドアーカイブも検証と復元機能が必須です。", ko: "현재 Agent 세션은 삭제되지 않습니다. 향후 콜드 아카이브도 검증 및 복원이 먼저 보장되어야 합니다.")
         case .hiddenAppData:
             return t("删除前需要确认来源；它可能包含会话历史、索引、缓存或账户状态。", en: "Identify the owner first; it may hold session history, indexes, caches, or account state.", zhHant: "刪除前需要確認來源；它可能包含工作階段歷史、索引、快取或帳戶狀態。", ja: "所有元を確認してください。履歴・インデックス・キャッシュ・アカウント状態を含む場合があります。", ko: "소유 앱을 먼저 확인하세요. 기록·인덱스·캐시·계정 상태가 있을 수 있습니다.")
         case .simulatorDevices:
@@ -473,6 +481,10 @@ extension Localizer {
             return t("首次重新打开相关工具时可能需要重新索引或下载。", en: "The related tool may need to re-index or re-download on next launch.", zhHant: "首次重新開啟相關工具時可能需要重新索引或下載。", ja: "次回起動時に再インデックスや再ダウンロードが必要になる場合があります。", ko: "다음 실행 시 다시 인덱싱하거나 내려받아야 할 수 있습니다.")
         case .buildArtifact:
             return t("下次构建可能变慢，未提交生成物请先确认。", en: "The next build will be slower. Check for generated output you have not committed.", zhHant: "下次建置可能變慢，未提交產生物請先確認。", ja: "次回のビルドが遅くなります。未コミットの生成物がないか確認してください。", ko: "다음 빌드가 느려집니다. 커밋하지 않은 생성물이 없는지 확인하세요.")
+        case .historicalBuild:
+            return t("删除后会失去对应的归档、测试结果、构建日志或旧版本输出；如需重传、符号化或回溯，请先备份。", en: "Removing it loses that archive, test result, build log, or old output. Back it up first if you may need resubmission, symbolication, or rollback.", zhHant: "刪除後會失去對應的封存、測試結果、建置日誌或舊版本輸出；如需重新提交、符號化或回溯，請先備份。", ja: "対応するアーカイブ・テスト結果・ビルドログ・旧成果物が失われます。再提出やシンボル化、ロールバックが必要なら先にバックアップしてください。", ko: "해당 아카이브·테스트 결과·빌드 로그·이전 출력이 사라집니다. 재제출, 심볼리케이션 또는 롤백이 필요하면 먼저 백업하세요.")
+        case .installerArtifact:
+            return t("删除后如需再次安装、签名或上传，需要从备份恢复或重新构建。", en: "To install, sign, or upload it again, you will need a backup or a new build.", zhHant: "刪除後如需再次安裝、簽署或上傳，需要從備份還原或重新建置。", ja: "再インストール・署名・アップロードするには、バックアップからの復元または再ビルドが必要です。", ko: "다시 설치·서명·업로드하려면 백업에서 복원하거나 다시 빌드해야 합니다.")
         case .downloadArchive:
             return t("删除后如需安装或恢复内容，需要重新下载。", en: "You will need to download it again to install or restore its contents.", zhHant: "刪除後如需安裝或還原內容，需要重新下載。", ja: "再インストールや復元が必要になった場合は再ダウンロードが必要です。", ko: "다시 설치하거나 복원하려면 새로 내려받아야 합니다.")
         case .unknownLargeItem:

@@ -75,6 +75,7 @@
 		C0DE00000000000000000005 /* codexU-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000006 /* codexU-LICENSE.txt */; };
 		CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */; };
 		AD10AD10AD10AD10AD10AD10 /* DiskAdvisorLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD20AD20AD20AD20AD20AD20 /* DiskAdvisorLabView.swift */; };
+		A510A510A510A510A510A510 /* StorageOptimizationCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A520A520A520A520A520A520 /* StorageOptimizationCore.swift */; };
 		LD10LOCALDIAGNOSTIC001 /* LocalSystemDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = LD20LOCALDIAGNOSTIC002 /* LocalSystemDiagnosticsView.swift */; };
 /* End PBXBuildFile section */
 
@@ -150,6 +151,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		C0DE00000000000000000006 /* codexU-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Resources/codexU-LICENSE.txt"; sourceTree = "<group>"; };
 		CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenScopeLabView.swift; sourceTree = "<group>"; };
 		AD20AD20AD20AD20AD20AD20 /* DiskAdvisorLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskAdvisorLabView.swift; sourceTree = "<group>"; };
+		A520A520A520A520A520A520 /* StorageOptimizationCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageOptimizationCore.swift; sourceTree = "<group>"; };
 		LD20LOCALDIAGNOSTIC002 /* LocalSystemDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSystemDiagnosticsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -190,6 +192,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				AGM20AGENTGEOMIRROR002 /* AgentGeoMirrorSettingsView.swift */,
 				CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */,
 				AD20AD20AD20AD20AD20AD20 /* DiskAdvisorLabView.swift */,
+				A520A520A520A520A520A520 /* StorageOptimizationCore.swift */,
 				LD20LOCALDIAGNOSTIC002 /* LocalSystemDiagnosticsView.swift */,
 			1A2B3C4D5E6F7A8B9C0D1E2F /* Theme.swift */,
 			F7A8B9C0D1E2F3A4B5C6D7E8 /* Localizer.swift */,
@@ -423,6 +426,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				AGM10AGENTGEOMIRROR002 /* AgentGeoMirrorSettingsView.swift in Sources */,
 				CA10CA10CA10CA10CA10CA10 /* TokenScopeLabView.swift in Sources */,
 				AD10AD10AD10AD10AD10AD10 /* DiskAdvisorLabView.swift in Sources */,
+				A510A510A510A510A510A510 /* StorageOptimizationCore.swift in Sources */,
 				LD10LOCALDIAGNOSTIC001 /* LocalSystemDiagnosticsView.swift in Sources */,
 			2A3B4C5D6E7F8A9B0C1D2E3F /* Theme.swift in Sources */,
 			);

@@ -53,6 +53,7 @@ enum DiskAdvisorRationale: String, Codable, Sendable, CaseIterable {
     case personalFiles
     case projectData
     case aiAgentData
+    case agentDuplicateMedia
     case hiddenAppData
     case simulatorDevices
     case simulatorDyldCache
@@ -63,6 +64,8 @@ enum DiskAdvisorRationale: String, Codable, Sendable, CaseIterable {
     case xcodeArchives
     case cacheOrLogs
     case buildArtifact
+    case historicalBuild
+    case installerArtifact
     case downloadArchive
     case unknownLargeItem
 }
@@ -114,6 +117,7 @@ final class DiskAdvisorLabStore: ObservableObject {
     @Published var errorMessage: String?
     @Published var cleanedSize: Int64 = 0
     @Published var cleanedCount = 0
+    @Published var optimizationSummary: StorageOptimizationSummary?
 
     var selectedCandidates: [DiskAdvisorCandidate] {
         candidates.filter { selectedIDs.contains($0.id) }
@@ -135,19 +139,93 @@ final class DiskAdvisorLabStore: ObservableObject {
         guard !isScanning else { return }
         isScanning = true
         errorMessage = nil
-        statusMessage = localizer.t("正在扫描常见大文件、缓存和构建产物...", en: "Scanning common large files, caches, and build artifacts...")
+        statusMessage = localizer.t("正在盘点常见缓存和大型目录...", en: "Inventorying common caches and large folders...")
         defer { isScanning = false }
 
         let roots = authorizedRoots
-        let found = await Task.detached(priority: .userInitiated) {
+        let genericCandidates = await Task.detached(priority: .userInitiated) {
             DiskAdvisorScanner.scan(authorizedRoots: roots)
         }.value
 
+        statusMessage = localizer.t(
+            "正在分析 Agent 会话重复媒体和历史构建；首次扫描会读取原始文件，之后使用指纹缓存...",
+            en: "Analyzing duplicate Agent media and build history. The first scan reads source files; later scans use the fingerprint cache..."
+        )
+        let home = SandboxPaths.realHomeDirectory
+        let cacheURL = URL(fileURLWithPath: SandboxPaths.shared.storageOptimizerCachePath)
+        let optimization = await Task.detached(priority: .utility) {
+            StorageOptimizationCore.scan(
+                homeDirectory: home,
+                authorizedRoots: roots,
+                isSandboxed: SandboxPaths.isSandboxed,
+                cacheURL: cacheURL,
+                retainBuildCount: 3
+            )
+        }.value
+        let found = merge(genericCandidates: genericCandidates, optimization: optimization)
+
         candidates = found
+        optimizationSummary = optimization.summary
         selectedIDs.removeAll()
-        statusMessage = found.isEmpty
-            ? localizer.t("没有发现明显候选项。", en: "No obvious candidates found.")
-            : localizer.t("发现 \(found.count) 个候选项，建议再进行 AI 分析。", en: "Found \(found.count) candidates. Run AI analysis next.")
+        let fingerprintedSize = ByteCountFormatter.string(
+            fromByteCount: optimization.summary.fingerprintedBytes,
+            countStyle: .file
+        )
+        if found.isEmpty {
+            statusMessage = localizer.t(
+                "扫描完成，没有发现可列出的清理候选；Agent 原始会话未修改。",
+                en: "Scan complete. No cleanup candidates were found; original Agent sessions were not modified."
+            )
+        } else {
+            statusMessage = localizer.t(
+                "扫描完成：\(found.count) 个候选；Agent 指纹缓存命中 \(optimization.summary.cacheHitCount) 个，本次增量读取 \(optimization.summary.hashedFileCount) 个 / \(fingerprintedSize)。原始会话未修改。",
+                en: "Scan complete: \(found.count) candidates; \(optimization.summary.cacheHitCount) Agent fingerprint cache hits and \(optimization.summary.hashedFileCount) files / \(fingerprintedSize) read incrementally. Original sessions were not modified."
+            )
+        }
+    }
+
+    private func merge(
+        genericCandidates: [DiskAdvisorCandidate],
+        optimization: StorageOptimizationScanResult
+    ) -> [DiskAdvisorCandidate] {
+        let specialized = optimization.cleanupItems.map { item -> DiskAdvisorCandidate in
+            let rationale: DiskAdvisorRationale = item.kind == .historicalBuild
+                ? .historicalBuild
+                : .installerArtifact
+            return DiskAdvisorCandidate(
+                id: item.path,
+                name: item.name,
+                path: item.path,
+                size: item.size,
+                fileCount: item.fileCount,
+                isDirectory: item.isDirectory,
+                modifiedDate: item.modifiedDate,
+                category: item.kind == .historicalBuild ? "Historical Build" : "Installer Artifact",
+                localHint: rationale.rawValue,
+                recommendation: .review,
+                risk: .caution,
+                reason: item.detail,
+                impact: "",
+                confidence: item.kind == .historicalBuild ? 0.94 : 0.97,
+                source: "TraceFence Storage",
+                analyzedAt: optimization.summary.completedAt,
+                rationale: rationale
+            )
+        }
+
+        let specializedPaths = specialized.map { URL(fileURLWithPath: $0.path).standardizedFileURL.path }
+        let filteredGeneric = genericCandidates.filter { candidate in
+            let path = URL(fileURLWithPath: candidate.path).standardizedFileURL.path
+            return !specializedPaths.contains { specializedPath in
+                path == specializedPath
+                    || specializedPath.hasPrefix(path + "/")
+                    || path.hasPrefix(specializedPath + "/")
+            }
+        }
+        var seen = Set<String>()
+        return (specialized + filteredGeneric)
+            .filter { seen.insert($0.path).inserted }
+            .sorted { $0.size > $1.size }
     }
 
     func analyze(config: AIConfig?, localizer: Localizer) async {
@@ -200,17 +278,19 @@ final class DiskAdvisorLabStore: ObservableObject {
         candidates = candidates.map { item in
             var updated = item
             guard let result = mapped[item.id] else { return updated }
-            if let recommendation = result.recommendation {
+            let requiresManualSelection = item.category == "Historical Build"
+                || item.category == "Installer Artifact"
+            if !requiresManualSelection, let recommendation = result.recommendation {
                 updated.recommendation = recommendation
             }
-            if let risk = result.risk {
+            if !requiresManualSelection, let risk = result.risk {
                 updated.risk = risk
             }
             let reason = result.reason?.trimmingCharacters(in: .whitespacesAndNewlines)
             let impact = result.impact?.trimmingCharacters(in: .whitespacesAndNewlines)
             let hasReason = reason?.isEmpty == false
             let hasImpact = impact?.isEmpty == false
-            if hasReason || hasImpact {
+            if !requiresManualSelection, hasReason || hasImpact {
                 updated.rationale = nil
                 updated.reason = hasReason ? (reason ?? "") : ""
                 updated.impact = hasImpact ? (impact ?? "") : ""
@@ -286,6 +366,9 @@ struct DiskAdvisorLabView: View {
             ScrollView {
                 VStack(spacing: Theme.Spacing.lg) {
                     statusStrip
+                    if let summary = store.optimizationSummary {
+                        storageOptimizationOverview(summary)
+                    }
                     summaryGrid
                     actionBar
                     candidateList
@@ -412,6 +495,138 @@ struct DiskAdvisorLabView: View {
         store.isScanning || store.isAnalyzing
     }
 
+    private func storageOptimizationOverview(_ summary: StorageOptimizationSummary) -> some View {
+        CardView(padding: Theme.Spacing.lg, cornerRadius: Theme.Radius.lg) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Image(systemName: "internaldrive.fill.badge.checkmark")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(localizer.t("Agent 与构建存储优化", en: "Agent & Build Storage Optimization"))
+                            .font(Theme.Font.subheadlineMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text(localizer.t(
+                            "按内容指纹分析重复媒体；每组构建保留最近 3 次，安装包由用户勾选清理。",
+                            en: "Duplicate media is fingerprinted; the newest 3 builds per group are retained, and installers require manual selection."
+                        ))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                    }
+                    Spacer()
+                    Text(shortDateTime(summary.completedAt))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
+
+                Divider().overlay(Theme.Colors.separator)
+
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.Spacing.md), count: 4), spacing: Theme.Spacing.md) {
+                    optimizationMetric(
+                        icon: "bubble.left.and.bubble.right.fill",
+                        color: Theme.Colors.info,
+                        title: localizer.t("Agent 会话", en: "Agent Sessions"),
+                        value: service.formatSize(summary.agentSessionBytes),
+                        subtitle: localizer.t("\(summary.agentSessionFileCount) 个会话文件", en: "\(summary.agentSessionFileCount) session files")
+                    )
+                    optimizationMetric(
+                        icon: "square.on.square",
+                        color: Theme.Colors.purple,
+                        title: localizer.t("完全重复媒体", en: "Exact Duplicate Media"),
+                        value: service.formatSize(summary.duplicateMediaBytes),
+                        subtitle: localizer.t("只分析，不改写原会话", en: "Analyzed only; sessions unchanged")
+                    )
+                    optimizationMetric(
+                        icon: "hammer.fill",
+                        color: Theme.Colors.warning,
+                        title: localizer.t("历史构建", en: "Build History"),
+                        value: service.formatSize(summary.historicalBuildBytes),
+                        subtitle: localizer.t("\(summary.historicalBuildCount) 项；已保留 \(summary.retainedBuildCount) 项", en: "\(summary.historicalBuildCount) items; \(summary.retainedBuildCount) retained")
+                    )
+                    optimizationMetric(
+                        icon: "shippingbox.fill",
+                        color: Theme.Colors.success,
+                        title: localizer.t("安装与分发包", en: "Installers & Distributions"),
+                        value: service.formatSize(summary.installerArtifactBytes),
+                        subtitle: localizer.t("\(summary.installerArtifactCount) 项，需手动勾选", en: "\(summary.installerArtifactCount) items; manual selection")
+                    )
+                }
+
+                if !summary.agentBreakdown.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            ForEach(Array(summary.agentBreakdown.prefix(8)), id: \.agentName) { agent in
+                                HStack(spacing: 6) {
+                                    Circle()
+                                        .fill(Theme.Colors.info)
+                                        .frame(width: 6, height: 6)
+                                    Text(agent.agentName)
+                                        .font(Theme.Font.caption)
+                                        .foregroundStyle(Theme.Colors.textPrimary)
+                                    Text(service.formatSize(agent.sessionBytes))
+                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                    if agent.duplicateMediaBytes > 0 {
+                                        Text(localizer.t(
+                                            "重复 \(service.formatSize(agent.duplicateMediaBytes))",
+                                            en: "dup \(service.formatSize(agent.duplicateMediaBytes))"
+                                        ))
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(Theme.Colors.purple)
+                                    }
+                                }
+                                .padding(.horizontal, Theme.Spacing.sm)
+                                .padding(.vertical, 6)
+                                .background(Theme.Colors.surface)
+                                .clipShape(Capsule())
+                                .overlay(Capsule().stroke(Theme.Colors.separator, lineWidth: 1))
+                            }
+                        }
+                    }
+                }
+
+                HStack(spacing: Theme.Spacing.sm) {
+                    Image(systemName: "bolt.horizontal.circle")
+                        .foregroundStyle(Theme.Colors.info)
+                    Text(localizer.t(
+                        "增量缓存：命中 \(summary.cacheHitCount) 个文件，本次读取 \(summary.hashedFileCount) 个 / \(service.formatSize(summary.fingerprintedBytes))，耗时 \(formatDuration(summary.scanDuration))。重复空间是冷归档优化上限，不会直接删除 Agent 历史。",
+                        en: "Incremental cache: \(summary.cacheHitCount) hits, \(summary.hashedFileCount) files / \(service.formatSize(summary.fingerprintedBytes)) read in \(formatDuration(summary.scanDuration)). Duplicate bytes are a cold-archive optimization ceiling; Agent history is never deleted directly."
+                    ))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                }
+            }
+        }
+    }
+
+    private func optimizationMetric(
+        icon: String,
+        color: Color,
+        title: String,
+        value: String,
+        subtitle: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Label(title, systemImage: icon)
+                .font(Theme.Font.caption)
+                .foregroundStyle(color)
+                .lineLimit(1)
+            Text(value)
+                .font(.system(size: 19, weight: .bold, design: .rounded))
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            Text(subtitle)
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Theme.Spacing.md)
+        .background(color.opacity(0.07))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
+    }
+
     private var diskAdvisorActivityColor: Color {
         store.isAnalyzing ? Theme.Colors.purple : Theme.Colors.info
     }
@@ -517,7 +732,7 @@ struct DiskAdvisorLabView: View {
                 }
                 .buttonStyle(.plain)
 
-                Image(systemName: candidate.isDirectory ? "folder.fill" : "doc.fill")
+                Image(systemName: candidateIcon(for: candidate))
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(candidate.recommendation.color)
                     .frame(width: 28, height: 28)
@@ -547,7 +762,7 @@ struct DiskAdvisorLabView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     HStack(spacing: Theme.Spacing.sm) {
-                        Label(candidate.category, systemImage: "tag")
+                        Label(localizedCategory(candidate.category), systemImage: "tag")
                         Label(candidate.source, systemImage: "brain.head.profile")
                         Label(confidenceText(candidate.confidence), systemImage: "gauge.with.dots.needle.67percent")
                         if let modified = candidate.modifiedDate {
@@ -725,6 +940,36 @@ struct DiskAdvisorLabView: View {
         formatter.dateStyle = .short
         formatter.timeStyle = .none
         return formatter.string(from: date)
+    }
+
+    private func shortDateTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private func formatDuration(_ interval: TimeInterval) -> String {
+        if interval < 1 { return String(format: "%.1fs", interval) }
+        if interval < 60 { return String(format: "%.0fs", interval) }
+        return String(format: "%.1fmin", interval / 60)
+    }
+
+    private func candidateIcon(for candidate: DiskAdvisorCandidate) -> String {
+        switch candidate.category {
+        case "Historical Build": return "hammer.fill"
+        case "Installer Artifact": return "shippingbox.fill"
+        default: return candidate.isDirectory ? "folder.fill" : "doc.fill"
+        }
+    }
+
+    private func localizedCategory(_ category: String) -> String {
+        switch category {
+        case "Historical Build": return localizer.t("历史构建", en: "Historical Build")
+        case "Installer Artifact": return localizer.t("安装与分发包", en: "Installer Artifact")
+        case "AI Agent Data": return localizer.t("Agent 数据", en: "Agent Data")
+        default: return category
+        }
     }
 
     private func confidenceText(_ confidence: Double) -> String {
@@ -1084,8 +1329,6 @@ private enum DiskAdvisorScanner {
         let exactDirectories: [(String, String)] = [
             ("Library/Caches", "Cache"),
             ("Library/Logs", "Logs"),
-            ("Library/Developer/Xcode/DerivedData", "Xcode DerivedData"),
-            ("Library/Developer/Xcode/Archives", "Xcode Archives"),
             ("Library/Developer/CoreSimulator/Caches", "Simulator Cache"),
             (".cache", "Developer Cache"),
             (".npm", "Package Cache"),
@@ -1119,11 +1362,13 @@ private enum DiskAdvisorScanner {
 
         for root in roots {
             let category = categoryForAuthorizedRoot(root, home: home)
-            if root.path != home.standardizedFileURL.path {
+            if root.path != home.standardizedFileURL.path, category != "AI Agent Data" {
                 addCandidate(root, category: category, into: &results, seen: &seen)
             }
-            scanTopLevelChildren(root, category: category, into: &results, seen: &seen)
-            scanProjectArtifacts(root, into: &results, seen: &seen)
+            if category != "AI Agent Data" {
+                scanTopLevelChildren(root, category: category, into: &results, seen: &seen)
+                scanProjectArtifacts(root, into: &results, seen: &seen)
+            }
 
             if root.standardizedFileURL.path == home.standardizedFileURL.path {
                 scanHiddenAppDataDirectories(home: home, into: &results, seen: &seen)
@@ -1141,7 +1386,6 @@ private enum DiskAdvisorScanner {
             (URL(fileURLWithPath: "/Library/Developer/CoreSimulator/Caches/dyld", isDirectory: true), "Simulator dyld Cache", "Simulator dyld cache"),
             (home.appendingPathComponent("Library/Developer/CoreSimulator/Devices", isDirectory: true), "Simulator Devices", "Simulator devices"),
             (home.appendingPathComponent(".npm", isDirectory: true), "Package Cache", "npm cache"),
-            (home.appendingPathComponent("Library/Developer/Xcode/DerivedData", isDirectory: true), "Xcode DerivedData", "Xcode DerivedData")
         ]
 
         for (url, category, name) in fileSystemCandidates {
@@ -1162,6 +1406,7 @@ private enum DiskAdvisorScanner {
             let lower = child.lastPathComponent.lowercased()
             guard lower.hasPrefix("."),
                   !shouldSkipHomeDirectory(lower),
+                  !isAgentDataDirectory(lower),
                   !isSensitive(child) else {
                 continue
             }
@@ -1304,7 +1549,7 @@ private enum DiskAdvisorScanner {
             return (.keep, .danger, .projectData, "这是项目根目录，可能包含源码、配置和生成内容；应只清理明确的缓存子目录。", "删除整个项目会造成源码和工作文件丢失。", 0.88)
         }
         if category == "AI Agent Data" {
-            return (.review, .caution, .aiAgentData, "AI Agent 数据通常包含会话历史、索引或本地状态，删除前应确认是否还需要追溯记录。", "删除后可能丢失历史会话、项目上下文或本地 agent 状态。", 0.78)
+            return (.keep, .danger, .aiAgentData, "AI Agent 数据通常包含会话历史、索引或本地状态，TraceFence 不把原始目录作为清理候选。", "删除后可能丢失历史会话、项目上下文或本地 agent 状态。", 0.98)
         }
         if category == "Hidden App Data" {
             return (.review, .caution, .hiddenAppData, "这是用户目录下的大型隐藏应用数据，可能是 Agent、开发工具、包管理器或其它本地状态。", "删除前需要确认来源；它可能包含会话历史、索引、缓存或账户状态。", 0.7)
@@ -1399,6 +1644,13 @@ private enum DiskAdvisorScanner {
         return skipped.contains(lowerName)
     }
 
+    private static func isAgentDataDirectory(_ lowerName: String) -> Bool {
+        [
+            ".codex", ".claude", ".grok", ".gemini", ".cursor",
+            ".aider", ".cline", ".continue", ".qoder"
+        ].contains(lowerName)
+    }
+
     private static func projectRoots(home: URL) -> [URL] {
         ["Developer", "Projects", "Code", "GitHub", "Documents", "Downloads"]
             .map { home.appendingPathComponent($0, isDirectory: true) }
@@ -1407,6 +1659,10 @@ private enum DiskAdvisorScanner {
     private static func categoryForAuthorizedRoot(_ url: URL, home: URL) -> String {
         let path = url.standardizedFileURL.path.lowercased()
         let name = url.lastPathComponent.lowercased()
+        if isAgentDataDirectory(name)
+            || ["/.codex/", "/.claude/", "/.grok/", "/.gemini/", "/.cursor/"].contains(where: path.contains) {
+            return "AI Agent Data"
+        }
         if path.contains("/private/tmp") { return "Temporary Files" }
         if path.contains("/coresimulator/devices") { return "Simulator Devices" }
         if path.contains("/coresimulator/caches") { return "Simulator Cache" }
