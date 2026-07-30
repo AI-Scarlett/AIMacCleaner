@@ -756,7 +756,7 @@ final class AgentUsageInsightsService: ObservableObject {
                 self.backfillStatus = loaded.backfillStatus
                 self.snapshotSourceSignatures = AgentUsageSourceFingerprint.currentSignatures()
                 _ = AgentUsageSnapshotCacheStore.save(AgentUsageSnapshotCache(
-                    version: 1,
+                    version: 2,
                     generatedAt: Date(),
                     lastRefreshAt: self.lastRefreshAt,
                     sourceSignatures: self.snapshotSourceSignatures,
@@ -1249,24 +1249,37 @@ private struct AgentUsageModelPrice {
     let cacheWrite5mPerMillion: Double
     let cacheWrite1hPerMillion: Double
     let outputPerMillion: Double
+    let longContextThreshold: Int64?
+    let longContextInputMultiplier: Double
+    let longContextOutputMultiplier: Double
 
     init(
         inputPerMillion: Double,
         cachedInputPerMillion: Double,
         cacheWrite5mPerMillion: Double? = nil,
         cacheWrite1hPerMillion: Double? = nil,
-        outputPerMillion: Double
+        outputPerMillion: Double,
+        longContextThreshold: Int64? = nil,
+        longContextInputMultiplier: Double = 1,
+        longContextOutputMultiplier: Double = 1
     ) {
         self.inputPerMillion = inputPerMillion
         self.cachedInputPerMillion = cachedInputPerMillion
         self.cacheWrite5mPerMillion = cacheWrite5mPerMillion ?? inputPerMillion
         self.cacheWrite1hPerMillion = cacheWrite1hPerMillion ?? inputPerMillion
         self.outputPerMillion = outputPerMillion
+        self.longContextThreshold = longContextThreshold
+        self.longContextInputMultiplier = longContextInputMultiplier
+        self.longContextOutputMultiplier = longContextOutputMultiplier
     }
 }
 
 /// Centralized API-equivalent reference prices. Values are estimates used only
 /// for local comparison; they are not invoices and unknown models are omitted.
+/// Official references checked 2026-07-30:
+/// - https://developers.openai.com/api/docs/models
+/// - https://platform.claude.com/docs/en/about-claude/pricing
+/// - https://platform.minimax.io/docs/guides/pricing-paygo
 private enum AgentUsagePricingCatalog {
     static func price(scope: AgentUsageScope, model: String?, at date: Date? = nil) -> AgentUsageModelPrice? {
         let value = (model ?? "").lowercased()
@@ -1274,70 +1287,153 @@ private enum AgentUsagePricingCatalog {
 
         switch scope {
         case .codex:
-            if value.contains("gpt-5.5-pro") || value.contains("gpt-5.4-pro") {
-                return AgentUsageModelPrice(inputPerMillion: 30, cachedInputPerMillion: 30, outputPerMillion: 180)
-            }
-            if value.contains("gpt-5.5") || value == "chat-latest" {
-                return AgentUsageModelPrice(inputPerMillion: 5, cachedInputPerMillion: 0.5, outputPerMillion: 30)
-            }
-            if value.contains("gpt-5.4-mini") {
-                return AgentUsageModelPrice(inputPerMillion: 0.75, cachedInputPerMillion: 0.075, outputPerMillion: 4.5)
-            }
-            if value.contains("gpt-5.4-nano") {
-                return AgentUsageModelPrice(inputPerMillion: 0.2, cachedInputPerMillion: 0.02, outputPerMillion: 1.25)
-            }
-            if value.contains("gpt-5.4") {
-                return AgentUsageModelPrice(inputPerMillion: 2.5, cachedInputPerMillion: 0.25, outputPerMillion: 15)
-            }
-            if value.contains("gpt-5.3-codex") || value.contains("gpt-5.2-codex")
-                || value.contains("gpt-5.3-chat") || value.contains("gpt-5.2") {
-                return AgentUsageModelPrice(inputPerMillion: 1.75, cachedInputPerMillion: 0.175, outputPerMillion: 14)
-            }
-            if value.contains("gpt-5-codex") || value == "gpt-5" {
-                return AgentUsageModelPrice(inputPerMillion: 1.25, cachedInputPerMillion: 0.125, outputPerMillion: 10)
-            }
-            if value.contains("o3") {
-                return AgentUsageModelPrice(inputPerMillion: 2, cachedInputPerMillion: 0.5, outputPerMillion: 8)
-            }
-            if value.contains("o4-mini") {
-                return AgentUsageModelPrice(inputPerMillion: 1.1, cachedInputPerMillion: 0.275, outputPerMillion: 4.4)
-            }
-            return nil
+            return openAIPrice(value)
         case .claude:
-            if containsClaudeVersion(value, family: "opus", versions: ["4-5", "4-6", "4-7", "4-8"]) {
-                return AgentUsageModelPrice(inputPerMillion: 5, cachedInputPerMillion: 0.5, cacheWrite5mPerMillion: 6.25, cacheWrite1hPerMillion: 10, outputPerMillion: 25)
-            }
-            if value.contains("opus") {
-                return AgentUsageModelPrice(inputPerMillion: 15, cachedInputPerMillion: 1.5, cacheWrite5mPerMillion: 18.75, cacheWrite1hPerMillion: 30, outputPerMillion: 75)
-            }
-            if containsClaudeVersion(value, family: "sonnet", versions: ["5", "5-0"]) {
-                let introductoryPriceEnds = Date(timeIntervalSince1970: 1_788_220_800) // 2026-09-01 00:00:00 UTC
-                if (date ?? Date()) < introductoryPriceEnds {
-                    return AgentUsageModelPrice(inputPerMillion: 2, cachedInputPerMillion: 0.2, cacheWrite5mPerMillion: 2.5, cacheWrite1hPerMillion: 4, outputPerMillion: 10)
-                }
-                return AgentUsageModelPrice(inputPerMillion: 3, cachedInputPerMillion: 0.3, cacheWrite5mPerMillion: 3.75, cacheWrite1hPerMillion: 6, outputPerMillion: 15)
-            }
-            if value.contains("sonnet") {
-                return AgentUsageModelPrice(inputPerMillion: 3, cachedInputPerMillion: 0.3, cacheWrite5mPerMillion: 3.75, cacheWrite1hPerMillion: 6, outputPerMillion: 15)
-            }
-            if containsClaudeVersion(value, family: "haiku", versions: ["4-5"]) {
-                return AgentUsageModelPrice(inputPerMillion: 1, cachedInputPerMillion: 0.1, cacheWrite5mPerMillion: 1.25, cacheWrite1hPerMillion: 2, outputPerMillion: 5)
-            }
-            if containsClaudeVersion(value, family: "haiku", versions: ["3-5"]) {
-                return AgentUsageModelPrice(inputPerMillion: 0.8, cachedInputPerMillion: 0.08, cacheWrite5mPerMillion: 1, cacheWrite1hPerMillion: 1.6, outputPerMillion: 4)
-            }
-            if value.contains("haiku") {
-                return AgentUsageModelPrice(inputPerMillion: 0.25, cachedInputPerMillion: 0.03, cacheWrite5mPerMillion: 0.3, cacheWrite1hPerMillion: 0.5, outputPerMillion: 1.25)
-            }
-            return nil
+            return claudePrice(value, at: date)
         case .openCode, .openClaw:
-            // These providers expose an explicit per-message cost when their
-            // runtime has one. Unknown models are never assigned a guessed
-            // catalog price here.
-            return nil
+            // Prefer the runtime's explicit per-message cost. When it is
+            // absent, resolve only public model IDs; router aliases remain
+            // unknown rather than inheriting a guessed price.
+            return miniMaxPrice(value)
+                ?? openAIPrice(value)
+                ?? claudePrice(value, at: date)
         case .combined:
             return nil
         }
+    }
+
+    private static func openAIPrice(_ value: String) -> AgentUsageModelPrice? {
+        let gpt56LongContext: (Int64, Double, Double) = (272_000, 2, 1.5)
+        if matchesModelID(value, id: "gpt-5.6-sol") {
+            return AgentUsageModelPrice(
+                inputPerMillion: 5,
+                cachedInputPerMillion: 0.5,
+                cacheWrite5mPerMillion: 6.25,
+                cacheWrite1hPerMillion: 6.25,
+                outputPerMillion: 30,
+                longContextThreshold: gpt56LongContext.0,
+                longContextInputMultiplier: gpt56LongContext.1,
+                longContextOutputMultiplier: gpt56LongContext.2
+            )
+        }
+        if matchesModelID(value, id: "gpt-5.6-terra") {
+            return AgentUsageModelPrice(
+                inputPerMillion: 2.5,
+                cachedInputPerMillion: 0.25,
+                cacheWrite5mPerMillion: 3.125,
+                cacheWrite1hPerMillion: 3.125,
+                outputPerMillion: 15,
+                longContextThreshold: gpt56LongContext.0,
+                longContextInputMultiplier: gpt56LongContext.1,
+                longContextOutputMultiplier: gpt56LongContext.2
+            )
+        }
+        if matchesModelID(value, id: "gpt-5.6-luna") {
+            return AgentUsageModelPrice(
+                inputPerMillion: 1,
+                cachedInputPerMillion: 0.1,
+                cacheWrite5mPerMillion: 1.25,
+                cacheWrite1hPerMillion: 1.25,
+                outputPerMillion: 6,
+                longContextThreshold: gpt56LongContext.0,
+                longContextInputMultiplier: gpt56LongContext.1,
+                longContextOutputMultiplier: gpt56LongContext.2
+            )
+        }
+        if value.contains("gpt-5.5-pro") || value.contains("gpt-5.4-pro") {
+            return AgentUsageModelPrice(inputPerMillion: 30, cachedInputPerMillion: 30, outputPerMillion: 180)
+        }
+        if value.contains("gpt-5.5") || value == "chat-latest" {
+            return AgentUsageModelPrice(inputPerMillion: 5, cachedInputPerMillion: 0.5, outputPerMillion: 30)
+        }
+        if value.contains("gpt-5.4-mini") {
+            return AgentUsageModelPrice(inputPerMillion: 0.75, cachedInputPerMillion: 0.075, outputPerMillion: 4.5)
+        }
+        if value.contains("gpt-5.4-nano") {
+            return AgentUsageModelPrice(inputPerMillion: 0.2, cachedInputPerMillion: 0.02, outputPerMillion: 1.25)
+        }
+        if value.contains("gpt-5.4") {
+            return AgentUsageModelPrice(inputPerMillion: 2.5, cachedInputPerMillion: 0.25, outputPerMillion: 15)
+        }
+        if value.contains("gpt-5.3-codex") || value.contains("gpt-5.2-codex")
+            || value.contains("gpt-5.3-chat") || value.contains("gpt-5.2") {
+            return AgentUsageModelPrice(inputPerMillion: 1.75, cachedInputPerMillion: 0.175, outputPerMillion: 14)
+        }
+        if value.contains("gpt-5-codex") || value == "gpt-5" {
+            return AgentUsageModelPrice(inputPerMillion: 1.25, cachedInputPerMillion: 0.125, outputPerMillion: 10)
+        }
+        if value.contains("o3") {
+            return AgentUsageModelPrice(inputPerMillion: 2, cachedInputPerMillion: 0.5, outputPerMillion: 8)
+        }
+        if value.contains("o4-mini") {
+            return AgentUsageModelPrice(inputPerMillion: 1.1, cachedInputPerMillion: 0.275, outputPerMillion: 4.4)
+        }
+        return nil
+    }
+
+    private static func matchesModelID(_ value: String, id: String) -> Bool {
+        let unnamespaced = value.split(separator: "/").last.map(String.init) ?? value
+        return unnamespaced == id || unnamespaced.hasPrefix(id + "-20")
+    }
+
+    private static func claudePrice(_ value: String, at date: Date?) -> AgentUsageModelPrice? {
+        if value.contains("fable-5") || value.contains("mythos-5") {
+            return AgentUsageModelPrice(inputPerMillion: 10, cachedInputPerMillion: 1, cacheWrite5mPerMillion: 12.5, cacheWrite1hPerMillion: 20, outputPerMillion: 50)
+        }
+        if containsClaudeVersion(value, family: "opus", versions: ["5", "5-0", "4-5", "4-6", "4-7", "4-8"]) {
+            return AgentUsageModelPrice(inputPerMillion: 5, cachedInputPerMillion: 0.5, cacheWrite5mPerMillion: 6.25, cacheWrite1hPerMillion: 10, outputPerMillion: 25)
+        }
+        if value.contains("opus") {
+            return AgentUsageModelPrice(inputPerMillion: 15, cachedInputPerMillion: 1.5, cacheWrite5mPerMillion: 18.75, cacheWrite1hPerMillion: 30, outputPerMillion: 75)
+        }
+        if containsClaudeVersion(value, family: "sonnet", versions: ["5", "5-0"]) {
+            let introductoryPriceEnds = Date(timeIntervalSince1970: 1_788_220_800) // 2026-09-01 00:00:00 UTC
+            if (date ?? Date()) < introductoryPriceEnds {
+                return AgentUsageModelPrice(inputPerMillion: 2, cachedInputPerMillion: 0.2, cacheWrite5mPerMillion: 2.5, cacheWrite1hPerMillion: 4, outputPerMillion: 10)
+            }
+            return AgentUsageModelPrice(inputPerMillion: 3, cachedInputPerMillion: 0.3, cacheWrite5mPerMillion: 3.75, cacheWrite1hPerMillion: 6, outputPerMillion: 15)
+        }
+        if value.contains("sonnet") {
+            return AgentUsageModelPrice(inputPerMillion: 3, cachedInputPerMillion: 0.3, cacheWrite5mPerMillion: 3.75, cacheWrite1hPerMillion: 6, outputPerMillion: 15)
+        }
+        if containsClaudeVersion(value, family: "haiku", versions: ["4-5"]) {
+            return AgentUsageModelPrice(inputPerMillion: 1, cachedInputPerMillion: 0.1, cacheWrite5mPerMillion: 1.25, cacheWrite1hPerMillion: 2, outputPerMillion: 5)
+        }
+        if containsClaudeVersion(value, family: "haiku", versions: ["3-5"]) {
+            return AgentUsageModelPrice(inputPerMillion: 0.8, cachedInputPerMillion: 0.08, cacheWrite5mPerMillion: 1, cacheWrite1hPerMillion: 1.6, outputPerMillion: 4)
+        }
+        if value.contains("haiku") {
+            return AgentUsageModelPrice(inputPerMillion: 0.25, cachedInputPerMillion: 0.03, cacheWrite5mPerMillion: 0.3, cacheWrite1hPerMillion: 0.5, outputPerMillion: 1.25)
+        }
+        return nil
+    }
+
+    private static func miniMaxPrice(_ value: String) -> AgentUsageModelPrice? {
+        if value.contains("minimax-m3") {
+            return AgentUsageModelPrice(
+                inputPerMillion: 0.3,
+                cachedInputPerMillion: 0.06,
+                cacheWrite5mPerMillion: 0.3,
+                cacheWrite1hPerMillion: 0.3,
+                outputPerMillion: 1.2,
+                longContextThreshold: 512_000,
+                longContextInputMultiplier: 2,
+                longContextOutputMultiplier: 2
+            )
+        }
+        if value.contains("minimax-m2.7-highspeed") {
+            return AgentUsageModelPrice(inputPerMillion: 0.6, cachedInputPerMillion: 0.06, cacheWrite5mPerMillion: 0.375, cacheWrite1hPerMillion: 0.375, outputPerMillion: 2.4)
+        }
+        if value.contains("minimax-m2.7") {
+            return AgentUsageModelPrice(inputPerMillion: 0.3, cachedInputPerMillion: 0.06, cacheWrite5mPerMillion: 0.375, cacheWrite1hPerMillion: 0.375, outputPerMillion: 1.2)
+        }
+        if value.contains("minimax-m2.5-highspeed") {
+            return AgentUsageModelPrice(inputPerMillion: 0.6, cachedInputPerMillion: 0.03, cacheWrite5mPerMillion: 0.375, cacheWrite1hPerMillion: 0.375, outputPerMillion: 2.4)
+        }
+        if value.contains("minimax-m2.5") || value.contains("minimax-m2.1") {
+            return AgentUsageModelPrice(inputPerMillion: 0.3, cachedInputPerMillion: 0.03, cacheWrite5mPerMillion: 0.375, cacheWrite1hPerMillion: 0.375, outputPerMillion: 1.2)
+        }
+        return nil
     }
 
     private static func containsClaudeVersion(_ value: String, family: String, versions: [String]) -> Bool {
@@ -1360,6 +1456,9 @@ private enum AgentUsagePricingCatalog {
         cacheWriteOneHourTokens: Int64 = 0
     ) -> (Double, Bool) {
         guard let price else { return (0, false) }
+        let usesLongContextTier = price.longContextThreshold.map { tokens.input > $0 } ?? false
+        let inputMultiplier = usesLongContextTier ? price.longContextInputMultiplier : 1
+        let outputMultiplier = usesLongContextTier ? price.longContextOutputMultiplier : 1
         if let cacheReadTokens {
             let inputTokens = max(0, tokens.input)
             let readTokens = min(max(0, cacheReadTokens), inputTokens)
@@ -1367,17 +1466,84 @@ private enum AgentUsagePricingCatalog {
             let oneHourTokens = min(max(0, cacheWriteOneHourTokens), writeTokens)
             let fiveMinuteTokens = max(0, writeTokens - oneHourTokens)
             let uncachedTokens = max(0, inputTokens - readTokens - writeTokens)
-            let input = Double(uncachedTokens) / 1_000_000 * price.inputPerMillion
-            let read = Double(readTokens) / 1_000_000 * price.cachedInputPerMillion
-            let write5m = Double(fiveMinuteTokens) / 1_000_000 * price.cacheWrite5mPerMillion
-            let write1h = Double(oneHourTokens) / 1_000_000 * price.cacheWrite1hPerMillion
-            let output = Double(max(0, tokens.output)) / 1_000_000 * price.outputPerMillion
+            let input = Double(uncachedTokens) / 1_000_000 * price.inputPerMillion * inputMultiplier
+            let read = Double(readTokens) / 1_000_000 * price.cachedInputPerMillion * inputMultiplier
+            let write5m = Double(fiveMinuteTokens) / 1_000_000 * price.cacheWrite5mPerMillion * inputMultiplier
+            let write1h = Double(oneHourTokens) / 1_000_000 * price.cacheWrite1hPerMillion * inputMultiplier
+            let output = Double(max(0, tokens.output)) / 1_000_000 * price.outputPerMillion * outputMultiplier
             return (input + read + write5m + write1h + output, true)
         }
-        let input = Double(max(0, tokens.uncachedInput)) / 1_000_000 * price.inputPerMillion
-        let cached = Double(max(0, min(tokens.cached, tokens.input))) / 1_000_000 * price.cachedInputPerMillion
-        let output = Double(max(0, tokens.output)) / 1_000_000 * price.outputPerMillion
+        let input = Double(max(0, tokens.uncachedInput)) / 1_000_000 * price.inputPerMillion * inputMultiplier
+        let cached = Double(max(0, min(tokens.cached, tokens.input))) / 1_000_000 * price.cachedInputPerMillion * inputMultiplier
+        let output = Double(max(0, tokens.output)) / 1_000_000 * price.outputPerMillion * outputMultiplier
         return (input + cached + output, true)
+    }
+
+    static func resolvedCost(
+        scope: AgentUsageScope,
+        model: String?,
+        date: Date,
+        tokens: AgentUsageTokenTotals,
+        explicitCostUSD: Double?,
+        cacheReadTokens: Int64? = nil,
+        cacheWriteTokens: Int64 = 0,
+        cacheWriteOneHourTokens: Int64 = 0
+    ) -> (Double, Bool) {
+        // A positive native cost is authoritative. Several Agent runtimes emit
+        // a literal zero when the cost field is unsupported or usage came from
+        // a subscription, so zero must fall back to the public API-equivalent
+        // catalog instead of being presented as a free model.
+        if let explicitCostUSD, explicitCostUSD > 0 {
+            return (explicitCostUSD, true)
+        }
+        return estimatedCost(
+            tokens: tokens,
+            price: price(scope: scope, model: model, at: date),
+            cacheReadTokens: cacheReadTokens,
+            cacheWriteTokens: cacheWriteTokens,
+            cacheWriteOneHourTokens: cacheWriteOneHourTokens
+        )
+    }
+}
+
+private extension AgentUsageFileCacheEntry {
+    /// Reprice compact cached counters without replaying multi-gigabyte source
+    /// transcripts. The compact cache does not retain the split between cache
+    /// write TTLs, so historical cached input uses the cache-read reference
+    /// rate until that individual source file changes and is parsed again.
+    func repriced(scope: AgentUsageScope) -> AgentUsageFileCacheEntry {
+        let events = summary.events.map { event -> AgentUsageEvent in
+            let resolved = AgentUsagePricingCatalog.resolvedCost(
+                scope: scope,
+                model: event.model,
+                date: event.date,
+                tokens: event.tokens,
+                explicitCostUSD: nil
+            )
+            return AgentUsageEvent(
+                id: event.id,
+                date: event.date,
+                tokens: event.tokens,
+                estimatedCostUSD: resolved.0,
+                priceKnown: resolved.1,
+                model: event.model,
+                projectPath: event.projectPath,
+                sessionID: event.sessionID
+            )
+        }
+        return AgentUsageFileCacheEntry(
+            size: size,
+            modificationTimeNanoseconds: modificationTimeNanoseconds,
+            coverageIncomplete: coverageIncomplete,
+            skippedRelevantRecord: skippedRelevantRecord,
+            scannedFromOffset: scannedFromOffset,
+            summary: AgentUsageFileSummary(
+                events: events,
+                toolCalls: summary.toolCalls,
+                skillEvents: summary.skillEvents,
+                lastActiveAt: summary.lastActiveAt
+            )
+        )
     }
 }
 
@@ -1594,7 +1760,9 @@ private extension AgentUsageSnapshot {
 }
 
 private enum AgentUsageSnapshotCacheStore {
-    private static let version = 1
+    // v2 rebuilds aggregate dollar estimates from the compact per-file token
+    // cache after the public model price catalog changes.
+    private static let version = 2
     private static let maximumEncodedBytes = 32 * 1_024 * 1_024
 
     static func load() -> AgentUsageSnapshotCache? {
@@ -1738,7 +1906,8 @@ private enum AgentUsageFileCacheStore {
               decoded.version == version else {
             return AgentUsageFileCache(version: version, entries: [:])
         }
-        return AgentUsageFileCache(version: version, entries: limited(decoded.entries))
+        let repriced = decoded.entries.mapValues { $0.repriced(scope: scope) }
+        return AgentUsageFileCache(version: version, entries: limited(repriced))
     }
 
     static func save(_ cache: AgentUsageFileCache, scope: AgentUsageScope) -> Bool {
@@ -4065,13 +4234,21 @@ private final class AgentUsageOpenCodeProvider: @unchecked Sendable {
                         mirroredRows += 1
                         continue
                     }
-                    let cost = max(0, row.costUSD ?? 0)
+                    let resolvedCost = AgentUsagePricingCatalog.resolvedCost(
+                        scope: .openCode,
+                        model: row.model,
+                        date: date,
+                        tokens: totals,
+                        explicitCostUSD: row.costUSD,
+                        cacheReadTokens: row.cacheRead,
+                        cacheWriteTokens: row.cacheWrite
+                    )
                     aggregate.events.append(AgentUsageEvent(
                         id: AgentUsagePrivacy.digest("opencode-family:" + canonicalID),
                         date: date,
                         tokens: totals,
-                        estimatedCostUSD: cost,
-                        priceKnown: row.costUSD != nil,
+                        estimatedCostUSD: resolvedCost.0,
+                        priceKnown: resolvedCost.1,
                         model: row.model,
                         projectPath: row.directory,
                         sessionID: row.sessionID
@@ -4140,12 +4317,21 @@ private final class AgentUsageOpenCodeProvider: @unchecked Sendable {
                     let costValue = AgentUsageValues.double(object["cost"])
                     let model = AgentUsageValues.string(object["modelID"])
                         ?? AgentUsageValues.string(object["model"])
+                    let resolvedCost = AgentUsagePricingCatalog.resolvedCost(
+                        scope: .openCode,
+                        model: model,
+                        date: date,
+                        tokens: totals,
+                        explicitCostUSD: costValue,
+                        cacheReadTokens: cacheRead,
+                        cacheWriteTokens: cacheWrite
+                    )
                     aggregate.events.append(AgentUsageEvent(
                         id: AgentUsagePrivacy.digest("opencode-family:" + row.id),
                         date: date,
                         tokens: totals,
-                        estimatedCostUSD: max(0, costValue ?? 0),
-                        priceKnown: costValue != nil,
+                        estimatedCostUSD: resolvedCost.0,
+                        priceKnown: resolvedCost.1,
                         model: model,
                         projectPath: row.directory,
                         sessionID: row.sessionID
@@ -4322,13 +4508,23 @@ private final class AgentUsageOpenClawProvider: @unchecked Sendable {
                     }
                     let costValue = (usage["cost"] as? [String: Any])
                         .flatMap { AgentUsageValues.double($0["total"]) }
+                    let model = AgentUsageValues.string(message["model"])
+                    let resolvedCost = AgentUsagePricingCatalog.resolvedCost(
+                        scope: .openClaw,
+                        model: model,
+                        date: date,
+                        tokens: totals,
+                        explicitCostUSD: costValue,
+                        cacheReadTokens: cacheRead,
+                        cacheWriteTokens: cacheWrite
+                    )
                     localEvents.append(AgentUsageEvent(
                         id: AgentUsagePrivacy.digest("openclaw-family:" + rawEventID),
                         date: date,
                         tokens: totals,
-                        estimatedCostUSD: max(0, costValue ?? 0),
-                        priceKnown: costValue != nil,
-                        model: AgentUsageValues.string(message["model"]),
+                        estimatedCostUSD: resolvedCost.0,
+                        priceKnown: resolvedCost.1,
+                        model: model,
                         projectPath: projectPath,
                         sessionID: sessionID
                     ))
@@ -5327,6 +5523,27 @@ extension AgentUsageInsightsService {
         expect(sonnet5Standard?.inputPerMillion == 3 && sonnet5Standard?.outputPerMillion == 15, "Claude Sonnet 5 standard pricing must apply after the introductory period")
         let haiku45 = AgentUsagePricingCatalog.price(scope: .claude, model: "claude-haiku-4-5")
         expect(haiku45?.inputPerMillion == 1 && haiku45?.outputPerMillion == 5, "Claude Haiku 4.5 must not inherit the older Haiku 3.5 price")
+        let gpt56Sol = AgentUsagePricingCatalog.price(scope: .codex, model: "gpt-5.6-sol")
+        expect(gpt56Sol?.inputPerMillion == 5 && gpt56Sol?.cachedInputPerMillion == 0.5 && gpt56Sol?.outputPerMillion == 30, "GPT-5.6 Sol must use the public Sol token prices")
+        let gpt56Terra = AgentUsagePricingCatalog.price(scope: .codex, model: "gpt-5.6-terra")
+        expect(gpt56Terra?.inputPerMillion == 2.5 && gpt56Terra?.cachedInputPerMillion == 0.25 && gpt56Terra?.outputPerMillion == 15, "GPT-5.6 Terra must use the public Terra token prices")
+        let gpt56Luna = AgentUsagePricingCatalog.price(scope: .codex, model: "gpt-5.6-luna")
+        expect(gpt56Luna?.inputPerMillion == 1 && gpt56Luna?.cachedInputPerMillion == 0.1 && gpt56Luna?.outputPerMillion == 6, "GPT-5.6 Luna must use the public Luna token prices")
+        let opus5 = AgentUsagePricingCatalog.price(scope: .claude, model: "claude-opus-5")
+        expect(opus5?.inputPerMillion == 5 && opus5?.cachedInputPerMillion == 0.5 && opus5?.outputPerMillion == 25, "Claude Opus 5 must not inherit legacy Opus pricing")
+        let fable5 = AgentUsagePricingCatalog.price(scope: .claude, model: "claude-fable-5")
+        expect(fable5?.inputPerMillion == 10 && fable5?.cachedInputPerMillion == 1 && fable5?.outputPerMillion == 50, "Claude Fable 5 must use its public model price")
+        let miniMaxM3 = AgentUsagePricingCatalog.price(scope: .openCode, model: "minimax/MiniMax-M3")
+        expect(miniMaxM3?.inputPerMillion == 0.3 && miniMaxM3?.cachedInputPerMillion == 0.06 && miniMaxM3?.outputPerMillion == 1.2, "MiniMax M3 must resolve through its namespaced OpenCode model ID")
+        let miniMaxM27 = AgentUsagePricingCatalog.price(scope: .openClaw, model: "MiniMax-M2.7")
+        expect(miniMaxM27?.inputPerMillion == 0.3 && miniMaxM27?.cachedInputPerMillion == 0.06 && miniMaxM27?.outputPerMillion == 1.2, "MiniMax M2.7 must fall back to public pricing when the runtime omits cost")
+        let longContextEstimate = AgentUsagePricingCatalog.estimatedCost(
+            tokens: AgentUsageTokenTotals(input: 300_000, cached: 0, output: 10_000, reasoning: 0, total: 310_000),
+            price: gpt56Sol
+        )
+        expect(abs(longContextEstimate.0 - 3.45) < 0.000_001, "GPT-5.6 requests above 272K input must use the published long-context multipliers")
+        expect(AgentUsagePricingCatalog.price(scope: .codex, model: "gpt-5.6-sol-pro") == nil, "Non-API Sol Pro aliases must not inherit the public Sol API price")
+        expect(AgentUsagePricingCatalog.price(scope: .codex, model: "codex-auto-review") == nil, "Internal router aliases must remain explicitly unpriced")
         return failures
     }
 

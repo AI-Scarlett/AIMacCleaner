@@ -847,9 +847,9 @@ struct AgentUsageInsightsView: View {
                                     Text(AgentUsageFormat.tokens(model.tokens.total))
                                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                                         .monospacedDigit()
-                                    Text(AgentUsageFormat.currency(model.estimatedAPIValueUSD))
+                                    Text(modelPriceText(model))
                                         .font(.system(size: 9, design: .rounded))
-                                        .foregroundStyle(Theme.Colors.textTertiary)
+                                        .foregroundStyle(modelPriceIsIncomplete(model) ? Theme.Colors.warning : Theme.Colors.textTertiary)
                                 }
                             }
                             .padding(.vertical, 7)
@@ -861,6 +861,23 @@ struct AgentUsageInsightsView: View {
                 }
             }
         }
+    }
+
+    private func modelPriceIsIncomplete(_ model: AgentUsageModelUsage) -> Bool {
+        service.snapshot.estimatedAPIValueUSD.unknownModels.contains(model.model)
+    }
+
+    private func modelPriceText(_ model: AgentUsageModelUsage) -> String {
+        guard modelPriceIsIncomplete(model) else {
+            return AgentUsageFormat.currency(model.estimatedAPIValueUSD)
+        }
+        if model.estimatedAPIValueUSD > 0 {
+            return localizer.t(
+                "部分计价 \(AgentUsageFormat.currency(model.estimatedAPIValueUSD))",
+                en: "Partial \(AgentUsageFormat.currency(model.estimatedAPIValueUSD))"
+            )
+        }
+        return localizer.t("价格未知", en: "Price unavailable")
     }
 
     private var recentSessionsCard: some View {

@@ -414,6 +414,24 @@ private enum DiskAdvisorDeleteScope {
     case inventoryFiles
 }
 
+private enum DiskCleanupCandidateFilter: String, CaseIterable {
+    case all
+    case installerArtifact
+    case historicalBuild
+
+    var category: String? {
+        switch self {
+        case .all: return nil
+        case .installerArtifact: return "Installer Artifact"
+        case .historicalBuild: return "Historical Build"
+        }
+    }
+}
+
+private enum DiskAdvisorScrollTarget: Hashable {
+    case cleanupCandidates
+}
+
 struct DiskAdvisorLabView: View {
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
@@ -433,11 +451,18 @@ struct DiskAdvisorLabView: View {
     @State private var inventoryVisibleLimit = 300
     @State private var previewFile: DiskFileRecord?
     @State private var deleteScope: DiskAdvisorDeleteScope = .cleanupCandidates
+    @State private var cleanupCandidateFilter: DiskCleanupCandidateFilter = .all
+    @State private var cleanupCandidateFocusRequest = 0
+    @State private var showDuplicateMediaInfo = false
 
     private var filteredCandidates: [DiskAdvisorCandidate] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !query.isEmpty else { return store.candidates }
-        return store.candidates.filter {
+        let categoryFiltered = store.candidates.filter { candidate in
+            guard let category = cleanupCandidateFilter.category else { return true }
+            return candidate.category == category
+        }
+        guard !query.isEmpty else { return categoryFiltered }
+        return categoryFiltered.filter {
             $0.name.lowercased().contains(query)
                 || $0.displayPath.lowercased().contains(query)
                 || $0.category.lowercased().contains(query)
@@ -516,25 +541,33 @@ struct DiskAdvisorLabView: View {
                 }
             }
 
-            ScrollView {
-                VStack(spacing: Theme.Spacing.lg) {
-                    statusStrip
-                    sectionSelector
-                    if section == .cleanup {
-                        if let summary = store.optimizationSummary {
-                            storageOptimizationOverview(summary)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: Theme.Spacing.lg) {
+                        statusStrip
+                        sectionSelector
+                        if section == .cleanup {
+                            if let summary = store.optimizationSummary {
+                                storageOptimizationOverview(summary)
+                            }
+                            summaryGrid
+                            actionBar
+                                .id(DiskAdvisorScrollTarget.cleanupCandidates)
+                            candidateList
+                        } else {
+                            if let summary = store.fileInventorySummary {
+                                fileInventoryOverview(summary)
+                            }
+                            fileInventoryContent
                         }
-                        summaryGrid
-                        actionBar
-                        candidateList
-                    } else {
-                        if let summary = store.fileInventorySummary {
-                            fileInventoryOverview(summary)
-                        }
-                        fileInventoryContent
+                    }
+                    .padding(Theme.Spacing.xl)
+                }
+                .onChange(of: cleanupCandidateFocusRequest) { _ in
+                    withAnimation(.easeInOut(duration: 0.28)) {
+                        proxy.scrollTo(DiskAdvisorScrollTarget.cleanupCandidates, anchor: .top)
                     }
                 }
-                .padding(Theme.Spacing.xl)
             }
         }
         .sheet(isPresented: $showAISettings) {
@@ -599,6 +632,14 @@ struct DiskAdvisorLabView: View {
             Text(localizer.t(
                 "如果需要使用第三方模型，TraceFence 会把候选项的路径、名称、大小、文件数、修改时间和本地规则提示发送到你配置的外部模型服务。不发送文件内容。",
                 en: "If an external model is needed, TraceFence will send candidate paths, names, sizes, file counts, modification dates, and local rule hints to your configured external model provider. File contents are not sent."
+            ))
+        }
+        .alert(localizer.t("重复媒体不能直接删除", en: "Duplicate Media Cannot Be Deleted In Place"), isPresented: $showDuplicateMediaInfo) {
+            Button(localizer.ok, role: .cancel) {}
+        } message: {
+            Text(localizer.t(
+                "这些重复图片、视频和音频是嵌在 Agent 会话文件里的内容，不是独立副本。直接删除会破坏原始对话。安全清理必须先把已结束的旧会话做成可还原冷归档，逐字节校验恢复结果后，才能把原会话移到废纸篓；当前版本只分析，不会改写或删除会话。",
+                en: "These duplicate images, videos, and audio clips are embedded inside Agent session files rather than stored as independent copies. Deleting bytes in place would corrupt the original conversations. Safe cleanup requires a restorable cold archive for closed, inactive sessions and byte-for-byte restore verification before originals can be moved to Trash. This version analyzes only and never rewrites or deletes sessions."
             ))
         }
         .sheet(isPresented: $showCleanResult) {
@@ -1094,8 +1135,12 @@ struct DiskAdvisorLabView: View {
                         color: Theme.Colors.purple,
                         title: localizer.t("完全重复媒体", en: "Exact Duplicate Media"),
                         value: service.formatSize(summary.duplicateMediaBytes),
-                        subtitle: localizer.t("只分析，不改写原会话", en: "Analyzed only; sessions unchanged")
-                    )
+                        subtitle: localizer.t("只分析，不改写原会话", en: "Analyzed only; sessions unchanged"),
+                        actionTitle: localizer.t("了解安全清理方式", en: "How safe cleanup works"),
+                        actionIcon: "info.circle"
+                    ) {
+                        showDuplicateMediaInfo = true
+                    }
                     optimizationMetric(
                         icon: "hammer.fill",
                         color: Theme.Colors.warning,
@@ -1108,8 +1153,12 @@ struct DiskAdvisorLabView: View {
                         color: Theme.Colors.success,
                         title: localizer.t("安装与分发包", en: "Installers & Distributions"),
                         value: service.formatSize(summary.installerArtifactBytes),
-                        subtitle: localizer.t("\(summary.installerArtifactCount) 项，需手动勾选", en: "\(summary.installerArtifactCount) items; manual selection")
-                    )
+                        subtitle: localizer.t("\(summary.installerArtifactCount) 项，需手动勾选", en: "\(summary.installerArtifactCount) items; manual selection"),
+                        actionTitle: localizer.t("查看并选择 \(summary.installerArtifactCount) 项", en: "Review \(summary.installerArtifactCount) items"),
+                        actionIcon: "arrow.down.circle"
+                    ) {
+                        focusCleanupCandidates(.installerArtifact)
+                    }
                 }
 
                 if !summary.agentBreakdown.isEmpty {
@@ -1164,7 +1213,10 @@ struct DiskAdvisorLabView: View {
         color: Color,
         title: String,
         value: String,
-        subtitle: String
+        subtitle: String,
+        actionTitle: String? = nil,
+        actionIcon: String = "arrow.right.circle",
+        action: (() -> Void)? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Label(title, systemImage: icon)
@@ -1180,6 +1232,16 @@ struct DiskAdvisorLabView: View {
                 .font(Theme.Font.caption)
                 .foregroundStyle(Theme.Colors.textSecondary)
                 .lineLimit(2)
+            if let actionTitle, let action {
+                Button(action: action) {
+                    Label(actionTitle, systemImage: actionIcon)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(color)
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Theme.Spacing.md)
@@ -1224,6 +1286,15 @@ struct DiskAdvisorLabView: View {
             HStack(spacing: Theme.Spacing.md) {
                 FilterSearchBar(placeholder: localizer.t("搜索路径、类型或原因", en: "Search path, category, or reason"), text: $searchText)
                     .frame(maxWidth: 360)
+
+                Menu {
+                    cleanupCandidateFilterButton(.all)
+                    cleanupCandidateFilterButton(.installerArtifact)
+                    cleanupCandidateFilterButton(.historicalBuild)
+                } label: {
+                    Label(cleanupCandidateFilterTitle(cleanupCandidateFilter), systemImage: "line.3.horizontal.decrease.circle")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 34))
 
                 Spacer()
 
@@ -1723,6 +1794,44 @@ struct DiskAdvisorLabView: View {
         case "Installer Artifact": return "shippingbox.fill"
         default: return candidate.isDirectory ? "folder.fill" : "doc.fill"
         }
+    }
+
+    @ViewBuilder
+    private func cleanupCandidateFilterButton(_ filter: DiskCleanupCandidateFilter) -> some View {
+        Button {
+            cleanupCandidateFilter = filter
+            searchText = ""
+        } label: {
+            let count = cleanupCandidateCount(filter)
+            if cleanupCandidateFilter == filter {
+                Label("\(cleanupCandidateFilterTitle(filter)) · \(count)", systemImage: "checkmark")
+            } else {
+                Text("\(cleanupCandidateFilterTitle(filter)) · \(count)")
+            }
+        }
+    }
+
+    private func cleanupCandidateCount(_ filter: DiskCleanupCandidateFilter) -> Int {
+        guard let category = filter.category else { return store.candidates.count }
+        return store.candidates.filter { $0.category == category }.count
+    }
+
+    private func cleanupCandidateFilterTitle(_ filter: DiskCleanupCandidateFilter) -> String {
+        switch filter {
+        case .all:
+            return localizer.t("全部候选", en: "All Candidates")
+        case .installerArtifact:
+            return localizer.t("安装与分发包", en: "Installers & Distributions")
+        case .historicalBuild:
+            return localizer.t("历史构建", en: "Build History")
+        }
+    }
+
+    private func focusCleanupCandidates(_ filter: DiskCleanupCandidateFilter) {
+        section = .cleanup
+        cleanupCandidateFilter = filter
+        searchText = ""
+        cleanupCandidateFocusRequest += 1
     }
 
     private func localizedCategory(_ category: String) -> String {
