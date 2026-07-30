@@ -2,6 +2,15 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.1.4] - 2026-07-30
+
+### Fixed
+- Codex 子 Agent rollout 中继承的父会话累计 `token_count` 不再被每个子会话重复计入，修复“今日”与总览被放大到数十亿 Token 的问题。
+
+### Improved
+- 仅对父子继承链执行一次定向缓存迁移；正常父链沿用已验证结果，父记录已归档时使用多个兄弟会话共有计数的保守交集，之后只增量读取仍在增长的会话。
+- 聚合快照升级后自动失效一次，概览、Token 与用量及菜单栏继续共用同一份修正后的本地统计。
+
 ## [1.1.3] - 2026-07-30
 
 ### Added
