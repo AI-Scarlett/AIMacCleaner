@@ -2,6 +2,16 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.1.3] - 2026-07-30
+
+### Added
+- “安装与分发包”概览卡片可直接进入候选文件清单，按类型筛选、查看原文件并手动勾选后移入废纸篓。
+- 补充 GPT-5.6 Sol/Terra/Luna、Claude Opus 5/Fable 5、MiniMax M3/M2.7 的公开 API 等值价格，并按输入、缓存输入、输出和适用的长上下文阶梯计算。
+
+### Improved
+- 明确 Agent 会话内完全重复媒体仅做分析，不直接改写或删除原始会话；界面说明安全冷归档边界。
+- 价格更新可直接重算紧凑用量缓存，无需重新扫描数 GB 的历史会话；未公开定价的内部模型别名显示“价格未知”，不再误显示为 $0.00。
+
 ## [1.1.2] - 2026-07-30
 
 ### Added

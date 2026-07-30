@@ -13,13 +13,17 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.2")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.3")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Makes installer and distribution-package findings actionable from the storage overview: filter candidates, inspect originals, select explicitly, and move only the chosen files to Trash.\n"
+    "- Clarifies that exact duplicate media embedded in Agent histories is analysis-only and remains protected unless a future cold-archive workflow can preserve session integrity.\n"
+    "- Adds public API-equivalent pricing for GPT-5.6 Sol/Terra/Luna, Claude Opus 5/Fable 5, and MiniMax M3/M2.7, calculated from input, cached-input, output, and long-context tiers where applicable.\n"
+    "- Reprices compact usage caches without rescanning multi-gigabyte transcripts, while internal or unpublished model aliases now show Price unknown instead of a misleading $0.00.\n"
     "- Adds a bounded, metadata-only file inventory grouped by images, videos, audio, documents, archives, installers, code, and other formats, with size plus last-opened, accessed, and modified dates.\n"
     "- Adds 7-, 30-, and 90-day inactivity filters, Quick Look and Finder inspection, and explicit selection before any file is moved to Trash.\n"
     "- Adds incremental Agent and build storage analysis for exact duplicate media, historical build outputs, and DMG/IPA/APK/EXE-style distribution artifacts while preserving original sessions and the newest three builds per group.\n"
