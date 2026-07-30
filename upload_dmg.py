@@ -13,13 +13,16 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.1")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.2")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Adds a bounded, metadata-only file inventory grouped by images, videos, audio, documents, archives, installers, code, and other formats, with size plus last-opened, accessed, and modified dates.\n"
+    "- Adds 7-, 30-, and 90-day inactivity filters, Quick Look and Finder inspection, and explicit selection before any file is moved to Trash.\n"
+    "- Adds incremental Agent and build storage analysis for exact duplicate media, historical build outputs, and DMG/IPA/APK/EXE-style distribution artifacts while preserving original sessions and the newest three builds per group.\n"
     "- Fixes the menu-bar Open TraceFence Console action so a closed main window is reliably recreated, activated, and brought to the front.\n"
     "- Aligns Overview, Token & Usage, and the menu-bar snapshot on the same cached aggregate, with visible refresh and backfill status.\n"
     "- Hardens Agent hooks, webhook delivery, local profile serving, and protected-content scanning while keeping read/list/search tools responsive when a hook times out.\n"
