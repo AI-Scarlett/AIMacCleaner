@@ -67,6 +67,8 @@ class SandboxPaths {
     var diskFileInventoryCachePath: String { dataDirectory + "/disk_file_inventory_cache_v1.json" }
     var tokenScopeCachePath: String { dataDirectory + "/tokenscope_cache_v1.json" }
     var agentUsageSnapshotCachePath: String { dataDirectory + "/agent_usage_snapshot_cache_v1.json" }
+    var agentUsagePricingCatalogPath: String { dataDirectory + "/agent_usage_pricing_catalog_v1.json" }
+    var agentUsagePricingCatalogMetadataPath: String { dataDirectory + "/agent_usage_pricing_catalog_metadata_v1.json" }
     var agentMonitorCachePath: String { dataDirectory + "/agent_monitor_cache_v1.json" }
     var lastResponsePath: String { dataDirectory + "/last_response.txt" }
     var alertsPath: String { dataDirectory + "/alerts.json" }

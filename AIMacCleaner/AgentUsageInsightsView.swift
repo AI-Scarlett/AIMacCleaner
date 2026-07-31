@@ -511,6 +511,15 @@ struct AgentUsageInsightsView: View {
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .lineLimit(2)
                 }
+
+                Label(
+                    AgentUsageRemotePricingCatalog.activeCatalogVersion.map {
+                        localizer.t("价格表：GitHub \($0)", en: "Pricing catalog: GitHub \($0)")
+                    } ?? localizer.t("价格表：内置离线版本", en: "Pricing catalog: built-in offline fallback"),
+                    systemImage: "arrow.triangle.2.circlepath"
+                )
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textTertiary)
             }
         }
     }

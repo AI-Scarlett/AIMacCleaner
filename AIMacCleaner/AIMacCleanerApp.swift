@@ -136,6 +136,37 @@ struct AIMacCleanerApp: App {
                     : 2
             )
         }
+        if ProcessInfo.processInfo.arguments.contains("--tracefence-pricing-probe") {
+            let report = AgentUsagePricingCatalogUpdateService.debugRunRemoteProbe()
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let data = try? encoder.encode(report) {
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data("\n".utf8))
+            }
+            Darwin.exit(report.status == .failed ? 2 : 0)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--tracefence-pricing-self-test") {
+            var failures = AgentUsageInsightsService.debugUsageInsightsSelfTestFailures()
+            if let fixturePath = ProcessInfo.processInfo.environment["TRACEFENCE_PRICING_FIXTURE_PATH"] {
+                do {
+                    let data = try Data(contentsOf: URL(fileURLWithPath: fixturePath))
+                    _ = try AgentUsageRemotePricingCatalog.decodeAndValidate(data)
+                } catch {
+                    failures.append("pricing fixture validation failed: \(error.localizedDescription)")
+                }
+            }
+            let payload: [String: Any] = [
+                "succeeded": failures.isEmpty,
+                "failures": failures,
+                "revision": AgentUsageRemotePricingCatalog.revisionSignature
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data("\n".utf8))
+            }
+            Darwin.exit(failures.isEmpty ? 0 : 2)
+        }
 #endif
         let defaults = UserDefaults.standard
         let palette = defaults.string(forKey: "colorPalette")
@@ -146,6 +177,13 @@ struct AIMacCleanerApp: App {
             IOSRemoteControlGatewayService.shared.startConfiguredIfNeeded()
             if TraceFenceDistributionPolicy.currentChannel.isDirect {
                 _ = await TraceFenceAgentCoreClient.shared.refresh()
+            }
+        }
+        Task { @MainActor in
+            guard TraceFenceDistributionPolicy.currentChannel.isDirect else { return }
+            let pricingReport = await AgentUsagePricingCatalogUpdateService.shared.refreshIfNeeded()
+            if pricingReport.catalogChanged {
+                AgentUsageInsightsService.shared.applyPricingCatalogUpdate()
             }
         }
     }

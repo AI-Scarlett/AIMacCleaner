@@ -13,13 +13,16 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.4")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.5")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Moves API-equivalent model pricing into a versioned public GitHub catalog that the direct-download client refreshes with strict validation, ETag caching, and an offline built-in fallback.\n"
+    "- Applies OpenAI's July 30 GPT-5.6 Terra and Luna reductions only from their effective date, while preserving earlier usage at the historical reference prices.\n"
+    "- Reprices compact local usage counters when the catalog revision changes, without replaying multi-gigabyte Agent transcripts.\n"
     "- Fixes inflated Codex token totals by removing inherited parent counters replayed inside forked subagent rollouts, with a one-time targeted cache migration and append-only refreshes afterward.\n"
     "- Makes installer and distribution-package findings actionable from the storage overview: filter candidates, inspect originals, select explicitly, and move only the chosen files to Trash.\n"
     "- Clarifies that exact duplicate media embedded in Agent histories is analysis-only and remains protected unless a future cold-archive workflow can preserve session integrity.\n"

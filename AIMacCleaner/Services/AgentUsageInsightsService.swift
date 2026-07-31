@@ -756,7 +756,7 @@ final class AgentUsageInsightsService: ObservableObject {
                 self.backfillStatus = loaded.backfillStatus
                 self.snapshotSourceSignatures = AgentUsageSourceFingerprint.currentSignatures()
                 _ = AgentUsageSnapshotCacheStore.save(AgentUsageSnapshotCache(
-                    version: 3,
+                    version: 4,
                     generatedAt: Date(),
                     lastRefreshAt: self.lastRefreshAt,
                     sourceSignatures: self.snapshotSourceSignatures,
@@ -806,6 +806,15 @@ final class AgentUsageInsightsService: ObservableObject {
 
     func retryScan() {
         automaticRefreshPaused = false
+        refresh(force: true)
+    }
+
+    /// Rebuilds monetary estimates from compact per-file counters after a
+    /// validated pricing catalog changes. Unchanged multi-gigabyte transcripts
+    /// remain cache hits and are not replayed from disk.
+    func applyPricingCatalogUpdate() {
+        guard !automaticRefreshPaused,
+              snapshotSourceSignatures["pricing"] != AgentUsagePricingCatalog.revisionSignature else { return }
         refresh(force: true)
     }
 
@@ -1282,13 +1291,30 @@ private struct AgentUsageModelPrice {
 /// - https://platform.claude.com/docs/en/about-claude/pricing
 /// - https://platform.minimax.io/docs/guides/pricing-paygo
 private enum AgentUsagePricingCatalog {
+    static var revisionSignature: String {
+        AgentUsageRemotePricingCatalog.revisionSignature
+    }
+
     static func price(scope: AgentUsageScope, model: String?, at date: Date? = nil) -> AgentUsageModelPrice? {
         let value = (model ?? "").lowercased()
         guard !value.isEmpty else { return nil }
 
+        if let remote = AgentUsageRemotePricingCatalog.price(scope: scope, model: value, at: date) {
+            return AgentUsageModelPrice(
+                inputPerMillion: remote.inputPerMillion,
+                cachedInputPerMillion: remote.cachedInputPerMillion,
+                cacheWrite5mPerMillion: remote.cacheWrite5mPerMillion,
+                cacheWrite1hPerMillion: remote.cacheWrite1hPerMillion,
+                outputPerMillion: remote.outputPerMillion,
+                longContextThreshold: remote.longContextThreshold,
+                longContextInputMultiplier: remote.longContextInputMultiplier,
+                longContextOutputMultiplier: remote.longContextOutputMultiplier
+            )
+        }
+
         switch scope {
         case .codex:
-            return openAIPrice(value)
+            return openAIPrice(value, at: date)
         case .claude:
             return claudePrice(value, at: date)
         case .openCode, .openClaw:
@@ -1296,15 +1322,16 @@ private enum AgentUsagePricingCatalog {
             // absent, resolve only public model IDs; router aliases remain
             // unknown rather than inheriting a guessed price.
             return miniMaxPrice(value)
-                ?? openAIPrice(value)
+                ?? openAIPrice(value, at: date)
                 ?? claudePrice(value, at: date)
         case .combined:
             return nil
         }
     }
 
-    private static func openAIPrice(_ value: String) -> AgentUsageModelPrice? {
+    private static func openAIPrice(_ value: String, at date: Date?) -> AgentUsageModelPrice? {
         let gpt56LongContext: (Int64, Double, Double) = (272_000, 2, 1.5)
+        let july30PriceChange = Date(timeIntervalSince1970: 1_785_369_600)
         if matchesModelID(value, id: "gpt-5.6-sol") {
             return AgentUsageModelPrice(
                 inputPerMillion: 5,
@@ -1318,24 +1345,26 @@ private enum AgentUsagePricingCatalog {
             )
         }
         if matchesModelID(value, id: "gpt-5.6-terra") {
+            let usesReducedPrice = (date ?? Date()) >= july30PriceChange
             return AgentUsageModelPrice(
-                inputPerMillion: 2.5,
-                cachedInputPerMillion: 0.25,
-                cacheWrite5mPerMillion: 3.125,
-                cacheWrite1hPerMillion: 3.125,
-                outputPerMillion: 15,
+                inputPerMillion: usesReducedPrice ? 2 : 2.5,
+                cachedInputPerMillion: usesReducedPrice ? 0.2 : 0.25,
+                cacheWrite5mPerMillion: usesReducedPrice ? 2.5 : 3.125,
+                cacheWrite1hPerMillion: usesReducedPrice ? 2.5 : 3.125,
+                outputPerMillion: usesReducedPrice ? 12 : 15,
                 longContextThreshold: gpt56LongContext.0,
                 longContextInputMultiplier: gpt56LongContext.1,
                 longContextOutputMultiplier: gpt56LongContext.2
             )
         }
         if matchesModelID(value, id: "gpt-5.6-luna") {
+            let usesReducedPrice = (date ?? Date()) >= july30PriceChange
             return AgentUsageModelPrice(
-                inputPerMillion: 1,
-                cachedInputPerMillion: 0.1,
-                cacheWrite5mPerMillion: 1.25,
-                cacheWrite1hPerMillion: 1.25,
-                outputPerMillion: 6,
+                inputPerMillion: usesReducedPrice ? 0.2 : 1,
+                cachedInputPerMillion: usesReducedPrice ? 0.02 : 0.1,
+                cacheWrite5mPerMillion: usesReducedPrice ? 0.25 : 1.25,
+                cacheWrite1hPerMillion: usesReducedPrice ? 0.25 : 1.25,
+                outputPerMillion: usesReducedPrice ? 1.2 : 6,
                 longContextThreshold: gpt56LongContext.0,
                 longContextInputMultiplier: gpt56LongContext.1,
                 longContextOutputMultiplier: gpt56LongContext.2
@@ -1762,9 +1791,9 @@ private extension AgentUsageSnapshot {
 }
 
 private enum AgentUsageSnapshotCacheStore {
-    // v3 invalidates final aggregates once so Codex subagent lineage replay can
-    // be reconciled against the compact per-file cache after upgrading.
-    private static let version = 3
+    // v4 adds the active pricing revision to final aggregate fingerprints so a
+    // remote catalog change can reprice compact counters without stale totals.
+    private static let version = 4
     private static let maximumEncodedBytes = 32 * 1_024 * 1_024
 
     static func load() -> AgentUsageSnapshotCache? {
@@ -1776,6 +1805,7 @@ private enum AgentUsageSnapshotCacheStore {
               let data = try? Data(contentsOf: cacheURL, options: [.mappedIfSafe]),
               let decoded = try? JSONDecoder().decode(AgentUsageSnapshotCache.self, from: data),
               decoded.version == version,
+              decoded.sourceSignatures["pricing"] == AgentUsagePricingCatalog.revisionSignature,
               !decoded.snapshots.isEmpty else { return nil }
         return decoded
     }
@@ -1834,6 +1864,7 @@ private enum AgentUsageSourceFingerprint {
             .compactMap { values[$0] }
             .joined(separator: "|")
         result[AgentUsageScope.combined.rawValue] = digest("combined|\(combined)")
+        result["pricing"] = AgentUsagePricingCatalog.revisionSignature
         return result
     }
 
@@ -2787,7 +2818,7 @@ private final class AgentUsageCodexSessionParser {
                 // child's later cumulative counters have the correct baseline.
                 // Only the resulting duplicate contribution is discarded.
                 guard !excludingTokenFingerprints.contains(tokenFingerprint) else { return }
-                let price = AgentUsagePricingCatalog.price(scope: .codex, model: currentModel)
+                let price = AgentUsagePricingCatalog.price(scope: .codex, model: currentModel, at: date)
                 let estimated = AgentUsagePricingCatalog.estimatedCost(tokens: tokens, price: price)
                 events.add(AgentUsageEvent(
                     id: nil,
@@ -5473,7 +5504,7 @@ private struct AgentUsageSnapshotBuilder {
 
 extension AgentUsageInsightsService {
     nonisolated static func debugUsageInsightsSelfTestFailures() -> [String] {
-        var failures: [String] = []
+        var failures = AgentUsageRemotePricingCatalog.debugSelfTestFailures()
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {
             if !value() { failures.append(message) }
         }
@@ -5906,10 +5937,16 @@ extension AgentUsageInsightsService {
         expect(haiku45?.inputPerMillion == 1 && haiku45?.outputPerMillion == 5, "Claude Haiku 4.5 must not inherit the older Haiku 3.5 price")
         let gpt56Sol = AgentUsagePricingCatalog.price(scope: .codex, model: "gpt-5.6-sol")
         expect(gpt56Sol?.inputPerMillion == 5 && gpt56Sol?.cachedInputPerMillion == 0.5 && gpt56Sol?.outputPerMillion == 30, "GPT-5.6 Sol must use the public Sol token prices")
-        let gpt56Terra = AgentUsagePricingCatalog.price(scope: .codex, model: "gpt-5.6-terra")
-        expect(gpt56Terra?.inputPerMillion == 2.5 && gpt56Terra?.cachedInputPerMillion == 0.25 && gpt56Terra?.outputPerMillion == 15, "GPT-5.6 Terra must use the public Terra token prices")
-        let gpt56Luna = AgentUsagePricingCatalog.price(scope: .codex, model: "gpt-5.6-luna")
-        expect(gpt56Luna?.inputPerMillion == 1 && gpt56Luna?.cachedInputPerMillion == 0.1 && gpt56Luna?.outputPerMillion == 6, "GPT-5.6 Luna must use the public Luna token prices")
+        let beforeJuly30 = Date(timeIntervalSince1970: 1_785_369_599)
+        let afterJuly30 = Date(timeIntervalSince1970: 1_785_369_600)
+        let gpt56Terra = AgentUsagePricingCatalog.price(scope: .codex, model: "gpt-5.6-terra", at: afterJuly30)
+        expect(gpt56Terra?.inputPerMillion == 2 && gpt56Terra?.cachedInputPerMillion == 0.2 && gpt56Terra?.outputPerMillion == 12, "GPT-5.6 Terra must use its reduced price from July 30, 2026")
+        let historicalTerra = AgentUsagePricingCatalog.price(scope: .codex, model: "gpt-5.6-terra", at: beforeJuly30)
+        expect(historicalTerra?.inputPerMillion == 2.5 && historicalTerra?.cachedInputPerMillion == 0.25 && historicalTerra?.outputPerMillion == 15, "GPT-5.6 Terra usage before July 30 must retain its historical price")
+        let gpt56Luna = AgentUsagePricingCatalog.price(scope: .codex, model: "gpt-5.6-luna", at: afterJuly30)
+        expect(gpt56Luna?.inputPerMillion == 0.2 && gpt56Luna?.cachedInputPerMillion == 0.02 && gpt56Luna?.outputPerMillion == 1.2, "GPT-5.6 Luna must use its reduced price from July 30, 2026")
+        let historicalLuna = AgentUsagePricingCatalog.price(scope: .codex, model: "gpt-5.6-luna", at: beforeJuly30)
+        expect(historicalLuna?.inputPerMillion == 1 && historicalLuna?.cachedInputPerMillion == 0.1 && historicalLuna?.outputPerMillion == 6, "GPT-5.6 Luna usage before July 30 must retain its historical price")
         let opus5 = AgentUsagePricingCatalog.price(scope: .claude, model: "claude-opus-5")
         expect(opus5?.inputPerMillion == 5 && opus5?.cachedInputPerMillion == 0.5 && opus5?.outputPerMillion == 25, "Claude Opus 5 must not inherit legacy Opus pricing")
         let fable5 = AgentUsagePricingCatalog.price(scope: .claude, model: "claude-fable-5")
