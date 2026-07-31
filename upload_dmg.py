@@ -13,13 +13,14 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.5")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.6")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Reconciles Overview and Token & Usage by opening the full dashboard on the same all-source aggregate; single-provider drill-downs now show an explicit filter reconciliation instead of looking like missing tokens.\n"
     "- Moves API-equivalent model pricing into a versioned public GitHub catalog that the direct-download client refreshes with strict validation, ETag caching, and an offline built-in fallback.\n"
     "- Applies OpenAI's July 30 GPT-5.6 Terra and Luna reductions only from their effective date, while preserving earlier usage at the historical reference prices.\n"
     "- Reprices compact local usage counters when the catalog revision changes, without replaying multi-gigabyte Agent transcripts.\n"

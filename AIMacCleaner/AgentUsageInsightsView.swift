@@ -8,6 +8,16 @@ import UniformTypeIdentifiers
 enum AgentUsageInsightsMode: Equatable {
     case tokenAnalytics
     case projectMonitor
+
+    /// The top-level Token & Usage entry is a global dashboard. It must open
+    /// on the same combined snapshot used by Overview; provider scopes remain
+    /// available as explicit drill-down filters after the page is visible.
+    var entryScope: AgentUsageScope? {
+        switch self {
+        case .tokenAnalytics: return .combined
+        case .projectMonitor: return nil
+        }
+    }
 }
 
 @MainActor
@@ -35,6 +45,7 @@ struct AgentUsageInsightsView: View {
     var body: some View {
         LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             dashboardHeader
+            scopeReconciliationBanner
             loadStateBanner
             if mode == .tokenAnalytics {
                 tokenOverview
@@ -51,6 +62,9 @@ struct AgentUsageInsightsView: View {
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.lg)
         .onAppear {
+            if let entryScope = mode.entryScope, service.scope != entryScope {
+                service.scope = entryScope
+            }
             syncFixedTimeZone()
             service.startScheduling()
         }
@@ -121,7 +135,7 @@ struct AgentUsageInsightsView: View {
                 Divider().overlay(Theme.Colors.separator)
 
                 HStack(spacing: Theme.Spacing.sm) {
-                    Text(localizer.t("可信 Token 来源", en: "Trusted token sources"))
+                    Text(localizer.t("显示范围", en: "Display scope"))
                         .font(Theme.Font.captionMedium)
                         .foregroundStyle(Theme.Colors.textSecondary)
 
@@ -140,6 +154,54 @@ struct AgentUsageInsightsView: View {
                     .lineLimit(1)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var scopeReconciliationBanner: some View {
+        if mode == .tokenAnalytics, service.scope != .combined {
+            let combinedTotal = service.snapshot(for: .combined).allTime.total
+            let selectedTotal = service.snapshot.allTime.total
+            let otherSourcesTotal = max(0, combinedTotal - selectedTotal)
+
+            HStack(alignment: .center, spacing: Theme.Spacing.md) {
+                Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.info)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(localizer.t(
+                        "当前显示 \(localizedScope(service.scope)) 筛选结果",
+                        en: "Showing filtered \(localizedScope(service.scope)) results"
+                    ))
+                    .font(Theme.Font.subheadlineMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+
+                    Text(localizer.t(
+                        "概览的全部可信来源为 \(AgentUsageFormat.tokens(combinedTotal))；当前筛选为 \(AgentUsageFormat.tokens(selectedTotal))，其余来源合计 \(AgentUsageFormat.tokens(otherSourcesTotal))。这不是 Token 丢失。",
+                        en: "Overview shows \(AgentUsageFormat.tokens(combinedTotal)) across all trusted sources. This filter shows \(AgentUsageFormat.tokens(selectedTotal)); the other sources contribute \(AgentUsageFormat.tokens(otherSourcesTotal)). No tokens are missing."
+                    ))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: Theme.Spacing.md)
+
+                Button {
+                    service.scope = .combined
+                } label: {
+                    Label(localizer.t("恢复全部来源", en: "Show all sources"), systemImage: "sum")
+                }
+                .buttonStyle(BrandButtonStyle(variant: .secondary, minHeight: 30))
+            }
+            .padding(Theme.Spacing.md)
+            .background(Theme.Colors.info.opacity(0.07))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                    .stroke(Theme.Colors.info.opacity(0.2), lineWidth: 1)
+            )
         }
     }
 
@@ -1315,15 +1377,23 @@ struct AgentUsageInsightsView: View {
         return Button {
             service.scope = scope
         } label: {
-            Text(localizedScope(scope))
-                .font(Theme.Font.captionMedium)
-                .foregroundStyle(selected ? .white : Theme.Colors.textSecondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(selected ? Theme.Colors.accent : Theme.Colors.cardBg)
-                .clipShape(Capsule())
+            HStack(spacing: 4) {
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 8, weight: .bold))
+                }
+                Text(localizedScope(scope))
+            }
+            .font(Theme.Font.captionMedium)
+            .foregroundStyle(selected ? .white : Theme.Colors.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(selected ? Theme.Colors.accent : Theme.Colors.cardBg)
+            .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(localizedScope(scope))
+        .accessibilityValue(selected ? localizer.t("已选择", en: "Selected") : localizer.t("未选择", en: "Not selected"))
     }
 
     private func projectPeriodButton(_ period: AgentUsageProjectPeriod, title: String) -> some View {
@@ -1497,8 +1567,8 @@ struct AgentUsageInsightsView: View {
         switch mode {
         case .tokenAnalytics:
             return localizer.t(
-                "概览与本页共用 Codex、Claude Code、OpenCode / MiniMax、OpenClaw / QClaw 的可信本机计数；不会上传会话内容。",
-                en: "Overview and this page share trusted local counters from Codex, Claude Code, OpenCode / MiniMax, and OpenClaw / QClaw. Session content never leaves this Mac."
+                "默认显示全部可信来源，与概览共用同一份聚合快照；选择单个来源时会明确标记为筛选结果。不会上传会话内容。",
+                en: "Defaults to all trusted sources using the same aggregate snapshot as Overview. Single-source drill-downs are explicitly labeled as filtered results. Session content never leaves this Mac."
             )
         case .projectMonitor:
             return localizer.t(

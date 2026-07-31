@@ -5915,6 +5915,8 @@ extension AgentUsageInsightsService {
         )
         expect(combinedReconciliation.reported.total == 1_200, "combined all-time inventory must add provider headlines once")
         expect(combinedReconciliation.detailed.total == 200, "combined parsed detail must add provider detail once")
+        expect(AgentUsageInsightsMode.tokenAnalytics.entryScope == .combined, "Token & Usage must enter on the same combined scope used by Overview")
+        expect(AgentUsageInsightsMode.projectMonitor.entryScope == nil, "project drill-down must preserve the user's explicit source filter")
         expect(AgentUsageTokenFormatter.string(40_254_839_013) == "40.25B", "shared token formatter must use the B unit consistently")
         expect(AgentUsageTokenFormatter.string(250_000_000) == "250.00M", "shared token formatter must use the M unit consistently")
         expect(AgentUsageTokenFormatter.string(-10) == "0", "shared token formatter must clamp invalid negative totals")

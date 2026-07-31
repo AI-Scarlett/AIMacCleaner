@@ -2,6 +2,12 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.1.6] - 2026-07-31
+
+### Fixed
+- “Token 与用量”主入口现在始终从“全部可信来源”打开，与概览读取同一份 combined 聚合快照，不再因上次停留在 Codex 等单一来源筛选而出现看似相差约 1.40B 的总量。
+- 单一来源筛选增加明确的选中标记和对账提示，同时展示概览总量、当前筛选值及其它来源合计，避免把筛选差额误判为 Token 丢失。
+
 ## [1.1.5] - 2026-07-31
 
 ### Added
