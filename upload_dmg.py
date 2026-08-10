@@ -13,13 +13,18 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.6")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.7")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Streams multi-gigabyte Agent histories in bounded chunks and reuses incremental fingerprints, avoiding whole-file memory spikes and repeated rescans when records are unchanged.\n"
+    "- Keeps the file inventory bounded to the largest actionable items, delays expensive metadata reads until needed, and preserves complete category totals without retaining every file in memory.\n"
+    "- Groups historical build outputs and keeps the newest three per project while recognizing 18 installer and distribution formats for explicit user-selected cleanup.\n"
+    "- Protects Codex, Claude, Grok, Gemini, Qwen, Cursor, and other Agent histories from cleanup, rejects symlink traversal, and removes unsafe whole-root Xcode and Unity deletion rules.\n"
+    "- Shares Agent session discovery caches across views and bounds updater and quota-command output so background refreshes cannot deadlock the app.\n"
     "- Reconciles Overview and Token & Usage by opening the full dashboard on the same all-source aggregate; single-provider drill-downs now show an explicit filter reconciliation instead of looking like missing tokens.\n"
     "- Moves API-equivalent model pricing into a versioned public GitHub catalog that the direct-download client refreshes with strict validation, ETag caching, and an offline built-in fallback.\n"
     "- Applies OpenAI's July 30 GPT-5.6 Terra and Luna reductions only from their effective date, while preserving earlier usage at the historical reference prices.\n"
