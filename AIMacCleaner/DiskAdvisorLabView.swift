@@ -110,6 +110,8 @@ private struct DiskAdvisorLLMResult: Codable {
 
 @MainActor
 final class DiskAdvisorLabStore: ObservableObject {
+    static let shared = DiskAdvisorLabStore()
+
     @Published var candidates: [DiskAdvisorCandidate] = []
     @Published var selectedIDs: Set<String> = []
     @Published var isScanning = false
@@ -119,9 +121,33 @@ final class DiskAdvisorLabStore: ObservableObject {
     @Published var cleanedSize: Int64 = 0
     @Published var cleanedCount = 0
     @Published var optimizationSummary: StorageOptimizationSummary?
-    @Published var fileInventory: [DiskFileRecord] = []
+    @Published var fileInventory: [DiskFileRecord] = [] {
+        didSet { rebuildFileInventoryIndexes() }
+    }
     @Published var fileInventorySummary: DiskFileInventorySummary?
     @Published var selectedFileIDs: Set<String> = []
+    @Published private(set) var hasCompletedScan = false
+
+    private struct FileActivityStats {
+        var count = 0
+        var bytes: Int64 = 0
+    }
+
+    private struct InventoryFilterKey: Equatable {
+        let inventoryRevision: Int
+        let query: String
+        let category: DiskFileCategory?
+        let ageFilter: DiskFileAgeFilter
+        let sort: DiskFileSort
+        let dayBucket: Int
+    }
+
+    private var fileByID: [String: DiskFileRecord] = [:]
+    private var activityStats: [DiskFileActivityMarker: FileActivityStats] = [:]
+    private var inventoryRevision = 0
+    private var inventoryFilterKey: InventoryFilterKey?
+    private var inventoryFilterResults: [DiskFileRecord] = []
+    private var activityStatsDayBucket = 0
 
     var selectedCandidates: [DiskAdvisorCandidate] {
         candidates.filter { selectedIDs.contains($0.id) }
@@ -140,11 +166,100 @@ final class DiskAdvisorLabStore: ObservableObject {
     }
 
     var selectedFiles: [DiskFileRecord] {
-        fileInventory.filter { selectedFileIDs.contains($0.id) }
+        selectedFileIDs.compactMap { fileByID[$0] }
     }
 
     var selectedFileSize: Int64 {
-        selectedFiles.reduce(Int64(0)) { $0 + $1.size }
+        selectedFileIDs.reduce(Int64(0)) { total, id in
+            total + (fileByID[id]?.size ?? 0)
+        }
+    }
+
+    fileprivate func filteredInventoryFiles(
+        query rawQuery: String,
+        category: DiskFileCategory?,
+        ageFilter: DiskFileAgeFilter,
+        sort: DiskFileSort,
+        now: Date
+    ) -> [DiskFileRecord] {
+        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let key = InventoryFilterKey(
+            inventoryRevision: inventoryRevision,
+            query: query,
+            category: category,
+            ageFilter: ageFilter,
+            sort: sort,
+            dayBucket: Int(now.timeIntervalSince1970 / 86_400)
+        )
+        if inventoryFilterKey == key { return inventoryFilterResults }
+
+        var files = fileInventory.filter { file in
+            let matchesCategory = category == nil || file.category == category
+            let matchesAge = ageFilter.includes(file.activityMarker(at: now))
+            let matchesSearch = query.isEmpty
+                || file.name.lowercased().contains(query)
+                || file.path.lowercased().contains(query)
+                || file.fileExtension.lowercased().contains(query)
+            return matchesCategory && matchesAge && matchesSearch
+        }
+        switch sort {
+        case .sizeDescending:
+            break
+        case .oldestActivity:
+            files.sort { ($0.lastActivityDate ?? .distantPast) < ($1.lastActivityDate ?? .distantPast) }
+        case .newestActivity:
+            files.sort { ($0.lastActivityDate ?? .distantPast) > ($1.lastActivityDate ?? .distantPast) }
+        case .name:
+            files.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        }
+        inventoryFilterKey = key
+        inventoryFilterResults = files
+        return files
+    }
+
+    func inactiveFileStats(minimumDays: Int) -> (count: Int, bytes: Int64) {
+        rebuildActivityStatsIfNeeded()
+        let markers: [DiskFileActivityMarker]
+        switch minimumDays {
+        case 90...:
+            markers = [.days90]
+        case 30...:
+            markers = [.days30, .days90]
+        case 7...:
+            markers = [.days7, .days30, .days90]
+        default:
+            markers = [.recent, .days7, .days30, .days90]
+        }
+        return markers.reduce(into: (count: 0, bytes: Int64(0))) { total, marker in
+            let stats = activityStats[marker] ?? FileActivityStats()
+            total.count += stats.count
+            total.bytes += stats.bytes
+        }
+    }
+
+    private func rebuildFileInventoryIndexes() {
+        inventoryRevision &+= 1
+        inventoryFilterKey = nil
+        inventoryFilterResults.removeAll(keepingCapacity: true)
+        fileByID = Dictionary(uniqueKeysWithValues: fileInventory.map { ($0.id, $0) })
+        rebuildActivityStats()
+    }
+
+    private func rebuildActivityStatsIfNeeded() {
+        let dayBucket = Int(Date().timeIntervalSince1970 / 86_400)
+        if activityStatsDayBucket != dayBucket { rebuildActivityStats() }
+    }
+
+    private func rebuildActivityStats() {
+        let now = Date()
+        activityStatsDayBucket = Int(now.timeIntervalSince1970 / 86_400)
+        activityStats = fileInventory.reduce(into: [:]) { result, file in
+            let marker = file.activityMarker(at: now)
+            var stats = result[marker] ?? FileActivityStats()
+            stats.count += 1
+            stats.bytes += file.size
+            result[marker] = stats
+        }
     }
 
     func scan(authorizedRoots: Set<String>? = nil, localizer: Localizer) async {
@@ -194,6 +309,7 @@ final class DiskAdvisorLabStore: ObservableObject {
         optimizationSummary = optimization.summary
         fileInventory = inventory.files
         fileInventorySummary = inventory.summary
+        hasCompletedScan = true
         selectedIDs.removeAll()
         selectedFileIDs.removeAll()
         let fingerprintedSize = ByteCountFormatter.string(
@@ -308,20 +424,28 @@ final class DiskAdvisorLabStore: ObservableObject {
     }
 
     func removeCleanedFiles(ids: Set<String>, cleanedSize: Int64) {
-        let removedCount = fileInventory.filter { ids.contains($0.id) }.count
+        let removedFiles = fileInventory.filter { ids.contains($0.id) }
+        let removedCount = removedFiles.count
         fileInventory.removeAll { ids.contains($0.id) }
         selectedFileIDs.subtract(ids)
         self.cleanedSize = cleanedSize
-        cleanedCount = ids.count
+        cleanedCount = removedCount
         if let summary = fileInventorySummary {
-            let breakdown = Dictionary(grouping: fileInventory, by: \.category)
-                .map { category, files in
-                    DiskFileCategoryBreakdown(
-                        category: category,
-                        fileCount: files.count,
-                        totalBytes: files.reduce(Int64(0)) { $0 + $1.size }
-                    )
+            let removedByCategory = Dictionary(grouping: removedFiles, by: \.category)
+                .mapValues { files in
+                    (count: files.count, bytes: files.reduce(Int64(0)) { $0 + $1.size })
                 }
+            let breakdown = summary.categoryBreakdown.compactMap { item -> DiskFileCategoryBreakdown? in
+                let removed = removedByCategory[item.category] ?? (count: 0, bytes: 0)
+                let count = max(item.fileCount - removed.count, 0)
+                let bytes = max(item.totalBytes - removed.bytes, 0)
+                guard count > 0 else { return nil }
+                return DiskFileCategoryBreakdown(
+                    category: item.category,
+                    fileCount: count,
+                    totalBytes: bytes
+                )
+            }
                 .sorted { $0.totalBytes > $1.totalBytes }
             fileInventorySummary = DiskFileInventorySummary(
                 eligibleFileCount: max(summary.eligibleFileCount - removedCount, 0),
@@ -435,9 +559,11 @@ private enum DiskAdvisorScrollTarget: Hashable {
 struct DiskAdvisorLabView: View {
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
-    @StateObject private var store = DiskAdvisorLabStore()
+    @StateObject private var store = DiskAdvisorLabStore.shared
     @StateObject private var licenseService = DirectLicenseService.shared
     @State private var searchText = ""
+    @State private var inventorySearchText = ""
+    @State private var inventorySearchTask: Task<Void, Never>?
     @State private var showAISettings = false
     @State private var showSubscriptionSettings = false
     @State private var showDeleteConfirm = false
@@ -471,32 +597,13 @@ struct DiskAdvisorLabView: View {
     }
 
     private var filteredInventoryFiles: [DiskFileRecord] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let now = Date()
-        var files = store.fileInventory.filter { file in
-            let matchesCategory = selectedFileCategory == nil || file.category == selectedFileCategory
-            let matchesAge = fileAgeFilter.includes(file.activityMarker(at: now))
-            let matchesSearch = query.isEmpty
-                || file.name.lowercased().contains(query)
-                || file.path.lowercased().contains(query)
-                || file.fileExtension.lowercased().contains(query)
-            return matchesCategory && matchesAge && matchesSearch
-        }
-        switch fileSort {
-        case .sizeDescending:
-            break // DiskFileInventoryCore already returns size-descending records.
-        case .oldestActivity:
-            files.sort {
-                ($0.lastActivityDate ?? .distantPast) < ($1.lastActivityDate ?? .distantPast)
-            }
-        case .newestActivity:
-            files.sort {
-                ($0.lastActivityDate ?? .distantPast) > ($1.lastActivityDate ?? .distantPast)
-            }
-        case .name:
-            files.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        }
-        return files
+        store.filteredInventoryFiles(
+            query: inventorySearchText,
+            category: selectedFileCategory,
+            ageFilter: fileAgeFilter,
+            sort: fileSort,
+            now: Date()
+        )
     }
 
     var body: some View {
@@ -650,12 +757,22 @@ struct DiskAdvisorLabView: View {
         }
         .onAppear {
             licenseService.refreshTrialState()
-            if store.candidates.isEmpty {
+            if !store.hasCompletedScan, !store.isScanning {
                 Task { await scanWithAuthorization(promptForAccess: false) }
             }
         }
-        .onChange(of: searchText) { _ in
-            if section == .files { inventoryVisibleLimit = 300 }
+        .onChange(of: searchText) { value in
+            guard section == .files else { return }
+            inventoryVisibleLimit = 300
+            inventorySearchTask?.cancel()
+            inventorySearchTask = Task {
+                try? await Task.sleep(nanoseconds: 180_000_000)
+                guard !Task.isCancelled else { return }
+                inventorySearchText = value
+            }
+        }
+        .onDisappear {
+            inventorySearchTask?.cancel()
         }
     }
 
@@ -722,6 +839,8 @@ struct DiskAdvisorLabView: View {
         Button {
             section = target
             searchText = ""
+            inventorySearchText = ""
+            inventorySearchTask?.cancel()
             inventoryVisibleLimit = 300
         } label: {
             Label(title, systemImage: icon)
@@ -1596,12 +1715,7 @@ struct DiskAdvisorLabView: View {
     }
 
     private func inventoryStats(minimumDays: Int) -> (count: Int, bytes: Int64) {
-        let now = Date()
-        let files = store.fileInventory.filter { file in
-            guard let activity = file.lastActivityDate else { return false }
-            return now.timeIntervalSince(activity) >= TimeInterval(minimumDays) * 86_400
-        }
-        return (files.count, files.reduce(Int64(0)) { $0 + $1.size })
+        store.inactiveFileStats(minimumDays: minimumDays)
     }
 
     private func inventoryCoverageMessage(_ summary: DiskFileInventorySummary) -> String {
@@ -2178,6 +2292,17 @@ private enum DiskAdvisorScanner {
         ".ssh", ".gnupg", "keychains", "wallet", "wallets", "password", "passwords",
         "secrets", "credentials", "private", "certificates"
     ]
+    private static let exactDirectories: [(String, String)] = [
+        ("Library/Caches", "Cache"),
+        ("Library/Logs", "Logs"),
+        ("Library/Developer/CoreSimulator/Caches", "Simulator Cache"),
+        (".cache", "Developer Cache"),
+        (".npm", "Package Cache"),
+        (".pnpm-store", "Package Cache"),
+        (".gradle/caches", "Package Cache"),
+        (".m2/repository", "Package Cache"),
+        (".cargo/registry", "Package Cache")
+    ]
 
     static func scan(authorizedRoots: Set<String>? = nil) -> [DiskAdvisorCandidate] {
         let home = URL(fileURLWithPath: SandboxPaths.realHomeDirectory, isDirectory: true)
@@ -2192,32 +2317,7 @@ private enum DiskAdvisorScanner {
                 .map { $0 }
         }
 
-        scanKnownHighValueDirectories(home: home, into: &results, seen: &seen)
-        scanHiddenAppDataDirectories(home: home, into: &results, seen: &seen)
-        scanTopLevelChildren(home.appendingPathComponent("Downloads", isDirectory: true), category: "Downloads", into: &results, seen: &seen)
-        scanTopLevelChildren(home.appendingPathComponent("Desktop", isDirectory: true), category: "Desktop", into: &results, seen: &seen)
-
-        let exactDirectories: [(String, String)] = [
-            ("Library/Caches", "Cache"),
-            ("Library/Logs", "Logs"),
-            ("Library/Developer/CoreSimulator/Caches", "Simulator Cache"),
-            (".cache", "Developer Cache"),
-            (".npm", "Package Cache"),
-            (".pnpm-store", "Package Cache"),
-            (".gradle/caches", "Package Cache"),
-            (".m2/repository", "Package Cache"),
-            (".cargo/registry", "Package Cache")
-        ]
-
-        for (relative, category) in exactDirectories {
-            scanTopLevelChildren(home.appendingPathComponent(relative, isDirectory: true), category: category, into: &results, seen: &seen)
-        }
-
-        for root in projectRoots(home: home) {
-            scanProjectArtifacts(root, into: &results, seen: &seen)
-            if results.count >= maxCandidates * 2 { break }
-        }
-        scanLargeHomeDirectories(home: home, into: &results, seen: &seen)
+        scanDefaultLocations(home: home, into: &results, seen: &seen)
 
         return results
             .sorted { $0.size > $1.size }
@@ -2226,42 +2326,73 @@ private enum DiskAdvisorScanner {
     }
 
     private static func scanAuthorizedRoots(_ rootPaths: Set<String>, home: URL, into results: inout [DiskAdvisorCandidate], seen: inout Set<String>) {
-        let roots = rootPaths
+        let candidates = rootPaths
             .map { URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL }
             .filter { isDirectory($0) }
-            .sorted { $0.path < $1.path }
+            .sorted { $0.path.count < $1.path.count }
+        var roots: [URL] = []
+        for candidate in candidates where !roots.contains(where: {
+            candidate.path == $0.path || candidate.path.hasPrefix($0.path + "/")
+        }) {
+            roots.append(candidate)
+        }
 
         for root in roots {
             let category = categoryForAuthorizedRoot(root, home: home)
-            if root.path != home.standardizedFileURL.path, category != "AI Agent Data" {
-                addCandidate(root, category: category, into: &results, seen: &seen)
-            }
-            if category != "AI Agent Data" {
+            if root.standardizedFileURL.path == home.standardizedFileURL.path {
+                scanDefaultLocations(home: home, into: &results, seen: &seen)
+            } else if category != "AI Agent Data" {
+                // The selected root is an authorization boundary, not a cleanup
+                // candidate. Showing only its children prevents an accidental
+                // whole-project deletion and avoids sizing the same tree twice.
                 scanTopLevelChildren(root, category: category, into: &results, seen: &seen)
                 scanProjectArtifacts(root, into: &results, seen: &seen)
-            }
-
-            if root.standardizedFileURL.path == home.standardizedFileURL.path {
-                scanHiddenAppDataDirectories(home: home, into: &results, seen: &seen)
-                scanLargeHomeDirectories(home: home, into: &results, seen: &seen)
             }
 
             if results.count >= maxCandidates * 2 { break }
         }
     }
 
-    private static func scanKnownHighValueDirectories(home: URL, into results: inout [DiskAdvisorCandidate], seen: inout Set<String>) {
-        let fileSystemCandidates: [(URL, String, String)] = [
-            (URL(fileURLWithPath: "/System/Volumes/Data/private/tmp", isDirectory: true), "Temporary Files", "System temp"),
-            (URL(fileURLWithPath: "/private/tmp", isDirectory: true), "Temporary Files", "System temp"),
-            (URL(fileURLWithPath: "/Library/Developer/CoreSimulator/Caches/dyld", isDirectory: true), "Simulator dyld Cache", "Simulator dyld cache"),
-            (home.appendingPathComponent("Library/Developer/CoreSimulator/Devices", isDirectory: true), "Simulator Devices", "Simulator devices"),
-            (home.appendingPathComponent(".npm", isDirectory: true), "Package Cache", "npm cache"),
-        ]
-
-        for (url, category, name) in fileSystemCandidates {
-            addCandidate(url, category: category, displayName: name, into: &results, seen: &seen)
+    private static func scanDefaultLocations(
+        home: URL,
+        into results: inout [DiskAdvisorCandidate],
+        seen: inout Set<String>
+    ) {
+        scanKnownHighValueDirectories(home: home, into: &results, seen: &seen)
+        scanHiddenAppDataDirectories(home: home, into: &results, seen: &seen)
+        scanTopLevelChildren(
+            home.appendingPathComponent("Downloads", isDirectory: true),
+            category: "Downloads",
+            into: &results,
+            seen: &seen
+        )
+        scanTopLevelChildren(
+            home.appendingPathComponent("Desktop", isDirectory: true),
+            category: "Desktop",
+            into: &results,
+            seen: &seen
+        )
+        for (relative, category) in exactDirectories {
+            scanTopLevelChildren(
+                home.appendingPathComponent(relative, isDirectory: true),
+                category: category,
+                into: &results,
+                seen: &seen
+            )
         }
+        for root in projectRoots(home: home) {
+            scanProjectArtifacts(root, into: &results, seen: &seen)
+            if results.count >= maxCandidates * 2 { break }
+        }
+    }
+
+    private static func scanKnownHighValueDirectories(home: URL, into results: inout [DiskAdvisorCandidate], seen: inout Set<String>) {
+        scanTopLevelChildren(
+            home.appendingPathComponent("Library/Developer/CoreSimulator/Devices", isDirectory: true),
+            category: "Simulator Devices",
+            into: &results,
+            seen: &seen
+        )
     }
 
     private static func scanHiddenAppDataDirectories(home: URL, into results: inout [DiskAdvisorCandidate], seen: inout Set<String>) {
@@ -2282,27 +2413,6 @@ private enum DiskAdvisorScanner {
                 continue
             }
             addCandidate(child, category: "Hidden App Data", into: &results, seen: &seen)
-            if results.count >= maxCandidates * 2 { return }
-        }
-    }
-
-    private static func scanLargeHomeDirectories(home: URL, into results: inout [DiskAdvisorCandidate], seen: inout Set<String>) {
-        guard let children = try? FileManager.default.contentsOfDirectory(
-            at: home,
-            includingPropertiesForKeys: resourceKeys,
-            options: [.skipsHiddenFiles]
-        ) else {
-            return
-        }
-
-        for child in children.prefix(300) {
-            let lower = child.lastPathComponent.lowercased()
-            guard isDirectory(child),
-                  !shouldSkipHomeDirectory(lower),
-                  !isSensitive(child) else {
-                continue
-            }
-            addCandidate(child, category: "Personal Files", into: &results, seen: &seen)
             if results.count >= maxCandidates * 2 { return }
         }
     }
@@ -2345,7 +2455,21 @@ private enum DiskAdvisorScanner {
                 enumerator.skipDescendants()
                 continue
             }
-            guard isDirectory(url), !isSensitive(url) else { continue }
+            let values = try? url.resourceValues(forKeys: [
+                .isDirectoryKey, .isSymbolicLinkKey
+            ])
+            if values?.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard values?.isDirectory == true, !isSensitive(url) else { continue }
+            if AgentDataProtection.containsProtectedData(
+                path: url.path,
+                homeDirectory: SandboxPaths.realHomeDirectory
+            ) {
+                enumerator.skipDescendants()
+                continue
+            }
 
             let name = url.lastPathComponent
             let lower = name.lowercased()
@@ -2376,11 +2500,11 @@ private enum DiskAdvisorScanner {
 
         let values = try? url.resourceValues(forKeys: Set(resourceKeys))
         if values?.isSymbolicLink == true { return }
+        seen.insert(standardized)
+        seen.insert(canonical)
 
         let (size, fileCount) = sizeOfItem(url)
         guard size >= minSize else { return }
-        seen.insert(standardized)
-        seen.insert(canonical)
 
         let modified = values?.contentModificationDate
         let classification = classify(url: url, category: category, modified: modified)
@@ -2472,6 +2596,7 @@ private enum DiskAdvisorScanner {
 
         var total: Int64 = 0
         var count = 0
+        var visited = 0
         guard let enumerator = FileManager.default.enumerator(
             at: url,
             includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .fileSizeKey],
@@ -2481,9 +2606,13 @@ private enum DiskAdvisorScanner {
         }
 
         for case let child as URL in enumerator {
-            if count > 60_000 { break }
+            visited += 1
+            if visited > 100_000 || count > 60_000 { break }
             let values = try? child.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .fileSizeKey])
-            if values?.isSymbolicLink == true { continue }
+            if values?.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
             guard values?.isRegularFile == true else { continue }
             let size = values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? values?.fileSize ?? 0
             total += Int64(size)
@@ -2516,10 +2645,7 @@ private enum DiskAdvisorScanner {
     }
 
     private static func isAgentDataDirectory(_ lowerName: String) -> Bool {
-        [
-            ".codex", ".claude", ".grok", ".gemini", ".cursor",
-            ".aider", ".cline", ".continue", ".qoder"
-        ].contains(lowerName)
+        AgentDataProtection.hiddenRootNames.contains(lowerName)
     }
 
     private static func projectRoots(home: URL) -> [URL] {
@@ -2531,7 +2657,10 @@ private enum DiskAdvisorScanner {
         let path = url.standardizedFileURL.path.lowercased()
         let name = url.lastPathComponent.lowercased()
         if isAgentDataDirectory(name)
-            || ["/.codex/", "/.claude/", "/.grok/", "/.gemini/", "/.cursor/"].contains(where: path.contains) {
+            || AgentDataProtection.containsProtectedData(
+                path: url.path,
+                homeDirectory: home.path
+            ) {
             return "AI Agent Data"
         }
         if path.contains("/private/tmp") { return "Temporary Files" }

@@ -20,6 +20,8 @@ struct AgentDataSource {
 }
 
 class AgentSessionScanner: ObservableObject, @unchecked Sendable {
+    static let shared = AgentSessionScanner()
+
     @Published var discoveredAgents: [DiscoveredAgent] = []
     @Published var opRecords: [AgentOpRecord] = []
     @Published var isScanning: Bool = false
@@ -54,6 +56,10 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
     private var recentSessionFileCache: [String: RecentSessionFileCacheEntry] = [:]
     private var incrementalReadOffsets: [String: UInt64] = [:]
     private var usesIncrementalReadWindow = false
+    private let agentDiscoveryCacheLifetime: TimeInterval = 5 * 60
+    private var lastAgentDiscoveryCompletedAt: Date = .distantPast
+    private var hasCompletedAgentDiscovery = false
+    private var dataSourceRevision: UInt64 = 0
 
     init() {
         registerBuiltInSources()
@@ -205,25 +211,46 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
     func registerSource(_ source: AgentDataSource) {
         scanStateLock.lock()
         defer { scanStateLock.unlock() }
+        if let existing = dataSources.first(where: {
+            $0.agentName == source.agentName && $0.isCustom == source.isCustom
+        }), Set(existing.searchPaths) == Set(source.searchPaths),
+           existing.filePattern == source.filePattern,
+           existing.isVSCodeType == source.isVSCodeType {
+            return
+        }
         dataSources.removeAll { $0.agentName == source.agentName && $0.isCustom == source.isCustom }
         dataSources.append(source)
+        dataSourceRevision &+= 1
+        hasCompletedAgentDiscovery = false
     }
 
     func removeDataSource(forAgentName name: String) {
         scanStateLock.lock()
         defer { scanStateLock.unlock() }
+        let previousCount = dataSources.count
         dataSources.removeAll { $0.agentName == name && $0.isCustom }
+        if dataSources.count != previousCount {
+            dataSourceRevision &+= 1
+            hasCompletedAgentDiscovery = false
+        }
     }
 
-    func scanAllAgents() {
+    func scanAllAgents(force: Bool = false) {
         scanStateLock.lock()
         guard !isScanningAgents else {
             scanStateLock.unlock()
             print("[AgentSessionScanner] scanAllAgents already in progress, skipping")
             return
         }
+        if !force,
+           hasCompletedAgentDiscovery,
+           Date().timeIntervalSince(lastAgentDiscoveryCompletedAt) < agentDiscoveryCacheLifetime {
+            scanStateLock.unlock()
+            return
+        }
         isScanningAgents = true
         let sources = dataSources
+        let sourceRevision = dataSourceRevision
         scanStateLock.unlock()
         isScanning = true
         scanError = ""
@@ -236,9 +263,13 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
                 self.parserLock.unlock()
                 self.scanStateLock.lock()
                 self.isScanningAgents = false
+                let shouldRescan = sourceRevision != self.dataSourceRevision
                 self.scanStateLock.unlock()
                 DispatchQueue.main.async {
                     self.isScanning = false
+                    if shouldRescan {
+                        self.scanAllAgents(force: true)
+                    }
                 }
             }
 
@@ -253,7 +284,9 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
                 }
 
                 let home = SandboxPaths.realHomeDirectory
-                let expandedPaths = source.searchPaths.map { $0.replacingOccurrences(of: "~", with: home) }
+                let expandedPaths = self.uniqueExistingPaths(
+                    source.searchPaths.map { $0.replacingOccurrences(of: "~", with: home) }
+                )
 
                 var sourceHasResults = false
 
@@ -282,11 +315,25 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
                     var projectDirs = Set<String>()
                     var fileCount = 0
 
-                    guard let enumerator = self.fileManager.enumerator(at: URL(fileURLWithPath: basePath), includingPropertiesForKeys: nil) else { continue }
+                    let discoveryKeys: Set<URLResourceKey> = [
+                        .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
+                        .contentModificationDateKey
+                    ]
+                    guard let enumerator = self.fileManager.enumerator(
+                        at: URL(fileURLWithPath: basePath),
+                        includingPropertiesForKeys: Array(discoveryKeys),
+                        options: [.skipsPackageDescendants]
+                    ) else { continue }
 
                     for case let itemURL as URL in enumerator {
                         fileCount += 1
                         if fileCount > 5000 { break }
+
+                        let values = try? itemURL.resourceValues(forKeys: discoveryKeys)
+                        if values?.isSymbolicLink == true {
+                            enumerator.skipDescendants()
+                            continue
+                        }
 
                         let path = itemURL.path
                         let relPath = String(path.dropFirst(basePath.count + 1))
@@ -300,8 +347,7 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
                         let lastComponent = itemURL.lastPathComponent
                         if lastComponent == ".git" {
                             sessionCount += 1
-                            if let attrs = try? self.fileManager.attributesOfItem(atPath: path),
-                               let modDate = attrs[.modificationDate] as? Date {
+                            if let modDate = values?.contentModificationDate {
                                 if latestDate == nil || modDate > latestDate! { latestDate = modDate }
                             }
                             enumerator.skipDescendants()
@@ -314,8 +360,7 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
 
                         if self.isSessionCandidate(itemURL, pattern: source.filePattern) {
                             sessionCount += 1
-                            if let attrs = try? self.fileManager.attributesOfItem(atPath: path),
-                               let modDate = attrs[.modificationDate] as? Date {
+                            if let modDate = values?.contentModificationDate {
                                 if latestDate == nil || modDate > latestDate! { latestDate = modDate }
                             }
                             let dirPart = components.first ?? ""
@@ -358,11 +403,31 @@ class AgentSessionScanner: ObservableObject, @unchecked Sendable {
 
             let results = Array(merged.values).sorted { ($0.latestActivity ?? .distantPast) > ($1.latestActivity ?? .distantPast) }
 
+            self.scanStateLock.lock()
+            if sourceRevision == self.dataSourceRevision {
+                self.hasCompletedAgentDiscovery = true
+                self.lastAgentDiscoveryCompletedAt = Date()
+            }
+            self.scanStateLock.unlock()
+
             DispatchQueue.main.async {
                 self.discoveredAgents = results
                 print("[AgentSessionScanner] Found \(results.count) agents with sessions")
             }
         }
+    }
+
+    private func uniqueExistingPaths(_ rawPaths: [String]) -> [String] {
+        var seen = Set<String>()
+        var paths: [String] = []
+        for rawPath in rawPaths {
+            let candidate = URL(fileURLWithPath: rawPath).standardizedFileURL.path
+            guard fileManager.fileExists(atPath: candidate), seen.insert(candidate).inserted else {
+                continue
+            }
+            paths.append(candidate)
+        }
+        return paths
     }
 
     func scanAgentOps(agentName: String) {

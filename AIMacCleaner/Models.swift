@@ -789,57 +789,6 @@ struct SensorEvent: Identifiable {
     }
 }
 
-struct StorageCategory: Identifiable {
-    let id: String
-    let name: String
-    let icon: String
-    let color: Color
-    let size: Int64
-    let path: String
-    var files: [StorageFile]
-
-    var sizeFormatted: String { ByteCountFormatter.string(fromByteCount: size, countStyle: .file) }
-}
-
-struct StorageFile: Identifiable {
-    let id: String
-    let name: String
-    let path: String
-    let size: Int64
-    let createdDate: Date?
-    let modifiedDate: Date?
-    let isDirectory: Bool
-    var aiAnalysis: String?
-    var riskLevel: FileRiskLevel = .unknown
-
-    var sizeFormatted: String { ByteCountFormatter.string(fromByteCount: size, countStyle: .file) }
-
-    enum SortField: String, CaseIterable {
-        case size = "Size"
-        case created = "Date Added"
-        case modified = "Date Modified"
-        case name = "Name"
-
-        var icon: String {
-            switch self {
-            case .size: "arrow.up.arrow.down.circle"
-            case .created: "calendar.badge.plus"
-            case .modified: "calendar.badge.clock"
-            case .name: "textformat"
-            }
-        }
-
-        func localizedLabel(_ localizer: Localizer) -> String {
-            switch self {
-            case .size: return localizer.sortSize
-            case .created: return localizer.sortCreated
-            case .modified: return localizer.sortModified
-            case .name: return localizer.sortName
-            }
-        }
-    }
-}
-
 struct IntelAppInfo: Identifiable {
     let id: String
     let name: String

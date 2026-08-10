@@ -5853,7 +5853,7 @@ struct AppOverviewTab: View {
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var usageInsightsService: AgentUsageInsightsService
     @ObservedObject var overviewStore: AgentMonitorOverviewStore
-    @StateObject private var sessionScanner = AgentSessionScanner()
+    @StateObject private var sessionScanner = AgentSessionScanner.shared
     @State private var didStartScan = false
 
     private var monitor: OperationMonitor { service.operationMonitor }
@@ -6130,7 +6130,6 @@ struct AppOverviewTab: View {
         service.refreshCachedSurfacesInBackground()
         overviewStore.refresh()
         sessionScanner.localizer = localizer
-        sessionScanner.isScanning = true
         sessionScanner.scanAllAgents()
         if service.installedApps.isEmpty {
             Task { await service.scanInstalledApps() }
@@ -11238,7 +11237,7 @@ struct OperationLogTab: View {
     @State private var customAgentName: String = ""
     @State private var customAgentPath: String = ""
     @State private var targetedChecked: Set<String> = []
-    @StateObject private var sessionScanner = AgentSessionScanner()
+    @StateObject private var sessionScanner = AgentSessionScanner.shared
     @AppStorage("customAgentSources") private var customAgentSourcesData: Data = Data()
     @State private var selectedAppToAdd: AppInfo?
     @State private var showAddAgentSheet: Bool = false
@@ -11688,7 +11687,6 @@ struct OperationLogTab: View {
                             .frame(maxWidth: 560)
                     }
                     Button {
-                        sessionScanner.isScanning = true
                         sessionScanner.scanAgentOps(agentName: sel)
                     } label: {
                         Label(localizer.scanRefresh, systemImage: "arrow.clockwise")
@@ -11731,8 +11729,7 @@ struct OperationLogTab: View {
                         .buttonStyle(.plain)
 
                         Button {
-                            sessionScanner.isScanning = true
-                            Task { sessionScanner.scanAllAgents() }
+                            Task { sessionScanner.scanAllAgents(force: true) }
                         } label: {
                             HStack(spacing: Theme.Spacing.xs) {
                                 Image(systemName: "arrow.clockwise").font(.system(size: 9))
@@ -11812,7 +11809,6 @@ struct OperationLogTab: View {
                                         if customAgentSources.contains(where: { $0.name == agent.name }) {
                                             Button {
                                                 removeCustomAgentSource(agent.name)
-                                                sessionScanner.scanAllAgents()
                                             } label: {
                                                 Image(systemName: "xmark.circle.fill")
                                                     .font(.system(size: 11))
@@ -11828,7 +11824,6 @@ struct OperationLogTab: View {
                                             auditFilterTimeRange = .all
                                             auditFilterOpType = ""
                                             aiSummary = ""
-                                            sessionScanner.isScanning = true
                                             Task {
                                                 sessionScanner.scanAgentOps(agentName: agent.name)
                                             }
@@ -11880,7 +11875,6 @@ struct OperationLogTab: View {
                     await service.scanInstalledApps()
                 }
                 registerInstalledAgentSources()
-                sessionScanner.isScanning = true
                 sessionScanner.scanAllAgents()
             }
         }

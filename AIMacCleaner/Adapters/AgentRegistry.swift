@@ -207,24 +207,11 @@ final class AgentRegistry: ObservableObject {
     }
 
     private func cliPath(for binary: String) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        process.arguments = [binary]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-            if process.terminationStatus == 0,
-               let path = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !path.isEmpty {
-                return path
-            }
-        } catch {}
-
         let home = SandboxPaths.realHomeDirectory
+        let expandedBinary = NSString(string: binary).expandingTildeInPath
+        if expandedBinary.contains("/"), FileManager.default.isExecutableFile(atPath: expandedBinary) {
+            return URL(fileURLWithPath: expandedBinary).standardizedFileURL.path
+        }
         let pathEntries = (ProcessInfo.processInfo.environment["PATH"] ?? "")
             .split(separator: ":")
             .map(String.init)
@@ -239,7 +226,8 @@ final class AgentRegistry: ObservableObject {
             "\(home)/.bun/bin",
             "\(home)/.cargo/bin"
         ]
-        for dir in Array(Set(pathEntries + commonDirs)) {
+        var seenDirectories = Set<String>()
+        for dir in pathEntries + commonDirs where seenDirectories.insert(dir).inserted {
             let candidate = URL(fileURLWithPath: dir).appendingPathComponent(binary).path
             if FileManager.default.isExecutableFile(atPath: candidate) {
                 return candidate

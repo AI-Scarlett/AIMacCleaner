@@ -761,6 +761,8 @@ final class DirectUpdateService: ObservableObject {
     private nonisolated static func runShell(_ script: String, timeout: TimeInterval) -> ShellResult {
         let process = Process()
         let output = Pipe()
+        let outputCapture = BoundedProcessOutput(limit: 8 * 1_024 * 1_024)
+        let readers = DispatchGroup()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = ["-lc", script]
         process.standardOutput = output
@@ -770,6 +772,11 @@ final class DirectUpdateService: ObservableObject {
             try process.run()
         } catch {
             return ShellResult(status: -1, output: error.localizedDescription, timedOut: false)
+        }
+        readers.enter()
+        DispatchQueue.global(qos: .utility).async {
+            outputCapture.drain(output.fileHandleForReading)
+            readers.leave()
         }
 
         let deadline = Date().addingTimeInterval(timeout)
@@ -783,9 +790,15 @@ final class DirectUpdateService: ObservableObject {
             Darwin.kill(process.processIdentifier, SIGKILL)
         }
         process.waitUntilExit()
-
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        let text = String(data: data, encoding: .utf8) ?? ""
+        if readers.wait(timeout: .now() + 2) == .timedOut {
+            output.fileHandleForReading.closeFile()
+            _ = readers.wait(timeout: .now() + 1)
+        }
+        let snapshot = outputCapture.snapshot()
+        var text = String(data: snapshot.data, encoding: .utf8) ?? ""
+        if snapshot.wasTruncated {
+            text += "\n[TraceFence truncated excessive command output]"
+        }
         return ShellResult(status: process.terminationStatus, output: text, timedOut: timedOut)
     }
 
@@ -933,15 +946,37 @@ final class DirectUpdateService: ObservableObject {
         let process = Process()
         let output = Pipe()
         let error = Pipe()
+        let outputCapture = BoundedProcessOutput(limit: 8 * 1_024 * 1_024)
+        let errorCapture = BoundedProcessOutput(limit: 1 * 1_024 * 1_024)
+        let readers = DispatchGroup()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         process.standardOutput = output
         process.standardError = error
         try process.run()
+        readers.enter()
+        DispatchQueue.global(qos: .utility).async {
+            outputCapture.drain(output.fileHandleForReading)
+            readers.leave()
+        }
+        readers.enter()
+        DispatchQueue.global(qos: .utility).async {
+            errorCapture.drain(error.fileHandleForReading)
+            readers.leave()
+        }
         process.waitUntilExit()
-
-        let stdout = output.fileHandleForReading.readDataToEndOfFile()
-        let stderr = error.fileHandleForReading.readDataToEndOfFile()
+        if readers.wait(timeout: .now() + 2) == .timedOut {
+            output.fileHandleForReading.closeFile()
+            error.fileHandleForReading.closeFile()
+            _ = readers.wait(timeout: .now() + 1)
+        }
+        let outputSnapshot = outputCapture.snapshot()
+        let errorSnapshot = errorCapture.snapshot()
+        let stdout = outputSnapshot.data
+        let stderr = errorSnapshot.data
+        if outputSnapshot.wasTruncated {
+            throw DirectUpdateError.commandFailed("Command output exceeded the safe processing limit: \(executable)")
+        }
         guard process.terminationStatus == 0 else {
             let detail = String(data: stderr, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
             throw DirectUpdateError.commandFailed(detail ?? executable)

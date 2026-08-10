@@ -31,8 +31,37 @@ def is_broad(path: str) -> bool:
         "~/Library/Application Support",
         "~/Library/Containers",
         "~/Library/Group Containers",
+        "~/Library/Developer/Xcode/DerivedData",
+        "~/Library/Developer/Xcode/Archives",
+        "~/Library/Unity",
+        "~/.codex/sessions",
+        "~/.codex/archived_sessions",
+        "~/.claude/projects",
+        "~/.grok/sessions",
+        "~/.grok/projects",
+        "~/.gemini/tmp",
+        "~/.gemini/history",
+        "~/.cursor/projects",
+        "~/Library/Application Support/Cursor/User/workspaceStorage",
+        "~/Library/Application Support/Trae/User/workspaceStorage",
+        "~/Library/Application Support/CodeBuddy CN/User/workspaceStorage",
     }
     if normalized in protected:
+        return True
+    protected_trees = (
+        "~/.codex/sessions",
+        "~/.codex/archived_sessions",
+        "~/.claude/projects",
+        "~/.grok/sessions",
+        "~/.grok/projects",
+        "~/.gemini/tmp",
+        "~/.gemini/history",
+        "~/.cursor/projects",
+        "~/Library/Application Support/Cursor/User/workspaceStorage",
+        "~/Library/Application Support/Trae/User/workspaceStorage",
+        "~/Library/Application Support/CodeBuddy CN/User/workspaceStorage",
+    )
+    if any(normalized.startswith(root + "/") for root in protected_trees):
         return True
     if normalized == "~/Library/Containers/com.docker.docker/Data/vms" or normalized.startswith(
         "~/Library/Containers/com.docker.docker/Data/vms/"

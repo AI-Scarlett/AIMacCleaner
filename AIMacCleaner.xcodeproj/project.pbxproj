@@ -20,7 +20,6 @@
 		D74BCA8FAB0474471D867C7C /* AIConfigView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */; };
 		DD8768E775E3FCAEE527E7C9 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3109E2D93F7928BE4CFFF2F /* Models.swift */; };
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* SensorMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6A7B8C9D0E1F2A3 /* SensorMonitor.swift */; };
-		C3D4E5F6A7B8C9D0E1F2A3B4 /* StorageAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A7B8C9D0E1F2A3B4C5 /* StorageAnalyzer.swift */; };
 		E4F5A6B7C8D9E0F1A2B3C4D5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A7B8C9D0E1F2A3B4C5D6E7 /* SettingsView.swift */; };
 		A1B2C3D4E5F6A7B8C9D0E1F3 /* Localizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7A8B9C0D1E2F3A4B5C6D7E8 /* Localizer.swift */; };
 		BB11CC22DD33EE44FF55AA66 /* IntelMigrationScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC22DD33EE44FF55AA66BB77 /* IntelMigrationScanner.swift */; };
@@ -95,7 +94,6 @@
 		F15EC33FFB79FB101CE80521 /* ScannerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerService.swift; sourceTree = "<group>"; };
 F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIConfigView.swift; sourceTree = "<group>"; };
 		B2C3D4E5F6A7B8C9D0E1F2A3 /* SensorMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensorMonitor.swift; sourceTree = "<group>"; };
-		D4E5F6A7B8C9D0E1F2A3B4C5 /* StorageAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageAnalyzer.swift; sourceTree = "<group>"; };
 		F6A7B8C9D0E1F2A3B4C5D6E7 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		F7A8B9C0D1E2F3A4B5C6D7E8 /* Localizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localizer.swift; sourceTree = "<group>"; };
 		CC22DD33EE44FF55AA66BB77 /* IntelMigrationScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntelMigrationScanner.swift; sourceTree = "<group>"; };
@@ -191,7 +189,6 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				EE44FF55AA66BB77CC88DD99 /* IntelMigrationTab.swift */,
 				FF55AA66BB77CC88DD99EE00 /* AIMacCleaner.entitlements */,
 				B2C3D4E5F6A7B8C9D0E1F2A3 /* SensorMonitor.swift */,
-				D4E5F6A7B8C9D0E1F2A3B4C5 /* StorageAnalyzer.swift */,
 				F6A7B8C9D0E1F2A3B4C5D6E7 /* SettingsView.swift */,
 				AGM20AGENTGEOMIRROR002 /* AgentGeoMirrorSettingsView.swift */,
 				CB10CB10CB10CB10CB10CB10 /* TokenScopeLabView.swift */,
@@ -372,7 +369,6 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 			files = (
 				D74BCA8FAB0474471D867C7C /* AIConfigView.swift in Sources */,
 				A1B2C3D4E5F6A7B8C9D0E1F2 /* SensorMonitor.swift in Sources */,
-				C3D4E5F6A7B8C9D0E1F2A3B4 /* StorageAnalyzer.swift in Sources */,
 				E4F5A6B7C8D9E0F1A2B3C4D5 /* SettingsView.swift in Sources */,
 			A1B2C3D4E5F6A7B8C9D0E1F3 /* Localizer.swift in Sources */,
 			848104EB233AA4D62CD15403 /* AIMacCleanerApp.swift in Sources */,

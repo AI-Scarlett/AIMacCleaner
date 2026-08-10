@@ -165,16 +165,7 @@ let SCAN_RULES: [ScanRule] = [
         "~/Library/Containers/com.docker.docker/Data/log",
         "~/Library/Containers/com.docker.docker/Data/logs",
     ]),
-    ScanRule(id: "cache_xcode_derived", name: "Xcode DerivedData", category: "开发", app: "Xcode", risk: "safe", riskDesc: "Xcode 编译产物和索引缓存，删除后下次编译会重新生成。", paths: [
-        "~/Library/Developer/Xcode/DerivedData",
-    ]),
-    ScanRule(id: "cache_xcode_archives", name: "Xcode Archives", category: "开发", app: "Xcode", risk: "caution", riskDesc: "Xcode 打包归档，删除后无法回溯历史版本。", paths: [
-        "~/Library/Developer/Xcode/Archives",
-    ]),
     ScanRule(id: "cache_android", name: "Android SDK 缓存", category: "开发", app: "Android Studio", risk: "safe", riskDesc: "Android SDK 临时缓存，删除后不影响 SDK 本身。", paths: [
         "~/Library/Android/sdk/.temp",
-    ]),
-    ScanRule(id: "cache_unity", name: "Unity 缓存", category: "开发", app: "Unity", risk: "safe", riskDesc: "Unity 编辑器缓存，删除后首次打开项目会重新导入。", paths: [
-        "~/Library/Unity",
     ]),
 ]

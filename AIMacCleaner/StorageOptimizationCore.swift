@@ -65,6 +65,8 @@ enum StorageOptimizationCore {
     private static let maxAgentFiles = 20_000
     private static let maxArtifactEntries = 100_000
     private static let maxCleanupItems = 800
+    private static let cacheTouchInterval: TimeInterval = 24 * 60 * 60
+    private static let maximumCacheBytes = 64 * 1_024 * 1_024
 
     private struct AgentRoot {
         let agentName: String
@@ -269,6 +271,7 @@ enum StorageOptimizationCore {
         var hashedFiles = 0
         var fingerprintedBytes: Int64 = 0
         var visited = 0
+        var cacheChanged = false
 
         for root in roots where FileManager.default.fileExists(atPath: root.url.path) {
             guard let enumerator = FileManager.default.enumerator(
@@ -296,8 +299,11 @@ enum StorageOptimizationCore {
                    cached.size == identity.size,
                    abs(cached.modifiedAt - identity.modifiedAt) < 0.001 {
                     payloads = cached.payloads
-                    cached.lastAccessedAt = now.timeIntervalSince1970
-                    cache.files[path] = cached
+                    if now.timeIntervalSince1970 - cached.lastAccessedAt >= cacheTouchInterval {
+                        cached.lastAccessedAt = now.timeIntervalSince1970
+                        cache.files[path] = cached
+                        cacheChanged = true
+                    }
                     cacheHits += 1
                 } else if let cached = cache.files[path],
                           cached.deviceID == identity.deviceID,
@@ -322,6 +328,7 @@ enum StorageOptimizationCore {
                         tailByteCount: appended.tailByteCount,
                         lastAccessedAt: now.timeIntervalSince1970
                     )
+                    cacheChanged = true
                     fingerprintedBytes += appended.processedBytes - cached.size
                     hashedFiles += 1
                 } else {
@@ -342,6 +349,7 @@ enum StorageOptimizationCore {
                         tailByteCount: full?.tailByteCount ?? 0,
                         lastAccessedAt: now.timeIntervalSince1970
                     )
+                    cacheChanged = true
                     fingerprintedBytes += processedBytes
                     hashedFiles += 1
                 }
@@ -355,7 +363,7 @@ enum StorageOptimizationCore {
             if visited > maxAgentFiles { break }
         }
 
-        trimAndSave(&cache, to: cacheURL, now: now)
+        trimAndSave(&cache, to: cacheURL, now: now, cacheChanged: cacheChanged)
 
         var globalPayloads: [String: PayloadFingerprint] = [:]
         var statsByAgent: [String: MutableAgentStats] = [:]
@@ -454,8 +462,12 @@ enum StorageOptimizationCore {
         in url: URL,
         startingAt requestedOffset: Int64 = 0
     ) throws -> EmbeddedPayloadScan {
-        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-        guard !data.isEmpty else {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let fileSize = try handle.seekToEnd()
+        let startOffset = min(UInt64(max(requestedOffset, 0)), fileSize)
+
+        guard fileSize > 0 else {
             return EmbeddedPayloadScan(
                 payloads: [],
                 endedWithNewline: false,
@@ -465,61 +477,142 @@ enum StorageOptimizationCore {
             )
         }
 
-        let payloads = data.withUnsafeBytes { rawBuffer -> [PayloadFingerprint] in
-            guard let base = rawBuffer.bindMemory(to: UInt8.self).baseAddress else { return [] }
-            let count = rawBuffer.count
-            var index = max(0, min(Int(requestedOffset), count))
-            var records: [String: PayloadFingerprint] = [:]
+        var parser = EmbeddedPayloadStreamParser()
+        var processedBytes = Int64(startOffset)
+        var tail = Data()
+        if startOffset > 0 {
+            let tailStart = startOffset > 4_096 ? startOffset - 4_096 : 0
+            try handle.seek(toOffset: tailStart)
+            tail = try handle.read(upToCount: Int(startOffset - tailStart)) ?? Data()
+        }
+        try handle.seek(toOffset: startOffset)
+        var lastByte: UInt8? = tail.last
+        while let chunk = try handle.read(upToCount: 1_024 * 1_024), !chunk.isEmpty {
+            parser.consume(chunk)
+            processedBytes += Int64(chunk.count)
+            lastByte = chunk.last
+            if chunk.count >= 4_096 {
+                tail = Data(chunk.suffix(4_096))
+            } else {
+                tail.append(chunk)
+                if tail.count > 4_096 {
+                    tail.removeFirst(tail.count - 4_096)
+                }
+            }
+        }
+        parser.finishAtEndOfFile()
+        let tailByteCount = tail.count
+        let tailDigest = Data(SHA256.hash(data: tail)).base64EncodedString()
+        return EmbeddedPayloadScan(
+            payloads: parser.payloads,
+            endedWithNewline: lastByte == 10,
+            processedBytes: processedBytes,
+            tailDigest: tailDigest,
+            tailByteCount: tailByteCount
+        )
+    }
 
-            while index + 12 < count {
-                guard matchesASCII("data:", at: index, bytes: base, count: count) else {
+    /// Incrementally recognizes data-URL payloads across arbitrary chunk
+    /// boundaries and hashes the base64 bytes without retaining the payload.
+    private struct EmbeddedPayloadStreamParser {
+        private static let dataPrefix = Array("data:".utf8)
+        private static let base64Marker = Array(";base64,".utf8)
+        private static let imagePrefix = Array("image/".utf8)
+        private static let audioPrefix = Array("audio/".utf8)
+        private static let videoPrefix = Array("video/".utf8)
+        private static let applicationPrefix = Array("application/".utf8)
+        private static let maximumHeaderBytes = 160
+
+        private var records: [String: PayloadFingerprint] = [:]
+        private var prefixMatchCount = 0
+        private var isReadingHeader = false
+        private var header: [UInt8] = []
+        private var payloadKind: EmbeddedMediaKind?
+        private var payloadHasher = SHA256()
+        private var payloadLength: Int64 = 0
+
+        var payloads: [PayloadFingerprint] { Array(records.values) }
+
+        mutating func consume(_ data: Data) {
+            data.withUnsafeBytes { rawBuffer in
+                let buffer = rawBuffer.bindMemory(to: UInt8.self)
+                guard let base = buffer.baseAddress else { return }
+                var index = 0
+                while index < buffer.count {
+                    if payloadKind != nil {
+                        let start = index
+                        while index < buffer.count, StorageOptimizationCore.isBase64Byte(base[index]) {
+                            index += 1
+                        }
+                        if index > start {
+                            payloadHasher.update(bufferPointer: UnsafeRawBufferPointer(
+                                start: base.advanced(by: start),
+                                count: index - start
+                            ))
+                            payloadLength += Int64(index - start)
+                        }
+                        if index == buffer.count { break }
+                        finishPayload()
+                        continue
+                    }
+
+                    consumeMetadataByte(base[index])
                     index += 1
-                    continue
                 }
+            }
+        }
 
-                let typeStart = index + 5
-                let kind: EmbeddedMediaKind
-                if matchesASCII("image/", at: typeStart, bytes: base, count: count) {
-                    kind = .image
-                } else if matchesASCII("audio/", at: typeStart, bytes: base, count: count) {
-                    kind = .audio
-                } else if matchesASCII("video/", at: typeStart, bytes: base, count: count) {
-                    kind = .video
-                } else if matchesASCII("application/", at: typeStart, bytes: base, count: count) {
-                    kind = .attachment
-                } else {
-                    index += 5
-                    continue
-                }
+        mutating func finishAtEndOfFile() {
+            if payloadKind != nil { finishPayload() }
+        }
 
-                guard let marker = findASCII(
-                    ";base64,",
-                    from: typeStart,
-                    through: min(typeStart + 160, count),
-                    bytes: base,
-                    count: count
-                ) else {
-                    index += 5
-                    continue
+        private mutating func consumeMetadataByte(_ byte: UInt8) {
+            if isReadingHeader {
+                header.append(byte)
+                if header.count >= Self.base64Marker.count,
+                   header.suffix(Self.base64Marker.count).elementsEqual(Self.base64Marker) {
+                    let mediaType = header.dropLast(Self.base64Marker.count)
+                    if mediaType.starts(with: Self.imagePrefix) {
+                        beginPayload(.image)
+                    } else if mediaType.starts(with: Self.audioPrefix) {
+                        beginPayload(.audio)
+                    } else if mediaType.starts(with: Self.videoPrefix) {
+                        beginPayload(.video)
+                    } else if mediaType.starts(with: Self.applicationPrefix) {
+                        beginPayload(.attachment)
+                    } else {
+                        resetHeader(lastByte: byte)
+                    }
+                } else if header.count > Self.maximumHeaderBytes {
+                    resetHeader(lastByte: byte)
                 }
+                return
+            }
 
-                let payloadStart = marker + 8
-                var payloadEnd = payloadStart
-                while payloadEnd < count, isBase64Byte(base[payloadEnd]) {
-                    payloadEnd += 1
+            if byte == Self.dataPrefix[prefixMatchCount] {
+                prefixMatchCount += 1
+                if prefixMatchCount == Self.dataPrefix.count {
+                    prefixMatchCount = 0
+                    isReadingHeader = true
+                    header.removeAll(keepingCapacity: true)
                 }
-                let length = payloadEnd - payloadStart
-                guard length >= 16 else {
-                    index = max(payloadEnd, index + 5)
-                    continue
-                }
+            } else {
+                prefixMatchCount = byte == Self.dataPrefix[0] ? 1 : 0
+            }
+        }
 
-                let payload = Data(
-                    bytesNoCopy: UnsafeMutableRawPointer(mutating: base.advanced(by: payloadStart)),
-                    count: length,
-                    deallocator: .none
-                )
-                let digest = Data(SHA256.hash(data: payload)).base64EncodedString()
+        private mutating func beginPayload(_ kind: EmbeddedMediaKind) {
+            payloadKind = kind
+            payloadHasher = SHA256()
+            payloadLength = 0
+            isReadingHeader = false
+            header.removeAll(keepingCapacity: true)
+        }
+
+        private mutating func finishPayload() {
+            guard let kind = payloadKind else { return }
+            if payloadLength >= 16 {
+                let digest = Data(payloadHasher.finalize()).base64EncodedString()
                 let key = "\(kind.rawValue):\(digest)"
                 if var existing = records[key] {
                     existing.occurrences += 1
@@ -528,24 +621,21 @@ enum StorageOptimizationCore {
                     records[key] = PayloadFingerprint(
                         digest: digest,
                         kind: kind,
-                        encodedBytes: Int64(length),
+                        encodedBytes: payloadLength,
                         occurrences: 1
                     )
                 }
-                index = payloadEnd
             }
-            return Array(records.values)
+            payloadKind = nil
+            payloadHasher = SHA256()
+            payloadLength = 0
         }
-        let tailByteCount = min(data.count, 4_096)
-        let tail = data.suffix(tailByteCount)
-        let tailDigest = Data(SHA256.hash(data: tail)).base64EncodedString()
-        return EmbeddedPayloadScan(
-            payloads: payloads,
-            endedWithNewline: data.last == 10,
-            processedBytes: Int64(data.count),
-            tailDigest: tailDigest,
-            tailByteCount: tailByteCount
-        )
+
+        private mutating func resetHeader(lastByte: UInt8) {
+            isReadingHeader = false
+            header.removeAll(keepingCapacity: true)
+            prefixMatchCount = lastByte == Self.dataPrefix[0] ? 1 : 0
+        }
     }
 
     private static func mergePayloads(
@@ -580,38 +670,6 @@ enum StorageOptimizationCore {
         }
     }
 
-    private static func matchesASCII(
-        _ value: StaticString,
-        at index: Int,
-        bytes: UnsafePointer<UInt8>,
-        count: Int
-    ) -> Bool {
-        let length = value.utf8CodeUnitCount
-        guard index >= 0, index + length <= count else { return false }
-        return value.withUTF8Buffer { expected in
-            for offset in 0..<expected.count where bytes[index + offset] != expected[offset] {
-                return false
-            }
-            return true
-        }
-    }
-
-    private static func findASCII(
-        _ value: StaticString,
-        from start: Int,
-        through end: Int,
-        bytes: UnsafePointer<UInt8>,
-        count: Int
-    ) -> Int? {
-        guard start < end else { return nil }
-        var index = start
-        while index < end {
-            if matchesASCII(value, at: index, bytes: bytes, count: count) { return index }
-            index += 1
-        }
-        return nil
-    }
-
     private static func isBase64Byte(_ byte: UInt8) -> Bool {
         (byte >= 65 && byte <= 90)
             || (byte >= 97 && byte <= 122)
@@ -644,19 +702,46 @@ enum StorageOptimizationCore {
         return cache
     }
 
-    private static func trimAndSave(_ cache: inout FingerprintCache, to url: URL, now: Date) {
+    private static func trimAndSave(
+        _ cache: inout FingerprintCache,
+        to url: URL,
+        now: Date,
+        cacheChanged: Bool
+    ) {
+        var needsSave = cacheChanged
         let cutoff = now.addingTimeInterval(-90 * 24 * 60 * 60).timeIntervalSince1970
-        cache.files = cache.files.filter { path, entry in
-            entry.lastAccessedAt >= cutoff && FileManager.default.fileExists(atPath: path)
-        }
+        let originalCount = cache.files.count
+        cache.files = cache.files.filter { $0.value.lastAccessedAt >= cutoff }
+        if cache.files.count != originalCount { needsSave = true }
         if cache.files.count > 5_000 {
             let keep = cache.files
                 .sorted { $0.value.lastAccessedAt > $1.value.lastAccessedAt }
                 .prefix(5_000)
             cache.files = Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
+            needsSave = true
         }
         cache.version = cacheVersion
-        guard let data = try? JSONEncoder().encode(cache) else { return }
+        guard needsSave else { return }
+        let encoder = JSONEncoder()
+        guard var data = try? encoder.encode(cache) else { return }
+        if data.count > maximumCacheBytes {
+            let orderedPaths = cache.files.sorted { lhs, rhs in
+                if lhs.value.lastAccessedAt != rhs.value.lastAccessedAt {
+                    return lhs.value.lastAccessedAt > rhs.value.lastAccessedAt
+                }
+                if lhs.value.size != rhs.value.size { return lhs.value.size > rhs.value.size }
+                return lhs.key < rhs.key
+            }.map(\.key)
+            var keepCount = orderedPaths.count
+            while data.count > maximumCacheBytes, keepCount > 1 {
+                keepCount = max(1, keepCount * 3 / 4)
+                let keep = Set(orderedPaths.prefix(keepCount))
+                cache.files = cache.files.filter { keep.contains($0.key) }
+                guard let reduced = try? encoder.encode(cache) else { return }
+                data = reduced
+            }
+        }
+        guard data.count <= maximumCacheBytes else { return }
         try? FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -688,11 +773,17 @@ enum StorageOptimizationCore {
                 at: derivedData,
                 includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey, .isSymbolicLinkKey],
                 options: [.skipsHiddenFiles]
-           ) {
+            ) {
             for project in projects {
-                guard isDirectory(project), !isSymbolicLink(project) else { continue }
+                let projectValues = try? project.resourceValues(forKeys: [
+                    .isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey
+                ])
+                guard projectValues?.isDirectory == true,
+                      projectValues?.isSymbolicLink != true else { continue }
                 let projectFamily = normalizedDerivedDataName(project.lastPathComponent)
-                let modified = modificationDate(of: project) ?? .distantPast
+                let modified = projectValues?.contentModificationDate
+                    ?? modificationDate(of: project)
+                    ?? .distantPast
                 records.append(BuildRecord(
                     kind: .xcodeDerivedData,
                     url: project,
@@ -710,12 +801,18 @@ enum StorageOptimizationCore {
                 for case let url as URL in enumerator {
                     visited += 1
                     if visited > 10_000 { break }
-                    if isSymbolicLink(url) {
+                    let values = try? url.resourceValues(forKeys: [
+                        .isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey,
+                        .contentModificationDateKey
+                    ])
+                    if values?.isSymbolicLink == true {
                         enumerator.skipDescendants()
                         continue
                     }
                     let ext = url.pathExtension.lowercased()
-                    let date = modificationDate(of: url) ?? .distantPast
+                    let date = values?.contentModificationDate
+                        ?? modificationDate(of: url)
+                        ?? .distantPast
                     if ext == "xcresult" {
                         records.append(BuildRecord(
                             kind: .xcodeResult,
@@ -724,7 +821,7 @@ enum StorageOptimizationCore {
                             modifiedDate: date
                         ))
                         enumerator.skipDescendants()
-                    } else if ext == "xcactivitylog", isRegularFile(url) {
+                    } else if ext == "xcactivitylog", values?.isRegularFile == true {
                         records.append(BuildRecord(
                             kind: .xcodeBuildLog,
                             url: url,
@@ -754,7 +851,10 @@ enum StorageOptimizationCore {
         for case let url as URL in enumerator {
             visited += 1
             if visited > 25_000 { break }
-            if isSymbolicLink(url) {
+            let values = try? url.resourceValues(forKeys: [
+                .isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey
+            ])
+            if values?.isSymbolicLink == true {
                 enumerator.skipDescendants()
                 continue
             }
@@ -764,7 +864,9 @@ enum StorageOptimizationCore {
                 kind: kind,
                 url: url,
                 groupKey: "archive:\(group)",
-                modifiedDate: modificationDate(of: url) ?? .distantPast
+                modifiedDate: values?.contentModificationDate
+                    ?? modificationDate(of: url)
+                    ?? .distantPast
             ))
             enumerator.skipDescendants()
         }
@@ -840,7 +942,7 @@ enum StorageOptimizationCore {
                     path: path,
                     size: size.bytes,
                     fileCount: size.files,
-                    isDirectory: isDirectory(record.url),
+                    isDirectory: size.isDirectory,
                     modifiedDate: record.modifiedDate,
                     detail: detail
                 ))
@@ -867,7 +969,9 @@ enum StorageOptimizationCore {
     ) -> ArtifactDiscovery {
         let roots: [URL]
         if isSandboxed {
-            roots = (authorizedRoots ?? []).map { URL(fileURLWithPath: $0, isDirectory: true) }
+            roots = nonOverlappingRoots((authorizedRoots ?? []).map {
+                URL(fileURLWithPath: $0, isDirectory: true)
+            }, home: home)
         } else {
             roots = ["Downloads", "Desktop", "Documents"].map {
                 home.appendingPathComponent($0, isDirectory: true)
@@ -897,12 +1001,17 @@ enum StorageOptimizationCore {
                     enumerator.skipDescendants()
                     continue
                 }
-                if isSymbolicLink(url) {
+                let values = try? url.resourceValues(forKeys: [
+                    .isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey,
+                    .fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey,
+                    .contentModificationDateKey
+                ])
+                if values?.isSymbolicLink == true {
                     enumerator.skipDescendants()
                     continue
                 }
 
-                if isDirectory(url) {
+                if values?.isDirectory == true {
                     let lower = url.lastPathComponent.lowercased()
                     if shouldSkipArtifactDirectory(lower) || isOpaquePackage(url) {
                         enumerator.skipDescendants()
@@ -914,19 +1023,17 @@ enum StorageOptimizationCore {
                             kind: .versionedOutput,
                             url: url,
                             groupKey: "versioned:\(url.deletingLastPathComponent().standardizedFileURL.path)",
-                            modifiedDate: modificationDate(of: url) ?? .distantPast
+                            modifiedDate: values?.contentModificationDate
+                                ?? modificationDate(of: url)
+                                ?? .distantPast
                         ))
                     }
                     continue
                 }
 
-                guard isRegularFile(url), isInstallerArtifact(url) else { continue }
+                guard values?.isRegularFile == true, isInstallerArtifact(url) else { continue }
                 let path = url.standardizedFileURL.path
                 guard seen.insert(path).inserted else { continue }
-                let values = try? url.resourceValues(forKeys: [
-                    .fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey,
-                    .contentModificationDateKey
-                ])
                 let bytes = allocatedFileSize(values)
                 guard bytes >= minimumInstallerSize else { continue }
                 result.installers.append(StorageCleanupItem(
@@ -950,8 +1057,8 @@ enum StorageOptimizationCore {
     ]
 
     private static let installerExtensions: Set<String> = [
-        "dmg", "pkg", "ipa", "apk", "aab", "exe", "msi", "msix",
-        "appx", "appxbundle", "deb", "rpm", "snap"
+        "dmg", "pkg", "xip", "iso", "ipa", "apk", "aab", "exe", "msi",
+        "msix", "appx", "appxbundle", "deb", "rpm", "snap"
     ]
 
     private static func isInstallerArtifact(_ url: URL) -> Bool {
@@ -999,6 +1106,26 @@ enum StorageOptimizationCore {
         }
     }
 
+    private static func nonOverlappingRoots(_ candidates: [URL], home: URL) -> [URL] {
+        let existing = candidates
+            .map(\.standardizedFileURL)
+            .filter {
+                FileManager.default.fileExists(atPath: $0.path)
+                    && !AgentDataProtection.containsProtectedData(
+                        path: $0.path,
+                        homeDirectory: home.path
+                    )
+            }
+            .sorted { $0.path.count < $1.path.count }
+        var roots: [URL] = []
+        for candidate in existing where !roots.contains(where: {
+            candidate.path == $0.path || candidate.path.hasPrefix($0.path + "/")
+        }) {
+            roots.append(candidate)
+        }
+        return roots
+    }
+
     private static func isDirectory(_ url: URL) -> Bool {
         (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
     }
@@ -1022,14 +1149,17 @@ enum StorageOptimizationCore {
         return Int64(values?.fileSize ?? 0)
     }
 
-    private static func allocatedSizeAndCount(of url: URL) -> (bytes: Int64, files: Int) {
-        if isRegularFile(url) {
-            let values = try? url.resourceValues(forKeys: [
-                .fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey
-            ])
-            return (allocatedFileSize(values), 1)
+    private static func allocatedSizeAndCount(
+        of url: URL
+    ) -> (bytes: Int64, files: Int, isDirectory: Bool) {
+        let rootValues = try? url.resourceValues(forKeys: [
+            .isRegularFileKey, .isDirectoryKey,
+            .fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey
+        ])
+        if rootValues?.isRegularFile == true {
+            return (allocatedFileSize(rootValues), 1, false)
         }
-        guard isDirectory(url),
+        guard rootValues?.isDirectory == true,
               let enumerator = FileManager.default.enumerator(
                 at: url,
                 includingPropertiesForKeys: [
@@ -1037,21 +1167,22 @@ enum StorageOptimizationCore {
                     .fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey
                 ],
                 options: []
-              ) else { return (0, 0) }
+              ) else { return (0, 0, false) }
         var bytes: Int64 = 0
         var files = 0
         for case let child as URL in enumerator {
-            if isSymbolicLink(child) {
+            let values = try? child.resourceValues(forKeys: [
+                .isRegularFileKey, .isSymbolicLinkKey,
+                .fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey
+            ])
+            if values?.isSymbolicLink == true {
                 enumerator.skipDescendants()
                 continue
             }
-            guard isRegularFile(child) else { continue }
-            let values = try? child.resourceValues(forKeys: [
-                .fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey
-            ])
+            guard values?.isRegularFile == true else { continue }
             bytes += allocatedFileSize(values)
             files += 1
         }
-        return (bytes, files)
+        return (bytes, files, true)
     }
 }

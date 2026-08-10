@@ -440,7 +440,9 @@ class ScannerService: ObservableObject {
     // MARK: - Local Scan
 
     func scanLocal(promptForAccess: Bool = true) async {
+        guard !isScanning else { return }
         isScanning = true
+        defer { isScanning = false }
         errorMessage = nil
         restoreScanAccessFromBookmarks()
 
@@ -449,14 +451,12 @@ class ScannerService: ObservableObject {
                 if promptForAccess {
                     errorMessage = localizer?.selectMonitorDirs ?? "Please select folders to scan"
                 }
-                isScanning = false
                 return
             }
         }
 
         if authorizedScanRoots.isEmpty {
             errorMessage = localizer?.selectMonitorDirs ?? "Please select folders to scan"
-            isScanning = false
             return
         }
 
@@ -552,7 +552,6 @@ class ScannerService: ObservableObject {
 
         scanItems = items
         refreshDiskInfo()
-        isScanning = false
         saveScannerCache()
     }
 
@@ -584,12 +583,16 @@ class ScannerService: ObservableObject {
             ".git", "package.json", "Cargo.toml", "Package.swift", "pyproject.toml",
             "requirements.txt", "go.mod", "pubspec.yaml", "pom.xml", "build.gradle"
         ]
-        let installerExtensions: Set<String> = ["dmg", "pkg", "xip", "iso"]
-        let skipDirectories: Set<String> = [
+        let installerExtensions: Set<String> = [
+            "dmg", "pkg", "xip", "iso", "ipa", "apk", "aab", "exe", "msi",
+            "msix", "appx", "appxbundle", "deb", "rpm", "snap"
+        ]
+        let skipDirectories: Set<String> = AgentDataProtection.hiddenRootNames.union([
             "Library", "Applications", ".Trash", ".git", ".codex", ".claude",
             "Pictures", "Music", "Movies", ".cache"
-        ]
-        let scanRoots = roots.isEmpty ? defaultMaintenanceRoots(fileManager: fm) : Array(roots)
+        ])
+        let rawScanRoots = roots.isEmpty ? defaultMaintenanceRoots(fileManager: fm) : Array(roots)
+        let scanRoots = nonOverlappingExistingRoots(rawScanRoots, fileManager: fm)
         var results: [MaintenanceCandidate] = []
         var seenPaths = Set<String>()
         var visitedEntries = 0
@@ -701,6 +704,23 @@ class ScannerService: ObservableObject {
         return ["Documents", "Downloads", "Desktop", "Developer", "Projects", "GitHub", "Code"]
             .map { (home as NSString).appendingPathComponent($0) }
             .filter { fileManager.fileExists(atPath: $0) }
+    }
+
+    nonisolated private static func nonOverlappingExistingRoots(
+        _ rawRoots: [String],
+        fileManager: FileManager
+    ) -> [String] {
+        let candidates = rawRoots
+            .map { URL(fileURLWithPath: Self.expandUserPath($0), isDirectory: true).standardizedFileURL.path }
+            .filter { fileManager.fileExists(atPath: $0) }
+            .sorted { $0.count < $1.count }
+        var roots: [String] = []
+        for candidate in candidates where !roots.contains(where: {
+            candidate == $0 || candidate.hasPrefix($0 + "/")
+        }) {
+            roots.append(candidate)
+        }
+        return roots
     }
 
     nonisolated private static func isProjectArtifact(_ url: URL, markers: [String], fileManager: FileManager) -> Bool {
@@ -846,7 +866,7 @@ class ScannerService: ObservableObject {
 
         guard let enumerator = fm.enumerator(at: URL(fileURLWithPath: path),
                                               includingPropertiesForKeys: [.fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .isRegularFileKey, .isSymbolicLinkKey],
-                                              options: [.skipsHiddenFiles],
+                                              options: [],
                                               errorHandler: nil) else {
             return (0, 0)
         }
@@ -883,7 +903,21 @@ class ScannerService: ObservableObject {
         var successCount = 0
         var failCount = 0
 
-        let itemsToDelete = scanItems.filter { ids.contains($0.id) }
+        let requestedIDs = Set(ids)
+        let itemsToDelete = scanItems.filter { requestedIDs.contains($0.id) }
+        let matchedIDs = Set(itemsToDelete.map(\.id))
+        for missingID in requestedIDs.subtracting(matchedIDs) {
+            failCount += 1
+            deleteResults.append(DeleteItemResult(
+                id: missingID,
+                path: "",
+                success: false,
+                message: localizer?.t(
+                    "清理项已过期，请重新扫描后再试。",
+                    en: "This cleanup item is stale. Scan again before retrying."
+                ) ?? "Cleanup item is stale."
+            ))
+        }
         let targetPaths = itemsToDelete.flatMap { pathsToDelete(for: $0) }
 
         let unsafeResults = itemsToDelete.flatMap { item in
@@ -927,6 +961,14 @@ class ScannerService: ObservableObject {
                         }
                         successCount += 1
                         deleteResults.append(DeleteItemResult(id: item.id, path: expanded, success: true, message: localizer?.movedToTrash ?? "Moved to Trash"))
+                    } else {
+                        failCount += 1
+                        deleteResults.append(DeleteItemResult(
+                            id: item.id,
+                            path: expanded,
+                            success: false,
+                            message: localizer?.t("文件不存在", en: "File does not exist") ?? "File does not exist"
+                        ))
                     }
                 } catch {
                     failCount += 1
@@ -935,7 +977,7 @@ class ScannerService: ObservableObject {
             }
         }
 
-        return DeleteResult(success: true, results: deleteResults, deleted: successCount, failed: failCount)
+        return DeleteResult(success: failCount == 0, results: deleteResults, deleted: successCount, failed: failCount)
     }
 
     func deleteAdvisedPaths(_ targets: [(id: String, path: String, size: Int64, fileCount: Int)]) async -> DeleteResult {
@@ -1035,6 +1077,16 @@ class ScannerService: ObservableObject {
         ]
         guard !protectedExactPaths.contains(normalized) else {
             return localizer?.t("不能把用户资料根目录或系统数据根目录作为清理项。", en: "User-data and system-data root folders cannot be cleanup targets.") ?? "Protected root path rejected."
+        }
+
+        guard !AgentDataProtection.containsProtectedData(
+            path: normalized,
+            homeDirectory: home
+        ) else {
+            return localizer?.t(
+                "Agent 原始会话和工作区状态只用于分析，不能作为清理目标。",
+                en: "Original Agent sessions and workspace state are analysis-only and cannot be cleanup targets."
+            ) ?? "Original Agent history is protected."
         }
 
         let dockerVMRoot = home + "/Library/Containers/com.docker.docker/Data/vms"
@@ -2132,7 +2184,7 @@ class ScannerService: ObservableObject {
     private var lastAlertTime: Date = .distantPast
     let operationMonitor = OperationMonitor()
     let guardFeature = AgentGuardFeature()
-    private let agentHistoryScanner = AgentSessionScanner()
+    private let agentHistoryScanner = AgentSessionScanner.shared
     private let agentHistoryScanQueue = DispatchQueue(
         label: "com.tracefence.agent-history-scan",
         qos: .utility

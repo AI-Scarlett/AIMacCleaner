@@ -40,6 +40,12 @@ struct VerifyDiskFileInventory {
             at: root.appendingPathComponent("photo-link.jpg"),
             withDestinationURL: root.appendingPathComponent("photo.JPG")
         )
+        let agentSessions = root.appendingPathComponent(".codex/sessions", isDirectory: true)
+        try fm.createDirectory(at: agentSessions, withIntermediateDirectories: true)
+        try Data(repeating: 9, count: 100_000).write(to: agentSessions.appendingPathComponent("source.jsonl"))
+        let qwenData = root.appendingPathComponent(".qwen/projects", isDirectory: true)
+        try fm.createDirectory(at: qwenData, withIntermediateDirectories: true)
+        try Data(repeating: 8, count: 110_000).write(to: qwenData.appendingPathComponent("source.jsonl"))
 
         let cacheURL = root.appendingPathComponent("cache/disk_file_inventory_cache_v1.json")
         var providerCalls = 0
@@ -81,6 +87,7 @@ struct VerifyDiskFileInventory {
         try expect(report.activityMarker(at: now) == .days7, "10-day marker failed")
         try expect(backup.activityMarker(at: now) == .recent, "recent marker failed")
         try expect(release.activityMarker(at: now) == .recent, "last-opened date should override an old modified date")
+        let firstCacheData = try Data(contentsOf: cacheURL)
 
         let second = DiskFileInventoryCore.scan(
             homeDirectory: root.path,
@@ -96,6 +103,8 @@ struct VerifyDiskFileInventory {
         try expect(second.summary.cacheHitCount == fixtures.count, "second scan should reuse all metadata records")
         try expect(second.summary.metadataReadCount == 0, "second scan should avoid Spotlight metadata reads")
         try expect(providerCalls == fixtures.count, "fresh cache should not call the last-opened provider")
+        let secondCacheData = try Data(contentsOf: cacheURL)
+        try expect(firstCacheData == secondCacheData, "an unchanged warm scan should not rewrite the metadata cache")
 
         let movie = root.appendingPathComponent("movie.MP4")
         let handle = try FileHandle(forWritingTo: movie)
@@ -118,7 +127,46 @@ struct VerifyDiskFileInventory {
         try expect(third.summary.cacheHitCount == fixtures.count - 1, "only the changed file should miss cache")
         try expect(third.summary.metadataReadCount == 1, "only the changed file should refresh metadata")
 
-        print("DISK_FILE_INVENTORY_OK files=\(first.files.count) cache_hits=\(second.summary.cacheHitCount) refreshed=\(third.summary.metadataReadCount) categories=\(first.summary.categoryBreakdown.count)")
+        providerCalls = 0
+        let boundedCacheURL = root.appendingPathComponent("cache/bounded_inventory_cache_v1.json")
+        let bounded = DiskFileInventoryCore.scan(
+            homeDirectory: root.path,
+            authorizedRoots: [root.path],
+            isSandboxed: true,
+            cacheURL: boundedCacheURL,
+            now: now.addingTimeInterval(180),
+            maximumReturnedFiles: 3,
+            lastOpenedDateProvider: { _ in
+                providerCalls += 1
+                return nil
+            }
+        )
+        try expect(bounded.summary.eligibleFileCount == fixtures.count, "bounded inventory must still count every eligible file")
+        try expect(bounded.files.count == 3, "bounded inventory should retain only the requested largest files")
+        try expect(bounded.summary.wasTruncated, "bounded inventory must report partial visible coverage")
+        try expect(providerCalls == 3, "Spotlight should run only for files retained by the bounded inventory")
+        try expect(bounded.summary.metadataReadCount == 3, "bounded inventory metadata count should match retained cache misses")
+
+        let protectedRoot = DiskFileInventoryCore.scan(
+            homeDirectory: root.path,
+            authorizedRoots: [agentSessions.path],
+            isSandboxed: true,
+            cacheURL: root.appendingPathComponent("cache/protected_inventory_cache_v1.json"),
+            now: now.addingTimeInterval(240)
+        )
+        try expect(protectedRoot.files.isEmpty, "directly authorized Agent state must not become a cleanup file list")
+        try expect(protectedRoot.summary.eligibleFileCount == 0, "protected Agent state must remain outside inventory totals")
+
+        let protectedQwenRoot = DiskFileInventoryCore.scan(
+            homeDirectory: root.path,
+            authorizedRoots: [qwenData.path],
+            isSandboxed: true,
+            cacheURL: root.appendingPathComponent("cache/protected_qwen_inventory_cache_v1.json"),
+            now: now.addingTimeInterval(300)
+        )
+        try expect(protectedQwenRoot.files.isEmpty, "all supported Agent roots must share cleanup protection")
+
+        print("DISK_FILE_INVENTORY_OK files=\(first.files.count) cache_hits=\(second.summary.cacheHitCount) refreshed=\(third.summary.metadataReadCount) bounded=\(bounded.files.count) protected=\(protectedRoot.files.count + protectedQwenRoot.files.count) categories=\(first.summary.categoryBreakdown.count)")
     }
 
     private static func record(

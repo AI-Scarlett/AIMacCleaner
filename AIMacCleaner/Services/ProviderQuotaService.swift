@@ -781,6 +781,41 @@ private struct ProviderQuotaWindowBuildResult {
     let diagnostic: String?
 }
 
+/// Continuously drains a child-process pipe while bounding the amount retained
+/// in memory. Waiting for a process before reading its pipes can deadlock once
+/// either pipe fills its kernel buffer.
+final class BoundedProcessOutput: @unchecked Sendable {
+    private let limit: Int
+    private let lock = NSLock()
+    private var data = Data()
+    private var truncated = false
+
+    init(limit: Int) {
+        self.limit = max(limit, 0)
+        data.reserveCapacity(min(self.limit, 64 * 1_024))
+    }
+
+    func drain(_ handle: FileHandle) {
+        while true {
+            let chunk = handle.readData(ofLength: 64 * 1_024)
+            guard !chunk.isEmpty else { return }
+            lock.lock()
+            let remaining = max(limit - data.count, 0)
+            if remaining > 0 {
+                data.append(contentsOf: chunk.prefix(remaining))
+            }
+            if chunk.count > remaining { truncated = true }
+            lock.unlock()
+        }
+    }
+
+    func snapshot() -> (data: Data, wasTruncated: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (data, truncated)
+    }
+}
+
 private struct CodexBarQuotaProvider {
     private let logger = Logger(subsystem: "com.tracefence.app", category: "provider-quota")
 
@@ -921,12 +956,18 @@ private struct CodexBarQuotaProvider {
         guard !providerIDs.isEmpty else { return [] }
 
         let group = DispatchGroup()
+        let limiter = DispatchSemaphore(value: 3)
         let lock = NSLock()
         var indexedPayloads: [(offset: Int, payloads: [CodexBarProviderPayload])] = []
 
         for (offset, providerID) in providerIDs.enumerated() {
             group.enter()
             DispatchQueue.global(qos: .utility).async {
+                limiter.wait()
+                defer {
+                    limiter.signal()
+                    group.leave()
+                }
                 let payloads = self.readSingleProviderPayload(
                     providerID,
                     from: executable,
@@ -935,7 +976,6 @@ private struct CodexBarQuotaProvider {
                 lock.lock()
                 indexedPayloads.append((offset, payloads))
                 lock.unlock()
-                group.leave()
             }
         }
 
@@ -1306,6 +1346,9 @@ private struct CodexBarQuotaProvider {
         let process = Process()
         let output = Pipe()
         let error = Pipe()
+        let outputCapture = BoundedProcessOutput(limit: 8 * 1_024 * 1_024)
+        let errorCapture = BoundedProcessOutput(limit: 1 * 1_024 * 1_024)
+        let readers = DispatchGroup()
 
         process.executableURL = executable
         process.arguments = arguments
@@ -1314,6 +1357,17 @@ private struct CodexBarQuotaProvider {
         process.environment = processEnvironment(for: executable)
 
         try process.run()
+        readers.enter()
+        DispatchQueue.global(qos: .utility).async {
+            outputCapture.drain(output.fileHandleForReading)
+            readers.leave()
+        }
+        readers.enter()
+        DispatchQueue.global(qos: .utility).async {
+            errorCapture.drain(error.fileHandleForReading)
+            readers.leave()
+        }
+
         let deadline = Date().addingTimeInterval(timeout)
         var didTimeOut = false
         while process.isRunning, Date() < deadline {
@@ -1332,13 +1386,23 @@ private struct CodexBarQuotaProvider {
         }
         process.waitUntilExit()
 
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        let errorData = error.fileHandleForReading.readDataToEndOfFile()
+        if readers.wait(timeout: .now() + 2) == .timedOut {
+            output.fileHandleForReading.closeFile()
+            error.fileHandleForReading.closeFile()
+            _ = readers.wait(timeout: .now() + 1)
+        }
+        let outputSnapshot = outputCapture.snapshot()
+        let errorSnapshot = errorCapture.snapshot()
+        let data = outputSnapshot.data
+        let errorData = errorSnapshot.data
         let message = String(data: errorData, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         if didTimeOut {
             throw CodexBarQuotaError.commandFailed("Quota monitor engine timed out. TraceFence stopped this read automatically.")
+        }
+        if outputSnapshot.wasTruncated {
+            throw CodexBarQuotaError.commandFailed("Quota monitor engine returned more data than TraceFence can safely process.")
         }
         if !data.isEmpty {
             return data
