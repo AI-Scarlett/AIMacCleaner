@@ -13,13 +13,17 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.7")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.8")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Keeps Token & Usage scans responsive on multi-gigabyte Codex histories with hard byte, time, and physical-memory budgets; cold and manual backfill passes are resumable instead of unbounded.\n"
+    "- Memory-maps lineage sources and indexes only compact token-counter records, so repeated media and artifact payloads are never copied into the app heap.\n"
+    "- Prevents Claude quota and session probes from accumulating output, hanging after timeout, or crash-looping when a local socket client disconnects early.\n"
+    "- Indexes discovered Agent Guard command rules during history rebuilds, removing the launch-time million-comparison main-thread stall on larger local audit histories.\n"
     "- Streams multi-gigabyte Agent histories in bounded chunks and reuses incremental fingerprints, avoiding whole-file memory spikes and repeated rescans when records are unchanged.\n"
     "- Keeps the file inventory bounded to the largest actionable items, delays expensive metadata reads until needed, and preserves complete category totals without retaining every file in memory.\n"
     "- Groups historical build outputs and keeps the newest three per project while recognizing 18 installer and distribution formats for explicit user-selected cleanup.\n"

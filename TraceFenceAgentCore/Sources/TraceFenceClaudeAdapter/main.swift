@@ -2,11 +2,15 @@ import CryptoKit
 import Darwin
 import Foundation
 
-private let adapterVersion = "1.0.2"
+private let adapterVersion = "1.0.3"
 private let maxRequestBytes = 512 * 1_024
 private let maxResponseBytes = 8 * 1_024 * 1_024
+private let maxProcessOutputBytes = 8 * 1_024 * 1_024
+private let maxProcessErrorBytes = 2 * 1_024 * 1_024
 private let maxSessionFiles = 100
 private let maxSessionFileBytes: Int64 = 50 * 1_024 * 1_024
+private let sessionCacheLifetime: TimeInterval = 60
+private let healthCacheLifetime: TimeInterval = 30
 private let claudeEnvironmentService = "com.tracefence.adapter.claude.environment.v2"
 private let claudeEnvironmentKeys = [
     "ANTHROPIC_AUTH_TOKEN",
@@ -67,6 +71,33 @@ private struct ProcessResult {
     let output: String
     let error: String
     let timedOut: Bool
+}
+
+private final class BoundedProcessBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private let limit: Int
+    private var data = Data()
+    private(set) var truncated = false
+
+    init(limit: Int) {
+        self.limit = max(1, limit)
+        data.reserveCapacity(min(limit, 64 * 1_024))
+    }
+
+    func append(_ chunk: Data) {
+        guard !chunk.isEmpty else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        let remaining = max(0, limit - data.count)
+        if remaining > 0 { data.append(chunk.prefix(remaining)) }
+        if chunk.count > remaining { truncated = true }
+    }
+
+    func text() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
 }
 
 private struct BackgroundAgent {
@@ -148,6 +179,9 @@ private final class ClaudeAdapterDaemon {
     private var cachedBaseSessions: [[String: Any]] = []
     private var sessionCacheUpdatedAt = Date.distantPast
     private var sessionRefreshInProgress = false
+    private let healthCacheLock = NSLock()
+    private var cachedHealthPayload: [String: Any]?
+    private var healthCacheUpdatedAt = Date.distantPast
     private var rpcListener: Int32 = -1
     private var hookListener: Int32 = -1
 
@@ -236,6 +270,23 @@ private final class ClaudeAdapterDaemon {
     }
 
     private func healthPayload() -> [String: Any] {
+        healthCacheLock.lock()
+        defer { healthCacheLock.unlock() }
+        if let cachedHealthPayload,
+           Date().timeIntervalSince(healthCacheUpdatedAt) < healthCacheLifetime {
+            return cachedHealthPayload
+        }
+
+        // Coalesce simultaneous menu, Core and phone health requests. Without
+        // this single-flight section a cold burst can launch the same Claude
+        // version/auth probes many times before the first response is cached.
+        let payload = rebuildHealthPayload()
+        cachedHealthPayload = payload
+        healthCacheUpdatedAt = Date()
+        return payload
+    }
+
+    private func rebuildHealthPayload() -> [String: Any] {
         guard let cli = claudeExecutable() else {
             return [
                 "adapterVersion": adapterVersion,
@@ -384,7 +435,7 @@ private final class ClaudeAdapterDaemon {
 
     private func refreshSessionCache(force: Bool = false) {
         sessionCacheLock.lock()
-        let isDue = force || Date().timeIntervalSince(sessionCacheUpdatedAt) >= 3
+        let isDue = force || Date().timeIntervalSince(sessionCacheUpdatedAt) >= sessionCacheLifetime
         guard isDue, !sessionRefreshInProgress else {
             sessionCacheLock.unlock()
             return
@@ -406,6 +457,9 @@ private final class ClaudeAdapterDaemon {
         sessionCacheLock.lock()
         sessionCacheUpdatedAt = .distantPast
         sessionCacheLock.unlock()
+        healthCacheLock.lock()
+        healthCacheUpdatedAt = .distantPast
+        healthCacheLock.unlock()
     }
 
     private func scanSessionFiles(backgroundAgents: [String: BackgroundAgent]) -> [[String: Any]] {
@@ -433,31 +487,37 @@ private final class ClaudeAdapterDaemon {
             var sessionId: String?
             var cwd = ""
             var createdAt = candidate.modifiedAt
+            var foundCreatedAt = false
             var model = "Claude"
             var lastUserMessage = ""
             var lastResponse = ""
             var customTitle = ""
 
             for segment in segments {
-                for line in segment.split(whereSeparator: \ .isNewline) {
-                    guard let data = line.data(using: .utf8),
-                          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-                    sessionId = stringValue(object, keys: ["sessionId", "session_id"], fallback: sessionId ?? "")
-                    cwd = stringValue(object, keys: ["cwd", "workingDirectory"], fallback: cwd)
-                    if let timestamp = object["timestamp"] as? String, let date = iso.date(from: timestamp) {
-                        createdAt = min(createdAt, date)
-                    }
-                    if object["type"] as? String == "custom-title" {
-                        customTitle = stringValue(object, keys: ["customTitle", "title", "name"], fallback: customTitle)
-                    }
-                    guard let message = object["message"] as? [String: Any],
-                          let role = message["role"] as? String else { continue }
-                    if let value = message["model"] as? String, !value.isEmpty, value != "<synthetic>" { model = value }
-                    let text = extractText(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if role == "user", !text.isEmpty, text != "Continue from where you left off." {
-                        lastUserMessage = String(text.suffix(1_200))
-                    } else if role == "assistant", !text.isEmpty, text != "No response requested." {
-                        lastResponse = String(text.suffix(1_200))
+                for line in segment.split(whereSeparator: \.isNewline) {
+                    autoreleasepool {
+                        guard let data = line.data(using: .utf8),
+                              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+                        sessionId = stringValue(object, keys: ["sessionId", "session_id"], fallback: sessionId ?? "")
+                        cwd = stringValue(object, keys: ["cwd", "workingDirectory"], fallback: cwd)
+                        if !foundCreatedAt,
+                           let timestamp = object["timestamp"] as? String,
+                           let date = iso.date(from: timestamp) {
+                            createdAt = min(createdAt, date)
+                            foundCreatedAt = true
+                        }
+                        if object["type"] as? String == "custom-title" {
+                            customTitle = stringValue(object, keys: ["customTitle", "title", "name"], fallback: customTitle)
+                        }
+                        guard let message = object["message"] as? [String: Any],
+                              let role = message["role"] as? String else { return }
+                        if let value = message["model"] as? String, !value.isEmpty, value != "<synthetic>" { model = value }
+                        let text = extractText(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
+                        if role == "user", !text.isEmpty, text != "Continue from where you left off." {
+                            lastUserMessage = String(text.suffix(1_200))
+                        } else if role == "assistant", !text.isEmpty, text != "No response requested." {
+                            lastResponse = String(text.suffix(1_200))
+                        }
                     }
                 }
             }
@@ -888,32 +948,89 @@ private func runProcess(
         return ProcessResult(status: -1, output: "", error: error.localizedDescription, timedOut: false)
     }
 
-    var outputData = Data()
-    var errorData = Data()
+    let outputBuffer = BoundedProcessBuffer(limit: maxProcessOutputBytes)
+    let errorBuffer = BoundedProcessBuffer(limit: maxProcessErrorBytes)
     let readers = DispatchGroup()
     readers.enter()
     DispatchQueue.global(qos: .utility).async {
-        outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        drainProcessPipe(outputPipe.fileHandleForReading, into: outputBuffer)
         readers.leave()
     }
     readers.enter()
     DispatchQueue.global(qos: .utility).async {
-        errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        drainProcessPipe(errorPipe.fileHandleForReading, into: errorBuffer)
         readers.leave()
     }
 
     let timedOut = termination.wait(timeout: .now() + timeout) == .timedOut
     if timedOut {
         kill(process.processIdentifier, SIGTERM)
-        if termination.wait(timeout: .now() + 1) == .timedOut { kill(process.processIdentifier, SIGKILL) }
+        if termination.wait(timeout: .now() + 1) == .timedOut {
+            kill(process.processIdentifier, SIGKILL)
+            if termination.wait(timeout: .now() + 3) == .timedOut {
+                process.waitUntilExit()
+            }
+        }
+    }
+    if readers.wait(timeout: .now() + 2) == .timedOut {
+        // A descendant can inherit a pipe after the direct child exits. Close
+        // our read ends so health polling cannot hang behind that descendant.
+        try? outputPipe.fileHandleForReading.close()
+        try? errorPipe.fileHandleForReading.close()
     }
     readers.wait()
     return ProcessResult(
-        status: process.terminationStatus,
-        output: String(data: outputData, encoding: .utf8) ?? "",
-        error: String(data: errorData, encoding: .utf8) ?? "",
+        status: process.isRunning ? -1 : process.terminationStatus,
+        output: outputBuffer.text(),
+        error: errorBuffer.text(),
         timedOut: timedOut
     )
+}
+
+private func drainProcessPipe(_ handle: FileHandle, into buffer: BoundedProcessBuffer) {
+    while true {
+        do {
+            let reachedEnd = try autoreleasepool { () -> Bool in
+                guard let chunk = try handle.read(upToCount: 64 * 1_024), !chunk.isEmpty else { return true }
+                buffer.append(chunk)
+                return false
+            }
+            if reachedEnd { return }
+        } catch {
+            return
+        }
+    }
+}
+
+private func runProcessSelfTest() -> Int32 {
+    let timeoutResult = runProcess(
+        "/bin/sh",
+        ["-c", "printf ready; sleep 5"],
+        timeout: 0.1,
+        includeStoredClaudeEnvironment: false
+    )
+    let outputResult = runProcess(
+        "/usr/bin/yes",
+        ["0123456789abcdef"],
+        timeout: 0.1,
+        includeStoredClaudeEnvironment: false
+    )
+    let failures = [
+        timeoutResult.timedOut ? nil : "timeout_not_reported",
+        outputResult.timedOut ? nil : "bounded_output_timeout_not_reported",
+        outputResult.output.utf8.count <= maxProcessOutputBytes ? nil : "output_limit_exceeded"
+    ].compactMap { $0 }
+    let payload: [String: Any] = [
+        "ok": failures.isEmpty,
+        "failures": failures,
+        "adapterVersion": adapterVersion,
+        "capturedOutputBytes": outputResult.output.utf8.count
+    ]
+    if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
+        FileHandle.standardOutput.write(data)
+        FileHandle.standardOutput.write(Data([0x0A]))
+    }
+    return failures.isEmpty ? 0 : 2
 }
 
 private func importClaudeEnvironment() -> Int32 {
@@ -1124,7 +1241,14 @@ let defaultRPCSocket = coreDirectory.appendingPathComponent("claude-adapter.sock
 let defaultHookSocket = coreDirectory.appendingPathComponent("claude-hooks.sock").path
 let arguments = CommandLine.arguments
 
-if arguments.contains("--import-environment") {
+// A menu refresh or hook client can disconnect before the daemon finishes its
+// response. Treat EPIPE as a failed write instead of letting the default
+// SIGPIPE disposition terminate launchd's long-running adapter process.
+_ = Darwin.signal(SIGPIPE, SIG_IGN)
+
+if arguments.contains("--self-test") {
+    exit(runProcessSelfTest())
+} else if arguments.contains("--import-environment") {
     exit(importClaudeEnvironment())
 } else if arguments.contains("--daemon") {
     let rpcSocket = argument(after: "--socket", default: defaultRPCSocket)

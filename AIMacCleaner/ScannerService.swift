@@ -2208,6 +2208,7 @@ class ScannerService: ObservableObject {
     private let recentAgentHistoryOverlap: TimeInterval = 90
     private let recentAgentHistoryAlertLookback: TimeInterval = 24 * 60 * 60
     private let recentAgentHistoryNotificationWindow: TimeInterval = 2 * 60
+    private let agentGuardAnalyticsReplacementRebuildInterval: TimeInterval = 5 * 60
     private let agentGuardAnalyticsSignatureKey = "agentGuard.analyticsRecordSignature.v3"
     private var lastAgentHistoryImportTime: Date =
         (UserDefaults.standard.object(forKey: "agentHistory.lastAutomaticImportAt") as? Date) ?? .distantPast
@@ -2215,6 +2216,8 @@ class ScannerService: ObservableObject {
     private var lastRecentAgentHistoryImportAttemptTime: Date = .distantPast
     private var recentAgentHistoryCursor: Date = .distantPast
     private var operationRecordsSnapshotSignature = ""
+    private var lastAgentGuardAnalyticsRebuildAt = Date.distantPast
+    private var agentGuardAnalyticsRebuildPending = false
     private var recordsClearCutoff: Date {
         if let d = UserDefaults.standard.object(forKey: "operationRecordsClearedAt") as? Date { return d }
         return .distantPast
@@ -2238,7 +2241,7 @@ class ScannerService: ObservableObject {
         operationRecordsSnapshotSignature = operationSnapshotSignature(operationRecords)
         let savedAnalyticsSignature = UserDefaults.standard.string(forKey: agentGuardAnalyticsSignatureKey)
         if guardFeature.hourlyStats.isEmpty || savedAnalyticsSignature != operationRecordsSnapshotSignature {
-            guardFeature.rebuildAnalytics(from: operationRecords)
+            rebuildAgentGuardAnalytics(from: operationRecords)
             UserDefaults.standard.set(operationRecordsSnapshotSignature, forKey: agentGuardAnalyticsSignatureKey)
         }
         initializeRecentAgentHistoryCursorIfNeeded()
@@ -2260,7 +2263,7 @@ class ScannerService: ObservableObject {
             if signature != operationRecordsSnapshotSignature {
                 processedOperationRecordIDs = Set(currentRecords.map(\.id))
                 operationRecordsSnapshotSignature = signature
-                guardFeature.rebuildAnalytics(from: currentRecords)
+                rebuildAgentGuardAnalytics(from: currentRecords)
                 UserDefaults.standard.set(signature, forKey: agentGuardAnalyticsSignatureKey)
             }
             startOperationPolling()
@@ -2288,7 +2291,7 @@ class ScannerService: ObservableObject {
         lastRecentAgentHistoryImportAttemptTime = .distantPast
         recentAgentHistoryCursor = clearedAt
         UserDefaults.standard.removeObject(forKey: agentHistoryImportTimestampKey)
-        guardFeature.rebuildAnalytics(from: [])
+        rebuildAgentGuardAnalytics(from: [])
         UserDefaults.standard.set(operationSnapshotSignature([]), forKey: agentGuardAnalyticsSignatureKey)
         saveScannerCache()
     }
@@ -2306,7 +2309,17 @@ class ScannerService: ObservableObject {
         let existingRecords = operationMonitor.records
         let existingByID = Dictionary(uniqueKeysWithValues: existingRecords.map { ($0.id, $0) })
         let changedRecords = converted.filter { existingByID[$0.id] != $0 }
-        guard !changedRecords.isEmpty else { return [] }
+        guard !changedRecords.isEmpty else {
+            if agentGuardAnalyticsRebuildPending,
+               Date().timeIntervalSince(lastAgentGuardAnalyticsRebuildAt) >= agentGuardAnalyticsReplacementRebuildInterval {
+                operationRecords = existingRecords
+                processedOperationRecordIDs = Set(existingRecords.map(\.id))
+                operationRecordsSnapshotSignature = operationSnapshotSignature(existingRecords)
+                rebuildAgentGuardAnalytics(from: existingRecords)
+                UserDefaults.standard.set(operationRecordsSnapshotSignature, forKey: agentGuardAnalyticsSignatureKey)
+            }
+            return []
+        }
         let existingIDs = Set(existingRecords.map(\.id))
         let hasReplacements = changedRecords.contains { existingByID[$0.id] != nil }
         operationMonitor.mergeHistoricalRecords(changedRecords)
@@ -2316,10 +2329,13 @@ class ScannerService: ObservableObject {
             .sorted { $0.timestamp < $1.timestamp }
         processedOperationRecordIDs = Set(operationRecords.map(\.id))
         operationRecordsSnapshotSignature = operationSnapshotSignature(operationRecords)
-        let rebuiltAnalytics = hasReplacements || alertEvaluationStart == nil
+        let replacementRebuildIsDue = hasReplacements
+            && Date().timeIntervalSince(lastAgentGuardAnalyticsRebuildAt) >= agentGuardAnalyticsReplacementRebuildInterval
+        let rebuiltAnalytics = alertEvaluationStart == nil || replacementRebuildIsDue
         if rebuiltAnalytics {
-            guardFeature.rebuildAnalytics(from: operationRecords)
+            rebuildAgentGuardAnalytics(from: operationRecords)
         } else {
+            if hasReplacements { agentGuardAnalyticsRebuildPending = true }
             for record in addedRecords {
                 guardFeature.recordStats(record)
             }
@@ -2358,26 +2374,61 @@ class ScannerService: ObservableObject {
                 guardFeature.saveCommandRules()
             }
         }
-        UserDefaults.standard.set(operationRecordsSnapshotSignature, forKey: agentGuardAnalyticsSignatureKey)
+        if !agentGuardAnalyticsRebuildPending {
+            UserDefaults.standard.set(operationRecordsSnapshotSignature, forKey: agentGuardAnalyticsSignatureKey)
+        }
         return addedRecords
     }
 
     func ingestHookAuditRecord(_ record: OperationRecord) {
         guard record.timestamp >= recordsClearCutoff else { return }
         operationMonitor.mergeHistoricalRecords([record])
-        refreshOperationRecordsSnapshot()
+        let currentRecords = operationMonitor.records
+        operationRecords = currentRecords
+        processedOperationRecordIDs = Set(currentRecords.map(\.id))
+        operationRecordsSnapshotSignature = operationSnapshotSignature(currentRecords)
+        // HookServer immediately forwards the same normalized event to
+        // AgentGuardFeature for stats and command evaluation. Rebuilding all
+        // 3,000 retained records here made every hook event an O(history)
+        // main-thread operation.
+        if !agentGuardAnalyticsRebuildPending {
+            UserDefaults.standard.set(operationRecordsSnapshotSignature, forKey: agentGuardAnalyticsSignatureKey)
+        }
     }
 
     func refreshOperationRecordsSnapshot() {
+        let previousRecords = operationRecords
+        let previousByID = Dictionary(uniqueKeysWithValues: previousRecords.map { ($0.id, $0) })
         let currentRecords = operationMonitor.records
         let signature = operationSnapshotSignature(currentRecords)
         operationRecords = currentRecords
         processedOperationRecordIDs = Set(currentRecords.map(\.id))
         guard signature != operationRecordsSnapshotSignature else { return }
         operationRecordsSnapshotSignature = signature
-        guardFeature.rebuildAnalytics(from: currentRecords)
-        UserDefaults.standard.set(signature, forKey: agentGuardAnalyticsSignatureKey)
+        let currentIDs = Set(currentRecords.map(\.id))
+        let addedRecords = currentRecords.filter { previousByID[$0.id] == nil }
+        let hasReplacements = currentRecords.contains { record in
+            guard let previous = previousByID[record.id] else { return false }
+            return previous != record
+        }
+        let hasRemovals = previousRecords.contains { !currentIDs.contains($0.id) }
+        if (hasReplacements || hasRemovals),
+           Date().timeIntervalSince(lastAgentGuardAnalyticsRebuildAt) >= agentGuardAnalyticsReplacementRebuildInterval {
+            rebuildAgentGuardAnalytics(from: currentRecords)
+        } else {
+            if hasReplacements || hasRemovals { agentGuardAnalyticsRebuildPending = true }
+            for record in addedRecords { guardFeature.recordStats(record) }
+        }
+        if !agentGuardAnalyticsRebuildPending {
+            UserDefaults.standard.set(signature, forKey: agentGuardAnalyticsSignatureKey)
+        }
         saveScannerCache()
+    }
+
+    private func rebuildAgentGuardAnalytics(from records: [OperationRecord]) {
+        guardFeature.rebuildAnalytics(from: records)
+        lastAgentGuardAnalyticsRebuildAt = Date()
+        agentGuardAnalyticsRebuildPending = false
     }
 
     private func operationSnapshotSignature(_ records: [OperationRecord]) -> String {

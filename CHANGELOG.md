@@ -2,6 +2,17 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.1.8] - 2026-08-12
+
+### Fixed
+- “Token 与用量”在冷缓存、手动继续补全以及超大 Codex 父子会话去重时改为严格的字节、时间和物理内存预算，扫描可续跑，不再因数 GB 会话把应用内存推高到数 GB。
+- 父会话去重只内存映射原始文件并定位紧凑 `token_count` 记录；提示词、图片、文件和其它大行不会复制进应用堆，未变化结果复用不含内容的本地指纹缓存。
+- Claude 适配器对子进程输出设置上限，并在超时后等待进程完整退出；客户端提前断开本地 socket 时不再触发 `SIGPIPE` 崩溃与 launchd 反复拉起。
+- Agent Guard 启动时使用命令规则索引重建 3000 条历史统计，不再在主线程执行近百万次重复字符串匹配；本机历史重建由约 6 分钟缩短到 5 秒。
+
+### Improved
+- Codex、Claude、OpenCode 和 OpenClaw 本地统计改为串行后台解析，降低同时扫描多个历史库造成的瞬时内存和磁盘压力。
+
 ## [1.1.7] - 2026-08-11
 
 ### Improved

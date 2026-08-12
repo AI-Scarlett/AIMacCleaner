@@ -1,5 +1,6 @@
 import Combine
 import CryptoKit
+import Darwin
 import Foundation
 import SQLite3
 
@@ -1982,6 +1983,7 @@ private enum AgentUsageFileCacheStore {
     static func clearAll() {
         for name in [
             codexName, claudeName,
+            "agent_usage_codex_lineage_cache_v1.json",
             "agent_usage_codex_cache_v4.json", "agent_usage_claude_cache_v4.json",
             "agent_usage_codex_cache_v3.json", "agent_usage_claude_cache_v3.json",
             "agent_usage_codex_cache_v2.json", "agent_usage_claude_cache_v2.json",
@@ -2023,6 +2025,90 @@ private enum AgentUsagePrivacy {
 
     static func cacheKey(for url: URL) -> String {
         digest(url.standardizedFileURL.path)
+    }
+}
+
+private struct AgentUsageLineageFingerprintCacheEntry: Codable {
+    let size: Int64
+    let modificationTimeNanoseconds: Int64
+    let fingerprints: [AgentUsageCounterFingerprint]
+    let lastAccessedAt: Date
+}
+
+private struct AgentUsageLineageFingerprintCache: Codable {
+    let version: Int
+    var entries: [String: AgentUsageLineageFingerprintCacheEntry]
+}
+
+/// Persists compact, content-free counter identities for fork parents. A very
+/// large parent transcript then needs to be streamed only once instead of on
+/// every cold detail pass. Prompts, replies, paths and session IDs are absent.
+private enum AgentUsageLineageFingerprintCacheStore {
+    private static let version = 1
+    private static let name = "agent_usage_codex_lineage_cache_v1.json"
+    private static let maximumEntries = 64
+    private static let maximumEncodedBytes = 16 * 1_024 * 1_024
+
+    static func load() -> AgentUsageLineageFingerprintCache {
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
+              let size = values.fileSize,
+              size >= 0,
+              size <= maximumEncodedBytes,
+              let data = try? Data(contentsOf: url, options: [.mappedIfSafe]),
+              let decoded = try? JSONDecoder().decode(AgentUsageLineageFingerprintCache.self, from: data),
+              decoded.version == version else {
+            return AgentUsageLineageFingerprintCache(version: version, entries: [:])
+        }
+        return AgentUsageLineageFingerprintCache(
+            version: version,
+            entries: limited(decoded.entries)
+        )
+    }
+
+    @discardableResult
+    static func save(_ cache: AgentUsageLineageFingerprintCache) -> Bool {
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            var entries = limited(cache.entries)
+            var data = try JSONEncoder().encode(AgentUsageLineageFingerprintCache(
+                version: version,
+                entries: entries
+            ))
+            while data.count > maximumEncodedBytes, !entries.isEmpty {
+                guard let oldest = entries.min(by: {
+                    $0.value.lastAccessedAt < $1.value.lastAccessedAt
+                })?.key else { break }
+                entries.removeValue(forKey: oldest)
+                data = try JSONEncoder().encode(AgentUsageLineageFingerprintCache(
+                    version: version,
+                    entries: entries
+                ))
+            }
+            guard data.count <= maximumEncodedBytes else { return false }
+            try data.write(to: url, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static var url: URL {
+        URL(fileURLWithPath: SandboxPaths.shared.dataDirectory, isDirectory: true)
+            .appendingPathComponent(name)
+    }
+
+    private static func limited(
+        _ entries: [String: AgentUsageLineageFingerprintCacheEntry]
+    ) -> [String: AgentUsageLineageFingerprintCacheEntry] {
+        guard entries.count > maximumEntries else { return entries }
+        return Dictionary(uniqueKeysWithValues: entries.sorted {
+            $0.value.lastAccessedAt > $1.value.lastAccessedAt
+        }.prefix(maximumEntries).map { ($0.key, $0.value) })
     }
 }
 
@@ -2150,33 +2236,41 @@ private struct AgentUsageCounterSample: Equatable {
 
 /// Stable, content-free identity for one Codex `token_count` record. Forked
 /// subagent rollouts replay their ancestor's counter records byte-for-byte in
-/// meaning even though the child has a different session identifier. Keeping
+/// meaning even though the child has a different session identifier. Hashing
 /// only the ten numeric counter fields lets TraceFence remove that inherited
 /// history without retaining prompts, replies, tool data, or file paths.
-private struct AgentUsageCounterFingerprint: Hashable {
-    let cumulativeInput: Int64
-    let cumulativeCached: Int64
-    let cumulativeOutput: Int64
-    let cumulativeReasoning: Int64
-    let cumulativeTotal: Int64
-    let lastInput: Int64
-    let lastCached: Int64
-    let lastOutput: Int64
-    let lastReasoning: Int64
-    let lastTotal: Int64
+private struct AgentUsageCounterFingerprint: Hashable, Codable {
+    /// Two independently mixed words keep an in-memory lineage index compact.
+    /// The previous representation retained ten Int64 fields plus Set storage
+    /// for every record, which amplified cold scans of large forked sessions.
+    let high: UInt64
+    let low: UInt64
 
     init(cumulative: AgentUsageCounterSample?, last: AgentUsageCounterSample?) {
         func value(_ raw: Int64?) -> Int64 { raw ?? Int64.min }
-        cumulativeInput = value(cumulative?.input)
-        cumulativeCached = value(cumulative?.cached)
-        cumulativeOutput = value(cumulative?.output)
-        cumulativeReasoning = value(cumulative?.reasoning)
-        cumulativeTotal = value(cumulative?.total)
-        lastInput = value(last?.input)
-        lastCached = value(last?.cached)
-        lastOutput = value(last?.output)
-        lastReasoning = value(last?.reasoning)
-        lastTotal = value(last?.total)
+        let fields = [
+            value(cumulative?.input), value(cumulative?.cached),
+            value(cumulative?.output), value(cumulative?.reasoning),
+            value(cumulative?.total), value(last?.input),
+            value(last?.cached), value(last?.output),
+            value(last?.reasoning), value(last?.total)
+        ]
+        var first: UInt64 = 0x243F_6A88_85A3_08D3
+        var second: UInt64 = 0x1319_8A2E_0370_7344
+        for (index, field) in fields.enumerated() {
+            let bits = UInt64(bitPattern: field)
+            first = Self.mix(first ^ bits ^ UInt64(index &* 0x9E37))
+            second = Self.mix(second &+ bits &+ UInt64(index &* 0x85EB))
+        }
+        high = first
+        low = second
+    }
+
+    private static func mix(_ value: UInt64) -> UInt64 {
+        var result = value
+        result = (result ^ (result >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        result = (result ^ (result >> 27)) &* 0x94D0_49BB_1331_11EB
+        return result ^ (result >> 31)
     }
 }
 
@@ -2575,6 +2669,30 @@ private struct AgentUsageJSONStreamStats {
     let oversizedRelevantLineCount: Int
 }
 
+private enum AgentUsageResidentMemoryGuard {
+    /// Token analytics is background metadata work. It must yield long before
+    /// it can make the rest of the Mac unresponsive, regardless of source size.
+    static let maximumResidentBytes: UInt64 = 512 * 1_024 * 1_024
+
+    static func isOverLimit() -> Bool {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size
+        )
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+                task_info(
+                    mach_task_self_,
+                    task_flavor_t(TASK_VM_INFO),
+                    rebound,
+                    &count
+                )
+            }
+        }
+        return result == KERN_SUCCESS && info.phys_footprint >= maximumResidentBytes
+    }
+}
+
 private enum AgentUsageJSONStream {
     @discardableResult
     static func forEachLine(
@@ -2600,6 +2718,7 @@ private enum AgentUsageJSONStream {
         var oversizedRelevantLineCount = 0
         var discardedLineWasInteresting = false
         var scanOffset = 0
+        var nextMemoryCheckAt: Int64 = 4 * 1_024 * 1_024
 
         while true {
             try Task.checkCancellation()
@@ -2611,11 +2730,23 @@ private enum AgentUsageJSONStream {
                 break
             }
             let readCount = Int(min(Int64(64 * 1_024), remaining ?? Int64(64 * 1_024)))
-            let chunk = try handle.read(upToCount: readCount) ?? Data()
-            if chunk.isEmpty { break }
-            bytesRead += Int64(chunk.count)
-            if remaining != nil { remaining! -= Int64(chunk.count) }
-            buffer.append(chunk)
+            var chunkCount = 0
+            let reachedEnd = try autoreleasepool { () -> Bool in
+                let chunk = try handle.read(upToCount: readCount) ?? Data()
+                guard !chunk.isEmpty else { return true }
+                chunkCount = chunk.count
+                buffer.append(chunk)
+                return false
+            }
+            if reachedEnd { break }
+            bytesRead += Int64(chunkCount)
+            if remaining != nil { remaining! -= Int64(chunkCount) }
+            if bytesRead >= nextMemoryCheckAt {
+                if AgentUsageResidentMemoryGuard.isOverLimit() {
+                    throw AgentUsageParserStop.bounded
+                }
+                nextMemoryCheckAt = bytesRead + 4 * 1_024 * 1_024
+            }
 
             var lineStartOffset = 0
             var consumedOffset = 0
@@ -2634,7 +2765,11 @@ private enum AgentUsageJSONStream {
                         let isInteresting = prefilterPatterns.isEmpty || prefilterPatterns.contains {
                             buffer.range(of: $0, options: [], in: lineRange) != nil
                         }
-                        if isInteresting { try body(buffer.subdata(in: lineRange)) }
+                        if isInteresting {
+                            try autoreleasepool {
+                                try body(buffer.subdata(in: lineRange))
+                            }
+                        }
                     } else {
                         let isRelevant = prefilterPatterns.isEmpty || prefilterPatterns.contains {
                             buffer.range(of: $0, options: [], in: lineRange) != nil
@@ -2673,7 +2808,7 @@ private enum AgentUsageJSONStream {
         }
 
         if !hitByteLimit, !buffer.isEmpty, !discardingOversizedLine, buffer.count <= maximumLineBytes {
-            try body(buffer)
+            try autoreleasepool { try body(buffer) }
         }
         return AgentUsageJSONStreamStats(
             bytesRead: bytesRead,
@@ -2982,16 +3117,36 @@ private enum AgentUsageCodexLineageReader {
     }
 
     static func tokenFingerprints(at url: URL) -> Set<AgentUsageCounterFingerprint>? {
+        guard let fingerprint = AgentUsageValues.fileFingerprint(url),
+              fingerprint.size >= 0,
+              fingerprint.size <= fingerprintReadLimit,
+              // Never fall back to copying a multi-gigabyte rollout into the
+              // app heap if Foundation cannot establish a read-only mapping.
+              let data = try? Data(contentsOf: url, options: [.alwaysMapped]) else { return nil }
         var result = Set<AgentUsageCounterFingerprint>()
         result.reserveCapacity(4_096)
         var recordCount = 0
+        var searchOffset = data.startIndex
         let tokenPattern = Data(#""type":"token_count""#.utf8)
-        do {
-            let stats = try AgentUsageJSONStream.forEachLine(
-                at: url,
-                maximumBytes: fingerprintReadLimit,
-                prefilterPatterns: [tokenPattern]
-            ) { line in
+        let maximumTokenLineBytes = 512 * 1_024
+
+        // Searching the memory-mapped bytes jumps directly between the small
+        // token_count records. It avoids constructing Data/String objects for
+        // gigabytes of prompts, artifacts and repeated media payloads.
+        while searchOffset < data.endIndex,
+              let match = data.range(
+                of: tokenPattern,
+                options: [],
+                in: searchOffset..<data.endIndex
+              ) {
+            let lineStart = data[..<match.lowerBound].lastIndex(of: 0x0A).map { $0 + 1 }
+                ?? data.startIndex
+            let newline = data[match.upperBound...].firstIndex(of: 0x0A)
+            let lineEnd = newline ?? data.endIndex
+            guard lineEnd - lineStart <= maximumTokenLineBytes else { return nil }
+
+            autoreleasepool {
+                let line = data.subdata(in: lineStart..<lineEnd)
                 guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
                       let payload = object["payload"] as? [String: Any],
                       (AgentUsageValues.string(payload["type"]) ?? AgentUsageValues.string(object["type"])) == "token_count",
@@ -3000,16 +3155,13 @@ private enum AgentUsageCodexLineageReader {
                 let last = (info["last_token_usage"] as? [String: Any]).map(AgentUsageValues.counterSample)
                 guard cumulative != nil || last != nil else { return }
                 recordCount += 1
-                if recordCount > fingerprintRecordLimit {
-                    throw AgentUsageCodexLineageStop.recordLimitReached
-                }
                 result.insert(AgentUsageCounterFingerprint(cumulative: cumulative, last: last))
             }
-            guard !stats.hitByteLimit, stats.oversizedRelevantLineCount == 0 else { return nil }
-            return result
-        } catch {
-            return nil
+            guard recordCount <= fingerprintRecordLimit else { return nil }
+            if recordCount % 256 == 0, AgentUsageResidentMemoryGuard.isOverLimit() { return nil }
+            searchOffset = newline.map { min(data.endIndex, $0 + 1) } ?? data.endIndex
         }
+        return result
     }
 }
 
@@ -3591,6 +3743,46 @@ private enum AgentUsageCodexWorkMode: Int {
     case backfill = 3
 }
 
+private struct AgentUsageCodexScanBudget {
+    let totalTranscriptBytes: Int64
+    let ordinaryBytesPerFile: Int64
+    let lineageBytesPerFile: Int64
+    let lineageFingerprintBytes: Int64
+    let deadline: Date?
+
+    static func make(hasWarmCache: Bool, completePendingBackfill: Bool) -> Self {
+        let mebibyte: Int64 = 1_024 * 1_024
+        if completePendingBackfill {
+            // "Continue" is a resumable pass, never an unbounded whole-disk
+            // replay. One pass can still finish the largest current child
+            // rollout, then commits its compact cache before another pass.
+            return Self(
+                totalTranscriptBytes: 1_024 * mebibyte,
+                ordinaryBytesPerFile: 128 * mebibyte,
+                lineageBytesPerFile: 1_024 * mebibyte,
+                lineageFingerprintBytes: 2_048 * mebibyte,
+                deadline: Date().addingTimeInterval(60)
+            )
+        }
+        if hasWarmCache {
+            return Self(
+                totalTranscriptBytes: 80 * mebibyte,
+                ordinaryBytesPerFile: 8 * mebibyte,
+                lineageBytesPerFile: 64 * mebibyte,
+                lineageFingerprintBytes: 1_280 * mebibyte,
+                deadline: Date().addingTimeInterval(2)
+            )
+        }
+        return Self(
+            totalTranscriptBytes: 320 * mebibyte,
+            ordinaryBytesPerFile: 32 * mebibyte,
+            lineageBytesPerFile: 192 * mebibyte,
+            lineageFingerprintBytes: 1_280 * mebibyte,
+            deadline: Date().addingTimeInterval(12)
+        )
+    }
+}
+
 private struct AgentUsageCodexWorkItem {
     let mode: AgentUsageCodexWorkMode
     let thread: AgentUsageCodexThread
@@ -3745,6 +3937,15 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                 > ($1.recencyAt ?? $1.updatedAt ?? .distantPast)
         }
 
+        var cache = AgentUsageFileCacheStore.load(scope: .codex)
+        let hasWarmCache = !cache.entries.isEmpty
+        let scanBudget = AgentUsageCodexScanBudget.make(
+            hasWarmCache: hasWarmCache,
+            completePendingBackfill: completePendingBackfill
+        )
+        var remainingLineageFingerprintBytes = scanBudget.lineageFingerprintBytes
+        var lineageFingerprintBudgetReached = false
+        var persistedLineageCache = AgentUsageLineageFingerprintCacheStore.load()
         var resolvedLineageThreadIDs = Set<String>()
         var lineageParentByThreadID: [String: String] = [:]
         var fingerprintCacheByThreadID: [String: Set<AgentUsageCounterFingerprint>] = [:]
@@ -3770,11 +3971,42 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             if fingerprintFailures.contains(threadID) { return nil }
             guard let thread = threadInventoryByID[threadID],
                   let url = AgentUsagePathPolicy.normalizedRolloutURL(thread.rolloutPath),
-                  let values = AgentUsageCodexLineageReader.tokenFingerprints(at: url) else {
+                  let sourceFingerprint = AgentUsageValues.fileFingerprint(url) else {
+                fingerprintFailures.insert(threadID)
+                return nil
+            }
+            let cacheKey = AgentUsagePrivacy.cacheKey(for: url)
+            if let persisted = persistedLineageCache.entries[cacheKey],
+               persisted.size == sourceFingerprint.size,
+               persisted.modificationTimeNanoseconds == sourceFingerprint.modificationTimeNanoseconds {
+                let values = Set(persisted.fingerprints)
+                fingerprintCacheByThreadID[threadID] = values
+                return values
+            }
+            guard sourceFingerprint.size <= AgentUsageCodexLineageReader.fingerprintReadLimit,
+                  sourceFingerprint.size <= remainingLineageFingerprintBytes else {
+                lineageFingerprintBudgetReached = true
+                fingerprintFailures.insert(threadID)
+                return nil
+            }
+            remainingLineageFingerprintBytes -= sourceFingerprint.size
+            guard let values = AgentUsageCodexLineageReader.tokenFingerprints(at: url) else {
+                if AgentUsageResidentMemoryGuard.isOverLimit() {
+                    lineageFingerprintBudgetReached = true
+                }
                 fingerprintFailures.insert(threadID)
                 return nil
             }
             fingerprintCacheByThreadID[threadID] = values
+            persistedLineageCache.entries[cacheKey] = AgentUsageLineageFingerprintCacheEntry(
+                size: sourceFingerprint.size,
+                modificationTimeNanoseconds: sourceFingerprint.modificationTimeNanoseconds,
+                fingerprints: values.sorted {
+                    $0.high == $1.high ? $0.low < $1.low : $0.high < $1.high
+                },
+                lastAccessedAt: Date()
+            )
+            _ = AgentUsageLineageFingerprintCacheStore.save(persistedLineageCache)
             return values
         }
 
@@ -3856,7 +4088,6 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             )
         ))
 
-        var cache = AgentUsageFileCacheStore.load(scope: .codex)
         let liveKeys = Set(threads.compactMap { thread -> String? in
             guard let url = AgentUsagePathPolicy.normalizedRolloutURL(thread.rolloutPath) else { return nil }
             return AgentUsagePrivacy.cacheKey(for: url)
@@ -3871,16 +4102,10 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
         var partialKeys = Set<String>()
         var failures = 0
         var cacheWriteFailed = false
-        let hasWarmCache = !cache.entries.isEmpty
-        var remainingReadBytes: Int64 = completePendingBackfill
-            ? Int64.max / 4
-            : (hasWarmCache ? 16 : 192) * 1_024 * 1_024
-        let maximumReadBytesPerFile: Int64 = completePendingBackfill
-            ? Int64.max / 4
-            : (hasWarmCache ? 8 : 32) * 1_024 * 1_024
-        let scanDeadline: Date? = completePendingBackfill
-            ? nil
-            : Date().addingTimeInterval(hasWarmCache ? 1.0 : 10)
+        var remainingReadBytes = scanBudget.totalTranscriptBytes
+        let maximumReadBytesPerFile = scanBudget.ordinaryBytesPerFile
+        let maximumLineageReadBytesPerFile = scanBudget.lineageBytesPerFile
+        let scanDeadline = scanBudget.deadline
 
         // Pass 1 is budget-free: every valid cached aggregate is restored before
         // any new IO. A deadline can therefore never make displayed totals drop.
@@ -3981,17 +4206,6 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                 > ($1.thread.recencyAt ?? $1.thread.updatedAt ?? .distantPast)
         }
 
-        if !completePendingBackfill {
-            let migrationCap: Int64 = 768 * 1_024 * 1_024
-            let requested = workItems.lazy
-                .filter { $0.mode == .lineageRebuild }
-                .reduce(Int64(0)) { AgentUsageMath.saturatingAdd($0, $1.fingerprint.size) }
-            remainingReadBytes = AgentUsageMath.saturatingAdd(
-                remainingReadBytes,
-                min(migrationCap, requested)
-            )
-        }
-
         // Pass 2 spends a bounded IO budget on append, new, then backfill work.
         // The receipt deliberately separates a checked inventory entry from an
         // entry whose transcript bytes actually advanced during this pass.
@@ -4021,8 +4235,7 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
 
         workLoop: for (workIndex, item) in workItems.enumerated() {
             if Task.isCancelled { break }
-            if item.mode != .lineageRebuild,
-               let scanDeadline, Date() >= scanDeadline {
+            if let scanDeadline, Date() >= scanDeadline {
                 stoppedByDeadline = true
                 break
             }
@@ -4056,9 +4269,10 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             let proposedStart: Int64
             switch item.mode {
             case .lineageRebuild:
-                guard item.fingerprint.size <= remainingReadBytes else {
+                guard item.fingerprint.size <= maximumLineageReadBytesPerFile,
+                      item.fingerprint.size <= remainingReadBytes else {
                     stoppedByReadBudget = true
-                    break workLoop
+                    continue workLoop
                 }
                 proposedStart = 0
                 upperBound = item.fingerprint.size
@@ -4116,6 +4330,10 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             let inherited: Set<AgentUsageCounterFingerprint>
             if item.mode == .lineageRebuild {
                 guard let values = inheritedFingerprints(for: item.thread.id) else {
+                    if lineageFingerprintBudgetReached {
+                        stoppedByReadBudget = true
+                        break workLoop
+                    }
                     failures += 1
                     continue workLoop
                 }
@@ -4129,7 +4347,7 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                 startingAtOffset: startingOffset,
                 startsAtLineBoundary: true,
                 maximumBytes: rangeBytes > 0 ? rangeBytes : nil,
-                deadline: nil,
+                deadline: scanDeadline,
                 allowCompleteTokenScan: completePendingBackfill || item.mode == .lineageRebuild,
                 excludingTokenFingerprints: inherited
             ) else {
@@ -4139,6 +4357,14 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             remainingReadBytes = max(0, remainingReadBytes - max(1, parsed.bytesRead))
             guard parsed.completedRequestedRange else {
                 // Never advance a cursor for a partially-read planned range.
+                if AgentUsageResidentMemoryGuard.isOverLimit() {
+                    stoppedByReadBudget = true
+                    break workLoop
+                }
+                if scanDeadline.map({ Date() >= $0 }) == true {
+                    stoppedByDeadline = true
+                    break workLoop
+                }
                 failures += 1
                 continue workLoop
             }
@@ -4950,11 +5176,11 @@ private final class AgentUsageOpenClawProvider: @unchecked Sendable {
 
 // MARK: - Snapshot aggregation
 
-private enum AgentUsageProviderLoadResult: Sendable {
-    case codex(AgentUsageRuntimeAggregate)
-    case claude(AgentUsageRuntimeAggregate)
-    case openCode(AgentUsageRuntimeAggregate)
-    case openClaw(AgentUsageRuntimeAggregate)
+private struct AgentUsageProviderBundle: Sendable {
+    let codex: AgentUsageRuntimeAggregate
+    let claude: AgentUsageRuntimeAggregate
+    let openCode: AgentUsageRuntimeAggregate
+    let openClaw: AgentUsageRuntimeAggregate
 }
 
 private struct AgentUsageInsightsLoadPayload: Sendable {
@@ -4982,42 +5208,39 @@ private struct AgentUsageInsightsLoader: Sendable {
         let lease = AgentUsageSecurityScopeLease.acquire()
         defer { lease.stop() }
         let skillIndex = AgentUsageSkillIndex.shared
-        var codex = AgentUsageRuntimeAggregate(scope: .codex)
-        var claude = AgentUsageRuntimeAggregate(scope: .claude)
-        var openCode = AgentUsageRuntimeAggregate(scope: .openCode)
-        var openClaw = AgentUsageRuntimeAggregate(scope: .openClaw)
-
-        await withTaskGroup(of: AgentUsageProviderLoadResult.self) { group in
-            group.addTask(priority: .utility) {
-                .codex(AgentUsageCodexProvider(
+        // Provider parsers are intentionally serialized. Running four local
+        // history readers at once multiplies transient Foundation allocations
+        // and disk pressure without making a cached refresh meaningfully faster.
+        let worker = Task.detached(priority: .utility) {
+            let codex = AgentUsageCodexProvider(
                     context: context,
                     skillIndex: skillIndex,
                     progress: progress,
                     completePendingBackfill: completePendingBackfill
-                ).load())
-            }
-            group.addTask(priority: .utility) {
-                .claude(AgentUsageClaudeProvider(
+                ).load()
+            let claude = AgentUsageClaudeProvider(
                     context: context,
                     skillIndex: skillIndex,
                     progress: progress
-                ).load())
-            }
-            group.addTask(priority: .utility) {
-                .openCode(AgentUsageOpenCodeProvider(progress: progress).load())
-            }
-            group.addTask(priority: .utility) {
-                .openClaw(AgentUsageOpenClawProvider(progress: progress).load())
-            }
-            for await result in group {
-                switch result {
-                case let .codex(value): codex = value
-                case let .claude(value): claude = value
-                case let .openCode(value): openCode = value
-                case let .openClaw(value): openClaw = value
-                }
-            }
+                ).load()
+            let openCode = AgentUsageOpenCodeProvider(progress: progress).load()
+            let openClaw = AgentUsageOpenClawProvider(progress: progress).load()
+            return AgentUsageProviderBundle(
+                codex: codex,
+                claude: claude,
+                openCode: openCode,
+                openClaw: openClaw
+            )
         }
+        let providers = await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
+        var codex = providers.codex
+        var claude = providers.claude
+        var openCode = providers.openCode
+        var openClaw = providers.openClaw
 
         if Task.isCancelled {
             return .failure(.unexpected("Local usage scan was cancelled."))
@@ -5508,6 +5731,29 @@ extension AgentUsageInsightsService {
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {
             if !value() { failures.append(message) }
         }
+
+        let coldBudget = AgentUsageCodexScanBudget.make(
+            hasWarmCache: false,
+            completePendingBackfill: false
+        )
+        let continueBudget = AgentUsageCodexScanBudget.make(
+            hasWarmCache: true,
+            completePendingBackfill: true
+        )
+        expect(coldBudget.totalTranscriptBytes <= 320 * 1_024 * 1_024, "cold Codex detail scan must remain byte-bounded")
+        expect(coldBudget.lineageBytesPerFile <= 192 * 1_024 * 1_024, "automatic lineage repair must remain per-file bounded")
+        expect(continueBudget.totalTranscriptBytes <= 1_024 * 1_024 * 1_024, "Continue backfill must remain a bounded resumable pass")
+        expect(continueBudget.deadline != nil, "Continue backfill must retain a responsiveness deadline")
+
+        let distinctFingerprintA = AgentUsageCounterFingerprint(
+            cumulative: AgentUsageCounterSample(input: 1, cached: 2, output: 3, reasoning: 4, total: 5),
+            last: nil
+        )
+        let distinctFingerprintB = AgentUsageCounterFingerprint(
+            cumulative: AgentUsageCounterSample(input: 1, cached: 2, output: 3, reasoning: 4, total: 6),
+            last: nil
+        )
+        expect(distinctFingerprintA != distinctFingerprintB, "compact lineage fingerprints must distinguish counter changes")
 
         var duplicateState = AgentUsageCounterState()
         let initial = AgentUsageCounterSample(input: 100, cached: 20, output: 40, reasoning: 5, total: 140)

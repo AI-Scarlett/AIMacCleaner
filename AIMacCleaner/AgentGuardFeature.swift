@@ -856,16 +856,83 @@ class AgentGuardFeature: ObservableObject {
             return reset
         }
 
+        // Discovered rules are normalized to the executable's first token.
+        // Index them once for historical rebuilds instead of scanning every
+        // discovered rule for every stored command (an O(records × rules)
+        // launch-time hot path on larger Agent histories).
+        var discoveredRuleIndex: [String: Int] = [:]
+        for index in commandRules.indices {
+            let rule = commandRules[index]
+            guard rule.listType == .unclassified,
+                  rule.source == .discovered,
+                  !rule.isRegex else { continue }
+            let pattern = rule.pattern.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            if !pattern.isEmpty, discoveredRuleIndex[pattern] == nil {
+                discoveredRuleIndex[pattern] = index
+            }
+        }
+
         for record in records.sorted(by: { $0.timestamp < $1.timestamp }) {
             recordStats(record)
             guard record.operationType == .execute else { continue }
             let command = record.detail.isEmpty ? record.targetPath : record.detail
-            _ = recordObservedCommand(command: command, agentName: record.agentName, timestamp: record.timestamp, shouldSave: false)
+            recordObservedCommandForAnalytics(
+                command: command,
+                agentName: record.agentName,
+                timestamp: record.timestamp,
+                discoveredRuleIndex: &discoveredRuleIndex
+            )
         }
 
         lastStatsSaveTime = .distantPast
         saveHourlyStats()
         saveCommandRules()
+    }
+
+    private func recordObservedCommandForAnalytics(
+        command: String,
+        agentName: String,
+        timestamp: Date,
+        discoveredRuleIndex: inout [String: Int]
+    ) {
+        guard alertRule.commandGuardEnabled else { return }
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let normalized = trimmed.lowercased()
+        if normalized.hasPrefix("const ") && normalized.contains("await tools.") { return }
+
+        // Preserve blacklist, whitelist and authored unclassified priority.
+        for listType in [CommandRule.ListType.blacklist, .whitelist, .unclassified] {
+            for index in commandRules.indices where commandRules[index].listType == listType {
+                let rule = commandRules[index]
+                if listType == .unclassified, rule.source == .discovered, !rule.isRegex {
+                    continue
+                }
+                guard matchCommand(normalized, rule: rule) else { continue }
+                incrementRuleCount(at: index, agentName: agentName, timestamp: timestamp, shouldSave: false)
+                return
+            }
+        }
+
+        let pattern = normalizedCommandPattern(trimmed)
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !pattern.isEmpty else { return }
+        if let index = discoveredRuleIndex[pattern], commandRules.indices.contains(index) {
+            incrementRuleCount(at: index, agentName: agentName, timestamp: timestamp, shouldSave: false)
+            return
+        }
+
+        discoverCommand(pattern: pattern, agentName: agentName, shouldSave: false)
+        if let index = commandRules.firstIndex(where: {
+            $0.listType == .unclassified
+                && $0.source == .discovered
+                && !$0.isRegex
+                && $0.pattern.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == pattern
+        }) {
+            discoveredRuleIndex[pattern] = index
+            incrementRuleCount(at: index, agentName: agentName, timestamp: timestamp, shouldSave: false)
+        }
     }
 
     // MARK: - F37 Export
@@ -1591,8 +1658,7 @@ class AgentGuardFeature: ObservableObject {
     private func containsLiteralCommandPattern(_ command: String, pattern rawPattern: String) -> Bool {
         let pattern = rawPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !pattern.isEmpty else { return false }
-        let boundaryCharacters = CharacterSet.whitespacesAndNewlines
-            .union(CharacterSet(charactersIn: "|;&(){}[]/\\\"'`"))
+        let boundaryCharacters = Self.commandBoundaryCharacters
         let needsTrailingBoundary = pattern.last?.isLetter == true
             || pattern.last?.isNumber == true
             || pattern.last.map { "._-".contains($0) } == true
@@ -1623,6 +1689,9 @@ class AgentGuardFeature: ObservableObject {
         }
         return false
     }
+
+    private static let commandBoundaryCharacters = CharacterSet.whitespacesAndNewlines
+        .union(CharacterSet(charactersIn: "|;&(){}[]/\\\"'`"))
 
     private func cachedRegex(for rule: CommandRule) -> Regex<AnyRegexOutput>? {
         if let regex = commandRegexCache[rule.id] {
