@@ -189,6 +189,61 @@ struct VerifyStorageOptimizer {
             "rewrite continuity guard failed to force a full re-read (expected \(replacement.utf8.count), got \(fourth.summary.fingerprintedBytes))"
         )
 
+        let largeSessionURL = sessions.appendingPathComponent("large-incremental.jsonl")
+        try Data().write(to: largeSessionURL)
+        let largeHandle = try FileHandle(forWritingTo: largeSessionURL)
+        let lineBlock = Data(String(
+            repeating: "{\"event\":\"heartbeat\"}\n",
+            count: 50_000
+        ).utf8)
+        let minimumLargeFixtureBytes = 70 * 1_024 * 1_024
+        var largeFixtureBytes = 0
+        while largeFixtureBytes < minimumLargeFixtureBytes {
+            try largeHandle.write(contentsOf: lineBlock)
+            largeFixtureBytes += lineBlock.count
+        }
+        try largeHandle.close()
+
+        let boundedFirst = StorageOptimizationCore.scan(
+            homeDirectory: root.path,
+            isSandboxed: false,
+            cacheURL: cache,
+            retainBuildCount: 3,
+            now: now.addingTimeInterval(40)
+        )
+        try expect(boundedFirst.summary.cacheHitCount == 3, "bounded scan should reuse the three existing sessions")
+        try expect(boundedFirst.summary.hashedFileCount == 1, "bounded scan should fingerprint only the new large session")
+        try expect(
+            boundedFirst.summary.fingerprintedBytes >= 64 * 1_024 * 1_024
+                && boundedFirst.summary.fingerprintedBytes < Int64(largeFixtureBytes),
+            "large session must be processed incrementally instead of in one pass"
+        )
+
+        let boundedSecond = StorageOptimizationCore.scan(
+            homeDirectory: root.path,
+            isSandboxed: false,
+            cacheURL: cache,
+            retainBuildCount: 3,
+            now: now.addingTimeInterval(50)
+        )
+        try expect(boundedSecond.summary.cacheHitCount == 3, "continuation scan should reuse unchanged sessions")
+        try expect(boundedSecond.summary.hashedFileCount == 1, "continuation scan should read only the remaining large-session tail")
+        try expect(
+            boundedSecond.summary.fingerprintedBytes
+                == Int64(largeFixtureBytes) - boundedFirst.summary.fingerprintedBytes,
+            "continuation scan did not resume from its cached byte offset"
+        )
+
+        let boundedWarm = StorageOptimizationCore.scan(
+            homeDirectory: root.path,
+            isSandboxed: false,
+            cacheURL: cache,
+            retainBuildCount: 3,
+            now: now.addingTimeInterval(60)
+        )
+        try expect(boundedWarm.summary.cacheHitCount == 4, "completed large-session scan should become a full cache hit")
+        try expect(boundedWarm.summary.hashedFileCount == 0, "warm scan must not re-read completed sessions")
+
         let protectedAgentArtifacts = StorageOptimizationCore.scan(
             homeDirectory: root.path,
             authorizedRoots: [qwenData.path],
@@ -202,7 +257,7 @@ struct VerifyStorageOptimizer {
             "Agent source data must never be surfaced as installer or build cleanup candidates"
         )
 
-        print("STORAGE_OPTIMIZER_OK sessions=3 duplicate=\(first.summary.duplicateMediaBytes) history=\(historical.count) installers=\(installers.count) cache_hits=\(second.summary.cacheHitCount) append_bytes=\(third.summary.fingerprintedBytes) rewrite_bytes=\(fourth.summary.fingerprintedBytes)")
+        print("STORAGE_OPTIMIZER_OK sessions=3 duplicate=\(first.summary.duplicateMediaBytes) history=\(historical.count) installers=\(installers.count) cache_hits=\(second.summary.cacheHitCount) append_bytes=\(third.summary.fingerprintedBytes) rewrite_bytes=\(fourth.summary.fingerprintedBytes) bounded_first=\(boundedFirst.summary.fingerprintedBytes) bounded_tail=\(boundedSecond.summary.fingerprintedBytes)")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {

@@ -142,7 +142,10 @@ final class DiskAdvisorLabStore: ObservableObject {
         let dayBucket: Int
     }
 
-    private var fileByID: [String: DiskFileRecord] = [:]
+    // Keep only an index into the canonical inventory. Storing every path-rich
+    // record a second time in a dictionary made consecutive scans briefly retain
+    // both complete generations and substantially raised the memory peak.
+    private var fileIndexByID: [String: Int] = [:]
     private var activityStats: [DiskFileActivityMarker: FileActivityStats] = [:]
     private var inventoryRevision = 0
     private var inventoryFilterKey: InventoryFilterKey?
@@ -166,12 +169,16 @@ final class DiskAdvisorLabStore: ObservableObject {
     }
 
     var selectedFiles: [DiskFileRecord] {
-        selectedFileIDs.compactMap { fileByID[$0] }
+        selectedFileIDs.compactMap { id in
+            guard let index = fileIndexByID[id], fileInventory.indices.contains(index) else { return nil }
+            return fileInventory[index]
+        }
     }
 
     var selectedFileSize: Int64 {
         selectedFileIDs.reduce(Int64(0)) { total, id in
-            total + (fileByID[id]?.size ?? 0)
+            guard let index = fileIndexByID[id], fileInventory.indices.contains(index) else { return total }
+            return total + fileInventory[index].size
         }
     }
 
@@ -240,8 +247,12 @@ final class DiskAdvisorLabStore: ObservableObject {
     private func rebuildFileInventoryIndexes() {
         inventoryRevision &+= 1
         inventoryFilterKey = nil
-        inventoryFilterResults.removeAll(keepingCapacity: true)
-        fileByID = Dictionary(uniqueKeysWithValues: fileInventory.map { ($0.id, $0) })
+        inventoryFilterResults.removeAll(keepingCapacity: false)
+        fileIndexByID.removeAll(keepingCapacity: false)
+        fileIndexByID.reserveCapacity(fileInventory.count)
+        for (index, file) in fileInventory.enumerated() {
+            fileIndexByID[file.id] = index
+        }
         rebuildActivityStats()
     }
 
@@ -271,7 +282,9 @@ final class DiskAdvisorLabStore: ObservableObject {
 
         let roots = authorizedRoots
         let genericCandidates = await Task.detached(priority: .userInitiated) {
-            DiskAdvisorScanner.scan(authorizedRoots: roots)
+            autoreleasepool {
+                DiskAdvisorScanner.scan(authorizedRoots: roots)
+            }
         }.value
 
         statusMessage = localizer.t(
@@ -281,13 +294,15 @@ final class DiskAdvisorLabStore: ObservableObject {
         let home = SandboxPaths.realHomeDirectory
         let cacheURL = URL(fileURLWithPath: SandboxPaths.shared.storageOptimizerCachePath)
         let optimization = await Task.detached(priority: .utility) {
-            StorageOptimizationCore.scan(
-                homeDirectory: home,
-                authorizedRoots: roots,
-                isSandboxed: SandboxPaths.isSandboxed,
-                cacheURL: cacheURL,
-                retainBuildCount: 3
-            )
+            autoreleasepool {
+                StorageOptimizationCore.scan(
+                    homeDirectory: home,
+                    authorizedRoots: roots,
+                    isSandboxed: SandboxPaths.isSandboxed,
+                    cacheURL: cacheURL,
+                    retainBuildCount: 3
+                )
+            }
         }.value
 
         statusMessage = localizer.t(
@@ -296,12 +311,14 @@ final class DiskAdvisorLabStore: ObservableObject {
         )
         let inventoryCacheURL = URL(fileURLWithPath: SandboxPaths.shared.diskFileInventoryCachePath)
         let inventory = await Task.detached(priority: .utility) {
-            DiskFileInventoryCore.scan(
-                homeDirectory: home,
-                authorizedRoots: roots,
-                isSandboxed: SandboxPaths.isSandboxed,
-                cacheURL: inventoryCacheURL
-            )
+            autoreleasepool {
+                DiskFileInventoryCore.scan(
+                    homeDirectory: home,
+                    authorizedRoots: roots,
+                    isSandboxed: SandboxPaths.isSandboxed,
+                    cacheURL: inventoryCacheURL
+                )
+            }
         }.value
         let found = merge(genericCandidates: genericCandidates, optimization: optimization)
 
@@ -2449,44 +2466,45 @@ private enum DiskAdvisorScanner {
         for case let url as URL in enumerator {
             visited += 1
             if visited > 80_000 || results.count >= maxCandidates * 2 { break }
+            autoreleasepool {
+                let depth = url.pathComponents.count - rootDepth
+                if depth > 6 {
+                    enumerator.skipDescendants()
+                    return
+                }
+                let values = try? url.resourceValues(forKeys: [
+                    .isDirectoryKey, .isSymbolicLinkKey
+                ])
+                if values?.isSymbolicLink == true {
+                    enumerator.skipDescendants()
+                    return
+                }
+                guard values?.isDirectory == true, !isSensitive(url) else { return }
+                if AgentDataProtection.containsProtectedData(
+                    path: url.path,
+                    homeDirectory: SandboxPaths.realHomeDirectory
+                ) {
+                    enumerator.skipDescendants()
+                    return
+                }
 
-            let depth = url.pathComponents.count - rootDepth
-            if depth > 6 {
-                enumerator.skipDescendants()
-                continue
-            }
-            let values = try? url.resourceValues(forKeys: [
-                .isDirectoryKey, .isSymbolicLinkKey
-            ])
-            if values?.isSymbolicLink == true {
-                enumerator.skipDescendants()
-                continue
-            }
-            guard values?.isDirectory == true, !isSensitive(url) else { continue }
-            if AgentDataProtection.containsProtectedData(
-                path: url.path,
-                homeDirectory: SandboxPaths.realHomeDirectory
-            ) {
-                enumerator.skipDescendants()
-                continue
-            }
-
-            let name = url.lastPathComponent
-            let lower = name.lowercased()
-            if generatedMediaNames.contains(lower) {
-                addCandidate(url, category: lower.contains("cache") ? "Generated Media Cache" : "Generated Media", into: &results, seen: &seen)
-                enumerator.skipDescendants()
-            } else if generatedTaskNames.contains(lower) {
-                addCandidate(url, category: "Generated Task Data", into: &results, seen: &seen)
-                enumerator.skipDescendants()
-            } else if lower == "logs" || lower == "log" {
-                addCandidate(url, category: "Logs", into: &results, seen: &seen)
-                enumerator.skipDescendants()
-            } else if artifactNames.contains(name) || artifactNames.contains(lower) {
-                addCandidate(url, category: "Build Artifact", into: &results, seen: &seen)
-                enumerator.skipDescendants()
-            } else if shouldSkipDirectory(lower) {
-                enumerator.skipDescendants()
+                let name = url.lastPathComponent
+                let lower = name.lowercased()
+                if generatedMediaNames.contains(lower) {
+                    addCandidate(url, category: lower.contains("cache") ? "Generated Media Cache" : "Generated Media", into: &results, seen: &seen)
+                    enumerator.skipDescendants()
+                } else if generatedTaskNames.contains(lower) {
+                    addCandidate(url, category: "Generated Task Data", into: &results, seen: &seen)
+                    enumerator.skipDescendants()
+                } else if lower == "logs" || lower == "log" {
+                    addCandidate(url, category: "Logs", into: &results, seen: &seen)
+                    enumerator.skipDescendants()
+                } else if artifactNames.contains(name) || artifactNames.contains(lower) {
+                    addCandidate(url, category: "Build Artifact", into: &results, seen: &seen)
+                    enumerator.skipDescendants()
+                } else if shouldSkipDirectory(lower) {
+                    enumerator.skipDescendants()
+                }
             }
         }
     }
@@ -2608,15 +2626,17 @@ private enum DiskAdvisorScanner {
         for case let child as URL in enumerator {
             visited += 1
             if visited > 100_000 || count > 60_000 { break }
-            let values = try? child.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .fileSizeKey])
-            if values?.isSymbolicLink == true {
-                enumerator.skipDescendants()
-                continue
+            autoreleasepool {
+                let values = try? child.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey, .fileSizeKey])
+                if values?.isSymbolicLink == true {
+                    enumerator.skipDescendants()
+                    return
+                }
+                guard values?.isRegularFile == true else { return }
+                let size = values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? values?.fileSize ?? 0
+                total += Int64(size)
+                count += 1
             }
-            guard values?.isRegularFile == true else { continue }
-            let size = values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? values?.fileSize ?? 0
-            total += Int64(size)
-            count += 1
         }
         return (total, max(count, 1))
     }

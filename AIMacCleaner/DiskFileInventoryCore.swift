@@ -87,9 +87,13 @@ enum DiskFileInventoryCore {
     private static let cacheVersion = 1
     private static let minimumFileSize: Int64 = 64 * 1_024
     private static let maxVisitedEntries = 200_000
-    private static let maxReturnedFiles = 50_000
-    private static let maxCachedFiles = 100_000
-    private static let maximumCacheBytes = 64 * 1_024 * 1_024
+    // The UI initially renders 300 rows and can page forward. Keeping tens of
+    // thousands of path-rich records plus dictionary/filter copies offered no
+    // practical benefit and amplified a scan into hundreds of MB of live state.
+    private static let maxReturnedFiles = 8_000
+    private static let maxCachedFiles = 16_000
+    private static let maximumCacheBytes = 16 * 1_024 * 1_024
+    private static let maximumScanDuration: TimeInterval = 30
     private static let spotlightRefreshInterval: TimeInterval = 24 * 60 * 60
     private static let cacheTouchInterval: TimeInterval = 24 * 60 * 60
 
@@ -233,6 +237,7 @@ enum DiskFileInventoryCore {
         var metadataReadCount = 0
         var unreadableEntryCount = 0
         var hitVisitLimit = false
+        var hitTimeLimit = false
         var cacheChanged = false
 
         rootLoop: for root in roots {
@@ -255,97 +260,109 @@ enum DiskFileInventoryCore {
                     hitVisitLimit = true
                     break rootLoop
                 }
+                if visitedEntryCount.isMultiple(of: 512),
+                   Date().timeIntervalSince(startedAt) >= maximumScanDuration {
+                    hitTimeLimit = true
+                    break rootLoop
+                }
 
-                guard let values = try? url.resourceValues(forKeys: resourceKeys) else {
-                    unreadableEntryCount += 1
-                    continue
-                }
-                if values.isSymbolicLink == true {
-                    enumerator.skipDescendants()
-                    continue
-                }
-                if values.isDirectory == true {
-                    if shouldSkipDirectory(url.lastPathComponent.lowercased()) {
-                        enumerator.skipDescendants()
+                // URL resource values and Foundation enumerator entries can
+                // accumulate autoreleased objects for the entire detached task.
+                // Drain them per entry while retaining only compact candidates.
+                autoreleasepool {
+                    guard let values = try? url.resourceValues(forKeys: resourceKeys) else {
+                        unreadableEntryCount += 1
+                        return
                     }
-                    continue
+                    if values.isSymbolicLink == true {
+                        enumerator.skipDescendants()
+                        return
+                    }
+                    if values.isDirectory == true {
+                        if shouldSkipDirectory(url.lastPathComponent.lowercased()) {
+                            enumerator.skipDescendants()
+                        }
+                        return
+                    }
+                    guard values.isRegularFile == true else { return }
+
+                    let logicalSize = Int64(values.fileSize ?? 0)
+                    let allocatedSize = allocatedFileSize(values)
+                    guard max(logicalSize, allocatedSize) >= minimumFileSize else { return }
+
+                    let path = url.standardizedFileURL.path
+                    guard discoveredPaths.insert(path).inserted else { return }
+                    eligibleFileCount += 1
+                    eligibleBytes += allocatedSize
+
+                    let ext = url.pathExtension.lowercased()
+                    let category = category(forExtension: ext)
+                    candidates.insert(InventoryCandidate(
+                        url: url,
+                        path: path,
+                        name: url.lastPathComponent,
+                        fileExtension: ext,
+                        category: category,
+                        logicalSize: logicalSize,
+                        allocatedSize: allocatedSize,
+                        creationDate: values.creationDate,
+                        modifiedDate: values.contentModificationDate,
+                        accessedDate: values.contentAccessDate
+                    ))
+                    var stats = categoryStats[category] ?? MutableCategoryStats()
+                    stats.count += 1
+                    stats.bytes += allocatedSize
+                    categoryStats[category] = stats
                 }
-                guard values.isRegularFile == true else { continue }
-
-                let logicalSize = Int64(values.fileSize ?? 0)
-                let allocatedSize = allocatedFileSize(values)
-                guard max(logicalSize, allocatedSize) >= minimumFileSize else { continue }
-
-                let path = url.standardizedFileURL.path
-                guard discoveredPaths.insert(path).inserted else { continue }
-                eligibleFileCount += 1
-                eligibleBytes += allocatedSize
-
-                let ext = url.pathExtension.lowercased()
-                let category = category(forExtension: ext)
-                candidates.insert(InventoryCandidate(
-                    url: url,
-                    path: path,
-                    name: url.lastPathComponent,
-                    fileExtension: ext,
-                    category: category,
-                    logicalSize: logicalSize,
-                    allocatedSize: allocatedSize,
-                    creationDate: values.creationDate,
-                    modifiedDate: values.contentModificationDate,
-                    accessedDate: values.contentAccessDate
-                ))
-                var stats = categoryStats[category] ?? MutableCategoryStats()
-                stats.count += 1
-                stats.bytes += allocatedSize
-                categoryStats[category] = stats
             }
         }
 
         var returned: [DiskFileRecord] = []
         returned.reserveCapacity(candidates.values.count)
         for candidate in candidates.sortedBestFirst() {
-            let modifiedAt = candidate.modifiedDate?.timeIntervalSince1970 ?? 0
-            let accessedAt = candidate.accessedDate?.timeIntervalSince1970 ?? 0
-            let cached = cache.files[candidate.path]
-            let cacheMatches = cached?.logicalSize == candidate.logicalSize
-                && cached?.allocatedSize == candidate.allocatedSize
-                && approximatelyEqual(cached?.modifiedAt, modifiedAt)
-                && approximatelyEqual(cached?.accessedAt, accessedAt)
-            let spotlightIsFresh = now.timeIntervalSince1970 - (cached?.spotlightCheckedAt ?? 0)
-                < spotlightRefreshInterval
+            autoreleasepool {
+                let modifiedAt = candidate.modifiedDate?.timeIntervalSince1970 ?? 0
+                let accessedAt = candidate.accessedDate?.timeIntervalSince1970 ?? 0
+                let cached = cache.files[candidate.path]
+                let cacheMatches = cached?.logicalSize == candidate.logicalSize
+                    && cached?.allocatedSize == candidate.allocatedSize
+                    && approximatelyEqual(cached?.modifiedAt, modifiedAt)
+                    && approximatelyEqual(cached?.accessedAt, accessedAt)
+                let spotlightIsFresh = now.timeIntervalSince1970 - (cached?.spotlightCheckedAt ?? 0)
+                    < spotlightRefreshInterval
 
-            let record: DiskFileRecord
-            if let cached, cacheMatches, spotlightIsFresh {
-                record = cached.record
-                cacheHitCount += 1
-                if now.timeIntervalSince1970 - cached.lastSeenAt >= cacheTouchInterval {
+                let record: DiskFileRecord
+                if let cached, cacheMatches, spotlightIsFresh {
+                    record = cached.record
+                    cacheHitCount += 1
+                    if now.timeIntervalSince1970 - cached.lastSeenAt >= cacheTouchInterval {
+                        cache.files[candidate.path] = CachedFile(
+                            logicalSize: cached.logicalSize,
+                            allocatedSize: cached.allocatedSize,
+                            modifiedAt: cached.modifiedAt,
+                            accessedAt: cached.accessedAt,
+                            record: cached.record,
+                            spotlightCheckedAt: cached.spotlightCheckedAt,
+                            lastSeenAt: now.timeIntervalSince1970
+                        )
+                        cacheChanged = true
+                    }
+                } else {
+                    record = candidate.record(lastOpenedDate: openedDateProvider(candidate.url))
+                    metadataReadCount += 1
                     cache.files[candidate.path] = CachedFile(
-                        logicalSize: cached.logicalSize,
-                        allocatedSize: cached.allocatedSize,
-                        modifiedAt: cached.modifiedAt,
-                        accessedAt: cached.accessedAt,
-                        record: cached.record,
-                        spotlightCheckedAt: cached.spotlightCheckedAt,
+                        logicalSize: candidate.logicalSize,
+                        allocatedSize: candidate.allocatedSize,
+                        modifiedAt: modifiedAt,
+                        accessedAt: accessedAt,
+                        record: record,
+                        spotlightCheckedAt: now.timeIntervalSince1970,
                         lastSeenAt: now.timeIntervalSince1970
                     )
                     cacheChanged = true
                 }
-            } else {
-                record = candidate.record(lastOpenedDate: openedDateProvider(candidate.url))
-                metadataReadCount += 1
-                cache.files[candidate.path] = CachedFile(
-                    logicalSize: candidate.logicalSize,
-                    allocatedSize: candidate.allocatedSize,
-                    modifiedAt: modifiedAt,
-                    accessedAt: accessedAt,
-                    record: record,
-                    spotlightCheckedAt: now.timeIntervalSince1970,
-                    lastSeenAt: now.timeIntervalSince1970
-                )
-                cacheChanged = true
+                returned.append(record)
             }
-            returned.append(record)
         }
         let returnedBytes = returned.reduce(Int64(0)) { $0 + $1.size }
         trimAndSave(&cache, to: cacheURL, now: now, cacheChanged: cacheChanged)
@@ -374,7 +391,7 @@ enum DiskFileInventoryCore {
                 cacheHitCount: cacheHitCount,
                 metadataReadCount: metadataReadCount,
                 unreadableEntryCount: unreadableEntryCount,
-                wasTruncated: hitVisitLimit || eligibleFileCount > returned.count,
+                wasTruncated: hitVisitLimit || hitTimeLimit || eligibleFileCount > returned.count,
                 minimumFileSize: minimumFileSize,
                 scanDuration: completedAt.timeIntervalSince(startedAt),
                 completedAt: completedAt,
@@ -521,7 +538,10 @@ enum DiskFileInventoryCore {
     }
 
     private static func loadCache(from url: URL) -> InventoryCache {
-        guard let data = try? Data(contentsOf: url),
+        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size >= 0,
+              size <= maximumCacheBytes,
+              let data = try? Data(contentsOf: url, options: [.mappedIfSafe]),
               let cache = try? JSONDecoder().decode(InventoryCache.self, from: data),
               cache.version == cacheVersion else {
             return InventoryCache(version: cacheVersion, files: [:])

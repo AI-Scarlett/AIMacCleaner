@@ -2426,6 +2426,10 @@ private final class AgentOverviewProcessOutputCapture: @unchecked Sendable {
 }
 
 private final class AgentMonitorOverviewScanner {
+    private static let maximumUsageFileBytes = 8_000_000
+    private static let maximumSessionStoreBytes = 32 * 1_024 * 1_024
+    private static let maximumHermesFileBytes = 20_000_000
+    private static let maximumSmallMetadataFileBytes = 2 * 1_024 * 1_024
     private static let iso8601Formatter = ISO8601DateFormatter()
     private static let fractionalISO8601Formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -2679,7 +2683,11 @@ private final class AgentMonitorOverviewScanner {
                 let files = usageFiles(under: root)
                 for file in files {
                     sessionIDs.insert(sessionID(for: file, root: root))
-                    let usage = parseUsage(file: file)
+                    // JSONSerialization bridges through Foundation objects. Drain
+                    // their autorelease storage after every session so a full
+                    // multi-provider refresh cannot retain all parser temporaries
+                    // until the detached scan task finishes.
+                    let usage = autoreleasepool { parseUsage(file: file) }
                     totalTokens += usage.tokens
                     if usage.lastContextTokens > lastContextTokens {
                         lastContextTokens = usage.lastContextTokens
@@ -3260,7 +3268,10 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func parseUsage(file: URL) -> (tokens: Int, lastContextTokens: Int, contextWindow: Int, latest: Date?, project: String?) {
-        guard let data = try? Data(contentsOf: file), data.count <= 8_000_000 else {
+        guard let data = boundedData(
+            contentsOf: file,
+            maximumBytes: Self.maximumUsageFileBytes
+        ) else {
             let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
             return (0, 0, 0, modified, nil)
         }
@@ -3273,32 +3284,34 @@ private final class AgentMonitorOverviewScanner {
         var project: String?
 
         for line in text.split(whereSeparator: \.isNewline).prefix(20_000) {
-            guard let lineData = String(line).data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { continue }
+            autoreleasepool {
+                guard let lineData = String(line).data(using: .utf8),
+                      let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { return }
 
-            if let timestamp = date(from: object) {
-                latest = maxDate(latest, timestamp)
-            }
-            if project == nil {
-                project = stringValue(object, keys: ["cwd", "project_path", "workspace"])
-                    ?? stringValue(object["payload"] as? [String: Any], keys: ["cwd", "project_path", "workspace"])
-            }
-            if let payload = object["payload"] as? [String: Any],
-               let info = payload["info"] as? [String: Any] {
-                if let last = info["last_token_usage"] as? [String: Any] {
-                    lastContextTokens = intKeys(last, ["input_tokens", "prompt_tokens"])
+                if let timestamp = date(from: object) {
+                    latest = maxDate(latest, timestamp)
                 }
-                if let cw = intValue(info["model_context_window"]) {
-                    contextWindow = cw
+                if project == nil {
+                    project = stringValue(object, keys: ["cwd", "project_path", "workspace"])
+                        ?? stringValue(object["payload"] as? [String: Any], keys: ["cwd", "project_path", "workspace"])
                 }
-            }
-            if let usage = usageTotal(from: object) {
-                if let previousTotal, usage >= previousTotal {
-                    tokens += max(usage - previousTotal, 0)
-                } else {
-                    tokens += usage
+                if let payload = object["payload"] as? [String: Any],
+                   let info = payload["info"] as? [String: Any] {
+                    if let last = info["last_token_usage"] as? [String: Any] {
+                        lastContextTokens = intKeys(last, ["input_tokens", "prompt_tokens"])
+                    }
+                    if let cw = intValue(info["model_context_window"]) {
+                        contextWindow = cw
+                    }
                 }
-                previousTotal = usage
+                if let usage = usageTotal(from: object) {
+                    if let previousTotal, usage >= previousTotal {
+                        tokens += max(usage - previousTotal, 0)
+                    } else {
+                        tokens += usage
+                    }
+                    previousTotal = usage
+                }
             }
         }
 
@@ -3812,7 +3825,10 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func parseOpenClawSessionStore(path: String, processInfo: [Int: ProcessInfo]) -> [AgentMonitorSessionSnapshot] {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+        guard let data = boundedData(
+                contentsOf: URL(fileURLWithPath: path),
+                maximumBytes: Self.maximumSessionStoreBytes
+              ),
               let store = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
         let liveProcess = processInfo.values.first { matchingSpecName($0.command) == "OpenClaw" }
         let children = childrenMap(processInfo)
@@ -3880,7 +3896,10 @@ private final class AgentMonitorOverviewScanner {
 
         let workspaceJSON = URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent("workspace.json")
         var workspace = ""
-        if let data = try? Data(contentsOf: workspaceJSON),
+        if let data = boundedData(
+                contentsOf: workspaceJSON,
+                maximumBytes: Self.maximumSmallMetadataFileBytes
+           ),
            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             workspace = (stringValue(object, keys: ["folder", "workspace"]) ?? "")
                 .replacingOccurrences(of: "file://", with: "")
@@ -4481,7 +4500,10 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func parseHermesSessionFile(_ url: URL) -> ParsedSession? {
-        guard let data = try? Data(contentsOf: url), data.count <= 20_000_000,
+        guard let data = boundedData(
+                contentsOf: url,
+                maximumBytes: Self.maximumHermesFileBytes
+              ),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         if url.lastPathComponent == "gateway_state.json" {
             let state = stringValue(object, keys: ["gateway_state", "state"]) ?? "unknown"
@@ -5624,6 +5646,27 @@ private final class AgentMonitorOverviewScanner {
 
     private func expand(_ path: String) -> String {
         path.replacingOccurrences(of: "~", with: home)
+    }
+
+    /// Reads at most `maximumBytes + 1` bytes and never maps or allocates the
+    /// complete source first. The old `Data(contentsOf:)` then `data.count`
+    /// pattern allocated multi-gigabyte Codex rollouts before rejecting them.
+    private func boundedData(contentsOf url: URL, maximumBytes: Int) -> Data? {
+        guard maximumBytes > 0,
+              let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
+              let fileSize = values.fileSize,
+              fileSize >= 0,
+              fileSize <= maximumBytes,
+              let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+
+        do {
+            let data = try handle.read(upToCount: maximumBytes + 1) ?? Data()
+            guard data.count <= maximumBytes else { return nil }
+            return data
+        } catch {
+            return nil
+        }
     }
 
     private func sqliteText(_ stmt: OpaquePointer?, _ index: Int32) -> String {
