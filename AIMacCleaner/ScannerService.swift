@@ -2224,7 +2224,10 @@ class ScannerService: ObservableObject {
     }
 
     func startOperationMonitor() {
-        guard TraceFenceEntitlementPolicy.canUseProFeatures else {
+        let hasAccess = TraceFenceDistributionPolicy.currentChannel.isDirect
+            ? TraceFenceEntitlementPolicy.canUsePlugin("tracefence.agent-guard")
+            : TraceFenceEntitlementPolicy.canUseProFeatures
+        guard hasAccess else {
             stopOperationMonitor()
             return
         }
@@ -2249,7 +2252,10 @@ class ScannerService: ObservableObject {
     }
 
     func ensureAgentGuardDataPipeline() {
-        guard TraceFenceEntitlementPolicy.canUseProFeatures else {
+        let hasAccess = TraceFenceDistributionPolicy.currentChannel.isDirect
+            ? TraceFenceEntitlementPolicy.canUsePlugin("tracefence.agent-guard")
+            : TraceFenceEntitlementPolicy.canUseProFeatures
+        guard hasAccess else {
             stopOperationMonitor()
             return
         }

@@ -667,6 +667,11 @@ final class AgentUsageInsightsService: ObservableObject {
 
     func startScheduling() {
         Self.retireLegacyTokenScopeCache()
+        guard TraceFenceDistributionPolicy.currentChannel.isAppStore
+                || TraceFenceEntitlementPolicy.canUsePlugin("tracefence.token-usage") else {
+            stopScheduling()
+            return
+        }
         guard scheduler == nil else { return }
         refreshIfDue()
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in

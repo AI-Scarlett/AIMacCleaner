@@ -12,11 +12,14 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab
     @State private var showAIConfig = false
     @StateObject private var licenseService = DirectLicenseService.shared
+    @StateObject private var marketplaceCatalogService = TraceFenceMarketplaceCatalogService.shared
+    @StateObject private var pluginEntitlementService = TraceFencePluginEntitlementService.shared
     @StateObject private var appStoreSubscriptionService = AppStoreSubscriptionService.shared
     @StateObject private var updateService = DirectUpdateService.shared
     @StateObject private var iOSRemoteGatewayService = IOSRemoteControlGatewayService.shared
     @ObservedObject private var captureService = CaptureShelfService.shared
     @State private var licenseKeyInput = ""
+    @State private var pluginLicenseInputs: [String: String] = [:]
     @State private var shortcutSettings: [GlobalShortcut] = GlobalShortcutService.defaultShortcuts
     @State private var recordingShortcutAction: GlobalShortcut.ShortcutAction?
     @State private var shortcutRecorderMonitor: Any?
@@ -50,6 +53,7 @@ struct SettingsView: View {
         case ai = "AI"
         case features = "Features"
         case license = "License"
+        case marketplace = "Marketplace"
         case appearance = "Appearance"
         case lab = "Lab"
         case monitor = "Monitor"
@@ -62,6 +66,7 @@ struct SettingsView: View {
             case .ai: "brain"
             case .features: "switch.2"
             case .license: TraceFenceDistributionPolicy.currentChannel.isAppStore ? "creditcard.fill" : "key.fill"
+            case .marketplace: "shippingbox.fill"
             case .appearance: "paintpalette.fill"
             case .lab: "flask"
             case .monitor: "bell.badge"
@@ -76,6 +81,7 @@ struct SettingsView: View {
             case .ai: "AI"
             case .features: "Features"
             case .license: "License"
+            case .marketplace: "Marketplace"
             case .appearance: "Appearance"
             case .lab: "Lab"
             case .monitor: "Monitor"
@@ -95,6 +101,8 @@ struct SettingsView: View {
                 } else {
                     localizer.t("授权", en: "License", zhHant: "授權", ja: "ライセンス", ko: "라이선스", mt: "License")
                 }
+            case .marketplace:
+                localizer.t("插件商城", en: "Plugin Store", zhHant: "外掛商城", ja: "プラグインストア", ko: "플러그인 스토어", mt: "Plugin Store")
             case .appearance: localizer.t("外观", en: "Appearance", zhHant: "外觀", ja: "外観", ko: "외관", mt: "Appearance")
             case .lab: localizer.settingsTabLab
             case .monitor: localizer.settingsTabMonitor
@@ -143,6 +151,9 @@ struct SettingsView: View {
             HStack(spacing: 0) {
                 VStack(spacing: Theme.Spacing.xs) {
                     ForEach(SettingsTab.allCases, id: \.self) { tab in
+                        if tab == .marketplace && TraceFenceDistributionPolicy.currentChannel.isAppStore {
+                            EmptyView()
+                        } else {
                         Button {
                             stopShortcutRecording()
                             selectedTab = tab
@@ -170,6 +181,7 @@ struct SettingsView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        }
                     }
                     Spacer()
                 }
@@ -194,6 +206,7 @@ struct SettingsView: View {
                             case .ai: aiSection
                             case .features: featuresSection
                             case .license: licenseSection
+                            case .marketplace: marketplaceSection
                             case .appearance: appearanceSection
                             case .lab: labSection
                             case .monitor: monitorSection
@@ -998,7 +1011,17 @@ struct SettingsView: View {
                 Button {
                     licenseService.openPurchasePage(for: .monthly)
                 } label: {
-                    Label(localizer.t("月付 $9.99", en: "Monthly $9.99", zhHant: "月付 $9.99", ja: "月払い $9.99", ko: "월간 $9.99", mt: "Monthly $9.99"), systemImage: "calendar")
+                    Label(
+                        localizer.t(
+                            "月付 · \(TraceFenceCheckoutPlan.monthly.priceLine)",
+                            en: "Monthly · \(TraceFenceCheckoutPlan.monthly.priceLine)",
+                            zhHant: "月付 · \(TraceFenceCheckoutPlan.monthly.priceLine)",
+                            ja: "月払い · \(TraceFenceCheckoutPlan.monthly.priceLine)",
+                            ko: "월간 · \(TraceFenceCheckoutPlan.monthly.priceLine)",
+                            mt: "Monthly · \(TraceFenceCheckoutPlan.monthly.priceLine)"
+                        ),
+                        systemImage: "calendar"
+                    )
                 }
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 32))
                 .disabled(TraceFenceDistributionPolicy.checkoutURL(for: .monthly) == nil)
@@ -1006,7 +1029,17 @@ struct SettingsView: View {
                 Button {
                     licenseService.openPurchasePage(for: .annual)
                 } label: {
-                    Label(localizer.t("年付 $79.99", en: "Annual $79.99", zhHant: "年付 $79.99", ja: "年払い $79.99", ko: "연간 $79.99", mt: "Annual $79.99"), systemImage: "calendar.badge.checkmark")
+                    Label(
+                        localizer.t(
+                            "年付 · \(TraceFenceCheckoutPlan.annual.priceLine)",
+                            en: "Annual · \(TraceFenceCheckoutPlan.annual.priceLine)",
+                            zhHant: "年付 · \(TraceFenceCheckoutPlan.annual.priceLine)",
+                            ja: "年払い · \(TraceFenceCheckoutPlan.annual.priceLine)",
+                            ko: "연간 · \(TraceFenceCheckoutPlan.annual.priceLine)",
+                            mt: "Annual · \(TraceFenceCheckoutPlan.annual.priceLine)"
+                        ),
+                        systemImage: "calendar.badge.checkmark"
+                    )
                 }
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.success, variant: .secondary, minHeight: 32))
                 .disabled(TraceFenceDistributionPolicy.checkoutURL(for: .annual) == nil)
@@ -1054,6 +1087,244 @@ struct SettingsView: View {
             }
         }
         .cardStyle()
+    }
+
+    private var marketplaceSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(Theme.Colors.accent.opacity(0.12))
+                    Image(systemName: "shippingbox.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.accent)
+                }
+                .frame(width: 48, height: 48)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(localizer.t("TraceFence 插件商城", en: "TraceFence Plugin Store"))
+                        .font(Theme.Font.headline)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(localizer.t(
+                        "免费插件可直接使用；付费插件支持 24 小时试用，配置独立商品后可单独购买。Standard 订阅包含所有符合当前宿主版本的插件。",
+                        en: "Free plugins work immediately. Paid plugins include a 24-hour trial and can be purchased separately once their standalone offer is configured. Standard includes every plugin compatible with this host version."
+                    ))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Button {
+                    Task { await marketplaceCatalogService.refresh(force: true) }
+                } label: {
+                    if marketplaceCatalogService.isRefreshing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label(localizer.t("刷新", en: "Refresh"), systemImage: "arrow.clockwise")
+                    }
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .ghost, minHeight: 34))
+                .disabled(marketplaceCatalogService.isRefreshing)
+            }
+            .cardStyle()
+
+            marketplaceCatalogStatus
+
+            ForEach(marketplaceCatalogService.catalog.plugins) { plugin in
+                marketplacePluginCard(plugin)
+            }
+        }
+    }
+
+    private var marketplaceCatalogStatus: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: TraceFenceMarketplaceCatalogRuntime.isUsingVerifiedRemoteCatalog
+                ? "checkmark.shield.fill"
+                : "internaldrive.fill")
+                .foregroundStyle(TraceFenceMarketplaceCatalogRuntime.isUsingVerifiedRemoteCatalog
+                    ? Theme.Colors.success
+                    : Theme.Colors.textSecondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(TraceFenceMarketplaceCatalogRuntime.isUsingVerifiedRemoteCatalog
+                    ? localizer.t("已验证远程目录", en: "Verified remote catalog")
+                    : localizer.t("正在使用内置离线目录", en: "Using built-in offline catalog"))
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(localizer.t(
+                    "目录修订版 \(marketplaceCatalogService.catalog.revision) · 价格以 Dodo 最终结账页为准",
+                    en: "Catalog revision \(marketplaceCatalogService.catalog.revision) · Dodo checkout is the final billing authority"
+                ))
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+            }
+            Spacer()
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+    }
+
+    private func marketplacePluginCard(_ plugin: TraceFencePluginDescriptor) -> some View {
+        let access = pluginEntitlementService.accessState(pluginID: plugin.id)
+        let offer = plugin.standaloneOfferID.flatMap { marketplaceCatalogService.catalog.offer(id: $0) }
+        let isBusy = pluginEntitlementService.busyPluginIDs.contains(plugin.id)
+        let hostVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+        let isCompatible = marketplaceCatalogService.catalog.isCompatible(plugin, hostVersion: hostVersion)
+
+        return VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(plugin.featured ? Theme.Colors.accent.opacity(0.12) : Theme.Colors.elevatedCardBg)
+                    Image(systemName: plugin.systemImage)
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(plugin.featured ? Theme.Colors.accent : Theme.Colors.textSecondary)
+                }
+                .frame(width: 44, height: 44)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Text(plugin.name)
+                            .font(Theme.Font.bodyMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text(plugin.delivery == .builtIn
+                            ? localizer.t("内置", en: "Built in")
+                            : localizer.t("可下载", en: "Download"))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Theme.Colors.separator.opacity(0.35))
+                            .clipShape(Capsule())
+                    }
+                    Text(plugin.summary)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("\(plugin.category) · v\(plugin.version) · ID: \(plugin.id)")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
+                Spacer()
+                marketplaceAccessBadge(access, offer: offer, isCompatible: isCompatible)
+            }
+
+            if !isCompatible {
+                Label(
+                    localizer.t(
+                        "需要 TraceFence \(plugin.minimumHostVersion) 或更高版本",
+                        en: "Requires TraceFence \(plugin.minimumHostVersion) or later"
+                    ),
+                    systemImage: "arrow.up.circle"
+                )
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.warning)
+            } else if case .locked = access, !plugin.isFree {
+                HStack(spacing: Theme.Spacing.sm) {
+                    if let trialHours = plugin.trialHours {
+                        Button {
+                            pluginEntitlementService.beginTrial(pluginID: plugin.id)
+                        } label: {
+                            Label(localizer.t("试用 \(trialHours) 小时", en: "Try \(trialHours) hours"), systemImage: "timer")
+                        }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 32))
+                    }
+                    if let offer {
+                        Button {
+                            pluginEntitlementService.openCheckout(pluginID: plugin.id)
+                        } label: {
+                            Label(localizer.t("购买 \(offer.displayPrice)", en: "Buy \(offer.displayPrice)"), systemImage: "cart.fill")
+                        }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.success, variant: .secondary, minHeight: 32))
+                    }
+                    if plugin.includedInAllAccess {
+                        Button {
+                            selectedTab = .license
+                        } label: {
+                            Label(localizer.t("订阅 Standard", en: "Subscribe Standard"), systemImage: "sparkles")
+                        }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .ghost, minHeight: 32))
+                    }
+                }
+
+                if plugin.standaloneOfferID != nil {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        TextField(
+                            localizer.t("输入此插件的 License Key", en: "Enter this plugin's license key"),
+                            text: Binding(
+                                get: { pluginLicenseInputs[plugin.id, default: ""] },
+                                set: { pluginLicenseInputs[plugin.id] = $0 }
+                            )
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        Button(localizer.t("兑换", en: "Redeem")) {
+                            Task {
+                                await pluginEntitlementService.activate(
+                                    pluginID: plugin.id,
+                                    licenseKey: pluginLicenseInputs[plugin.id, default: ""]
+                                )
+                            }
+                        }
+                        .disabled(isBusy)
+                    }
+                }
+            } else if case .licensed = access {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Button(localizer.t("重新验证", en: "Recheck")) {
+                        Task { await pluginEntitlementService.validate(pluginID: plugin.id) }
+                    }
+                    .disabled(isBusy)
+                    Button(localizer.t("解绑", en: "Deactivate"), role: .destructive) {
+                        Task { await pluginEntitlementService.deactivate(pluginID: plugin.id) }
+                    }
+                    .disabled(isBusy)
+                }
+            }
+
+            if let message = pluginEntitlementService.grants[plugin.id]?.message, !message.isEmpty {
+                Label(message, systemImage: "info.circle")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.warning)
+            }
+        }
+        .cardStyle()
+    }
+
+    private func marketplaceAccessBadge(
+        _ access: TraceFencePluginAccessState,
+        offer: TraceFenceMarketplaceOffer?,
+        isCompatible: Bool
+    ) -> some View {
+        let title: String
+        let color: Color
+        if !isCompatible {
+            title = localizer.t("需更新", en: "Update required")
+            color = Theme.Colors.warning
+        } else { switch access {
+        case .free:
+            title = localizer.t("免费", en: "Free")
+            color = Theme.Colors.success
+        case .allAccess:
+            title = "Standard"
+            color = Theme.Colors.accent
+        case .licensed:
+            title = localizer.t("已购买", en: "Owned")
+            color = Theme.Colors.success
+        case .trial(let expiresAt):
+            let hours = max(1, Int(ceil(expiresAt.timeIntervalSinceNow / 3600)))
+            title = localizer.t("试用剩余 \(hours) 小时", en: "Trial · \(hours)h left")
+            color = Theme.Colors.info
+        case .locked:
+            title = offer?.displayPrice ?? localizer.t("需授权", en: "License required")
+            color = Theme.Colors.textSecondary
+        } }
+        return Text(title)
+            .font(Theme.Font.captionMedium)
+            .foregroundStyle(color)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(color.opacity(0.11))
+            .clipShape(Capsule())
     }
 
 #if DEBUG

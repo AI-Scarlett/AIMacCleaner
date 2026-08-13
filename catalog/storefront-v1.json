@@ -1,0 +1,145 @@
+{
+  "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
+  "expiresAt": "2027-08-13T00:00:00Z",
+  "offers": [
+    {
+      "active": true,
+      "amountMinor": 999,
+      "billingInterval": "month",
+      "billingIntervalCount": 1,
+      "currency": "USD",
+      "dodo": {
+        "acceptedLegacyProductIDs": [],
+        "liveProductID": "pdt_0Nj4q5PqaHwgy17MmjlAk",
+        "testProductID": "pdt_0Nj4pRs43qM7S5NM2yl2D"
+      },
+      "grantsAllPlugins": true,
+      "id": "standard.monthly",
+      "kind": "subscription",
+      "name": "TraceFence Standard Monthly",
+      "trialHours": 48
+    },
+    {
+      "active": true,
+      "amountMinor": 7999,
+      "billingInterval": "year",
+      "billingIntervalCount": 1,
+      "currency": "USD",
+      "dodo": {
+        "acceptedLegacyProductIDs": [],
+        "liveProductID": "pdt_0Nj4rXdh9EI3A7uzyYWpk",
+        "testProductID": "pdt_0Nj4pnQWqPMk14yHT9Q1i"
+      },
+      "grantsAllPlugins": true,
+      "id": "standard.annual",
+      "kind": "subscription",
+      "name": "TraceFence Standard Annual",
+      "trialHours": 48
+    }
+  ],
+  "plugins": [
+    {
+      "capabilities": [
+        "agent.status",
+        "agent.activity"
+      ],
+      "category": "Agent",
+      "delivery": "built_in",
+      "featured": true,
+      "id": "tracefence.agent-monitor",
+      "includedInAllAccess": true,
+      "isFree": true,
+      "minimumHostVersion": "1.1.9",
+      "name": "Agent Monitor",
+      "package": null,
+      "standaloneOfferID": null,
+      "summary": "Live local status and activity for supported AI agents.",
+      "systemImage": "waveform.path.ecg",
+      "trialHours": null,
+      "version": "1.0.0"
+    },
+    {
+      "capabilities": [
+        "agent.audit",
+        "agent.approval"
+      ],
+      "category": "Security",
+      "delivery": "built_in",
+      "featured": true,
+      "id": "tracefence.agent-guard",
+      "includedInAllAccess": true,
+      "isFree": false,
+      "minimumHostVersion": "1.1.9",
+      "name": "Agent Guard",
+      "package": null,
+      "standaloneOfferID": null,
+      "summary": "Review local agent operations, approvals, and safety events.",
+      "systemImage": "shield.checkered",
+      "trialHours": 24,
+      "version": "1.0.0"
+    },
+    {
+      "capabilities": [
+        "usage.tokens",
+        "usage.cost"
+      ],
+      "category": "Analytics",
+      "delivery": "built_in",
+      "featured": true,
+      "id": "tracefence.token-usage",
+      "includedInAllAccess": true,
+      "isFree": false,
+      "minimumHostVersion": "1.1.9",
+      "name": "Token & Usage",
+      "package": null,
+      "standaloneOfferID": null,
+      "summary": "Cached multi-agent token totals, model ranking, and cost estimates.",
+      "systemImage": "number.circle.fill",
+      "trialHours": 24,
+      "version": "1.0.0"
+    },
+    {
+      "capabilities": [
+        "storage.scan",
+        "storage.review"
+      ],
+      "category": "Storage",
+      "delivery": "built_in",
+      "featured": true,
+      "id": "tracefence.disk-advisor",
+      "includedInAllAccess": true,
+      "isFree": true,
+      "minimumHostVersion": "1.1.9",
+      "name": "Disk Advisor",
+      "package": null,
+      "standaloneOfferID": null,
+      "summary": "Bounded storage analysis for agent history, build output, and large files.",
+      "systemImage": "internaldrive.fill",
+      "trialHours": null,
+      "version": "1.0.0"
+    },
+    {
+      "capabilities": [
+        "remote.pairing",
+        "remote.control"
+      ],
+      "category": "Remote",
+      "delivery": "built_in",
+      "featured": true,
+      "id": "tracefence.ios-remote",
+      "includedInAllAccess": true,
+      "isFree": false,
+      "minimumHostVersion": "1.1.9",
+      "name": "iOS Remote Pairing",
+      "package": null,
+      "standaloneOfferID": null,
+      "summary": "Pair TraceFence Sentinel and control supported local agent sessions.",
+      "systemImage": "iphone.gen3.radiowaves.left.and.right",
+      "trialHours": 24,
+      "version": "1.0.0"
+    }
+  ],
+  "publishedAt": "2026-08-13T00:00:00Z",
+  "revision": 1,
+  "schemaVersion": 1
+}

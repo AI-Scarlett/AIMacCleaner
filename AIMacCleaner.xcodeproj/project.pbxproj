@@ -57,6 +57,7 @@
 		D2F004001122334455667788 /* TraceFenceAgentCoreClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F004101122334455667788 /* TraceFenceAgentCoreClient.swift */; };
 		B116459B8B7913107AAE0C86 /* ConversationWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */; };
 		D1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift */; };
+		MP10MARKETPLACECATALOG01 /* MarketplaceCatalogService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MP20MARKETPLACECATALOG02 /* MarketplaceCatalogService.swift */; };
 		D1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift */; };
 		D1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift */; };
 		D1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */; };
@@ -134,6 +135,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		D2F004101122334455667788 /* TraceFenceAgentCoreClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/TraceFenceAgentCoreClient.swift; sourceTree = "<group>"; };
 		F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ConversationWatcher.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/DirectLicenseService.swift; sourceTree = "<group>"; };
+		MP20MARKETPLACECATALOG02 /* MarketplaceCatalogService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/MarketplaceCatalogService.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/DirectUpdateService.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AppleIntelligenceService.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ProviderQuotaService.swift; sourceTree = "<group>"; };
@@ -235,6 +237,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				D2F004101122334455667788 /* TraceFenceAgentCoreClient.swift */,
 				F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */,
 				E1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift */,
+				MP20MARKETPLACECATALOG02 /* MarketplaceCatalogService.swift */,
 				E1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift */,
 				E1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift */,
 				E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */,
@@ -414,6 +417,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				D2F004001122334455667788 /* TraceFenceAgentCoreClient.swift in Sources */,
 				B116459B8B7913107AAE0C86 /* ConversationWatcher.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift in Sources */,
+				MP10MARKETPLACECATALOG01 /* MarketplaceCatalogService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift in Sources */,

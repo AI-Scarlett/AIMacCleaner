@@ -8,6 +8,8 @@ struct ContentView: View {
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var localizer: Localizer
     @EnvironmentObject var licenseService: DirectLicenseService
+    @EnvironmentObject var marketplaceCatalogService: TraceFenceMarketplaceCatalogService
+    @EnvironmentObject var pluginEntitlementService: TraceFencePluginEntitlementService
     @StateObject private var iOSRemoteGatewayService = IOSRemoteControlGatewayService.shared
     @ObservedObject var overviewStore: AgentMonitorOverviewStore
     @State private var showSettings = false
@@ -73,6 +75,21 @@ struct ContentView: View {
             switch self {
             case .tokenScope, .diskAdvisor, .agentProfile, .localDiagnostics, .cleaner, .app, .dependency, .other, .migration: return true
             default: return false
+            }
+        }
+
+        var pluginID: String? {
+            switch self {
+            case .overview:
+                return "tracefence.agent-monitor"
+            case .agentGuard, .operations:
+                return "tracefence.agent-guard"
+            case .tokenScope:
+                return "tracefence.token-usage"
+            case .diskAdvisor:
+                return "tracefence.disk-advisor"
+            default:
+                return nil
             }
         }
 
@@ -384,6 +401,12 @@ struct ContentView: View {
                                     .foregroundStyle(selectedTab == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
 
                                 Spacer()
+
+                                if isDirectPluginLocked(item) {
+                                    Image(systemName: "lock.fill")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundStyle(Theme.Colors.warning)
+                                }
                             }
                             .padding(.horizontal, Theme.Spacing.md + Theme.Spacing.lg)
                             .padding(.vertical, Theme.Spacing.xs + 2)
@@ -425,6 +448,12 @@ struct ContentView: View {
                 .lineLimit(1)
 
             Spacer()
+
+            if isDirectPluginLocked(item) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Theme.Colors.warning)
+            }
 
             if selectedTab == item {
                 Text(navMeta(for: item))
@@ -476,6 +505,15 @@ struct ContentView: View {
                     RoundedRectangle(cornerRadius: 12)
                         .fill(selectedTab == item ? AnyShapeStyle(Theme.Gradients.hero) : AnyShapeStyle(Theme.Colors.textPrimary.opacity(0.045)))
                 )
+                .overlay(alignment: .topTrailing) {
+                    if isDirectPluginLocked(item) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 7, weight: .black))
+                            .foregroundStyle(Theme.Colors.warning)
+                            .padding(2)
+                            .background(Theme.Colors.elevatedCardBg, in: Circle())
+                    }
+                }
             Text(item.label(localizer).split(separator: " ").first.map(String.init) ?? "")
                 .font(.system(size: 8, weight: selectedTab == item ? .semibold : .regular))
                 .foregroundStyle(selectedTab == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
@@ -504,7 +542,7 @@ struct ContentView: View {
                     }
 
                     footerIconButton(icon: iosRemoteFooterIcon, color: iosRemoteFooterColor, help: iosRemoteFooterHelp) {
-                        showIOSRemotePairing = true
+                        openIOSRemotePairing()
                     }
 
                     if TraceFenceDistributionPolicy.currentChannel.isAppStore {
@@ -550,7 +588,7 @@ struct ContentView: View {
                                     .minimumScaleFactor(0.78)
                                 Spacer(minLength: 2)
                                 footerLabeledButton(icon: iosRemoteFooterIcon, title: iosRemoteFooterTitle, color: iosRemoteFooterColor) {
-                                    showIOSRemotePairing = true
+                                    openIOSRemotePairing()
                                 }
                                 .frame(width: 98)
                             }
@@ -599,6 +637,26 @@ struct ContentView: View {
         settingsInitialTab = tab
             ?? (TraceFenceDistributionPolicy.currentChannel.isAppStore ? .license : .features)
         showSettings = true
+    }
+
+    private func openIOSRemotePairing() {
+        if TraceFenceDistributionPolicy.currentChannel.isDirect,
+           !TraceFenceEntitlementPolicy.canUsePlugin("tracefence.ios-remote") {
+            openSettings(.marketplace)
+        } else {
+            showIOSRemotePairing = true
+        }
+    }
+
+    private func isDirectPluginLocked(_ item: NavItem) -> Bool {
+        guard TraceFenceDistributionPolicy.currentChannel.isDirect,
+              let pluginID = item.pluginID else {
+            return false
+        }
+        guard marketplaceCatalogService.catalog.plugin(id: pluginID) != nil else {
+            return true
+        }
+        return !TraceFenceEntitlementPolicy.canUsePlugin(pluginID)
     }
 
     private var iosRemoteFooterColor: Color {
@@ -792,20 +850,28 @@ struct ContentView: View {
             AppManagerTab(filterType: .other)
                 .environmentObject(localizer)
         case .operations:
-            OperationLogTab(monitor: service.operationMonitor)
-                .environmentObject(localizer)
+            pluginContent("tracefence.agent-guard") {
+                OperationLogTab(monitor: service.operationMonitor)
+                    .environmentObject(localizer)
+            }
         case .agentGuard:
-            AgentGuardTab()
-                .environmentObject(localizer)
+            pluginContent("tracefence.agent-guard") {
+                AgentGuardTab()
+                    .environmentObject(localizer)
+            }
         case .toolbox:
             ToolboxTab()
                 .environmentObject(localizer)
         case .tokenScope:
-            TokenScopeLabView()
-                .environmentObject(localizer)
+            pluginContent("tracefence.token-usage") {
+                TokenScopeLabView()
+                    .environmentObject(localizer)
+            }
         case .diskAdvisor:
-            DiskAdvisorLabView()
-                .environmentObject(localizer)
+            pluginContent("tracefence.disk-advisor") {
+                DiskAdvisorLabView()
+                    .environmentObject(localizer)
+            }
         case .agentProfile:
             AgentGeoMirrorSettingsView()
                 .environmentObject(localizer)
@@ -816,6 +882,82 @@ struct ContentView: View {
             IntelMigrationTab()
                 .environmentObject(localizer)
         }
+    }
+
+    @ViewBuilder
+    private func pluginContent<Content: View>(
+        _ pluginID: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        if TraceFenceDistributionPolicy.currentChannel.isDirect,
+           !TraceFenceEntitlementPolicy.canUsePlugin(pluginID) {
+            TraceFencePluginAccessGateView(
+                pluginID: pluginID,
+                onOpenStore: { openSettings(.marketplace) }
+            )
+            .environmentObject(localizer)
+            .environmentObject(pluginEntitlementService)
+        } else {
+            content()
+        }
+    }
+}
+
+private struct TraceFencePluginAccessGateView: View {
+    @EnvironmentObject private var localizer: Localizer
+    @EnvironmentObject private var pluginEntitlementService: TraceFencePluginEntitlementService
+    let pluginID: String
+    let onOpenStore: () -> Void
+
+    private var plugin: TraceFencePluginDescriptor? {
+        TraceFenceMarketplaceCatalogRuntime.plugin(id: pluginID)
+    }
+
+    var body: some View {
+        VStack(spacing: Theme.Spacing.xl) {
+            Spacer()
+            Image(systemName: plugin?.systemImage ?? "shippingbox.fill")
+                .font(.system(size: 42, weight: .semibold))
+                .foregroundStyle(Theme.Colors.accent)
+                .frame(width: 82, height: 82)
+                .background(Theme.Colors.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 24))
+
+            VStack(spacing: Theme.Spacing.sm) {
+                Text(plugin?.name ?? localizer.t("插件", en: "Plugin"))
+                    .font(Theme.Font.title2Bold)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(localizer.t(
+                    plugin?.standaloneOfferID == nil
+                        ? "这个功能现在由独立插件提供。你可以先试用 24 小时，或通过 Standard 订阅解锁全部插件。"
+                        : "这个功能现在由独立插件提供。你可以先试用 24 小时、单独购买，或通过 Standard 订阅解锁全部插件。",
+                    en: plugin?.standaloneOfferID == nil
+                        ? "This feature is now provided as an independent plugin. Start a 24-hour trial or unlock every plugin with Standard."
+                        : "This feature is now provided as an independent plugin. Start a 24-hour trial, buy it separately, or unlock every plugin with Standard."
+                ))
+                .font(Theme.Font.body)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 520)
+            }
+
+            HStack(spacing: Theme.Spacing.md) {
+                if let hours = plugin?.trialHours {
+                    Button {
+                        pluginEntitlementService.beginTrial(pluginID: pluginID)
+                    } label: {
+                        Label(localizer.t("试用 \(hours) 小时", en: "Try \(hours) hours"), systemImage: "timer")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 38))
+                }
+                Button(action: onOpenStore) {
+                    Label(localizer.t("打开插件商城", en: "Open Plugin Store"), systemImage: "shippingbox.fill")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 38))
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(Theme.Spacing.xxl)
     }
 }
 

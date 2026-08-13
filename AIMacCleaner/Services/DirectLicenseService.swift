@@ -35,8 +35,14 @@ enum TraceFenceSubscriptionTier: String, Codable, CaseIterable {
         switch self {
         case .none:
             return "Limited local monitoring"
-        case .appStoreStandard, .directStandard:
+        case .appStoreStandard:
             return "$9.99/month or $79.99/year"
+        case .directStandard:
+            let monthly = TraceFenceMarketplaceCatalogRuntime.standardOffer(for: .monthly)?.displayPriceWithPeriod
+                ?? "$9.99/month"
+            let annual = TraceFenceMarketplaceCatalogRuntime.standardOffer(for: .annual)?.displayPriceWithPeriod
+                ?? "$79.99/year"
+            return "\(monthly) or \(annual)"
         }
     }
 
@@ -74,9 +80,19 @@ enum TraceFenceCheckoutPlan: String, CaseIterable {
     case annual
 
     var priceLine: String {
+        if let price = TraceFenceMarketplaceCatalogRuntime.standardOffer(for: self)?.displayPriceWithPeriod {
+            return price
+        }
         switch self {
         case .monthly: return "$9.99 / month"
         case .annual: return "$79.99 / year"
+        }
+    }
+
+    var marketplaceOfferID: String {
+        switch self {
+        case .monthly: return "standard.monthly"
+        case .annual: return "standard.annual"
         }
     }
 }
@@ -217,9 +233,17 @@ enum TraceFenceDistributionPolicy {
     }
 
     static func checkoutURL(for plan: TraceFenceCheckoutPlan) -> URL? {
-        guard currentChannel.isDirect,
-              let productID = dodoProductID(for: plan),
-              let returnURL = checkoutReturnURL,
+        guard currentChannel.isDirect, let returnURL = checkoutReturnURL else {
+            return nil
+        }
+        if let dynamic = TraceFenceMarketplaceCatalogRuntime.checkoutURL(
+            offerID: plan.marketplaceOfferID,
+            environment: dodoEnvironment,
+            returnURL: returnURL
+        ) {
+            return dynamic
+        }
+        guard let productID = bundledDodoProductID(for: plan),
               var components = URLComponents(string: "https://\(dodoEnvironment.checkoutHost)/buy/\(productID)") else {
             return nil
         }
@@ -243,6 +267,16 @@ enum TraceFenceDistributionPolicy {
 
     static func dodoProductID(for plan: TraceFenceCheckoutPlan) -> String? {
         guard currentChannel.isDirect else { return nil }
+        if let dynamic = TraceFenceMarketplaceCatalogRuntime.standardProductID(
+            for: plan,
+            environment: dodoEnvironment
+        ) {
+            return dynamic
+        }
+        return bundledDodoProductID(for: plan)
+    }
+
+    private static func bundledDodoProductID(for plan: TraceFenceCheckoutPlan) -> String? {
         let infoKey: String
         let defaultsKey: String
         switch plan {
@@ -261,7 +295,11 @@ enum TraceFenceDistributionPolicy {
     }
 
     static var dodoStandardProductIDs: Set<String> {
-        Set(TraceFenceCheckoutPlan.allCases.compactMap(dodoProductID(for:)))
+        var values = TraceFenceMarketplaceCatalogRuntime.acceptedStandardProductIDs(
+            environment: dodoEnvironment
+        )
+        values.formUnion(TraceFenceCheckoutPlan.allCases.compactMap(bundledDodoProductID(for:)))
+        return values
     }
 
     static var dodoBusinessID: String? {
@@ -273,6 +311,20 @@ enum TraceFenceDistributionPolicy {
             return nil
         }
         return value
+    }
+
+    static var bundledDodoBusinessID: String? {
+        let candidates = [
+            Bundle.main.object(forInfoDictionaryKey: "TraceFenceDodoBusinessID") as? String,
+            "bus_0Nj3ve514BLr8z2wT3duj"
+        ]
+        for candidate in candidates {
+            let value = candidate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if value.range(of: #"^bus_[A-Za-z0-9]+$"#, options: .regularExpression) != nil {
+                return value
+            }
+        }
+        return nil
     }
 
     static func isSupportedDodoProductID(_ productID: String) -> Bool {
@@ -521,6 +573,18 @@ enum TraceFenceEntitlementPolicy {
             await AppStoreSubscriptionService.shared.refresh()
         } else {
             DirectLicenseService.shared.refreshTrialState()
+        }
+    }
+
+    static func canUsePlugin(_ pluginID: String) -> Bool {
+        guard TraceFenceDistributionPolicy.currentChannel.isDirect else {
+            return canUseProFeatures
+        }
+        switch TraceFencePluginEntitlementService.shared.accessState(pluginID: pluginID) {
+        case .free, .allAccess, .licensed, .trial:
+            return true
+        case .locked:
+            return false
         }
     }
 }

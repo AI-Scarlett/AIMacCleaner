@@ -236,6 +236,12 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             stop()
             return
         }
+        if TraceFenceDistributionPolicy.currentChannel.isDirect,
+           !TraceFenceEntitlementPolicy.canUsePlugin("tracefence.ios-remote") {
+            stop()
+            statusMessage = "The iOS Remote Pairing plugin requires an active entitlement."
+            return
+        }
         let normalized = Self.normalizedPort(port)
         UserDefaults.standard.set(normalized, forKey: Self.portKey)
         UserDefaults.standard.set(normalized, forKey: "traceFenceIOSRemoteGatewayLastStartPort")
@@ -671,7 +677,7 @@ final class IOSRemoteControlGatewayService: ObservableObject {
         if TraceFenceDistributionPolicy.currentChannel.isAppStore {
             return AppStoreSubscriptionService.shared.canUseProFeatures
         }
-        return DirectLicenseService.shared.canUseProFeatures || DirectLicenseService.shared.isTrialActive
+        return TraceFenceEntitlementPolicy.canUsePlugin("tracefence.ios-remote")
     }
 
     private var supportsExternalControlPlane: Bool {
@@ -3008,7 +3014,7 @@ final class IOSRemoteControlGatewayService: ObservableObject {
         return [
             "channel": TraceFenceDistributionPolicy.currentChannel.rawValue,
             "tier": DirectLicenseService.shared.currentTier.rawValue,
-            "active": DirectLicenseService.shared.canUseProFeatures || DirectLicenseService.shared.isTrialActive,
+            "active": TraceFenceEntitlementPolicy.canUsePlugin("tracefence.ios-remote"),
             "enhanced": false
         ]
     }

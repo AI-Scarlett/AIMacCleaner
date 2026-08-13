@@ -11,6 +11,8 @@ struct AIMacCleanerApp: App {
     @StateObject private var conversationWatcher = ConversationWatcher()
     @StateObject private var overviewStore = AgentMonitorOverviewStore()
     @StateObject private var licenseService = DirectLicenseService.shared
+    @StateObject private var marketplaceCatalogService = TraceFenceMarketplaceCatalogService.shared
+    @StateObject private var pluginEntitlementService = TraceFencePluginEntitlementService.shared
     @StateObject private var updateService = DirectUpdateService.shared
     @StateObject private var iOSRemoteGatewayService = IOSRemoteControlGatewayService.shared
     @StateObject private var providerQuotaService = ProviderQuotaService()
@@ -167,6 +169,33 @@ struct AIMacCleanerApp: App {
             }
             Darwin.exit(failures.isEmpty ? 0 : 2)
         }
+        if ProcessInfo.processInfo.arguments.contains("--tracefence-marketplace-self-test") {
+            var failures: [String] = []
+            let arguments = ProcessInfo.processInfo.arguments
+            if let catalogIndex = arguments.firstIndex(of: "--catalog"),
+               let signatureIndex = arguments.firstIndex(of: "--signature"),
+               catalogIndex + 1 < arguments.count,
+               signatureIndex + 1 < arguments.count {
+                do {
+                    let catalog = try Data(contentsOf: URL(fileURLWithPath: arguments[catalogIndex + 1]))
+                    let signature = try Data(contentsOf: URL(fileURLWithPath: arguments[signatureIndex + 1]))
+                    failures = TraceFenceMarketplaceCatalogRuntime.debugSelfTestFailures(
+                        catalogData: catalog,
+                        signatureData: signature
+                    )
+                } catch {
+                    failures.append(error.localizedDescription)
+                }
+            } else {
+                failures.append("Pass --catalog and --signature fixture paths.")
+            }
+            let payload: [String: Any] = ["succeeded": failures.isEmpty, "failures": failures]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data("\n".utf8))
+            }
+            Darwin.exit(failures.isEmpty ? 0 : 2)
+        }
 #endif
         let defaults = UserDefaults.standard
         let palette = defaults.string(forKey: "colorPalette")
@@ -181,6 +210,7 @@ struct AIMacCleanerApp: App {
         }
         Task { @MainActor in
             guard TraceFenceDistributionPolicy.currentChannel.isDirect else { return }
+            await TraceFenceMarketplaceCatalogService.shared.refresh()
             let pricingReport = await AgentUsagePricingCatalogUpdateService.shared.refreshIfNeeded()
             if pricingReport.catalogChanged {
                 AgentUsageInsightsService.shared.applyPricingCatalogUpdate()
@@ -225,6 +255,8 @@ struct AIMacCleanerApp: App {
                 .environmentObject(sessionsViewModel)
                 .environmentObject(conversationWatcher)
                 .environmentObject(licenseService)
+                .environmentObject(marketplaceCatalogService)
+                .environmentObject(pluginEntitlementService)
                 .environmentObject(updateService)
                 .environmentObject(providerQuotaService)
                 .environmentObject(agentUsageInsightsService)
@@ -304,11 +336,34 @@ struct AIMacCleanerApp: App {
                     menuBarController.setEnabled(newValue)
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .traceFenceEntitlementDidChange)) { notification in
-                    let isActive = notification.userInfo?["canUseProFeatures"] as? Bool == true
-                    if isActive {
-                        startEntitledServices()
-                    } else {
-                        stopEntitledServices()
+                    if let isActive = notification.userInfo?["canUseProFeatures"] as? Bool {
+                        if isActive {
+                            startEntitledServices()
+                        } else {
+                            stopEntitledServices()
+                        }
+                        return
+                    }
+                    if notification.userInfo?["pluginID"] as? String == "tracefence.ios-remote" {
+                        if TraceFenceEntitlementPolicy.canUsePlugin("tracefence.ios-remote") {
+                            iOSRemoteGatewayService.startConfiguredIfNeeded()
+                        } else {
+                            iOSRemoteGatewayService.stop()
+                        }
+                    }
+                    if notification.userInfo?["pluginID"] as? String == "tracefence.token-usage" {
+                        if TraceFenceEntitlementPolicy.canUsePlugin("tracefence.token-usage") {
+                            if shouldStartUsageInsightsAtLaunch {
+                                agentUsageInsightsService.startScheduling()
+                            }
+                        } else {
+                            agentUsageInsightsService.stopScheduling()
+                        }
+                    }
+                    if notification.userInfo?["pluginID"] as? String == "tracefence.agent-guard",
+                       !TraceFenceEntitlementPolicy.canUsePlugin("tracefence.agent-guard") {
+                        operationMonitorEnabled = false
+                        service.stopOperationMonitor()
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in

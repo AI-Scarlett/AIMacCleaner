@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "revision": 1,
+  "publishedAt": "2026-08-13T00:00:00Z",
+  "expiresAt": "2027-08-13T00:00:00Z",
+  "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
+  "offers": [
+    {
+      "id": "standard.monthly",
+      "name": "TraceFence Standard Monthly",
+      "kind": "subscription",
+      "currency": "USD",
+      "amountMinor": 999,
+      "billingInterval": "month",
+      "billingIntervalCount": 1,
+      "trialHours": 48,
+      "grantsAllPlugins": true,
+      "active": true,
+      "dodo": {
+        "liveProductID": "pdt_0Nj4q5PqaHwgy17MmjlAk",
+        "testProductID": "pdt_0Nj4pRs43qM7S5NM2yl2D",
+        "acceptedLegacyProductIDs": []
+      }
+    },
+    {
+      "id": "standard.annual",
+      "name": "TraceFence Standard Annual",
+      "kind": "subscription",
+      "currency": "USD",
+      "amountMinor": 7999,
+      "billingInterval": "year",
+      "billingIntervalCount": 1,
+      "trialHours": 48,
+      "grantsAllPlugins": true,
+      "active": true,
+      "dodo": {
+        "liveProductID": "pdt_0Nj4rXdh9EI3A7uzyYWpk",
+        "testProductID": "pdt_0Nj4pnQWqPMk14yHT9Q1i",
+        "acceptedLegacyProductIDs": []
+      }
+    }
+  ],
+  "plugins": [
+    {
+      "id": "tracefence.agent-monitor",
+      "version": "1.0.0",
+      "name": "Agent Monitor",
+      "summary": "Live local status and activity for supported AI agents.",
+      "category": "Agent",
+      "systemImage": "waveform.path.ecg",
+      "delivery": "built_in",
+      "minimumHostVersion": "1.1.9",
+      "capabilities": ["agent.status", "agent.activity"],
+      "isFree": true,
+      "includedInAllAccess": true,
+      "standaloneOfferID": null,
+      "trialHours": null,
+      "featured": true,
+      "package": null
+    },
+    {
+      "id": "tracefence.agent-guard",
+      "version": "1.0.0",
+      "name": "Agent Guard",
+      "summary": "Review local agent operations, approvals, and safety events.",
+      "category": "Security",
+      "systemImage": "shield.checkered",
+      "delivery": "built_in",
+      "minimumHostVersion": "1.1.9",
+      "capabilities": ["agent.audit", "agent.approval"],
+      "isFree": false,
+      "includedInAllAccess": true,
+      "standaloneOfferID": null,
+      "trialHours": 24,
+      "featured": true,
+      "package": null
+    },
+    {
+      "id": "tracefence.token-usage",
+      "version": "1.0.0",
+      "name": "Token & Usage",
+      "summary": "Cached multi-agent token totals, model ranking, and cost estimates.",
+      "category": "Analytics",
+      "systemImage": "number.circle.fill",
+      "delivery": "built_in",
+      "minimumHostVersion": "1.1.9",
+      "capabilities": ["usage.tokens", "usage.cost"],
+      "isFree": false,
+      "includedInAllAccess": true,
+      "standaloneOfferID": null,
+      "trialHours": 24,
+      "featured": true,
+      "package": null
+    },
+    {
+      "id": "tracefence.disk-advisor",
+      "version": "1.0.0",
+      "name": "Disk Advisor",
+      "summary": "Bounded storage analysis for agent history, build output, and large files.",
+      "category": "Storage",
+      "systemImage": "internaldrive.fill",
+      "delivery": "built_in",
+      "minimumHostVersion": "1.1.9",
+      "capabilities": ["storage.scan", "storage.review"],
+      "isFree": true,
+      "includedInAllAccess": true,
+      "standaloneOfferID": null,
+      "trialHours": null,
+      "featured": true,
+      "package": null
+    },
+    {
+      "id": "tracefence.ios-remote",
+      "version": "1.0.0",
+      "name": "iOS Remote Pairing",
+      "summary": "Pair TraceFence Sentinel and control supported local agent sessions.",
+      "category": "Remote",
+      "systemImage": "iphone.gen3.radiowaves.left.and.right",
+      "delivery": "built_in",
+      "minimumHostVersion": "1.1.9",
+      "capabilities": ["remote.pairing", "remote.control"],
+      "isFree": false,
+      "includedInAllAccess": true,
+      "standaloneOfferID": null,
+      "trialHours": 24,
+      "featured": true,
+      "package": null
+    }
+  ]
+}
