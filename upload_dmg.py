@@ -13,22 +13,20 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.1")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.2")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
-    "TraceFence 1.2.1 introduces the independently versioned Plugin Center.\n\n"
-    "- Adds Discover, Library, and Updates views for a coherent plugin lifecycle.\n"
-    "- Publishes 45 signed first-party plugins from TraceFence-owned, immutable per-plugin releases.\n"
-    "- Keeps every plugin version independent from the TraceFence host version.\n"
-    "- Supports install, enable, disable, update, one-version rollback, and uninstall while preserving plugin data.\n"
-    "- Verifies catalog signature and rollback policy, package SHA-256, Developer ID team, manifest identity, PluginKit ABI, minimum host and macOS versions, and declared permissions.\n"
-    "- Adds a PluginKit v4 compatibility runtime with generic primary, component, and settings surfaces.\n"
-    "- Mirrors the pinned Apache-2.0 MacTools source into the TraceFence source tree so package availability no longer depends on the upstream repository.\n"
-    "- Keeps Agent Guard standalone purchase product pdt_0NlLDDcejZUSrZ0bRNosp separate; the 45-package collection is included with TraceFence Standard.\n"
-    "- Hardens notarization uploads with an automatic S3 acceleration retry and signs the embedded PluginKit framework before the app.\n"
+    "TraceFence 1.2.2 makes installed plugins first-class applications instead of Settings dialogs.\n\n"
+    "- Adds a persistent My Plugins workspace to the main TraceFence sidebar.\n"
+    "- Routes Open actions out of Settings and into the main workspace, removing the nested unclosable plugin sheet.\n"
+    "- Adds explicit close controls and correct primary/component panel visibility lifecycles.\n"
+    "- Adds a menu-bar Plugins tab for pinned quick controls such as Fan Control.\n"
+    "- Lets users star installed plugins without filling the main sidebar with every package.\n"
+    "- Keeps the Store focused on purchase, install, enable/disable, independent update, rollback, and uninstall.\n"
+    "- Keeps all 45 plugin versions and TraceFence host updates independent.\n"
 )
 
 

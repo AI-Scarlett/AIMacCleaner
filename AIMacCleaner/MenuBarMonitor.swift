@@ -72,8 +72,14 @@ struct MenuBarMonitor: View {
     let openMainConsole: () -> Void
     @ObservedObject private var artifactShelfService = ArtifactShelfService.shared
     @ObservedObject private var artifactSidecarController = ArtifactSidecarController.shared
+    @ObservedObject private var pluginCatalogService = TraceFenceMarketplaceCatalogService.shared
+    @ObservedObject private var pluginPackageManager = TraceFencePluginPackageManager.shared
+    @ObservedObject private var pluginRuntimeHost = TraceFencePluginRuntimeHost.shared
     @EnvironmentObject var localizer: Localizer
     @State private var selectedTab: MonitorTab = .quotas
+    @State private var selectedQuickPluginID: String?
+    @AppStorage(TraceFencePluginDisplayPreferences.pinnedPluginIDsKey)
+    private var pinnedPluginIDsJSON = TraceFencePluginDisplayPreferences.defaultPinnedPluginIDsJSON
     @AppStorage("networkMode") private var networkMode = "internet"
     @State private var alertThreshold: Double = 10.0
     @State private var monitoringEnabled: Bool = true
@@ -100,6 +106,7 @@ struct MenuBarMonitor: View {
         case capture = "capture"
         case operations = "operations"
         case overview = "overview"
+        case plugins = "plugins"
 
         func label(_ localizer: Localizer) -> String {
             switch self {
@@ -107,6 +114,7 @@ struct MenuBarMonitor: View {
             case .capture: return localizer.t("采集", en: "Capture", zhHant: "採集", ja: "収集", ko: "캡처", mt: "Capture")
             case .operations: return localizer.agentMonitorTitle
             case .overview: return localizer.systemMonitorTitle
+            case .plugins: return localizer.t("插件", en: "Plugins", zhHant: "外掛", ja: "プラグイン", ko: "플러그인", mt: "Plugins")
             }
         }
 
@@ -116,6 +124,7 @@ struct MenuBarMonitor: View {
             case .capture: return "viewfinder"
             case .operations: return "chart.bar"
             case .overview: return "gauge.open.with.lines.needle.84percent"
+            case .plugins: return "puzzlepiece.extension.fill"
             }
         }
     }
@@ -138,6 +147,8 @@ struct MenuBarMonitor: View {
                         overviewContent
                     case .operations:
                         operationsContent
+                    case .plugins:
+                        pluginsContent
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -153,6 +164,10 @@ struct MenuBarMonitor: View {
         }
         .onAppear {
             loadSettings()
+            pluginPackageManager.refresh(catalog: pluginCatalogService.catalog)
+#if DEBUG
+            openPluginTabForUITestIfRequested()
+#endif
             startDeferredMonitorForSelectedTab()
         }
         .onChange(of: selectedTab) { _ in
@@ -353,6 +368,132 @@ struct MenuBarMonitor: View {
                 .frame(height: 1)
         }
     }
+
+    private var pluginsContent: some View {
+        Group {
+            if let selectedQuickPluginID {
+                TraceFencePluginRuntimeView(
+                    runtimeHost: pluginRuntimeHost,
+                    pluginID: selectedQuickPluginID,
+                    presentation: .menuBar,
+                    onClose: { self.selectedQuickPluginID = nil }
+                )
+                .id(selectedQuickPluginID)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(localizer.t("快捷插件", en: "Quick Plugins"))
+                                    .font(Theme.Font.headline)
+                                Text(localizer.t(
+                                    "在“我的插件”中点星标固定常用工具",
+                                    en: "Star frequently used tools in My Plugins"
+                                ))
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                            }
+                            Spacer()
+                            Button {
+                                TraceFencePluginPresentationCenter.shared.openPluginWorkspace()
+                                openMainConsole()
+                            } label: {
+                                Label(localizer.t("管理", en: "Manage"), systemImage: "arrow.up.right")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+
+                        if quickPlugins.isEmpty {
+                            VStack(spacing: Theme.Spacing.md) {
+                                Image(systemName: "star.circle")
+                                    .font(.system(size: 30, weight: .semibold))
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                                Text(localizer.t(
+                                    "还没有可用的快捷插件",
+                                    en: "No quick plugins are available yet"
+                                ))
+                                .font(Theme.Font.captionMedium)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                Button {
+                                    TraceFencePluginPresentationCenter.shared.openPluginWorkspace()
+                                    openMainConsole()
+                                } label: {
+                                    Label(localizer.t("打开我的插件", en: "Open My Plugins"), systemImage: "puzzlepiece.extension.fill")
+                                }
+                                .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .secondary, minHeight: 32))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Theme.Spacing.xxl)
+                            .cardStyle()
+                        } else {
+                            LazyVGrid(
+                                columns: [GridItem(.flexible()), GridItem(.flexible())],
+                                spacing: Theme.Spacing.sm
+                            ) {
+                                ForEach(quickPlugins) { plugin in
+                                    Button {
+                                        selectedQuickPluginID = plugin.id
+                                    } label: {
+                                        HStack(spacing: Theme.Spacing.sm) {
+                                            Image(systemName: plugin.systemImage)
+                                                .font(.system(size: 15, weight: .semibold))
+                                                .foregroundStyle(Theme.Colors.accent)
+                                                .frame(width: 34, height: 34)
+                                                .background(Theme.Colors.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(plugin.localizedName())
+                                                    .font(Theme.Font.captionMedium)
+                                                    .foregroundStyle(Theme.Colors.textPrimary)
+                                                    .lineLimit(1)
+                                                Text(localizer.t("点击使用", en: "Open"))
+                                                    .font(.system(size: 9, weight: .medium))
+                                                    .foregroundStyle(Theme.Colors.textTertiary)
+                                            }
+                                            Spacer(minLength: 0)
+                                        }
+                                        .padding(Theme.Spacing.sm)
+                                        .contentShape(Rectangle())
+                                        .background(Theme.Colors.elevatedCardBg.opacity(0.74), in: RoundedRectangle(cornerRadius: Theme.Radius.md))
+                                        .overlay {
+                                            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                                                .stroke(Theme.Colors.separator, lineWidth: 1)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                    .padding(Theme.Spacing.lg)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var quickPlugins: [TraceFencePluginDescriptor] {
+        let pinned = TraceFencePluginDisplayPreferences.pinnedPluginIDs(from: pinnedPluginIDsJSON)
+        return pinned.compactMap { pluginID in
+            guard pluginPackageManager.records[pluginID] != nil,
+                  let plugin = pluginCatalogService.catalog.plugin(id: pluginID),
+                  plugin.supportsMenuBarQuickPanel else {
+                return nil
+            }
+            return plugin
+        }
+    }
+
+#if DEBUG
+    private func openPluginTabForUITestIfRequested() {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--tracefence-menu-plugin-tab") else { return }
+        selectedTab = .plugins
+        if let flagIndex = arguments.firstIndex(of: "--tracefence-open-quick-plugin"),
+           arguments.indices.contains(flagIndex + 1) {
+            selectedQuickPluginID = arguments[flagIndex + 1]
+        }
+    }
+#endif
 
     private var overviewContent: some View {
         ScrollView {
@@ -2815,6 +2956,8 @@ struct MenuBarMonitor: View {
                 usageInsightsService.startScheduling()
             case .capture:
                 captureService.start()
+            case .plugins:
+                break
             }
         }
         deferredMonitorWorkItem = workItem

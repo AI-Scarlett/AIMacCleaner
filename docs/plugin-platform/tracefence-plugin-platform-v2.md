@@ -44,6 +44,15 @@ future XPC isolation class, and individual paid SKUs require a unique commerce
 product identifier for each plugin. TraceFence Standard currently grants the
 first-party 45-plugin collection without coupling plugin updates to host updates.
 
+## TraceFence 1.2.2 presentation correction
+
+Version 1.2.2 separates plugin lifecycle management from daily use. The Store
+no longer presents the runtime as a nested Settings sheet. Open requests dismiss
+Settings and route through the application shell to My Plugins; pinned compact
+panels also appear in the menu-bar Plugins tab. Both surfaces expose explicit
+close actions and notify plugins when primary or component panels become visible
+or hidden.
+
 ## Target boundaries
 
 ### 1. Catalog
@@ -116,6 +125,31 @@ The Store has three primary destinations:
 
 Plugin details show version history, download size, permissions, compatibility,
 source/license attribution and release notes before purchase or install.
+
+### 6. Use surfaces
+
+The Store is not a plugin launcher. Purchase, installation, updates, rollback,
+enable/disable and uninstall stay in the Store; normal plugin use is routed by
+the application shell to one or more declared surfaces:
+
+| Surface | Appropriate plugin shape | Host behavior |
+| --- | --- | --- |
+| My Plugins workspace | Every installed plugin | Persistent main-window destination with search, explicit close and plugin settings |
+| Menu-bar quick panel | Short controls and live status | User-pinned tools only; opening the status item is sufficient for repeat use |
+| Utility window | Long-running or multi-window workflows | Independently closable window restored by the host |
+| Background service | Explicit background capability | Starts only after enablement and permission checks; no hidden activation from installation |
+
+Existing PluginKit v4 `primaryPanel` and `componentPanel` capabilities are
+eligible for the menu-bar quick panel and the workspace. Settings-only plugins
+remain in the workspace. Future packages may add `presentation.window`,
+`presentation.menu-bar`, or `runtime.background` capabilities without coupling
+their version to TraceFence.
+
+An Open action from Settings first dismisses Settings, then sends a launch
+request to the application shell. Plugin UI must never be presented as a second
+modal sheet above the Store. A workspace or utility window always exposes a
+clear close action, while selecting another main navigation destination also
+leaves the plugin surface.
 
 ## Package contract
 

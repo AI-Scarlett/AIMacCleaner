@@ -10,11 +10,15 @@ struct ContentView: View {
     @EnvironmentObject var licenseService: DirectLicenseService
     @EnvironmentObject var marketplaceCatalogService: TraceFenceMarketplaceCatalogService
     @EnvironmentObject var pluginEntitlementService: TraceFencePluginEntitlementService
+    @StateObject private var pluginPackageManager = TraceFencePluginPackageManager.shared
+    @StateObject private var pluginRuntimeHost = TraceFencePluginRuntimeHost.shared
+    @StateObject private var pluginPresentationCenter = TraceFencePluginPresentationCenter.shared
     @StateObject private var iOSRemoteGatewayService = IOSRemoteControlGatewayService.shared
     @ObservedObject var overviewStore: AgentMonitorOverviewStore
     @State private var showSettings = false
     @State private var settingsInitialTab: SettingsView.SettingsTab = .features
     @State private var showIOSRemotePairing = false
+    @State private var selectedPluginID: String?
     @State private var sidebarCollapsed = false
     @State private var toolboxExpanded = false
     @State private var hoveredItem: NavItem?
@@ -60,6 +64,7 @@ struct ContentView: View {
         case overview = "overview"
         case agentGuard = "agentGuard"
         case operations = "operations"
+        case plugins = "plugins"
         case toolbox = "toolbox"
         case tokenScope = "tokenScope"
         case diskAdvisor = "diskAdvisor"
@@ -101,6 +106,7 @@ struct ContentView: View {
             case .other: "terminal"
             case .overview: "chart.bar.xaxis"
             case .operations: "eye.fill"
+            case .plugins: "puzzlepiece.extension.fill"
             case .agentGuard: "shield.fill"
             case .toolbox: "wrench.and.screwdriver.fill"
             case .tokenScope: "chart.xyaxis.line"
@@ -119,6 +125,7 @@ struct ContentView: View {
             case .other: Theme.Colors.textSecondary
             case .overview: Theme.Colors.info
             case .operations: Theme.Colors.accent
+            case .plugins: Theme.Colors.purple
             case .agentGuard: Theme.Colors.accent
             case .toolbox: Theme.Colors.info
             case .tokenScope: Theme.Colors.accent
@@ -137,6 +144,7 @@ struct ContentView: View {
             case .other: localizer.navOther
             case .overview: localizer.navOverview
             case .operations: localizer.navOperations
+            case .plugins: localizer.t("我的插件", en: "My Plugins", zhHant: "我的外掛", ja: "マイプラグイン", ko: "내 플러그인", mt: "My Plugins")
             case .agentGuard: localizer.navAgentGuard
             case .toolbox: localizer.navToolbox
             case .tokenScope: localizer.tokenScopeTitle
@@ -155,6 +163,7 @@ struct ContentView: View {
             case .other: localizer.subOther
             case .overview: localizer.subOverview
             case .operations: localizer.subOperations
+            case .plugins: localizer.t("运行已安装插件与管理快捷入口", en: "Run installed plugins and manage quick access", zhHant: "執行已安裝外掛與管理快速入口", ja: "インストール済みプラグインを実行", ko: "설치된 플러그인 실행 및 빠른 접근 관리", mt: "Run installed plugins and manage quick access")
             case .agentGuard: localizer.subAgentGuard
             case .toolbox: localizer.subToolbox
             case .tokenScope: localizer.tokenScopeSubtitle
@@ -180,6 +189,9 @@ struct ContentView: View {
             service.refreshDiskInfo()
             service.refreshHardwareInfo()
             iOSRemoteGatewayService.configure(scannerService: service)
+#if DEBUG
+            openPluginWorkspaceForUITestIfRequested()
+#endif
             if TraceFenceDistributionPolicy.currentChannel.isDirect
                 || AppStoreSubscriptionService.shared.canUseProFeatures {
                 overviewStore.startBackgroundRefresh()
@@ -200,12 +212,33 @@ struct ContentView: View {
             )
             .environmentObject(localizer)
         }
+        .onReceive(pluginPresentationCenter.$request.compactMap { $0 }) { request in
+            selectedPluginID = request.pluginID
+            selectedTab = .plugins
+            showSettings = false
+            pluginPresentationCenter.consume(requestID: request.id)
+        }
         .preferredColorScheme(currentAppearanceMode.colorScheme)
     }
 
     private var currentAppearanceMode: AppearanceMode {
         AppearanceMode(rawValue: appearanceMode) ?? .system
     }
+
+#if DEBUG
+    private func openPluginWorkspaceForUITestIfRequested() {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flagIndex = arguments.firstIndex(of: "--tracefence-open-plugin-workspace") else { return }
+        let pluginID = arguments.indices.contains(flagIndex + 1) ? arguments[flagIndex + 1] : nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            if let pluginID, pluginID.hasPrefix("tracefence.") {
+                pluginPresentationCenter.open(pluginID: pluginID)
+            } else {
+                pluginPresentationCenter.openPluginWorkspace()
+            }
+        }
+    }
+#endif
 
     private var sidebar: some View {
         VStack(spacing: 0) {
@@ -479,6 +512,9 @@ struct ContentView: View {
         case .overview: return localizer.t("实时", en: "Live", zhHant: "即時", ja: "ライブ", ko: "실시간", mt: "Live")
         case .agentGuard: return service.guardFeature.unreadAlertCount > 0 ? "\(service.guardFeature.unreadAlertCount)" : localizer.t("守护", en: "Guard", zhHant: "守護", ja: "保護", ko: "보호", mt: "Guard")
         case .operations: return service.operationRecords.isEmpty ? localizer.t("审计", en: "Audit", zhHant: "稽核", ja: "監査", ko: "감사", mt: "Audit") : "\(service.operationRecords.count)"
+        case .plugins:
+            let installedCount = pluginPackageManager.records.count
+            return installedCount > 0 ? "\(installedCount)" : localizer.t("应用", en: "Apps", zhHant: "應用", ja: "アプリ", ko: "앱", mt: "Apps")
         case .toolbox: return localizer.t("工具", en: "Tools", zhHant: "工具", ja: "ツール", ko: "도구", mt: "Tools")
         case .tokenScope: return localizer.t("测试", en: "Beta", zhHant: "測試", ja: "ベータ", ko: "베타", mt: "Beta")
         case .diskAdvisor: return localizer.t("实验", en: "Lab", zhHant: "實驗", ja: "ラボ", ko: "실험", mt: "Lab")
@@ -854,6 +890,15 @@ struct ContentView: View {
                 OperationLogTab(monitor: service.operationMonitor)
                     .environmentObject(localizer)
             }
+        case .plugins:
+            TraceFencePluginWorkspaceView(
+                catalogService: marketplaceCatalogService,
+                packageManager: pluginPackageManager,
+                runtimeHost: pluginRuntimeHost,
+                selectedPluginID: $selectedPluginID,
+                openStore: { openSettings(.marketplace) }
+            )
+            .environmentObject(localizer)
         case .agentGuard:
             pluginContent("tracefence.agent-guard") {
                 AgentGuardTab()

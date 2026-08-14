@@ -15,14 +15,13 @@ struct SettingsView: View {
     @StateObject private var marketplaceCatalogService = TraceFenceMarketplaceCatalogService.shared
     @StateObject private var pluginEntitlementService = TraceFencePluginEntitlementService.shared
     @StateObject private var pluginPackageService = TraceFencePluginPackageManager.shared
-    @StateObject private var pluginRuntimeHost = TraceFencePluginRuntimeHost.shared
+    @StateObject private var pluginPresentationCenter = TraceFencePluginPresentationCenter.shared
     @StateObject private var appStoreSubscriptionService = AppStoreSubscriptionService.shared
     @StateObject private var updateService = DirectUpdateService.shared
     @StateObject private var iOSRemoteGatewayService = IOSRemoteControlGatewayService.shared
     @ObservedObject private var captureService = CaptureShelfService.shared
     @State private var licenseKeyInput = ""
     @State private var pluginLicenseInputs: [String: String] = [:]
-    @State private var presentedPluginID: String?
     @State private var shortcutSettings: [GlobalShortcut] = GlobalShortcutService.defaultShortcuts
     @State private var recordingShortcutAction: GlobalShortcut.ShortcutAction?
     @State private var shortcutRecorderMonitor: Any?
@@ -256,20 +255,6 @@ struct SettingsView: View {
             AIConfigView()
                 .environmentObject(service)
                 .environmentObject(localizer)
-        }
-        .sheet(isPresented: Binding(
-            get: { presentedPluginID != nil },
-            set: { if !$0 { presentedPluginID = nil } }
-        )) {
-            if let presentedPluginID {
-                TraceFencePluginRuntimeView(
-                    runtimeHost: pluginRuntimeHost,
-                    pluginID: presentedPluginID
-                )
-                .environmentObject(localizer)
-                .frame(minWidth: 620, minHeight: 480)
-                .appCanvas()
-            }
         }
         .onAppear {
             selectedTab = initialTab
@@ -1111,10 +1096,20 @@ struct SettingsView: View {
             catalogService: marketplaceCatalogService,
             entitlementService: pluginEntitlementService,
             packageManager: pluginPackageService,
-            openedPluginID: $presentedPluginID,
+            openPlugin: { pluginID in
+                openPluginFromSettings(pluginID)
+            },
             openSubscription: { selectedTab = .license }
         )
         .environmentObject(localizer)
+    }
+
+    private func openPluginFromSettings(_ pluginID: String) {
+        pluginPresentationCenter.open(pluginID: pluginID)
+        dismiss()
+        DispatchQueue.main.async {
+            (NSApp.delegate as? AppDelegate)?.presentMainWindow(reason: "plugin-workspace")
+        }
     }
 
     private var marketplaceCatalogStatus: some View {
@@ -1289,9 +1284,9 @@ struct SettingsView: View {
                             .foregroundStyle(Theme.Colors.textSecondary)
                     case let .installed(version, enabled, restartRequired):
                         Button {
-                            presentedPluginID = plugin.id
+                            openPluginFromSettings(plugin.id)
                         } label: {
-                            Label(localizer.t("打开", en: "Open"), systemImage: "arrow.up.forward.app.fill")
+                            Label(localizer.t("在主界面打开", en: "Open in Workspace"), systemImage: "arrow.up.forward.app.fill")
                         }
                         .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 32))
                         Text("v\(version)")

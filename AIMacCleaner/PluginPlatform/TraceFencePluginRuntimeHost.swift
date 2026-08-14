@@ -109,6 +109,17 @@ final class TraceFencePluginRuntimeHost: ObservableObject {
         )
     }
 
+    func setSurfaceVisible(pluginID: String, surface: PluginPanelSurface, visible: Bool) {
+        guard let lifecycle = sessions[pluginID]?.plugin as? any PluginPanelSurfaceLifecycleHandling else {
+            return
+        }
+        if visible {
+            lifecycle.panelSurfaceDidBecomeVisible(surface)
+        } else {
+            lifecycle.panelSurfaceDidBecomeHidden(surface)
+        }
+    }
+
     func settingsPage(pluginID: String) -> PluginSettingsPage? {
         sessions[pluginID]?.plugin.settingsPage
     }
@@ -254,11 +265,19 @@ final class TraceFencePluginRuntimeHost: ObservableObject {
     }
 }
 
+enum TraceFencePluginRuntimePresentation {
+    case workspace
+    case menuBar
+}
+
 struct TraceFencePluginRuntimeView: View {
     @EnvironmentObject private var localizer: Localizer
     @ObservedObject var runtimeHost: TraceFencePluginRuntimeHost
     let pluginID: String
+    var presentation: TraceFencePluginRuntimePresentation = .workspace
+    var onClose: (() -> Void)?
     @State private var selectedSurface: Surface = .main
+    @State private var visiblePanelSurface: PluginPanelSurface?
 
     private enum Surface: String {
         case main
@@ -295,6 +314,19 @@ struct TraceFencePluginRuntimeView: View {
         .task {
             runtimeHost.open(pluginID: pluginID)
         }
+        .onChange(of: runtimeHost.state(pluginID: pluginID)) { state in
+            if state == .active {
+                updateVisiblePanelSurface()
+            } else {
+                hideVisiblePanelSurface()
+            }
+        }
+        .onChange(of: selectedSurface) { _ in
+            updateVisiblePanelSurface()
+        }
+        .onDisappear {
+            hideVisiblePanelSurface()
+        }
     }
 
     @ViewBuilder
@@ -313,7 +345,8 @@ struct TraceFencePluginRuntimeView: View {
                             .foregroundStyle(Theme.Colors.textSecondary)
                     }
                     Spacer()
-                    if [plugin.primaryPanel != nil, plugin.componentPanel != nil, plugin.settingsPage != nil]
+                    if presentation == .workspace,
+                       [plugin.primaryPanel != nil, plugin.componentPanel != nil, plugin.settingsPage != nil]
                         .filter({ $0 }).count > 1 {
                         Picker("", selection: $selectedSurface) {
                             if plugin.primaryPanel != nil {
@@ -336,6 +369,14 @@ struct TraceFencePluginRuntimeView: View {
                         Image(systemName: "arrow.clockwise")
                     }
                     .buttonStyle(.borderless)
+                    if let onClose {
+                        Button(action: onClose) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        }
+                        .buttonStyle(.borderless)
+                        .help(localizer.t("关闭插件", en: "Close Plugin"))
+                    }
                 }
 
                 if selectedSurface == .settings || (plugin.primaryPanel == nil && plugin.componentPanel == nil) {
@@ -366,8 +407,33 @@ struct TraceFencePluginRuntimeView: View {
                     )
                 }
             }
-            .padding(Theme.Spacing.xxl)
+            .padding(presentation == .menuBar ? Theme.Spacing.lg : Theme.Spacing.xxl)
         }
+    }
+
+    private func updateVisiblePanelSurface() {
+        guard runtimeHost.state(pluginID: pluginID) == .active else { return }
+        let target: PluginPanelSurface?
+        switch selectedSurface {
+        case .main:
+            target = runtimeHost.plugin(pluginID: pluginID)?.primaryPanel == nil ? nil : .primary
+        case .component:
+            target = runtimeHost.plugin(pluginID: pluginID)?.componentPanel == nil ? nil : .component
+        case .settings:
+            target = nil
+        }
+        guard target != visiblePanelSurface else { return }
+        hideVisiblePanelSurface()
+        if let target {
+            runtimeHost.setSurfaceVisible(pluginID: pluginID, surface: target, visible: true)
+            visiblePanelSurface = target
+        }
+    }
+
+    private func hideVisiblePanelSurface() {
+        guard let visiblePanelSurface else { return }
+        runtimeHost.setSurfaceVisible(pluginID: pluginID, surface: visiblePanelSurface, visible: false)
+        self.visiblePanelSurface = nil
     }
 
     @ViewBuilder
@@ -455,6 +521,227 @@ struct TraceFencePluginRuntimeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(Theme.Spacing.xxl)
+    }
+}
+
+/// Installed plugins live in an application workspace. The store remains a
+/// lifecycle surface and does not become the place users must revisit to run a
+/// tool.
+struct TraceFencePluginWorkspaceView: View {
+    @EnvironmentObject private var localizer: Localizer
+
+    @ObservedObject var catalogService: TraceFenceMarketplaceCatalogService
+    @ObservedObject var packageManager: TraceFencePluginPackageManager
+    @ObservedObject var runtimeHost: TraceFencePluginRuntimeHost
+    @Binding var selectedPluginID: String?
+    let openStore: () -> Void
+
+    @AppStorage(TraceFencePluginDisplayPreferences.pinnedPluginIDsKey)
+    private var pinnedPluginIDsJSON = TraceFencePluginDisplayPreferences.defaultPinnedPluginIDsJSON
+    @State private var searchText = ""
+
+    var body: some View {
+        HStack(spacing: 0) {
+            pluginRail
+                .frame(width: 250)
+            Rectangle()
+                .fill(Theme.Colors.separator)
+                .frame(width: 1)
+            workspaceContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .task {
+            packageManager.refresh(catalog: catalogService.catalog)
+            selectFirstPluginIfNeeded()
+        }
+        .onChange(of: catalogService.catalog.revision) { _ in
+            packageManager.refresh(catalog: catalogService.catalog)
+            selectFirstPluginIfNeeded()
+        }
+    }
+
+    private var pluginRail: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(spacing: Theme.Spacing.sm) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localizer.t("我的插件", en: "My Plugins"))
+                        .font(Theme.Font.headline)
+                    Text(localizer.t("已安装 \(installedPlugins.count) 个", en: "\(installedPlugins.count) installed"))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
+                Spacer()
+                Button(action: openStore) {
+                    Image(systemName: "plus.app.fill")
+                }
+                .buttonStyle(.borderless)
+                .help(localizer.t("打开插件商城", en: "Open Plugin Store"))
+            }
+
+            if installedPlugins.count > 7 {
+                TextField(localizer.t("搜索已安装插件", en: "Search installed plugins"), text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            if installedPlugins.isEmpty {
+                VStack(spacing: Theme.Spacing.md) {
+                    Image(systemName: "puzzlepiece.extension")
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Text(localizer.t("还没有安装插件", en: "No plugins installed"))
+                        .font(Theme.Font.captionMedium)
+                    Button(localizer.t("浏览插件商城", en: "Browse Plugin Store"), action: openStore)
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .secondary, minHeight: 30))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: Theme.Spacing.xs) {
+                        ForEach(filteredInstalledPlugins) { plugin in
+                            pluginRailRow(plugin)
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+        .padding(Theme.Spacing.lg)
+        .background(Theme.Gradients.sidebar)
+    }
+
+    private func pluginRailRow(_ plugin: TraceFencePluginDescriptor) -> some View {
+        let isSelected = selectedPluginID == plugin.id
+        let isPinned = pinnedPluginIDs.contains(plugin.id)
+        return HStack(spacing: Theme.Spacing.xs) {
+            Button {
+                selectedPluginID = plugin.id
+            } label: {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Image(systemName: plugin.systemImage)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(isSelected ? .white : Theme.Colors.accent)
+                        .frame(width: 30, height: 30)
+                        .background(
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .fill(isSelected ? AnyShapeStyle(Theme.Gradients.hero) : AnyShapeStyle(Theme.Colors.accent.opacity(0.10)))
+                        )
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(plugin.localizedName())
+                            .font(Theme.Font.captionMedium)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .lineLimit(1)
+                        Text("v\(packageManager.state(for: plugin).installedVersion ?? plugin.version)")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                togglePinned(plugin.id)
+            } label: {
+                Image(systemName: isPinned ? "star.fill" : "star")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(isPinned ? Theme.Colors.warning : Theme.Colors.textTertiary)
+                    .frame(width: 24, height: 30)
+            }
+            .buttonStyle(.plain)
+            .help(isPinned
+                ? localizer.t("从快捷插件移除", en: "Remove from Quick Plugins")
+                : localizer.t("固定到快捷插件", en: "Pin to Quick Plugins"))
+        }
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .fill(isSelected ? Theme.Colors.elevatedCardBg : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(isSelected ? Theme.Colors.separator : Color.clear, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var workspaceContent: some View {
+        if let selectedPluginID,
+           packageManager.records[selectedPluginID] != nil {
+            TraceFencePluginRuntimeView(
+                runtimeHost: runtimeHost,
+                pluginID: selectedPluginID,
+                presentation: .workspace,
+                onClose: { self.selectedPluginID = nil }
+            )
+            .id(selectedPluginID)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            VStack(spacing: Theme.Spacing.lg) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Theme.Radius.xl)
+                        .fill(Theme.Colors.accent.opacity(0.10))
+                    Image(systemName: "puzzlepiece.extension.fill")
+                        .font(.system(size: 34, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.accent)
+                }
+                .frame(width: 76, height: 76)
+                Text(localizer.t("插件工作区", en: "Plugin Workspace"))
+                    .font(Theme.Font.title2Bold)
+                Text(localizer.t(
+                    "从左侧打开已安装插件。常用插件可以点星标固定到菜单栏快捷区。",
+                    en: "Open an installed plugin from the left. Star frequently used plugins to pin them to the menu-bar quick area."
+                ))
+                .font(Theme.Font.body)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 430)
+                Button(localizer.t("打开插件商城", en: "Open Plugin Store"), action: openStore)
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .secondary, minHeight: 34))
+            }
+            .padding(Theme.Spacing.xxl)
+        }
+    }
+
+    private var installedPlugins: [TraceFencePluginDescriptor] {
+        catalogService.catalog.plugins.filter { packageManager.records[$0.id] != nil }
+            .sorted { lhs, rhs in
+                let lhsPinned = pinnedPluginIDs.contains(lhs.id)
+                let rhsPinned = pinnedPluginIDs.contains(rhs.id)
+                if lhsPinned != rhsPinned { return lhsPinned }
+                return lhs.localizedName().localizedCaseInsensitiveCompare(rhs.localizedName()) == .orderedAscending
+            }
+    }
+
+    private var filteredInstalledPlugins: [TraceFencePluginDescriptor] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return installedPlugins }
+        return installedPlugins.filter {
+            $0.localizedName().lowercased().contains(query)
+                || $0.localizedSummary().lowercased().contains(query)
+        }
+    }
+
+    private var pinnedPluginIDs: Set<String> {
+        Set(TraceFencePluginDisplayPreferences.pinnedPluginIDs(from: pinnedPluginIDsJSON))
+    }
+
+    private func togglePinned(_ pluginID: String) {
+        var values = TraceFencePluginDisplayPreferences.pinnedPluginIDs(from: pinnedPluginIDsJSON)
+        if let index = values.firstIndex(of: pluginID) {
+            values.remove(at: index)
+        } else {
+            values.append(pluginID)
+        }
+        pinnedPluginIDsJSON = TraceFencePluginDisplayPreferences.encodedPinnedPluginIDs(values)
+    }
+
+    private func selectFirstPluginIfNeeded() {
+        guard let selectedPluginID else { return }
+        if packageManager.records[selectedPluginID] == nil {
+            self.selectedPluginID = nil
+        }
     }
 }
 

@@ -20,6 +20,15 @@ enum TraceFencePluginDelivery: String, Codable, Sendable {
     case package
 }
 
+/// Runtime placement is derived from capabilities, not from where the plugin
+/// was purchased. A plugin can participate in more than one host surface.
+enum TraceFencePluginUseSurface: String, Hashable, Sendable {
+    case workspace
+    case menuBarQuickPanel
+    case utilityWindow
+    case background
+}
+
 struct TraceFenceMarketplaceDodoProducts: Codable, Equatable, Sendable {
     let liveProductID: String?
     let testProductID: String?
@@ -144,6 +153,26 @@ struct TraceFencePluginDescriptor: Identifiable, Codable, Equatable, Sendable {
             if let value = localizedMetadata[base] { return value }
         }
         return localizedMetadata["en"]
+    }
+
+    var useSurfaces: Set<TraceFencePluginUseSurface> {
+        var surfaces: Set<TraceFencePluginUseSurface> = [.workspace]
+        if capabilities.contains("tools.primary-panel")
+            || capabilities.contains("tools.component-panel")
+            || capabilities.contains("presentation.menu-bar") {
+            surfaces.insert(.menuBarQuickPanel)
+        }
+        if capabilities.contains("presentation.window") {
+            surfaces.insert(.utilityWindow)
+        }
+        if capabilities.contains("runtime.background") {
+            surfaces.insert(.background)
+        }
+        return surfaces
+    }
+
+    var supportsMenuBarQuickPanel: Bool {
+        useSurfaces.contains(.menuBarQuickPanel)
     }
 }
 

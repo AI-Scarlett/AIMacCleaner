@@ -8,7 +8,7 @@ struct TraceFencePluginStoreView: View {
     @ObservedObject var catalogService: TraceFenceMarketplaceCatalogService
     @ObservedObject var entitlementService: TraceFencePluginEntitlementService
     @ObservedObject var packageManager: TraceFencePluginPackageManager
-    @Binding var openedPluginID: String?
+    let openPlugin: (String) -> Void
     let openSubscription: () -> Void
 
     @State private var section: TraceFencePluginPlatformSection = .discover
@@ -45,7 +45,7 @@ struct TraceFencePluginStoreView: View {
                     openRuntime: {
                         self.detailPluginID = nil
                         DispatchQueue.main.async {
-                            openedPluginID = plugin.id
+                            openPlugin(plugin.id)
                         }
                     }
                 )
@@ -385,9 +385,9 @@ struct TraceFencePluginStoreView: View {
                 ProgressView().controlSize(.small)
             case .installed:
                 Button {
-                    openedPluginID = plugin.id
+                    openPlugin(plugin.id)
                 } label: {
-                    Label(localizer.t("打开", en: "Open"), systemImage: "arrow.up.forward.app.fill")
+                    Label(localizer.t("在主界面打开", en: "Open in Workspace"), systemImage: "arrow.up.forward.app.fill")
                 }
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 30))
             case let .updateAvailable(_, targetVersion, _):
@@ -720,7 +720,7 @@ private struct TraceFencePluginDetailView: View {
                 ProgressView().controlSize(.small)
             case .installed:
                 Button(action: openRuntime) {
-                    Label(localizer.t("打开插件", en: "Open Plugin"), systemImage: "arrow.up.forward.app.fill")
+                    Label(localizer.t("在主界面打开", en: "Open in Workspace"), systemImage: "arrow.up.forward.app.fill")
                 }
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
             case let .updateAvailable(_, targetVersion, _):

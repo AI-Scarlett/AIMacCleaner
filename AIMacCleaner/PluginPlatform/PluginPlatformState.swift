@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// The package lifecycle is independent from commerce and runtime state.
@@ -55,4 +56,56 @@ enum TraceFencePluginPlatformSection: String, CaseIterable, Identifiable {
     case updates
 
     var id: String { rawValue }
+}
+
+/// A store never presents plugin UI itself. It sends a launch request to the
+/// application shell, which chooses the appropriate workspace or menu-bar
+/// surface and can dismiss Settings before showing it.
+struct TraceFencePluginPresentationRequest: Identifiable, Equatable {
+    let id = UUID()
+    let pluginID: String?
+}
+
+@MainActor
+final class TraceFencePluginPresentationCenter: ObservableObject {
+    static let shared = TraceFencePluginPresentationCenter()
+
+    @Published private(set) var request: TraceFencePluginPresentationRequest?
+
+    private init() {}
+
+    func open(pluginID: String) {
+        request = TraceFencePluginPresentationRequest(pluginID: pluginID)
+    }
+
+    func openPluginWorkspace() {
+        request = TraceFencePluginPresentationRequest(pluginID: nil)
+    }
+
+    func consume(requestID: UUID) {
+        guard request?.id == requestID else { return }
+        request = nil
+    }
+}
+
+enum TraceFencePluginDisplayPreferences {
+    static let pinnedPluginIDsKey = "traceFence.plugins.pinnedIDs"
+    static let defaultPinnedPluginIDs = ["tracefence.tools.fan-control"]
+    static let defaultPinnedPluginIDsJSON = "[\"tracefence.tools.fan-control\"]"
+
+    static func pinnedPluginIDs(from rawValue: String) -> [String] {
+        guard let data = rawValue.data(using: .utf8),
+              let values = try? JSONDecoder().decode([String].self, from: data) else {
+            return defaultPinnedPluginIDs
+        }
+        return values
+    }
+
+    static func encodedPinnedPluginIDs(_ values: [String]) -> String {
+        guard let data = try? JSONEncoder().encode(values),
+              let string = String(data: data, encoding: .utf8) else {
+            return "[]"
+        }
+        return string
+    }
 }
