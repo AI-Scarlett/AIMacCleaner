@@ -1,0 +1,4 @@
+# Preserve the pinned third-party snapshot and generated compatibility framework
+# byte-for-byte without applying repository whitespace policy to those files.
+ThirdParty/MacTools/** -whitespace
+AIMacCleaner/Frameworks/** -whitespace

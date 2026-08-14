@@ -63,6 +63,24 @@ class CatalogPolicyTests(unittest.TestCase):
         with self.assertRaises(CatalogPolicyError):
             validate_catalog(value)
 
+    def test_download_package_cannot_use_a_local_trial(self) -> None:
+        value = copy.deepcopy(self.document)
+        plugin = value["plugins"][0]
+        plugin["delivery"] = "package"
+        plugin["isFree"] = False
+        plugin["includedInAllAccess"] = True
+        plugin["trialHours"] = 24
+        plugin["package"] = {
+            "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-example-v1.0.0/example-1.0.0.mactoolsplugin.zip",
+            "sha256": "0" * 64,
+            "sizeBytes": 100,
+            "bundleIdentifier": "com.tracefence.plugin.example",
+            "teamIdentifier": "UQ87N2WZ76",
+            "entryPoint": "Example.bundle",
+        }
+        with self.assertRaises(CatalogPolicyError):
+            validate_catalog(value)
+
     def test_generic_standalone_offer_cannot_unlock_multiple_plugins(self) -> None:
         value = copy.deepcopy(self.document)
         value["offers"].append({

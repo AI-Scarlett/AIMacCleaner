@@ -37,3 +37,10 @@ build/MacOS/
 build/Info.plist
 build/create_icon.py
 build/icon.png
+
+# Vendored MacTools plugin snapshot: keep only source inputs, never generated state.
+ThirdParty/MacTools/LocalConfig.xcconfig
+ThirdParty/MacTools/MacTools.xcodeproj/
+ThirdParty/MacTools/Configs/GeneratedPlugins.yml
+ThirdParty/MacTools/build/
+!ThirdParty/MacTools/project.yml

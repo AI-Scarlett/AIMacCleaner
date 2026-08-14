@@ -1,0 +1,70 @@
+{
+  "id": "mouse-enhancer",
+  "displayName": "鼠标增强",
+  "summary": "分别调整鼠标与触控板的滚动方向",
+  "localizedMetadata": {
+    "ar": {
+      "displayName": "محسّن الماوس",
+      "summary": "ضبط اتجاه تمرير الماوس ولوحة التتبع."
+    },
+    "de": {
+      "displayName": "Maus-Erweiterung",
+      "summary": "Scrollrichtung für Maus und Trackpad getrennt anpassen."
+    },
+    "en": {
+      "displayName": "Mouse Enhancer",
+      "summary": "Adjust mouse and trackpad scroll directions separately."
+    },
+    "es": {
+      "displayName": "Mejoras para el ratón",
+      "summary": "Ajusta por separado el desplazamiento del ratón y del trackpad."
+    },
+    "fr": {
+      "displayName": "Amélioration de la souris",
+      "summary": "Réglez séparément le défilement de la souris et du trackpad."
+    },
+    "ja": {
+      "displayName": "マウス機能拡張",
+      "summary": "マウスとトラックパッドのスクロール方向を個別に調整します。"
+    },
+    "ko": {
+      "displayName": "마우스 기능 향상",
+      "summary": "마우스와 트랙패드의 스크롤 방향을 각각 조정합니다."
+    },
+    "pt": {
+      "displayName": "Aprimoramento do mouse",
+      "summary": "Ajuste separadamente a rolagem do mouse e do trackpad."
+    },
+    "ru": {
+      "displayName": "Расширение мыши",
+      "summary": "Настраивайте прокрутку мыши и трекпада отдельно."
+    },
+    "zh-Hans": {
+      "displayName": "鼠标增强",
+      "summary": "分别调整鼠标与触控板的滚动方向"
+    },
+    "zh-Hant": {
+      "displayName": "滑鼠增強",
+      "summary": "分別調整滑鼠與觸控板的捲動方向"
+    }
+  },
+  "version": "1.0.8",
+  "minHostVersion": "1.1.6",
+  "pluginKitVersion": 4,
+  "bundleRelativePath": "MouseEnhancer.bundle",
+  "factoryClass": "MouseEnhancerPlugin.MouseEnhancerPluginFactory",
+  "build": {
+    "project": "../../MacTools.xcodeproj",
+    "scheme": "MouseEnhancerPlugin"
+  },
+  "capabilities": {
+    "primaryPanel": true,
+    "componentPanel": false,
+    "settings": "form"
+  },
+  "permissions": [
+    "accessibility",
+    "inputMonitoring"
+  ],
+  "category": "productivity"
+}

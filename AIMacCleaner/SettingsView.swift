@@ -14,12 +14,15 @@ struct SettingsView: View {
     @StateObject private var licenseService = DirectLicenseService.shared
     @StateObject private var marketplaceCatalogService = TraceFenceMarketplaceCatalogService.shared
     @StateObject private var pluginEntitlementService = TraceFencePluginEntitlementService.shared
+    @StateObject private var pluginPackageService = TraceFencePluginPackageManager.shared
+    @StateObject private var pluginRuntimeHost = TraceFencePluginRuntimeHost.shared
     @StateObject private var appStoreSubscriptionService = AppStoreSubscriptionService.shared
     @StateObject private var updateService = DirectUpdateService.shared
     @StateObject private var iOSRemoteGatewayService = IOSRemoteControlGatewayService.shared
     @ObservedObject private var captureService = CaptureShelfService.shared
     @State private var licenseKeyInput = ""
     @State private var pluginLicenseInputs: [String: String] = [:]
+    @State private var presentedPluginID: String?
     @State private var shortcutSettings: [GlobalShortcut] = GlobalShortcutService.defaultShortcuts
     @State private var recordingShortcutAction: GlobalShortcut.ShortcutAction?
     @State private var shortcutRecorderMonitor: Any?
@@ -253,6 +256,20 @@ struct SettingsView: View {
             AIConfigView()
                 .environmentObject(service)
                 .environmentObject(localizer)
+        }
+        .sheet(isPresented: Binding(
+            get: { presentedPluginID != nil },
+            set: { if !$0 { presentedPluginID = nil } }
+        )) {
+            if let presentedPluginID {
+                TraceFencePluginRuntimeView(
+                    runtimeHost: pluginRuntimeHost,
+                    pluginID: presentedPluginID
+                )
+                .environmentObject(localizer)
+                .frame(minWidth: 620, minHeight: 480)
+                .appCanvas()
+            }
         }
         .onAppear {
             selectedTab = initialTab
@@ -1090,50 +1107,14 @@ struct SettingsView: View {
     }
 
     private var marketplaceSection: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-            HStack(alignment: .top, spacing: Theme.Spacing.md) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .fill(Theme.Colors.accent.opacity(0.12))
-                    Image(systemName: "shippingbox.fill")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.accent)
-                }
-                .frame(width: 48, height: 48)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(localizer.t("TraceFence 插件商城", en: "TraceFence Plugin Store"))
-                        .font(Theme.Font.headline)
-                        .foregroundStyle(Theme.Colors.textPrimary)
-                    Text(localizer.t(
-                        "免费插件可直接使用；付费插件支持 24 小时试用，配置独立商品后可单独购买。Standard 订阅包含所有符合当前宿主版本的插件。",
-                        en: "Free plugins work immediately. Paid plugins include a 24-hour trial and can be purchased separately once their standalone offer is configured. Standard includes every plugin compatible with this host version."
-                    ))
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.Colors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                Button {
-                    Task { await marketplaceCatalogService.refresh(force: true) }
-                } label: {
-                    if marketplaceCatalogService.isRefreshing {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label(localizer.t("刷新", en: "Refresh"), systemImage: "arrow.clockwise")
-                    }
-                }
-                .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .ghost, minHeight: 34))
-                .disabled(marketplaceCatalogService.isRefreshing)
-            }
-            .cardStyle()
-
-            marketplaceCatalogStatus
-
-            ForEach(marketplaceCatalogService.catalog.plugins) { plugin in
-                marketplacePluginCard(plugin)
-            }
-        }
+        TraceFencePluginStoreView(
+            catalogService: marketplaceCatalogService,
+            entitlementService: pluginEntitlementService,
+            packageManager: pluginPackageService,
+            openedPluginID: $presentedPluginID,
+            openSubscription: { selectedTab = .license }
+        )
+        .environmentObject(localizer)
     }
 
     private var marketplaceCatalogStatus: some View {
@@ -1171,6 +1152,8 @@ struct SettingsView: View {
         let isBusy = pluginEntitlementService.busyPluginIDs.contains(plugin.id)
         let hostVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
         let isCompatible = marketplaceCatalogService.catalog.isCompatible(plugin, hostVersion: hostVersion)
+        let packageState = pluginPackageService.state(for: plugin)
+        let canDownloadPackage = plugin.delivery == .package && isCompatible && access != .locked
 
         return VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             HStack(alignment: .top, spacing: Theme.Spacing.md) {
@@ -1287,6 +1270,77 @@ struct SettingsView: View {
                     }
                     .disabled(isBusy)
                 }
+            }
+
+            if canDownloadPackage {
+                HStack(spacing: Theme.Spacing.sm) {
+                    switch packageState {
+                    case let .downloading(targetVersion):
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(localizer.t("正在下载 v\(targetVersion) 并验证…", en: "Downloading and verifying v\(targetVersion)…"))
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                    case let .installing(targetVersion):
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(localizer.t("正在安装 v\(targetVersion)…", en: "Installing v\(targetVersion)…"))
+                            .font(Theme.Font.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                    case let .installed(version, enabled, restartRequired):
+                        Button {
+                            presentedPluginID = plugin.id
+                        } label: {
+                            Label(localizer.t("打开", en: "Open"), systemImage: "arrow.up.forward.app.fill")
+                        }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 32))
+                        Text("v\(version)")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                        Toggle(localizer.t("启用", en: "Enabled"), isOn: Binding(
+                            get: { enabled },
+                            set: { pluginPackageService.setEnabled($0, pluginID: plugin.id) }
+                        ))
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        if restartRequired {
+                            Label(localizer.t("重启后完全生效", en: "Restart required"), systemImage: "arrow.clockwise.circle")
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.warning)
+                        }
+                    case let .updateAvailable(installedVersion, targetVersion, _):
+                        Button {
+                            Task { await pluginPackageService.install(plugin: plugin) }
+                        } label: {
+                            Label(
+                                localizer.t("更新 \(installedVersion) → \(targetVersion)", en: "Update \(installedVersion) → \(targetVersion)"),
+                                systemImage: "arrow.down.circle.fill"
+                            )
+                        }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .secondary, minHeight: 32))
+                    case .notInstalled, .failed:
+                        Button {
+                            Task { await pluginPackageService.install(plugin: plugin) }
+                        } label: {
+                            Label(localizer.t("安装", en: "Install"), systemImage: "arrow.down.circle.fill")
+                        }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .secondary, minHeight: 32))
+                    }
+                    Spacer()
+                    Label(
+                        localizer.t("TraceFence 自有镜像", en: "TraceFence-owned mirror"),
+                        systemImage: "checkmark.shield.fill"
+                    )
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.success)
+                }
+            }
+
+            if case let .failed(message, _) = packageState {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.warning)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let message = pluginEntitlementService.grants[plugin.id]?.message, !message.isEmpty {

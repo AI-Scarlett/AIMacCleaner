@@ -1,0 +1,35 @@
+{
+  "id": "tracefence.codex-media-cleanup",
+  "displayName": "Codex 媒体整理",
+  "summary": "安全去重 Codex 会话中的重复图片，并修复 Responses API 不接受的本地 image_url",
+  "localizedMetadata": {
+    "en": {
+      "displayName": "Codex Media Cleanup",
+      "summary": "Safely deduplicate repeated images in Codex sessions and repair local image_url values rejected by the Responses API"
+    },
+    "zh-Hans": {
+      "displayName": "Codex 媒体整理",
+      "summary": "安全去重 Codex 会话中的重复图片，并修复 Responses API 不接受的本地 image_url"
+    },
+    "zh-Hant": {
+      "displayName": "Codex 媒體整理",
+      "summary": "安全去重 Codex 工作階段中的重複圖片，並修復 Responses API 不接受的本機 image_url"
+    }
+  },
+  "version": "1.0.0",
+  "minHostVersion": "1.1.6",
+  "pluginKitVersion": 4,
+  "bundleRelativePath": "CodexMediaCleanup.bundle",
+  "factoryClass": "CodexMediaCleanupPlugin.CodexMediaCleanupPluginFactory",
+  "build": {
+    "project": "../TraceFenceCodexPlugins.xcodeproj",
+    "scheme": "CodexMediaCleanupPlugin"
+  },
+  "capabilities": {
+    "primaryPanel": true,
+    "componentPanel": false,
+    "settings": "workspace"
+  },
+  "permissions": [],
+  "category": "storage"
+}

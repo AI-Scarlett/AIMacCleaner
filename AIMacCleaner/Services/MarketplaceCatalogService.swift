@@ -94,22 +94,57 @@ struct TraceFencePluginPackageDescriptor: Codable, Equatable, Sendable {
     let entryPoint: String
 }
 
+struct TraceFencePluginLocalizedMetadata: Codable, Equatable, Sendable {
+    let displayName: String
+    let summary: String
+}
+
 struct TraceFencePluginDescriptor: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let version: String
     let name: String
     let summary: String
+    let localizedMetadata: [String: TraceFencePluginLocalizedMetadata]?
     let category: String
     let systemImage: String
     let delivery: TraceFencePluginDelivery
     let minimumHostVersion: String
+    let minimumSystemVersion: String
+    let pluginKitVersion: Int
     let capabilities: [String]
+    let permissions: [String]
     let isFree: Bool
     let includedInAllAccess: Bool
     let standaloneOfferID: String?
     let trialHours: Int?
     let featured: Bool
     let package: TraceFencePluginPackageDescriptor?
+
+    func localizedName(preferredLanguages: [String] = Locale.preferredLanguages) -> String {
+        localizedValue(preferredLanguages: preferredLanguages)?.displayName ?? name
+    }
+
+    func localizedSummary(preferredLanguages: [String] = Locale.preferredLanguages) -> String {
+        localizedValue(preferredLanguages: preferredLanguages)?.summary ?? summary
+    }
+
+    private func localizedValue(preferredLanguages: [String]) -> TraceFencePluginLocalizedMetadata? {
+        guard let localizedMetadata else { return nil }
+        for language in preferredLanguages {
+            if let exact = localizedMetadata[language] { return exact }
+            let normalized = language.replacingOccurrences(of: "_", with: "-")
+            if let exact = localizedMetadata[normalized] { return exact }
+            if normalized.lowercased().hasPrefix("zh-hant"), let value = localizedMetadata["zh-Hant"] {
+                return value
+            }
+            if normalized.lowercased().hasPrefix("zh"), let value = localizedMetadata["zh-Hans"] {
+                return value
+            }
+            let base = normalized.split(separator: "-").first.map(String.init) ?? normalized
+            if let value = localizedMetadata[base] { return value }
+        }
+        return localizedMetadata["en"]
+    }
 }
 
 struct TraceFenceMarketplaceCatalog: Codable, Equatable, Sendable {
@@ -401,6 +436,8 @@ enum TraceFenceMarketplaceCatalogRuntime {
         for plugin in catalog.plugins {
             guard isSafeID(plugin.id), pluginIDs.insert(plugin.id).inserted,
                   isSafeVersion(plugin.version), isSafeVersion(plugin.minimumHostVersion),
+                  isSafeSystemVersion(plugin.minimumSystemVersion),
+                  0...TraceFencePluginPackageManager.supportedPluginKitVersion ~= plugin.pluginKitVersion,
                   1...100 ~= plugin.name.count,
                   1...500 ~= plugin.summary.count,
                   isSafeShortText(plugin.category),
@@ -408,6 +445,10 @@ enum TraceFenceMarketplaceCatalogRuntime {
                   plugin.capabilities.count <= 64,
                   Set(plugin.capabilities).count == plugin.capabilities.count,
                   plugin.capabilities.allSatisfy(isSafeCapability),
+                  plugin.permissions.count <= 32,
+                  Set(plugin.permissions).count == plugin.permissions.count,
+                  plugin.permissions.allSatisfy(isSafeCapability),
+                  isSafeLocalizedMetadata(plugin.localizedMetadata),
                   plugin.trialHours.map({ 1...720 ~= $0 }) ?? true else {
                 throw ValidationError.invalidPlugin
             }
@@ -431,10 +472,14 @@ enum TraceFenceMarketplaceCatalogRuntime {
             }
             switch plugin.delivery {
             case .builtIn:
-                guard plugin.package == nil else { throw ValidationError.invalidPackage }
+                guard plugin.package == nil, plugin.pluginKitVersion == 0 else {
+                    throw ValidationError.invalidPackage
+                }
             case .package:
                 guard let package = plugin.package,
-                      isAllowedPackageURL(package.url),
+                      plugin.pluginKitVersion > 0,
+                      plugin.trialHours == nil,
+                      isAllowedPackageURL(package.url, pluginID: plugin.id, version: plugin.version),
                       package.sha256.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
                       1...2_147_483_648 ~= package.sizeBytes,
                       package.bundleIdentifier.hasPrefix("com.tracefence.plugin."),
@@ -454,6 +499,10 @@ enum TraceFenceMarketplaceCatalogRuntime {
         value.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"#, options: .regularExpression) != nil
     }
 
+    private static func isSafeSystemVersion(_ value: String) -> Bool {
+        value.range(of: #"^[0-9]+(?:\.[0-9]+){1,2}$"#, options: .regularExpression) != nil
+    }
+
     private static func isSafeShortText(_ value: String) -> Bool {
         1...80 ~= value.count && !value.contains("\n") && !value.contains("\r")
     }
@@ -462,15 +511,33 @@ enum TraceFenceMarketplaceCatalogRuntime {
         value.range(of: #"^[a-z][a-z0-9._-]{1,79}$"#, options: .regularExpression) != nil
     }
 
+    private static func isSafeLocalizedMetadata(
+        _ metadata: [String: TraceFencePluginLocalizedMetadata]?
+    ) -> Bool {
+        guard let metadata else { return true }
+        guard metadata.count <= 32 else { return false }
+        return metadata.allSatisfy { locale, value in
+            locale.range(of: #"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"#, options: .regularExpression) != nil
+                && 1...100 ~= value.displayName.count
+                && 1...500 ~= value.summary.count
+                && !value.displayName.contains("\n")
+                && !value.summary.contains("\r")
+        }
+    }
+
     private static func isSafeDodoProductID(_ value: String) -> Bool {
         value.range(of: #"^pdt_[A-Za-z0-9]+$"#, options: .regularExpression) != nil
     }
 
-    private static func isAllowedPackageURL(_ url: URL) -> Bool {
-        url.scheme?.lowercased() == "https"
+    private static func isAllowedPackageURL(_ url: URL, pluginID: String, version: String) -> Bool {
+        guard pluginID.hasPrefix("tracefence.tools.") else { return false }
+        let rawPluginID = String(pluginID.dropFirst("tracefence.tools.".count))
+        let expectedPath = "/AI-Scarlett/TraceFence/releases/download/plugin-\(rawPluginID)-v\(version)/\(rawPluginID)-\(version).mactoolsplugin.zip"
+        return url.scheme?.lowercased() == "https"
             && url.host?.lowercased() == "github.com"
-            && url.path.hasPrefix("/AI-Scarlett/TraceFence/releases/download/plugins-")
-            && ["zip", "pkg"].contains(url.pathExtension.lowercased())
+            && url.path == expectedPath
+            && url.query == nil
+            && url.fragment == nil
     }
 
     struct ValidatedCatalog: Sendable {
@@ -734,11 +801,15 @@ enum TraceFenceMarketplaceCatalogRuntime {
                 version: "1.0.0",
                 name: name,
                 summary: summary,
+                localizedMetadata: nil,
                 category: category,
                 systemImage: systemImage,
                 delivery: .builtIn,
                 minimumHostVersion: "1.1.9",
+                minimumSystemVersion: "13.0",
+                pluginKitVersion: 0,
                 capabilities: capabilities,
+                permissions: [],
                 isFree: isFree,
                 includedInAllAccess: includedInAllAccess,
                 standaloneOfferID: standaloneOfferID,

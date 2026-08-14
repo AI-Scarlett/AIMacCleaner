@@ -3,8 +3,8 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="TraceFence"
-VERSION="${TRACEFENCE_VERSION:-1.2.0}"
-BUILD_NUMBER="${TRACEFENCE_BUILD_NUMBER:-120}"
+VERSION="${TRACEFENCE_VERSION:-1.2.1}"
+BUILD_NUMBER="${TRACEFENCE_BUILD_NUMBER:-121}"
 TAG="v${VERSION}"
 SCHEME="AIMacCleaner"
 CONFIGURATION="Release"
@@ -37,30 +37,26 @@ CODEXBAR_BINARY="${CODEXBAR_BINARY:-$PROJECT_DIR/AIMacCleaner/Resources/codexbar
 
 notarytool_submit() {
   local artifact="$1"
+  local auth_args=()
   if [ -n "$NOTARY_PROFILE" ]; then
-    xcrun notarytool submit "$artifact" \
-      --keychain-profile "$NOTARY_PROFILE" \
-      "${NOTARYTOOL_ARGS[@]}" \
-      --wait
+    auth_args+=(--keychain-profile "$NOTARY_PROFILE")
   elif [ -n "$NOTARY_KEY" ] && [ -n "$NOTARY_KEY_ID" ]; then
+    auth_args+=(--key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID")
     if [ -n "$NOTARY_ISSUER" ]; then
-      xcrun notarytool submit "$artifact" \
-        --key "$NOTARY_KEY" \
-        --key-id "$NOTARY_KEY_ID" \
-        --issuer "$NOTARY_ISSUER" \
-        "${NOTARYTOOL_ARGS[@]}" \
-        --wait
-    else
-      xcrun notarytool submit "$artifact" \
-        --key "$NOTARY_KEY" \
-        --key-id "$NOTARY_KEY_ID" \
-        "${NOTARYTOOL_ARGS[@]}" \
-        --wait
+      auth_args+=(--issuer "$NOTARY_ISSUER")
     fi
   else
     echo "Set TRACEFENCE_NOTARY_PROFILE or TRACEFENCE_NOTARY_KEY/TRACEFENCE_NOTARY_KEY_ID when TRACEFENCE_NOTARIZE=1" >&2
     exit 1
   fi
+
+  if [ "${#NOTARYTOOL_ARGS[@]}" -gt 0 ]; then
+    if xcrun notarytool submit "$artifact" "${auth_args[@]}" "${NOTARYTOOL_ARGS[@]}" --wait; then
+      return 0
+    fi
+    echo "Notary upload failed without S3 acceleration; retrying with acceleration enabled..." >&2
+  fi
+  xcrun notarytool submit "$artifact" "${auth_args[@]}" --wait
 }
 
 echo "========================================="
@@ -120,6 +116,18 @@ PROVIDER_ENGINE="$BUILT_APP/Contents/MacOS/codexbar"
 if [ ! -x "$PROVIDER_ENGINE" ]; then
   install -m 755 "$CODEXBAR_BINARY" "$PROVIDER_ENGINE"
 fi
+
+PLUGIN_FRAMEWORK="$BUILT_APP/Contents/Frameworks/MacToolsPluginKit.framework"
+if [ ! -d "$PLUGIN_FRAMEWORK" ]; then
+  echo "Bundled PluginKit compatibility framework not found: $PLUGIN_FRAMEWORK" >&2
+  exit 1
+fi
+
+codesign --force \
+  --options runtime \
+  --timestamp \
+  --sign "$SIGN_IDENTITY" \
+  "$PLUGIN_FRAMEWORK"
 
 codesign --force \
   --options runtime \

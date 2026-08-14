@@ -1,0 +1,3 @@
+import BatteryChargeLimitPlugin
+
+private let batteryChargeLimitPluginFactoryAnchor: Any.Type = BatteryChargeLimitPluginFactory.self

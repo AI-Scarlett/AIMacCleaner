@@ -18,7 +18,7 @@ SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 
 EXPECTED_BUSINESS_ID = "bus_0Nj3ve514BLr8z2wT3duj"
 EXPECTED_TEAM_ID = "UQ87N2WZ76"
-EXPECTED_PACKAGE_PREFIX = "/AI-Scarlett/TraceFence/releases/download/plugins-"
+EXPECTED_PACKAGE_PREFIX = "/AI-Scarlett/TraceFence/releases/download/plugin-"
 
 
 class CatalogPolicyError(ValueError):
@@ -125,6 +125,11 @@ def validate_catalog(document: dict[str, Any], *, require_live_products: bool = 
             raise CatalogPolicyError(f"invalid plugin version: {plugin_id}")
         if not VERSION_RE.fullmatch(str(plugin.get("minimumHostVersion") or "")):
             raise CatalogPolicyError(f"invalid minimum host version: {plugin_id}")
+        if not re.fullmatch(r"^[0-9]+(?:\.[0-9]+){1,2}$", str(plugin.get("minimumSystemVersion") or "")):
+            raise CatalogPolicyError(f"invalid minimum system version: {plugin_id}")
+        plugin_kit_version = plugin.get("pluginKitVersion")
+        if not isinstance(plugin_kit_version, int) or not 0 <= plugin_kit_version <= 4:
+            raise CatalogPolicyError(f"invalid PluginKit version: {plugin_id}")
         if plugin.get("delivery") not in {"built_in", "package"}:
             raise CatalogPolicyError(f"invalid delivery mode: {plugin_id}")
         plugin_trial_hours = plugin.get("trialHours")
@@ -137,6 +142,26 @@ def validate_catalog(document: dict[str, Any], *, require_live_products: bool = 
             raise CatalogPolicyError(f"invalid capabilities: {plugin_id}")
         if not all(isinstance(value, str) and re.fullmatch(r"^[a-z][a-z0-9._-]{1,79}$", value) for value in capabilities):
             raise CatalogPolicyError(f"invalid capability value: {plugin_id}")
+        permissions = plugin.get("permissions")
+        if not isinstance(permissions, list) or len(permissions) > 32 or len(set(permissions)) != len(permissions):
+            raise CatalogPolicyError(f"invalid permissions: {plugin_id}")
+        if not all(isinstance(value, str) and re.fullmatch(r"^[a-z][a-z0-9._-]{1,79}$", value) for value in permissions):
+            raise CatalogPolicyError(f"invalid permission value: {plugin_id}")
+        localized_metadata = plugin.get("localizedMetadata")
+        if localized_metadata is not None:
+            if not isinstance(localized_metadata, dict) or len(localized_metadata) > 32:
+                raise CatalogPolicyError(f"invalid localized metadata: {plugin_id}")
+            for locale, value in localized_metadata.items():
+                if not isinstance(locale, str) or not re.fullmatch(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$", locale):
+                    raise CatalogPolicyError(f"invalid locale: {plugin_id}")
+                if not isinstance(value, dict):
+                    raise CatalogPolicyError(f"invalid localized value: {plugin_id}")
+                display_name = value.get("displayName")
+                localized_summary = value.get("summary")
+                if not isinstance(display_name, str) or not 1 <= len(display_name) <= 100:
+                    raise CatalogPolicyError(f"invalid localized name: {plugin_id}")
+                if not isinstance(localized_summary, str) or not 1 <= len(localized_summary) <= 500:
+                    raise CatalogPolicyError(f"invalid localized summary: {plugin_id}")
         if not plugin.get("isFree") and not plugin.get("includedInAllAccess") and plugin.get("standaloneOfferID") is None:
             raise CatalogPolicyError(f"paid plugin has no entitlement path: {plugin_id}")
         offer_id = plugin.get("standaloneOfferID")
@@ -155,14 +180,27 @@ def validate_catalog(document: dict[str, Any], *, require_live_products: bool = 
             standalone_owners[offer_id] = plugin_id
         package = plugin.get("package")
         if plugin.get("delivery") == "built_in":
-            if package is not None:
+            if package is not None or plugin_kit_version != 0:
                 raise CatalogPolicyError(f"built-in plugin has a package: {plugin_id}")
             continue
         if not isinstance(package, dict):
             raise CatalogPolicyError(f"downloadable plugin is missing a package: {plugin_id}")
+        if plugin_kit_version != 4:
+            raise CatalogPolicyError(f"unsupported downloadable PluginKit version: {plugin_id}")
+        if plugin_trial_hours is not None:
+            raise CatalogPolicyError(
+                f"downloadable plugin cannot use a revocable local trial: {plugin_id}"
+            )
         parsed = urlparse(str(package.get("url") or ""))
         if parsed.scheme != "https" or parsed.netloc != "github.com" or not parsed.path.startswith(EXPECTED_PACKAGE_PREFIX):
             raise CatalogPolicyError(f"unsafe package URL: {plugin_id}")
+        raw_plugin_id = plugin_id.removeprefix("tracefence.tools.")
+        expected_path = (
+            f"{EXPECTED_PACKAGE_PREFIX}{raw_plugin_id}-v{plugin['version']}/"
+            f"{raw_plugin_id}-{plugin['version']}.mactoolsplugin.zip"
+        )
+        if parsed.path != expected_path or parsed.query or parsed.fragment:
+            raise CatalogPolicyError(f"package URL is not the immutable per-plugin release: {plugin_id}")
         if not SHA256_RE.fullmatch(str(package.get("sha256") or "")):
             raise CatalogPolicyError(f"invalid package SHA-256: {plugin_id}")
         size_bytes = package.get("sizeBytes")

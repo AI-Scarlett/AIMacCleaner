@@ -58,6 +58,12 @@
 		B116459B8B7913107AAE0C86 /* ConversationWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */; };
 		D1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift */; };
 		MP10MARKETPLACECATALOG01 /* MarketplaceCatalogService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MP20MARKETPLACECATALOG02 /* MarketplaceCatalogService.swift */; };
+		TFKITBUILDLINK000000001 /* MacToolsPluginKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = TFKITFILEREF000000001 /* MacToolsPluginKit.framework */; };
+		TFKITBUILDEMBED00000001 /* MacToolsPluginKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = TFKITFILEREF000000001 /* MacToolsPluginKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		TFPLATFORMSTATEBUILD001 /* PluginPlatformState.swift in Sources */ = {isa = PBXBuildFile; fileRef = TFPLATFORMSTATEFILE0001 /* PluginPlatformState.swift */; };
+		TFPACKAGEMANAGERBUILD01 /* TraceFencePluginPackageManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = TFPACKAGEMANAGERFILE001 /* TraceFencePluginPackageManager.swift */; };
+		TFRUNTIMEHOSTBUILD00001 /* TraceFencePluginRuntimeHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = TFRUNTIMEHOSTFILE000001 /* TraceFencePluginRuntimeHost.swift */; };
+		TFPLUGINSTOREBUILD00001 /* TraceFencePluginStoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TFPLUGINSTOREFILE000001 /* TraceFencePluginStoreView.swift */; };
 		D1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift */; };
 		D1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift */; };
 		D1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */; };
@@ -136,6 +142,11 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ConversationWatcher.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/DirectLicenseService.swift; sourceTree = "<group>"; };
 		MP20MARKETPLACECATALOG02 /* MarketplaceCatalogService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/MarketplaceCatalogService.swift; sourceTree = "<group>"; };
+		TFKITFILEREF000000001 /* MacToolsPluginKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = Frameworks/MacToolsPluginKit.framework; sourceTree = "<group>"; };
+		TFPLATFORMSTATEFILE0001 /* PluginPlatformState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginPlatform/PluginPlatformState.swift; sourceTree = "<group>"; };
+		TFPACKAGEMANAGERFILE001 /* TraceFencePluginPackageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginPlatform/TraceFencePluginPackageManager.swift; sourceTree = "<group>"; };
+		TFRUNTIMEHOSTFILE000001 /* TraceFencePluginRuntimeHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginPlatform/TraceFencePluginRuntimeHost.swift; sourceTree = "<group>"; };
+		TFPLUGINSTOREFILE000001 /* TraceFencePluginStoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginPlatform/TraceFencePluginStoreView.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/DirectUpdateService.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AppleIntelligenceService.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ProviderQuotaService.swift; sourceTree = "<group>"; };
@@ -238,6 +249,11 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				F116459B8B7913107AAE0C86 /* ConversationWatcher.swift */,
 				E1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift */,
 				MP20MARKETPLACECATALOG02 /* MarketplaceCatalogService.swift */,
+				TFKITFILEREF000000001 /* MacToolsPluginKit.framework */,
+				TFPLATFORMSTATEFILE0001 /* PluginPlatformState.swift */,
+				TFPACKAGEMANAGERFILE001 /* TraceFencePluginPackageManager.swift */,
+				TFRUNTIMEHOSTFILE000001 /* TraceFencePluginRuntimeHost.swift */,
+				TFPLUGINSTOREFILE000001 /* TraceFencePluginStoreView.swift */,
 				E1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift */,
 				E1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift */,
 				E1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift */,
@@ -266,6 +282,8 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 			buildPhases = (
 				1966423F0571FCFAFFCD6863 /* Sources */,
 				2DA348074FE152181CBDA495 /* Resources */,
+				TFKITFRAMEWORKSPHASE0001 /* Frameworks */,
+				TFKITEMBEDPHASE00000001 /* Embed Plugin Compatibility Framework */,
 				TF20STRIPDIRECTRES000001 /* Embed Provider Engine */,
 				TF21SIGNPROVIDER000001 /* Sign Provider Engine */,
 			);
@@ -313,7 +331,29 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 		};
 /* End PBXProject section */
 
+/* Begin PBXFrameworksBuildPhase section */
+		TFKITFRAMEWORKSPHASE0001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				TFKITBUILDLINK000000001 /* MacToolsPluginKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
 /* Begin PBXCopyFilesBuildPhase section */
+		TFKITEMBEDPHASE00000001 /* Embed Plugin Compatibility Framework */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				TFKITBUILDEMBED00000001 /* MacToolsPluginKit.framework in Embed Frameworks */,
+			);
+			name = "Embed Plugin Compatibility Framework";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		TF20STRIPDIRECTRES000001 /* Embed Provider Engine */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -418,6 +458,10 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				B116459B8B7913107AAE0C86 /* ConversationWatcher.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4C /* DirectLicenseService.swift in Sources */,
 				MP10MARKETPLACECATALOG01 /* MarketplaceCatalogService.swift in Sources */,
+				TFPLATFORMSTATEBUILD001 /* PluginPlatformState.swift in Sources */,
+				TFPACKAGEMANAGERBUILD01 /* TraceFencePluginPackageManager.swift in Sources */,
+				TFRUNTIMEHOSTBUILD00001 /* TraceFencePluginRuntimeHost.swift in Sources */,
+				TFPLUGINSTOREBUILD00001 /* TraceFencePluginStoreView.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4D /* DirectUpdateService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4E /* AppleIntelligenceService.swift in Sources */,
 				D1A2B3C4D5E6F708192A3B4F /* ProviderQuotaService.swift in Sources */,
@@ -450,9 +494,13 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-					CURRENT_PROJECT_VERSION = 120;
+					CURRENT_PROJECT_VERSION = 121;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
+					FRAMEWORK_SEARCH_PATHS = (
+						"$(inherited)",
+						"$(PROJECT_DIR)/AIMacCleaner/Frameworks",
+					);
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
 			INFOPLIST_KEY_CFBundleDisplayName = TraceFence;
 			INFOPLIST_KEY_LSMinimumSystemVersion = 13.0;
@@ -461,7 +509,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 				"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 1.2.0;
+			MARKETING_VERSION = 1.2.1;
 			OPTIMIZATION_LEVEL = "-O";
 				PRODUCT_BUNDLE_IDENTIFIER = com.tracefence.app;
 				PRODUCT_NAME = TraceFence;
@@ -603,9 +651,13 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					CODE_SIGN_STYLE = Automatic;
 					COMBINE_HIDPI_IMAGES = YES;
 					CODE_SIGN_ENTITLEMENTS = AIMacCleaner/AIMacCleaner.entitlements;
-					CURRENT_PROJECT_VERSION = 120;
+					CURRENT_PROJECT_VERSION = 121;
 					DEVELOPMENT_TEAM = UQ87N2WZ76;
 					ENABLE_HARDENED_RUNTIME = YES;
+					FRAMEWORK_SEARCH_PATHS = (
+						"$(inherited)",
+						"$(PROJECT_DIR)/AIMacCleaner/Frameworks",
+					);
 				INFOPLIST_FILE = AIMacCleaner/Info.plist;
 			INFOPLIST_KEY_CFBundleDisplayName = TraceFence;
 			INFOPLIST_KEY_LSMinimumSystemVersion = 13.0;
@@ -614,7 +666,7 @@ F5CEA91490D454D5FEA18AF7 /* AIConfigView.swift */ = {isa = PBXFileReference; las
 					"@executable_path/../Frameworks",
 			);
 			MACOSX_DEPLOYMENT_TARGET = 13.0;
-			MARKETING_VERSION = 1.2.0;
+			MARKETING_VERSION = 1.2.1;
 			OPTIMIZATION_LEVEL = "-Onone";
 				PRODUCT_BUNDLE_IDENTIFIER = com.tracefence.app;
 				PRODUCT_NAME = TraceFence;

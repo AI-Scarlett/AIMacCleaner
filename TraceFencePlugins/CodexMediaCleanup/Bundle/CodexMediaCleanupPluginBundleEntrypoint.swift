@@ -1,0 +1,3 @@
+import CodexMediaCleanupPlugin
+
+private let codexMediaCleanupPluginFactoryAnchor: Any.Type = CodexMediaCleanupPluginFactory.self

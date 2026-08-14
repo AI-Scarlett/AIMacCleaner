@@ -1,0 +1,4 @@
+TraceFenceCodexPlugins.xcodeproj/
+build/
+*.xcresult
+.DS_Store

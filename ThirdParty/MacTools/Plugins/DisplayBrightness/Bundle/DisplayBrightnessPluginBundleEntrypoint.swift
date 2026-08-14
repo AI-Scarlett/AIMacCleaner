@@ -1,0 +1,3 @@
+import DisplayBrightnessPlugin
+
+private let displayBrightnessPluginFactoryAnchor: Any.Type = DisplayBrightnessPluginFactory.self

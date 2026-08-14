@@ -1,0 +1,3 @@
+import DisplayResolutionPlugin
+
+private let displayResolutionPluginFactoryAnchor: Any.Type = DisplayResolutionPluginFactory.self

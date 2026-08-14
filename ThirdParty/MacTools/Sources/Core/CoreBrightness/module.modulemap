@@ -1,0 +1,4 @@
+module CoreBrightness [system] {
+    header "CoreBrightness.h"
+    export *
+}

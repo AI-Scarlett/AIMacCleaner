@@ -1,0 +1,3 @@
+import PhysicalCleanModePlugin
+
+private let physicalCleanModePluginFactoryAnchor: Any.Type = PhysicalCleanModePluginFactory.self

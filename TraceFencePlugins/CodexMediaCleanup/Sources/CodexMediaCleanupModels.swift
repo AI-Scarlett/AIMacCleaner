@@ -1,0 +1,137 @@
+import Foundation
+
+enum CodexMediaCleanupPhase: Equatable, Sendable {
+    case idle
+    case scanning
+    case scanned
+    case waitingForCodex
+    case repairing
+    case completed
+}
+
+struct CodexMediaScanReport: Equatable, Sendable {
+    var scannedFiles = 0
+    var affectedFiles = 0
+    var malformedFiles = 0
+    var inlineImageOccurrences = 0
+    var uniqueImageCount = 0
+    var reclaimableOccurrences = 0
+    var retainedEffectiveOccurrences = 0
+    var invalidEffectiveFileURLs = 0
+    var missingMediaObjects = 0
+    var estimatedReclaimableBytes: Int64 = 0
+    var scannedBytes: Int64 = 0
+    var completedAt = Date()
+
+    var needsRepair: Bool {
+        reclaimableOccurrences > 0 || invalidEffectiveFileURLs > 0
+    }
+}
+
+struct CodexMediaRepairReport: Equatable, Codable, Sendable {
+    struct FileResult: Equatable, Codable, Sendable {
+        let path: String
+        let backupPath: String
+        let originalSHA256: String
+        let repairedSHA256: String
+        let replacedStaleDataURLs: Int
+        let restoredEffectiveImageURLs: Int
+        let createdMediaObjects: Int
+        let reboundLocalPaths: Int
+        let reclaimedBytes: Int64
+    }
+
+    let runID: String
+    let startedAt: Date
+    let completedAt: Date
+    let files: [FileResult]
+    let skippedFiles: [String]
+    let reportPath: String
+
+    var repairedFileCount: Int { files.count }
+    var replacementCount: Int { files.reduce(0) { $0 + $1.replacedStaleDataURLs } }
+    var restorationCount: Int { files.reduce(0) { $0 + $1.restoredEffectiveImageURLs } }
+    var reclaimedBytes: Int64 { files.reduce(0) { $0 + $1.reclaimedBytes } }
+}
+
+struct CodexMediaCleanupSnapshot: Equatable, Sendable {
+    var phase: CodexMediaCleanupPhase = .idle
+    var scanReport: CodexMediaScanReport?
+    var repairReport: CodexMediaRepairReport?
+    var completedFiles = 0
+    var totalFiles = 0
+    var currentFile = ""
+    var includeArchivedSessions = true
+    var errorMessage: String?
+
+    var isBusy: Bool {
+        switch phase {
+        case .scanning, .waitingForCodex, .repairing: true
+        default: false
+        }
+    }
+}
+
+enum CodexMediaCleanupError: LocalizedError, Equatable {
+    case invalidCodexHome(String)
+    case malformedJSON(path: String, line: Int)
+    case invalidDataImage
+    case unsupportedImageType(String)
+    case unsafeMediaReference(String)
+    case missingMediaObject(String)
+    case corruptMediaObject(String)
+    case fileIsOpen(String)
+    case backupVerificationFailed(String)
+    case outputVerificationFailed(String)
+    case atomicReplaceFailed(String)
+    case cancelled
+
+    var errorDescription: String? {
+        switch self {
+        case let .invalidCodexHome(path): "Codex 数据目录不可用：\(path)"
+        case let .malformedJSON(path, line): "会话 JSON 已损坏：\(path) 第 \(line) 行"
+        case .invalidDataImage: "发现无法解码的 data:image Base64 图片"
+        case let .unsupportedImageType(type): "暂不支持的图片类型：\(type)"
+        case let .unsafeMediaReference(path): "媒体引用超出 Codex 内容寻址目录：\(path)"
+        case let .missingMediaObject(path): "原始媒体文件不存在：\(path)"
+        case let .corruptMediaObject(path): "媒体文件 SHA-256 与文件名不一致：\(path)"
+        case let .fileIsOpen(path): "会话仍被进程占用：\(path)"
+        case let .backupVerificationFailed(path): "备份校验失败：\(path)"
+        case let .outputVerificationFailed(path): "修复结果校验失败：\(path)"
+        case let .atomicReplaceFailed(path): "无法原子替换会话文件：\(path)"
+        case .cancelled: "操作已取消"
+        }
+    }
+}
+
+struct CodexMediaCleanupConfiguration: Sendable {
+    let codexHome: URL
+    let supportDirectory: URL
+    let includeArchivedSessions: Bool
+
+    var mediaRoot: URL {
+        codexHome.appendingPathComponent("media_objects/sha256", isDirectory: true)
+    }
+
+    var sessionRoots: [URL] {
+        var roots = [codexHome.appendingPathComponent("sessions", isDirectory: true)]
+        if includeArchivedSessions {
+            roots.append(codexHome.appendingPathComponent("archived_sessions", isDirectory: true))
+        }
+        return roots
+    }
+
+    var backupRoot: URL {
+        supportDirectory.appendingPathComponent("Backups", isDirectory: true)
+    }
+
+    var reportRoot: URL {
+        supportDirectory.appendingPathComponent("Reports", isDirectory: true)
+    }
+}
+
+struct CodexMediaProgress: Sendable {
+    let completed: Int
+    let total: Int
+    let currentPath: String
+}

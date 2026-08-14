@@ -1,0 +1,23 @@
+MacTools.xcodeproj
+MacTools.xcworkspace
+LocalConfig.xcconfig
+Configs/GeneratedPlugins.yml
+scripts/release.local.env
+build/
+.build/
+site/node_modules/
+site/dist/
+site/.astro/
+site/public/assets
+__pycache__/
+.DS_Store
+*.log
+CLAUDE.local.md
+
+xcuserdata/
+*.xcuserdatad
+*.xcuserstate
+*.pbxuser
+
+# Machine-local Claude Code session lock (records a local PID/session id)
+.claude/scheduled_tasks.lock

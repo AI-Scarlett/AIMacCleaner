@@ -537,6 +537,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindowPresentationGeneration: UInt64 = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+#if DEBUG
+        let pluginSelfTestArguments = ProcessInfo.processInfo.arguments
+        if pluginSelfTestArguments.contains("--tracefence-plugin-runtime-self-test") {
+            Task { @MainActor in
+                await TraceFencePluginRuntimeSelfTest.run(arguments: pluginSelfTestArguments)
+            }
+            return
+        }
+#endif
         NSApp.setActivationPolicy(.regular)
         NSApp.unhide(nil)
         terminateDuplicateTraceFenceInstances()
@@ -582,6 +591,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        TraceFencePluginRuntimeHost.shared.shutdown()
         AgentUsageInsightsService.shared.stopScheduling()
         NotificationCenter.default.removeObserver(
             self,
