@@ -262,7 +262,7 @@ def main():
     upload_url = release["upload_url"]
     dmg_name = os.path.basename(args.dmg)
     checksum_name = os.path.basename(sha_path)
-    manifest_path = f"{args.dmg}.json"
+    manifest_path = os.path.join(os.path.dirname(args.dmg), MANIFEST_NAME)
     manifest = {
         "version": VERSION,
         "releaseName": RELEASE_NAME,
