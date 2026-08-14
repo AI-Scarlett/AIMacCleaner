@@ -102,10 +102,18 @@ final class TraceFencePluginRuntimeHost: ObservableObject {
         objectWillChange.send()
     }
 
-    func componentView(pluginID: String) -> AnyView? {
+    func componentView(
+        pluginID: String,
+        dismiss: @escaping () -> Void = {},
+        isPanelVisible: Bool = true
+    ) -> AnyView? {
         guard let component = sessions[pluginID]?.plugin.componentPanel else { return nil }
         return component.makeView(
-            context: PluginComponentContext(pluginID: pluginID, dismiss: {}, isPanelVisible: true)
+            context: PluginComponentContext(
+                pluginID: pluginID,
+                dismiss: dismiss,
+                isPanelVisible: isPanelVisible
+            )
         )
     }
 
@@ -276,8 +284,10 @@ struct TraceFencePluginRuntimeView: View {
     let pluginID: String
     var presentation: TraceFencePluginRuntimePresentation = .workspace
     var onClose: (() -> Void)?
+    var openInWorkspace: (() -> Void)?
     @State private var selectedSurface: Surface = .main
     @State private var visiblePanelSurface: PluginPanelSurface?
+    @State private var didResolveDefaultSurface = false
 
     private enum Surface: String {
         case main
@@ -313,9 +323,11 @@ struct TraceFencePluginRuntimeView: View {
         }
         .task {
             runtimeHost.open(pluginID: pluginID)
+            resolveDefaultSurfaceIfNeeded()
         }
         .onChange(of: runtimeHost.state(pluginID: pluginID)) { state in
             if state == .active {
+                resolveDefaultSurfaceIfNeeded()
                 updateVisiblePanelSurface()
             } else {
                 hideVisiblePanelSurface()
@@ -332,82 +344,382 @@ struct TraceFencePluginRuntimeView: View {
     @ViewBuilder
     private var activePlugin: some View {
         if let plugin = runtimeHost.plugin(pluginID: pluginID) {
-            VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-                HStack(spacing: Theme.Spacing.md) {
-                    Image(systemName: plugin.metadata.iconName)
-                        .font(.system(size: 28, weight: .semibold))
-                        .foregroundStyle(plugin.metadata.iconTint)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(plugin.metadata.title)
-                            .font(Theme.Font.title2Bold)
-                        Text(plugin.metadata.defaultDescription)
-                            .font(Theme.Font.body)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                    }
-                    Spacer()
-                    if presentation == .workspace,
-                       [plugin.primaryPanel != nil, plugin.componentPanel != nil, plugin.settingsPage != nil]
-                        .filter({ $0 }).count > 1 {
-                        Picker("", selection: $selectedSurface) {
-                            if plugin.primaryPanel != nil {
-                                Text(localizer.t("使用", en: "Use")).tag(Surface.main)
-                            }
-                            if plugin.componentPanel != nil {
-                                Text(localizer.t("面板", en: "Panel")).tag(Surface.component)
-                            }
-                            if plugin.settingsPage != nil {
-                                Text(localizer.t("设置", en: "Settings")).tag(Surface.settings)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(width: 150)
-                    }
-                    Button {
-                        runtimeHost.refresh(pluginID: pluginID)
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .buttonStyle(.borderless)
-                    if let onClose {
-                        Button(action: onClose) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(Theme.Colors.textTertiary)
-                        }
-                        .buttonStyle(.borderless)
-                        .help(localizer.t("关闭插件", en: "Close Plugin"))
-                    }
-                }
+            switch presentation {
+            case .workspace:
+                workspacePlugin(plugin)
+            case .menuBar:
+                menuBarPlugin(plugin)
+            }
+        }
+    }
 
-                if selectedSurface == .settings || (plugin.primaryPanel == nil && plugin.componentPanel == nil) {
-                    if let page = runtimeHost.settingsPage(pluginID: pluginID) {
-                        TraceFencePluginSettingsView(
-                            pluginID: pluginID,
-                            plugin: plugin,
-                            page: page,
-                            runtimeHost: runtimeHost
-                        )
+    private func workspacePlugin(_ plugin: any MacToolsPlugin) -> some View {
+        VStack(spacing: 0) {
+            workspaceHeader(plugin)
+            Divider().overlay(Theme.Colors.separator)
+            workspaceSurface(plugin)
+                .id("\(pluginID)-\(selectedSurface.rawValue)")
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .clipped()
+    }
+
+    private func menuBarPlugin(_ plugin: any MacToolsPlugin) -> some View {
+        VStack(spacing: 0) {
+            compactHeader(plugin)
+            Divider().overlay(Theme.Colors.separator)
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    if catalogDescriptor?.menuBarMode == .status,
+                       let component = plugin.componentPanel {
+                        compactComponentStatus(component.componentPanelState)
+                    } else if let primary = plugin.primaryPanel {
+                        primaryPanel(primary)
+                    } else if let component = plugin.componentPanel {
+                        compactComponentStatus(component.componentPanelState)
                     } else {
                         runtimeMessage(
-                            icon: "gearshape",
-                            title: localizer.t("这个插件没有可配置项目", en: "This plugin has no configurable settings")
+                            icon: "macwindow",
+                            title: localizer.t(
+                                "这个插件需要在桌面端使用",
+                                en: "This plugin is available in the desktop workspace"
+                            )
                         )
                     }
-                } else if selectedSurface == .component,
-                          let component = runtimeHost.componentView(pluginID: pluginID) {
-                    component
-                } else if let primary = plugin.primaryPanel {
-                    primaryPanel(primary)
-                } else if let component = runtimeHost.componentView(pluginID: pluginID) {
-                    component
-                } else {
-                    runtimeMessage(
-                        icon: "slider.horizontal.3",
-                        title: localizer.t("请在插件设置中配置", en: "Configure this plugin in Settings")
-                    )
+
+                    if plugin.componentPanel != nil || plugin.settingsPage != nil,
+                       let openInWorkspace {
+                        Button(action: openInWorkspace) {
+                            Label(
+                                localizer.t("在桌面打开完整内容", en: "Open Full View on Desktop"),
+                                systemImage: "macwindow"
+                            )
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(BrandButtonStyle(
+                            color: Theme.Colors.accent,
+                            variant: .secondary,
+                            minHeight: 34
+                        ))
+                    }
                 }
+                .padding(Theme.Spacing.lg)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .padding(presentation == .menuBar ? Theme.Spacing.lg : Theme.Spacing.xxl)
+            .scrollIndicators(.visible)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .clipped()
+    }
+
+    private func workspaceHeader(_ plugin: any MacToolsPlugin) -> some View {
+        HStack(spacing: Theme.Spacing.md) {
+            Image(systemName: plugin.metadata.iconName)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(plugin.metadata.iconTint)
+                .frame(width: 42, height: 42)
+                .background(plugin.metadata.iconTint.opacity(0.10), in: RoundedRectangle(cornerRadius: Theme.Radius.md))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(plugin.metadata.title)
+                    .font(Theme.Font.title2Bold)
+                    .lineLimit(1)
+                Text(plugin.metadata.defaultDescription)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(1)
+                placementBadges
+            }
+
+            Spacer(minLength: Theme.Spacing.md)
+
+            if availableSurfaces(for: plugin).count > 1 {
+                Picker("", selection: $selectedSurface) {
+                    ForEach(availableSurfaces(for: plugin), id: \.rawValue) { surface in
+                        Text(surfaceLabel(surface, plugin: plugin)).tag(surface)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: CGFloat(availableSurfaces(for: plugin).count) * 86)
+            }
+
+            runtimeButtons
+        }
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.elevatedCardBg.opacity(0.42))
+    }
+
+    private func compactHeader(_ plugin: any MacToolsPlugin) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: plugin.metadata.iconName)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(plugin.metadata.iconTint)
+                .frame(width: 32, height: 32)
+                .background(plugin.metadata.iconTint.opacity(0.10), in: RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(plugin.metadata.title)
+                    .font(Theme.Font.bodyMedium)
+                    .lineLimit(1)
+                Text(menuBarModeLabel)
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+            Spacer()
+            runtimeButtons
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var runtimeButtons: some View {
+        Button {
+            runtimeHost.refresh(pluginID: pluginID)
+        } label: {
+            Image(systemName: "arrow.clockwise")
+        }
+        .buttonStyle(.borderless)
+        .help(localizer.t("刷新插件", en: "Refresh Plugin"))
+
+        if let onClose {
+            Button(action: onClose) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+            .buttonStyle(.borderless)
+            .help(localizer.t("关闭插件", en: "Close Plugin"))
+        }
+    }
+
+    @ViewBuilder
+    private var placementBadges: some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            placementBadge(
+                localizer.t("桌面", en: "Desktop"),
+                systemImage: "macwindow"
+            )
+            if let menuBarMode = catalogDescriptor?.menuBarMode {
+                placementBadge(
+                    menuBarMode == .quickControl
+                        ? localizer.t("菜单栏控制", en: "Menu Control")
+                        : localizer.t("菜单栏状态", en: "Menu Status"),
+                    systemImage: "menubar.rectangle"
+                )
+            } else {
+                placementBadge(
+                    localizer.t("仅桌面", en: "Desktop Only"),
+                    systemImage: "rectangle.slash"
+                )
+            }
+        }
+    }
+
+    private func placementBadge(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(Theme.Colors.textTertiary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Theme.Colors.cardBg.opacity(0.78), in: Capsule())
+    }
+
+    @ViewBuilder
+    private func workspaceSurface(_ plugin: any MacToolsPlugin) -> some View {
+        switch selectedSurface {
+        case .settings:
+            if let page = runtimeHost.settingsPage(pluginID: pluginID) {
+                settingsSurface(plugin: plugin, page: page)
+            } else {
+                runtimeMessage(
+                    icon: "gearshape",
+                    title: localizer.t("这个插件没有可配置项目", en: "This plugin has no configurable settings")
+                )
+            }
+        case .component:
+            if let component = runtimeHost.componentView(
+                pluginID: pluginID,
+                dismiss: onClose ?? {},
+                isPanelVisible: true
+            ) {
+                ScrollView(.vertical) {
+                    component
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(Theme.Spacing.xl)
+                }
+                .scrollIndicators(.visible)
+            } else {
+                fallbackWorkspaceSurface(plugin)
+            }
+        case .main:
+            if let primary = plugin.primaryPanel {
+                ScrollView(.vertical) {
+                    primaryPanel(primary)
+                        .padding(Theme.Spacing.xl)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .scrollIndicators(.visible)
+            } else {
+                fallbackWorkspaceSurface(plugin)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func fallbackWorkspaceSurface(_ plugin: any MacToolsPlugin) -> some View {
+        if let component = runtimeHost.componentView(
+            pluginID: pluginID,
+            dismiss: onClose ?? {},
+            isPanelVisible: true
+        ) {
+            ScrollView(.vertical) {
+                component
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(Theme.Spacing.xl)
+            }
+        } else if let page = runtimeHost.settingsPage(pluginID: pluginID) {
+            settingsSurface(plugin: plugin, page: page)
+        } else {
+            runtimeMessage(
+                icon: "slider.horizontal.3",
+                title: localizer.t("这个插件暂时没有可用界面", en: "This plugin has no available interface")
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func settingsSurface(plugin: any MacToolsPlugin, page: PluginSettingsPage) -> some View {
+        let settingsView = TraceFencePluginSettingsView(
+            pluginID: pluginID,
+            plugin: plugin,
+            page: page,
+            runtimeHost: runtimeHost
+        )
+        if pageUsesHostScrolling(page) {
+            ScrollView(.vertical) {
+                settingsView
+                    .padding(Theme.Spacing.xl)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .scrollIndicators(.visible)
+        } else {
+            settingsView
+                .padding(Theme.Spacing.xl)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+
+    private func compactComponentStatus(_ state: PluginComponentState) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Circle()
+                    .fill(state.isActive ? Theme.Colors.success : Theme.Colors.textTertiary)
+                    .frame(width: 8, height: 8)
+                Text(state.isActive
+                    ? localizer.t("状态正常", en: "Active")
+                    : localizer.t("等待运行", en: "Waiting"))
+                    .font(Theme.Font.captionMedium)
+                Spacer()
+                Text(localizer.t("状态摘要", en: "Status Summary"))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+            Text(state.subtitle)
+                .font(Theme.Font.body)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let error = state.errorMessage, !error.isEmpty {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.warning)
+            }
+        }
+        .cardStyle()
+    }
+
+    private var catalogDescriptor: TraceFencePluginDescriptor? {
+        TraceFenceMarketplaceCatalogRuntime.plugin(id: pluginID)
+    }
+
+    private var menuBarModeLabel: String {
+        switch catalogDescriptor?.menuBarMode {
+        case .quickControl:
+            return localizer.t("菜单栏快捷控制", en: "Menu Bar Quick Control")
+        case .status:
+            return localizer.t("菜单栏状态摘要", en: "Menu Bar Status Summary")
+        case nil:
+            return localizer.t("桌面端插件", en: "Desktop Plugin")
+        }
+    }
+
+    private func availableSurfaces(for plugin: any MacToolsPlugin) -> [Surface] {
+        var result: [Surface] = []
+        if plugin.primaryPanel != nil { result.append(.main) }
+        if plugin.componentPanel != nil { result.append(.component) }
+        if plugin.settingsPage != nil { result.append(.settings) }
+        return result
+    }
+
+    private func surfaceLabel(_ surface: Surface, plugin: any MacToolsPlugin) -> String {
+        switch surface {
+        case .main:
+            return localizer.t("快捷控制", en: "Control")
+        case .component:
+            return localizer.t("数据面板", en: "Dashboard")
+        case .settings:
+            if let page = plugin.settingsPage, case .workspace = page.body {
+                return localizer.t("完整工具", en: "Full Tool")
+            }
+            return localizer.t("设置", en: "Settings")
+        }
+    }
+
+    private func resolveDefaultSurfaceIfNeeded() {
+        guard !didResolveDefaultSurface,
+              let plugin = runtimeHost.plugin(pluginID: pluginID) else { return }
+        let preferred: Surface
+        switch presentation {
+        case .menuBar:
+            preferred = catalogDescriptor?.menuBarMode == .status ? .component : .main
+        case .workspace:
+            switch catalogDescriptor?.workspaceLanding {
+            case .quickControl:
+                preferred = .main
+            case .dataPanel:
+                preferred = .component
+            case .workspace, .settings:
+                preferred = .settings
+            case nil:
+                preferred = fallbackDefaultSurface(for: plugin)
+            }
+        }
+        let available = availableSurfaces(for: plugin)
+        selectedSurface = available.contains(preferred)
+            ? preferred
+            : (available.first ?? .settings)
+        didResolveDefaultSurface = true
+    }
+
+    private func fallbackDefaultSurface(for plugin: any MacToolsPlugin) -> Surface {
+        if plugin.componentPanel != nil { return .component }
+        if let page = plugin.settingsPage, case .workspace = page.body { return .settings }
+        if plugin.primaryPanel != nil { return .main }
+        return .settings
+    }
+
+    private func pageUsesHostScrolling(_ page: PluginSettingsPage) -> Bool {
+        switch page.body {
+        case .form:
+            return true
+        case let .workspace(workspace):
+            switch workspace.scrolling {
+            case .host: return true
+            case .selfManaged: return false
+            }
         }
     }
 
@@ -612,6 +924,7 @@ struct TraceFencePluginWorkspaceView: View {
     private func pluginRailRow(_ plugin: TraceFencePluginDescriptor) -> some View {
         let isSelected = selectedPluginID == plugin.id
         let isPinned = pinnedPluginIDs.contains(plugin.id)
+        let supportsMenuBar = plugin.supportsMenuBarQuickPanel
         return HStack(spacing: Theme.Spacing.xs) {
             Button {
                 selectedPluginID = plugin.id
@@ -630,9 +943,18 @@ struct TraceFencePluginWorkspaceView: View {
                             .font(Theme.Font.captionMedium)
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
-                        Text("v\(packageManager.state(for: plugin).installedVersion ?? plugin.version)")
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(Theme.Colors.textTertiary)
+                        HStack(spacing: 4) {
+                            Text("v\(packageManager.state(for: plugin).installedVersion ?? plugin.version)")
+                                .font(.system(size: 9, design: .monospaced))
+                            Text("·")
+                            Text(localizer.t("桌面", en: "Desktop"))
+                            if supportsMenuBar {
+                                Text("·")
+                                Text(localizer.t("菜单", en: "Menu"))
+                            }
+                        }
+                        .font(.system(size: 9))
+                        .foregroundStyle(Theme.Colors.textTertiary)
                     }
                     Spacer(minLength: 0)
                 }
@@ -640,18 +962,26 @@ struct TraceFencePluginWorkspaceView: View {
             }
             .buttonStyle(.plain)
 
-            Button {
-                togglePinned(plugin.id)
-            } label: {
-                Image(systemName: isPinned ? "star.fill" : "star")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isPinned ? Theme.Colors.warning : Theme.Colors.textTertiary)
+            if supportsMenuBar {
+                Button {
+                    togglePinned(plugin.id)
+                } label: {
+                    Image(systemName: isPinned ? "star.fill" : "star")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(isPinned ? Theme.Colors.warning : Theme.Colors.textTertiary)
+                        .frame(width: 24, height: 30)
+                }
+                .buttonStyle(.plain)
+                .help(isPinned
+                    ? localizer.t("从菜单栏快捷插件移除", en: "Remove from Menu Bar Plugins")
+                    : localizer.t("固定到菜单栏快捷插件", en: "Pin to Menu Bar Plugins"))
+            } else {
+                Image(systemName: "macwindow")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.textTertiary)
                     .frame(width: 24, height: 30)
+                    .help(localizer.t("仅在桌面工作区使用", en: "Desktop workspace only"))
             }
-            .buttonStyle(.plain)
-            .help(isPinned
-                ? localizer.t("从快捷插件移除", en: "Remove from Quick Plugins")
-                : localizer.t("固定到快捷插件", en: "Pin to Quick Plugins"))
         }
         .padding(.horizontal, Theme.Spacing.sm)
         .padding(.vertical, 5)
@@ -1301,6 +1631,7 @@ enum TraceFencePluginRuntimeSelfTest {
                     minimumSystemVersion: descriptor.minimumSystemVersion,
                     pluginKitVersion: descriptor.pluginKitVersion,
                     capabilities: descriptor.capabilities,
+                    presentation: descriptor.presentation,
                     permissions: descriptor.permissions,
                     isFree: descriptor.isFree,
                     includedInAllAccess: descriptor.includedInAllAccess,

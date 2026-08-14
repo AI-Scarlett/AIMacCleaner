@@ -29,6 +29,25 @@ enum TraceFencePluginUseSurface: String, Hashable, Sendable {
     case background
 }
 
+/// The catalog describes what should be shown first on each host surface.
+/// Plugin versions remain independent from this host-owned placement policy.
+enum TraceFencePluginWorkspaceLanding: String, Codable, Equatable, Sendable {
+    case quickControl = "quick_control"
+    case dataPanel = "data_panel"
+    case workspace
+    case settings
+}
+
+enum TraceFencePluginMenuBarMode: String, Codable, Equatable, Sendable {
+    case quickControl = "quick_control"
+    case status
+}
+
+struct TraceFencePluginPresentationDescriptor: Codable, Equatable, Sendable {
+    let workspaceDefault: TraceFencePluginWorkspaceLanding
+    let menuBar: TraceFencePluginMenuBarMode?
+}
+
 struct TraceFenceMarketplaceDodoProducts: Codable, Equatable, Sendable {
     let liveProductID: String?
     let testProductID: String?
@@ -121,6 +140,7 @@ struct TraceFencePluginDescriptor: Identifiable, Codable, Equatable, Sendable {
     let minimumSystemVersion: String
     let pluginKitVersion: Int
     let capabilities: [String]
+    let presentation: TraceFencePluginPresentationDescriptor?
     let permissions: [String]
     let isFree: Bool
     let includedInAllAccess: Bool
@@ -157,9 +177,7 @@ struct TraceFencePluginDescriptor: Identifiable, Codable, Equatable, Sendable {
 
     var useSurfaces: Set<TraceFencePluginUseSurface> {
         var surfaces: Set<TraceFencePluginUseSurface> = [.workspace]
-        if capabilities.contains("tools.primary-panel")
-            || capabilities.contains("tools.component-panel")
-            || capabilities.contains("presentation.menu-bar") {
+        if menuBarMode != nil || capabilities.contains("presentation.menu-bar") {
             surfaces.insert(.menuBarQuickPanel)
         }
         if capabilities.contains("presentation.window") {
@@ -173,6 +191,35 @@ struct TraceFencePluginDescriptor: Identifiable, Codable, Equatable, Sendable {
 
     var supportsMenuBarQuickPanel: Bool {
         useSurfaces.contains(.menuBarQuickPanel)
+    }
+
+    var workspaceLanding: TraceFencePluginWorkspaceLanding {
+        if let presentation {
+            return presentation.workspaceDefault
+        }
+        if capabilities.contains("tools.component-panel") {
+            return .dataPanel
+        }
+        if capabilities.contains("tools.settings.workspace") {
+            return .workspace
+        }
+        if capabilities.contains("tools.primary-panel") {
+            return .quickControl
+        }
+        return .settings
+    }
+
+    var menuBarMode: TraceFencePluginMenuBarMode? {
+        if let presentation {
+            return presentation.menuBar
+        }
+        if capabilities.contains("tools.primary-panel") {
+            return .quickControl
+        }
+        if capabilities.contains("tools.component-panel") {
+            return .status
+        }
+        return nil
     }
 }
 
@@ -474,6 +521,7 @@ enum TraceFenceMarketplaceCatalogRuntime {
                   plugin.capabilities.count <= 64,
                   Set(plugin.capabilities).count == plugin.capabilities.count,
                   plugin.capabilities.allSatisfy(isSafeCapability),
+                  isValidPresentation(plugin),
                   plugin.permissions.count <= 32,
                   Set(plugin.permissions).count == plugin.permissions.count,
                   plugin.permissions.allSatisfy(isSafeCapability),
@@ -522,6 +570,28 @@ enum TraceFenceMarketplaceCatalogRuntime {
 
     private static func isSafeID(_ value: String) -> Bool {
         value.range(of: #"^[a-z0-9][a-z0-9._-]{2,79}$"#, options: .regularExpression) != nil
+    }
+
+    private static func isValidPresentation(_ plugin: TraceFencePluginDescriptor) -> Bool {
+        guard let presentation = plugin.presentation else { return true }
+        switch presentation.workspaceDefault {
+        case .quickControl:
+            guard plugin.capabilities.contains("tools.primary-panel") else { return false }
+        case .dataPanel:
+            guard plugin.capabilities.contains("tools.component-panel") else { return false }
+        case .workspace:
+            guard plugin.capabilities.contains("tools.settings.workspace") else { return false }
+        case .settings:
+            guard plugin.capabilities.contains(where: { $0.hasPrefix("tools.settings.") }) else { return false }
+        }
+        switch presentation.menuBar {
+        case .quickControl:
+            return plugin.capabilities.contains("tools.primary-panel")
+        case .status:
+            return plugin.capabilities.contains("tools.component-panel")
+        case nil:
+            return true
+        }
     }
 
     private static func isSafeVersion(_ value: String) -> Bool {
@@ -838,6 +908,7 @@ enum TraceFenceMarketplaceCatalogRuntime {
                 minimumSystemVersion: "13.0",
                 pluginKitVersion: 0,
                 capabilities: capabilities,
+                presentation: nil,
                 permissions: [],
                 isFree: isFree,
                 includedInAllAccess: includedInAllAccess,

@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "marketplace"))
 
 from catalog_policy import CatalogPolicyError, load_json, validate_catalog  # noqa: E402
+from import_mactools_packages import presentation  # noqa: E402
 
 
 class CatalogPolicyTests(unittest.TestCase):
@@ -121,6 +122,58 @@ class CatalogPolicyTests(unittest.TestCase):
         plugin["standaloneOfferID"] = None
         with self.assertRaises(CatalogPolicyError):
             validate_catalog(value)
+
+    def test_data_panel_presentation_requires_component_panel(self) -> None:
+        value = copy.deepcopy(self.document)
+        plugin = value["plugins"][0]
+        plugin["presentation"] = {
+            "workspaceDefault": "data_panel",
+            "menuBar": None,
+        }
+        plugin["capabilities"] = [
+            capability
+            for capability in plugin["capabilities"]
+            if capability != "tools.component-panel"
+        ]
+        with self.assertRaises(CatalogPolicyError):
+            validate_catalog(value)
+
+    def test_menu_status_presentation_requires_component_panel(self) -> None:
+        value = copy.deepcopy(self.document)
+        plugin = value["plugins"][0]
+        plugin["presentation"] = {
+            "workspaceDefault": "quick_control",
+            "menuBar": "status",
+        }
+        plugin["capabilities"] = ["tools.primary-panel"]
+        with self.assertRaises(CatalogPolicyError):
+            validate_catalog(value)
+
+    def test_imported_component_plugin_defaults_to_desktop_data_and_menu_status(self) -> None:
+        value = presentation({
+            "capabilities": {
+                "primaryPanel": False,
+                "componentPanel": True,
+                "settings": "form",
+            }
+        })
+        self.assertEqual(value, {
+            "workspaceDefault": "data_panel",
+            "menuBar": "status",
+        })
+
+    def test_imported_settings_only_plugin_is_desktop_only(self) -> None:
+        value = presentation({
+            "capabilities": {
+                "primaryPanel": False,
+                "componentPanel": False,
+                "settings": "workspace",
+            }
+        })
+        self.assertEqual(value, {
+            "workspaceDefault": "workspace",
+            "menuBar": None,
+        })
 
 
 if __name__ == "__main__":

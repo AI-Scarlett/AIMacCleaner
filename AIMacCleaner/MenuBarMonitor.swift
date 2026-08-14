@@ -376,7 +376,12 @@ struct MenuBarMonitor: View {
                     runtimeHost: pluginRuntimeHost,
                     pluginID: selectedQuickPluginID,
                     presentation: .menuBar,
-                    onClose: { self.selectedQuickPluginID = nil }
+                    onClose: { self.selectedQuickPluginID = nil },
+                    openInWorkspace: {
+                        TraceFencePluginPresentationCenter.shared.open(pluginID: selectedQuickPluginID)
+                        self.selectedQuickPluginID = nil
+                        openMainConsole()
+                    }
                 )
                 .id(selectedQuickPluginID)
             } else {

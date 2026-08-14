@@ -13,20 +13,20 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.2")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.3")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
-    "TraceFence 1.2.2 makes installed plugins first-class applications instead of Settings dialogs.\n\n"
-    "- Adds a persistent My Plugins workspace to the main TraceFence sidebar.\n"
-    "- Routes Open actions out of Settings and into the main workspace, removing the nested unclosable plugin sheet.\n"
-    "- Adds explicit close controls and correct primary/component panel visibility lifecycles.\n"
-    "- Adds a menu-bar Plugins tab for pinned quick controls such as Fan Control.\n"
-    "- Lets users star installed plugins without filling the main sidebar with every package.\n"
-    "- Keeps the Store focused on purchase, install, enable/disable, independent update, rollback, and uninstall.\n"
-    "- Keeps all 45 plugin versions and TraceFence host updates independent.\n"
+    "TraceFence 1.2.3 gives every installed plugin a deliberate desktop and menu-bar experience.\n\n"
+    "- Fixes plugin workspaces being clipped above or below the visible window.\n"
+    "- Keeps the plugin title and surface switcher fixed while only the content body scrolls.\n"
+    "- Opens data plugins on their dashboard, full tools in their workspace, and action plugins on quick controls.\n"
+    "- Limits the menu bar to pinned quick controls or compact status summaries; charts and long tools stay on the desktop.\n"
+    "- Adds a one-click path from a menu-bar summary to the full desktop plugin.\n"
+    "- Adds catalog presentation contracts so future plugins declare their default surface independently of their version.\n"
+    "- Keeps all plugin releases independent from the TraceFence host release.\n"
 )
 
 

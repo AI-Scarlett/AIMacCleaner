@@ -53,6 +53,25 @@ panels also appear in the menu-bar Plugins tab. Both surfaces expose explicit
 close actions and notify plugins when primary or component panels become visible
 or hidden.
 
+## TraceFence 1.2.3 surface contract
+
+Version 1.2.3 makes placement and first-use behavior explicit catalog data. Each
+plugin independently declares one desktop landing surface and an optional
+menu-bar mode:
+
+| Plugin shape | Desktop default | Menu-bar behavior |
+| --- | --- | --- |
+| Short action or live control | Quick control | Pinned quick control |
+| Metrics, health or observation | Data panel | Compact status summary |
+| Multi-section tool | Full workspace | Desktop only unless a separate compact control exists |
+| Configuration-only integration | Settings | Desktop only |
+
+The desktop host owns one bounded scrolling region beneath a fixed plugin
+header. A plugin workspace that declares self-managed scrolling keeps that
+responsibility; all other panels are wrapped by the host exactly once. The
+menu-bar host never embeds a full chart or long-form workspace and always offers
+a path back to the full desktop content when one exists.
+
 ## Target boundaries
 
 ### 1. Catalog

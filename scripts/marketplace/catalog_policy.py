@@ -142,6 +142,30 @@ def validate_catalog(document: dict[str, Any], *, require_live_products: bool = 
             raise CatalogPolicyError(f"invalid capabilities: {plugin_id}")
         if not all(isinstance(value, str) and re.fullmatch(r"^[a-z][a-z0-9._-]{1,79}$", value) for value in capabilities):
             raise CatalogPolicyError(f"invalid capability value: {plugin_id}")
+        presentation = plugin.get("presentation")
+        if presentation is not None:
+            if not isinstance(presentation, dict):
+                raise CatalogPolicyError(f"invalid presentation: {plugin_id}")
+            workspace_default = presentation.get("workspaceDefault")
+            menu_bar = presentation.get("menuBar")
+            workspace_requirements = {
+                "quick_control": "tools.primary-panel",
+                "data_panel": "tools.component-panel",
+                "workspace": "tools.settings.workspace",
+            }
+            if workspace_default == "settings":
+                if not any(value.startswith("tools.settings.") for value in capabilities):
+                    raise CatalogPolicyError(f"settings presentation without settings: {plugin_id}")
+            elif workspace_default not in workspace_requirements:
+                raise CatalogPolicyError(f"invalid workspace presentation: {plugin_id}")
+            elif workspace_requirements[workspace_default] not in capabilities:
+                raise CatalogPolicyError(f"unsupported workspace presentation: {plugin_id}")
+            if menu_bar == "quick_control" and "tools.primary-panel" not in capabilities:
+                raise CatalogPolicyError(f"menu control without primary panel: {plugin_id}")
+            if menu_bar == "status" and "tools.component-panel" not in capabilities:
+                raise CatalogPolicyError(f"menu status without component panel: {plugin_id}")
+            if menu_bar not in {None, "quick_control", "status"}:
+                raise CatalogPolicyError(f"invalid menu presentation: {plugin_id}")
         permissions = plugin.get("permissions")
         if not isinstance(permissions, list) or len(permissions) > 32 or len(set(permissions)) != len(permissions):
             raise CatalogPolicyError(f"invalid permissions: {plugin_id}")

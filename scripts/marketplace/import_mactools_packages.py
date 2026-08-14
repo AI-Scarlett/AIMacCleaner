@@ -110,6 +110,34 @@ def capabilities(manifest: dict[str, Any]) -> list[str]:
     return sorted(set(values))
 
 
+def presentation(manifest: dict[str, Any]) -> dict[str, Any]:
+    declared = manifest.get("capabilities") or {}
+    primary_panel = bool(declared.get("primaryPanel"))
+    component_panel = bool(declared.get("componentPanel"))
+    settings = declared.get("settings")
+
+    if component_panel:
+        workspace_default = "data_panel"
+    elif settings == "workspace":
+        workspace_default = "workspace"
+    elif primary_panel:
+        workspace_default = "quick_control"
+    else:
+        workspace_default = "settings"
+
+    if primary_panel:
+        menu_bar = "quick_control"
+    elif component_panel:
+        menu_bar = "status"
+    else:
+        menu_bar = None
+
+    return {
+        "workspaceDefault": workspace_default,
+        "menuBar": menu_bar,
+    }
+
+
 def permissions(manifest: dict[str, Any]) -> list[str]:
     values: list[str] = []
     for permission in manifest.get("permissions") or []:
@@ -174,6 +202,7 @@ def main() -> int:
             "minimumSystemVersion": minimum_system_version,
             "pluginKitVersion": manifest["pluginKitVersion"],
             "capabilities": capabilities(manifest),
+            "presentation": presentation(manifest),
             "permissions": permissions(manifest),
             "isFree": False,
             "includedInAllAccess": True,
