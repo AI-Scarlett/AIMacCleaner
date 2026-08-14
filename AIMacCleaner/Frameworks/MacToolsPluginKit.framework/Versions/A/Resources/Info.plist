@@ -9,7 +9,7 @@
 	<key>CFBundleExecutable</key>
 	<string>MacToolsPluginKit</string>
 	<key>CFBundleIdentifier</key>
-	<string>.mactools.plugin-kit</string>
+	<string>com.tracefence.plugin-kit</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

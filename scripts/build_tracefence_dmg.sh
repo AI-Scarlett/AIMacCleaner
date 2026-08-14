@@ -59,6 +59,20 @@ notarytool_submit() {
   xcrun notarytool submit "$artifact" "${auth_args[@]}" --wait
 }
 
+codesign_with_retry() {
+  local attempt
+  for attempt in 1 2 3; do
+    if codesign "$@"; then
+      return 0
+    fi
+    if [ "$attempt" -lt 3 ]; then
+      echo "codesign failed (attempt $attempt); retrying secure timestamp..." >&2
+      sleep 2
+    fi
+  done
+  return 1
+}
+
 echo "========================================="
 echo "  Building ${APP_NAME} ${TAG}"
 echo "========================================="
@@ -123,19 +137,26 @@ if [ ! -d "$PLUGIN_FRAMEWORK" ]; then
   exit 1
 fi
 
-codesign --force \
+PLUGIN_FRAMEWORK_PLIST="$PLUGIN_FRAMEWORK/Versions/A/Resources/Info.plist"
+PLUGIN_FRAMEWORK_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLUGIN_FRAMEWORK_PLIST")"
+if [ "$PLUGIN_FRAMEWORK_IDENTIFIER" != "com.tracefence.plugin-kit" ]; then
+  echo "Bundled PluginKit framework has invalid bundle identifier: $PLUGIN_FRAMEWORK_IDENTIFIER" >&2
+  exit 1
+fi
+
+codesign_with_retry --force \
   --options runtime \
   --timestamp \
   --sign "$SIGN_IDENTITY" \
   "$PLUGIN_FRAMEWORK"
 
-codesign --force \
+codesign_with_retry --force \
   --options runtime \
   --timestamp \
   --sign "$SIGN_IDENTITY" \
   "$PROVIDER_ENGINE"
 
-codesign --force \
+codesign_with_retry --force \
   --options runtime \
   --timestamp \
   --entitlements "$ENTITLEMENTS" \
@@ -159,7 +180,11 @@ HELPER_ENTITLEMENTS_OUTPUT="$(codesign -d --entitlements - "$PROVIDER_ENGINE" 2>
 }
 
 if [ "$NOTARIZE" = "1" ]; then
-  ditto -c -k --keepParent "$BUILT_APP" "$OUTPUT_ZIP"
+  ditto -c -k --norsrc --keepParent "$BUILT_APP" "$OUTPUT_ZIP"
+  if unzip -Z1 "$OUTPUT_ZIP" | grep -Eq '(^|/)\._'; then
+    echo "Release ZIP contains AppleDouble metadata" >&2
+    exit 1
+  fi
   notarytool_submit "$OUTPUT_ZIP"
   xcrun stapler staple "$BUILT_APP"
   spctl --assess --type execute --verbose=2 "$BUILT_APP"
@@ -178,7 +203,7 @@ hdiutil create \
   -format UDZO \
   "$OUTPUT_DMG"
 
-codesign --force \
+codesign_with_retry --force \
   --timestamp \
   --sign "$SIGN_IDENTITY" \
   "$OUTPUT_DMG"
