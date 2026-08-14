@@ -3,8 +3,8 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="TraceFence"
-VERSION="${TRACEFENCE_VERSION:-1.1.9}"
-BUILD_NUMBER="${TRACEFENCE_BUILD_NUMBER:-119}"
+VERSION="${TRACEFENCE_VERSION:-1.2.0}"
+BUILD_NUMBER="${TRACEFENCE_BUILD_NUMBER:-120}"
 TAG="v${VERSION}"
 SCHEME="AIMacCleaner"
 CONFIGURATION="Release"
@@ -28,6 +28,10 @@ NOTARY_KEY="${TRACEFENCE_NOTARY_KEY:-$DEFAULT_NOTARY_KEY}"
 NOTARY_KEY_ID="${TRACEFENCE_NOTARY_KEY_ID:-JHKYSFS5HM}"
 NOTARY_ISSUER="${TRACEFENCE_NOTARY_ISSUER:-69a6de85-f729-47e3-e053-5b8c7c11a4d1}"
 NOTARIZE="${TRACEFENCE_NOTARIZE:-1}"
+NOTARYTOOL_ARGS=()
+if [ "${NOTARYTOOL_S3_ACCELERATION:-0}" != "1" ]; then
+  NOTARYTOOL_ARGS+=(--no-s3-acceleration)
+fi
 CODEXBAR_DIR="${CODEXBAR_DIR:-}"
 CODEXBAR_BINARY="${CODEXBAR_BINARY:-$PROJECT_DIR/AIMacCleaner/Resources/codexbar}"
 
@@ -36,6 +40,7 @@ notarytool_submit() {
   if [ -n "$NOTARY_PROFILE" ]; then
     xcrun notarytool submit "$artifact" \
       --keychain-profile "$NOTARY_PROFILE" \
+      "${NOTARYTOOL_ARGS[@]}" \
       --wait
   elif [ -n "$NOTARY_KEY" ] && [ -n "$NOTARY_KEY_ID" ]; then
     if [ -n "$NOTARY_ISSUER" ]; then
@@ -43,11 +48,13 @@ notarytool_submit() {
         --key "$NOTARY_KEY" \
         --key-id "$NOTARY_KEY_ID" \
         --issuer "$NOTARY_ISSUER" \
+        "${NOTARYTOOL_ARGS[@]}" \
         --wait
     else
       xcrun notarytool submit "$artifact" \
         --key "$NOTARY_KEY" \
         --key-id "$NOTARY_KEY_ID" \
+        "${NOTARYTOOL_ARGS[@]}" \
         --wait
     fi
   else

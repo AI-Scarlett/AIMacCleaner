@@ -13,13 +13,15 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.1.9")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.0")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
     "TraceFence direct-download release.\n\n"
+    "- Adds a signed direct-build plugin marketplace with strict catalog verification, rollback protection, per-plugin entitlements, and bounded background activation.\n"
+    "- Adds the first standalone Agent Guard purchase path with Dodo Checkout, exact business/product validation, local License Key redemption, and a 24-hour trial.\n"
     "- Prevents Disk Advisor scans from loading multi-gigabyte Agent histories into memory; oversized sessions are fingerprinted in resumable 64 MiB newline-aligned passes with allocator relief.\n"
     "- Bounds file-inventory records, cache payloads, scan time, and filesystem traversal while draining Foundation temporaries per item, keeping repeated scans responsive on large home directories.\n"
     "- Keeps Token & Usage scans responsive on multi-gigabyte Codex histories with hard byte, time, and physical-memory budgets; cold and manual backfill passes are resumable instead of unbounded.\n"
