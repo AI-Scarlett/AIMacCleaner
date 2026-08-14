@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-08-13T00:00:00Z",
+  "expiresAt": "2027-08-14T01:30:00Z",
   "offers": [
     {
       "active": true,
@@ -35,6 +35,23 @@
       "kind": "subscription",
       "name": "TraceFence Standard Annual",
       "trialHours": 48
+    },
+    {
+      "active": true,
+      "amountMinor": 90,
+      "billingInterval": null,
+      "billingIntervalCount": null,
+      "currency": "USD",
+      "dodo": {
+        "acceptedLegacyProductIDs": [],
+        "liveProductID": "pdt_0NlLDDcejZUSrZ0bRNosp",
+        "testProductID": null
+      },
+      "grantsAllPlugins": false,
+      "id": "plugin.agent-guard.lifetime",
+      "kind": "one_time",
+      "name": "TraceFence Standard - 1",
+      "trialHours": null
     }
   ],
   "plugins": [
@@ -72,7 +89,7 @@
       "minimumHostVersion": "1.1.9",
       "name": "Agent Guard",
       "package": null,
-      "standaloneOfferID": null,
+      "standaloneOfferID": "plugin.agent-guard.lifetime",
       "summary": "Review local agent operations, approvals, and safety events.",
       "systemImage": "shield.checkered",
       "trialHours": 24,
@@ -139,7 +156,7 @@
       "version": "1.0.0"
     }
   ],
-  "publishedAt": "2026-08-13T00:00:00Z",
-  "revision": 1,
+  "publishedAt": "2026-08-14T01:30:00Z",
+  "revision": 2,
   "schemaVersion": 1
 }

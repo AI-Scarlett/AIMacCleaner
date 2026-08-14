@@ -79,18 +79,25 @@ def main() -> int:
     product_field = "liveProductID" if args.environment == "live" else "testProductID"
     base_url = "https://live.dodopayments.com" if args.environment == "live" else "https://test.dodopayments.com"
     changes = []
+    skipped = []
     for offer in document["offers"]:
         if not offer.get("active"):
             continue
         product_id = offer["dodo"].get(product_field)
         if not product_id:
-            raise SystemExit(f"{offer['id']} has no {product_field}")
+            skipped.append(offer["id"])
+            continue
         changes.append((offer, product_id, price_payload(offer)))
 
     if not args.apply:
         for offer, product_id, payload in changes:
             print(f"DRY_RUN offer={offer['id']} product={product_id} amountMinor={payload['price']['price'] if 'price' in payload and isinstance(payload['price'], dict) else payload['price']}")
-        print(f"DODO_SYNC_DRY_RUN_OK offers={len(changes)}")
+        for offer_id in skipped:
+            print(f"DODO_SYNC_SKIP offer={offer_id} missing={product_field}")
+        print(
+            f"DODO_SYNC_DRY_RUN_OK offers={len(changes)} "
+            f"skipped={len(skipped)} environment={args.environment}"
+        )
         return 0
 
     api_key = os.environ.get("DODO_PAYMENTS_API_KEY", "").strip()
@@ -110,7 +117,9 @@ def main() -> int:
         if actual != expected:
             raise SystemExit(f"Dodo readback mismatch for {offer['id']}: expected {expected}, got {actual}")
         print(f"DODO_READBACK_OK offer={offer['id']} product={product_id} amountMinor={actual}")
-    print(f"DODO_SYNC_OK offers={len(changes)} environment={args.environment}")
+    for offer_id in skipped:
+        print(f"DODO_SYNC_SKIP offer={offer_id} missing={product_field}")
+    print(f"DODO_SYNC_OK offers={len(changes)} skipped={len(skipped)} environment={args.environment}")
     return 0
 
 

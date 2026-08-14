@@ -45,6 +45,8 @@ copies the three catalog whitelist files.
    signatures, expired documents, unsafe package URLs, and revision rollback.
 7. If refresh fails, TraceFence continues with the last verified cache or the
    built-in fallback catalog.
+8. On app upgrades, an older verified cache cannot replace a newer bundled
+   catalog revision; the runtime starts from the newer of those two sources.
 
 ## Performance contract
 
@@ -103,3 +105,12 @@ Provision one Dodo product per standalone paid plugin, add it to the catalog,
 run test-mode activation/deactivation, then enable the offer. A private binding
 service is required before supporting a generic license key that can be redeemed
 for an arbitrary plugin.
+
+The first live standalone mapping is `plugin.agent-guard.lifetime` ->
+`tracefence.agent-guard` -> `pdt_0NlLDDcejZUSrZ0bRNosp`. Public checkout
+readback on 2026-08-14 showed a USD 0.90 one-time product with automatic License
+Key fulfillment and an activation limit of one. The product currently has no
+test-mode counterpart, so Debug/test builds deliberately hide checkout and
+redemption for this offer. Before public release, rename the live Dodo product
+from the provisional `TraceFence Standard - 1` label to an Agent Guard-specific
+name, then repeat checkout and activation readback.

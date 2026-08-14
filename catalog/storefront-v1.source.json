@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "revision": 1,
-  "publishedAt": "2026-08-13T00:00:00Z",
-  "expiresAt": "2027-08-13T00:00:00Z",
+  "revision": 2,
+  "publishedAt": "2026-08-14T01:30:00Z",
+  "expiresAt": "2027-08-14T01:30:00Z",
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
   "offers": [
     {
@@ -38,6 +38,23 @@
         "testProductID": "pdt_0Nj4pnQWqPMk14yHT9Q1i",
         "acceptedLegacyProductIDs": []
       }
+    },
+    {
+      "id": "plugin.agent-guard.lifetime",
+      "name": "TraceFence Standard - 1",
+      "kind": "one_time",
+      "currency": "USD",
+      "amountMinor": 90,
+      "billingInterval": null,
+      "billingIntervalCount": null,
+      "trialHours": null,
+      "grantsAllPlugins": false,
+      "active": true,
+      "dodo": {
+        "liveProductID": "pdt_0NlLDDcejZUSrZ0bRNosp",
+        "testProductID": null,
+        "acceptedLegacyProductIDs": []
+      }
     }
   ],
   "plugins": [
@@ -70,7 +87,7 @@
       "capabilities": ["agent.audit", "agent.approval"],
       "isFree": false,
       "includedInAllAccess": true,
-      "standaloneOfferID": null,
+      "standaloneOfferID": "plugin.agent-guard.lifetime",
       "trialHours": 24,
       "featured": true,
       "package": null

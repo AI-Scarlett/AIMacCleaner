@@ -489,10 +489,12 @@ enum TraceFenceMarketplaceCatalogRuntime {
         private var value: ActiveState
 
         init() {
-            if let cached = try? Store.loadVerified() {
+            let bundled = ActiveState(catalog: BuiltIn.catalog, isVerifiedRemote: false)
+            if let cached = try? Store.loadVerified(),
+               cached.catalog.revision >= bundled.catalog.revision {
                 value = .init(catalog: cached.catalog, isVerifiedRemote: true)
             } else {
-                value = .init(catalog: BuiltIn.catalog, isVerifiedRemote: false)
+                value = bundled
             }
         }
 
@@ -601,8 +603,8 @@ enum TraceFenceMarketplaceCatalogRuntime {
     private enum BuiltIn {
         static let catalog = TraceFenceMarketplaceCatalog(
             schemaVersion: 1,
-            revision: 0,
-            publishedAt: Date(timeIntervalSince1970: 0),
+            revision: 2,
+            publishedAt: Date(timeIntervalSince1970: 1_786_671_000),
             expiresAt: .distantFuture,
             businessID: TraceFenceDistributionPolicy.bundledDodoBusinessID ?? "",
             offers: [
@@ -637,6 +639,22 @@ enum TraceFenceMarketplaceCatalogRuntime {
                         liveProductID: "pdt_0Nj4rXdh9EI3A7uzyYWpk",
                         testProductID: "pdt_0Nj4pnQWqPMk14yHT9Q1i"
                     )
+                ),
+                TraceFenceMarketplaceOffer(
+                    id: "plugin.agent-guard.lifetime",
+                    name: "TraceFence Standard - 1",
+                    kind: .oneTime,
+                    currency: "USD",
+                    amountMinor: 90,
+                    billingInterval: nil,
+                    billingIntervalCount: nil,
+                    trialHours: nil,
+                    grantsAllPlugins: false,
+                    active: true,
+                    dodo: .init(
+                        liveProductID: "pdt_0NlLDDcejZUSrZ0bRNosp",
+                        testProductID: nil
+                    )
                 )
             ],
             plugins: [
@@ -660,6 +678,7 @@ enum TraceFenceMarketplaceCatalogRuntime {
                     capabilities: ["agent.audit", "agent.approval"],
                     isFree: false,
                     includedInAllAccess: true,
+                    standaloneOfferID: "plugin.agent-guard.lifetime",
                     featured: true
                 ),
                 builtInPlugin(
@@ -707,6 +726,7 @@ enum TraceFenceMarketplaceCatalogRuntime {
             capabilities: [String],
             isFree: Bool,
             includedInAllAccess: Bool,
+            standaloneOfferID: String? = nil,
             featured: Bool
         ) -> TraceFencePluginDescriptor {
             TraceFencePluginDescriptor(
@@ -721,7 +741,7 @@ enum TraceFenceMarketplaceCatalogRuntime {
                 capabilities: capabilities,
                 isFree: isFree,
                 includedInAllAccess: includedInAllAccess,
-                standaloneOfferID: nil,
+                standaloneOfferID: standaloneOfferID,
                 trialHours: isFree ? nil : 24,
                 featured: featured,
                 package: nil

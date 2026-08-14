@@ -21,6 +21,27 @@ class CatalogPolicyTests(unittest.TestCase):
     def test_source_catalog_is_valid(self) -> None:
         validate_catalog(self.document)
 
+    def test_agent_guard_live_product_is_bound_to_one_plugin(self) -> None:
+        offers = {offer["id"]: offer for offer in self.document["offers"]}
+        plugins = {plugin["id"]: plugin for plugin in self.document["plugins"]}
+        offer = offers["plugin.agent-guard.lifetime"]
+        self.assertEqual(offer["kind"], "one_time")
+        self.assertFalse(offer["grantsAllPlugins"])
+        self.assertEqual(offer["amountMinor"], 90)
+        self.assertEqual(offer["currency"], "USD")
+        self.assertEqual(offer["dodo"]["liveProductID"], "pdt_0NlLDDcejZUSrZ0bRNosp")
+        self.assertIsNone(offer["dodo"]["testProductID"])
+        self.assertEqual(
+            plugins["tracefence.agent-guard"]["standaloneOfferID"],
+            "plugin.agent-guard.lifetime",
+        )
+        owners = [
+            plugin["id"]
+            for plugin in self.document["plugins"]
+            if plugin["standaloneOfferID"] == "plugin.agent-guard.lifetime"
+        ]
+        self.assertEqual(owners, ["tracefence.agent-guard"])
+
     def test_duplicate_product_is_rejected(self) -> None:
         value = copy.deepcopy(self.document)
         value["offers"][1]["dodo"]["liveProductID"] = value["offers"][0]["dodo"]["liveProductID"]

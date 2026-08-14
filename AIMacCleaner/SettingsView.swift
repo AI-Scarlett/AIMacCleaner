@@ -1167,6 +1167,7 @@ struct SettingsView: View {
     private func marketplacePluginCard(_ plugin: TraceFencePluginDescriptor) -> some View {
         let access = pluginEntitlementService.accessState(pluginID: plugin.id)
         let offer = plugin.standaloneOfferID.flatMap { marketplaceCatalogService.catalog.offer(id: $0) }
+        let standaloneProductID = offer?.dodo.productID(for: TraceFenceDistributionPolicy.dodoEnvironment)
         let isBusy = pluginEntitlementService.busyPluginIDs.contains(plugin.id)
         let hostVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
         let isCompatible = marketplaceCatalogService.catalog.isCompatible(plugin, hostVersion: hostVersion)
@@ -1229,13 +1230,20 @@ struct SettingsView: View {
                         }
                         .buttonStyle(BrandButtonStyle(color: Theme.Colors.info, variant: .secondary, minHeight: 32))
                     }
-                    if let offer {
+                    if let offer, standaloneProductID != nil {
                         Button {
                             pluginEntitlementService.openCheckout(pluginID: plugin.id)
                         } label: {
                             Label(localizer.t("购买 \(offer.displayPrice)", en: "Buy \(offer.displayPrice)"), systemImage: "cart.fill")
                         }
                         .buttonStyle(BrandButtonStyle(color: Theme.Colors.success, variant: .secondary, minHeight: 32))
+                    } else if offer != nil {
+                        Label(
+                            localizer.t("当前环境尚未配置购买商品", en: "Checkout is not configured for this environment"),
+                            systemImage: "testtube.2"
+                        )
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.warning)
                     }
                     if plugin.includedInAllAccess {
                         Button {
@@ -1247,7 +1255,7 @@ struct SettingsView: View {
                     }
                 }
 
-                if plugin.standaloneOfferID != nil {
+                if standaloneProductID != nil {
                     HStack(spacing: Theme.Spacing.sm) {
                         TextField(
                             localizer.t("输入此插件的 License Key", en: "Enter this plugin's license key"),
