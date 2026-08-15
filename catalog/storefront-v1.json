@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-08-15T04:20:00Z",
+  "expiresAt": "2027-08-15T09:15:27Z",
   "offers": [
     {
       "active": true,
@@ -1093,10 +1093,10 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.codex-media-cleanup",
         "entryPoint": "CodexMediaCleanup.bundle",
-        "sha256": "2b501149ae5079edf5aed249ee06f02d3b2a4331d9bea3479ac0aea9b29135c4",
-        "sizeBytes": 696400,
+        "sha256": "f8022e4bd3668b4ea686d1ff385eed768aa5600f8cf885ba26e8e6040b5cd8ee",
+        "sizeBytes": 1060135,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-codex-media-cleanup-v1.0.1/codex-media-cleanup-1.0.1.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-codex-media-cleanup-v1.0.2/codex-media-cleanup-1.0.2.mactoolsplugin.zip"
       },
       "permissions": [],
       "placements": {
@@ -1113,7 +1113,7 @@
       "summary": "Clean duplicate media to reduce disk usage, and repair invalid image_url values in session history to prevent image URL format errors",
       "systemImage": "photo.stack.fill",
       "trialHours": null,
-      "version": "1.0.1"
+      "version": "1.0.2"
     },
     {
       "capabilities": [
@@ -4079,7 +4079,7 @@
       "version": "1.0.9"
     }
   ],
-  "publishedAt": "2026-08-15T04:20:00Z",
-  "revision": 9,
+  "publishedAt": "2026-08-15T09:15:27Z",
+  "revision": 10,
   "schemaVersion": 1
 }
