@@ -17,6 +17,7 @@ OUTPUT_APP="$OUTPUT_DIR/${APP_NAME}.app"
 OUTPUT_DMG="$OUTPUT_DIR/${APP_NAME}-${TAG}-arm64.dmg"
 OUTPUT_ZIP="$OUTPUT_DIR/${APP_NAME}-${TAG}-arm64.zip"
 SWIFT_COMPILATION_MODE="${TRACEFENCE_SWIFT_COMPILATION_MODE:-singlefile}"
+BUILD_JOBS="${TRACEFENCE_BUILD_JOBS:-2}"
 SIGN_IDENTITY="${TRACEFENCE_SIGN_IDENTITY:-Developer ID Application: xiaoming zhou (UQ87N2WZ76)}"
 ENTITLEMENTS="$PROJECT_DIR/AIMacCleaner/AIMacCleaner.entitlements"
 DEFAULT_NOTARY_KEY="$HOME/.appstoreconnect/private_keys/AuthKey_JHKYSFS5HM.p8"
@@ -103,6 +104,7 @@ xcodebuild \
   -configuration "$CONFIGURATION" \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$BUILD_ROOT" \
+  -jobs "$BUILD_JOBS" \
   build \
   CODE_SIGNING_ALLOWED=NO \
   ENABLE_DEBUG_DYLIB=NO \
