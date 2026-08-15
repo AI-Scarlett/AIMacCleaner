@@ -185,7 +185,7 @@ final class MiddleClickPlugin: MacToolsPlugin, AccessibilityPermissionRefreshing
             isGranted: isAccessibilityGranted,
             footnote: isAccessibilityGranted ? nil : localization.string(
                 "permission.accessibility.footnote",
-                defaultValue: "前往系统设置 → 隐私与安全性 → 辅助功能，授权 MacTools。"
+                defaultValue: "前往系统设置 → 隐私与安全性 → 辅助功能，授权 TraceFence。"
             )
         )
     }

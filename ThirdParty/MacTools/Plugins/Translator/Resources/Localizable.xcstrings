@@ -4906,67 +4906,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "افتح إعدادات النظام > الخصوصية والأمان > إمكانية الوصول واسمح لـ MacTools."
+            "value": "افتح إعدادات النظام > الخصوصية والأمان > إمكانية الوصول واسمح لـ TraceFence."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Öffnen Sie Systemeinstellungen > Datenschutz & Sicherheit > Bedienungshilfen und erlauben Sie MacTools."
+            "value": "Öffnen Sie Systemeinstellungen > Datenschutz & Sicherheit > Bedienungshilfen und erlauben Sie TraceFence."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open System Settings > Privacy & Security > Accessibility and allow MacTools."
+            "value": "Open System Settings > Privacy & Security > Accessibility and allow TraceFence."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Abre Ajustes del Sistema > Privacidad y seguridad > Accesibilidad y permite MacTools."
+            "value": "Abre Ajustes del Sistema > Privacidad y seguridad > Accesibilidad y permite TraceFence."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ouvrez Réglages Système > Confidentialité et sécurité > Accessibilité, puis autorisez MacTools."
+            "value": "Ouvrez Réglages Système > Confidentialité et sécurité > Accessibilité, puis autorisez TraceFence."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "システム設定 > プライバシーとセキュリティ > アクセシビリティで MacTools を許可します。"
+            "value": "システム設定 > プライバシーとセキュリティ > アクセシビリティで TraceFence を許可します。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용에서 MacTools를 허용하세요."
+            "value": "시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용에서 TraceFence를 허용하세요."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Abra Ajustes do Sistema > Privacidade e Segurança > Acessibilidade e permita MacTools."
+            "value": "Abra Ajustes do Sistema > Privacidade e Segurança > Acessibilidade e permita TraceFence."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Откройте Системные настройки > Конфиденциальность и безопасность > Универсальный доступ и разрешите MacTools."
+            "value": "Откройте Системные настройки > Конфиденциальность и безопасность > Универсальный доступ и разрешите TraceFence."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "前往系统设置 → 隐私与安全性 → 辅助功能，授权 MacTools。"
+            "value": "前往系统设置 → 隐私与安全性 → 辅助功能，授权 TraceFence。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "前往系統設定 → 隱私權與安全性 → 輔助使用，授權 MacTools。"
+            "value": "前往系統設定 → 隱私權與安全性 → 輔助使用，授權 TraceFence。"
           }
         }
       }
@@ -5048,7 +5048,7 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "قد تحتاج ترجمة التحديد في المتصفح إلى السماح لـ MacTools بالتحكم في المتصفح الحالي."
+            "value": "قد تحتاج ترجمة التحديد في المتصفح إلى السماح لـ TraceFence بالتحكم في المتصفح الحالي."
           }
         },
         "de": {
@@ -5060,13 +5060,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Browser selection translation may need permission for MacTools to control the current browser."
+            "value": "Browser selection translation may need permission for TraceFence to control the current browser."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "La traducción de selección en el navegador puede necesitar permiso para que MacTools controle el navegador actual."
+            "value": "La traducción de selección en el navegador puede necesitar permiso para que TraceFence controle el navegador actual."
           }
         },
         "fr": {
@@ -5078,37 +5078,37 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ブラウザの選択範囲を翻訳するには、MacTools に現在のブラウザの制御を許可する必要がある場合があります。"
+            "value": "ブラウザの選択範囲を翻訳するには、TraceFence に現在のブラウザの制御を許可する必要がある場合があります。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "브라우저 선택 항목 번역은 MacTools가 현재 브라우저를 제어할 권한이 필요할 수 있습니다."
+            "value": "브라우저 선택 항목 번역은 TraceFence가 현재 브라우저를 제어할 권한이 필요할 수 있습니다."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "A tradução de seleção no navegador pode exigir permissão para o MacTools controlar o navegador atual."
+            "value": "A tradução de seleção no navegador pode exigir permissão para o TraceFence controlar o navegador atual."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Для перевода выделенного текста в браузере MacTools может понадобиться разрешение на управление текущим браузером."
+            "value": "Для перевода выделенного текста в браузере TraceFence может понадобиться разрешение на управление текущим браузером."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "浏览器划词可能需要允许 MacTools 控制当前浏览器。"
+            "value": "浏览器划词可能需要允许 TraceFence 控制当前浏览器。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "瀏覽器劃詞可能需要允許 MacTools 控制目前的瀏覽器。"
+            "value": "瀏覽器劃詞可能需要允許 TraceFence 控制目前的瀏覽器。"
           }
         }
       }
@@ -5403,67 +5403,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "افتح إعدادات النظام > الخصوصية والأمان > تسجيل الشاشة واسمح لـ MacTools."
+            "value": "افتح إعدادات النظام > الخصوصية والأمان > تسجيل الشاشة واسمح لـ TraceFence."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Öffnen Sie Systemeinstellungen > Datenschutz & Sicherheit > Bildschirmaufnahme und erlauben Sie MacTools."
+            "value": "Öffnen Sie Systemeinstellungen > Datenschutz & Sicherheit > Bildschirmaufnahme und erlauben Sie TraceFence."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open System Settings > Privacy & Security > Screen Recording and allow MacTools."
+            "value": "Open System Settings > Privacy & Security > Screen Recording and allow TraceFence."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Abre Ajustes del Sistema > Privacidad y seguridad > Grabación de pantalla y permite MacTools."
+            "value": "Abre Ajustes del Sistema > Privacidad y seguridad > Grabación de pantalla y permite TraceFence."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ouvrez Réglages Système > Confidentialité et sécurité > Enregistrement de l’écran, puis autorisez MacTools."
+            "value": "Ouvrez Réglages Système > Confidentialité et sécurité > Enregistrement de l’écran, puis autorisez TraceFence."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "システム設定 > プライバシーとセキュリティ > 画面収録で MacTools を許可します。"
+            "value": "システム設定 > プライバシーとセキュリティ > 画面収録で TraceFence を許可します。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "시스템 설정 > 개인정보 보호 및 보안 > 화면 기록에서 MacTools를 허용하세요."
+            "value": "시스템 설정 > 개인정보 보호 및 보안 > 화면 기록에서 TraceFence를 허용하세요."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Abra Ajustes do Sistema > Privacidade e Segurança > Gravação de Tela e permita MacTools."
+            "value": "Abra Ajustes do Sistema > Privacidade e Segurança > Gravação de Tela e permita TraceFence."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Откройте Системные настройки > Конфиденциальность и безопасность > Запись экрана и разрешите MacTools."
+            "value": "Откройте Системные настройки > Конфиденциальность и безопасность > Запись экрана и разрешите TraceFence."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "前往系统设置 → 隐私与安全性 → 屏幕录制，授权 MacTools。"
+            "value": "前往系统设置 → 隐私与安全性 → 屏幕录制，授权 TraceFence。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "前往系統設定 → 隱私權與安全性 → 螢幕錄製，授權 MacTools。"
+            "value": "前往系統設定 → 隱私權與安全性 → 螢幕錄製，授權 TraceFence。"
           }
         }
       }

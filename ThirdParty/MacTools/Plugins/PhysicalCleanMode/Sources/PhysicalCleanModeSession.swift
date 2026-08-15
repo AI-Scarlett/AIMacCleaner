@@ -609,7 +609,7 @@ final class PhysicalCleanModeSession: NSObject, NSWindowDelegate {
         let result = IOPMAssertionCreateWithName(
             kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString,
             IOPMAssertionLevel(kIOPMAssertionLevelOn),
-            "MacTools Physical Clean Mode" as CFString,
+            "TraceFence Physical Clean Mode" as CFString,
             &assertionID
         )
 

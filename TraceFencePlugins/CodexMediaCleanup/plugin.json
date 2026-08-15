@@ -1,5 +1,5 @@
 {
-  "id": "tracefence.codex-media-cleanup",
+  "id": "codex-media-cleanup",
   "displayName": "Codex 媒体整理",
   "summary": "安全去重 Codex 会话中的重复图片，并修复 Responses API 不接受的本地 image_url",
   "localizedMetadata": {
@@ -14,10 +14,22 @@
     "zh-Hant": {
       "displayName": "Codex 媒體整理",
       "summary": "安全去重 Codex 工作階段中的重複圖片，並修復 Responses API 不接受的本機 image_url"
+    },
+    "ja": {
+      "displayName": "Codex メディア整理",
+      "summary": "Codex セッション内の重複画像を安全に整理し、Responses API が受け付けないローカル image_url を修復します"
+    },
+    "ko": {
+      "displayName": "Codex 미디어 정리",
+      "summary": "Codex 세션의 중복 이미지를 안전하게 정리하고 Responses API가 거부하는 로컬 image_url을 복구합니다"
+    },
+    "mt": {
+      "displayName": "Tindif tal-Midja Codex",
+      "summary": "Neħħi b’mod sigur immaġnijiet duplikati fis-sessjonijiet Codex u sewwi image_url lokali miċħuda mill-Responses API"
     }
   },
   "version": "1.0.0",
-  "minHostVersion": "1.1.6",
+  "minHostVersion": "1.2.4",
   "pluginKitVersion": 4,
   "bundleRelativePath": "CodexMediaCleanup.bundle",
   "factoryClass": "CodexMediaCleanupPlugin.CodexMediaCleanupPluginFactory",

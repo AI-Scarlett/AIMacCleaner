@@ -70,8 +70,13 @@ def main() -> int:
             "sizeBytes": actual_size,
         })
 
-    if len(release_plan) != 45:
-        raise SystemExit(f"expected 45 independent plugin releases, found {len(release_plan)}")
+    expected_packages = sum(
+        plugin.get("delivery") == "package" for plugin in catalog.get("plugins", [])
+    )
+    if not release_plan or len(release_plan) != expected_packages:
+        raise SystemExit(
+            f"expected {expected_packages} independent plugin releases, found {len(release_plan)}"
+        )
     plan_path = args.output / "release-plan.json"
     plan_path.write_text(
         json.dumps({"schemaVersion": 1, "releases": release_plan}, indent=2, sort_keys=True) + "\n",

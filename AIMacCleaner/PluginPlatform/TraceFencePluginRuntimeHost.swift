@@ -464,9 +464,14 @@ struct TraceFencePluginRuntimeView: View {
                 Text(plugin.metadata.title)
                     .font(Theme.Font.bodyMedium)
                     .lineLimit(1)
-                Text(menuBarModeLabel)
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.Colors.textTertiary)
+                HStack(spacing: Theme.Spacing.xs) {
+                    Text(menuBarModeLabel)
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    if let descriptor = catalogDescriptor {
+                        TraceFencePluginPricingBadge(plugin: descriptor, compact: true)
+                    }
+                }
             }
             Spacer()
             runtimeButtons
@@ -515,6 +520,9 @@ struct TraceFencePluginRuntimeView: View {
                     localizer.t("仅桌面", en: "Desktop Only"),
                     systemImage: "rectangle.slash"
                 )
+            }
+            if let descriptor = catalogDescriptor {
+                TraceFencePluginPricingBadge(plugin: descriptor, compact: true)
             }
         }
     }
@@ -946,12 +954,16 @@ struct TraceFencePluginWorkspaceView: View {
                         HStack(spacing: 4) {
                             Text("v\(packageManager.state(for: plugin).installedVersion ?? plugin.version)")
                                 .font(.system(size: 9, design: .monospaced))
-                            Text("·")
-                            Text(localizer.t("桌面", en: "Desktop"))
-                            if supportsMenuBar {
-                                Text("·")
-                                Text(localizer.t("菜单", en: "Menu"))
+                            TraceFencePluginPricingBadge(plugin: plugin, compact: true)
+                            if plugin.supportsOverview {
+                                Image(systemName: "rectangle.grid.2x2")
+                                    .help(localizer.t("可在概览显示", en: "Available on Overview"))
                             }
+                            if supportsMenuBar {
+                                Image(systemName: "menubar.rectangle")
+                                    .help(localizer.t("可在菜单栏显示", en: "Available in Menu Bar"))
+                            }
+                            Spacer(minLength: 0)
                         }
                         .font(.system(size: 9))
                         .foregroundStyle(Theme.Colors.textTertiary)
@@ -1035,7 +1047,9 @@ struct TraceFencePluginWorkspaceView: View {
     }
 
     private var installedPlugins: [TraceFencePluginDescriptor] {
-        catalogService.catalog.plugins.filter { packageManager.records[$0.id] != nil }
+        catalogService.catalog.plugins.filter {
+            $0.supportsPluginTab && packageManager.records[$0.id] != nil
+        }
             .sorted { lhs, rhs in
                 let lhsPinned = pinnedPluginIDs.contains(lhs.id)
                 let rhsPinned = pinnedPluginIDs.contains(rhs.id)
@@ -1069,7 +1083,8 @@ struct TraceFencePluginWorkspaceView: View {
 
     private func selectFirstPluginIfNeeded() {
         guard let selectedPluginID else { return }
-        if packageManager.records[selectedPluginID] == nil {
+        if packageManager.records[selectedPluginID] == nil
+            || catalogService.catalog.plugin(id: selectedPluginID)?.supportsPluginTab != true {
             self.selectedPluginID = nil
         }
     }
@@ -1272,34 +1287,51 @@ private struct TraceFencePluginSettingsView: View {
 
     @ViewBuilder
     private var permissionCards: some View {
-        ForEach(plugin.permissionRequirements) { requirement in
-            let state = plugin.permissionState(for: requirement.id)
-            HStack(alignment: .top, spacing: Theme.Spacing.md) {
-                Image(systemName: state.isGranted ? "checkmark.shield.fill" : "hand.raised.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(state.isGranted ? Theme.Colors.success : Theme.Colors.warning)
-                    .frame(width: 24)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(requirement.title)
-                        .font(Theme.Font.bodyMedium)
-                    Text(requirement.description)
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                    if let footnote = state.footnote, !footnote.isEmpty {
-                        Text(footnote)
+        if !plugin.permissionRequirements.isEmpty {
+            Label(
+                localizer.t(
+                    "系统权限由 TraceFence 主应用统一管理，所有插件共用已有授权，不会为插件重复申请。",
+                    en: "System permissions are managed by the TraceFence app and shared by all plugins; plugins do not request a separate grant.",
+                    zhHant: "系統權限由 TraceFence 主應用程式統一管理，所有外掛共用現有授權，不會為外掛重複申請。",
+                    ja: "システム権限は TraceFence アプリが一元管理し、すべてのプラグインで共有します。プラグインごとの再承認は不要です。",
+                    ko: "시스템 권한은 TraceFence 앱이 통합 관리하며 모든 플러그인이 기존 권한을 공유합니다. 플러그인별로 다시 승인하지 않습니다.",
+                    mt: "Il-permessi tas-sistema huma ġestiti mill-app TraceFence u kondiviżi mill-plugins kollha; m’hemmx awtorizzazzjoni separata għal kull plugin."
+                ),
+                systemImage: "checkmark.shield"
+            )
+            .font(Theme.Font.caption)
+            .foregroundStyle(Theme.Colors.textSecondary)
+            .padding(.horizontal, Theme.Spacing.sm)
+
+            ForEach(plugin.permissionRequirements) { requirement in
+                let state = plugin.permissionState(for: requirement.id)
+                HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                    Image(systemName: state.isGranted ? "checkmark.shield.fill" : "hand.raised.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(state.isGranted ? Theme.Colors.success : Theme.Colors.warning)
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(requirement.title)
+                            .font(Theme.Font.bodyMedium)
+                        Text(requirement.description)
                             .font(Theme.Font.caption)
-                            .foregroundStyle(Theme.Colors.textTertiary)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                        if let footnote = state.footnote, !footnote.isEmpty {
+                            Text(footnote)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        }
                     }
+                    Spacer()
+                    Button(state.isGranted
+                        ? localizer.t("TraceFence 已授权", en: "TraceFence Granted")
+                        : localizer.t("授权 TraceFence", en: "Grant TraceFence Access")) {
+                        runtimeHost.handlePermissionAction(pluginID: pluginID, permissionID: requirement.id)
+                    }
+                    .disabled(state.isGranted)
                 }
-                Spacer()
-                Button(state.isGranted
-                    ? localizer.t("已授权", en: "Granted")
-                    : localizer.t("前往授权", en: "Grant Access")) {
-                    runtimeHost.handlePermissionAction(pluginID: pluginID, permissionID: requirement.id)
-                }
-                .disabled(state.isGranted)
+                .cardStyle()
             }
-            .cardStyle()
         }
     }
 
@@ -1632,6 +1664,7 @@ enum TraceFencePluginRuntimeSelfTest {
                     pluginKitVersion: descriptor.pluginKitVersion,
                     capabilities: descriptor.capabilities,
                     presentation: descriptor.presentation,
+                    placements: descriptor.placements,
                     permissions: descriptor.permissions,
                     isFree: descriptor.isFree,
                     includedInAllAccess: descriptor.includedInAllAccess,

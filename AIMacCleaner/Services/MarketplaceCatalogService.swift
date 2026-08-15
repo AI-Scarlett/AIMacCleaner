@@ -48,6 +48,15 @@ struct TraceFencePluginPresentationDescriptor: Codable, Equatable, Sendable {
     let menuBar: TraceFencePluginMenuBarMode?
 }
 
+/// Placement eligibility is catalog policy, not a side effect of having a UI
+/// capability. A plugin may provide a panel without being appropriate for a
+/// compact overview or menu-bar surface.
+struct TraceFencePluginPlacementDescriptor: Codable, Equatable, Sendable {
+    let overview: Bool
+    let pluginTab: Bool
+    let menuBarPluginTab: Bool
+}
+
 struct TraceFenceMarketplaceDodoProducts: Codable, Equatable, Sendable {
     let liveProductID: String?
     let testProductID: String?
@@ -141,6 +150,7 @@ struct TraceFencePluginDescriptor: Identifiable, Codable, Equatable, Sendable {
     let pluginKitVersion: Int
     let capabilities: [String]
     let presentation: TraceFencePluginPresentationDescriptor?
+    let placements: TraceFencePluginPlacementDescriptor?
     let permissions: [String]
     let isFree: Bool
     let includedInAllAccess: Bool
@@ -176,8 +186,11 @@ struct TraceFencePluginDescriptor: Identifiable, Codable, Equatable, Sendable {
     }
 
     var useSurfaces: Set<TraceFencePluginUseSurface> {
-        var surfaces: Set<TraceFencePluginUseSurface> = [.workspace]
-        if menuBarMode != nil || capabilities.contains("presentation.menu-bar") {
+        var surfaces: Set<TraceFencePluginUseSurface> = []
+        if supportsPluginTab {
+            surfaces.insert(.workspace)
+        }
+        if supportsMenuBarPluginTab {
             surfaces.insert(.menuBarQuickPanel)
         }
         if capabilities.contains("presentation.window") {
@@ -191,6 +204,22 @@ struct TraceFencePluginDescriptor: Identifiable, Codable, Equatable, Sendable {
 
     var supportsMenuBarQuickPanel: Bool {
         useSurfaces.contains(.menuBarQuickPanel)
+    }
+
+    var supportsOverview: Bool {
+        resolvedPlacements.overview
+    }
+
+    var supportsPluginTab: Bool {
+        resolvedPlacements.pluginTab
+    }
+
+    var supportsMenuBarPluginTab: Bool {
+        resolvedPlacements.menuBarPluginTab && menuBarMode != nil
+    }
+
+    var resolvedPlacements: TraceFencePluginPlacementDescriptor {
+        placements ?? TraceFenceLegacyPluginPlacementPolicy.placements(for: self)
     }
 
     var workspaceLanding: TraceFencePluginWorkspaceLanding {
@@ -220,6 +249,62 @@ struct TraceFencePluginDescriptor: Identifiable, Codable, Equatable, Sendable {
             return .status
         }
         return nil
+    }
+}
+
+/// Revision 7 catalogs predate explicit placement fields. Keep one bounded
+/// migration map so current signed catalogs behave deterministically until the
+/// next externally signed revision is published.
+private enum TraceFenceLegacyPluginPlacementPolicy {
+    private static let overviewPluginIDs: Set<String> = [
+        "tracefence.tools.activity-bar",
+        "tracefence.tools.battery-charge-limit",
+        "tracefence.tools.device-battery",
+        "tracefence.tools.fan-control",
+        "tracefence.tools.ip-overview",
+        "tracefence.tools.system-status",
+    ]
+
+    private static let menuBarPluginIDs: Set<String> = [
+        "tracefence.tools.activity-bar",
+        "tracefence.tools.app-volume",
+        "tracefence.tools.appearance",
+        "tracefence.tools.auto-hide-dock",
+        "tracefence.tools.auto-hide-menu-bar",
+        "tracefence.tools.battery-charge-limit",
+        "tracefence.tools.calendar",
+        "tracefence.tools.clipboard-clear",
+        "tracefence.tools.device-battery",
+        "tracefence.tools.display-brightness",
+        "tracefence.tools.display-resolution",
+        "tracefence.tools.display-sleep",
+        "tracefence.tools.display-true-color",
+        "tracefence.tools.eject-disk",
+        "tracefence.tools.fan-control",
+        "tracefence.tools.hide-notch",
+        "tracefence.tools.ip-overview",
+        "tracefence.tools.keep-awake",
+        "tracefence.tools.lock-screen",
+        "tracefence.tools.microphone-mute",
+        "tracefence.tools.night-shift",
+        "tracefence.tools.physical-clean-mode",
+        "tracefence.tools.quit-apps",
+        "tracefence.tools.sidecar",
+        "tracefence.tools.stage-manager",
+        "tracefence.tools.system-mute",
+        "tracefence.tools.system-status",
+        "tracefence.tools.translator",
+    ]
+
+    static func placements(for plugin: TraceFencePluginDescriptor) -> TraceFencePluginPlacementDescriptor {
+        guard plugin.delivery == .package else {
+            return .init(overview: false, pluginTab: false, menuBarPluginTab: false)
+        }
+        return .init(
+            overview: overviewPluginIDs.contains(plugin.id),
+            pluginTab: true,
+            menuBarPluginTab: menuBarPluginIDs.contains(plugin.id)
+        )
     }
 }
 
@@ -522,6 +607,7 @@ enum TraceFenceMarketplaceCatalogRuntime {
                   Set(plugin.capabilities).count == plugin.capabilities.count,
                   plugin.capabilities.allSatisfy(isSafeCapability),
                   isValidPresentation(plugin),
+                  isValidPlacements(plugin),
                   plugin.permissions.count <= 32,
                   Set(plugin.permissions).count == plugin.permissions.count,
                   plugin.permissions.allSatisfy(isSafeCapability),
@@ -592,6 +678,17 @@ enum TraceFenceMarketplaceCatalogRuntime {
         case nil:
             return true
         }
+    }
+
+    private static func isValidPlacements(_ plugin: TraceFencePluginDescriptor) -> Bool {
+        guard let placements = plugin.placements else { return true }
+        if placements.overview && !placements.pluginTab {
+            return false
+        }
+        if placements.menuBarPluginTab && plugin.menuBarMode == nil {
+            return false
+        }
+        return true
     }
 
     private static func isSafeVersion(_ value: String) -> Bool {
@@ -909,6 +1006,7 @@ enum TraceFenceMarketplaceCatalogRuntime {
                 pluginKitVersion: 0,
                 capabilities: capabilities,
                 presentation: nil,
+                placements: .init(overview: false, pluginTab: false, menuBarPluginTab: false),
                 permissions: [],
                 isFree: isFree,
                 includedInAllAccess: includedInAllAccess,

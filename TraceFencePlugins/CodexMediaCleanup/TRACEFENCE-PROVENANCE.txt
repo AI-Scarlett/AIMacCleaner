@@ -1,0 +1,13 @@
+TraceFence first-party plugin distribution
+Plugin: codex-media-cleanup 1.0.0
+Source owner: TraceFence
+Source location: private TraceFence application repository
+Runtime distribution: AI-Scarlett/TraceFence immutable per-plugin release
+PluginKit ABI: 4
+Minimum TraceFence version: 1.2.4
+Minimum macOS version: 14.0
+
+This package is developed, built, signed, and distributed by TraceFence. It
+does not download code from or depend on the continued availability of the
+MacTools repository. Codex session data is processed locally and is not
+uploaded by this plugin.

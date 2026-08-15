@@ -1,4 +1,5 @@
 import Foundation
+import MacToolsPluginKit
 
 enum CodexMediaCleanupPhase: Equatable, Sendable {
     case idle
@@ -100,6 +101,35 @@ enum CodexMediaCleanupError: LocalizedError, Equatable {
         case let .outputVerificationFailed(path): "修复结果校验失败：\(path)"
         case let .atomicReplaceFailed(path): "无法原子替换会话文件：\(path)"
         case .cancelled: "操作已取消"
+        }
+    }
+
+    func message(using localization: PluginLocalization) -> String {
+        switch self {
+        case let .invalidCodexHome(path):
+            localization.format("error.invalidCodexHome", defaultValue: "Codex 数据目录不可用：%@", path)
+        case let .malformedJSON(path, line):
+            localization.format("error.malformedJSON", defaultValue: "会话 JSON 已损坏：%@ 第 %lld 行", path, Int64(line))
+        case .invalidDataImage:
+            localization.string("error.invalidDataImage", defaultValue: "发现无法解码的 data:image Base64 图片")
+        case let .unsupportedImageType(type):
+            localization.format("error.unsupportedImageType", defaultValue: "暂不支持的图片类型：%@", type)
+        case let .unsafeMediaReference(path):
+            localization.format("error.unsafeMediaReference", defaultValue: "媒体引用超出 Codex 内容寻址目录：%@", path)
+        case let .missingMediaObject(path):
+            localization.format("error.missingMediaObject", defaultValue: "原始媒体文件不存在：%@", path)
+        case let .corruptMediaObject(path):
+            localization.format("error.corruptMediaObject", defaultValue: "媒体文件 SHA-256 与文件名不一致：%@", path)
+        case let .fileIsOpen(path):
+            localization.format("error.fileIsOpen", defaultValue: "会话仍被进程占用：%@", path)
+        case let .backupVerificationFailed(path):
+            localization.format("error.backupVerificationFailed", defaultValue: "备份校验失败：%@", path)
+        case let .outputVerificationFailed(path):
+            localization.format("error.outputVerificationFailed", defaultValue: "修复结果校验失败：%@", path)
+        case let .atomicReplaceFailed(path):
+            localization.format("error.atomicReplaceFailed", defaultValue: "无法原子替换会话文件：%@", path)
+        case .cancelled:
+            localization.string("error.cancelled", defaultValue: "操作已取消")
         }
     }
 }

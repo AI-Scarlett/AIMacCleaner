@@ -315,7 +315,7 @@ struct IPOverviewService: IPOverviewProviding {
         var request = URLRequest(url: url)
         request.timeoutInterval = requestTimeout ?? timeout
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        request.setValue("MacTools IP Overview", forHTTPHeaderField: "User-Agent")
+        request.setValue("TraceFence IP Overview", forHTTPHeaderField: "User-Agent")
         return try await httpClient.data(for: request)
     }
 

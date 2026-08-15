@@ -530,7 +530,7 @@ private extension Array where Element == UInt8 {
 
 private func usage() {
     let program = (CommandLine.arguments.first as NSString?)?.lastPathComponent ?? "mactools-battery-smc-helper"
-    print("MacTools Battery SMC Helper")
+    print("TraceFence Battery SMC Helper")
     print("Usage:")
     print("  \(program) probe")
     print("  \(program) inhibit [<percent>]")

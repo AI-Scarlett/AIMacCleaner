@@ -4764,67 +4764,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "تم إنشاؤه بواسطة MacTools في %@"
+            "value": "تم إنشاؤه بواسطة TraceFence في %@"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Von MacTools erstellt am %@"
+            "value": "Von TraceFence erstellt am %@"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Created by MacTools at %@"
+            "value": "Created by TraceFence at %@"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Creado por MacTools el %@"
+            "value": "Creado por TraceFence el %@"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Créé par MacTools le %@"
+            "value": "Créé par TraceFence le %@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools が %@ に作成"
+            "value": "TraceFence が %@ に作成"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools에서 %@에 생성"
+            "value": "TraceFence에서 %@에 생성"
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Criado pelo MacTools em %@"
+            "value": "Criado pelo TraceFence em %@"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Создано MacTools: %@"
+            "value": "Создано TraceFence: %@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "由 MacTools 创建于 %@"
+            "value": "由 TraceFence 创建于 %@"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "由 MacTools 建立於 %@"
+            "value": "由 TraceFence 建立於 %@"
           }
         }
       }

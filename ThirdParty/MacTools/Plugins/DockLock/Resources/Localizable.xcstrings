@@ -52,9 +52,9 @@
     },
     "permission.accessibility.footnote" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Allow MacTools in System Settings > Privacy & Security > Accessibility." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Autorisez MacTools dans Réglages Système > Confidentialité et sécurité > Accessibilité." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在系统设置的“隐私与安全性 > 辅助功能”中允许 MacTools。" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Allow TraceFence in System Settings > Privacy & Security > Accessibility." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Autorisez TraceFence dans Réglages Système > Confidentialité et sécurité > Accessibilité." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在系统设置的“隐私与安全性 > 辅助功能”中允许 TraceFence。" } }
       }
     },
     "error.accessibilityRequired" : {

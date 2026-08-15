@@ -6255,67 +6255,67 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这些项目在磁盘上留下了以 .mactools-staged- 开头的暂存对象，可在下方记录里查看原路径后自行处理。"
+            "value": "这些项目在磁盘上留下了以 .tracefence-staged- 开头的暂存对象，可在下方记录里查看原路径后自行处理。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "These items left staged objects on disk whose names start with .mactools-staged-. Check the original path in the records below, then handle them yourself."
+            "value": "These items left staged objects on disk whose names start with .tracefence-staged-. Check the original path in the records below, then handle them yourself."
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "這些項目在磁碟上留下了以 .mactools-staged- 開頭的暫存對象，可在下方記錄裡查看原路徑後自行處理。"
+            "value": "這些項目在磁碟上留下了以 .tracefence-staged- 開頭的暫存對象，可在下方記錄裡查看原路徑後自行處理。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "これらの項目は .mactools-staged- で始まるステージングオブジェクトを残しています。下の記録で元のパスを確認し、ご自身で処理してください。"
+            "value": "これらの項目は .tracefence-staged- で始まるステージングオブジェクトを残しています。下の記録で元のパスを確認し、ご自身で処理してください。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 항목들은 이름이 .mactools-staged-로 시작하는 스테이징 객체를 남겼습니다. 아래 기록에서 원래 경로를 확인한 뒤 직접 처리하세요."
+            "value": "이 항목들은 이름이 .tracefence-staged-로 시작하는 스테이징 객체를 남겼습니다. 아래 기록에서 원래 경로를 확인한 뒤 직접 처리하세요."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Diese Elemente haben Staging-Objekte mit Namen beginnend mit .mactools-staged- hinterlassen. Originalpfad unten prüfen und selbst behandeln."
+            "value": "Diese Elemente haben Staging-Objekte mit Namen beginnend mit .tracefence-staged- hinterlassen. Originalpfad unten prüfen und selbst behandeln."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Estos elementos dejaron objetos temporales cuyo nombre empieza por .mactools-staged-. Consulta la ruta original abajo y gestionalos tú."
+            "value": "Estos elementos dejaron objetos temporales cuyo nombre empieza por .tracefence-staged-. Consulta la ruta original abajo y gestionalos tú."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ces éléments ont laissé des objets de staging dont le nom commence par .mactools-staged-. Vérifiez le chemin d’origine ci-dessous, puis traitez-les vous-même."
+            "value": "Ces éléments ont laissé des objets de staging dont le nom commence par .tracefence-staged-. Vérifiez le chemin d’origine ci-dessous, puis traitez-les vous-même."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Estes itens deixaram objetos de staging com nomes a começar por .mactools-staged-. Veja o caminho original abaixo e trate-os você mesmo."
+            "value": "Estes itens deixaram objetos de staging com nomes a começar por .tracefence-staged-. Veja o caminho original abaixo e trate-os você mesmo."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Эти элементы оставили на диске объекты со именами .mactools-staged-. Проверьте исходный путь в записях ниже и обработайте вручную."
+            "value": "Эти элементы оставили на диске объекты со именами .tracefence-staged-. Проверьте исходный путь в записях ниже и обработайте вручную."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "تركت هذه العناصر كائنات مؤقتة تبدأ أسماؤها بـ .mactools-staged-. راجع المسار الأصلي في السجلات أدناه ثم عالجها بنفسك."
+            "value": "تركت هذه العناصر كائنات مؤقتة تبدأ أسماؤها بـ .tracefence-staged-. راجع المسار الأصلي في السجلات أدناه ثم عالجها بنفسك."
           }
         }
       }
@@ -6894,67 +6894,67 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "授权后请退出并重新打开 MacTools。"
+            "value": "授权后请退出并重新打开 TraceFence。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "After granting access, quit and reopen MacTools."
+            "value": "After granting access, quit and reopen TraceFence."
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "授權後請退出並重新打開 MacTools。"
+            "value": "授權後請退出並重新打開 TraceFence。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "許可後、MacTools を終了して再度開いてください。"
+            "value": "許可後、TraceFence を終了して再度開いてください。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "권한을 허용한 뒤 MacTools를 종료했다가 다시 여세요."
+            "value": "권한을 허용한 뒤 TraceFence를 종료했다가 다시 여세요."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nach der Freigabe MacTools beenden und erneut öffnen."
+            "value": "Nach der Freigabe TraceFence beenden und erneut öffnen."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tras conceder el acceso, cierra y vuelve a abrir MacTools."
+            "value": "Tras conceder el acceso, cierra y vuelve a abrir TraceFence."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Après autorisation, quittez puis rouvrez MacTools."
+            "value": "Après autorisation, quittez puis rouvrez TraceFence."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Depois de conceder o acesso, saia e reabra o MacTools."
+            "value": "Depois de conceder o acesso, saia e reabra o TraceFence."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "После выдачи доступа выйдите из MacTools и откройте снова."
+            "value": "После выдачи доступа выйдите из TraceFence и откройте снова."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "بعد منح الوصول، أغلِق MacTools ثم أعد فتحه."
+            "value": "بعد منح الوصول، أغلِق TraceFence ثم أعد فتحه."
           }
         }
       }

@@ -1,4 +1,5 @@
 import Foundation
+import MacToolsPluginKit
 
 @MainActor
 final class CodexMediaCleanupController: ObservableObject {
@@ -7,6 +8,7 @@ final class CodexMediaCleanupController: ObservableObject {
 
     private let codexHome: URL
     private let supportDirectory: URL
+    private let localization: PluginLocalization
     private let scanEngine: CodexMediaScanEngine
     private let repairEngine: CodexMediaRepairEngine
     private var task: Task<Void, Never>?
@@ -15,11 +17,13 @@ final class CodexMediaCleanupController: ObservableObject {
         codexHome: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex", isDirectory: true),
         supportDirectory: URL,
+        localization: PluginLocalization,
         scanEngine: CodexMediaScanEngine = CodexMediaScanEngine(),
         repairEngine: CodexMediaRepairEngine = CodexMediaRepairEngine()
     ) {
         self.codexHome = codexHome
         self.supportDirectory = supportDirectory
+        self.localization = localization
         self.scanEngine = scanEngine
         self.repairEngine = repairEngine
         self.snapshot = CodexMediaCleanupSnapshot()
@@ -69,7 +73,7 @@ final class CodexMediaCleanupController: ObservableObject {
             } catch {
                 guard let self else { return }
                 self.snapshot.phase = .idle
-                self.snapshot.errorMessage = error.localizedDescription
+                self.snapshot.errorMessage = self.localizedDescription(for: error)
                 self.publish()
             }
         }
@@ -107,7 +111,7 @@ final class CodexMediaCleanupController: ObservableObject {
             } catch {
                 guard let self else { return }
                 self.snapshot.phase = .scanned
-                self.snapshot.errorMessage = error.localizedDescription
+                self.snapshot.errorMessage = self.localizedDescription(for: error)
                 self.publish()
             }
         }
@@ -118,7 +122,7 @@ final class CodexMediaCleanupController: ObservableObject {
         task = nil
         snapshot.phase = snapshot.scanReport == nil ? .idle : .scanned
         snapshot.currentFile = ""
-        snapshot.errorMessage = CodexMediaCleanupError.cancelled.localizedDescription
+        snapshot.errorMessage = CodexMediaCleanupError.cancelled.message(using: localization)
         publish()
     }
 
@@ -139,6 +143,13 @@ final class CodexMediaCleanupController: ObservableObject {
     private func publish() {
         onStateChange?()
         objectWillChange.send()
+    }
+
+    private func localizedDescription(for error: Error) -> String {
+        if let cleanupError = error as? CodexMediaCleanupError {
+            return cleanupError.message(using: localization)
+        }
+        return error.localizedDescription
     }
 
     private func applyProgress(_ progress: CodexMediaProgress, phase: CodexMediaCleanupPhase) {

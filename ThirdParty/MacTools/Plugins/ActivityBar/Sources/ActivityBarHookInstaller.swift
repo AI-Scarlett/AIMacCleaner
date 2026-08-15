@@ -468,7 +468,7 @@ private extension ActivityBarHookInstaller {
     var claudeHookScript: String {
         """
         #!/bin/bash
-        # MacTools Activity Bar hook for Claude Code.
+        # TraceFence Activity Bar hook for Claude Code.
 
         SOCKET_PATH="\(socketPath)"
         [ -S "$SOCKET_PATH" ] || exit 0
@@ -531,7 +531,7 @@ private extension ActivityBarHookInstaller {
     var cursorHookScript: String {
         """
         #!/bin/bash
-        # MacTools Activity Bar hook for Cursor.
+        # TraceFence Activity Bar hook for Cursor.
 
         SOCKET_PATH="\(socketPath)"
         [ -S "$SOCKET_PATH" ] || { cat > /dev/null 2>&1; exit 0; }
@@ -598,7 +598,7 @@ private extension ActivityBarHookInstaller {
     var codexHookScript: String {
         """
         #!/bin/bash
-        # MacTools Activity Bar hook for Codex.
+        # TraceFence Activity Bar hook for Codex.
 
         SOCKET_PATH="\(socketPath)"
         [ -S "$SOCKET_PATH" ] || exit 0

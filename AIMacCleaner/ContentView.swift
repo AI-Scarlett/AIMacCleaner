@@ -871,7 +871,10 @@ struct ContentView: View {
     private var detailContent: some View {
         switch selectedTab {
         case .overview:
-            AppOverviewTab(overviewStore: overviewStore)
+            AppOverviewTab(
+                overviewStore: overviewStore,
+                openPlugin: { pluginPresentationCenter.open(pluginID: $0) }
+            )
                 .environmentObject(localizer)
         case .cleaner:
             MacCleanerTab()
@@ -6083,6 +6086,7 @@ struct AppOverviewTab: View {
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var usageInsightsService: AgentUsageInsightsService
     @ObservedObject var overviewStore: AgentMonitorOverviewStore
+    let openPlugin: (String) -> Void
     @StateObject private var sessionScanner = AgentSessionScanner.shared
     @State private var didStartScan = false
 
@@ -6222,7 +6226,8 @@ struct AppOverviewTab: View {
             AgentCommandDashboardView(
                 store: overviewStore,
                 monitor: monitor,
-                onRefresh: refresh
+                onRefresh: refresh,
+                openPlugin: openPlugin
             )
         }
         .frame(minWidth: 720, minHeight: 520)
@@ -7242,7 +7247,10 @@ private struct AgentCommandDashboardView: View {
     @EnvironmentObject var localizer: Localizer
     @EnvironmentObject var service: ScannerService
     @EnvironmentObject var usageInsightsService: AgentUsageInsightsService
+    @ObservedObject private var pluginCatalogService = TraceFenceMarketplaceCatalogService.shared
+    @ObservedObject private var pluginPackageManager = TraceFencePluginPackageManager.shared
     let onRefresh: () -> Void
+    let openPlugin: (String) -> Void
 
     @State private var selectedSessionID: String?
     @State private var filterText = ""
@@ -7557,6 +7565,10 @@ private struct AgentCommandDashboardView: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     commandCenterHero(data)
 
+                    if !overviewPlugins.isEmpty {
+                        overviewPluginShelf
+                    }
+
                     currentSessionUsageCard(data)
                     networkAuditCard(data)
                     sessionListCard(data)
@@ -7571,6 +7583,7 @@ private struct AgentCommandDashboardView: View {
             .background(Theme.Colors.sidebarBg.opacity(0.24))
         }
         .onAppear {
+            pluginPackageManager.refresh(catalog: pluginCatalogService.catalog)
             usageInsightsService.startScheduling()
             onRefresh()
             normalizeSelection()
@@ -7619,6 +7632,95 @@ private struct AgentCommandDashboardView: View {
                     .environmentObject(localizer)
             }
         }
+    }
+
+    private var overviewPlugins: [TraceFencePluginDescriptor] {
+        pluginCatalogService.catalog.plugins
+            .filter { plugin in
+                plugin.supportsOverview
+                    && plugin.supportsPluginTab
+                    && pluginPackageManager.records[plugin.id]?.enabled == true
+            }
+            .sorted {
+                $0.localizedName().localizedCaseInsensitiveCompare($1.localizedName()) == .orderedAscending
+            }
+    }
+
+    private var overviewPluginShelf: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localizer.t(
+                        "概览插件",
+                        en: "Overview Plugins",
+                        zhHant: "概覽外掛",
+                        ja: "概要プラグイン",
+                        ko: "개요 플러그인",
+                        mt: "Overview Plugins"
+                    ))
+                    .font(Theme.Font.headline)
+                    Text(localizer.t(
+                        "这里只显示目录明确允许出现在概览中的已启用插件。",
+                        en: "Only enabled plugins explicitly allowed on Overview are shown here.",
+                        zhHant: "這裡只顯示目錄明確允許出現在概覽中的已啟用外掛。",
+                        ja: "カタログで概要表示が明示的に許可された有効なプラグインのみ表示します。",
+                        ko: "카탈로그에서 개요 표시가 명시적으로 허용된 활성 플러그인만 표시합니다.",
+                        mt: "Only explicitly allowed enabled plugins are shown here."
+                    ))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                }
+                Spacer()
+                Text(localizer.t("\(overviewPlugins.count) 个", en: "\(overviewPlugins.count) plugins"))
+                    .font(Theme.Font.captionMedium)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+            }
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 210), spacing: Theme.Spacing.sm)],
+                spacing: Theme.Spacing.sm
+            ) {
+                ForEach(overviewPlugins) { plugin in
+                    Button {
+                        openPlugin(plugin.id)
+                    } label: {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Image(systemName: plugin.systemImage)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Theme.Colors.accent)
+                                .frame(width: 36, height: 36)
+                                .background(
+                                    Theme.Colors.accent.opacity(0.10),
+                                    in: RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                )
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(plugin.localizedName())
+                                    .font(Theme.Font.captionMedium)
+                                    .foregroundStyle(Theme.Colors.textPrimary)
+                                    .lineLimit(1)
+                                Text(localizer.t("在插件 Tab 打开", en: "Open in Plugins"))
+                                    .font(.system(size: 9, weight: .medium))
+                                    .foregroundStyle(Theme.Colors.textTertiary)
+                            }
+                            Spacer(minLength: 0)
+                            TraceFencePluginPricingBadge(plugin: plugin, compact: true)
+                        }
+                        .padding(Theme.Spacing.sm)
+                        .contentShape(Rectangle())
+                        .background(
+                            Theme.Colors.elevatedCardBg.opacity(0.74),
+                            in: RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                                .stroke(Theme.Colors.separator, lineWidth: 1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .cardStyle()
     }
 
     private func commandCenterHero(_ data: AgentCommandDashboardData) -> some View {

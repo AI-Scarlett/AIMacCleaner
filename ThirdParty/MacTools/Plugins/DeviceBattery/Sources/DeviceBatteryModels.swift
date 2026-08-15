@@ -350,7 +350,7 @@ struct DeviceBatterySnapshot: Equatable, Sendable {
         case .permissionDenied:
             return localization.string(
                 "snapshot.error.permissionDenied",
-                defaultValue: "无法访问雷柏 HID 接口，请在系统设置中允许 MacTools 使用输入监控。"
+                defaultValue: "无法访问雷柏 HID 接口，请在系统设置中允许 TraceFence 使用输入监控。"
             )
         case let .failed(message):
             return message

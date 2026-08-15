@@ -850,7 +850,7 @@ extension TrackpadGesture {
         if tipTapConfiguration != nil || actionKind == .middleClick {
             guidance.append(localization.string(
                 "gesture.conflict.secondaryClick",
-                defaultValue: "macOS 不提供原生点击来源。MacTools 仅在一个手势候选活动时关联点击；同时点击外接鼠标时可能发生冲突。"
+                defaultValue: "macOS 不提供原生点击来源。TraceFence 仅在一个手势候选活动时关联点击；同时点击外接鼠标时可能发生冲突。"
             ))
         }
 

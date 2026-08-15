@@ -441,7 +441,7 @@ private extension Array where Element == UInt8 {
 
 private func usage() {
     let program = (CommandLine.arguments.first as NSString?)?.lastPathComponent ?? "mactools-fan-smc-helper"
-    print("MacTools Fan SMC Helper")
+    print("TraceFence Fan SMC Helper")
     print("Usage:")
     print("  \(program) info")
     print("  \(program) identity")

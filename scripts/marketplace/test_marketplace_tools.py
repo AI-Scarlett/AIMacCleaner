@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "marketplace"))
 
 from catalog_policy import CatalogPolicyError, load_json, validate_catalog  # noqa: E402
-from import_mactools_packages import presentation  # noqa: E402
+from import_mactools_packages import placements, presentation  # noqa: E402
 
 
 class CatalogPolicyTests(unittest.TestCase):
@@ -149,8 +149,42 @@ class CatalogPolicyTests(unittest.TestCase):
         with self.assertRaises(CatalogPolicyError):
             validate_catalog(value)
 
+    def test_catalog_has_explicit_surface_contracts(self) -> None:
+        plugins = self.document["plugins"]
+        self.assertTrue(all("placements" in plugin for plugin in plugins))
+        self.assertEqual(sum(plugin["placements"]["overview"] for plugin in plugins), 6)
+        self.assertEqual(sum(plugin["placements"]["pluginTab"] for plugin in plugins), 46)
+        self.assertEqual(sum(plugin["placements"]["menuBarPluginTab"] for plugin in plugins), 28)
+
+    def test_overview_placement_requires_plugin_tab(self) -> None:
+        value = copy.deepcopy(self.document)
+        plugin = value["plugins"][0]
+        plugin["placements"] = {
+            "overview": True,
+            "pluginTab": False,
+            "menuBarPluginTab": False,
+        }
+        with self.assertRaises(CatalogPolicyError):
+            validate_catalog(value)
+
+    def test_menu_bar_placement_requires_menu_presentation(self) -> None:
+        value = copy.deepcopy(self.document)
+        plugin = value["plugins"][0]
+        plugin["placements"] = {
+            "overview": False,
+            "pluginTab": True,
+            "menuBarPluginTab": True,
+        }
+        plugin["presentation"] = {
+            "workspaceDefault": "workspace",
+            "menuBar": None,
+        }
+        with self.assertRaises(CatalogPolicyError):
+            validate_catalog(value)
+
     def test_imported_component_plugin_defaults_to_desktop_data_and_menu_status(self) -> None:
         value = presentation({
+            "id": "system-status",
             "capabilities": {
                 "primaryPanel": False,
                 "componentPanel": True,
@@ -160,6 +194,20 @@ class CatalogPolicyTests(unittest.TestCase):
         self.assertEqual(value, {
             "workspaceDefault": "data_panel",
             "menuBar": "status",
+        })
+
+    def test_imported_non_quick_component_plugin_stays_off_menu_bar(self) -> None:
+        value = presentation({
+            "id": "fix-damaged-app",
+            "capabilities": {
+                "primaryPanel": False,
+                "componentPanel": True,
+                "settings": "form",
+            },
+        })
+        self.assertEqual(value, {
+            "workspaceDefault": "data_panel",
+            "menuBar": None,
         })
 
     def test_imported_settings_only_plugin_is_desktop_only(self) -> None:
@@ -173,6 +221,18 @@ class CatalogPolicyTests(unittest.TestCase):
         self.assertEqual(value, {
             "workspaceDefault": "workspace",
             "menuBar": None,
+        })
+
+    def test_imported_plugin_placements_are_explicit(self) -> None:
+        self.assertEqual(placements({"id": "activity-bar"}), {
+            "overview": True,
+            "pluginTab": True,
+            "menuBarPluginTab": True,
+        })
+        self.assertEqual(placements({"id": "right-click"}), {
+            "overview": False,
+            "pluginTab": True,
+            "menuBarPluginTab": False,
         })
 
 

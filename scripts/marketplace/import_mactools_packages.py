@@ -26,6 +26,44 @@ CATEGORY_METADATA = {
     "storage": ("Storage", "internaldrive.fill"),
     "system": ("System", "gearshape.2.fill"),
 }
+OVERVIEW_PLUGIN_IDS = {
+    "activity-bar",
+    "battery-charge-limit",
+    "device-battery",
+    "fan-control",
+    "ip-overview",
+    "system-status",
+}
+MENU_BAR_PLUGIN_IDS = {
+    "activity-bar",
+    "app-volume",
+    "appearance",
+    "auto-hide-dock",
+    "auto-hide-menu-bar",
+    "battery-charge-limit",
+    "calendar",
+    "clipboard-clear",
+    "device-battery",
+    "display-brightness",
+    "display-resolution",
+    "display-sleep",
+    "display-true-color",
+    "eject-disk",
+    "fan-control",
+    "hide-notch",
+    "ip-overview",
+    "keep-awake",
+    "lock-screen",
+    "microphone-mute",
+    "night-shift",
+    "physical-clean-mode",
+    "quit-apps",
+    "sidecar",
+    "stage-manager",
+    "system-mute",
+    "system-status",
+    "translator",
+}
 
 
 def sha256(path: Path) -> str:
@@ -125,9 +163,11 @@ def presentation(manifest: dict[str, Any]) -> dict[str, Any]:
     else:
         workspace_default = "settings"
 
-    if primary_panel:
+    plugin_id = str(manifest.get("id") or "")
+    menu_bar_enabled = plugin_id in MENU_BAR_PLUGIN_IDS
+    if menu_bar_enabled and primary_panel:
         menu_bar = "quick_control"
-    elif component_panel:
+    elif menu_bar_enabled and component_panel:
         menu_bar = "status"
     else:
         menu_bar = None
@@ -135,6 +175,15 @@ def presentation(manifest: dict[str, Any]) -> dict[str, Any]:
     return {
         "workspaceDefault": workspace_default,
         "menuBar": menu_bar,
+    }
+
+
+def placements(manifest: dict[str, Any]) -> dict[str, bool]:
+    plugin_id = str(manifest.get("id") or "")
+    return {
+        "overview": plugin_id in OVERVIEW_PLUGIN_IDS,
+        "pluginTab": True,
+        "menuBarPluginTab": plugin_id in MENU_BAR_PLUGIN_IDS,
     }
 
 
@@ -203,6 +252,7 @@ def main() -> int:
             "pluginKitVersion": manifest["pluginKitVersion"],
             "capabilities": capabilities(manifest),
             "presentation": presentation(manifest),
+            "placements": placements(manifest),
             "permissions": permissions(manifest),
             "isFree": False,
             "includedInAllAccess": True,
@@ -230,6 +280,11 @@ def main() -> int:
         plugin.setdefault("minimumSystemVersion", "13.0")
         plugin.setdefault("pluginKitVersion", 0)
         plugin.setdefault("permissions", [])
+        plugin.setdefault("placements", {
+            "overview": False,
+            "pluginTab": False,
+            "menuBarPluginTab": False,
+        })
     storefront["plugins"] = bundled_plugins + imported
     storefront["revision"] = args.revision or int(storefront["revision"]) + 1
     now = datetime.now(timezone.utc).replace(microsecond=0)

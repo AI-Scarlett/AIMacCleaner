@@ -19,13 +19,16 @@
 构建产物遵循 TraceFence 当前采用的 `.mactoolsplugin` 目录协议：
 
 ```text
-tracefence.codex-media-cleanup.mactoolsplugin/
+codex-media-cleanup.mactoolsplugin/
   plugin.json
   CodexMediaCleanup.bundle/
 ```
 
 清单声明 `pluginKitVersion: 4`、工厂类、功能面板和 workspace 设置页。发布包须使用
 TraceFence 团队的 Developer ID 签名，并由 TraceFence 商城目录记录不可变 GitHub URL、大小和 SHA-256。
+
+这是 TraceFence 自研插件，不从 MacTools 仓库下载代码或运行时资源。它只在桌面端“我的插件”工作台
+显示，不占用概览和任务栏插件页；商城分类为收费插件，TraceFence 全插件订阅包含使用权。
 
 ## 本地构建
 
@@ -45,5 +48,5 @@ cd ..
 ThirdParty/MacTools/scripts/plugins/build-local-plugins.sh \
   --source-dir TraceFencePlugins \
   --output-dir TraceFencePlugins/build/CodexMediaCleanupPlugin \
-  --plugin tracefence.codex-media-cleanup
+  --plugin codex-media-cleanup
 ```

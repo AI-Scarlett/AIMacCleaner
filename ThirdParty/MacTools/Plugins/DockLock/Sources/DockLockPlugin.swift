@@ -339,7 +339,7 @@ final class DockLockPlugin: MacToolsPlugin, PluginPrimaryPanel, AccessibilityPer
                 ? nil
                 : localization.string(
                     "permission.accessibility.footnote",
-                    defaultValue: "在系统设置的“隐私与安全性 > 辅助功能”中允许 MacTools。"
+                    defaultValue: "在系统设置的“隐私与安全性 > 辅助功能”中允许 TraceFence。"
                 )
         )
     }

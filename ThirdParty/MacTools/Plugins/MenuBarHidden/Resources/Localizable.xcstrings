@@ -78,67 +78,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools لا يمكن إخفاء الرمز"
+            "value": "TraceFence لا يمكن إخفاء الرمز"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools-Symbol kann nicht ausgeblendet werden"
+            "value": "TraceFence-Symbol kann nicht ausgeblendet werden"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools Icon Cannot Be Hidden"
+            "value": "TraceFence Icon Cannot Be Hidden"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools El icono no se puede ocultar"
+            "value": "TraceFence El icono no se puede ocultar"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "L'icône MacTools ne peut pas être masquée"
+            "value": "L'icône TraceFence ne peut pas être masquée"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools アイコンは非表示にできません"
+            "value": "TraceFence アイコンは非表示にできません"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools 아이콘은 숨길 수 없습니다"
+            "value": "TraceFence 아이콘은 숨길 수 없습니다"
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ícone MacTools não pode ser ocultado"
+            "value": "Ícone TraceFence não pode ser ocultado"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools Значок нельзя скрыть"
+            "value": "TraceFence Значок нельзя скрыть"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools 图标不能隐藏"
+            "value": "TraceFence 图标不能隐藏"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools 圖標不能隱藏"
+            "value": "TraceFence 圖標不能隱藏"
           }
         }
       }

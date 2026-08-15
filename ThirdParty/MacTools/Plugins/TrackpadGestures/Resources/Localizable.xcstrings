@@ -636,67 +636,67 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow MacTools in System Settings → Privacy & Security → Accessibility."
+            "value": "Allow TraceFence in System Settings → Privacy & Security → Accessibility."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统设置 → 隐私与安全性 → 辅助功能，允许 MacTools。"
+            "value": "系统设置 → 隐私与安全性 → 辅助功能，允许 TraceFence。"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "اسمح لـ MacTools في إعدادات النظام ← الخصوصية والأمان ← إمكانية الوصول."
+            "value": "اسمح لـ TraceFence في إعدادات النظام ← الخصوصية والأمان ← إمكانية الوصول."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Erlauben Sie MacTools in den Systemeinstellungen → Datenschutz und Sicherheit → Barrierefreiheit."
+            "value": "Erlauben Sie TraceFence in den Systemeinstellungen → Datenschutz und Sicherheit → Barrierefreiheit."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Permita MacTools en Configuración del sistema → Privacidad y seguridad → Accesibilidad."
+            "value": "Permita TraceFence en Configuración del sistema → Privacidad y seguridad → Accesibilidad."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Autorisez MacTools dans Paramètres système → Confidentialité et sécurité → Accessibilité."
+            "value": "Autorisez TraceFence dans Paramètres système → Confidentialité et sécurité → Accessibilité."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "「システム設定」→「プライバシーとセキュリティ」→「アクセシビリティ」で MacTools を許可します。"
+            "value": "「システム設定」→「プライバシーとセキュリティ」→「アクセシビリティ」で TraceFence を許可します。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "시스템 설정 → 개인정보 보호 및 보안 → 접근성에서 MacTools를 허용하세요."
+            "value": "시스템 설정 → 개인정보 보호 및 보안 → 접근성에서 TraceFence를 허용하세요."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Permitir MacTools em Configurações do sistema → Privacidade e segurança → Acessibilidade."
+            "value": "Permitir TraceFence em Configurações do sistema → Privacidade e segurança → Acessibilidade."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Разрешите MacTools в настройках системы → Конфиденциальность и безопасность → Доступность."
+            "value": "Разрешите TraceFence в настройках системы → Конфиденциальность и безопасность → Доступность."
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在系統設定 → 隱私和安全性 → 輔助功能中允許 MacTools。"
+            "value": "在系統設定 → 隱私和安全性 → 輔助功能中允許 TraceFence。"
           }
         }
       }
@@ -846,67 +846,67 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow MacTools in System Settings → Privacy & Security → Input Monitoring. If the status does not update, reopen MacTools."
+            "value": "Allow TraceFence in System Settings → Privacy & Security → Input Monitoring. If the status does not update, reopen TraceFence."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统设置 → 隐私与安全性 → 输入监控，允许 MacTools；若状态未更新，请重新打开 MacTools。"
+            "value": "系统设置 → 隐私与安全性 → 输入监控，允许 TraceFence；若状态未更新，请重新打开 TraceFence。"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "اسمح لـ MacTools في إعدادات النظام ← الخصوصية والأمان ← مراقبة الإدخال. إذا لم يتم تحديث الحالة، فأعد فتح MacTools."
+            "value": "اسمح لـ TraceFence في إعدادات النظام ← الخصوصية والأمان ← مراقبة الإدخال. إذا لم يتم تحديث الحالة، فأعد فتح TraceFence."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Erlauben Sie MacTools in den Systemeinstellungen → Datenschutz und Sicherheit → Eingabeüberwachung. Wenn der Status nicht aktualisiert wird, öffnen Sie MacTools erneut."
+            "value": "Erlauben Sie TraceFence in den Systemeinstellungen → Datenschutz und Sicherheit → Eingabeüberwachung. Wenn der Status nicht aktualisiert wird, öffnen Sie TraceFence erneut."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Permita MacTools en Configuración del sistema → Privacidad y seguridad → Monitoreo de entrada. Si el estado no se actualiza, vuelva a abrir MacTools."
+            "value": "Permita TraceFence en Configuración del sistema → Privacidad y seguridad → Monitoreo de entrada. Si el estado no se actualiza, vuelva a abrir TraceFence."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Autorisez MacTools dans Paramètres système → Confidentialité et sécurité → Surveillance des entrées. Si le statut n'est pas mis à jour, rouvrez MacTools."
+            "value": "Autorisez TraceFence dans Paramètres système → Confidentialité et sécurité → Surveillance des entrées. Si le statut n'est pas mis à jour, rouvrez TraceFence."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "システム設定 → プライバシーとセキュリティ → 入力監視で MacTools を許可します。ステータスが更新されない場合は、MacTools を再度開きます。"
+            "value": "システム設定 → プライバシーとセキュリティ → 入力監視で TraceFence を許可します。ステータスが更新されない場合は、TraceFence を再度開きます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "시스템 설정 → 개인정보 보호 및 보안 → 입력 모니터링에서 MacTools를 허용하세요. 상태가 업데이트되지 않으면 MacTools를 다시 엽니다."
+            "value": "시스템 설정 → 개인정보 보호 및 보안 → 입력 모니터링에서 TraceFence를 허용하세요. 상태가 업데이트되지 않으면 TraceFence를 다시 엽니다."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Permitir MacTools em Configurações do sistema → Privacidade e segurança → Monitoramento de entrada. Se o status não for atualizado, reabra o MacTools."
+            "value": "Permitir TraceFence em Configurações do sistema → Privacidade e segurança → Monitoramento de entrada. Se o status não for atualizado, reabra o TraceFence."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Разрешите MacTools в настройках системы → Конфиденциальность и безопасность → Мониторинг ввода. Если статус не обновится, снова откройте MacTools."
+            "value": "Разрешите TraceFence в настройках системы → Конфиденциальность и безопасность → Мониторинг ввода. Если статус не обновится, снова откройте TraceFence."
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在系統設定 → 隱私和安全性 → 輸入監控中允許 MacTools。如果狀態未更新，請重新開啟 MacTools。"
+            "value": "在系統設定 → 隱私和安全性 → 輸入監控中允許 TraceFence。如果狀態未更新，請重新開啟 TraceFence。"
           }
         }
       }
@@ -4113,67 +4113,67 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS does not identify native-click sources. MacTools correlates a click only while one gesture candidate is active; a simultaneous external-mouse click may conflict."
+            "value": "macOS does not identify native-click sources. TraceFence correlates a click only while one gesture candidate is active; a simultaneous external-mouse click may conflict."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS 不提供原生点击来源。MacTools 仅在一个手势候选活动时关联点击；同时点击外接鼠标时可能发生冲突。"
+            "value": "macOS 不提供原生点击来源。TraceFence 仅在一个手势候选活动时关联点击；同时点击外接鼠标时可能发生冲突。"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "لا يحدد macOS مصدر النقرات الأصلية. يربط MacTools النقرة فقط عند نشاط مرشح إيماءة واحد؛ وقد تتعارض نقرة متزامنة من ماوس خارجي."
+            "value": "لا يحدد macOS مصدر النقرات الأصلية. يربط TraceFence النقرة فقط عند نشاط مرشح إيماءة واحد؛ وقد تتعارض نقرة متزامنة من ماوس خارجي."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS identifiziert die Quelle nativer Klicks nicht. MacTools ordnet einen Klick nur bei genau einem aktiven Gestenkandidaten zu; ein gleichzeitiger Klick mit einer externen Maus kann kollidieren."
+            "value": "macOS identifiziert die Quelle nativer Klicks nicht. TraceFence ordnet einen Klick nur bei genau einem aktiven Gestenkandidaten zu; ein gleichzeitiger Klick mit einer externen Maus kann kollidieren."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS no identifica el origen de los clics nativos. MacTools solo relaciona un clic cuando hay un candidato de gesto activo; un clic simultáneo de un ratón externo puede generar un conflicto."
+            "value": "macOS no identifica el origen de los clics nativos. TraceFence solo relaciona un clic cuando hay un candidato de gesto activo; un clic simultáneo de un ratón externo puede generar un conflicto."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS n’identifie pas la source des clics natifs. MacTools n’associe un clic que lorsqu’un seul geste candidat est actif ; un clic simultané avec une souris externe peut créer un conflit."
+            "value": "macOS n’identifie pas la source des clics natifs. TraceFence n’associe un clic que lorsqu’un seul geste candidat est actif ; un clic simultané avec une souris externe peut créer un conflit."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS はネイティブクリックの入力元を識別しません。MacTools は候補ジェスチャが 1 つだけ有効な間にクリックを関連付けます。外付けマウスの同時クリックは競合する場合があります。"
+            "value": "macOS はネイティブクリックの入力元を識別しません。TraceFence は候補ジェスチャが 1 つだけ有効な間にクリックを関連付けます。外付けマウスの同時クリックは競合する場合があります。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS는 기본 클릭의 입력 장치를 식별하지 않습니다. MacTools는 제스처 후보가 하나만 활성화된 동안 클릭을 연결하며, 외장 마우스를 동시에 클릭하면 충돌할 수 있습니다."
+            "value": "macOS는 기본 클릭의 입력 장치를 식별하지 않습니다. TraceFence는 제스처 후보가 하나만 활성화된 동안 클릭을 연결하며, 외장 마우스를 동시에 클릭하면 충돌할 수 있습니다."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "O macOS não identifica a origem dos cliques nativos. O MacTools só associa um clique enquanto há um candidato de gesto ativo; um clique simultâneo de um mouse externo pode causar conflito."
+            "value": "O macOS não identifica a origem dos cliques nativos. O TraceFence só associa um clique enquanto há um candidato de gesto ativo; um clique simultâneo de um mouse externo pode causar conflito."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS не определяет источник системных щелчков. MacTools связывает щелчок только с одним активным кандидатом жеста; одновременный щелчок внешней мышью может конфликтовать."
+            "value": "macOS не определяет источник системных щелчков. TraceFence связывает щелчок только с одним активным кандидатом жеста; одновременный щелчок внешней мышью может конфликтовать."
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS 不提供原生點按來源。MacTools 僅在一個手勢候選活動時關聯點按；同時點按外接滑鼠時可能發生衝突。"
+            "value": "macOS 不提供原生點按來源。TraceFence 僅在一個手勢候選活動時關聯點按；同時點按外接滑鼠時可能發生衝突。"
           }
         }
       }

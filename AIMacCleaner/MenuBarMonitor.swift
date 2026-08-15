@@ -450,9 +450,12 @@ struct MenuBarMonitor: View {
                                                     .font(Theme.Font.captionMedium)
                                                     .foregroundStyle(Theme.Colors.textPrimary)
                                                     .lineLimit(1)
-                                                Text(localizer.t("点击使用", en: "Open"))
-                                                    .font(.system(size: 9, weight: .medium))
-                                                    .foregroundStyle(Theme.Colors.textTertiary)
+                                                HStack(spacing: 4) {
+                                                    Text(localizer.t("点击使用", en: "Open"))
+                                                        .font(.system(size: 9, weight: .medium))
+                                                        .foregroundStyle(Theme.Colors.textTertiary)
+                                                    TraceFencePluginPricingBadge(plugin: plugin, compact: true)
+                                                }
                                             }
                                             Spacer(minLength: 0)
                                         }

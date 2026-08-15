@@ -6,9 +6,9 @@ import MacToolsPluginKit
 
 enum MenuBarHiddenConstants {
     static let pluginID = "menu-bar-hidden"
-    static let hiddenControlItemTitle = "MacTools.ControlItem.Hidden"
-    static let alwaysHiddenControlItemTitle = "MacTools.ControlItem.AlwaysHidden"
-    static let visibleControlItemTitle = "MacTools.ControlItem.Visible"
+    static let hiddenControlItemTitle = "TraceFence.ControlItem.Hidden"
+    static let alwaysHiddenControlItemTitle = "TraceFence.ControlItem.AlwaysHidden"
+    static let visibleControlItemTitle = "TraceFence.ControlItem.Visible"
     /// Pasteboard type for layout-bar drag/drop.
     static let itemPasteboardType = "cc.ggbond.mactools.menu-bar-hidden.item"
     /// CoreGraphics window layer for menu bar status items.

@@ -173,7 +173,7 @@ final class ActivityBarController: ObservableObject {
         case .inputMonitoringDenied:
             return localization.string(
                 "settings.inputMonitoring.footnote",
-                defaultValue: "键盘、鼠标和滚动统计需要在系统设置中允许 MacTools 进行输入监控。前台应用使用时长仍可记录。"
+                defaultValue: "键盘、鼠标和滚动统计需要在系统设置中允许 TraceFence 进行输入监控。前台应用使用时长仍可记录。"
             )
         case .idle, .running:
             return nil
@@ -190,7 +190,7 @@ final class ActivityBarController: ObservableObject {
     var hookUninstallFootnote: String {
         localization.string(
             "settings.aiHooks.uninstallFootnote",
-            defaultValue: "只移除 MacTools 写入的 Hook 条目和脚本，不会清空其他工具配置。"
+            defaultValue: "只移除 TraceFence 写入的 Hook 条目和脚本，不会清空其他工具配置。"
         )
     }
 

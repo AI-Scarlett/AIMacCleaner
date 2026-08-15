@@ -196,33 +196,33 @@
     "permission.systemAudio.footnote.denied": {
       "extractionState": "manual",
       "localizations": {
-        "ar": { "stringUnit": { "state": "translated", "value": "افتح إعدادات النظام ← الخصوصية والأمان ← تسجيل الشاشة وصوت النظام، ثم اسمح لـ MacTools." } },
-        "de": { "stringUnit": { "state": "translated", "value": "Öffnen Sie Systemeinstellungen → Datenschutz & Sicherheit → Bildschirm- und Systemaudioaufnahme und erlauben Sie MacTools." } },
-        "en": { "stringUnit": { "state": "translated", "value": "Open System Settings → Privacy & Security → Screen & System Audio Recording and allow MacTools." } },
-        "es": { "stringUnit": { "state": "translated", "value": "Abre Ajustes del Sistema → Privacidad y seguridad → Grabación de pantalla y audio del sistema, y permite MacTools." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrez Réglages Système → Confidentialité et sécurité → Enregistrement de l’écran et de l’audio système, puis autorisez MacTools." } },
-        "ja": { "stringUnit": { "state": "translated", "value": "システム設定 → プライバシーとセキュリティ → 画面とシステムオーディオの録音で、MacTools を許可してください。" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "시스템 설정 → 개인정보 보호 및 보안 → 화면 및 시스템 오디오 녹음에서 MacTools를 허용하세요." } },
-        "pt": { "stringUnit": { "state": "translated", "value": "Abra Ajustes do Sistema → Privacidade e Segurança → Gravação de Tela e Áudio do Sistema e permita o MacTools." } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Откройте «Системные настройки» → «Конфиденциальность и безопасность» → «Запись экрана и системного аудио» и разрешите MacTools." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "前往系统设置 → 隐私与安全性 → 屏幕与系统音频录制，授权 MacTools。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "前往系統設定 → 私隱與保安 → 螢幕與系統音訊錄製，授權 MacTools。" } }
+        "ar": { "stringUnit": { "state": "translated", "value": "افتح إعدادات النظام ← الخصوصية والأمان ← تسجيل الشاشة وصوت النظام، ثم اسمح لـ TraceFence." } },
+        "de": { "stringUnit": { "state": "translated", "value": "Öffnen Sie Systemeinstellungen → Datenschutz & Sicherheit → Bildschirm- und Systemaudioaufnahme und erlauben Sie TraceFence." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Open System Settings → Privacy & Security → Screen & System Audio Recording and allow TraceFence." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Abre Ajustes del Sistema → Privacidad y seguridad → Grabación de pantalla y audio del sistema, y permite TraceFence." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrez Réglages Système → Confidentialité et sécurité → Enregistrement de l’écran et de l’audio système, puis autorisez TraceFence." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "システム設定 → プライバシーとセキュリティ → 画面とシステムオーディオの録音で、TraceFence を許可してください。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "시스템 설정 → 개인정보 보호 및 보안 → 화면 및 시스템 오디오 녹음에서 TraceFence를 허용하세요." } },
+        "pt": { "stringUnit": { "state": "translated", "value": "Abra Ajustes do Sistema → Privacidade e Segurança → Gravação de Tela e Áudio do Sistema e permita o TraceFence." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Откройте «Системные настройки» → «Конфиденциальность и безопасность» → «Запись экрана и системного аудио» и разрешите TraceFence." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "前往系统设置 → 隐私与安全性 → 屏幕与系统音频录制，授权 TraceFence。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "前往系統設定 → 私隱與保安 → 螢幕與系統音訊錄製，授權 TraceFence。" } }
       }
     },
     "permission.systemAudio.footnote.requesting": {
       "extractionState": "manual",
       "localizations": {
-        "ar": { "stringUnit": { "state": "translated", "value": "اسمح لـ MacTools في مطالبة أذونات macOS." } },
-        "de": { "stringUnit": { "state": "translated", "value": "Erlauben Sie MacTools in der macOS-Berechtigungsabfrage." } },
-        "en": { "stringUnit": { "state": "translated", "value": "Allow MacTools in the macOS permission prompt." } },
-        "es": { "stringUnit": { "state": "translated", "value": "Permite MacTools en el aviso de permisos de macOS." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Autorisez MacTools dans la demande d’autorisation macOS." } },
-        "ja": { "stringUnit": { "state": "translated", "value": "macOS のアクセス許可ダイアログで MacTools を許可してください。" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "macOS 권한 요청에서 MacTools를 허용하세요." } },
-        "pt": { "stringUnit": { "state": "translated", "value": "Permita o MacTools no aviso de permissão do macOS." } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Разрешите MacTools в запросе разрешений macOS." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请在 macOS 权限提示中允许 MacTools。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "請在 macOS 權限提示中允許 MacTools。" } }
+        "ar": { "stringUnit": { "state": "translated", "value": "اسمح لـ TraceFence في مطالبة أذونات macOS." } },
+        "de": { "stringUnit": { "state": "translated", "value": "Erlauben Sie TraceFence in der macOS-Berechtigungsabfrage." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Allow TraceFence in the macOS permission prompt." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Permite TraceFence en el aviso de permisos de macOS." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Autorisez TraceFence dans la demande d’autorisation macOS." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "macOS のアクセス許可ダイアログで TraceFence を許可してください。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "macOS 권한 요청에서 TraceFence를 허용하세요." } },
+        "pt": { "stringUnit": { "state": "translated", "value": "Permita o TraceFence no aviso de permissão do macOS." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Разрешите TraceFence в запросе разрешений macOS." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请在 macOS 权限提示中允许 TraceFence。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "請在 macOS 權限提示中允許 TraceFence。" } }
       }
     },
     "permission.systemAudio.footnote.unknown": {

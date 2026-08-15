@@ -291,67 +291,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "في إعدادات النظام ← الخصوصية والأمان ← إمكانية الوصول، اسمح بـ MacTools."
+            "value": "في إعدادات النظام ← الخصوصية والأمان ← إمكانية الوصول، اسمح بـ TraceFence."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Erlauben Sie unter Systemeinstellungen → Datenschutz und Sicherheit → Barrierefreiheit MacTools."
+            "value": "Erlauben Sie unter Systemeinstellungen → Datenschutz und Sicherheit → Barrierefreiheit TraceFence."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "En Configuración del sistema → Privacidad y seguridad → Accesibilidad, permita MacTools."
+            "value": "En Configuración del sistema → Privacidad y seguridad → Accesibilidad, permita TraceFence."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Dans Paramètres système → Confidentialité et sécurité → Accessibilité, autorisez MacTools."
+            "value": "Dans Paramètres système → Confidentialité et sécurité → Accessibilité, autorisez TraceFence."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "시스템 설정 → 개인정보 보호 및 보안 → 접근성에서 MacTools를 허용하세요."
+            "value": "시스템 설정 → 개인정보 보호 및 보안 → 접근성에서 TraceFence를 허용하세요."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Em Configurações do sistema → Privacidade e segurança → Acessibilidade, permita MacTools."
+            "value": "Em Configurações do sistema → Privacidade e segurança → Acessibilidade, permita TraceFence."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "В «Системных настройках» → «Конфиденциальность и безопасность» → «Доступность» разрешите MacTools."
+            "value": "В «Системных настройках» → «Конфиденциальность и безопасность» → «Доступность» разрешите TraceFence."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "In System Settings → Privacy & Security → Accessibility, allow MacTools."
+            "value": "In System Settings → Privacy & Security → Accessibility, allow TraceFence."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "システム設定 → プライバシーとセキュリティ → アクセシビリティで、MacTools を許可してください。"
+            "value": "システム設定 → プライバシーとセキュリティ → アクセシビリティで、TraceFence を許可してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统设置 → 隐私与安全性 → 辅助功能，允许 MacTools。"
+            "value": "系统设置 → 隐私与安全性 → 辅助功能，允许 TraceFence。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "系統設定 → 隱私權與安全性 → 輔助使用，允許 MacTools。"
+            "value": "系統設定 → 隱私權與安全性 → 輔助使用，允許 TraceFence。"
           }
         }
       }

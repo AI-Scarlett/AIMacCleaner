@@ -26,7 +26,7 @@ same-Team-ID PluginKit v4 packages:
 
 - the host, PluginKit ABI, catalog, entitlement and every plugin have independent
   version fields and update decisions;
-- the signed catalog points to 45 immutable per-plugin releases owned by the
+- the catalog points to immutable per-plugin releases owned by the
   TraceFence repository;
 - acquisition, installation, activation and update state are represented
   separately;
@@ -42,7 +42,7 @@ same-Team-ID PluginKit v4 packages:
 Known boundaries remain deliberate: untrusted third-party plugins require a
 future XPC isolation class, and individual paid SKUs require a unique commerce
 product identifier for each plugin. TraceFence Standard currently grants the
-first-party 45-plugin collection without coupling plugin updates to host updates.
+first-party plugin collection without coupling plugin updates to host updates.
 
 ## TraceFence 1.2.2 presentation correction
 
@@ -71,6 +71,36 @@ header. A plugin workspace that declares self-managed scrolling keeps that
 responsibility; all other panels are wrapped by the host exactly once. The
 menu-bar host never embeds a full chart or long-form workspace and always offers
 a path back to the full desktop content when one exists.
+
+## TraceFence 1.2.4 placement and pricing contract
+
+Version 1.2.4 adds three independent catalog placement flags:
+
+| Field | Host surface | Eligibility rule |
+| --- | --- | --- |
+| `placements.overview` | Main Overview quick shelf | Must also be eligible for the desktop Plugins tab |
+| `placements.pluginTab` | Desktop My Plugins workspace | Package must be installed and enabled before it is shown |
+| `placements.menuBarPluginTab` | Menu-bar Plugins tab | Requires an explicit compact `presentation.menuBar` mode |
+
+The current 51-plugin catalog enables 6, 46 and 28 plugins on those surfaces,
+respectively. Placement describes where a plugin is usable; it never grants an
+entitlement and it never follows the host application version.
+
+The 46 package plugins include the pinned 45-plugin upstream snapshot plus the
+first-party Codex Media Cleanup plugin. All runtime downloads come from
+TraceFence-owned immutable releases; the upstream repository is provenance, not
+a runtime dependency.
+
+System authorization also belongs to the host. Plugins declare required macOS
+capabilities for disclosure and least-privilege checks, while the operating
+system grants Accessibility, Screen Recording, Input Monitoring, Calendar and
+Automation access to the signed TraceFence process. A plugin never introduces a
+second TraceFence license or a separate macOS authorization identity.
+
+Commercial classification is also independent from access. `isFree` always
+renders as localized Free or Paid metadata. A Standard subscriber can therefore
+see both Paid and Included on one plugin: the first label describes the product,
+while the second describes the current account's acquisition right.
 
 ## Target boundaries
 

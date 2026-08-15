@@ -13,19 +13,19 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.3")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.4")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
-    "TraceFence 1.2.3 gives every installed plugin a deliberate desktop and menu-bar experience.\n\n"
-    "- Fixes plugin workspaces being clipped above or below the visible window.\n"
-    "- Keeps the plugin title and surface switcher fixed while only the content body scrolls.\n"
-    "- Opens data plugins on their dashboard, full tools in their workspace, and action plugins on quick controls.\n"
-    "- Limits the menu bar to pinned quick controls or compact status summaries; charts and long tools stay on the desktop.\n"
-    "- Adds a one-click path from a menu-bar summary to the full desktop plugin.\n"
-    "- Adds catalog presentation contracts so future plugins declare their default surface independently of their version.\n"
+    "TraceFence 1.2.4 makes plugin placement and pricing explicit across the product.\n\n"
+    "- Gives each plugin independent Overview, desktop Plugins tab, and menu-bar Plugins tab eligibility.\n"
+    "- Adds an Overview shelf for installed plugins that are deliberately approved for quick access.\n"
+    "- Filters My Plugins and the menu-bar tab from the same catalog policy.\n"
+    "- Labels every plugin as Free or Paid in the current TraceFence language.\n"
+    "- Keeps commercial classification separate from entitlement, so subscribers see Paid and Included together.\n"
+    "- Shows placement eligibility in the Store and opens plugins in their intended surface.\n"
     "- Keeps all plugin releases independent from the TraceFence host release.\n"
 )
 

@@ -182,8 +182,8 @@ def main() -> int:
 
     catalog = json.loads(args.catalog.read_text(encoding="utf-8"))
     plugins = [plugin for plugin in catalog.get("plugins", []) if plugin.get("delivery") == "package"]
-    if len(plugins) != 45:
-        raise SystemExit(f"expected 45 independently delivered plugins, found {len(plugins)}")
+    if not plugins:
+        raise SystemExit("catalog has no independently delivered plugins")
 
     results: list[dict[str, Any]] = []
     for plugin in plugins:

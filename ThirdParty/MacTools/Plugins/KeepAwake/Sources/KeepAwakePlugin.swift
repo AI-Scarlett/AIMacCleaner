@@ -95,7 +95,7 @@ final class KeepAwakePlugin:
     }
 
     private enum VirtualDisplayIdentity {
-        static let name = "MacTools Virtual Display"
+        static let name = "TraceFence Virtual Display"
         static let vendorNumber: UInt32 = 505
     }
 

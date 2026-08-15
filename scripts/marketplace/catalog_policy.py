@@ -166,6 +166,21 @@ def validate_catalog(document: dict[str, Any], *, require_live_products: bool = 
                 raise CatalogPolicyError(f"menu status without component panel: {plugin_id}")
             if menu_bar not in {None, "quick_control", "status"}:
                 raise CatalogPolicyError(f"invalid menu presentation: {plugin_id}")
+        placements = plugin.get("placements")
+        if placements is not None:
+            if not isinstance(placements, dict) or set(placements) != {
+                "overview", "pluginTab", "menuBarPluginTab"
+            }:
+                raise CatalogPolicyError(f"invalid placements: {plugin_id}")
+            if not all(isinstance(value, bool) for value in placements.values()):
+                raise CatalogPolicyError(f"non-boolean placement: {plugin_id}")
+            if placements["overview"] and not placements["pluginTab"]:
+                raise CatalogPolicyError(f"overview placement without plugin tab: {plugin_id}")
+            if placements["menuBarPluginTab"]:
+                if not isinstance(presentation, dict) or presentation.get("menuBar") not in {
+                    "quick_control", "status"
+                }:
+                    raise CatalogPolicyError(f"menu placement without menu presentation: {plugin_id}")
         permissions = plugin.get("permissions")
         if not isinstance(permissions, list) or len(permissions) > 32 or len(set(permissions)) != len(permissions):
             raise CatalogPolicyError(f"invalid permissions: {plugin_id}")

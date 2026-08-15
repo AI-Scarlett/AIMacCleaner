@@ -29,7 +29,7 @@ protocol DDCBrightnessTransport {
 }
 
 private enum DDCCommunicationQueue {
-    static let shared = DispatchQueue(label: "MacTools.DisplayBrightness.DDC")
+    static let shared = DispatchQueue(label: "TraceFence.DisplayBrightness.DDC")
 }
 
 final class IntelDDCTransport: DDCBrightnessTransport, @unchecked Sendable {

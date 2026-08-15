@@ -210,7 +210,7 @@ final class MenuBarHiddenStripPaddingNSView: NSView {
         alert.alertStyle = .warning
         alert.messageText = localization.string(
             "alert.hostIconCannotHide.title",
-            defaultValue: "MacTools 图标不能隐藏"
+            defaultValue: "TraceFence 图标不能隐藏"
         )
         alert.informativeText = localization.string(
             "alert.hostIconCannotHide.message",

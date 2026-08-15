@@ -1,5 +1,84 @@
 import SwiftUI
 
+/// Commercial classification is immutable catalog metadata. It must stay
+/// visible even when the current subscriber already has access.
+struct TraceFencePluginPricingBadge: View {
+    @EnvironmentObject private var localizer: Localizer
+
+    let plugin: TraceFencePluginDescriptor
+    var compact = false
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: compact ? 8 : 10, weight: .bold))
+            .foregroundStyle(color)
+            .padding(.horizontal, compact ? 6 : 8)
+            .padding(.vertical, compact ? 2 : 4)
+            .background(color.opacity(0.11), in: Capsule())
+            .help(helpText)
+    }
+
+    private var title: String {
+        plugin.isFree
+            ? localizer.t("免费", en: "Free", zhHant: "免費", ja: "無料", ko: "무료", mt: "Free")
+            : localizer.t("收费", en: "Paid", zhHant: "收費", ja: "有料", ko: "유료", mt: "Paid")
+    }
+
+    private var helpText: String {
+        if plugin.isFree {
+            return localizer.t(
+                "这是免费插件，不需要订阅或单独购买。",
+                en: "This is a free plugin and requires no subscription or separate purchase.",
+                zhHant: "這是免費外掛，不需要訂閱或單獨購買。",
+                ja: "無料プラグインです。サブスクリプションや個別購入は不要です。",
+                ko: "무료 플러그인으로 구독이나 별도 구매가 필요하지 않습니다.",
+                mt: "This is a free plugin."
+            )
+        }
+        return localizer.t(
+            "这是收费插件；当前订阅权益会另外显示。",
+            en: "This is a paid plugin; current subscription access is shown separately.",
+            zhHant: "這是收費外掛；目前訂閱權益會另外顯示。",
+            ja: "有料プラグインです。現在のサブスクリプション権限は別に表示されます。",
+            ko: "유료 플러그인이며 현재 구독 권한은 별도로 표시됩니다.",
+            mt: "This is a paid plugin."
+        )
+    }
+
+    private var color: Color {
+        plugin.isFree ? Theme.Colors.success : Theme.Colors.warning
+    }
+}
+
+struct TraceFencePluginPlacementSummary: View {
+    @EnvironmentObject private var localizer: Localizer
+    let plugin: TraceFencePluginDescriptor
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if plugin.supportsOverview {
+                placement(localizer.t("概览", en: "Overview"), icon: "rectangle.grid.2x2")
+            }
+            if plugin.supportsPluginTab {
+                placement(localizer.t("插件 Tab", en: "Plugins"), icon: "puzzlepiece.extension")
+            }
+            if plugin.supportsMenuBarPluginTab {
+                placement(localizer.t("菜单栏", en: "Menu Bar"), icon: "menubar.rectangle")
+            }
+            if !plugin.supportsOverview && !plugin.supportsPluginTab && !plugin.supportsMenuBarPluginTab {
+                placement(localizer.t("系统页面", en: "System Page"), icon: "macwindow")
+            }
+        }
+        .font(.system(size: 8, weight: .medium))
+        .foregroundStyle(Theme.Colors.textTertiary)
+    }
+
+    private func placement(_ title: String, icon: String) -> some View {
+        Label(title, systemImage: icon)
+            .lineLimit(1)
+    }
+}
+
 /// Store presentation is deliberately downstream of catalog, commerce,
 /// installation and runtime. It never treats a downloaded archive as usable.
 struct TraceFencePluginStoreView: View {
@@ -115,14 +194,14 @@ struct TraceFencePluginStoreView: View {
                 Text("·")
                     .foregroundStyle(Theme.Colors.textTertiary)
                 Text(localizer.t(
-                    "修订 (catalogService.catalog.revision) · (downloadablePlugins.count) 个可独立升级插件",
-                    en: "Revision (catalogService.catalog.revision) · (downloadablePlugins.count) independently updatable plugins"
+                    "修订 \(catalogService.catalog.revision) · \(downloadablePlugins.count) 个可独立升级插件",
+                    en: "Revision \(catalogService.catalog.revision) · \(downloadablePlugins.count) independently updatable plugins"
                 ))
                 .foregroundStyle(Theme.Colors.textSecondary)
                 Spacer()
                 if !updatePlugins.isEmpty {
                     Label(
-                        localizer.t("(updatePlugins.count) 个更新", en: "(updatePlugins.count) updates"),
+                        localizer.t("\(updatePlugins.count) 个更新", en: "\(updatePlugins.count) updates"),
                         systemImage: "arrow.down.circle.fill"
                     )
                     .foregroundStyle(Theme.Colors.accent)
@@ -287,9 +366,13 @@ struct TraceFencePluginStoreView: View {
                         Text(localizedCategory(plugin.category))
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Colors.textTertiary)
+                        TraceFencePluginPlacementSummary(plugin: plugin)
                     }
                     Spacer()
-                    accessBadge(plugin)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        TraceFencePluginPricingBadge(plugin: plugin)
+                        entitlementBadge(plugin)
+                    }
                 }
                 .contentShape(Rectangle())
             }
@@ -332,6 +415,7 @@ struct TraceFencePluginStoreView: View {
                 installationVersionLine(plugin, state: state)
             }
             Spacer()
+            TraceFencePluginPricingBadge(plugin: plugin, compact: true)
             if case let .installed(_, enabled, _) = state {
                 Toggle("", isOn: Binding(
                     get: { enabled },
@@ -448,19 +532,19 @@ struct TraceFencePluginStoreView: View {
         .frame(width: size, height: size)
     }
 
-    private func accessBadge(_ plugin: TraceFencePluginDescriptor) -> some View {
+    private func entitlementBadge(_ plugin: TraceFencePluginDescriptor) -> some View {
         let state = entitlementService.accessState(pluginID: plugin.id)
         let title: String
         let color: Color
         switch state {
         case .free:
-            title = localizer.t("免费", en: "Free")
+            title = localizer.t("可直接使用", en: "Ready", zhHant: "可直接使用", ja: "利用可能", ko: "사용 가능", mt: "Ready")
             color = Theme.Colors.success
         case .allAccess:
-            title = "Standard"
+            title = localizer.t("订阅已包含", en: "Included", zhHant: "訂閱已包含", ja: "含まれています", ko: "구독에 포함", mt: "Included")
             color = Theme.Colors.accent
         case .licensed:
-            title = localizer.t("已购买", en: "Owned")
+            title = localizer.t("已单独购买", en: "Purchased", zhHant: "已單獨購買", ja: "購入済み", ko: "구매 완료", mt: "Purchased")
             color = Theme.Colors.success
         case let .trial(expiresAt):
             let hours = max(1, Int(ceil(expiresAt.timeIntervalSinceNow / 3600)))
@@ -741,6 +825,8 @@ private struct TraceFencePluginDetailView: View {
             metadataRow(localizer.t("插件版本", en: "Plugin version"), plugin.version)
             metadataRow(localizer.t("TraceFence 最低版本", en: "Minimum TraceFence"), plugin.minimumHostVersion)
             metadataRow(localizer.t("macOS 最低版本", en: "Minimum macOS"), plugin.minimumSystemVersion)
+            metadataRow(localizer.t("商业类型", en: "Pricing"), pricingDescription)
+            metadataRow(localizer.t("显示位置", en: "Placement"), placementDescription)
             if plugin.delivery == .package {
                 metadataRow("PluginKit ABI", "v\(plugin.pluginKitVersion)")
                 if let size = plugin.package?.sizeBytes {
@@ -835,6 +921,39 @@ private struct TraceFencePluginDetailView: View {
         }
     }
 
+    private var pricingDescription: String {
+        if plugin.isFree {
+            return localizer.t("免费", en: "Free", zhHant: "免費", ja: "無料", ko: "무료", mt: "Free")
+        }
+        if let offerID = plugin.standaloneOfferID,
+           let offer = catalog.offer(id: offerID) {
+            return localizer.t(
+                "收费 · Standard 或 \(offer.displayPrice) 单独购买",
+                en: "Paid · Standard or \(offer.displayPrice) separately",
+                zhHant: "收費 · Standard 或 \(offer.displayPrice) 單獨購買",
+                ja: "有料 · Standard または \(offer.displayPrice) で個別購入",
+                ko: "유료 · Standard 또는 \(offer.displayPrice) 별도 구매",
+                mt: "Paid · Standard or \(offer.displayPrice) separately"
+            )
+        }
+        return localizer.t(
+            "收费 · Standard",
+            en: "Paid · Standard",
+            zhHant: "收費 · Standard",
+            ja: "有料 · Standard",
+            ko: "유료 · Standard",
+            mt: "Paid · Standard"
+        )
+    }
+
+    private var placementDescription: String {
+        var values: [String] = []
+        if plugin.supportsOverview { values.append(localizer.t("概览", en: "Overview")) }
+        if plugin.supportsPluginTab { values.append(localizer.t("插件 Tab", en: "Plugins")) }
+        if plugin.supportsMenuBarPluginTab { values.append(localizer.t("菜单栏插件 Tab", en: "Menu Bar Plugins")) }
+        return values.isEmpty ? localizer.t("系统固定页面", en: "Fixed system page") : values.joined(separator: " · ")
+    }
+
     private var statusDetail: String {
         let state = packageManager.state(for: plugin)
         switch state {
@@ -853,8 +972,31 @@ private struct TraceFencePluginDetailView: View {
         switch permission {
         case "screen-recording": localizer.t("屏幕录制", en: "Screen Recording")
         case "accessibility": localizer.t("辅助功能", en: "Accessibility")
+        case "input-monitoring", "inputMonitoring", "inputmonitoring": localizer.t(
+            "输入监控",
+            en: "Input Monitoring",
+            zhHant: "輸入監控",
+            ja: "入力監視",
+            ko: "입력 모니터링",
+            mt: "Monitoraġġ tal-Input"
+        )
         case "microphone": localizer.t("麦克风", en: "Microphone")
-        case "calendar": localizer.t("日历", en: "Calendar")
+        case "calendar", "calendarFullAccess", "calendarfullaccess", "calendar-full-access": localizer.t(
+            "日历",
+            en: "Calendar",
+            zhHant: "行事曆",
+            ja: "カレンダー",
+            ko: "캘린더",
+            mt: "Kalendarju"
+        )
+        case "automation": localizer.t(
+            "自动化控制",
+            en: "Automation",
+            zhHant: "自動化控制",
+            ja: "オートメーション",
+            ko: "자동화",
+            mt: "Awtomazzjoni"
+        )
         case "contacts": localizer.t("通讯录", en: "Contacts")
         case "full-disk-access": localizer.t("完全磁盘访问", en: "Full Disk Access")
         default: permission.replacingOccurrences(of: "-", with: " ").capitalized

@@ -152,7 +152,7 @@ final class TranslatorPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginSettings
                 id: TranslatorConstants.PermissionID.automation,
                 kind: .automation,
                 title: localization.string("permission.automation.title", defaultValue: "自动化授权"),
-                description: localization.string("permission.automation.description", defaultValue: "浏览器划词可能需要允许 MacTools 控制当前浏览器。")
+                description: localization.string("permission.automation.description", defaultValue: "浏览器划词可能需要允许 TraceFence 控制当前浏览器。")
             ),
             PluginPermissionRequirement(
                 id: TranslatorConstants.PermissionID.screenRecording,
@@ -241,7 +241,7 @@ final class TranslatorPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginSettings
                     ? nil
                     : localization.string(
                         "permission.accessibility.footnote",
-                        defaultValue: "前往系统设置 → 隐私与安全性 → 辅助功能，授权 MacTools。"
+                        defaultValue: "前往系统设置 → 隐私与安全性 → 辅助功能，授权 TraceFence。"
                     )
             )
         case TranslatorConstants.PermissionID.automation:
@@ -263,7 +263,7 @@ final class TranslatorPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginSettings
                     ? nil
                     : localization.string(
                         "permission.screenRecording.footnote",
-                        defaultValue: "前往系统设置 → 隐私与安全性 → 屏幕录制，授权 MacTools。"
+                        defaultValue: "前往系统设置 → 隐私与安全性 → 屏幕录制，授权 TraceFence。"
                     )
             )
         default:

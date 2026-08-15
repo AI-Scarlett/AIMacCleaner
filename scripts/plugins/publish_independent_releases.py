@@ -62,8 +62,9 @@ def main() -> int:
     catalog = json.loads(args.catalog.read_text(encoding="utf-8"))
     names = {plugin["id"]: plugin["name"] for plugin in catalog.get("plugins", [])}
     releases = plan.get("releases")
-    if not isinstance(releases, list) or len(releases) != 45:
-        raise SystemExit(f"expected 45 releases, found {len(releases) if isinstance(releases, list) else 0}")
+    if not isinstance(releases, list) or not releases:
+        raise SystemExit("release plan has no independently versioned plugins")
+    total = len(releases)
 
     existing_releases = release_states(args.repository)
     created = 0
@@ -84,10 +85,10 @@ def main() -> int:
             if existing.get("isDraft") or existing.get("isPrerelease"):
                 raise SystemExit(f"existing plugin release is not final: {tag}")
             verified += 1
-            print(f"PLUGIN_RELEASE_EXISTS {index}/45 {tag}", flush=True)
+            print(f"PLUGIN_RELEASE_EXISTS {index}/{total} {tag}", flush=True)
             continue
 
-        print(f"PLUGIN_RELEASE_PENDING {index}/45 {tag}", flush=True)
+        print(f"PLUGIN_RELEASE_PENDING {index}/{total} {tag}", flush=True)
         if not args.execute:
             continue
         title = f"{names.get(release['pluginID'], release['pluginID'])} v{release['version']}"
@@ -113,10 +114,10 @@ def main() -> int:
             "--latest=false",
         ])
         created += 1
-        print(f"PLUGIN_RELEASE_CREATED {index}/45 {tag}", flush=True)
+        print(f"PLUGIN_RELEASE_CREATED {index}/{total} {tag}", flush=True)
 
     mode = "execute" if args.execute else "dry-run"
-    print(f"PLUGIN_RELEASE_PUBLISH_OK mode={mode} created={created} verified={verified} total=45")
+    print(f"PLUGIN_RELEASE_PUBLISH_OK mode={mode} created={created} verified={verified} total={total}")
     return 0
 
 

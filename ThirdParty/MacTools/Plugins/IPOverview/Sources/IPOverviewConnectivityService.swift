@@ -33,7 +33,7 @@ struct IPOverviewConnectivityService: IPOverviewConnectivityChecking {
         request.timeoutInterval = timeout
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.httpMethod = "GET"
-        request.setValue("MacTools IP Overview", forHTTPHeaderField: "User-Agent")
+        request.setValue("TraceFence IP Overview", forHTTPHeaderField: "User-Agent")
 
         let startedAt = Date()
         do {

@@ -356,6 +356,11 @@ package_source_dir() {
     mkdir -p "$package_path/$(dirname "$bundle_relative_path")"
     copy_manifest_for_configuration "$manifest" "$package_path/plugin.json"
     ditto "$bundle_path" "$package_path/$bundle_relative_path"
+    for metadata_name in LICENSE TRACEFENCE-PROVENANCE.txt; do
+        if [[ -f "$root/$metadata_name" ]]; then
+            ditto "$root/$metadata_name" "$package_path/$metadata_name"
+        fi
+    done
 
     if [[ -n "$SIGN_IDENTITY" ]]; then
         "$REPO_ROOT/scripts/plugins/sign-plugin-package.sh" \

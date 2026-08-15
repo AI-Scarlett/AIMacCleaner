@@ -25,7 +25,12 @@ def is_metadata_path(name: str) -> bool:
     return name.startswith("__MACOSX/") or any(part.startswith("._") for part in parts)
 
 
-def copy_entry(source: zipfile.ZipFile, destination: zipfile.ZipFile, info: zipfile.ZipInfo) -> None:
+def copy_entry(
+    source: zipfile.ZipFile,
+    destination: zipfile.ZipFile,
+    info: zipfile.ZipInfo,
+    data: bytes | None = None,
+) -> None:
     copied = zipfile.ZipInfo(filename=info.filename, date_time=info.date_time)
     copied.compress_type = zipfile.ZIP_DEFLATED
     copied.comment = info.comment
@@ -39,7 +44,7 @@ def copy_entry(source: zipfile.ZipFile, destination: zipfile.ZipFile, info: zipf
     if info.is_dir():
         destination.writestr(copied, b"")
     else:
-        destination.writestr(copied, source.read(info.filename))
+        destination.writestr(copied, source.read(info.filename) if data is None else data)
 
 
 def repack(
@@ -88,6 +93,22 @@ def repack(
                 strict_timestamps=False,
             ) as destination:
                 for info in entries:
+                    if info.filename in {
+                        f"{expected_root}/LICENSE",
+                        f"{expected_root}/TRACEFENCE-PROVENANCE.txt",
+                    }:
+                        continue
+                    if info.filename == f"{expected_root}/plugin.json":
+                        manifest = json.loads(source.read(info.filename))
+                        manifest.pop("build", None)
+                        manifest.pop("buildProject", None)
+                        copy_entry(
+                            source,
+                            destination,
+                            info,
+                            (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
+                        )
+                        continue
                     copy_entry(source, destination, info)
                 destination.writestr(f"{expected_root}/LICENSE", license_bytes)
                 destination.writestr(f"{expected_root}/TRACEFENCE-PROVENANCE.txt", provenance)

@@ -154,7 +154,7 @@ private final class ApplicationVolumeRouteWorker: ApplicationVolumeRouteWorking,
 
     private static func probeSystemAudioAccess() -> Bool {
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
-        description.name = "MacTools Application Volume Permission"
+        description.name = "TraceFence Application Volume Permission"
         description.isPrivate = true
         description.muteBehavior = .unmuted
 
@@ -202,7 +202,7 @@ private final class AudioRouteGainSession: @unchecked Sendable {
         }
 
         let tapDescription = CATapDescription(stereoMixdownOfProcesses: processObjectIDs)
-        tapDescription.name = "MacTools Application Volume \(UUID().uuidString)"
+        tapDescription.name = "TraceFence Application Volume \(UUID().uuidString)"
         tapDescription.isPrivate = true
         tapDescription.muteBehavior = .mutedWhenTapped
 
@@ -215,7 +215,7 @@ private final class AudioRouteGainSession: @unchecked Sendable {
         }
 
         let aggregateDescription: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "MacTools Application Volume Route",
+            kAudioAggregateDeviceNameKey: "TraceFence Application Volume Route",
             kAudioAggregateDeviceUIDKey: "cc.ggbond.mactools.app-volume.\(UUID().uuidString)",
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceMainSubDeviceKey: outputDeviceUID,

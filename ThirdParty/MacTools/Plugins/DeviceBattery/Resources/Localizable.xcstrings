@@ -3202,67 +3202,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools يمكنه استخدام مراقبة الإدخال وقد قرأ معلومات الماوس المدعومة."
+            "value": "TraceFence يمكنه استخدام مراقبة الإدخال وقد قرأ معلومات الماوس المدعومة."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools kann die Eingabeüberwachung verwenden und hat unterstützte Mausinformationen gelesen."
+            "value": "TraceFence kann die Eingabeüberwachung verwenden und hat unterstützte Mausinformationen gelesen."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools can use Input Monitoring and has read supported mouse information."
+            "value": "TraceFence can use Input Monitoring and has read supported mouse information."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools puede usar la supervisión de entrada y ha leído la información del mouse compatible."
+            "value": "TraceFence puede usar la supervisión de entrada y ha leído la información del mouse compatible."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools peut utiliser la surveillance des entrées et a lu les informations de souris prises en charge."
+            "value": "TraceFence peut utiliser la surveillance des entrées et a lu les informations de souris prises en charge."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools は入力モニタリングを使用でき、サポートされているマウス情報を読み取っています。"
+            "value": "TraceFence は入力モニタリングを使用でき、サポートされているマウス情報を読み取っています。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools은(는) 입력 모니터링을 사용할 수 있으며 지원되는 마우스 정보를 읽었습니다."
+            "value": "TraceFence는 입력 모니터링을 사용할 수 있으며 지원되는 마우스 정보를 읽었습니다."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools pode usar o monitoramento de entrada e leu as informações suportadas do mouse."
+            "value": "TraceFence pode usar o monitoramento de entrada e leu as informações suportadas do mouse."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools может использовать мониторинг ввода и прочитал поддерживаемую информацию о мыши."
+            "value": "TraceFence может использовать мониторинг ввода и прочитал поддерживаемую информацию о мыши."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已允许 MacTools 使用输入监控，并已读取到厂商 HID 鼠标信息。"
+            "value": "已允许 TraceFence 使用输入监控，并已读取到厂商 HID 鼠标信息。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "已允許 MacTools 使用輸入監控，並已讀取到廠商 HID 滑鼠信息。"
+            "value": "已允許 TraceFence 使用輸入監控，並已讀取到廠商 HID 滑鼠信息。"
           }
         }
       }
@@ -3273,67 +3273,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools استخدام مراقبة الإدخال لقراءة أجهزة الماوس المدعومة."
+            "value": "TraceFence استخدام مراقبة الإدخال لقراءة أجهزة الماوس المدعومة."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools kann Input Monitoring verwenden, um unterstützte Mäuse zu lesen."
+            "value": "TraceFence kann Input Monitoring verwenden, um unterstützte Mäuse zu lesen."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools can use Input Monitoring to read supported mice."
+            "value": "TraceFence can use Input Monitoring to read supported mice."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools puede usar la supervisión de entrada para leer ratones compatibles."
+            "value": "TraceFence puede usar la supervisión de entrada para leer ratones compatibles."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools peut utiliser la surveillance des entrées pour lire les souris prises en charge."
+            "value": "TraceFence peut utiliser la surveillance des entrées pour lire les souris prises en charge."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools は、入力モニタリングを使用してサポートされているマウスを読み取ることができます。"
+            "value": "TraceFence は、入力モニタリングを使用してサポートされているマウスを読み取ることができます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools은 입력 모니터링을 사용하여 지원되는 마우스를 읽을 수 있습니다."
+            "value": "TraceFence는 입력 모니터링을 사용하여 지원되는 마우스를 읽을 수 있습니다."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools pode usar o monitoramento de entrada para ler mouses compatíveis."
+            "value": "TraceFence pode usar o monitoramento de entrada para ler mouses compatíveis."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools может использовать мониторинг ввода для чтения поддерживаемых мышей."
+            "value": "TraceFence может использовать мониторинг ввода для чтения поддерживаемых мышей."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已允许 MacTools 使用输入监控，可读取已适配厂商 HID 鼠标信息。"
+            "value": "已允许 TraceFence 使用输入监控，可读取已适配厂商 HID 鼠标信息。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "已允許 MacTools 使用輸入監控，可讀取已適配廠商 HID 滑鼠信息。"
+            "value": "已允許 TraceFence 使用輸入監控，可讀取已適配廠商 HID 滑鼠信息。"
           }
         }
       }
@@ -3344,67 +3344,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools يمكنه استخدام مراقبة الإدخال. فشلت آخر قراءة مدعومة للماوس: %@"
+            "value": "TraceFence يمكنه استخدام مراقبة الإدخال. فشلت آخر قراءة مدعومة للماوس: %@"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools kann die Eingabeüberwachung verwenden. Der letzte unterstützte Mauslesevorgang ist fehlgeschlagen: %@"
+            "value": "TraceFence kann die Eingabeüberwachung verwenden. Der letzte unterstützte Mauslesevorgang ist fehlgeschlagen: %@"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools can use Input Monitoring. The latest supported mouse read failed: %@"
+            "value": "TraceFence can use Input Monitoring. The latest supported mouse read failed: %@"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools puede utilizar la supervisión de entrada. La última lectura del mouse admitida falló: %@"
+            "value": "TraceFence puede utilizar la supervisión de entrada. La última lectura del mouse admitida falló: %@"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools peut utiliser la surveillance des entrées. La dernière lecture de souris prise en charge a échoué : %@"
+            "value": "TraceFence peut utiliser la surveillance des entrées. La dernière lecture de souris prise en charge a échoué : %@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools は入力モニタリングを使用できます。サポートされている最新のマウスの読み取りに失敗しました: %@"
+            "value": "TraceFence は入力モニタリングを使用できます。サポートされている最新のマウスの読み取りに失敗しました: %@"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools은 입력 모니터링을 사용할 수 있습니다. 지원되는 최근 마우스 읽기 실패: %@"
+            "value": "TraceFence는 입력 모니터링을 사용할 수 있습니다. 지원되는 최근 마우스 읽기 실패: %@"
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools pode usar o monitoramento de entrada. A última leitura do mouse compatível falhou: %@"
+            "value": "TraceFence pode usar o monitoramento de entrada. A última leitura do mouse compatível falhou: %@"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "MacTools может использовать мониторинг ввода. Не удалось выполнить последнее поддерживаемое чтение с помощью мыши: %@"
+            "value": "TraceFence может использовать мониторинг ввода. Не удалось выполнить последнее поддерживаемое чтение с помощью мыши: %@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已允许 MacTools 使用输入监控。最近读取厂商 HID 鼠标失败：%@"
+            "value": "已允许 TraceFence 使用输入监控。最近读取厂商 HID 鼠标失败：%@"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "已允許 MacTools 使用輸入監控。最近讀取廠商 HID 滑鼠失敗：%@"
+            "value": "已允許 TraceFence 使用輸入監控。最近讀取廠商 HID 滑鼠失敗：%@"
           }
         }
       }
@@ -3415,67 +3415,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "انتقل إلى إعدادات النظام > الخصوصية والأمان > مراقبة الإدخال واسمح بـ MacTools."
+            "value": "انتقل إلى إعدادات النظام > الخصوصية والأمان > مراقبة الإدخال واسمح بـ TraceFence."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Gehen Sie zu Systemeinstellungen > Datenschutz und Sicherheit > Eingabeüberwachung und erlauben Sie MacTools."
+            "value": "Gehen Sie zu Systemeinstellungen > Datenschutz und Sicherheit > Eingabeüberwachung und erlauben Sie TraceFence."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Go to System Settings > Privacy & Security > Input Monitoring and allow MacTools."
+            "value": "Go to System Settings > Privacy & Security > Input Monitoring and allow TraceFence."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vaya a Configuración del sistema > Privacidad y seguridad > Monitoreo de entrada y permita MacTools."
+            "value": "Vaya a Configuración del sistema > Privacidad y seguridad > Monitoreo de entrada y permita TraceFence."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Accédez à Paramètres système > Confidentialité et sécurité > Surveillance des entrées et autorisez MacTools."
+            "value": "Accédez à Paramètres système > Confidentialité et sécurité > Surveillance des entrées et autorisez TraceFence."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "[システム設定] > [プライバシーとセキュリティ] > [入力モニタリング] に移動し、MacTools を許可します。"
+            "value": "[システム設定] > [プライバシーとセキュリティ] > [入力モニタリング] に移動し、TraceFence を許可します。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "시스템 설정 > 개인정보 보호 및 보안 > 입력 모니터링으로 이동하여 MacTools을(를) 허용하세요."
+            "value": "시스템 설정 > 개인정보 보호 및 보안 > 입력 모니터링으로 이동하여 TraceFence를 허용하세요."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vá para Configurações do sistema > Privacidade e segurança > Monitoramento de entrada e permita MacTools."
+            "value": "Vá para Configurações do sistema > Privacidade e segurança > Monitoramento de entrada e permita TraceFence."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Перейдите в «Настройки системы» > «Конфиденциальность и безопасность» > «Мониторинг ввода» и разрешите MacTools."
+            "value": "Перейдите в «Настройки системы» > «Конфиденциальность и безопасность» > «Мониторинг ввода» и разрешите TraceFence."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "前往系统设置 → 隐私与安全性 → 输入监控，允许 MacTools。"
+            "value": "前往系统设置 → 隐私与安全性 → 输入监控，允许 TraceFence。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "前往系統設定 → 隱私權與安全性 → 輸入監控，允許 MacTools。"
+            "value": "前往系統設定 → 隱私權與安全性 → 輸入監控，允許 TraceFence。"
           }
         }
       }
@@ -5151,67 +5151,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "لا يمكن الوصول إلى واجهة Rapoo HID. اسمح لـ MacTools باستخدام مراقبة الإدخال في إعدادات النظام."
+            "value": "لا يمكن الوصول إلى واجهة Rapoo HID. اسمح لـ TraceFence باستخدام مراقبة الإدخال في إعدادات النظام."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kann nicht auf die HID-Schnittstelle Rapoo zugreifen. Erlauben Sie MacTools, die Eingabeüberwachung in den Systemeinstellungen zu verwenden."
+            "value": "Kann nicht auf die HID-Schnittstelle Rapoo zugreifen. Erlauben Sie TraceFence, die Eingabeüberwachung in den Systemeinstellungen zu verwenden."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cannot access the Rapoo HID interface. Allow MacTools to use Input Monitoring in System Settings."
+            "value": "Cannot access the Rapoo HID interface. Allow TraceFence to use Input Monitoring in System Settings."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "No se puede acceder a la interfaz HID Rapoo. Permita que MacTools utilice la supervisión de entrada en la configuración del sistema."
+            "value": "No se puede acceder a la interfaz HID Rapoo. Permita que TraceFence utilice la supervisión de entrada en la configuración del sistema."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Impossible d'accéder à l'interface Rapoo HID. Autorisez MacTools à utiliser la surveillance des entrées dans les paramètres système."
+            "value": "Impossible d'accéder à l'interface Rapoo HID. Autorisez TraceFence à utiliser la surveillance des entrées dans les paramètres système."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rapoo HID インターフェイスにアクセスできません。 MacTools がシステム設定で入力モニタリングを使用できるようにします。"
+            "value": "Rapoo HID インターフェイスにアクセスできません。 TraceFence がシステム設定で入力モニタリングを使用できるようにします。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rapoo HID 인터페이스에 액세스할 수 없습니다. MacTools이(가) 시스템 설정에서 입력 모니터링을 사용하도록 허용하세요."
+            "value": "Rapoo HID 인터페이스에 액세스할 수 없습니다. TraceFence이(가) 시스템 설정에서 입력 모니터링을 사용하도록 허용하세요."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Não é possível acessar a interface HID Rapoo. Permita que MacTools use o monitoramento de entrada nas configurações do sistema."
+            "value": "Não é possível acessar a interface HID Rapoo. Permita que TraceFence use o monitoramento de entrada nas configurações do sistema."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Невозможно получить доступ к HID-интерфейсу Rapoo. Разрешите MacTools использовать мониторинг ввода в настройках системы."
+            "value": "Невозможно получить доступ к HID-интерфейсу Rapoo. Разрешите TraceFence использовать мониторинг ввода в настройках системы."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法访问雷柏 HID 接口，请在系统设置中允许 MacTools 使用输入监控。"
+            "value": "无法访问雷柏 HID 接口，请在系统设置中允许 TraceFence 使用输入监控。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "無法訪問雷柏 HID 接口，請在系統設定中允許 MacTools 使用輸入監控。"
+            "value": "無法訪問雷柏 HID 接口，請在系統設定中允許 TraceFence 使用輸入監控。"
           }
         }
       }

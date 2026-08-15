@@ -287,7 +287,7 @@ final class SystemStatusMenuBarMetricsView: NSView {
 
 @MainActor
 final class SystemStatusMenuBarMetricsController: NSObject {
-    private static let autosaveName = "MacTools.SystemStatus.MenuBarMetrics"
+    private static let autosaveName = "TraceFence.SystemStatus.MenuBarMetrics"
 
     private let viewModel: SystemStatusViewModel
     private let settingsController: SystemStatusSettingsController

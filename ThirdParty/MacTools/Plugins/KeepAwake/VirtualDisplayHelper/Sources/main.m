@@ -98,7 +98,7 @@ static BOOL CreateVirtualDisplay(void) {
 
     id descriptor = [[descriptorClass alloc] init];
     [descriptor setQueue:dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0)];
-    [descriptor setName:@"MacTools Virtual Display"];
+    [descriptor setName:@"TraceFence Virtual Display"];
     [descriptor setWhitePoint:CGPointMake(0.3125, 0.3291)];
     [descriptor setRedPrimary:CGPointMake(0.6797, 0.3203)];
     [descriptor setGreenPrimary:CGPointMake(0.2559, 0.6983)];

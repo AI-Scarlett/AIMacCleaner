@@ -238,13 +238,13 @@ final class MenuBarHiddenItemEnumerator {
     }
 
     private static func namespace(for window: WindowInfo, sourcePID: pid_t?) -> String {
-        if window.title?.hasPrefix("MacTools.ControlItem.") == true,
+        if window.title?.hasPrefix("TraceFence.ControlItem.") == true,
            (
                window.ownerPID == ProcessInfo.processInfo.processIdentifier
                    || window.owningApplication?.bundleIdentifier == "com.apple.controlcenter"
            )
         {
-            return Bundle.main.bundleIdentifier ?? "MacTools"
+            return Bundle.main.bundleIdentifier ?? "TraceFence"
         }
         if let sourcePID,
            let app = NSRunningApplication(processIdentifier: sourcePID)
@@ -517,11 +517,11 @@ private final class MenuBarHiddenSourcePIDResolver {
         unresolvedWindows: [WindowInfo],
         allWindows: [WindowInfo]
     ) -> [CGWindowID: pid_t] {
-        let hostBundleID = Bundle.main.bundleIdentifier ?? "MacTools"
+        let hostBundleID = Bundle.main.bundleIdentifier ?? "TraceFence"
         let controlCenterBundleID = "com.apple.controlcenter"
         let markers = allWindows.compactMap { window -> Marker? in
             guard let title = window.title, title.contains(".") else { return nil }
-            guard !title.hasPrefix("MacTools.ControlItem."), title != hostBundleID else { return nil }
+            guard !title.hasPrefix("TraceFence.ControlItem."), title != hostBundleID else { return nil }
             return Marker(
                 windowID: window.windowID,
                 title: title,

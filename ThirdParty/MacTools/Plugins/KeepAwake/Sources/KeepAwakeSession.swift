@@ -41,11 +41,11 @@ final class KeepAwakeSession: KeepAwakeSessionManaging {
         var name: CFString {
             switch self {
             case .system:
-                return "MacTools Keep Awake" as CFString
+                return "TraceFence Keep Awake" as CFString
             case .display:
-                return "MacTools Keep Awake Display" as CFString
+                return "TraceFence Keep Awake Display" as CFString
             case .lidClose:
-                return "MacTools Keep Awake Closed Lid" as CFString
+                return "TraceFence Keep Awake Closed Lid" as CFString
             }
         }
     }

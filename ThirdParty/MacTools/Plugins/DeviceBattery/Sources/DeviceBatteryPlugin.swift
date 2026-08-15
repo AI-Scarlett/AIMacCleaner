@@ -327,7 +327,7 @@ final class DeviceBatteryPlugin: MacToolsPlugin, PluginComponentPanel,
                 isGranted: false,
                 footnote: localization.string(
                     "permission.inputMonitoring.openSettingsFootnote",
-                    defaultValue: "前往系统设置 → 隐私与安全性 → 输入监控，允许 MacTools。"
+                    defaultValue: "前往系统设置 → 隐私与安全性 → 输入监控，允许 TraceFence。"
                 )
             )
         }
@@ -351,18 +351,18 @@ final class DeviceBatteryPlugin: MacToolsPlugin, PluginComponentPanel,
         case .connected:
             return localization.string(
                 "permission.inputMonitoring.granted.connected",
-                defaultValue: "已允许 MacTools 使用输入监控，并已读取到厂商 HID 鼠标信息。"
+                defaultValue: "已允许 TraceFence 使用输入监控，并已读取到厂商 HID 鼠标信息。"
             )
         case .failed(let message):
             return localization.format(
                 "permission.inputMonitoring.granted.failed",
-                defaultValue: "已允许 MacTools 使用输入监控。最近读取厂商 HID 鼠标失败：%@",
+                defaultValue: "已允许 TraceFence 使用输入监控。最近读取厂商 HID 鼠标失败：%@",
                 message
             )
         case .idle, .scanning, .waitingForReport, .noDevice, .permissionDenied:
             return localization.string(
                 "permission.inputMonitoring.granted.default",
-                defaultValue: "已允许 MacTools 使用输入监控，可读取已适配厂商 HID 鼠标信息。"
+                defaultValue: "已允许 TraceFence 使用输入监控，可读取已适配厂商 HID 鼠标信息。"
             )
         }
     }
@@ -372,7 +372,7 @@ final class DeviceBatteryPlugin: MacToolsPlugin, PluginComponentPanel,
         case .permissionDenied:
             return localization.string(
                 "permission.inputMonitoring.openSettingsFootnote",
-                defaultValue: "前往系统设置 → 隐私与安全性 → 输入监控，允许 MacTools。"
+                defaultValue: "前往系统设置 → 隐私与安全性 → 输入监控，允许 TraceFence。"
             )
         case .failed(let message):
             return localization.format(

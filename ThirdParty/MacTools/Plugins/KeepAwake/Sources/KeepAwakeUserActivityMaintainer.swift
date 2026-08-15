@@ -65,7 +65,7 @@ final class KeepAwakeUserActivityMaintainer: KeepAwakeUserActivityMaintaining {
         self.refreshInterval = refreshInterval
         self.declareActivity = activityDeclarer ?? { assertionID in
             IOPMAssertionDeclareUserActivity(
-                "MacTools Screen-Based Tools" as CFString,
+                "TraceFence Screen-Based Tools" as CFString,
                 kIOPMUserActiveRemote,
                 &assertionID
             )

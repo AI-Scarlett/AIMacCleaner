@@ -577,8 +577,8 @@
           }
         },
         "en": { "stringUnit": { "state": "translated", "value": "System Settings → Privacy & Security → Accessibility." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "系统设置 → 隐私与安全性 → 辅助功能，允许 MacTools。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "系統設定 → 隱私權與安全性 → 輔助使用，允許 MacTools。" } }
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "系统设置 → 隐私与安全性 → 辅助功能，允许 TraceFence。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "系統設定 → 隱私權與安全性 → 輔助使用，允許 TraceFence。" } }
       }
     },
     "permission.accessibility.title": {
@@ -742,8 +742,8 @@
           }
         },
         "en": { "stringUnit": { "state": "translated", "value": "System Settings → Privacy & Security → Input Monitoring." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "系统设置 → 隐私与安全性 → 输入监控，允许 MacTools。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "系統設定 → 隱私權與安全性 → 輸入監控，允許 MacTools。" } }
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "系统设置 → 隐私与安全性 → 输入监控，允许 TraceFence。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "系統設定 → 隱私權與安全性 → 輸入監控，允許 TraceFence。" } }
       }
     },
     "permission.inputMonitoring.granted": {

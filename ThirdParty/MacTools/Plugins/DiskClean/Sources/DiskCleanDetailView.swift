@@ -134,7 +134,7 @@ struct DiskCleanDetailView: View {
                 lines: [
                     localization.string(
                         "detail.fda.footnote",
-                        defaultValue: "授权后请退出并重新打开 MacTools。"
+                        defaultValue: "授权后请退出并重新打开 TraceFence。"
                     )
                 ]
             ) {

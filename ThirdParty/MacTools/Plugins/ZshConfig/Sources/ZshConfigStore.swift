@@ -209,7 +209,7 @@ final class ZshConfigStore: ObservableObject {
         # \(localization.format("store.header.role", defaultValue: "说明：%@", type.role(localization: localization)))
         # \(localization.format("store.header.whenLoaded", defaultValue: "加载时机：%@", type.whenLoaded(localization: localization)))
         # \(localization.format("store.header.recommendedUse", defaultValue: "推荐用途：%@", type.recommendedUse(localization: localization)))
-        # \(localization.format("store.header.createdAt", defaultValue: "由 MacTools 创建于 %@", createdAt))
+        # \(localization.format("store.header.createdAt", defaultValue: "由 TraceFence 创建于 %@", createdAt))
         #
         # \(localization.format("store.header.reloadHint", defaultValue: "保存后，在终端执行 %@ 即可立即生效（.zshrc 适用）。", sourceCommand))
         #

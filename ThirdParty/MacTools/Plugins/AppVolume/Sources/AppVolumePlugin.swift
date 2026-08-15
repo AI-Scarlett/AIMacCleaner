@@ -171,7 +171,7 @@ final class AppVolumePlugin: MacToolsPlugin, PluginPrimaryPanel {
                 isGranted: false,
                 footnote: localization.string(
                     "permission.systemAudio.footnote.requesting",
-                    defaultValue: "请在 macOS 权限提示中允许 MacTools。"
+                    defaultValue: "请在 macOS 权限提示中允许 TraceFence。"
                 ),
                 statusText: localization.string("permission.status.requesting", defaultValue: "正在请求"),
                 statusSystemImage: "ellipsis.circle",
@@ -184,7 +184,7 @@ final class AppVolumePlugin: MacToolsPlugin, PluginPrimaryPanel {
                 isGranted: false,
                 footnote: localization.string(
                     "permission.systemAudio.footnote.denied",
-                    defaultValue: "前往系统设置 → 隐私与安全性 → 屏幕与系统音频录制，授权 MacTools。"
+                    defaultValue: "前往系统设置 → 隐私与安全性 → 屏幕与系统音频录制，授权 TraceFence。"
                 )
             )
         }

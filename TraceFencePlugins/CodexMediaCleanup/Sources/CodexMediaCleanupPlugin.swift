@@ -17,7 +17,10 @@ private struct CodexMediaCleanupPluginProvider: PluginProvider {
         let localization = PluginLocalization(bundle: context.resourceBundle)
         let supportDirectory = context.supportDirectory ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/TraceFence/Plugins/codex-media-cleanup", isDirectory: true)
-        let controller = CodexMediaCleanupController(supportDirectory: supportDirectory)
+        let controller = CodexMediaCleanupController(
+            supportDirectory: supportDirectory,
+            localization: localization
+        )
         return [CodexMediaCleanupPlugin(controller: controller, localization: localization)]
     }
 }
@@ -50,7 +53,7 @@ final class CodexMediaCleanupPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginS
         self.controller = controller
         self.localization = localization
         self.metadata = PluginMetadata(
-            id: "tracefence.codex-media-cleanup",
+            id: "codex-media-cleanup",
             title: localization.string("metadata.title", defaultValue: "Codex 媒体整理"),
             iconName: "photo.stack",
             iconTint: Color(nsColor: .systemPurple),
@@ -131,9 +134,16 @@ final class CodexMediaCleanupPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginS
         case .completed:
             return localization.string("panel.completed", defaultValue: "修复完成")
         case .scanned:
-            guard let report = snapshot.scanReport else { return "扫描完成" }
+            guard let report = snapshot.scanReport else {
+                return localization.string("panel.scanned", defaultValue: "扫描完成")
+            }
             if report.needsRepair {
-                return "\(report.affectedFiles) 个会话需要处理 · 约 \(Self.bytes(report.estimatedReclaimableBytes))"
+                return localization.format(
+                    "panel.needsRepairFormat",
+                    defaultValue: "%lld 个会话需要处理 · 约 %@",
+                    Int64(report.affectedFiles),
+                    Self.bytes(report.estimatedReclaimableBytes)
+                )
             }
             return localization.string("panel.clean", defaultValue: "未发现需要处理的重复媒体")
         }
@@ -143,13 +153,15 @@ final class CodexMediaCleanupPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginS
         let snapshot = controller.snapshot
         var controls = [action(
             id: ControlID.scan,
-            title: snapshot.phase == .scanning ? "扫描中…" : "扫描",
+            title: snapshot.phase == .scanning
+                ? localization.string("action.scanning", defaultValue: "扫描中…")
+                : localization.string("action.scan", defaultValue: "扫描"),
             icon: "magnifyingglass",
             enabled: controller.canScan
         )]
         controls.append(action(
             id: ControlID.repair,
-            title: "打开详情并确认修复",
+            title: localization.string("action.openRepair", defaultValue: "打开详情并确认修复"),
             icon: "arrow.up.right.square",
             enabled: controller.canRepair,
             divider: true
@@ -157,7 +169,7 @@ final class CodexMediaCleanupPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginS
         if snapshot.isBusy {
             controls.append(action(
                 id: ControlID.cancel,
-                title: "停止",
+                title: localization.string("action.stop", defaultValue: "停止"),
                 icon: "xmark.circle",
                 enabled: true,
                 divider: true
@@ -165,7 +177,7 @@ final class CodexMediaCleanupPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginS
         }
         controls.append(action(
             id: ControlID.openDetails,
-            title: "打开详情",
+            title: localization.string("action.openDetails", defaultValue: "打开详情"),
             icon: "arrow.up.right.square",
             enabled: true,
             divider: true,

@@ -7,7 +7,6 @@ import argparse
 import json
 import pathlib
 import re
-import shutil
 
 
 MARKETING_VERSION_PATTERN = re.compile(
@@ -29,12 +28,14 @@ def copy_manifest(
     configuration: str,
     app_version_config: pathlib.Path,
 ) -> None:
-    if configuration != "Debug":
-        shutil.copy2(source, destination)
-        return
-
     manifest = json.loads(source.read_text(encoding="utf-8"))
-    manifest["minHostVersion"] = development_host_version(app_version_config)
+    if configuration == "Debug":
+        manifest["minHostVersion"] = development_host_version(app_version_config)
+    else:
+        # Build instructions are source-only metadata. They are neither needed
+        # nor accepted as part of the installed/runtime package contract.
+        manifest.pop("build", None)
+        manifest.pop("buildProject", None)
     destination.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

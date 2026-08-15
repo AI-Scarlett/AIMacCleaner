@@ -91,7 +91,7 @@ final class RightClickPlugin: MacToolsPlugin {
                 title: localization.string("permission.finderExtension.title", defaultValue: "Finder 扩展"),
                 description: localization.string(
                     "permission.finderExtension.description",
-                    defaultValue: "在系统设置中打开 MacTools 右键工具。"
+                    defaultValue: "在系统设置中打开 TraceFence 右键工具。"
                 )
             )
         ]

@@ -329,7 +329,7 @@ final class MouseEnhancerPlugin:
                     ? nil
                     : localization.string(
                         "permission.accessibility.footnote",
-                        defaultValue: "系统设置 → 隐私与安全性 → 辅助功能，允许 MacTools。"
+                        defaultValue: "系统设置 → 隐私与安全性 → 辅助功能，允许 TraceFence。"
                     )
             )
         case PermissionID.inputMonitoring:
@@ -631,7 +631,7 @@ final class MouseEnhancerPlugin:
                 isGranted: false,
                 footnote: localization.string(
                     "permission.inputMonitoring.footnote",
-                    defaultValue: "系统设置 → 隐私与安全性 → 输入监控，允许 MacTools。"
+                    defaultValue: "系统设置 → 隐私与安全性 → 输入监控，允许 TraceFence。"
                 )
             )
         }

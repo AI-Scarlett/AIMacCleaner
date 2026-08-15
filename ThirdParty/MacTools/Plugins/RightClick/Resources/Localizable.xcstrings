@@ -220,67 +220,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "قم بتشغيل MacTools انقر بزر الماوس الأيمن في إعدادات النظام."
+            "value": "قم بتشغيل TraceFence انقر بزر الماوس الأيمن في إعدادات النظام."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aktivieren Sie „MacTools“ mit der rechten Maustaste in den Systemeinstellungen."
+            "value": "Aktivieren Sie „TraceFence“ mit der rechten Maustaste in den Systemeinstellungen."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turn on MacTools Right Click in System Settings."
+            "value": "Turn on TraceFence Right Click in System Settings."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Activa MacTools Clic derecho en Configuración del sistema."
+            "value": "Activa TraceFence Clic derecho en Configuración del sistema."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Activez MacTools Clic droit dans les paramètres système."
+            "value": "Activez TraceFence Clic droit dans les paramètres système."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "システム設定で MacTools を右クリックしてオンにします。"
+            "value": "システム設定で TraceFence を右クリックしてオンにします。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "시스템 설정에서 MacTools을(를) 마우스 오른쪽 버튼으로 클릭하세요."
+            "value": "시스템 설정에서 TraceFence를 마우스 오른쪽 버튼으로 클릭하세요."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ative MacTools Clique com o botão direito nas configurações do sistema."
+            "value": "Ative TraceFence Clique com o botão direito nas configurações do sistema."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Включите MacTools Щелкните правой кнопкой мыши в настройках системы."
+            "value": "Включите TraceFence Щелкните правой кнопкой мыши в настройках системы."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在系统设置中打开 MacTools 右键工具。"
+            "value": "在系统设置中打开 TraceFence 右键工具。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在系統設定中打開 MacTools 右鍵工具。"
+            "value": "在系統設定中打開 TraceFence 右鍵工具。"
           }
         }
       }

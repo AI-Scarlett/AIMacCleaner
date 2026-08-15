@@ -17,7 +17,7 @@ enum DiskCleanStorageLocation {
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        return applicationSupport.appendingPathComponent("MacTools/DiskClean", isDirectory: true)
+        return applicationSupport.appendingPathComponent("TraceFence/DiskClean", isDirectory: true)
     }
 }
 

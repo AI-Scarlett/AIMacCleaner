@@ -157,7 +157,7 @@ struct IPOverviewLeakTestService: IPOverviewLeakTesting {
         var request = URLRequest(url: url)
         request.timeoutInterval = timeout
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        request.setValue("MacTools IP Overview", forHTTPHeaderField: "User-Agent")
+        request.setValue("TraceFence IP Overview", forHTTPHeaderField: "User-Agent")
         return try await httpClient.data(for: request)
     }
 
