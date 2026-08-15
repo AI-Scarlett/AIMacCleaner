@@ -13,18 +13,17 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.6")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.7")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
-    f"TraceFence {VERSION} consolidates remote Agent control, plugin ownership, and direct-license integrity.\n\n"
-    "- Adds DeepSeek Harness discovery, project/session visibility, and fail-closed remote control through TraceFence Sentinel.\n"
-    "- Consolidates public/local IP, connectivity, network quality, and leak checks in Network Diagnostics 1.0.18.\n"
-    "- Keeps System Status focused on live system metrics and publishes System Status 1.0.21 independently.\n"
-    "- Clears completed plugin restart notices after a real cold launch while keeping in-tab updates available.\n"
-    "- Authenticates cached website licenses with a per-install Keychain-backed HMAC and refreshes Dodo authorization at launch.\n"
+    f"TraceFence {VERSION} fixes plugin workspace launch reliability and loading layout stability.\n\n"
+    "- Prevents plugin startup from being cancelled by an observed package-state refresh.\n"
+    "- Keeps the sidebar and plugin canvas at full-window size during first launch.\n"
+    "- Adds an eight-second startup timeout with localized retry instead of an endless spinner.\n"
+    "- Retains the DeepSeek Harness, plugin ownership, and direct-license hardening delivered in TraceFence 1.2.6.\n"
 )
 
 

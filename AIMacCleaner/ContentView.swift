@@ -194,9 +194,16 @@ struct ContentView: View {
         HStack(spacing: 0) {
             sidebar
             detailContent
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
+                .layoutPriority(1)
                 .appCanvas()
         }
         .frame(minWidth: 960, minHeight: 640)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.clear)
         .id(colorPalette)
         .onAppear {

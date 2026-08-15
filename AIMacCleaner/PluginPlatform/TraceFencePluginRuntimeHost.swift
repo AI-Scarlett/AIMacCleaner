@@ -310,6 +310,8 @@ struct TraceFencePluginRuntimeView: View {
     @State private var selectedSurface: Surface = .main
     @State private var visiblePanelSurface: PluginPanelSurface?
     @State private var didResolveDefaultSurface = false
+    @State private var loadingTimedOut = false
+    @State private var loadingWatchdog: Task<Void, Never>?
 
     private enum Surface: String {
         case main
@@ -387,7 +389,7 @@ struct TraceFencePluginRuntimeView: View {
                     title: localizer.t("插件已停用", en: "Plugin disabled")
                 )
             case .idle, .loading:
-                ProgressView(localizer.t("正在启动插件…", en: "Starting plugin…"))
+                runtimeLoadingView
             case .active:
                 activePlugin
             case let .failed(message):
@@ -399,6 +401,7 @@ struct TraceFencePluginRuntimeView: View {
                 )
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // Plugin workspaces are type-erased when they cross the bundle boundary.
         // Changing Locale alone does not rebuild an already-created AnyView, so
         // give the rendered subtree a new identity whenever TraceFence changes
@@ -410,20 +413,19 @@ struct TraceFencePluginRuntimeView: View {
         .environment(\.pluginComponentTheme, pluginComponentTheme)
         .tint(Theme.Colors.accent)
         .preferredColorScheme(preferredPluginColorScheme)
-        .task {
-            PluginRuntimeLocalization.source.setPreference(localizer.language.rawValue)
-            packageManager.refresh(catalog: catalogService.catalog)
-            runtimeHost.open(pluginID: pluginID)
-            runtimeHost.refreshLocalization()
-            resolveDefaultSurfaceIfNeeded()
+        .onAppear {
+            launchPlugin()
         }
         .onChange(of: pluginLocaleSource.revision) { _ in
             runtimeHost.refreshLocalization()
         }
         .onChange(of: runtimeHost.state(pluginID: pluginID)) { state in
             if state == .active {
+                stopLoadingWatchdog()
                 resolveDefaultSurfaceIfNeeded()
                 updateVisiblePanelSurface()
+            } else if case .failed = state {
+                stopLoadingWatchdog()
             } else {
                 hideVisiblePanelSurface()
             }
@@ -432,8 +434,89 @@ struct TraceFencePluginRuntimeView: View {
             updateVisiblePanelSurface()
         }
         .onDisappear {
+            stopLoadingWatchdog()
             hideVisiblePanelSurface()
         }
+    }
+
+    private var runtimeLoadingView: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            if loadingTimedOut {
+                Image(systemName: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.warning)
+                Text(localizer.t("插件启动时间过长", en: "Plugin startup is taking too long"))
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Text(localizer.t(
+                    "可以重新尝试；其他页面和插件不会受影响。",
+                    en: "You can retry without affecting other pages or plugins."
+                ))
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                Button {
+                    launchPlugin()
+                } label: {
+                    Label(localizer.t("重新启动插件", en: "Retry Plugin"), systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(BrandButtonStyle(
+                    color: Theme.Colors.accent,
+                    variant: .secondary,
+                    minHeight: 34
+                ))
+            } else {
+                ProgressView()
+                    .controlSize(.large)
+                Text(localizer.t("正在启动插件…", en: "Starting plugin…"))
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .padding(Theme.Spacing.xxl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .background(Theme.Colors.background.opacity(0.22))
+    }
+
+    /// Opening from `.task` is unsafe here because refreshing an observed
+    /// package manager can rebuild this view and cancel the task before
+    /// `runtimeHost.open` runs. `onAppear` executes this short MainActor
+    /// sequence atomically and the package records are already refreshed by
+    /// the workspace/store owner.
+    private func launchPlugin() {
+        loadingTimedOut = false
+        stopLoadingWatchdog()
+        PluginRuntimeLocalization.source.setPreference(localizer.language.rawValue)
+        runtimeHost.synchronizeWithInstalledPlugins()
+        runtimeHost.open(pluginID: pluginID)
+        runtimeHost.refreshLocalization()
+        resolveDefaultSurfaceIfNeeded()
+
+        switch runtimeHost.state(pluginID: pluginID) {
+        case .idle, .loading:
+            startLoadingWatchdog()
+        default:
+            break
+        }
+    }
+
+    private func startLoadingWatchdog() {
+        loadingWatchdog?.cancel()
+        loadingWatchdog = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            guard !Task.isCancelled else { return }
+            switch runtimeHost.state(pluginID: pluginID) {
+            case .idle, .loading:
+                loadingTimedOut = true
+            default:
+                break
+            }
+        }
+    }
+
+    private func stopLoadingWatchdog() {
+        loadingWatchdog?.cancel()
+        loadingWatchdog = nil
     }
 
     @ViewBuilder
