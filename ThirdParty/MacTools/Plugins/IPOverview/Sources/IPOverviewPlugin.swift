@@ -53,13 +53,13 @@ final class IPOverviewPlugin:
         self.viewModel = viewModel ?? IPOverviewViewModel(storage: context.storage, localization: localization)
         self.metadata = PluginMetadata(
             id: "ip-overview",
-            title: localization.string("metadata.title", defaultValue: "IP 检测"),
+            title: localization.string("metadata.title", defaultValue: "网络诊断"),
             iconName: "network",
             iconTint: Color(nsColor: .systemBlue),
             order: 12,
             defaultDescription: localization.string(
                 "metadata.description",
-                defaultValue: "查看公网 IP、本地地址和归属地"
+                defaultValue: "统一诊断公网与本地 IP、归属地、连通性、网络质量及泄漏风险"
             )
         )
         self.primaryPanelDescriptor = PluginPrimaryPanelDescriptor(

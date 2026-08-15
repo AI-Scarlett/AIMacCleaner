@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 import Security
 import StoreKit
@@ -573,6 +574,7 @@ enum TraceFenceEntitlementPolicy {
             await AppStoreSubscriptionService.shared.refresh()
         } else {
             DirectLicenseService.shared.refreshTrialState()
+            await DirectLicenseService.shared.validateCurrentLicense()
         }
     }
 
@@ -633,13 +635,16 @@ final class DirectLicenseService: ObservableObject {
     @Published private(set) var isBusy = false
     @Published private(set) var licenseSyncedThisRun = false
 
-    var isLicensed: Bool { snapshot.status == .licensed }
+    var isLicensed: Bool {
+        snapshot.status == .licensed &&
+            snapshot.lastValidatedAt.map { Date().timeIntervalSince($0) <= offlineGraceDuration } == true
+    }
     var trialDuration: TimeInterval { 48 * 60 * 60 }
     var isTrialActive: Bool { !isLicensed && trialSnapshot.expiresAt > Date() }
     var isTrialExpired: Bool { !isLicensed && trialSnapshot.expiresAt <= Date() }
     var canUseCoreFeatures: Bool { isLicensed || isTrialActive }
     var canUseProFeatures: Bool { isLicensed }
-    var currentTier: TraceFenceSubscriptionTier { TraceFenceDistributionPolicy.tier(from: snapshot) }
+    var currentTier: TraceFenceSubscriptionTier { isLicensed ? .directStandard : .none }
     var trialRemainingSeconds: TimeInterval {
         max(0, trialSnapshot.expiresAt.timeIntervalSinceNow)
     }
@@ -650,24 +655,23 @@ final class DirectLicenseService: ObservableObject {
     private var dodoLicenseBaseURL: URL { TraceFenceDistributionPolicy.dodoEnvironment.licenseBaseURL }
     private let offlineGraceDuration: TimeInterval = 72 * 60 * 60
     private let snapshotKey = "traceFenceLicenseSnapshot"
+    private let snapshotSignatureKey = "traceFenceLicenseSnapshotSignature"
     private let trialStartedKey = "traceFenceTrialStartedAt"
     private let serviceName = "TraceFence.DirectLicense"
     private let licenseAccount = "license_key"
     private let instanceAccount = "instance_id"
     private let businessAccount = "business_id"
     private let productAccount = "product_id"
+    private let snapshotSigningKeyAccount = "snapshot_signing_key"
     private let decoder = JSONDecoder()
     private let dateCodec = ISO8601DateFormatter()
 
     private init() {
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        if let data = UserDefaults.standard.data(forKey: snapshotKey),
-           let decoded = try? JSONDecoder().decode(DirectLicenseSnapshot.self, from: data) {
-            snapshot = decoded
-        } else {
-            snapshot = .empty
-        }
+        snapshot = .empty
         trialSnapshot = .empty
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        snapshot = loadVerifiedSnapshot()
+        persistSnapshot()
         trialSnapshot = loadOrStartTrial()
     }
 
@@ -952,14 +956,105 @@ final class DirectLicenseService: ObservableObject {
     }
 
     private func persistSnapshot() {
-        if let data = try? JSONEncoder().encode(snapshot) {
-            UserDefaults.standard.set(data, forKey: snapshotKey)
+        guard let data = try? JSONEncoder().encode(snapshot),
+              let signingKey = snapshotSigningKey() else {
+            UserDefaults.standard.removeObject(forKey: snapshotKey)
+            UserDefaults.standard.removeObject(forKey: snapshotSignatureKey)
+            return
         }
+        let signature = Data(HMAC<SHA256>.authenticationCode(
+            for: data,
+            using: SymmetricKey(data: signingKey)
+        ))
+        UserDefaults.standard.set(data, forKey: snapshotKey)
+        UserDefaults.standard.set(signature, forKey: snapshotSignatureKey)
+    }
+
+    private func loadVerifiedSnapshot() -> DirectLicenseSnapshot {
+        let defaults = UserDefaults.standard
+        guard let data = defaults.data(forKey: snapshotKey),
+              let decoded = try? JSONDecoder().decode(DirectLicenseSnapshot.self, from: data) else {
+            defaults.removeObject(forKey: snapshotKey)
+            defaults.removeObject(forKey: snapshotSignatureKey)
+            return .empty
+        }
+
+        if let storedSignature = defaults.data(forKey: snapshotSignatureKey) {
+            guard let signingKey = readSecretData(account: snapshotSigningKeyAccount) else {
+                defaults.removeObject(forKey: snapshotKey)
+                defaults.removeObject(forKey: snapshotSignatureKey)
+                return .empty
+            }
+            let expectedSignature = Data(HMAC<SHA256>.authenticationCode(
+                for: data,
+                using: SymmetricKey(data: signingKey)
+            ))
+            guard constantTimeEqual(storedSignature, expectedSignature) else {
+                defaults.removeObject(forKey: snapshotKey)
+                defaults.removeObject(forKey: snapshotSignatureKey)
+                return .empty
+            }
+            return decoded
+        }
+
+        // Versions before 1.2.6 stored this cache without a signature. Only migrate
+        // a licensed cache when matching credentials already exist in Keychain.
+        guard decoded.status != .licensed || hasMatchingLicenseCredentials(for: decoded) else {
+            defaults.removeObject(forKey: snapshotKey)
+            return .empty
+        }
+        return decoded
+    }
+
+    private func hasMatchingLicenseCredentials(for cachedSnapshot: DirectLicenseSnapshot) -> Bool {
+        guard readSecret(account: licenseAccount)?.isEmpty == false,
+              let storedBusinessID = readSecret(account: businessAccount),
+              TraceFenceDistributionPolicy.isSupportedDodoBusinessID(storedBusinessID),
+              let storedProductID = readSecret(account: productAccount),
+              TraceFenceDistributionPolicy.isSupportedDodoProductID(storedProductID),
+              cachedSnapshot.businessID == storedBusinessID,
+              cachedSnapshot.productID == storedProductID,
+              cachedSnapshot.lastValidatedAt.map({ Date().timeIntervalSince($0) <= offlineGraceDuration }) == true else {
+            return false
+        }
+        return true
+    }
+
+    private func snapshotSigningKey() -> Data? {
+        if let existing = readSecretData(account: snapshotSigningKeyAccount), existing.count == 32 {
+            return existing
+        }
+
+        var generated = Data(count: 32)
+        let status = generated.withUnsafeMutableBytes { bytes in
+            guard let baseAddress = bytes.baseAddress else { return errSecParam }
+            return SecRandomCopyBytes(kSecRandomDefault, bytes.count, baseAddress)
+        }
+        guard status == errSecSuccess,
+              saveSecretData(generated, account: snapshotSigningKeyAccount),
+              readSecretData(account: snapshotSigningKeyAccount) == generated else {
+            return nil
+        }
+        return generated
+    }
+
+    private func constantTimeEqual(_ lhs: Data, _ rhs: Data) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        var difference: UInt8 = 0
+        for (left, right) in zip(lhs, rhs) {
+            difference |= left ^ right
+        }
+        return difference == 0
     }
 
     private func saveSecret(_ value: String, account: String) {
-        deleteSecret(account: account)
         guard let data = value.data(using: .utf8) else { return }
+        _ = saveSecretData(data, account: account)
+    }
+
+    @discardableResult
+    private func saveSecretData(_ data: Data, account: String) -> Bool {
+        deleteSecret(account: account)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -967,10 +1062,15 @@ final class DirectLicenseService: ObservableObject {
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             kSecValueData as String: data
         ]
-        SecItemAdd(query as CFDictionary, nil)
+        return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
     }
 
     private func readSecret(account: String) -> String? {
+        guard let data = readSecretData(account: account) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func readSecretData(account: String) -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -983,7 +1083,7 @@ final class DirectLicenseService: ObservableObject {
               let data = item as? Data else {
             return nil
         }
-        return String(data: data, encoding: .utf8)
+        return data
     }
 
     private func deleteSecret(account: String) {

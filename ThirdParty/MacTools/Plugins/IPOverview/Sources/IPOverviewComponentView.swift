@@ -63,7 +63,7 @@ struct IPOverviewComponentView: View {
                         .background(.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
 
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(localization.string("component.title", defaultValue: "IP 检测"))
+                        Text(localization.string("component.title", defaultValue: "网络诊断"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
                         Text(viewModel.snapshot.preferredGeoInfo?.locationText ?? localization.string(

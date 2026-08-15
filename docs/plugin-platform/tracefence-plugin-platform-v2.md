@@ -102,6 +102,28 @@ renders as localized Free or Paid metadata. A Standard subscriber can therefore
 see both Paid and Included on one plugin: the first label describes the product,
 while the second describes the current account's acquisition right.
 
+## TraceFence 1.2.6 ownership and in-place updates
+
+The host no longer duplicates utility applications. Public and local IP,
+location, reachability, latency, network quality, DNS leaks and WebRTC leaks are
+owned by the independently versioned `tracefence.tools.ip-overview` Network
+Diagnostics plugin. System Status owns live throughput only. The TraceFence host
+retains only capabilities that cannot be externalized safely: Agent egress
+security, the online/offline mode and iOS remote pairing.
+
+Installed plugins expose their own lifecycle control in the desktop plugin Tab:
+
+1. Check the signed GitHub catalog for that plugin.
+2. Compare the installed plugin version with the catalog version.
+3. Download and validate only that plugin's immutable release asset.
+4. Install it atomically and show a restart requirement when the old bundle is
+   already loaded.
+5. On the next cold host launch, acknowledge the completed version switch and
+   clear the persisted restart requirement.
+
+The marketplace remains the discovery, purchase and bulk-management surface;
+it is no longer a mandatory detour for routine use or a single-plugin update.
+
 ## Target boundaries
 
 ### 1. Catalog

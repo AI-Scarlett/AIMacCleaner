@@ -2,6 +2,19 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.2.6] - 2026-08-15
+
+### Added
+- DeepSeek Harness 加入 Mac 项目与会话发现、Agent Core 适配器和 iOS 远程控制链路；无法确定安全控制指令时保持拒绝执行。
+
+### Fixed
+- 官网授权缓存改为由每台 Mac 的 Keychain 随机密钥进行 HMAC 校验，并在启动时向 Dodo 重新验证；旧缓存只有存在匹配授权凭据且仍处于离线宽限期时才迁移。
+- 插件安装或回滚产生的“需要重启”状态会在真正冷启动完成后清除，不再永久残留。
+
+### Improved
+- 公网/本地 IP、连通性、网络质量及 DNS/WebRTC 泄漏统一归入“网络诊断”插件 1.0.18；系统状态插件 1.0.21 只保留实时吞吐等系统指标。
+- 已安装网络诊断插件会一次性迁移到桌面插件 Tab，用户之后仍可自行调整固定位置。
+
 ## [1.2.5] - 2026-08-15
 
 ### Fixed

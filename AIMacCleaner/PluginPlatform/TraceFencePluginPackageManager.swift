@@ -51,6 +51,32 @@ final class TraceFencePluginPackageManager: ObservableObject {
 
     private init() {
         refresh(catalog: TraceFenceMarketplaceCatalogRuntime.activeCatalog)
+        acknowledgeCompletedHostRestart()
+    }
+
+    /// A restart requirement is created only after an install or rollback in
+    /// the current host process. Reaching this initializer proves a new host
+    /// process has started, so the persisted requirement can be acknowledged.
+    /// Updates performed later in this process still set it back to true.
+    private func acknowledgeCompletedHostRestart() {
+        for pluginID in records.keys.sorted() {
+            guard var record = records[pluginID], record.restartRequired else { continue }
+            record.restartRequired = false
+            do {
+                try Self.saveRecord(record)
+                records[pluginID] = record
+                states[pluginID] = .installed(
+                    version: record.activeVersion,
+                    enabled: record.enabled,
+                    restartRequired: false
+                )
+            } catch {
+                states[pluginID] = .failed(
+                    message: error.localizedDescription,
+                    installedVersion: record.activeVersion
+                )
+            }
+        }
     }
 
     func refresh(catalog: TraceFenceMarketplaceCatalog) {

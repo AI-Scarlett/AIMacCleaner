@@ -759,21 +759,9 @@ struct SystemStatusComponentView: View {
                     )
                 }
 
-                VStack(alignment: .leading, spacing: 1) {
-                    SystemStatusKeyValueLine(
-                        label: localization.string("network.publicIP", defaultValue: "公网"),
-                        value: network.publicIPAddress
-                            ?? localization.string("network.publicIP.collecting", defaultValue: "获取中"),
-                        copyValue: network.publicIPAddress,
-                        localization: localization
-                    )
-                    SystemStatusKeyValueLine(
-                        label: localization.string("network.localIP", defaultValue: "内网"),
-                        value: network.ipAddress ?? "—",
-                        copyValue: network.ipAddress,
-                        localization: localization
-                    )
-                }
+                // Address, reachability and leak diagnosis now belong to the
+                // independently updated Network Diagnostics plugin. System
+                // Status owns only live throughput as a system metric.
             }
         }
     }

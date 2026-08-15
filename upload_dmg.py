@@ -13,18 +13,18 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.4")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.6")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
-    f"TraceFence {VERSION} improves plugin reliability, large-history scanning, and UI consistency.\n\n"
-    "- Automatically resumes bounded Token & Usage backfill from cached cursors, without requiring repeated Continue clicks.\n"
-    "- Runs Codex Media Cleanup 1.0.2 analysis in an isolated worker with a 64 MiB result limit, protecting the host app from memory spikes and crashes.\n"
-    "- Lets installed plugins check for and install updates directly from their own tabs.\n"
-    "- Moves the website build's overlapping network diagnostics into the unified IP Check plugin.\n"
-    "- Keeps plugin language, light/dark appearance, and color skin synchronized with TraceFence in real time.\n"
+    f"TraceFence {VERSION} consolidates remote Agent control, plugin ownership, and direct-license integrity.\n\n"
+    "- Adds DeepSeek Harness discovery, project/session visibility, and fail-closed remote control through TraceFence Sentinel.\n"
+    "- Consolidates public/local IP, connectivity, network quality, and leak checks in Network Diagnostics 1.0.18.\n"
+    "- Keeps System Status focused on live system metrics and publishes System Status 1.0.21 independently.\n"
+    "- Clears completed plugin restart notices after a real cold launch while keeping in-tab updates available.\n"
+    "- Authenticates cached website licenses with a per-install Keychain-backed HMAC and refreshes Dodo authorization at launch.\n"
 )
 
 

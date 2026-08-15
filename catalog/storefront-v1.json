@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-08-15T09:15:27Z",
+  "expiresAt": "2027-08-15T12:30:10Z",
   "offers": [
     {
       "active": true,
@@ -2198,60 +2198,60 @@
       "isFree": false,
       "localizedMetadata": {
         "ar": {
-          "displayName": "فحص IP",
-          "summary": "عرض IP الخروج وIP المحلي والموقع وجودة الشبكة."
+          "displayName": "تشخيص الشبكة",
+          "summary": "تشخيص IP العام والمحلي والموقع وجودة الاتصال وتسريبات DNS وWebRTC."
         },
         "de": {
-          "displayName": "IP-Prüfung",
-          "summary": "Zeigt Ausgangs-IP, lokale IP, Standort und Netzwerkqualität an."
+          "displayName": "Netzwerkdiagnose",
+          "summary": "Diagnose von öffentlicher und lokaler IP, Standort, Verbindung, Netzwerkqualität sowie DNS- und WebRTC-Lecks."
         },
         "en": {
-          "displayName": "IP Check",
-          "summary": "View egress IP, local IP, location, and network quality."
+          "displayName": "Network Diagnostics",
+          "summary": "Diagnose public and local IPs, location, connectivity, network quality, and DNS/WebRTC leaks."
         },
         "es": {
-          "displayName": "Comprobación de IP",
-          "summary": "Consulta la IP de salida, la IP local, la ubicación y la calidad de red."
+          "displayName": "Diagnóstico de red",
+          "summary": "Diagnostica IP pública y local, ubicación, conectividad, calidad de red y fugas DNS/WebRTC."
         },
         "fr": {
-          "displayName": "Vérification IP",
-          "summary": "Afficher l’IP de sortie, l’IP locale, la localisation et la qualité du réseau."
+          "displayName": "Diagnostic réseau",
+          "summary": "Diagnostiquez les IP publique et locale, la localisation, la connectivité, la qualité réseau et les fuites DNS/WebRTC."
         },
         "ja": {
-          "displayName": "IPチェック",
-          "summary": "出口 IP、ローカル IP、所在地、ネットワーク品質を表示します。"
+          "displayName": "ネットワーク診断",
+          "summary": "パブリック／ローカル IP、所在地、接続性、ネットワーク品質、DNS／WebRTC リークを診断します。"
         },
         "ko": {
-          "displayName": "IP 확인",
-          "summary": "외부 IP, 로컬 IP, 위치 및 네트워크 품질을 확인합니다."
+          "displayName": "네트워크 진단",
+          "summary": "공인·로컬 IP, 위치, 연결 상태, 네트워크 품질 및 DNS/WebRTC 누출을 진단합니다."
         },
         "pt": {
-          "displayName": "Verificação de IP",
-          "summary": "Veja IP de saída, IP local, localização e qualidade da rede."
+          "displayName": "Diagnóstico de rede",
+          "summary": "Diagnostique IP público e local, localização, conectividade, qualidade da rede e vazamentos DNS/WebRTC."
         },
         "ru": {
-          "displayName": "Проверка IP",
-          "summary": "Просмотр исходящего IP, локального IP, местоположения и качества сети."
+          "displayName": "Диагностика сети",
+          "summary": "Диагностика публичного и локального IP, местоположения, связи, качества сети и утечек DNS/WebRTC."
         },
         "zh-Hans": {
-          "displayName": "IP 检测",
-          "summary": "查看出口 IP、本地 IP、归属地与网络测速摘要"
+          "displayName": "网络诊断",
+          "summary": "统一诊断公网与本地 IP、归属地、网络质量、连通性及 DNS/WebRTC 泄漏"
         },
         "zh-Hant": {
-          "displayName": "IP 檢測",
-          "summary": "查看出口 IP、本地 IP、歸屬地與網路測速摘要"
+          "displayName": "網路診斷",
+          "summary": "統一診斷公網與本地 IP、歸屬地、網路品質、連通性及 DNS/WebRTC 洩漏"
         }
       },
       "minimumHostVersion": "1.2.1",
       "minimumSystemVersion": "14.0",
-      "name": "IP Check",
+      "name": "Network Diagnostics",
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.ip-overview",
         "entryPoint": "IPOverview.bundle",
-        "sha256": "998cc7adcbf8e25869ec6407e7699c21d6e09ee3ea23ae9c0d4bb117e42ea4db",
-        "sizeBytes": 1109466,
+        "sha256": "c53a12686b182148da15a27e8638897937a6fdbe5026682668ec95c3ce665843",
+        "sizeBytes": 1126210,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-ip-overview-v1.0.17/ip-overview-1.0.17.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-ip-overview-v1.0.18/ip-overview-1.0.18.mactoolsplugin.zip"
       },
       "permissions": [],
       "placements": {
@@ -2265,10 +2265,10 @@
         "workspaceDefault": "workspace"
       },
       "standaloneOfferID": null,
-      "summary": "View egress IP, local IP, location, and network quality.",
+      "summary": "Diagnose public and local IPs, location, connectivity, network quality, and DNS/WebRTC leaks.",
       "systemImage": "chart.xyaxis.line",
       "trialHours": null,
-      "version": "1.0.17"
+      "version": "1.0.18"
     },
     {
       "capabilities": [
@@ -3617,10 +3617,10 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.system-status",
         "entryPoint": "SystemStatus.bundle",
-        "sha256": "8bce9968df4eeb4083c39b379fc64215bcb1b33162aae6203b6ba4fe1d75e8c0",
-        "sizeBytes": 718312,
+        "sha256": "64314fa84c1fcc7e770694e99845ff3f1c0770abf910e49f80286938f425c640",
+        "sizeBytes": 731234,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-system-status-v1.0.20/system-status-1.0.20.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-system-status-v1.0.21/system-status-1.0.21.mactoolsplugin.zip"
       },
       "permissions": [],
       "placements": {
@@ -3637,7 +3637,7 @@
       "summary": "View live system status.",
       "systemImage": "chart.xyaxis.line",
       "trialHours": null,
-      "version": "1.0.20"
+      "version": "1.0.21"
     },
     {
       "capabilities": [
@@ -4079,7 +4079,7 @@
       "version": "1.0.9"
     }
   ],
-  "publishedAt": "2026-08-15T09:15:27Z",
-  "revision": 10,
+  "publishedAt": "2026-08-15T12:30:10Z",
+  "revision": 11,
   "schemaVersion": 1
 }

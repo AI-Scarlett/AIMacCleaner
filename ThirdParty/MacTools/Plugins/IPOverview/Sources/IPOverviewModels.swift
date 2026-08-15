@@ -943,7 +943,7 @@ struct IPOverviewSnapshot: Codable, Equatable, Sendable {
 
     func reportText(localization: PluginLocalization = PluginLocalization(bundle: .main)) -> String {
         var lines: [String] = []
-        lines.append(localization.string("report.title", defaultValue: "IP 检测结果"))
+        lines.append(localization.string("report.title", defaultValue: "网络诊断结果"))
         if let lastUpdated {
             lines.append(localization.format(
                 "report.updatedAt",

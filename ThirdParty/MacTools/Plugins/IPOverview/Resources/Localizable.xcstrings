@@ -291,67 +291,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "فحص IP"
+            "value": "تشخيص الشبكة"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP-Prüfung"
+            "value": "Netzwerkdiagnose"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP Check"
+            "value": "Network Diagnostics"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Verificación de IP"
+            "value": "Diagnóstico de red"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vérification IP"
+            "value": "Diagnostic réseau"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP チェック"
+            "value": "ネットワーク診断"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP 확인"
+            "value": "네트워크 진단"
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Verificação de IP"
+            "value": "Diagnóstico de rede"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Проверка IP"
+            "value": "Диагностика сети"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP 检测"
+            "value": "网络诊断"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP 檢測"
+            "value": "網路診斷"
           }
         }
       }
@@ -2705,67 +2705,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "عرض عنوان IP العام والعناوين المحلية والموقع."
+            "value": "تشخيص IP العام والمحلي والموقع وجودة الاتصال وتسريبات DNS وWebRTC."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Öffentliche IP, lokale Adressen und Standort anzeigen."
+            "value": "Öffentliche und lokale IP, Standort, Verbindung sowie DNS- und WebRTC-Lecks diagnostizieren."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "View public IP, local addresses, and location."
+            "value": "Diagnose public and local IPs, location, connectivity, and DNS/WebRTC leaks."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ver IP pública, direcciones locales y ubicación."
+            "value": "Diagnostica IP pública y local, ubicación, conectividad y fugas DNS/WebRTC."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Affichez l'adresse IP publique, les adresses locales et l'emplacement."
+            "value": "Diagnostiquez les IP publique et locale, la localisation, la connectivité et les fuites DNS/WebRTC."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "パブリック IP、ローカルアドレス、所在地を表示します。"
+            "value": "パブリック／ローカル IP、所在地、接続性、DNS／WebRTC リークを診断します。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "공용 IP, 로컬 주소, 위치를 확인하세요."
+            "value": "공인·로컬 IP, 위치, 연결 상태 및 DNS/WebRTC 누출을 진단합니다."
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ver IP público, endereços locais e localização."
+            "value": "Diagnostique IP público e local, localização, conectividade e vazamentos DNS/WebRTC."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Просмотр публичного IP, локальных адресов и местоположения."
+            "value": "Диагностика публичного и локального IP, местоположения, связи и утечек DNS/WebRTC."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "查看公网 IP、本地地址和归属地"
+            "value": "统一诊断公网与本地 IP、归属地、连通性及 DNS/WebRTC 泄漏"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "查看公網 IP、本地地址和歸屬地"
+            "value": "統一診斷公網與本地 IP、歸屬地、連通性及 DNS/WebRTC 洩漏"
           }
         }
       }
@@ -2776,67 +2776,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "التحقق من IP"
+            "value": "تشخيص الشبكة"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP-Prüfung"
+            "value": "Netzwerkdiagnose"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP Check"
+            "value": "Network Diagnostics"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Verificación de IP"
+            "value": "Diagnóstico de red"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vérification IP"
+            "value": "Diagnostic réseau"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP チェック"
+            "value": "ネットワーク診断"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP 확인"
+            "value": "네트워크 진단"
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Verificação de IP"
+            "value": "Diagnóstico de rede"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Проверка IP"
+            "value": "Диагностика сети"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP 检测"
+            "value": "网络诊断"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP 檢測"
+            "value": "網路診斷"
           }
         }
       }
@@ -4835,67 +4835,67 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "نتيجة فحص IP"
+            "value": "نتيجة تشخيص الشبكة"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ergebnis der IP-Prüfung"
+            "value": "Ergebnis der Netzwerkdiagnose"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP Check Result"
+            "value": "Network Diagnostics Result"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Resultado de la comprobación de IP"
+            "value": "Resultado del diagnóstico de red"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Résultat de la vérification IP"
+            "value": "Résultat du diagnostic réseau"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP チェック結果"
+            "value": "ネットワーク診断結果"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP 확인 결과"
+            "value": "네트워크 진단 결과"
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "Resultado da verificação de IP"
+            "value": "Resultado do diagnóstico de rede"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Результат проверки IP"
+            "value": "Результат диагностики сети"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP 检测结果"
+            "value": "网络诊断结果"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP 檢測結果"
+            "value": "網路診斷結果"
           }
         }
       }

@@ -58,10 +58,16 @@ struct ContentView: View {
     }
 
     private static var toolboxSubItems: [NavItem] {
+        // Public/local IP, reachability and leak diagnosis belong to the
+        // independently updated IP Overview plugin. Keep Local System Audit
+        // available for host-only launch-item and privacy checks.
         var items: [NavItem] = [.tokenScope, .diskAdvisor, .agentProfile, .localDiagnostics]
         items.append(contentsOf: [.cleaner, .app, .dependency, .other, .migration])
         return items
     }
+
+    private static let networkDiagnosticsPluginID = "tracefence.tools.ip-overview"
+    private static let networkDiagnosticsMainTabMigrationKey = "traceFence.migrations.networkDiagnosticsMainTab.v1"
 
     enum NavItem: String, CaseIterable {
         case overview = "overview"
@@ -198,6 +204,7 @@ struct ContentView: View {
             service.refreshDiskInfo()
             service.refreshHardwareInfo()
             iOSRemoteGatewayService.configure(scannerService: service)
+            migrateNetworkDiagnosticsToPluginTabIfNeeded()
 #if DEBUG
             openPluginWorkspaceForUITestIfRequested()
 #endif
@@ -233,6 +240,26 @@ struct ContentView: View {
 
     private var currentAppearanceMode: AppearanceMode {
         AppearanceMode(rawValue: appearanceMode) ?? .system
+    }
+
+    /// The previous built-in Local Diagnostics page duplicated the IP,
+    /// connectivity and leak-detection utility. Preserve discoverability for
+    /// existing users by pinning the installed replacement once; after the
+    /// migration the normal user-controlled pin setting remains authoritative.
+    private func migrateNetworkDiagnosticsToPluginTabIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.networkDiagnosticsMainTabMigrationKey),
+              pluginPackageManager.records[Self.networkDiagnosticsPluginID]?.enabled == true,
+              marketplaceCatalogService.catalog.plugin(id: Self.networkDiagnosticsPluginID)?.supportsPluginTab == true else {
+            return
+        }
+
+        var pluginIDs = TraceFencePluginDisplayPreferences.mainTabPluginIDs(from: mainTabPluginIDsJSON)
+        if !pluginIDs.contains(Self.networkDiagnosticsPluginID) {
+            pluginIDs.append(Self.networkDiagnosticsPluginID)
+            mainTabPluginIDsJSON = TraceFencePluginDisplayPreferences.encodedMainTabPluginIDs(pluginIDs)
+        }
+        defaults.set(true, forKey: Self.networkDiagnosticsMainTabMigrationKey)
     }
 
 #if DEBUG
@@ -8412,7 +8439,7 @@ private struct AgentCommandDashboardView: View {
         let hasProxyBypass = data.networkConnections.contains { $0.safetyStatus == "proxyBypass" }
         let badgeColor = hasProxyBypass ? Theme.Colors.danger : (warningCount > 0 ? Theme.Colors.warning : Theme.Colors.cyan)
 
-        return dashboardCard(title: localizer.t("Agent 出站网络", en: "Agent Network Egress", zhHant: "Agent 出站網路", ja: "Agent 送信ネットワーク", ko: "Agent 아웃바운드 네트워크", mt: "Agent Network Egress"), icon: "network", color: Theme.Colors.cyan) {
+        return dashboardCard(title: localizer.t("Agent 出站安全", en: "Agent Egress Security", zhHant: "Agent 出站安全", ja: "Agent 送信セキュリティ", ko: "Agent 아웃바운드 보안", mt: "Agent Egress Security"), icon: "network", color: Theme.Colors.cyan) {
             Text(warningCount > 0 ? "\(warningCount) / \(data.networkConnections.count)" : "\(data.networkConnections.count)")
                 .font(Theme.Font.captionMedium)
                 .foregroundStyle(badgeColor)
