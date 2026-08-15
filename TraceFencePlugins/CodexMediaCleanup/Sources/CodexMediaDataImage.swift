@@ -26,10 +26,38 @@ struct CodexDataImage: Equatable, Sendable {
             throw CodexMediaCleanupError.invalidDataImage
         }
 
-        let encoded = value[marker.upperBound...].filter { !$0.isWhitespace }
-        guard !encoded.isEmpty,
-              encoded.range(of: #"^[A-Za-z0-9+/]*={0,2}$"#, options: .regularExpression) != nil,
-              let bytes = Data(base64Encoded: String(encoded)),
+        let payload = value[marker.upperBound...]
+        var containsWhitespace = false
+        var encodedByteCount = 0
+        var paddingCount = 0
+        var sawPadding = false
+        for byte in payload.utf8 {
+            if byte == 9 || byte == 10 || byte == 13 || byte == 32 {
+                containsWhitespace = true
+                continue
+            }
+            let isBase64 = (byte >= 65 && byte <= 90)
+                || (byte >= 97 && byte <= 122)
+                || (byte >= 48 && byte <= 57)
+                || byte == 43
+                || byte == 47
+            if byte == 61 {
+                sawPadding = true
+                paddingCount += 1
+                guard paddingCount <= 2 else { throw CodexMediaCleanupError.invalidDataImage }
+            } else {
+                guard isBase64, !sawPadding else { throw CodexMediaCleanupError.invalidDataImage }
+            }
+            encodedByteCount += 1
+        }
+        guard encodedByteCount > 0 else { throw CodexMediaCleanupError.invalidDataImage }
+        let encoded: String
+        if containsWhitespace {
+            encoded = String(payload.unicodeScalars.filter { !$0.properties.isWhitespace })
+        } else {
+            encoded = String(payload)
+        }
+        guard let bytes = Data(base64Encoded: encoded),
               !bytes.isEmpty else {
             throw CodexMediaCleanupError.invalidDataImage
         }

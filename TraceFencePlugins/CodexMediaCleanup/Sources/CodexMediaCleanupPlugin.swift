@@ -26,7 +26,8 @@ private struct CodexMediaCleanupPluginProvider: PluginProvider {
 }
 
 @MainActor
-final class CodexMediaCleanupPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginSettingsPresenting {
+final class CodexMediaCleanupPlugin: MacToolsPlugin, PluginPrimaryPanel,
+    PluginSettingsPresenting, PluginRuntimeLocalizationRefreshing {
     enum ControlID {
         static let scan = "codex-media-cleanup-scan"
         static let repair = "codex-media-cleanup-repair"
@@ -34,7 +35,7 @@ final class CodexMediaCleanupPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginS
         static let openDetails = "codex-media-cleanup-details"
     }
 
-    let metadata: PluginMetadata
+    private(set) var metadata: PluginMetadata
     let primaryPanelDescriptor = PluginPrimaryPanelDescriptor(
         controlStyle: .disclosure,
         menuActionBehavior: .keepPresented
@@ -52,7 +53,12 @@ final class CodexMediaCleanupPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginS
     init(controller: CodexMediaCleanupController, localization: PluginLocalization) {
         self.controller = controller
         self.localization = localization
-        self.metadata = PluginMetadata(
+        self.metadata = Self.makeMetadata(localization: localization)
+        controller.onStateChange = { [weak self] in self?.onStateChange?() }
+    }
+
+    private static func makeMetadata(localization: PluginLocalization) -> PluginMetadata {
+        PluginMetadata(
             id: "codex-media-cleanup",
             title: localization.string("metadata.title", defaultValue: "Codex 媒体整理"),
             iconName: "photo.stack",
@@ -63,7 +69,11 @@ final class CodexMediaCleanupPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginS
                 defaultValue: "清理重复媒体文件，降低磁盘空间占用；修复会话记录中的无效 image_url，避免历史对话出现图片地址格式错误"
             )
         )
-        controller.onStateChange = { [weak self] in self?.onStateChange?() }
+    }
+
+    func refreshLocalization() {
+        metadata = Self.makeMetadata(localization: localization)
+        onStateChange?()
     }
 
     var primaryPanelState: PluginPanelState {

@@ -28,7 +28,7 @@
       "summary": "Naddaf midja duplikata biex tnaqqas l-użu tad-diska u sewwi image_url invalidi fl-istorja biex tevita żbalji fil-format"
     }
   },
-  "version": "1.0.1",
+  "version": "1.0.2",
   "minHostVersion": "1.2.4",
   "pluginKitVersion": 4,
   "bundleRelativePath": "CodexMediaCleanup.bundle",
@@ -43,5 +43,10 @@
     "settings": "workspace"
   },
   "permissions": [],
-  "category": "storage"
+  "category": "storage",
+  "package": {
+    "signPaths": [
+      "CodexMediaCleanup.bundle/Contents/Resources/Helpers/TraceFenceCodexMediaWorker"
+    ]
+  }
 }

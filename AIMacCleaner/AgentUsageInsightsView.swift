@@ -248,7 +248,7 @@ struct AgentUsageInsightsView: View {
                     icon: "pause.circle.fill",
                     color: Theme.Colors.warning,
                     title: localizer.t("扫描已暂停", en: "Scan paused"),
-                    detail: localizer.t("已保留上次快照；点击“继续补全”后从本地缓存继续。", en: "The previous snapshot is preserved. Continue backfill resumes from the local cache.")
+                    detail: localizer.t("已保留上次快照和缓存游标；点击“立即继续”可恢复已暂停的扫描。", en: "The previous snapshot and cache cursor are preserved. Resume Now restarts the paused scan.")
                 )
             }
         case let .partial(message):
@@ -454,7 +454,7 @@ struct AgentUsageInsightsView: View {
             return (localizer.t("本机明细扫描失败", en: "Local detail scan failed"), "xmark.octagon.fill", Theme.Colors.danger)
         case .completed:
             if status.hasRemainingWork {
-                return (localizer.t("本轮扫描已结束，仍有待补全", en: "Pass finished with detail remaining"), "exclamationmark.triangle.fill", Theme.Colors.warning)
+                return (localizer.t("已缓存本轮进度，将自动续扫", en: "Progress cached; continuing automatically"), "arrow.triangle.2.circlepath", Theme.Colors.warning)
             }
             return (localizer.t("当前明细范围已全部扫描", en: "Current detail range fully scanned"), "checkmark.circle.fill", Theme.Colors.success)
         }
@@ -471,11 +471,11 @@ struct AgentUsageInsightsView: View {
             }
             return localizer.t("已检查当前全部可补全会话，没有剩余本机明细。", en: "Every currently eligible session was checked and no local detail remains to backfill.")
         case .timeBudgetReached:
-            return localizer.t("本轮响应时间额度已到，仍有 \(status.remainingSessions) 个会话待补；点击“继续补全”会从缓存位置继续。", en: "This pass reached its responsiveness time budget with \(status.remainingSessions) sessions remaining. Continue backfill resumes from the cache.")
+            return localizer.t("本轮响应时间额度已到，仍有 \(status.remainingSessions) 个会话待补；游标已落盘，TraceFence 会自动开始下一轮。", en: "This pass reached its responsiveness budget with \(status.remainingSessions) sessions remaining. The cursor is saved and TraceFence will start another pass automatically.")
         case .readBudgetReached:
-            return localizer.t("本轮本地读取额度已到，仍有 \(status.remainingSessions) 个会话待补；可继续下一轮。", en: "This pass reached its local read budget with \(status.remainingSessions) sessions remaining. Another pass can continue.")
+            return localizer.t("本轮本地读取额度已到，仍有 \(status.remainingSessions) 个会话待补；缓存已保存，将自动续扫。", en: "This pass reached its local read budget with \(status.remainingSessions) sessions remaining. The cache is saved and another pass will start automatically.")
         case .runLimitReached:
-            return localizer.t("本轮有 \(status.remainingSessions) 个会话未处理完，可继续补全。", en: "This pass left \(status.remainingSessions) sessions unfinished. Continue backfill to resume.")
+            return localizer.t("本轮有 \(status.remainingSessions) 个会话未处理完；TraceFence 将从缓存游标自动续扫。", en: "This pass left \(status.remainingSessions) sessions unfinished. TraceFence will resume automatically from the saved cursor.")
         case .inventoryLimitReached:
             return localizer.t("当前 2,000 个会话的明细已扫完；有 \(status.excludedByInventoryLimit) 个会话超出明细范围，另有 \(status.aggregateOnlyHistorySessions) 个较早会话仅纳入 SQLite 全时间总量，不冒充已解析明细。", en: "Detail is complete for the current 2,000-session inventory. \(status.excludedByInventoryLimit) sessions are outside that detail limit, and \(status.aggregateOnlyHistorySessions) older sessions remain represented only by SQLite all-time totals, not parsed detail.")
         case .pausedByUser:
@@ -1464,7 +1464,7 @@ struct AgentUsageInsightsView: View {
     private var scanActionTitle: String {
         if isLoading { return localizer.t("暂停", en: "Pause") }
         if scanNeedsRetry { return localizer.t("重试", en: "Retry") }
-        if hasPendingBackfill { return localizer.t("继续补全", en: "Continue backfill") }
+        if hasPendingBackfill { return localizer.t("立即继续", en: "Resume Now") }
         return localizer.t("刷新", en: "Refresh")
     }
 
@@ -1482,7 +1482,7 @@ struct AgentUsageInsightsView: View {
             return localizer.t("重试上次失败的本地扫描", en: "Retry the failed local scan")
         }
         if hasPendingBackfill {
-            return localizer.t("从本地缓存位置继续补全剩余会话", en: "Resume remaining sessions from the local cache")
+            return localizer.t("无需反复点击；系统会自动续扫。此按钮仅用于立即开始下一轮。", en: "No repeated clicks are required; scanning continues automatically. This button only starts the next pass immediately.")
         }
         return localizer.t("重新读取本地用量数据", en: "Read local usage data again")
     }

@@ -84,8 +84,10 @@
 "log.scanStarted" = "開始唯讀掃描 Codex 工作階段；不會修改任何檔案。";
 "log.scanCompletedFormat" = "掃描完成：%lld 個工作階段檔案，%lld 個可清理副本，%lld 個無效 image_url，預計釋放 %@。";
 "log.scanSkippedFormat" = "安全略過：%lld 個損壞 JSONL，%lld 個缺失或未通過驗證的媒體物件。";
+"log.scanResourceLimitFormat" = "%lld 個工作階段包含超過 64MB 的單筆記錄，已安全略過；修復不會在主程式中強制解析。";
 "log.scanFileFormat" = "掃描 [%lld/%lld] %@";
 "log.operationRequestedFormat" = "已要求「%@」。寫入前將確認 Codex 完全結束並檢查工作階段檔案控制代碼。";
+"log.isolatedWorker" = "修復會在獨立工作程序中逐檔執行；單一超大工作階段失敗不會再導致 TraceFence 結束。";
 "log.waitingForCodex" = "偵測到 Codex/ChatGPT 仍在執行。請暫停所有任務並完全結束客戶端；TraceFence 會繼續等待，不會強制結束處理程序。";
 "log.codexStopped" = "Codex 已完全結束，開始逐檔備份、驗證與原子處理。";
 "log.processFileFormat" = "%@ [%lld/%lld] %@";
@@ -98,6 +100,7 @@
 "error.codexAppMissing" = "找不到 Codex/ChatGPT 客戶端，請手動啟動後再完成歷史對話驗證。";
 "error.invalidCodexHome" = "Codex 資料目錄無法使用：%@";
 "error.malformedJSON" = "工作階段 JSON 已損壞：%@ 第 %lld 行";
+"error.recordTooLarge" = "工作階段記錄超過安全處理上限：%@ 第 %lld 行（%lld 位元組，上限 %lld 位元組）";
 "error.invalidDataImage" = "發現無法解碼的 data:image Base64 圖片";
 "error.unsupportedImageType" = "不支援的圖片類型：%@";
 "error.unsafeMediaReference" = "媒體參照超出 Codex 內容定址目錄：%@";
@@ -107,4 +110,6 @@
 "error.backupVerificationFailed" = "備份驗證失敗：%@";
 "error.outputVerificationFailed" = "修復結果驗證失敗：%@";
 "error.atomicReplaceFailed" = "無法以原子方式取代工作階段檔案：%@";
+"error.workerUnavailable" = "隔離修復程序無法使用：%@";
+"error.workerFailed" = "隔離修復程序無法處理：%@（%@）";
 "error.cancelled" = "操作已取消";

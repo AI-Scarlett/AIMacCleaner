@@ -84,8 +84,10 @@
 "log.scanStarted" = "开始只读扫描 Codex 会话；不会修改任何文件。";
 "log.scanCompletedFormat" = "扫描完成：%lld 个会话文件，%lld 个可清理副本，%lld 个无效 image_url，预计释放 %@。";
 "log.scanSkippedFormat" = "安全跳过：%lld 个损坏 JSONL，%lld 个缺失或未通过校验的媒体对象。";
+"log.scanResourceLimitFormat" = "%lld 个会话包含超过 64MB 的单条记录，已安全跳过；修复不会在主程序中强行解析。";
 "log.scanFileFormat" = "扫描 [%lld/%lld] %@";
 "log.operationRequestedFormat" = "已请求“%@”。写入前将确认 Codex 完全退出并检查会话文件句柄。";
+"log.isolatedWorker" = "修复将在独立工作进程中逐文件执行；单个超大会话失败不会再导致 TraceFence 退出。";
 "log.waitingForCodex" = "检测到 Codex/ChatGPT 仍在运行。请暂停所有任务并完全退出客户端；TraceFence 会继续等待，不会强制结束进程。";
 "log.codexStopped" = "Codex 已完全退出，开始逐文件备份、校验和原子处理。";
 "log.processFileFormat" = "%@ [%lld/%lld] %@";
@@ -98,6 +100,7 @@
 "error.codexAppMissing" = "未找到 Codex/ChatGPT 客户端，请手动启动后再完成历史对话验证。";
 "error.invalidCodexHome" = "Codex 数据目录不可用：%@";
 "error.malformedJSON" = "会话 JSON 已损坏：%@ 第 %lld 行";
+"error.recordTooLarge" = "会话记录超过安全处理上限：%@ 第 %lld 行（%lld 字节，上限 %lld 字节）";
 "error.invalidDataImage" = "发现无法解码的 data:image Base64 图片";
 "error.unsupportedImageType" = "暂不支持的图片类型：%@";
 "error.unsafeMediaReference" = "媒体引用超出 Codex 内容寻址目录：%@";
@@ -107,4 +110,6 @@
 "error.backupVerificationFailed" = "备份校验失败：%@";
 "error.outputVerificationFailed" = "修复结果校验失败：%@";
 "error.atomicReplaceFailed" = "无法原子替换会话文件：%@";
+"error.workerUnavailable" = "隔离修复进程不可用：%@";
+"error.workerFailed" = "隔离修复进程未能处理：%@（%@）";
 "error.cancelled" = "操作已取消";

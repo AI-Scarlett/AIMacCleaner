@@ -2,6 +2,14 @@ import Darwin
 import Foundation
 
 enum CodexJSONL {
+    /// A single Codex JSONL record can legitimately contain several inline
+    /// images. Above this bound Foundation's tree decoder can multiply the
+    /// allocation into hundreds of megabytes. The file is left untouched and
+    /// reported instead of risking memory-pressure termination.
+    static let maximumRecordBytes = 64 * 1_024 * 1_024
+    private static let allocatorReliefInterval = 32 * 1_024 * 1_024
+    private static let compactedMarker = Data("\"compacted\"".utf8)
+
     struct Layout: Equatable, Sendable {
         let lastCompactionLine: Int?
         let lineCount: Int
@@ -12,6 +20,7 @@ enum CodexJSONL {
         var lineCount = 0
         try forEachLine(at: url) { lineNumber, data in
             lineCount = lineNumber
+            guard data.range(of: compactedMarker) != nil else { return }
             let record = try decodeRecord(data, path: url.path, line: lineNumber)
             if record["type"] as? String == "compacted" {
                 lastCompactionLine = lineNumber
@@ -34,17 +43,36 @@ enum CodexJSONL {
         defer { free(buffer) }
 
         var lineNumber = 0
+        var bytesSinceAllocatorRelief = 0
         while true {
             let count = getline(&buffer, &capacity, file)
             if count < 0 { break }
             guard let buffer else { throw POSIXError(.EIO) }
             lineNumber += 1
+            try validateRecordByteCount(count, path: url.path, line: lineNumber)
             try autoreleasepool {
                 try body(lineNumber, Data(bytes: buffer, count: count))
             }
+            bytesSinceAllocatorRelief += count
+            if bytesSinceAllocatorRelief >= allocatorReliefInterval {
+                _ = malloc_zone_pressure_relief(nil, 0)
+                bytesSinceAllocatorRelief = 0
+            }
         }
+        _ = malloc_zone_pressure_relief(nil, 0)
         if ferror(file) != 0 {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+    }
+
+    static func validateRecordByteCount(_ count: Int, path: String, line: Int) throws {
+        guard count <= maximumRecordBytes else {
+            throw CodexMediaCleanupError.recordTooLarge(
+                path: path,
+                line: line,
+                bytes: count,
+                limit: maximumRecordBytes
+            )
         }
     }
 

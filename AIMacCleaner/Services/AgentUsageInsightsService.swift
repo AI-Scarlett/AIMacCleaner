@@ -581,6 +581,8 @@ final class AgentUsageInsightsService: ObservableObject {
     private static let timeZoneDefaultsKey = "traceFence.agentUsage.timeZone"
     private static let foregroundInterval: TimeInterval = 5 * 60
     private static let backgroundInterval: TimeInterval = 15 * 60
+    private static let foregroundBackfillInterval: TimeInterval = 45
+    private static let backgroundBackfillInterval: TimeInterval = 2 * 60
     private static let maximumAutomaticSnapshotAge: TimeInterval = 6 * 60 * 60
 
     @Published private(set) var snapshot: AgentUsageSnapshot
@@ -613,8 +615,11 @@ final class AgentUsageInsightsService: ObservableObject {
 
     private var snapshots: [AgentUsageScope: AgentUsageSnapshot] = [:]
     private var refreshTask: Task<Void, Never>?
+    private var backfillContinuationTask: Task<Void, Never>?
+    private var consecutiveBackfillNoProgress = 0
     private var refreshGeneration: UInt64 = 0
     private var scheduler: Timer?
+    private var schedulingEnabled = false
     private var applicationIsActive = true
     private var lastRefreshAt: Date?
     private var refreshPreviousSnapshot: AgentUsageSnapshot?
@@ -672,8 +677,10 @@ final class AgentUsageInsightsService: ObservableObject {
             stopScheduling()
             return
         }
+        schedulingEnabled = true
         guard scheduler == nil else { return }
         refreshIfDue()
+        schedulePendingBackfillIfNeeded(backfillStatus)
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshIfDue()
@@ -684,8 +691,11 @@ final class AgentUsageInsightsService: ObservableObject {
     }
 
     func stopScheduling() {
+        schedulingEnabled = false
         scheduler?.invalidate()
         scheduler = nil
+        backfillContinuationTask?.cancel()
+        backfillContinuationTask = nil
     }
 
     func setApplicationActive(_ active: Bool) {
@@ -704,6 +714,10 @@ final class AgentUsageInsightsService: ObservableObject {
 
     func refresh(force: Bool = false, completePendingBackfill: Bool = false) {
         guard force || !automaticRefreshPaused else { return }
+        if force || completePendingBackfill {
+            backfillContinuationTask?.cancel()
+            backfillContinuationTask = nil
+        }
         // Scheduled requests coalesce. A force request (for example a time-zone
         // preference change) cancels the old generation so stale boundaries can
         // never overwrite the newly-selected statistics mode.
@@ -713,10 +727,12 @@ final class AgentUsageInsightsService: ObservableObject {
             self.refreshTask = nil
             refreshGeneration &+= 1
         }
-        if !force, let lastRefreshAt, Date().timeIntervalSince(lastRefreshAt) < 20 {
+        if !force, !completePendingBackfill,
+           let lastRefreshAt, Date().timeIntervalSince(lastRefreshAt) < 20 {
             return
         }
-        if !force, snapshotCanBeReused(currentSignatures: AgentUsageSourceFingerprint.currentSignatures()) {
+        if !force, !completePendingBackfill,
+           snapshotCanBeReused(currentSignatures: AgentUsageSourceFingerprint.currentSignatures()) {
             publishCachedState()
             return
         }
@@ -784,6 +800,7 @@ final class AgentUsageInsightsService: ObservableObject {
                     message: "Local usage scan complete"
                 )
                 self.refreshPreviousSnapshot = nil
+                self.schedulePendingBackfillIfNeeded(loaded.backfillStatus)
             case let .failure(error):
                 self.state = .failed(message: error.localizedDescription, previous: previous)
                 let failedStatus = self.backfillStatus ?? AgentUsageBackfillStatus(stage: .failed)
@@ -828,6 +845,8 @@ final class AgentUsageInsightsService: ObservableObject {
     /// snapshot or any cache chunks already committed by providers. Automatic
     /// refresh remains paused until the user explicitly continues or retries.
     func pauseScan() {
+        backfillContinuationTask?.cancel()
+        backfillContinuationTask = nil
         guard refreshTask != nil else { return }
         refreshTask?.cancel()
         refreshTask = nil
@@ -859,6 +878,9 @@ final class AgentUsageInsightsService: ObservableObject {
     /// Removes only derived aggregate caches. Source transcripts and databases
     /// are never modified.
     func clearCaches() {
+        backfillContinuationTask?.cancel()
+        backfillContinuationTask = nil
+        consecutiveBackfillNoProgress = 0
         refreshTask?.cancel()
         refreshTask = nil
         refreshGeneration &+= 1
@@ -890,13 +912,57 @@ final class AgentUsageInsightsService: ObservableObject {
             publishCachedState()
             return
         }
-        let interval = applicationIsActive ? Self.foregroundInterval : Self.backgroundInterval
+        let hasPendingBackfill = (backfillStatus?.remainingSessions ?? 0) > 0
+        let interval: TimeInterval
+        if hasPendingBackfill {
+            interval = applicationIsActive
+                ? Self.foregroundBackfillInterval
+                : Self.backgroundBackfillInterval
+        } else {
+            interval = applicationIsActive ? Self.foregroundInterval : Self.backgroundInterval
+        }
         guard lastRefreshAt.map({ Date().timeIntervalSince($0) >= interval }) ?? true else { return }
-        refresh()
+        // A pending receipt is a resumable local job, not a cache hit. Continue
+        // it automatically in bounded passes so users never have to keep
+        // pressing "Continue backfill" just to finish an existing inventory.
+        refresh(completePendingBackfill: hasPendingBackfill)
+    }
+
+    /// A backfill receipt represents a durable local job. Chain bounded passes
+    /// off the main thread until its cached cursor reaches zero, instead of
+    /// requiring one user click per gigabyte (or one click per rewritten file).
+    private func schedulePendingBackfillIfNeeded(_ status: AgentUsageBackfillStatus?) {
+        backfillContinuationTask?.cancel()
+        backfillContinuationTask = nil
+        guard !automaticRefreshPaused,
+              schedulingEnabled,
+              refreshTask == nil,
+              let status,
+              status.remainingSessions > 0 else {
+            consecutiveBackfillNoProgress = 0
+            return
+        }
+
+        if status.advancedThisRun > 0 {
+            consecutiveBackfillNoProgress = 0
+        } else {
+            consecutiveBackfillNoProgress = min(5, consecutiveBackfillNoProgress + 1)
+        }
+        let baseDelay: TimeInterval = applicationIsActive ? 2 : 15
+        let multiplier = pow(2, Double(consecutiveBackfillNoProgress))
+        let delay = min(60, baseDelay * multiplier)
+        backfillContinuationTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            self.backfillContinuationTask = nil
+            guard self.refreshTask == nil, !self.automaticRefreshPaused else { return }
+            self.refresh(completePendingBackfill: true)
+        }
     }
 
     private func snapshotCanBeReused(currentSignatures: [String: String]) -> Bool {
         guard !snapshots.isEmpty,
+              (backfillStatus?.remainingSessions ?? 0) == 0,
               let lastRefreshAt,
               Date().timeIntervalSince(lastRefreshAt) < Self.maximumAutomaticSnapshotAge,
               snapshotSourceSignatures == currentSignatures else { return false }
@@ -1091,6 +1157,12 @@ private struct AgentUsageFileCacheEntry: Codable {
     let scannedFromOffset: Int64
     let summary: AgentUsageFileSummary
     var lineageDedupVersion: Int? = nil
+    /// Non-nil only while a large lineage child is being rebuilt backwards in
+    /// bounded chunks. This makes the repair resumable across launches.
+    var lineageRebuildTargetVersion: Int? = nil
+    /// SHA-256 of the last bounded window ending at `size`. A larger source is
+    /// an append only when this boundary still matches; rewrites must rebuild.
+    var appendBoundaryFingerprint: String? = nil
 }
 
 private struct AgentUsageFileCache: Codable {
@@ -1166,6 +1238,29 @@ private enum AgentUsageBackfillOutcomePolicy {
         if stoppedByReadBudget { return .readBudgetReached }
         if failedThisRun > 0 { return .scanFailed }
         return .runLimitReached
+    }
+}
+
+private enum AgentUsageLineageCachePolicy {
+    /// Version 1 entries were produced by comparing a child with the real
+    /// ancestor rollout and are already exact. If that ancestor is archived
+    /// later, version 2's sibling fallback is useful for uncached children but
+    /// must not invalidate the exact result and replay gigabytes of history.
+    static func requiresRebuild(
+        isLineageChild: Bool,
+        cachedVersion: Int?,
+        rebuildTargetVersion: Int?,
+        exactFingerprint: Bool,
+        appendPrefixIsVerified: Bool,
+        currentSize: Int64,
+        cachedSize: Int64?
+    ) -> Bool {
+        guard isLineageChild else { return false }
+        if rebuildTargetVersion != nil { return true }
+        if cachedVersion == nil { return true }
+        if exactFingerprint { return false }
+        guard cachedSize.map({ currentSize > $0 }) == true else { return true }
+        return !appendPrefixIsVerified
     }
 }
 
@@ -1579,7 +1674,9 @@ private extension AgentUsageFileCacheEntry {
                 skillEvents: summary.skillEvents,
                 lastActiveAt: summary.lastActiveAt
             ),
-            lineageDedupVersion: lineageDedupVersion
+            lineageDedupVersion: lineageDedupVersion,
+            lineageRebuildTargetVersion: lineageRebuildTargetVersion,
+            appendBoundaryFingerprint: appendBoundaryFingerprint
         )
     }
 }
@@ -2030,6 +2127,37 @@ private enum AgentUsagePrivacy {
 
     static func cacheKey(for url: URL) -> String {
         digest(url.standardizedFileURL.path)
+    }
+}
+
+private enum AgentUsageAppendBoundary {
+    private static let windowBytes: Int64 = 64 * 1_024
+
+    static func fingerprint(at url: URL, endingAt prefixSize: Int64) -> String? {
+        guard prefixSize >= 0 else { return nil }
+        let start = max(0, prefixSize - windowBytes)
+        let expectedCount = Int(prefixSize - start)
+        do {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            try handle.seek(toOffset: UInt64(start))
+            let data = expectedCount == 0
+                ? Data()
+                : (try handle.read(upToCount: expectedCount) ?? Data())
+            guard data.count == expectedCount else { return nil }
+            var hasher = SHA256()
+            hasher.update(data: Data("\(prefixSize):".utf8))
+            hasher.update(data: data)
+            return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        } catch {
+            return nil
+        }
+    }
+
+    static func matches(_ expected: String?, at url: URL, endingAt prefixSize: Int64) -> Bool {
+        guard let expected,
+              let current = fingerprint(at: url, endingAt: prefixSize) else { return false }
+        return current == expected
     }
 }
 
@@ -3124,34 +3252,25 @@ private enum AgentUsageCodexLineageReader {
     static func tokenFingerprints(at url: URL) -> Set<AgentUsageCounterFingerprint>? {
         guard let fingerprint = AgentUsageValues.fileFingerprint(url),
               fingerprint.size >= 0,
-              fingerprint.size <= fingerprintReadLimit,
-              // Never fall back to copying a multi-gigabyte rollout into the
-              // app heap if Foundation cannot establish a read-only mapping.
-              let data = try? Data(contentsOf: url, options: [.alwaysMapped]) else { return nil }
+              fingerprint.size <= fingerprintReadLimit else { return nil }
         var result = Set<AgentUsageCounterFingerprint>()
         result.reserveCapacity(4_096)
         var recordCount = 0
-        var searchOffset = data.startIndex
         let tokenPattern = Data(#""type":"token_count""#.utf8)
         let maximumTokenLineBytes = 512 * 1_024
 
-        // Searching the memory-mapped bytes jumps directly between the small
-        // token_count records. It avoids constructing Data/String objects for
-        // gigabytes of prompts, artifacts and repeated media payloads.
-        while searchOffset < data.endIndex,
-              let match = data.range(
-                of: tokenPattern,
-                options: [],
-                in: searchOffset..<data.endIndex
-              ) {
-            let lineStart = data[..<match.lowerBound].lastIndex(of: 0x0A).map { $0 + 1 }
-                ?? data.startIndex
-            let newline = data[match.upperBound...].firstIndex(of: 0x0A)
-            let lineEnd = newline ?? data.endIndex
-            guard lineEnd - lineStart <= maximumTokenLineBytes else { return nil }
-
-            autoreleasepool {
-                let line = data.subdata(in: lineStart..<lineEnd)
+        // A mapped multi-gigabyte rollout still raises the process footprint as
+        // its pages are touched. Foundation then retains enough allocator pages
+        // for the 512 MiB safety guard to stop every later parent in the same
+        // pass. Stream 64 KiB chunks instead; the shared reader discards large
+        // media/prompt lines and calls us only for compact token_count records.
+        do {
+            let stats = try AgentUsageJSONStream.forEachLine(
+                at: url,
+                maximumLineBytes: maximumTokenLineBytes,
+                maximumBytes: fingerprint.size,
+                prefilterPatterns: [tokenPattern]
+            ) { line in
                 guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
                       let payload = object["payload"] as? [String: Any],
                       (AgentUsageValues.string(payload["type"]) ?? AgentUsageValues.string(object["type"])) == "token_count",
@@ -3161,10 +3280,15 @@ private enum AgentUsageCodexLineageReader {
                 guard cumulative != nil || last != nil else { return }
                 recordCount += 1
                 result.insert(AgentUsageCounterFingerprint(cumulative: cumulative, last: last))
+                if recordCount > fingerprintRecordLimit {
+                    throw AgentUsageCodexLineageStop.recordLimitReached
+                }
             }
-            guard recordCount <= fingerprintRecordLimit else { return nil }
-            if recordCount % 256 == 0, AgentUsageResidentMemoryGuard.isOverLimit() { return nil }
-            searchOffset = newline.map { min(data.endIndex, $0 + 1) } ?? data.endIndex
+            guard !stats.hitByteLimit,
+                  stats.oversizedRelevantLineCount == 0,
+                  !AgentUsageResidentMemoryGuard.isOverLimit() else { return nil }
+        } catch {
+            return nil
         }
         return result
     }
@@ -3758,13 +3882,12 @@ private struct AgentUsageCodexScanBudget {
     static func make(hasWarmCache: Bool, completePendingBackfill: Bool) -> Self {
         let mebibyte: Int64 = 1_024 * 1_024
         if completePendingBackfill {
-            // "Continue" is a resumable pass, never an unbounded whole-disk
-            // replay. One pass can still finish the largest current child
-            // rollout, then commits its compact cache before another pass.
+            // A continuation is a resumable pass, never an unbounded whole-
+            // disk replay. Large lineage children advance in 256 MiB chunks.
             return Self(
                 totalTranscriptBytes: 1_024 * mebibyte,
                 ordinaryBytesPerFile: 128 * mebibyte,
-                lineageBytesPerFile: 1_024 * mebibyte,
+                lineageBytesPerFile: 256 * mebibyte,
                 lineageFingerprintBytes: 2_048 * mebibyte,
                 deadline: Date().addingTimeInterval(60)
             )
@@ -3773,7 +3896,7 @@ private struct AgentUsageCodexScanBudget {
             return Self(
                 totalTranscriptBytes: 80 * mebibyte,
                 ordinaryBytesPerFile: 8 * mebibyte,
-                lineageBytesPerFile: 64 * mebibyte,
+                lineageBytesPerFile: 32 * mebibyte,
                 lineageFingerprintBytes: 1_280 * mebibyte,
                 deadline: Date().addingTimeInterval(2)
             )
@@ -3781,7 +3904,7 @@ private struct AgentUsageCodexScanBudget {
         return Self(
             totalTranscriptBytes: 320 * mebibyte,
             ordinaryBytesPerFile: 32 * mebibyte,
-            lineageBytesPerFile: 192 * mebibyte,
+            lineageBytesPerFile: 64 * mebibyte,
             lineageFingerprintBytes: 1_280 * mebibyte,
             deadline: Date().addingTimeInterval(12)
         )
@@ -3795,6 +3918,8 @@ private struct AgentUsageCodexWorkItem {
     let fingerprint: AgentUsageValues.FileFingerprint
     let key: String
     let cached: AgentUsageFileCacheEntry?
+    let targetLineageDedupVersion: Int?
+    let appendPrefixIsVerified: Bool
 }
 
 private enum AgentUsageLineAlignmentResult: Equatable {
@@ -4144,21 +4269,34 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             let exactFingerprint = cached?.size == fingerprint.size
                 && cached?.modificationTimeNanoseconds == fingerprint.modificationTimeNanoseconds
             let isLineageChild = lineageParentByThreadID[thread.id] != nil
-            let requiredDedupVersion = isLineageChild
-                ? requiredLineageDedupVersion(for: thread.id)
-                : nil
-            let requiresLineageRebuild = isLineageChild && (
-                cached?.lineageDedupVersion != requiredDedupVersion
-                    || (!exactFingerprint && cached != nil && fingerprint.size <= (cached?.size ?? 0))
+            let appendPrefixIsVerified = cached.map {
+                fingerprint.size > $0.size
+                    && AgentUsageAppendBoundary.matches(
+                        $0.appendBoundaryFingerprint,
+                        at: url,
+                        endingAt: $0.size
+                    )
+            } ?? false
+            let requiresLineageRebuild = AgentUsageLineageCachePolicy.requiresRebuild(
+                isLineageChild: isLineageChild,
+                cachedVersion: cached?.lineageDedupVersion,
+                rebuildTargetVersion: cached?.lineageRebuildTargetVersion,
+                exactFingerprint: exactFingerprint,
+                appendPrefixIsVerified: appendPrefixIsVerified,
+                currentSize: fingerprint.size,
+                cachedSize: cached?.size
             )
+            let isResumingLineageRebuild = requiresLineageRebuild
+                && cached?.lineageRebuildTargetVersion != nil
+                && (exactFingerprint || appendPrefixIsVerified)
 
-            if let cached, !requiresLineageRebuild {
+            if let cached, !requiresLineageRebuild || isResumingLineageRebuild {
                 summariesByKey[key] = cached.summary.rehydrated(
                     projectPath: thread.cwd,
                     sessionID: thread.id,
                     skillIndex: skillIndex
                 )
-                if cached.coverageIncomplete || cached.skippedRelevantRecord { partialKeys.insert(key) }
+                if cached.coverageIncomplete { partialKeys.insert(key) }
             } else {
                 // Never keep publishing a known pre-fix child aggregate while
                 // its one-time lineage rebuild is pending. A partial snapshot
@@ -4173,22 +4311,29 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                     url: url,
                     fingerprint: fingerprint,
                     key: key,
-                    cached: cached
+                    cached: cached,
+                    targetLineageDedupVersion: requiredLineageDedupVersion(for: thread.id),
+                    appendPrefixIsVerified: appendPrefixIsVerified
+                ))
+            } else if let cached,
+                      cached.coverageIncomplete,
+                      cached.scannedFromOffset > 0,
+                      exactFingerprint || appendPrefixIsVerified {
+                workItems.append(AgentUsageCodexWorkItem(
+                    mode: .backfill,
+                    thread: thread,
+                    url: url,
+                    fingerprint: fingerprint,
+                    key: key,
+                    cached: cached,
+                    targetLineageDedupVersion: nil,
+                    appendPrefixIsVerified: appendPrefixIsVerified
                 ))
             } else if exactFingerprint {
-                if let cached, cached.coverageIncomplete, cached.scannedFromOffset > 0 {
-                    workItems.append(AgentUsageCodexWorkItem(
-                        mode: .backfill,
-                        thread: thread,
-                        url: url,
-                        fingerprint: fingerprint,
-                        key: key,
-                        cached: cached
-                    ))
-                }
+                // A complete exact cache is restored in pass 1; no IO needed.
             } else {
                 let mode: AgentUsageCodexWorkMode
-                if let cached, fingerprint.size > cached.size {
+                if cached != nil, appendPrefixIsVerified {
                     mode = .append
                 } else {
                     mode = .newFile
@@ -4199,7 +4344,9 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                     url: url,
                     fingerprint: fingerprint,
                     key: key,
-                    cached: cached
+                    cached: cached,
+                    targetLineageDedupVersion: nil,
+                    appendPrefixIsVerified: appendPrefixIsVerified
                 ))
                 partialKeys.insert(key)
             }
@@ -4221,6 +4368,7 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
         var completedThisRun = 0
         var stoppedByDeadline = false
         var stoppedByReadBudget = false
+        var advancesSinceCacheCheckpoint = 0
         progress(AgentUsageScanProgress(
             phase: .scanningCodexSessions,
             current: 0,
@@ -4274,13 +4422,16 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             let proposedStart: Int64
             switch item.mode {
             case .lineageRebuild:
-                guard item.fingerprint.size <= maximumLineageReadBytesPerFile,
-                      item.fingerprint.size <= remainingReadBytes else {
-                    stoppedByReadBudget = true
-                    continue workLoop
-                }
-                proposedStart = 0
-                upperBound = item.fingerprint.size
+                let canResume = item.cached?.lineageRebuildTargetVersion != nil
+                    && ((item.cached?.size == item.fingerprint.size
+                         && item.cached?.modificationTimeNanoseconds == item.fingerprint.modificationTimeNanoseconds)
+                        || item.appendPrefixIsVerified)
+                    && (item.cached?.scannedFromOffset ?? 0) > 0
+                upperBound = canResume
+                    ? (item.cached?.scannedFromOffset ?? item.fingerprint.size)
+                    : item.fingerprint.size
+                let planned = min(upperBound, maximumLineageReadBytesPerFile, remainingReadBytes)
+                proposedStart = max(0, upperBound - planned)
             case .append:
                 guard let cached = item.cached else {
                     failures += 1
@@ -4381,10 +4532,17 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
             let scannedFromOffset: Int64
             switch item.mode {
             case .lineageRebuild:
-                diskSummary = parsedDisk
-                coverageIncomplete = false
-                skippedRelevantRecord = parsed.skippedRelevantRecord
-                scannedFromOffset = 0
+                let canMergeCheckpoint = item.cached?.lineageRebuildTargetVersion != nil
+                    && ((item.cached?.size == item.fingerprint.size
+                         && item.cached?.modificationTimeNanoseconds == item.fingerprint.modificationTimeNanoseconds)
+                        || item.appendPrefixIsVerified)
+                diskSummary = canMergeCheckpoint
+                    ? (item.cached?.summary.merged(with: parsedDisk) ?? parsedDisk)
+                    : parsedDisk
+                coverageIncomplete = startingOffset > 0
+                skippedRelevantRecord = (canMergeCheckpoint ? item.cached?.skippedRelevantRecord : false) == true
+                    || parsed.skippedRelevantRecord
+                scannedFromOffset = startingOffset
             case .append:
                 guard let cached = item.cached else {
                     failures += 1
@@ -4410,26 +4568,53 @@ private final class AgentUsageCodexProvider: @unchecked Sendable {
                 scannedFromOffset = startingOffset
             }
 
+            let deferredAppend = item.appendPrefixIsVerified
+                && item.fingerprint.size > (item.cached?.size ?? item.fingerprint.size)
+                && (item.mode == .backfill || item.mode == .lineageRebuild)
+            let storedSize = deferredAppend
+                ? (item.cached?.size ?? item.fingerprint.size)
+                : item.fingerprint.size
+            let storedModificationTime = deferredAppend
+                ? (item.cached?.modificationTimeNanoseconds ?? item.fingerprint.modificationTimeNanoseconds)
+                : item.fingerprint.modificationTimeNanoseconds
             let entry = AgentUsageFileCacheEntry(
-                size: item.fingerprint.size,
-                modificationTimeNanoseconds: item.fingerprint.modificationTimeNanoseconds,
+                size: storedSize,
+                modificationTimeNanoseconds: storedModificationTime,
                 coverageIncomplete: coverageIncomplete,
                 skippedRelevantRecord: skippedRelevantRecord,
                 scannedFromOffset: scannedFromOffset,
                 summary: diskSummary,
                 lineageDedupVersion: item.mode == .lineageRebuild
-                    ? requiredLineageDedupVersion(for: item.thread.id)
-                    : item.cached?.lineageDedupVersion
+                    ? (coverageIncomplete ? nil : item.targetLineageDedupVersion)
+                    : item.cached?.lineageDedupVersion,
+                lineageRebuildTargetVersion: item.mode == .lineageRebuild && coverageIncomplete
+                    ? item.targetLineageDedupVersion
+                    : nil,
+                appendBoundaryFingerprint: deferredAppend
+                    ? item.cached?.appendBoundaryFingerprint
+                    : AgentUsageAppendBoundary.fingerprint(
+                        at: item.url,
+                        endingAt: item.fingerprint.size
+                    )
             )
             cache.entries[item.key] = entry
             cacheChanged = true
             advancedThisRun += 1
+            advancesSinceCacheCheckpoint += 1
+            if advancesSinceCacheCheckpoint >= 8 {
+                if AgentUsageFileCacheStore.save(cache, scope: .codex) {
+                    cacheChanged = false
+                    advancesSinceCacheCheckpoint = 0
+                } else {
+                    cacheWriteFailed = true
+                }
+            }
             summariesByKey[item.key] = diskSummary.rehydrated(
                 projectPath: item.thread.cwd,
                 sessionID: item.thread.id,
                 skillIndex: skillIndex
             )
-            if coverageIncomplete || skippedRelevantRecord {
+            if coverageIncomplete || deferredAppend {
                 partialKeys.insert(item.key)
             } else {
                 partialKeys.remove(item.key)
@@ -5748,7 +5933,68 @@ extension AgentUsageInsightsService {
         expect(coldBudget.totalTranscriptBytes <= 320 * 1_024 * 1_024, "cold Codex detail scan must remain byte-bounded")
         expect(coldBudget.lineageBytesPerFile <= 192 * 1_024 * 1_024, "automatic lineage repair must remain per-file bounded")
         expect(continueBudget.totalTranscriptBytes <= 1_024 * 1_024 * 1_024, "Continue backfill must remain a bounded resumable pass")
+        expect(continueBudget.lineageBytesPerFile <= 256 * 1_024 * 1_024, "lineage rebuilds must checkpoint large child rollouts in bounded chunks")
         expect(continueBudget.deadline != nil, "Continue backfill must retain a responsiveness deadline")
+        expect(
+            !AgentUsageLineageCachePolicy.requiresRebuild(
+                isLineageChild: true,
+                cachedVersion: 1,
+                rebuildTargetVersion: nil,
+                exactFingerprint: true,
+                appendPrefixIsVerified: false,
+                currentSize: 500,
+                cachedSize: 500
+            ),
+            "an exact v1 lineage cache must survive later ancestor archival"
+        )
+        expect(
+            AgentUsageLineageCachePolicy.requiresRebuild(
+                isLineageChild: true,
+                cachedVersion: nil,
+                rebuildTargetVersion: nil,
+                exactFingerprint: true,
+                appendPrefixIsVerified: false,
+                currentSize: 500,
+                cachedSize: 500
+            ),
+            "a legacy child cache without lineage metadata must rebuild once"
+        )
+        expect(
+            AgentUsageLineageCachePolicy.requiresRebuild(
+                isLineageChild: true,
+                cachedVersion: 1,
+                rebuildTargetVersion: nil,
+                exactFingerprint: false,
+                appendPrefixIsVerified: false,
+                currentSize: 400,
+                cachedSize: 500
+            ),
+            "a truncated child rollout must rebuild its lineage aggregate"
+        )
+        expect(
+            !AgentUsageLineageCachePolicy.requiresRebuild(
+                isLineageChild: true,
+                cachedVersion: 1,
+                rebuildTargetVersion: nil,
+                exactFingerprint: false,
+                appendPrefixIsVerified: true,
+                currentSize: 600,
+                cachedSize: 500
+            ),
+            "a cryptographically verified append must preserve an exact lineage cache"
+        )
+        expect(
+            AgentUsageLineageCachePolicy.requiresRebuild(
+                isLineageChild: true,
+                cachedVersion: nil,
+                rebuildTargetVersion: 2,
+                exactFingerprint: true,
+                appendPrefixIsVerified: false,
+                currentSize: 500,
+                cachedSize: 500
+            ),
+            "an in-progress lineage checkpoint must resume until its cursor reaches zero"
+        )
 
         let distinctFingerprintA = AgentUsageCounterFingerprint(
             cumulative: AgentUsageCounterSample(input: 1, cached: 2, output: 3, reasoning: 4, total: 5),

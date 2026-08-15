@@ -84,8 +84,10 @@
 "log.scanStarted" = "Started a read-only Codex session scan; no files will be modified.";
 "log.scanCompletedFormat" = "Scan complete: %lld session files, %lld cleanable copies, %lld invalid image_url values, about %@ reclaimable.";
 "log.scanSkippedFormat" = "Safely skipped %lld malformed JSONL files and %lld missing or unverified media objects.";
+"log.scanResourceLimitFormat" = "Safely skipped %lld sessions with a record larger than 64 MB; repair will not force them through the host app.";
 "log.scanFileFormat" = "Scan [%lld/%lld] %@";
 "log.operationRequestedFormat" = "Requested “%@”. TraceFence will confirm Codex has fully quit and check session file handles before writing.";
+"log.isolatedWorker" = "Repair runs one file at a time in an isolated worker; an oversized session can no longer terminate TraceFence.";
 "log.waitingForCodex" = "Codex/ChatGPT is still running. Pause every task and quit the client completely; TraceFence will wait and never force-quit it.";
 "log.codexStopped" = "Codex has fully quit. Starting per-file backup, verification, and atomic processing.";
 "log.processFileFormat" = "%@ [%lld/%lld] %@";
@@ -98,6 +100,7 @@
 "error.codexAppMissing" = "The Codex/ChatGPT client was not found. Start it manually, then complete historical conversation validation.";
 "error.invalidCodexHome" = "The Codex data directory is unavailable: %@";
 "error.malformedJSON" = "Session JSON is damaged: %@, line %lld";
+"error.recordTooLarge" = "Session record exceeds the safe processing limit: %@, line %lld (%lld bytes; limit %lld bytes)";
 "error.invalidDataImage" = "Found a data:image Base64 image that cannot be decoded";
 "error.unsupportedImageType" = "Unsupported image type: %@";
 "error.unsafeMediaReference" = "Media reference is outside the Codex content-addressed directory: %@";
@@ -107,4 +110,6 @@
 "error.backupVerificationFailed" = "Backup verification failed: %@";
 "error.outputVerificationFailed" = "Repaired output verification failed: %@";
 "error.atomicReplaceFailed" = "Could not replace the session file atomically: %@";
+"error.workerUnavailable" = "The isolated repair worker is unavailable: %@";
+"error.workerFailed" = "The isolated repair worker could not process %@ (%@)";
 "error.cancelled" = "Operation cancelled";

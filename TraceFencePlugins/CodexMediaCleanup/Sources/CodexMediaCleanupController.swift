@@ -20,13 +20,13 @@ final class CodexMediaCleanupController: ObservableObject {
         supportDirectory: URL,
         localization: PluginLocalization,
         scanEngine: CodexMediaScanEngine = CodexMediaScanEngine(),
-        repairEngine: CodexMediaRepairEngine = CodexMediaRepairEngine()
+        repairEngine: CodexMediaRepairEngine? = nil
     ) {
         self.codexHome = codexHome
         self.supportDirectory = supportDirectory
         self.localization = localization
         self.scanEngine = scanEngine
-        self.repairEngine = repairEngine
+        self.repairEngine = repairEngine ?? Self.bundledRepairEngine()
         self.snapshot = CodexMediaCleanupSnapshot()
     }
 
@@ -94,6 +94,13 @@ final class CodexMediaCleanupController: ObservableObject {
                         Int64(report.missingMediaObjects)
                     ))
                 }
+                if report.resourceLimitedFiles > 0 {
+                    self.appendLog(.warning, self.localization.format(
+                        "log.scanResourceLimitFormat",
+                        defaultValue: "%lld 个会话包含超过 64MB 的单条记录，已安全跳过；修复不会在主程序中强行解析。",
+                        Int64(report.resourceLimitedFiles)
+                    ))
+                }
                 self.publish()
             } catch {
                 guard let self else { return }
@@ -125,6 +132,10 @@ final class CodexMediaCleanupController: ObservableObject {
             "log.operationRequestedFormat",
             defaultValue: "已请求“%@”。写入前将确认 Codex 完全退出并检查会话文件句柄。",
             operationName(operation)
+        ))
+        appendLog(.info, t(
+            "log.isolatedWorker",
+            "修复将在独立工作进程中逐文件执行；单个超大会话失败不会再导致 TraceFence 退出。"
         ))
         if codexIsRunning {
             appendLog(.warning, t(
@@ -352,5 +363,17 @@ final class CodexMediaCleanupController: ObservableObject {
 
     private static func bytes(_ value: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: value, countStyle: .file)
+    }
+
+    private static func bundledRepairEngine() -> CodexMediaRepairEngine {
+        let bundle = Bundle(for: CodexMediaCleanupPluginFactory.self)
+        let worker = bundle.resourceURL?
+            .appendingPathComponent("Helpers", isDirectory: true)
+            .appendingPathComponent("TraceFenceCodexMediaWorker", isDirectory: false)
+            ?? bundle.bundleURL.appendingPathComponent(
+                "Contents/Resources/Helpers/TraceFenceCodexMediaWorker",
+                isDirectory: false
+            )
+        return CodexMediaRepairEngine(executionMode: .isolated(workerExecutable: worker))
     }
 }

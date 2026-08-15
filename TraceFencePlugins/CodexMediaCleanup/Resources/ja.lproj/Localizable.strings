@@ -84,8 +84,10 @@
 "log.scanStarted" = "Codex セッションの読み取り専用スキャンを開始しました。ファイルは変更しません。";
 "log.scanCompletedFormat" = "スキャン完了：%lld セッション、整理可能 %lld コピー、無効な image_url %lld 件、約 %@ 回収可能。";
 "log.scanSkippedFormat" = "破損 JSONL %lld 件と欠落または未検証のメディア %lld 件を安全にスキップしました。";
+"log.scanResourceLimitFormat" = "64 MB を超える単一レコードを含むセッション %lld 件を安全にスキップしました。ホストアプリでは強制解析しません。";
 "log.scanFileFormat" = "スキャン [%lld/%lld] %@";
 "log.operationRequestedFormat" = "「%@」を要求しました。書き込み前に Codex の完全終了とファイルハンドルを確認します。";
+"log.isolatedWorker" = "修復は独立ワーカーで 1 ファイルずつ実行されます。巨大なセッションが失敗しても TraceFence は終了しません。";
 "log.waitingForCodex" = "Codex/ChatGPT は実行中です。すべてのタスクを停止して完全終了してください。TraceFence は強制終了せず待機します。";
 "log.codexStopped" = "Codex が完全終了しました。ファイルごとのバックアップ、検証、アトミック処理を開始します。";
 "log.processFileFormat" = "%@ [%lld/%lld] %@";
@@ -98,6 +100,7 @@
 "error.codexAppMissing" = "Codex/ChatGPT クライアントが見つかりません。手動で起動して履歴確認を完了してください。";
 "error.invalidCodexHome" = "Codex データディレクトリを使用できません：%@";
 "error.malformedJSON" = "セッション JSON が破損しています：%@、%lld 行目";
+"error.recordTooLarge" = "セッションレコードが安全な処理上限を超えています：%@、%lld 行目（%lld バイト、上限 %lld バイト）";
 "error.invalidDataImage" = "デコードできない data:image Base64 画像が見つかりました";
 "error.unsupportedImageType" = "未対応の画像形式：%@";
 "error.unsafeMediaReference" = "メディア参照が Codex コンテンツアドレスディレクトリの外にあります：%@";
@@ -107,4 +110,6 @@
 "error.backupVerificationFailed" = "バックアップ検証に失敗しました：%@";
 "error.outputVerificationFailed" = "修復結果の検証に失敗しました：%@";
 "error.atomicReplaceFailed" = "セッションファイルをアトミックに置き換えられません：%@";
+"error.workerUnavailable" = "分離修復ワーカーを利用できません：%@";
+"error.workerFailed" = "分離修復ワーカーは %@ を処理できませんでした（%@）";
 "error.cancelled" = "操作をキャンセルしました";

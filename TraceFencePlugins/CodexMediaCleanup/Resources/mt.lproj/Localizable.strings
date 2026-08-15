@@ -84,8 +84,10 @@
 "log.scanStarted" = "Beda skan tas-sessjonijiet Codex li jaqra biss; ebda fajl mhu se jinbidel.";
 "log.scanCompletedFormat" = "Skan lest: %lld fajls tas-sessjoni, %lld kopji biex jitnaddfu, %lld image_url invalidi, madwar %@ jistgħu jinġabru.";
 "log.scanSkippedFormat" = "Inqabżu b’mod sigur %lld JSONL bil-ħsara u %lld oġġetti tal-midja neqsin jew mhux ivverifikati.";
+"log.scanResourceLimitFormat" = "Inqabżu b’mod sigur %lld sessjoni b’rekord wieħed akbar minn 64 MB; l-app prinċipali mhux se tipprova tanalizzahom bil-forza.";
 "log.scanFileFormat" = "Skan [%lld/%lld] %@";
 "log.operationRequestedFormat" = "Intalbet “%@”. Qabel kitba, TraceFence jivverifika li Codex għalaq u jiċċekkja l-file handles.";
+"log.isolatedWorker" = "It-tiswija ssir fajl b’fajl fi worker iżolat; sessjoni kbira ma tistax aktar tagħlaq TraceFence.";
 "log.waitingForCodex" = "Codex/ChatGPT għadu għaddej. Waqqaf il-kompiti u agħlaq il-klijent; TraceFence jistenna u ma jagħlqux bil-forza.";
 "log.codexStopped" = "Codex għalaq kompletament. Beda backup, verifika u pproċessar atomiku għal kull fajl.";
 "log.processFileFormat" = "%@ [%lld/%lld] %@";
@@ -98,6 +100,7 @@
 "error.codexAppMissing" = "Il-klijent Codex/ChatGPT ma nstabx. Ibdieh manwalment u mbagħad ivverifika konverżazzjoni storika.";
 "error.invalidCodexHome" = "Id-direttorju tad-data Codex mhux disponibbli: %@";
 "error.malformedJSON" = "Il-JSON tas-sessjoni għandu ħsara: %@, linja %lld";
+"error.recordTooLarge" = "Ir-rekord tas-sessjoni jaqbeż il-limitu sigur: %@, linja %lld (%lld bytes; limitu %lld bytes)";
 "error.invalidDataImage" = "Instabet immaġni data:image Base64 li ma tistax tiġi dekodifikata";
 "error.unsupportedImageType" = "Tip ta’ immaġni mhux appoġġjat: %@";
 "error.unsafeMediaReference" = "Ir-referenza tal-midja tinsab barra d-direttorju indirizzat bil-kontenut ta’ Codex: %@";
@@ -107,4 +110,6 @@
 "error.backupVerificationFailed" = "Il-verifika tal-backup falliet: %@";
 "error.outputVerificationFailed" = "Il-verifika tar-riżultat imsewwi falliet: %@";
 "error.atomicReplaceFailed" = "Il-fajl tas-sessjoni ma setax jinbidel b’mod atomiku: %@";
+"error.workerUnavailable" = "Il-worker iżolat tat-tiswija mhuwiex disponibbli: %@";
+"error.workerFailed" = "Il-worker iżolat ma setax jipproċessa %@ (%@)";
 "error.cancelled" = "L-operazzjoni ġiet ikkanċellata";

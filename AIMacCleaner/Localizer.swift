@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import MacToolsPluginKit
 
 enum AppLanguage: String, CaseIterable {
     case english = "en"
@@ -75,6 +76,7 @@ class Localizer: ObservableObject {
     @Published var language: AppLanguage {
         didSet {
             UserDefaults.standard.set(language.rawValue, forKey: "appLanguage")
+            synchronizePluginRuntimeLanguage()
             if didFinishInit {
                 UserDefaults.standard.set(true, forKey: "appLanguageUserSelected")
             }
@@ -86,7 +88,16 @@ class Localizer: ObservableObject {
         let hasUserSelection = UserDefaults.standard.bool(forKey: "appLanguageUserSelected")
         let saved = hasUserSelection ? (UserDefaults.standard.string(forKey: "appLanguage") ?? "en") : "en"
         language = AppLanguage(rawValue: saved) ?? .english
+        synchronizePluginRuntimeLanguage()
         didFinishInit = true
+    }
+
+    private func synchronizePluginRuntimeLanguage() {
+        UserDefaults.standard.set(
+            language.rawValue,
+            forKey: PluginRuntimeLocalization.preferenceUserDefaultsKey
+        )
+        PluginRuntimeLocalization.source.setPreference(language.rawValue)
     }
 
     func t(_ zh: String, en: String, zhHant: String? = nil, ja: String? = nil, ko: String? = nil, mt: String? = nil) -> String {

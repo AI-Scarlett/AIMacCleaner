@@ -11,6 +11,9 @@
   `Invalid 'input[51].content[2].image_url'. Expected a valid URL, but got a value with an invalid format.`。
 - **清理并修复**：在同一次安全事务中完成前两项。
 - 每个阶段在页面显示文件级进度和带时间戳日志。
+- 写入阶段由独立、低优先级工作进程逐文件执行。单个异常或超大会话即使触发系统内存限制，
+  也只会安全跳过该文件，不会再终止 TraceFence 主程序。
+- 单条 JSONL 记录的安全上限为 64MB；超限记录不会解析或改写，并会在扫描/运行报告中标记。
 - 写入前提示用户暂停所有 Codex 任务并完全退出客户端；完成后必须重新启动 Codex，并打开包含图片的历史对话验证图片显示和继续发送消息。
 
 ## 安全模型
@@ -32,10 +35,12 @@
 codex-media-cleanup.mactoolsplugin/
   plugin.json
   CodexMediaCleanup.bundle/
+    Contents/Resources/Helpers/TraceFenceCodexMediaWorker
 ```
 
 清单声明 `pluginKitVersion: 4`、工厂类、功能面板和 workspace 设置页。发布包须使用
-TraceFence 团队的 Developer ID 签名，并由 TraceFence 商城目录记录不可变 GitHub URL、大小和 SHA-256。
+TraceFence 团队的 Developer ID 对工作进程和外层 bundle 分层签名，并由 TraceFence 商城目录记录
+不可变 GitHub URL、大小和 SHA-256。
 
 这是 TraceFence 自研插件，不从 MacTools 仓库下载代码或运行时资源。它只在桌面端“我的插件”工作台
 显示，不占用概览和任务栏插件页；商城分类为收费插件，TraceFence 全插件订阅包含使用权。

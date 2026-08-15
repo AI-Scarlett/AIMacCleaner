@@ -86,7 +86,7 @@
 
 ### 方式一：下载 DMG（推荐）
 
-1. 从 [TraceFence Releases](https://github.com/AI-Scarlett/TraceFence/releases/latest) 下载最新版 `TraceFence-v1.2.4-arm64.dmg`
+1. 从 [TraceFence Releases](https://github.com/AI-Scarlett/TraceFence/releases/latest) 下载最新版 `TraceFence-v1.2.5-arm64.dmg`
 2. 双击打开 DMG 文件
 3. 将 TraceFence 拖入 Applications 文件夹
 4. 首次打开时，右键点击应用 → 选择「打开」（需绕过 Gatekeeper 验证）
@@ -222,6 +222,13 @@ AIMacCleaner/
 | 🔴 危险 | 可能丢失数据 | （需用户确认的重要数据目录） |
 
 ## 更新日志
+
+### v1.2.5 (2026-08-15)
+- 修复 Token 与用量把已精确去重的 Codex 子会话缓存反复判为过期、导致用户不断点击“继续补全”的问题；剩余明细会从已落盘游标自动续扫
+- Codex 媒体整理 v1.0.2 将每个会话放入独立低优先级进程处理，并限制超大单条记录；异常会跳过单文件，不再拖垮 TraceFence 主进程
+- 已安装插件可在自己的桌面 Tab 内检查并直接安装更新，无需返回插件商城
+- 官网版的网络诊断统一由 IP 概览插件提供；本机巡检只保留启动项和明确的隐私动作，不再启动重复网络扫描
+- 插件语言、深浅色模式和配色皮肤由 TraceFence 统一注入；切换语言时会立即重建插件内容，不再只更新插件标题
 
 ### v1.2.4 (2026-08-15)
 - 插件中心明确展示 51 个目录条目：5 个系统内置组件和 46 个从 TraceFence GitHub 独立安装、独立升级的插件

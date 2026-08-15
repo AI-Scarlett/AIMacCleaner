@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct CodexMediaScanEngine: Sendable {
@@ -43,9 +44,12 @@ struct CodexMediaScanEngine: Sendable {
                 report.missingMediaObjects += stats.missingMediaObjects
                 report.estimatedReclaimableBytes += stats.estimatedReclaimableBytes
                 globalHashes.formUnion(stats.hashes)
+            } catch CodexMediaCleanupError.recordTooLarge {
+                report.resourceLimitedFiles += 1
             } catch {
                 report.malformedFiles += 1
             }
+            _ = malloc_zone_pressure_relief(nil, 0)
         }
         report.uniqueImageCount = globalHashes.count
         report.completedAt = Date()

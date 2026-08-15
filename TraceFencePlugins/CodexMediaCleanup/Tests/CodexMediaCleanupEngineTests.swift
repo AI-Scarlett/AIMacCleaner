@@ -173,6 +173,57 @@ final class CodexMediaCleanupEngineTests: XCTestCase {
         XCTAssertThrowsError(try CodexDataImage.parse("data:image/png;base64,%%%"))
     }
 
+    func testOversizedRecordIsRejectedBeforeJSONDecoding() {
+        XCTAssertNoThrow(
+            try CodexJSONL.validateRecordByteCount(
+                CodexJSONL.maximumRecordBytes,
+                path: "/tmp/safe.jsonl",
+                line: 1
+            )
+        )
+        XCTAssertThrowsError(
+            try CodexJSONL.validateRecordByteCount(
+                CodexJSONL.maximumRecordBytes + 1,
+                path: "/tmp/oversized.jsonl",
+                line: 7
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? CodexMediaCleanupError,
+                .recordTooLarge(
+                    path: "/tmp/oversized.jsonl",
+                    line: 7,
+                    bytes: CodexJSONL.maximumRecordBytes + 1,
+                    limit: CodexJSONL.maximumRecordBytes
+                )
+            )
+        }
+    }
+
+    func testIsolatedWorkerRepairsFixtureWithoutMutatingHostProcess() async throws {
+        let fixture = try makeMixedSession(named: "isolated-worker")
+        let configuration = CodexMediaCleanupConfiguration(
+            codexHome: codexHome,
+            supportDirectory: support,
+            includeArchivedSessions: false
+        )
+        let helper = try builtWorkerExecutable()
+        let engine = CodexMediaRepairEngine(
+            processMonitor: AlwaysStoppedProcessMonitor(),
+            executionMode: .isolated(workerExecutable: helper)
+        )
+
+        let report = try await engine.perform(.cleanupAndRepair, configuration: configuration)
+
+        XCTAssertEqual(report.repairedFileCount, 1)
+        XCTAssertEqual(report.replacementCount, 2)
+        XCTAssertEqual(report.restorationCount, 2)
+        let records = try readJSONL(fixture.session)
+        XCTAssertEqual(imageURL(in: records[0]), fixture.fileURL)
+        XCTAssertEqual(imageURLInCompaction(records[1]), fixture.dataURL)
+        XCTAssertEqual(imageURL(in: records[2]), fixture.dataURL)
+    }
+
     func testOpenSessionIsSkippedWithoutModification() async throws {
         let bytes = Data("open-session-image".utf8)
         let dataURL = "data:image/png;base64,\(bytes.base64EncodedString())"
@@ -203,6 +254,49 @@ final class CodexMediaCleanupEngineTests: XCTestCase {
         let factory = NSClassFromString("CodexMediaCleanupPlugin.CodexMediaCleanupPluginFactory")
             as? MacToolsPluginBundleFactory.Type
         XCTAssertNotNil(factory)
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: try builtWorkerExecutable().path))
+    }
+
+    @MainActor
+    func testPluginMetadataFollowsTraceFenceLanguagePreference() throws {
+        let originalPreference = UserDefaults.standard.string(
+            forKey: PluginRuntimeLocalization.preferenceUserDefaultsKey
+        )
+        defer { PluginRuntimeLocalization.source.setPreference(originalPreference) }
+
+        let productsDirectory = Bundle(for: Self.self).bundleURL.deletingLastPathComponent()
+        let pluginURL = productsDirectory.appendingPathComponent("CodexMediaCleanup.bundle", isDirectory: true)
+        let bundle = try XCTUnwrap(Bundle(url: pluginURL))
+        XCTAssertTrue(bundle.load(), "bundle did not load")
+
+        let context = PluginRuntimeContext(
+            pluginID: "tracefence.tools.codex-media-cleanup",
+            resourceBundle: bundle,
+            supportDirectory: support,
+            cacheDirectory: root.appendingPathComponent("cache", isDirectory: true),
+            temporaryDirectory: root.appendingPathComponent("temporary", isDirectory: true)
+        )
+        let provider = try CodexMediaCleanupPluginFactory.makeProvider(context: context)
+        let plugin = try XCTUnwrap(provider.makePlugins().first as? CodexMediaCleanupPlugin)
+
+        PluginRuntimeLocalization.source.setPreference("en")
+        plugin.refreshLocalization()
+        XCTAssertEqual(plugin.metadata.title, "Codex Media Cleanup")
+
+        PluginRuntimeLocalization.source.setPreference("zh-Hans")
+        plugin.refreshLocalization()
+        XCTAssertEqual(plugin.metadata.title, "Codex 媒体整理")
+    }
+
+    private func builtWorkerExecutable() throws -> URL {
+        let productsDirectory = Bundle(for: Self.self).bundleURL.deletingLastPathComponent()
+        let helper = productsDirectory
+            .appendingPathComponent("CodexMediaCleanup.bundle", isDirectory: true)
+            .appendingPathComponent("Contents/Resources/Helpers/TraceFenceCodexMediaWorker")
+        return try XCTUnwrap(
+            FileManager.default.isExecutableFile(atPath: helper.path) ? helper : nil,
+            "isolated worker is missing from the built plugin bundle"
+        )
     }
 
     private func responseItem(imageURL: String) -> [String: Any] {

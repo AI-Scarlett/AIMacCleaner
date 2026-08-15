@@ -115,7 +115,7 @@ struct ContentView: View {
             case .tokenScope: "chart.xyaxis.line"
             case .diskAdvisor: "sparkles"
             case .agentProfile: "globe.badge.chevron.backward"
-            case .localDiagnostics: "network"
+            case .localDiagnostics: TraceFenceDistributionPolicy.currentChannel.isDirect ? "checklist" : "network"
             case .migration: "arrow.triangle.2.circlepath"
             }
         }
@@ -153,7 +153,10 @@ struct ContentView: View {
             case .tokenScope: localizer.tokenScopeTitle
             case .diskAdvisor: localizer.t("AI 磁盘顾问", en: "AI Disk Advisor", zhHant: "AI 磁碟顧問", ja: "AI ディスクアドバイザー", ko: "AI 디스크 어드바이저", mt: "AI Disk Advisor")
             case .agentProfile: localizer.t("Agent 画像", en: "Agent Profile", zhHant: "Agent 畫像", ja: "Agent プロファイル", ko: "Agent 프로필", mt: "Agent Profile")
-            case .localDiagnostics: localizer.t("本机诊断", en: "Local Diagnostics", zhHant: "本機診斷", ja: "ローカル診断", ko: "로컬 진단", mt: "Local Diagnostics")
+            case .localDiagnostics:
+                TraceFenceDistributionPolicy.currentChannel.isDirect
+                    ? localizer.t("本机巡检", en: "Local System Audit", zhHant: "本機巡檢", ja: "ローカル監査", ko: "로컬 시스템 감사", mt: "Local System Audit")
+                    : localizer.t("本机诊断", en: "Local Diagnostics", zhHant: "本機診斷", ja: "ローカル診断", ko: "로컬 진단", mt: "Local Diagnostics")
             case .migration: localizer.navMigration
             }
         }
@@ -172,7 +175,10 @@ struct ContentView: View {
             case .tokenScope: localizer.tokenScopeSubtitle
             case .diskAdvisor: localizer.t("Apple Intelligence 磁盘清理建议", en: "Apple Intelligence cleanup advice", zhHant: "Apple Intelligence 磁碟清理建議", ja: "Apple Intelligence のクリーンアップ提案", ko: "Apple Intelligence 정리 제안", mt: "Apple Intelligence cleanup advice")
             case .agentProfile: localizer.t("给 Agent 注入语言、时区与本地探测画像", en: "Inject language, timezone, and local probe profiles for agents", zhHant: "為 Agent 注入語言、時區與本機探測畫像", ja: "Agent に言語、タイムゾーン、ローカル診断プロファイルを注入", ko: "Agent에 언어, 시간대 및 로컬 탐지 프로필 주입", mt: "Inject language, timezone, and local probe profiles for agents")
-            case .localDiagnostics: localizer.t("出口网络与启动项只读巡检", en: "Egress and launch item audit", zhHant: "出口網路與啟動項唯讀巡檢", ja: "出口ネットワークと起動項目監査", ko: "송신 네트워크 및 시작 항목 점검", mt: "Egress and launch item audit")
+            case .localDiagnostics:
+                TraceFenceDistributionPolicy.currentChannel.isDirect
+                    ? localizer.t("启动项与本机隐私动作；网络工具统一到 IP 概览插件", en: "Launch items and local privacy actions; network tools live in IP Overview", zhHant: "啟動項與本機私隱動作；網路工具統一到 IP 概覽外掛", ja: "起動項目とローカル操作。ネットワーク機能は IP Overview に統合", ko: "시작 항목 및 로컬 개인정보 작업; 네트워크 도구는 IP Overview에 통합", mt: "Launch items and local privacy actions; network tools live in IP Overview")
+                    : localizer.t("出口网络与启动项只读巡检", en: "Egress and launch item audit", zhHant: "出口網路與啟動項唯讀巡檢", ja: "出口ネットワークと起動項目監査", ko: "송신 네트워크 및 시작 항목 점검", mt: "Egress and launch item audit")
             case .migration: localizer.subMigration
             }
         }
@@ -1025,7 +1031,9 @@ struct ContentView: View {
             AgentGeoMirrorSettingsView()
                 .environmentObject(localizer)
         case .localDiagnostics:
-            LocalSystemDiagnosticsView()
+            LocalSystemDiagnosticsView(
+                includesNetwork: !TraceFenceDistributionPolicy.currentChannel.isDirect
+            )
                 .environmentObject(localizer)
         case .migration:
             IntelMigrationTab()

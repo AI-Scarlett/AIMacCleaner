@@ -1,0 +1,120 @@
+name: TraceFenceCodexPlugins
+options:
+  createIntermediateGroups: true
+  autoCreateSchemes: false
+configs:
+  Debug: debug
+  Release: release
+settings:
+  base:
+    BUNDLE_IDENTIFIER_PREFIX: com.tracefence
+    DEVELOPMENT_TEAM: UQ87N2WZ76
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+targets:
+  MacToolsPluginKit:
+    type: framework
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: ../ThirdParty/MacTools/Sources/MacToolsPluginKit
+      - path: ../ThirdParty/MacTools/Sources/Shared/Localization
+    settings:
+      base:
+        PRODUCT_NAME: MacToolsPluginKit
+        PRODUCT_MODULE_NAME: MacToolsPluginKit
+        PRODUCT_BUNDLE_IDENTIFIER: com.tracefence.plugin-kit.development
+        GENERATE_INFOPLIST_FILE: true
+  TraceFenceCodexMediaWorker:
+    type: tool
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: CodexMediaCleanup/Sources/CodexJSONL.swift
+      - path: CodexMediaCleanup/Sources/CodexMediaCleanupModels.swift
+      - path: CodexMediaCleanup/Sources/CodexMediaDataImage.swift
+      - path: CodexMediaCleanup/Sources/CodexMediaRepairEngine.swift
+      - path: CodexMediaCleanup/Sources/CodexProcessMonitor.swift
+      - path: CodexMediaCleanup/Worker
+    settings:
+      base:
+        PRODUCT_NAME: TraceFenceCodexMediaWorker
+        PRODUCT_BUNDLE_IDENTIFIER: com.tracefence.plugin.codex-media-cleanup.worker
+        GENERATE_INFOPLIST_FILE: true
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TRACEFENCE_CODEX_MEDIA_WORKER"
+  CodexMediaCleanupPluginCore:
+    type: library.static
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: CodexMediaCleanup/Sources
+    dependencies:
+      - target: MacToolsPluginKit
+    settings:
+      base:
+        PRODUCT_MODULE_NAME: CodexMediaCleanupPlugin
+        PRODUCT_NAME: CodexMediaCleanupPluginCore
+        PRODUCT_BUNDLE_IDENTIFIER: com.tracefence.plugin.codex-media-cleanup.core
+        GENERATE_INFOPLIST_FILE: true
+  CodexMediaCleanupPlugin:
+    type: bundle
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: CodexMediaCleanup/Bundle
+      - path: CodexMediaCleanup/Resources
+    dependencies:
+      - target: MacToolsPluginKit
+        embed: false
+      - target: CodexMediaCleanupPluginCore
+        link: true
+      - target: TraceFenceCodexMediaWorker
+        link: false
+    settings:
+      base:
+        PRODUCT_NAME: CodexMediaCleanup
+        PRODUCT_MODULE_NAME: CodexMediaCleanupPluginBundle
+        PRODUCT_BUNDLE_IDENTIFIER: com.tracefence.plugin.codex-media-cleanup
+        GENERATE_INFOPLIST_FILE: true
+        WRAPPER_EXTENSION: bundle
+    postBuildScripts:
+      - name: Copy isolated repair worker
+        script: |
+          set -euo pipefail
+          helper_dir="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Helpers"
+          mkdir -p "$helper_dir"
+          ditto "$BUILT_PRODUCTS_DIR/TraceFenceCodexMediaWorker" "$helper_dir/TraceFenceCodexMediaWorker"
+          chmod 755 "$helper_dir/TraceFenceCodexMediaWorker"
+        inputFiles:
+          - "$(BUILT_PRODUCTS_DIR)/TraceFenceCodexMediaWorker"
+        outputFiles:
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Helpers/TraceFenceCodexMediaWorker"
+  CodexMediaCleanupPluginTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: CodexMediaCleanup/Tests
+    dependencies:
+      - target: CodexMediaCleanupPluginCore
+      - target: MacToolsPluginKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tracefence.plugin.codex-media-cleanup.tests
+        GENERATE_INFOPLIST_FILE: true
+schemes:
+  CodexMediaCleanupPlugin:
+    build:
+      targets:
+        CodexMediaCleanupPlugin: all
+        CodexMediaCleanupPluginTests: [test]
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - CodexMediaCleanupPluginTests
+    run:
+      config: Debug
+    archive:
+      config: Release

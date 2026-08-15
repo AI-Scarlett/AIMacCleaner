@@ -159,12 +159,16 @@ struct TraceFencePluginDescriptor: Identifiable, Codable, Equatable, Sendable {
     let featured: Bool
     let package: TraceFencePluginPackageDescriptor?
 
-    func localizedName(preferredLanguages: [String] = Locale.preferredLanguages) -> String {
-        localizedValue(preferredLanguages: preferredLanguages)?.displayName ?? name
+    func localizedName(preferredLanguages: [String]? = nil) -> String {
+        localizedValue(preferredLanguages: preferredLanguages ?? Self.activePreferredLanguages)?.displayName ?? name
     }
 
-    func localizedSummary(preferredLanguages: [String] = Locale.preferredLanguages) -> String {
-        localizedValue(preferredLanguages: preferredLanguages)?.summary ?? summary
+    func localizedSummary(preferredLanguages: [String]? = nil) -> String {
+        localizedValue(preferredLanguages: preferredLanguages ?? Self.activePreferredLanguages)?.summary ?? summary
+    }
+
+    private static var activePreferredLanguages: [String] {
+        [UserDefaults.standard.string(forKey: "appLanguage") ?? AppLanguage.english.rawValue]
     }
 
     private func localizedValue(preferredLanguages: [String]) -> TraceFencePluginLocalizedMetadata? {

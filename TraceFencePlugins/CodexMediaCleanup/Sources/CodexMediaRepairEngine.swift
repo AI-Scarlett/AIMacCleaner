@@ -2,6 +2,11 @@ import CryptoKit
 import Darwin
 import Foundation
 
+enum CodexMediaRepairExecutionMode: Sendable {
+    case inProcess
+    case isolated(workerExecutable: URL)
+}
+
 struct CodexMediaRepairEngine: Sendable {
     private struct TransformState: Equatable {
         var staleReplacements = 0
@@ -24,9 +29,14 @@ struct CodexMediaRepairEngine: Sendable {
     }
 
     let processMonitor: any CodexProcessMonitoring
+    let executionMode: CodexMediaRepairExecutionMode
 
-    init(processMonitor: any CodexProcessMonitoring = CodexProcessMonitor()) {
+    init(
+        processMonitor: any CodexProcessMonitoring = CodexProcessMonitor(),
+        executionMode: CodexMediaRepairExecutionMode = .inProcess
+    ) {
         self.processMonitor = processMonitor
+        self.executionMode = executionMode
     }
 
     func perform(
@@ -38,6 +48,7 @@ struct CodexMediaRepairEngine: Sendable {
             try await processMonitor.waitUntilCodexStops()
         }
 
+        try removeAbandonedTemporaryFiles(configuration: configuration)
         let files = try CodexSessionDiscovery.sessionFiles(configuration: configuration)
         let runID = Self.runID()
         let startedAt = Date()
@@ -56,6 +67,7 @@ struct CodexMediaRepairEngine: Sendable {
 
         var results: [CodexMediaRepairReport.FileResult] = []
         var skipped: [String] = []
+        let checkpointURL = runReportRoot.appendingPathComponent("\(operation.rawValue)-progress.json")
         for (index, file) in files.enumerated() {
             if Task.isCancelled { throw CodexMediaCleanupError.cancelled }
             progress(.init(completed: index, total: files.count, currentPath: file.path))
@@ -66,42 +78,58 @@ struct CodexMediaRepairEngine: Sendable {
                 if processMonitor.fileHasOpenHandle(file) {
                     throw CodexMediaCleanupError.fileIsOpen(file.path)
                 }
-                guard let result = try repairFile(
-                    file,
-                    operation: operation,
-                    configuration: configuration,
-                    backupRoot: runBackupRoot
-                ) else { continue }
-                results.append(result)
+                let result: CodexMediaRepairReport.FileResult?
+                switch executionMode {
+                case .inProcess:
+                    result = try autoreleasepool {
+                        try repairFile(
+                            file,
+                            operation: operation,
+                            configuration: configuration,
+                            backupRoot: runBackupRoot
+                        )
+                    }
+                case let .isolated(workerExecutable):
+                    result = try repairFileUsingWorker(
+                        workerExecutable: workerExecutable,
+                        file: file,
+                        operation: operation,
+                        configuration: configuration,
+                        backupRoot: runBackupRoot
+                    )
+                }
+                if let result { results.append(result) }
             } catch CodexMediaCleanupError.cancelled {
                 throw CodexMediaCleanupError.cancelled
             } catch {
                 skipped.append("\(file.path): \(error.localizedDescription)")
             }
+            _ = malloc_zone_pressure_relief(nil, 0)
+            try writeReport(
+                operation: operation,
+                runID: runID,
+                startedAt: startedAt,
+                results: results,
+                skipped: skipped,
+                reportURL: checkpointURL
+            )
         }
 
         let reportURL = runReportRoot.appendingPathComponent("\(operation.rawValue)-report.json")
-        let report = CodexMediaRepairReport(
-            runID: runID,
+        let report = try writeReport(
             operation: operation,
+            runID: runID,
             startedAt: startedAt,
-            completedAt: Date(),
-            files: results,
-            skippedFiles: skipped,
-            reportPath: reportURL.path
+            results: results,
+            skipped: skipped,
+            reportURL: reportURL
         )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        encoder.dateEncodingStrategy = .iso8601
-        var encoded = try encoder.encode(report)
-        encoded.append(0x0A)
-        try encoded.write(to: reportURL, options: [.atomic])
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: reportURL.path)
+        try? FileManager.default.removeItem(at: checkpointURL)
         progress(.init(completed: files.count, total: files.count, currentPath: ""))
         return report
     }
 
-    private func repairFile(
+    func repairFile(
         _ file: URL,
         operation: CodexMediaOperation,
         configuration: CodexMediaCleanupConfiguration,
@@ -514,6 +542,12 @@ struct CodexMediaRepairEngine: Sendable {
         let layout = try CodexJSONL.layout(of: file)
         var invalid = 0
         try CodexJSONL.forEachLine(at: file) { lineNumber, data in
+            if lineNumber == layout.lastCompactionLine {
+                guard data.range(of: Data("\"compacted\"".utf8)) != nil else { return }
+            } else {
+                guard layout.lastCompactionLine == nil || lineNumber > layout.lastCompactionLine!,
+                      data.range(of: Data("\"response_item\"".utf8)) != nil else { return }
+            }
             let record = try CodexJSONL.decodeRecord(data, path: file.path, line: lineNumber)
             guard let root = CodexJSONL.effectiveRoot(in: record, lineNumber: lineNumber, layout: layout) else {
                 return
@@ -587,6 +621,123 @@ struct CodexMediaRepairEngine: Sendable {
             hasher.update(data: data)
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func repairFileUsingWorker(
+        workerExecutable: URL,
+        file: URL,
+        operation: CodexMediaOperation,
+        configuration: CodexMediaCleanupConfiguration,
+        backupRoot: URL
+    ) throws -> CodexMediaRepairReport.FileResult? {
+        let worker = workerExecutable.resolvingSymlinksInPath().standardizedFileURL
+        guard FileManager.default.isExecutableFile(atPath: worker.path) else {
+            throw CodexMediaCleanupError.workerUnavailable(worker.path)
+        }
+
+        let process = Process()
+        process.executableURL = worker
+        process.arguments = [
+            "--file", file.path,
+            "--operation", operation.rawValue,
+            "--codex-home", configuration.codexHome.path,
+            "--support-directory", configuration.supportDirectory.path,
+            "--backup-root", backupRoot.path
+        ]
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        try process.run()
+
+        var cancellationStartedAt: Date?
+        while process.isRunning {
+            if Task.isCancelled {
+                if cancellationStartedAt == nil {
+                    cancellationStartedAt = Date()
+                    process.terminate()
+                } else if Date().timeIntervalSince(cancellationStartedAt!) > 2 {
+                    kill(process.processIdentifier, SIGKILL)
+                }
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        process.waitUntilExit()
+
+        let outputData = stdout.fileHandleForReading.readDataToEndOfFile()
+        let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
+        if Task.isCancelled { throw CodexMediaCleanupError.cancelled }
+
+        let response = try? JSONDecoder().decode(CodexMediaWorkerResponse.self, from: outputData)
+        if process.terminationStatus == 0,
+           let response,
+           response.error == nil {
+            return response.result
+        }
+
+        let detail: String
+        if let responseError = response?.error, !responseError.isEmpty {
+            detail = responseError
+        } else if process.terminationReason == .uncaughtSignal {
+            detail = "signal \(process.terminationStatus)"
+        } else if let stderrText = String(data: errorData, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !stderrText.isEmpty {
+            detail = String(stderrText.prefix(1_000))
+        } else {
+            detail = "exit \(process.terminationStatus)"
+        }
+        throw CodexMediaCleanupError.workerFailed(path: file.path, detail: detail)
+    }
+
+    @discardableResult
+    private func writeReport(
+        operation: CodexMediaOperation,
+        runID: String,
+        startedAt: Date,
+        results: [CodexMediaRepairReport.FileResult],
+        skipped: [String],
+        reportURL: URL
+    ) throws -> CodexMediaRepairReport {
+        let report = CodexMediaRepairReport(
+            runID: runID,
+            operation: operation,
+            startedAt: startedAt,
+            completedAt: Date(),
+            files: results,
+            skippedFiles: skipped,
+            reportPath: reportURL.path
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
+        var encoded = try encoder.encode(report)
+        encoded.append(0x0A)
+        try encoded.write(to: reportURL, options: [.atomic])
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: reportURL.path)
+        return report
+    }
+
+    private func removeAbandonedTemporaryFiles(
+        configuration: CodexMediaCleanupConfiguration,
+        now: Date = Date()
+    ) throws {
+        for root in configuration.sessionRoots where FileManager.default.fileExists(atPath: root.path) {
+            guard let enumerator = FileManager.default.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
+                options: [.skipsPackageDescendants]
+            ) else { continue }
+            for case let url as URL in enumerator {
+                guard url.lastPathComponent.hasPrefix("."),
+                      url.lastPathComponent.hasSuffix(".tracefence.tmp") else { continue }
+                let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
+                guard values?.isRegularFile == true,
+                      let modified = values?.contentModificationDate,
+                      now.timeIntervalSince(modified) >= 60 else { continue }
+                try FileManager.default.removeItem(at: url)
+            }
+        }
     }
 
     private static func runID() -> String {

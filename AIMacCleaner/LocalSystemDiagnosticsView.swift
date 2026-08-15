@@ -5,15 +5,25 @@ import SwiftUI
 
 struct LocalSystemDiagnosticsView: View {
     @EnvironmentObject private var localizer: Localizer
-    @StateObject private var model = LocalSystemDiagnosticsModel()
+    @StateObject private var model: LocalSystemDiagnosticsModel
+    private let includesNetwork: Bool
+
+    init(includesNetwork: Bool = true) {
+        self.includesNetwork = includesNetwork
+        _model = StateObject(wrappedValue: LocalSystemDiagnosticsModel(includesNetwork: includesNetwork))
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                 PageHeader(
-                    icon: "network",
-                    title: localizer.t("本机诊断", en: "Local Diagnostics"),
-                    subtitle: localizer.t("检查出口网络、启动项和本机隐私动作。", en: "Inspect network egress, launch items, and local privacy actions."),
+                    icon: includesNetwork ? "network" : "checklist",
+                    title: includesNetwork
+                        ? localizer.t("本机诊断", en: "Local Diagnostics")
+                        : localizer.t("本机巡检", en: "Local System Audit"),
+                    subtitle: includesNetwork
+                        ? localizer.t("检查出口网络、启动项和本机隐私动作。", en: "Inspect network egress, launch items, and local privacy actions.")
+                        : localizer.t("检查启动项并执行明确的本机隐私动作；网络诊断已统一到 IP 概览插件。", en: "Audit launch items and run explicit local privacy actions. Network diagnostics now live in the IP Overview plugin."),
                     color: Theme.Colors.teal
                 ) {
                     Button {
@@ -30,9 +40,14 @@ struct LocalSystemDiagnosticsView: View {
 
                 diagnosticSummary
 
-                HStack(alignment: .top, spacing: Theme.Spacing.lg) {
-                    networkPanel
+                if includesNetwork {
+                    HStack(alignment: .top, spacing: Theme.Spacing.lg) {
+                        networkPanel
+                        privacyPanel
+                    }
+                } else {
                     privacyPanel
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 launchItemsPanel
@@ -51,28 +66,36 @@ struct LocalSystemDiagnosticsView: View {
     }
 
     private var diagnosticSummary: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.Spacing.md), count: 4), spacing: Theme.Spacing.md) {
-            summaryTile(
-                title: localizer.t("出口 IP", en: "Public IP"),
-                value: model.snapshot.primaryPublicIP?.displayValue ?? localizer.t("等待", en: "Waiting"),
-                detail: model.snapshot.primaryPublicIP?.subtitle ?? localizer.t("刷新后显示", en: "Shown after refresh"),
-                icon: "globe",
-                color: Theme.Colors.info
-            )
-            summaryTile(
-                title: localizer.t("本地地址", en: "Local IPs"),
-                value: "\(model.snapshot.localAddresses.count)",
-                detail: model.snapshot.localAddresses.first?.displayValue ?? localizer.t("未读取", en: "Not read"),
-                icon: "network",
-                color: Theme.Colors.teal
-            )
-            summaryTile(
-                title: localizer.t("连通性", en: "Reachability"),
-                value: "\(model.snapshot.reachableCount)/\(max(model.snapshot.connectivity.count, 1))",
-                detail: localizer.t("关键端点", en: "Key endpoints"),
-                icon: "point.3.connected.trianglepath.dotted",
-                color: model.snapshot.hasConnectivityWarning ? Theme.Colors.warning : Theme.Colors.success
-            )
+        LazyVGrid(
+            columns: Array(
+                repeating: GridItem(.flexible(), spacing: Theme.Spacing.md),
+                count: includesNetwork ? 4 : 2
+            ),
+            spacing: Theme.Spacing.md
+        ) {
+            if includesNetwork {
+                summaryTile(
+                    title: localizer.t("出口 IP", en: "Public IP"),
+                    value: model.snapshot.primaryPublicIP?.displayValue ?? localizer.t("等待", en: "Waiting"),
+                    detail: model.snapshot.primaryPublicIP?.subtitle ?? localizer.t("刷新后显示", en: "Shown after refresh"),
+                    icon: "globe",
+                    color: Theme.Colors.info
+                )
+                summaryTile(
+                    title: localizer.t("本地地址", en: "Local IPs"),
+                    value: "\(model.snapshot.localAddresses.count)",
+                    detail: model.snapshot.localAddresses.first?.displayValue ?? localizer.t("未读取", en: "Not read"),
+                    icon: "network",
+                    color: Theme.Colors.teal
+                )
+                summaryTile(
+                    title: localizer.t("连通性", en: "Reachability"),
+                    value: "\(model.snapshot.reachableCount)/\(max(model.snapshot.connectivity.count, 1))",
+                    detail: localizer.t("关键端点", en: "Key endpoints"),
+                    icon: "point.3.connected.trianglepath.dotted",
+                    color: model.snapshot.hasConnectivityWarning ? Theme.Colors.warning : Theme.Colors.success
+                )
+            }
             summaryTile(
                 title: localizer.t("启动项", en: "Launch Items"),
                 value: "\(model.snapshot.launchItems.count)",
@@ -80,6 +103,15 @@ struct LocalSystemDiagnosticsView: View {
                 icon: "bolt.badge.clock",
                 color: model.snapshot.hasLaunchWarnings ? Theme.Colors.warning : Theme.Colors.purple
             )
+            if !includesNetwork {
+                summaryTile(
+                    title: localizer.t("网络工具", en: "Network Tools"),
+                    value: localizer.t("已迁移", en: "Moved"),
+                    detail: localizer.t("使用 IP 概览插件", en: "Use the IP Overview plugin"),
+                    icon: "puzzlepiece.extension.fill",
+                    color: Theme.Colors.info
+                )
+            }
         }
     }
 
@@ -378,6 +410,11 @@ private final class LocalSystemDiagnosticsModel: ObservableObject {
     @Published private(set) var lastErrorMessage: String?
 
     private var hasLoaded = false
+    private let includesNetwork: Bool
+
+    init(includesNetwork: Bool = true) {
+        self.includesNetwork = includesNetwork
+    }
 
     func refreshIfNeeded() {
         guard !hasLoaded else { return }
@@ -403,31 +440,40 @@ private final class LocalSystemDiagnosticsModel: ObservableObject {
     }
 
     private func performRefresh() async {
-        async let localAddresses = Task.detached(priority: .utility) {
-            Self.collectLocalAddresses()
-        }.value
         async let launchItems = Task.detached(priority: .utility) {
             Self.scanLaunchItems()
         }.value
-        async let primaryIP = fetchPublicEndpoint(
-            id: "primary-egress",
-            title: "Global egress",
-            url: URL(string: "https://api.ipify.org?format=json")
-        )
-        async let secondaryIP = fetchPublicEndpoint(
-            id: "secondary-egress",
-            title: "Backup egress",
-            url: URL(string: "https://ifconfig.me/ip")
-        )
-        async let connectivity = runConnectivityChecks()
-
-        snapshot = await LocalDiagnosticsSnapshot(
-            publicEndpoints: [primaryIP, secondaryIP],
-            localAddresses: localAddresses,
-            connectivity: connectivity,
-            launchItems: launchItems,
-            refreshedAt: Date()
-        )
+        if includesNetwork {
+            async let localAddresses = Task.detached(priority: .utility) {
+                Self.collectLocalAddresses()
+            }.value
+            async let primaryIP = fetchPublicEndpoint(
+                id: "primary-egress",
+                title: "Global egress",
+                url: URL(string: "https://api.ipify.org?format=json")
+            )
+            async let secondaryIP = fetchPublicEndpoint(
+                id: "secondary-egress",
+                title: "Backup egress",
+                url: URL(string: "https://ifconfig.me/ip")
+            )
+            async let connectivity = runConnectivityChecks()
+            snapshot = await LocalDiagnosticsSnapshot(
+                publicEndpoints: [primaryIP, secondaryIP],
+                localAddresses: localAddresses,
+                connectivity: connectivity,
+                launchItems: launchItems,
+                refreshedAt: Date()
+            )
+        } else {
+            // Website builds delegate all public-IP, interface, reachability,
+            // leak and quality checks to the independently updated IP Overview
+            // plugin. Do not start a second network scanner here.
+            snapshot = await LocalDiagnosticsSnapshot(
+                launchItems: launchItems,
+                refreshedAt: Date()
+            )
+        }
         isRefreshing = false
         statusMessage = "Local diagnostics refreshed."
     }

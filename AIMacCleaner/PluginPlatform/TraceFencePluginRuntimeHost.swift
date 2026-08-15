@@ -25,8 +25,14 @@ final class TraceFencePluginRuntimeHost: ObservableObject {
     }
 
     func synchronizeWithInstalledPlugins() {
-        for (pluginID, record) in packageManager.records where sessions[pluginID] == nil {
-            states[pluginID] = record.enabled ? .idle : .disabled
+        for (pluginID, record) in packageManager.records {
+            if let session = sessions[pluginID] {
+                states[pluginID] = session.version == record.activeVersion
+                    ? .active
+                    : .restartRequired
+            } else {
+                states[pluginID] = record.enabled ? .idle : .disabled
+            }
         }
     }
 
@@ -93,6 +99,13 @@ final class TraceFencePluginRuntimeHost: ObservableObject {
     func refresh(pluginID: String) {
         guard let plugin = sessions[pluginID]?.plugin else { return }
         plugin.refresh()
+        objectWillChange.send()
+    }
+
+    func refreshLocalization() {
+        for session in sessions.values {
+            (session.plugin as? any PluginRuntimeLocalizationRefreshing)?.refreshLocalization()
+        }
         objectWillChange.send()
     }
 
@@ -280,13 +293,20 @@ enum TraceFencePluginRuntimePresentation {
 
 struct TraceFencePluginRuntimeView: View {
     @EnvironmentObject private var localizer: Localizer
+    @Environment(\.colorScheme) private var inheritedColorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @ObservedObject var runtimeHost: TraceFencePluginRuntimeHost
+    @ObservedObject private var packageManager = TraceFencePluginPackageManager.shared
+    @ObservedObject private var catalogService = TraceFenceMarketplaceCatalogService.shared
+    @ObservedObject private var pluginLocaleSource = PluginRuntimeLocalization.source
     let pluginID: String
     var presentation: TraceFencePluginRuntimePresentation = .workspace
     var onClose: (() -> Void)?
     var openInWorkspace: (() -> Void)?
     @AppStorage(TraceFencePluginDisplayPreferences.mainTabPluginIDsKey)
     private var mainTabPluginIDsJSON = TraceFencePluginDisplayPreferences.defaultMainTabPluginIDsJSON
+    @AppStorage("appearanceMode") private var appearanceMode = "system"
+    @AppStorage("colorPalette") private var colorPalette = AppColorPalette.porcelain.rawValue
     @State private var selectedSurface: Surface = .main
     @State private var visiblePanelSurface: PluginPanelSurface?
     @State private var didResolveDefaultSurface = false
@@ -295,6 +315,62 @@ struct TraceFencePluginRuntimeView: View {
         case main
         case component
         case settings
+    }
+
+    private var preferredPluginColorScheme: ColorScheme? {
+        switch appearanceMode {
+        case "light": .light
+        case "dark": .dark
+        default: nil
+        }
+    }
+
+    private var resolvedPluginColorScheme: ColorScheme {
+        preferredPluginColorScheme ?? inheritedColorScheme
+    }
+
+    private var pluginComponentTheme: PluginComponentTheme {
+        // Reading the palette-backed AppStorage value makes every installed
+        // plugin redraw immediately when TraceFence changes skins.
+        _ = colorPalette
+        return PluginComponentTheme(
+            surfaces: .init(
+                panel: Theme.Colors.background,
+                card: Theme.Colors.cardBg,
+                nested: Theme.Colors.elevatedCardBg,
+                nestedMuted: Theme.Colors.cardBg.opacity(resolvedPluginColorScheme == .dark ? 0.62 : 0.72),
+                chip: Theme.Colors.cardHover,
+                control: Theme.Colors.elevatedCardBg,
+                controlHover: Theme.Colors.cardHover,
+                track: Theme.Colors.separator.opacity(0.72),
+                backplate: Theme.Colors.surface
+            ),
+            text: .init(
+                primary: Theme.Colors.textPrimary,
+                secondary: Theme.Colors.textSecondary,
+                tertiary: Theme.Colors.textTertiary,
+                disabled: Theme.Colors.textTertiary.opacity(0.55)
+            ),
+            status: .init(
+                success: Theme.Colors.success,
+                warning: Theme.Colors.warning,
+                critical: Theme.Colors.danger,
+                informational: Theme.Colors.info
+            ),
+            dataSeries: .init(
+                primary: Theme.Colors.accent,
+                secondary: Theme.Colors.info,
+                tertiary: Theme.Colors.success,
+                quaternary: Theme.Colors.purple,
+                quinary: Theme.Colors.teal,
+                senary: Theme.Colors.cyan
+            ),
+            interaction: .init(
+                selectionOpacity: colorSchemeContrast == .increased ? 0.24 : 0.16,
+                emphasisOpacity: colorSchemeContrast == .increased ? 0.14 : 0.09,
+                subtleTintOpacity: colorSchemeContrast == .increased ? 0.14 : 0.08
+            )
+        )
     }
 
     var body: some View {
@@ -323,9 +399,26 @@ struct TraceFencePluginRuntimeView: View {
                 )
             }
         }
+        // Plugin workspaces are type-erased when they cross the bundle boundary.
+        // Changing Locale alone does not rebuild an already-created AnyView, so
+        // give the rendered subtree a new identity whenever TraceFence changes
+        // language. The host view's own @State (selected surface, visibility)
+        // stays intact while every plugin gets fresh localized descriptors and
+        // content without requiring a restart.
+        .id("\(pluginID)-locale-\(pluginLocaleSource.revision)")
+        .environment(\.locale, pluginLocaleSource.locale)
+        .environment(\.pluginComponentTheme, pluginComponentTheme)
+        .tint(Theme.Colors.accent)
+        .preferredColorScheme(preferredPluginColorScheme)
         .task {
+            PluginRuntimeLocalization.source.setPreference(localizer.language.rawValue)
+            packageManager.refresh(catalog: catalogService.catalog)
             runtimeHost.open(pluginID: pluginID)
+            runtimeHost.refreshLocalization()
             resolveDefaultSurfaceIfNeeded()
+        }
+        .onChange(of: pluginLocaleSource.revision) { _ in
+            runtimeHost.refreshLocalization()
         }
         .onChange(of: runtimeHost.state(pluginID: pluginID)) { state in
             if state == .active {
@@ -424,10 +517,10 @@ struct TraceFencePluginRuntimeView: View {
                 .background(plugin.metadata.iconTint.opacity(0.10), in: RoundedRectangle(cornerRadius: Theme.Radius.md))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(plugin.metadata.title)
+                Text(catalogDescriptor?.localizedName() ?? plugin.metadata.title)
                     .font(Theme.Font.title2Bold)
                     .lineLimit(1)
-                Text(plugin.metadata.defaultDescription)
+                Text(catalogDescriptor?.localizedSummary() ?? plugin.metadata.defaultDescription)
                     .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .lineLimit(1)
@@ -463,7 +556,7 @@ struct TraceFencePluginRuntimeView: View {
                 .frame(width: 32, height: 32)
                 .background(plugin.metadata.iconTint.opacity(0.10), in: RoundedRectangle(cornerRadius: Theme.Radius.sm))
             VStack(alignment: .leading, spacing: 2) {
-                Text(plugin.metadata.title)
+                Text(catalogDescriptor?.localizedName() ?? plugin.metadata.title)
                     .font(Theme.Font.bodyMedium)
                     .lineLimit(1)
                 HStack(spacing: Theme.Spacing.xs) {
@@ -485,6 +578,34 @@ struct TraceFencePluginRuntimeView: View {
 
     @ViewBuilder
     private var runtimeButtons: some View {
+        if let descriptor = catalogDescriptor {
+            switch packageManager.state(for: descriptor) {
+            case let .updateAvailable(_, targetVersion, _):
+                Button {
+                    installAvailableUpdate()
+                } label: {
+                    Label("v\(targetVersion)", systemImage: "arrow.down.circle.fill")
+                        .labelStyle(.titleAndIcon)
+                        .foregroundStyle(Theme.Colors.accent)
+                }
+                .buttonStyle(.borderless)
+                .help(localizer.t("直接更新此插件到 v\(targetVersion)", en: "Update this plugin directly to v\(targetVersion)"))
+            case .downloading, .installing:
+                ProgressView()
+                    .controlSize(.small)
+                    .help(localizer.t("正在更新插件", en: "Updating plugin"))
+            default:
+                Button {
+                    checkThisPluginForUpdates()
+                } label: {
+                    Image(systemName: "arrow.down.circle")
+                }
+                .buttonStyle(.borderless)
+                .disabled(catalogService.isRefreshing)
+                .help(localizer.t("检查此插件更新", en: "Check This Plugin for Updates"))
+            }
+        }
+
         if showsMainTabPin, catalogDescriptor?.supportsPluginTab == true {
             Button {
                 toggleMainTabPin()
@@ -513,6 +634,27 @@ struct TraceFencePluginRuntimeView: View {
             }
             .buttonStyle(.borderless)
             .help(localizer.t("关闭插件", en: "Close Plugin"))
+        }
+    }
+
+    /// Keeps lifecycle actions next to the installed tool. The store remains
+    /// the discovery and first-install surface, but is no longer required for
+    /// routine updates.
+    private func checkThisPluginForUpdates() {
+        Task { @MainActor in
+            await catalogService.refresh(force: true)
+            packageManager.refresh(catalog: catalogService.catalog)
+            runtimeHost.synchronizeWithInstalledPlugins()
+        }
+    }
+
+    private func installAvailableUpdate() {
+        Task { @MainActor in
+            await catalogService.refresh(force: true)
+            packageManager.refresh(catalog: catalogService.catalog)
+            guard let plugin = catalogService.catalog.plugin(id: pluginID) else { return }
+            await packageManager.install(plugin: plugin)
+            runtimeHost.synchronizeWithInstalledPlugins()
         }
     }
 
@@ -862,7 +1004,9 @@ struct TraceFencePluginRuntimeView: View {
     }
 
     private var pluginTitle: String {
-        runtimeHost.plugin(pluginID: pluginID)?.metadata.title ?? localizer.t("插件", en: "Plugin")
+        catalogDescriptor?.localizedName()
+            ?? runtimeHost.plugin(pluginID: pluginID)?.metadata.title
+            ?? localizer.t("插件", en: "Plugin")
     }
 
     private func runtimeMessage(icon: String, title: String) -> some View {
@@ -993,6 +1137,11 @@ struct TraceFencePluginWorkspaceView: View {
                         HStack(spacing: 4) {
                             Text("v\(packageManager.state(for: plugin).installedVersion ?? plugin.version)")
                                 .font(.system(size: 9, design: .monospaced))
+                            if case .updateAvailable = packageManager.state(for: plugin) {
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .foregroundStyle(Theme.Colors.accent)
+                                    .help(localizer.t("可在当前插件页直接更新", en: "Update directly from this plugin page"))
+                            }
                             TraceFencePluginPricingBadge(plugin: plugin, compact: true)
                             if plugin.supportsOverview {
                                 Image(systemName: "rectangle.grid.2x2")
