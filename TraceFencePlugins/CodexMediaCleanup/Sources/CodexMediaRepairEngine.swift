@@ -29,7 +29,8 @@ struct CodexMediaRepairEngine: Sendable {
         self.processMonitor = processMonitor
     }
 
-    func repair(
+    func perform(
+        _ operation: CodexMediaOperation,
         configuration: CodexMediaCleanupConfiguration,
         progress: @Sendable (CodexMediaProgress) -> Void = { _ in }
     ) async throws -> CodexMediaRepairReport {
@@ -67,6 +68,7 @@ struct CodexMediaRepairEngine: Sendable {
                 }
                 guard let result = try repairFile(
                     file,
+                    operation: operation,
                     configuration: configuration,
                     backupRoot: runBackupRoot
                 ) else { continue }
@@ -78,9 +80,10 @@ struct CodexMediaRepairEngine: Sendable {
             }
         }
 
-        let reportURL = runReportRoot.appendingPathComponent("repair-report.json")
+        let reportURL = runReportRoot.appendingPathComponent("\(operation.rawValue)-report.json")
         let report = CodexMediaRepairReport(
             runID: runID,
+            operation: operation,
             startedAt: startedAt,
             completedAt: Date(),
             files: results,
@@ -100,10 +103,15 @@ struct CodexMediaRepairEngine: Sendable {
 
     private func repairFile(
         _ file: URL,
+        operation: CodexMediaOperation,
         configuration: CodexMediaCleanupConfiguration,
         backupRoot: URL
     ) throws -> CodexMediaRepairReport.FileResult? {
-        let prepared = try prepare(file: file, mediaRoot: configuration.mediaRoot)
+        let prepared = try prepare(
+            file: file,
+            mediaRoot: configuration.mediaRoot,
+            operation: operation
+        )
         guard prepared.state.changed else {
             try? FileManager.default.removeItem(at: prepared.temporaryURL)
             return nil
@@ -128,8 +136,9 @@ struct CodexMediaRepairEngine: Sendable {
 
         do {
             try atomicReplace(prepared.temporaryURL, destination: file, mode: prepared.originalMode)
+            let invalidEffectiveURLs = try verifyEffectiveHistory(file, mediaRoot: configuration.mediaRoot)
             guard try sha256File(file) == prepared.repairedSHA256,
-                  try verifyEffectiveHistory(file, mediaRoot: configuration.mediaRoot) == 0 else {
+                  (!operation.performsRepair || invalidEffectiveURLs == 0) else {
                 throw CodexMediaCleanupError.outputVerificationFailed(file.path)
             }
         } catch {
@@ -150,7 +159,11 @@ struct CodexMediaRepairEngine: Sendable {
         )
     }
 
-    private func prepare(file: URL, mediaRoot: URL) throws -> PreparedFile {
+    private func prepare(
+        file: URL,
+        mediaRoot: URL,
+        operation: CodexMediaOperation
+    ) throws -> PreparedFile {
         let layout = try CodexJSONL.layout(of: file)
         let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
         let mode = (attributes[.posixPermissions] as? NSNumber)?.int16Value ?? 0o600
@@ -174,6 +187,7 @@ struct CodexMediaRepairEngine: Sendable {
                     lineNumber: lineNumber,
                     layout: layout,
                     mediaRoot: mediaRoot,
+                    operation: operation,
                     pendingReferencePaths: &pendingReferencePaths,
                     state: &state
                 )
@@ -211,6 +225,7 @@ struct CodexMediaRepairEngine: Sendable {
         lineNumber: Int,
         layout: CodexJSONL.Layout,
         mediaRoot: URL,
+        operation: CodexMediaOperation,
         pendingReferencePaths: inout [String: String],
         state: inout TransformState
     ) throws -> (record: [String: Any], changed: Bool) {
@@ -245,18 +260,30 @@ struct CodexMediaRepairEngine: Sendable {
            var payload = output["payload"] as? [String: Any],
            let history = payload["replacement_history"] {
             payload["replacement_history"] = try transformValue(
-                history, isEffective: true, mediaRoot: mediaRoot, state: &state
+                history,
+                isEffective: true,
+                mediaRoot: mediaRoot,
+                operation: operation,
+                state: &state
             )
             output["payload"] = payload
         } else if type == "response_item",
                   layout.lastCompactionLine == nil || lineNumber > layout.lastCompactionLine!,
                   let payload = output["payload"] {
             output["payload"] = try transformValue(
-                payload, isEffective: true, mediaRoot: mediaRoot, state: &state
+                payload,
+                isEffective: true,
+                mediaRoot: mediaRoot,
+                operation: operation,
+                state: &state
             )
         } else {
             output = try transformValue(
-                output, isEffective: false, mediaRoot: mediaRoot, state: &state
+                output,
+                isEffective: false,
+                mediaRoot: mediaRoot,
+                operation: operation,
+                state: &state
             ) as? [String: Any] ?? output
         }
         return (output, before != state)
@@ -429,11 +456,12 @@ struct CodexMediaRepairEngine: Sendable {
         _ value: Any,
         isEffective: Bool,
         mediaRoot: URL,
+        operation: CodexMediaOperation,
         state: inout TransformState
     ) throws -> Any {
         if let string = value as? String {
             guard let image = try CodexDataImage.parse(string) else { return string }
-            if isEffective { return string }
+            if isEffective || !operation.performsCleanup { return string }
             let stored = try CodexMediaObjectStore.ensureObject(for: image, mediaRoot: mediaRoot)
             if stored.created { state.createdMediaObjects += 1 }
             state.staleReplacements += 1
@@ -443,13 +471,20 @@ struct CodexMediaRepairEngine: Sendable {
         }
         if let array = value as? [Any] {
             return try array.map {
-                try transformValue($0, isEffective: isEffective, mediaRoot: mediaRoot, state: &state)
+                try transformValue(
+                    $0,
+                    isEffective: isEffective,
+                    mediaRoot: mediaRoot,
+                    operation: operation,
+                    state: &state
+                )
             }
         }
         guard var dictionary = value as? [String: Any] else { return value }
 
         var handledImageURL = false
-        if isEffective,
+        if operation.performsRepair,
+           isEffective,
            dictionary["type"] as? String == "input_image",
            let rawURL = dictionary["image_url"] as? String,
            rawURL.hasPrefix("file://") {
@@ -465,7 +500,11 @@ struct CodexMediaRepairEngine: Sendable {
         for (key, item) in dictionary {
             if handledImageURL && key == "image_url" { continue }
             dictionary[key] = try transformValue(
-                item, isEffective: isEffective, mediaRoot: mediaRoot, state: &state
+                item,
+                isEffective: isEffective,
+                mediaRoot: mediaRoot,
+                operation: operation,
+                state: &state
             )
         }
         return dictionary

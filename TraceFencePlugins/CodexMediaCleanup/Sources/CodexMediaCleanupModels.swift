@@ -6,8 +6,46 @@ enum CodexMediaCleanupPhase: Equatable, Sendable {
     case scanning
     case scanned
     case waitingForCodex
+    case cleaning
     case repairing
+    case cleaningAndRepairing
     case completed
+}
+
+enum CodexMediaOperation: String, CaseIterable, Codable, Equatable, Sendable {
+    case cleanup
+    case repair
+    case cleanupAndRepair
+
+    var performsCleanup: Bool {
+        self == .cleanup || self == .cleanupAndRepair
+    }
+
+    var performsRepair: Bool {
+        self == .repair || self == .cleanupAndRepair
+    }
+
+    var phase: CodexMediaCleanupPhase {
+        switch self {
+        case .cleanup: .cleaning
+        case .repair: .repairing
+        case .cleanupAndRepair: .cleaningAndRepairing
+        }
+    }
+}
+
+enum CodexMediaLogLevel: String, Equatable, Sendable {
+    case info
+    case success
+    case warning
+    case error
+}
+
+struct CodexMediaLogEntry: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let timestamp: Date
+    let level: CodexMediaLogLevel
+    let message: String
 }
 
 struct CodexMediaScanReport: Equatable, Sendable {
@@ -24,9 +62,9 @@ struct CodexMediaScanReport: Equatable, Sendable {
     var scannedBytes: Int64 = 0
     var completedAt = Date()
 
-    var needsRepair: Bool {
-        reclaimableOccurrences > 0 || invalidEffectiveFileURLs > 0
-    }
+    var needsCleanup: Bool { reclaimableOccurrences > 0 }
+    var needsRepair: Bool { invalidEffectiveFileURLs > 0 }
+    var needsWork: Bool { needsCleanup || needsRepair }
 }
 
 struct CodexMediaRepairReport: Equatable, Codable, Sendable {
@@ -43,6 +81,7 @@ struct CodexMediaRepairReport: Equatable, Codable, Sendable {
     }
 
     let runID: String
+    let operation: CodexMediaOperation
     let startedAt: Date
     let completedAt: Date
     let files: [FileResult]
@@ -59,15 +98,21 @@ struct CodexMediaCleanupSnapshot: Equatable, Sendable {
     var phase: CodexMediaCleanupPhase = .idle
     var scanReport: CodexMediaScanReport?
     var repairReport: CodexMediaRepairReport?
+    var activeOperation: CodexMediaOperation?
+    var lastOperation: CodexMediaOperation?
     var completedFiles = 0
     var totalFiles = 0
     var currentFile = ""
     var includeArchivedSessions = true
     var errorMessage: String?
+    var logs: [CodexMediaLogEntry] = []
+    var requiresRestartValidation = false
+    var codexRestarted = false
+    var historyConversationValidated = false
 
     var isBusy: Bool {
         switch phase {
-        case .scanning, .waitingForCodex, .repairing: true
+        case .scanning, .waitingForCodex, .cleaning, .repairing, .cleaningAndRepairing: true
         default: false
         }
     }

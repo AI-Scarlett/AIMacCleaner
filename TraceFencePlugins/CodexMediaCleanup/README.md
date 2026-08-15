@@ -3,6 +3,16 @@
 这是一个 **TraceFence PluginKit 4** 原生插件。Codex 只是被扫描的数据源；插件不安装到
 `~/.codex/plugins`，也不依赖 Codex skill 或 Codex 会话继续运行。
 
+## 功能与工作流
+
+- **扫描**：只读分析重复媒体、副本数量、预计可释放空间和无效 `image_url`。
+- **清理**：只外置已被 compaction 取代的重复副本和非模型事件副本，降低会话文件占用。
+- **修复**：只修复有效历史中的无效 `file://` 图片引用，避免
+  `Invalid 'input[51].content[2].image_url'. Expected a valid URL, but got a value with an invalid format.`。
+- **清理并修复**：在同一次安全事务中完成前两项。
+- 每个阶段在页面显示文件级进度和带时间戳日志。
+- 写入前提示用户暂停所有 Codex 任务并完全退出客户端；完成后必须重新启动 Codex，并打开包含图片的历史对话验证图片显示和继续发送消息。
+
 ## 安全模型
 
 - 扫描始终只读。

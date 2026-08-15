@@ -73,10 +73,11 @@ final class CodexMediaCleanupEngineTests: XCTestCase {
         XCTAssertEqual(before.affectedFiles, 1)
         XCTAssertEqual(before.reclaimableOccurrences, 2)
         XCTAssertEqual(before.invalidEffectiveFileURLs, 2)
-        XCTAssertTrue(before.needsRepair)
+        XCTAssertTrue(before.needsWork)
 
         let engine = CodexMediaRepairEngine(processMonitor: AlwaysStoppedProcessMonitor())
-        let repair = try await engine.repair(configuration: configuration)
+        let repair = try await engine.perform(.cleanupAndRepair, configuration: configuration)
+        XCTAssertEqual(repair.operation, .cleanupAndRepair)
         XCTAssertEqual(repair.repairedFileCount, 1)
         XCTAssertEqual(repair.replacementCount, 2)
         XCTAssertEqual(repair.restorationCount, 2)
@@ -93,15 +94,65 @@ final class CodexMediaCleanupEngineTests: XCTestCase {
         XCTAssertEqual(localImages, [stored.url.path], "local display metadata should point to the canonical original")
 
         let after = try CodexMediaScanEngine().scan(configuration: configuration)
-        XCTAssertFalse(after.needsRepair)
+        XCTAssertFalse(after.needsWork)
         XCTAssertEqual(after.invalidEffectiveFileURLs, 0)
         XCTAssertEqual(after.reclaimableOccurrences, 0)
         XCTAssertEqual(after.retainedEffectiveOccurrences, 2)
 
         let firstRepairBytes = try Data(contentsOf: session)
-        let secondRepair = try await engine.repair(configuration: configuration)
+        let secondRepair = try await engine.perform(.cleanupAndRepair, configuration: configuration)
         XCTAssertEqual(secondRepair.repairedFileCount, 0, "a second run must be idempotent")
         XCTAssertEqual(try Data(contentsOf: session), firstRepairBytes)
+    }
+
+    func testCleanupOnlyExternalizesDuplicatesWithoutRepairingEffectiveImageURLs() async throws {
+        let fixture = try makeMixedSession(named: "cleanup-only")
+        let configuration = CodexMediaCleanupConfiguration(
+            codexHome: codexHome,
+            supportDirectory: support,
+            includeArchivedSessions: false
+        )
+
+        let engine = CodexMediaRepairEngine(processMonitor: AlwaysStoppedProcessMonitor())
+        let report = try await engine.perform(.cleanup, configuration: configuration)
+        XCTAssertEqual(report.operation, .cleanup)
+        XCTAssertEqual(report.replacementCount, 2)
+        XCTAssertEqual(report.restorationCount, 0)
+
+        let records = try readJSONL(fixture.session)
+        XCTAssertEqual(imageURL(in: records[0]), fixture.fileURL)
+        XCTAssertEqual(imageURLInCompaction(records[1]), fixture.fileURL)
+        XCTAssertEqual(imageURL(in: records[2]), fixture.fileURL)
+
+        let after = try CodexMediaScanEngine().scan(configuration: configuration)
+        XCTAssertFalse(after.needsCleanup)
+        XCTAssertTrue(after.needsRepair)
+        XCTAssertEqual(after.invalidEffectiveFileURLs, 2)
+    }
+
+    func testRepairOnlyFixesEffectiveImageURLsWithoutCleaningDuplicates() async throws {
+        let fixture = try makeMixedSession(named: "repair-only")
+        let configuration = CodexMediaCleanupConfiguration(
+            codexHome: codexHome,
+            supportDirectory: support,
+            includeArchivedSessions: false
+        )
+
+        let engine = CodexMediaRepairEngine(processMonitor: AlwaysStoppedProcessMonitor())
+        let report = try await engine.perform(.repair, configuration: configuration)
+        XCTAssertEqual(report.operation, .repair)
+        XCTAssertEqual(report.replacementCount, 0)
+        XCTAssertEqual(report.restorationCount, 2)
+
+        let records = try readJSONL(fixture.session)
+        XCTAssertEqual(imageURL(in: records[0]), fixture.dataURL)
+        XCTAssertEqual(imageURLInCompaction(records[1]), fixture.dataURL)
+        XCTAssertEqual(imageURL(in: records[2]), fixture.dataURL)
+
+        let after = try CodexMediaScanEngine().scan(configuration: configuration)
+        XCTAssertTrue(after.needsCleanup)
+        XCTAssertFalse(after.needsRepair)
+        XCTAssertEqual(after.reclaimableOccurrences, 2)
     }
 
     func testMalformedSessionIsReportedAndNeverModified() throws {
@@ -137,7 +188,7 @@ final class CodexMediaCleanupEngineTests: XCTestCase {
             includeArchivedSessions: false
         )
         let engine = CodexMediaRepairEngine(processMonitor: OpenFileProcessMonitor())
-        let report = try await engine.repair(configuration: configuration)
+        let report = try await engine.perform(.cleanupAndRepair, configuration: configuration)
         XCTAssertEqual(report.repairedFileCount, 0)
         XCTAssertEqual(report.skippedFiles.count, 1)
         XCTAssertEqual(try Data(contentsOf: session), original)
@@ -166,6 +217,41 @@ final class CodexMediaCleanupEngineTests: XCTestCase {
                 ]
             ]
         ]
+    }
+
+    private func makeMixedSession(named name: String) throws -> (
+        session: URL,
+        dataURL: String,
+        fileURL: String
+    ) {
+        let imageBytes = Data("\(name)-image-content".utf8)
+        let dataURL = "data:image/png;base64,\(imageBytes.base64EncodedString())"
+        let image = try XCTUnwrap(try CodexDataImage.parse(dataURL))
+        let mediaRoot = codexHome.appendingPathComponent("media_objects/sha256", isDirectory: true)
+        let stored = try CodexMediaObjectStore.ensureObject(for: image, mediaRoot: mediaRoot)
+        let fileURL = stored.url.absoluteString
+        let session = codexHome.appendingPathComponent("sessions/2026/08/14/\(name).jsonl")
+        try writeJSONL([
+            responseItem(imageURL: dataURL),
+            [
+                "type": "compacted",
+                "payload": ["replacement_history": [[
+                    "type": "message",
+                    "content": [["type": "input_image", "image_url": fileURL]]
+                ]]]
+            ],
+            responseItem(imageURL: fileURL),
+            [
+                "type": "event_msg",
+                "payload": [
+                    "type": "user_message",
+                    "images": [dataURL],
+                    "local_images": ["/tmp/original.png"],
+                    "message": #"<image path="/tmp/original.png">"#
+                ]
+            ]
+        ], to: session)
+        return (session, dataURL, fileURL)
     }
 
     private func writeJSONL(_ records: [[String: Any]], to url: URL) throws {

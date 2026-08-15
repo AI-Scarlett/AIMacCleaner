@@ -60,7 +60,7 @@ final class CodexMediaCleanupPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginS
             order: 92,
             defaultDescription: localization.string(
                 "metadata.description",
-                defaultValue: "安全去重 Codex 会话图片，并修复无效的本地 image_url"
+                defaultValue: "清理重复媒体文件，降低磁盘空间占用；修复会话记录中的无效 image_url，避免历史对话出现图片地址格式错误"
             )
         )
         controller.onStateChange = { [weak self] in self?.onStateChange?() }
@@ -130,14 +130,17 @@ final class CodexMediaCleanupPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginS
         case .idle: return localization.string("panel.idle", defaultValue: "等待只读扫描")
         case .scanning: return localization.string("panel.scanning", defaultValue: "正在扫描会话…")
         case .waitingForCodex: return localization.string("panel.waiting", defaultValue: "等待 Codex 完全退出")
-        case .repairing: return localization.string("panel.repairing", defaultValue: "正在备份并原子修复…")
+        case .cleaning: return localization.string("panel.cleaning", defaultValue: "正在备份并清理重复媒体…")
+        case .repairing: return localization.string("panel.repairing", defaultValue: "正在备份并修复会话…")
+        case .cleaningAndRepairing:
+            return localization.string("panel.cleaningAndRepairing", defaultValue: "正在清理并修复…")
         case .completed:
-            return localization.string("panel.completed", defaultValue: "修复完成")
+            return localization.string("panel.completed", defaultValue: "处理完成，等待重启验证")
         case .scanned:
             guard let report = snapshot.scanReport else {
                 return localization.string("panel.scanned", defaultValue: "扫描完成")
             }
-            if report.needsRepair {
+            if report.needsWork {
                 return localization.format(
                     "panel.needsRepairFormat",
                     defaultValue: "%lld 个会话需要处理 · 约 %@",
@@ -161,9 +164,9 @@ final class CodexMediaCleanupPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginS
         )]
         controls.append(action(
             id: ControlID.repair,
-            title: localization.string("action.openRepair", defaultValue: "打开详情并确认修复"),
+            title: localization.string("action.openRepair", defaultValue: "打开详情选择清理或修复"),
             icon: "arrow.up.right.square",
-            enabled: controller.canRepair,
+            enabled: controller.canCleanupAndRepair,
             divider: true
         ))
         if snapshot.isBusy {

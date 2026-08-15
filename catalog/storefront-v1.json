@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-08-15T03:05:00Z",
+  "expiresAt": "2027-08-15T04:20:00Z",
   "offers": [
     {
       "active": true,
@@ -1064,27 +1064,27 @@
       "localizedMetadata": {
         "en": {
           "displayName": "Codex Media Cleanup",
-          "summary": "Safely deduplicate repeated images in Codex sessions and repair local image_url values rejected by the Responses API"
+          "summary": "Clean duplicate media to reduce disk usage, and repair invalid image_url values in session history to prevent image URL format errors"
         },
         "ja": {
           "displayName": "Codex メディア整理",
-          "summary": "Codex セッション内の重複画像を安全に整理し、Responses API が受け付けないローカル image_url を修復します"
+          "summary": "重複メディアを整理してディスク使用量を減らし、履歴内の無効な image_url を修復して画像 URL 形式エラーを防ぎます"
         },
         "ko": {
           "displayName": "Codex 미디어 정리",
-          "summary": "Codex 세션의 중복 이미지를 안전하게 정리하고 Responses API가 거부하는 로컬 image_url을 복구합니다"
+          "summary": "중복 미디어를 정리해 디스크 사용량을 줄이고 세션 기록의 잘못된 image_url을 복구해 이미지 URL 형식 오류를 방지합니다"
         },
         "mt": {
           "displayName": "Tindif tal-Midja Codex",
-          "summary": "Neħħi b’mod sigur immaġnijiet duplikati fis-sessjonijiet Codex u sewwi image_url lokali miċħuda mill-Responses API"
+          "summary": "Naddaf midja duplikata biex tnaqqas l-użu tad-diska u sewwi image_url invalidi fl-istorja biex tevita żbalji fil-format"
         },
         "zh-Hans": {
           "displayName": "Codex 媒体整理",
-          "summary": "安全去重 Codex 会话中的重复图片，并修复 Responses API 不接受的本地 image_url"
+          "summary": "清理重复媒体文件以降低磁盘占用，并修复会话记录中的无效 image_url，避免历史对话出现图片地址格式错误"
         },
         "zh-Hant": {
           "displayName": "Codex 媒體整理",
-          "summary": "安全去重 Codex 工作階段中的重複圖片，並修復 Responses API 不接受的本機 image_url"
+          "summary": "清理重複媒體檔案以降低磁碟占用，並修復工作階段記錄中的無效 image_url，避免歷史對話出現圖片位址格式錯誤"
         }
       },
       "minimumHostVersion": "1.2.4",
@@ -1093,10 +1093,10 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.codex-media-cleanup",
         "entryPoint": "CodexMediaCleanup.bundle",
-        "sha256": "f66205b05fe8c4a0aa3196d44edfbc4e14c9fb6b00fe768f9cb7a675b327fd15",
-        "sizeBytes": 531034,
+        "sha256": "2b501149ae5079edf5aed249ee06f02d3b2a4331d9bea3479ac0aea9b29135c4",
+        "sizeBytes": 696400,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-codex-media-cleanup-v1.0.0/codex-media-cleanup-1.0.0.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-codex-media-cleanup-v1.0.1/codex-media-cleanup-1.0.1.mactoolsplugin.zip"
       },
       "permissions": [],
       "placements": {
@@ -1110,10 +1110,10 @@
         "workspaceDefault": "workspace"
       },
       "standaloneOfferID": null,
-      "summary": "Safely deduplicate repeated images in Codex sessions and repair local image_url values rejected by the Responses API",
+      "summary": "Clean duplicate media to reduce disk usage, and repair invalid image_url values in session history to prevent image URL format errors",
       "systemImage": "photo.stack.fill",
       "trialHours": null,
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "capabilities": [
@@ -4079,7 +4079,7 @@
       "version": "1.0.9"
     }
   ],
-  "publishedAt": "2026-08-15T03:05:00Z",
-  "revision": 8,
+  "publishedAt": "2026-08-15T04:20:00Z",
+  "revision": 9,
   "schemaVersion": 1
 }
