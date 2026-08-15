@@ -61,15 +61,23 @@ final class ControlService {
     private func interrupt(_ params: [String: Any]) throws -> [String: Any] {
         let sessionId = requestedSessionId(params)
         guard !sessionId.isEmpty else { throw UniversalAdapterError.invalidRequest }
+        let action = string(params["action"]).lowercased()
+        let shouldTerminate = action == "terminate" || action == "stop"
 
         if var job = store.job(adapterId: profile.id, sessionId: sessionId), processIsAlive(job.pid) {
-            signalInterrupt(pid: job.pid)
-            job.phase = "interrupted"
+            if shouldTerminate {
+                signalTerminate(pid: job.pid)
+            } else {
+                signalInterrupt(pid: job.pid)
+            }
+            job.phase = shouldTerminate ? "done" : "interrupted"
             job.updatedAt = Date().timeIntervalSince1970
             store.save(job)
             return [
-                "command": "interrupt",
-                "message": "Interrupt delivered to the real \(profile.displayName) process.",
+                "command": shouldTerminate ? "terminate" : "interrupt",
+                "message": shouldTerminate
+                    ? "Termination delivered to the real \(profile.displayName) process."
+                    : "Interrupt delivered to the real \(profile.displayName) process.",
                 "pid": Int(job.pid)
             ]
         }
@@ -82,8 +90,8 @@ final class ControlService {
                 body: [:]
             )
             return [
-                "command": "interrupt",
-                "message": "Interrupt delivered through the \(profile.displayName) control plane."
+                "command": shouldTerminate ? "terminate" : "interrupt",
+                "message": "\(shouldTerminate ? "Termination" : "Interrupt") delivered through the \(profile.displayName) control plane."
             ]
         }
 
@@ -220,6 +228,8 @@ final class ControlService {
             if resume { arguments += ["--session-id", nativeSessionId] }
             arguments.append(instruction)
             return arguments
+        case "deepseek-harness":
+            return ["--profile", "headless", instruction]
         default:
             throw UniversalAdapterError.controlUnavailable("control_not_implemented_for_\(profile.id)")
         }
@@ -241,6 +251,18 @@ final class ControlService {
         environment["TERM"] = "dumb"
         environment["NO_COLOR"] = "1"
         environment["TRACEFENCE_MANAGED_AGENT"] = "1"
+        let knownPaths = [
+            "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin",
+            NSHomeDirectory() + "/.local/bin",
+            NSHomeDirectory() + "/.npm-global/bin",
+            NSHomeDirectory() + "/.bun/bin"
+        ]
+        let existingPath = environment["PATH"] ?? ""
+        environment["PATH"] = (knownPaths + existingPath.split(separator: ":").map(String.init))
+            .reduce(into: [String]()) { values, path in
+                if !path.isEmpty && !values.contains(path) { values.append(path) }
+            }
+            .joined(separator: ":")
         process.environment = environment
         do {
             try process.run()
@@ -262,12 +284,14 @@ final class ControlService {
         if resume, !requested.isEmpty { return requested }
         switch profile.id {
         case "grok", "qwen": return UUID().uuidString.lowercased()
+        case "deepseek-harness": return "tracefence-\(UUID().uuidString.lowercased())"
         case "openclaw": return requested.isEmpty ? "tracefence-\(UUID().uuidString.lowercased())" : requested
         default: return requested.isEmpty ? "tracefence-\(UUID().uuidString.lowercased())" : requested
         }
     }
 
     private func shouldResume(existing: [String: Any]?) -> Bool {
+        if profile.id == "deepseek-harness" { return false }
         guard let existing, existing["controlAvailable"] as? Bool != false else { return false }
         if string(existing["controlReason"]) == "managed_agent_process" {
             return ["grok", "qwen", "openclaw"].contains(profile.id)
@@ -295,6 +319,10 @@ final class ControlService {
 
     private func signalInterrupt(pid: Int32) {
         if kill(-pid, SIGINT) != 0 { _ = kill(pid, SIGINT) }
+    }
+
+    private func signalTerminate(pid: Int32) {
+        if kill(-pid, SIGTERM) != 0 { _ = kill(pid, SIGTERM) }
     }
 
     private func waitForExit(pid: Int32, timeout: TimeInterval) {

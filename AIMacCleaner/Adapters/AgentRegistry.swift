@@ -11,7 +11,8 @@ final class AgentRegistry: ObservableObject {
     var hookInstaller = HookInstaller()
     private let unsupportedHookAgentIds: Set<String> = [
         "cursor", "cursor-cli", "grok", "qwen", "minimax", "opencode", "kiro",
-        "openclaw", "hermes", "aider", "amp", "goose", "copilot", "droid"
+        "openclaw", "hermes", "aider", "amp", "goose", "copilot", "droid",
+        "deepseek-harness"
     ]
 
     var allAdapters: [any AgentAdapter] { adapters }
@@ -59,6 +60,7 @@ final class AgentRegistry: ObservableObject {
             CoreManagedAgentAdapter.goose,
             KimiAdapter(),
             DeepSeekAdapter(),
+            CoreManagedAgentAdapter.deepSeekHarness,
             OpenCodeAdapter(),
             DroidAdapter(),
             StepFunAdapter(),

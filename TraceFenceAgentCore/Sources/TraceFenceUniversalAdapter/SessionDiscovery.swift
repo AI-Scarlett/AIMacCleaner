@@ -69,6 +69,7 @@ final class SessionDiscovery {
         case "opencode": values = genericJSONSessions(roots: ["~/.local/share/opencode/storage/session", "~/.local/share/opencode"], agentType: "OpenCode")
         case "kiro": values = genericJSONSessions(roots: ["~/.kiro/sessions"], agentType: "Kiro CLI")
         case "aider": values = aiderSessions()
+        case "deepseek-harness": values = deepSeekHarnessSessions()
         default: values = []
         }
 
@@ -91,7 +92,8 @@ final class SessionDiscovery {
             let alive = processIsAlive(job.pid)
             let output = store.outputTail(path: job.outputPath)
             let providerFailure = providerFailure(in: output)
-            value["phase"] = alive ? "processing" : (providerFailure == nil ? job.phase : "error")
+            let inactivePhase = job.phase == "processing" ? "done" : job.phase
+            value["phase"] = alive ? "processing" : (providerFailure == nil ? inactivePhase : "error")
             value["updatedAt"] = max(job.updatedAt, fileModifiedAt(job.outputPath))
             value["controlAvailable"] = providerFailure == nil
             value["controlReason"] = providerFailure == nil ? "managed_agent_process" : "provider_authentication_failed"
@@ -726,6 +728,116 @@ final class SessionDiscovery {
         }
     }
 
+    private func deepSeekHarnessSessions() -> [[String: Any]] {
+        let workspaceURL = URL(fileURLWithPath: expandPath("~/.dsh/storages/workspace.json"))
+        let projectionURL = URL(fileURLWithPath: expandPath("~/.dsh/storages/session_projcache.json"))
+        guard let workspaceData = boundedData(contentsOf: workspaceURL, limit: 8 * 1_024 * 1_024),
+              let workspaceObject = jsonObject(workspaceData) else { return [] }
+
+        let projectionObject = boundedData(contentsOf: projectionURL, limit: 32 * 1_024 * 1_024)
+            .flatMap(jsonObject) ?? [:]
+        let workspaces = ((workspaceObject["tables"] as? [String: Any])?["workspaces"] as? [String: Any]) ?? [:]
+        let projections = ((projectionObject["tables"] as? [String: Any])?["sessions"] as? [String: Any]) ?? [:]
+        let archives = deepSeekHarnessArchives()
+        let projectionModifiedAt = fileModifiedAt(projectionURL.path)
+
+        var workspaceBySession: [String: [String: Any]] = [:]
+        for rawWorkspace in workspaces.values {
+            guard let workspace = rawWorkspace as? [String: Any] else { continue }
+            for sessionId in workspace["sessionIds"] as? [String] ?? [] {
+                workspaceBySession[sessionId] = workspace
+            }
+        }
+
+        let allSessionIds = Set(projections.keys).union(workspaceBySession.keys)
+        return allSessionIds.compactMap { sessionId -> [String: Any]? in
+            let projection = projections[sessionId] as? [String: Any] ?? [:]
+            let identity = projection["identity"] as? [String: Any] ?? [:]
+            let rows = projection["rows"] as? [String: Any] ?? [:]
+            let workspace = workspaceBySession[sessionId] ?? [:]
+            let titleRow = deepSeekHarnessRow(rows, key: "title")
+            let metadata = deepSeekHarnessRow(rows, key: "sessionListMetadata")
+            let stats = deepSeekHarnessRow(rows, key: "sessionStats")
+            let usage = deepSeekHarnessRow(rows, key: "tokenUsage")
+            let totals = usage["totals"] as? [String: Any] ?? [:]
+
+            let cwd = (identity["cwd"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? (workspace["path"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? ""
+            let workspaceTitle = (workspace["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let rawProjectedTitle = titleRow["title"] as? String
+                ?? titleRow["text"] as? String
+                ?? titleRow["value"] as? String
+            let projectedTitle = rawProjectedTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let directTitle = (rows["title"] as? [String: Any])?["val"] as? String ?? ""
+            let title = [projectedTitle, directTitle, workspaceTitle, "DeepSeek Harness session"]
+                .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? "DeepSeek Harness session"
+
+            let archivePath = archives[sessionId] ?? ""
+            let createdAt = unixTime(identity["createdAt"] ?? workspace["createdAt"])
+            let observedUpdatedAt = max(
+                unixTime(metadata["lastPromptAt"] ?? workspace["updatedAt"]),
+                archivePath.isEmpty ? 0 : fileModifiedAt(archivePath)
+            )
+            let updatedAt = observedUpdatedAt > 0 ? observedUpdatedAt : projectionModifiedAt
+            let openStep = stats["openStep"]
+            let hasOpenStep = openStep != nil && !(openStep is NSNull)
+            let pendingCalls = stats["pendingCalls"]
+            let hasPendingCalls: Bool
+            if let calls = pendingCalls as? [Any] {
+                hasPendingCalls = !calls.isEmpty
+            } else if let calls = pendingCalls as? [String: Any] {
+                hasPendingCalls = !calls.isEmpty
+            } else {
+                hasPendingCalls = false
+            }
+
+            var session = baseSession(
+                id: sessionId,
+                title: title,
+                cwd: cwd,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                model: "DeepSeek Harness",
+                sourcePath: archivePath
+            )
+            session["project"] = workspaceTitle.isEmpty
+                ? (cwd.isEmpty ? "DeepSeek Harness" : URL(fileURLWithPath: cwd).lastPathComponent)
+                : workspaceTitle
+            session["phase"] = hasOpenStep || hasPendingCalls ? "processing" : "idle"
+            session["controlReason"] = profile.supportsDirectControl
+                ? "new_headless_task_adapter"
+                : unavailableControlReason()
+            session["contextAvailable"] = false
+            session["resumeRequiresInstruction"] = true
+            session["resumeNote"] = "DeepSeek Harness headless mode starts a new persisted task in this workspace; it does not mutate the archived session."
+            session["tokens"] = [
+                "input": numberValue(totals["uncachedInputTokens"]),
+                "output": numberValue(totals["outputTokens"]),
+                "cacheRead": numberValue(totals["cacheReadTokens"]),
+                "cacheCreate": numberValue(totals["cacheWriteTokens"])
+            ]
+            return session
+        }
+    }
+
+    private func deepSeekHarnessRow(_ rows: [String: Any], key: String) -> [String: Any] {
+        guard let wrapper = rows[key] as? [String: Any] else { return [:] }
+        if let value = wrapper["val"] as? [String: Any] { return value }
+        return wrapper
+    }
+
+    private func deepSeekHarnessArchives() -> [String: String] {
+        let root = URL(fileURLWithPath: expandPath("~/.dsh/sessions"), isDirectory: true)
+        let files = recentFiles(
+            root: root,
+            matching: { $0.lastPathComponent == "session.jsonl.zstd" },
+            maxDepth: 4,
+            limit: 240
+        )
+        return Dictionary(uniqueKeysWithValues: files.map { ($0.deletingLastPathComponent().lastPathComponent, $0.path) })
+    }
+
     private func baseSession(
         id: String,
         title: String,
@@ -749,10 +861,12 @@ final class SessionDiscovery {
             "model": model,
             "agentType": profile.displayName,
             "controlAvailable": canControl,
-            "controlReason": canControl ? "resumable_agent_adapter" : unavailableControlReason(),
+            "controlReason": canControl
+                ? (profile.controlKind == .newTaskCLI ? "new_headless_task_adapter" : "resumable_agent_adapter")
+                : unavailableControlReason(),
             "controlMode": canControl ? "tracefence_agent_core" : "display_only",
             "sourcePath": sourcePath,
-            "contextAvailable": profile.id == "minimax" || !sourcePath.isEmpty
+            "contextAvailable": profile.id == "minimax" || (profile.id != "deepseek-harness" && !sourcePath.isEmpty)
         ]
     }
 
@@ -1039,6 +1153,7 @@ final class SessionDiscovery {
         case "trae": return "Trae Desktop session metadata is visible, but Trae does not expose a supported local transcript or control API."
         case "codebuddy": return "CodeBuddy exposes queued user instructions locally; assistant output and live control are not available through a supported local API."
         case "minimax": return "No readable MiniMax Code messages were found for this session."
+        case "deepseek-harness": return "DeepSeek Harness stores this transcript as a compressed archive. TraceFence currently shows its project, status, and token totals without expanding the archive."
         default: return "This Agent session has not written a readable local transcript yet."
         }
     }

@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-let universalAdapterVersion = "1.1.0"
+let universalAdapterVersion = "1.2.0"
 let universalProtocolVersion = 1
 
 enum AdapterControlKind: String {
@@ -182,6 +182,16 @@ struct UniversalAdapterProfile {
             controlKind: .newTaskCLI,
             supportsApprovalHook: false,
             documentationURL: "https://docs.factory.ai/"
+        ),
+        .init(
+            id: "deepseek-harness",
+            displayName: "DeepSeek Harness",
+            commandCandidates: ["dsh", "~/deepseek-harness/apps/cli/lib/bin.js"],
+            dataRoots: ["~/.dsh"],
+            applicationNames: [],
+            controlKind: .newTaskCLI,
+            supportsApprovalHook: false,
+            documentationURL: "https://github.com/deepseek-ai/DeepSeek-Harness"
         )
     ]
 
@@ -191,6 +201,11 @@ struct UniversalAdapterProfile {
 
     var commandURL: URL? {
         for candidate in commandCandidates {
+            if candidate == "~" || candidate.hasPrefix("~/") {
+                let url = URL(fileURLWithPath: expandPath(candidate))
+                if FileManager.default.isExecutableFile(atPath: url.path) { return url }
+                continue
+            }
             if candidate.hasPrefix("/") {
                 let url = URL(fileURLWithPath: candidate)
                 if FileManager.default.isExecutableFile(atPath: url.path) { return url }

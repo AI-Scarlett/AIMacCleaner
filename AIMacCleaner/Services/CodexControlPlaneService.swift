@@ -278,17 +278,21 @@ final class CodexControlPlaneService {
 
         var coreSnapshots: [CodexSessionSnapshot] = []
         if let coreRows = await TraceFenceAgentCoreClient.shared.listSessions() {
+            let codexRows = coreRows.filter { row in
+                let adapterId = (row["adapterId"] as? String ?? "codex").lowercased()
+                return adapterId == "codex"
+            }
             let rolloutSummaries = await rolloutSummaryCache.summaries(
-                for: coreRows.map(Self.sourcePath(from:))
+                for: codexRows.map(Self.sourcePath(from:))
             )
-            coreSnapshots = coreRows.compactMap { row in
+            coreSnapshots = codexRows.compactMap { row in
                 let sourcePath = Self.sourcePath(from: row)
                 return sessionSnapshot(
                     from: row,
                     rollout: rolloutSummaries[sourcePath] ?? RolloutSummary()
                 )
             }
-            for row in coreRows {
+            for row in codexRows {
                 if let threadId = row["id"] as? String {
                     captureDesktopApprovals(from: row, threadId: threadId)
                 }

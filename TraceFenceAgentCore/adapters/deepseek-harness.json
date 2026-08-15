@@ -1,0 +1,10 @@
+{
+  "id": "deepseek-harness",
+  "version": "1.0.0",
+  "displayName": "DeepSeek Harness",
+  "executable": "TraceFenceUniversalAdapter",
+  "arguments": ["--adapter", "deepseek-harness"],
+  "transport": "process",
+  "minimumCoreProtocol": 1,
+  "capabilities": ["session_discovery", "instruction", "interrupt", "independent_update"]
+}

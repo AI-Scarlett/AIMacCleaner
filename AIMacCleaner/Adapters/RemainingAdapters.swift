@@ -381,6 +381,18 @@ struct CoreManagedAgentAdapter: AgentAdapter {
         hookPaths: [],
         hookMarker: ""
     )
+
+    static let deepSeekHarness = CoreManagedAgentAdapter(
+        name: "deepseek-harness",
+        displayName: "DeepSeek Harness",
+        icon: "d.circle.fill",
+        configRootPath: ".dsh",
+        commandNames: ["dsh"],
+        applicationNames: [],
+        dataPaths: [".dsh"],
+        hookPaths: [],
+        hookMarker: ""
+    )
 }
 
 struct AutoClawAdapter: AgentAdapter {

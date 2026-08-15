@@ -842,53 +842,81 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     private func agentControlPayload(extra: [String: Any] = [:]) async -> [String: Any] {
         let sessions = await sessionStore?.getAllSessions() ?? []
         let monitorStore = resolvedOverviewStore()
+        if supportsExternalControlPlane {
+            _ = await TraceFenceAgentCoreClient.shared.refresh()
+        }
+        let agentCoreRows: [[String: Any]] = supportsExternalControlPlane
+            ? (await TraceFenceAgentCoreClient.shared.listSessions() ?? []).filter {
+                (($0["adapterId"] as? String) ?? "codex").lowercased() != "codex"
+            }
+            : []
+        let agentCoreNativeIds = Set(agentCoreRows.compactMap(agentCoreNativeSessionId(_:)))
         let codexSessions: [CodexSessionSnapshot] = supportsExternalControlPlane
             ? await CodexControlPlaneService.shared.sessionSnapshots()
             : []
         let codexIds = Set(codexSessions.map(\.id))
-        let monitorSessions = monitorStore.sessions.filter { !codexIds.contains($0.sessionId) }
+        let monitorSessions = monitorStore.sessions.filter {
+            !codexIds.contains($0.sessionId) && !agentCoreNativeIds.contains($0.sessionId)
+        }
         let ptySessions: [AgentPTYSessionSnapshot] = supportsExternalControlPlane
             ? AgentPTYRuntimeService.shared.visibleSessions
             : []
         let desktopSessions = supportsExternalControlPlane ? desktopAgentPayloads() : []
         let ptySessionPayloads = ptySessions.map(ptySessionPayload(_:))
         let codexSessionPayloads = codexSessions.map(codexSessionPayload(_:))
+        let agentCoreSessionPayloads = agentCoreRows.map(agentCoreSessionPayload(_:))
         let activeSessions = sessions.filter { $0.phase.isActive || $0.phase.needsAttention }
         let activeMonitorSessions = monitorSessions.filter(isMonitorSessionVisible(_:))
         let codexApprovals = supportsExternalControlPlane ? CodexControlPlaneService.shared.approvalSnapshots() : []
         let approvals = approvalSnapshots(from: sessions) + codexApprovals.map { codexApprovalPayload($0, sessions: codexSessions) }
-        let prioritizedPayloads = desktopSessions + ptySessionPayloads + codexSessionPayloads + activeSessions.map(sessionPayload(_:)) + activeMonitorSessions.map(monitorSessionPayload(_:))
-        let allPayloads = desktopSessions + ptySessionPayloads + codexSessionPayloads + sessions.map(sessionPayload(_:)) + monitorSessions.map(monitorSessionPayload(_:))
+        let prioritizedPayloads = desktopSessions + ptySessionPayloads + codexSessionPayloads + agentCoreSessionPayloads + activeSessions.map(sessionPayload(_:)) + activeMonitorSessions.map(monitorSessionPayload(_:))
+        let allPayloads = desktopSessions + ptySessionPayloads + codexSessionPayloads + agentCoreSessionPayloads + sessions.map(sessionPayload(_:)) + monitorSessions.map(monitorSessionPayload(_:))
         let sessionPayloads = Array(prioritizedPayloads.prefix(Self.maxRemoteSessions))
         let allSessionPayloads = Array(allPayloads.prefix(Self.maxRemoteAllSessions))
         let ptyProcessingCount = ptySessions.filter { $0.phase == "processing" }.count
         let ptyInterruptedCount = ptySessions.filter { $0.phase == "interrupted" }.count
+        let coreProcessingCount = agentCoreRows.filter { ($0["phase"] as? String) == "processing" }.count
+        let coreInterruptedCount = agentCoreRows.filter { ($0["phase"] as? String) == "interrupted" }.count
+        let codexProcessingCount = codexSessions.filter { $0.phase == "processing" }.count
+        let codexInterruptedCount = codexSessions.filter { $0.phase == "interrupted" }.count
+        let hookProcessingCount = sessions.filter { $0.phase == .processing }.count
+        let hookInterruptedCount = sessions.filter { $0.phase == .interrupted }.count
+        let monitorProcessingCount = activeMonitorSessions.filter { monitorSessionPhase($0) == "processing" }.count
+        let monitorInterruptedCount = activeMonitorSessions.filter { monitorSessionPhase($0) == "interrupted" }.count
+        let summary: [String: Any] = [
+            "sessionCount": desktopSessions.count + codexSessions.count + agentCoreRows.count + sessions.count + monitorSessions.count + ptySessions.count,
+            "activeSessionCount": desktopSessions.count + codexProcessingCount + coreProcessingCount + activeSessions.count + activeMonitorSessions.count + ptySessions.filter { $0.phase != "done" }.count,
+            "pendingApprovalCount": approvals.count,
+            "processingCount": desktopSessions.count + codexProcessingCount + coreProcessingCount + hookProcessingCount + monitorProcessingCount + ptyProcessingCount,
+            "interruptedCount": codexInterruptedCount + coreInterruptedCount + hookInterruptedCount + monitorInterruptedCount + ptyInterruptedCount
+        ]
+        let truncated: [String: Any] = [
+            "sessions": sessionPayloads.count < prioritizedPayloads.count,
+            "allSessions": allSessionPayloads.count < allPayloads.count,
+            "sessionLimit": Self.maxRemoteSessions,
+            "allSessionLimit": Self.maxRemoteAllSessions
+        ]
+        let launchTargets = supportsExternalControlPlane ? remoteLaunchTargets.map(ptyLaunchTargetPayload(_:)) : []
+        let recentEvents = (codexEventSnapshots(from: codexSessions, limit: 24)
+            + agentCoreEventSnapshots(from: agentCoreRows, limit: 24)
+            + ptyEventSnapshots(from: ptySessions, limit: 24)
+            + eventSnapshots(from: sessions, limit: 24)
+            + monitorEventSnapshots(from: monitorSessions, limit: 24))
+            .sorted { ($0["timestamp"] as? String ?? "") > ($1["timestamp"] as? String ?? "") }
+            .prefix(24)
+            .map { $0 }
         var body: [String: Any] = [
             "ok": true,
             "version": 1,
             "generatedAt": Self.isoDate(Date()),
-            "summary": [
-                "sessionCount": desktopSessions.count + codexSessions.count + sessions.count + monitorSessions.count + ptySessions.count,
-                "activeSessionCount": desktopSessions.count + codexSessions.filter { $0.phase == "processing" }.count + activeSessions.count + activeMonitorSessions.count + ptySessions.filter { $0.phase != "done" }.count,
-                "pendingApprovalCount": approvals.count,
-                "processingCount": desktopSessions.count + codexSessions.filter { $0.phase == "processing" }.count + sessions.filter { $0.phase == .processing }.count + activeMonitorSessions.filter { monitorSessionPhase($0) == "processing" }.count + ptyProcessingCount,
-                "interruptedCount": codexSessions.filter { $0.phase == "interrupted" }.count + sessions.filter { $0.phase == .interrupted }.count + activeMonitorSessions.filter { monitorSessionPhase($0) == "interrupted" }.count + ptyInterruptedCount
-            ],
+            "summary": summary,
             "sessions": sessionPayloads,
             "allSessions": allSessionPayloads,
-            "truncated": [
-                "sessions": sessionPayloads.count < prioritizedPayloads.count,
-                "allSessions": allSessionPayloads.count < allPayloads.count,
-                "sessionLimit": Self.maxRemoteSessions,
-                "allSessionLimit": Self.maxRemoteAllSessions
-            ],
-            "launchTargets": supportsExternalControlPlane ? remoteLaunchTargets.map(ptyLaunchTargetPayload(_:)) : [],
+            "truncated": truncated,
+            "launchTargets": launchTargets,
             "pendingApprovals": approvals,
             "controlPlane": controlPlanePayload(),
-            "recentEvents": (codexEventSnapshots(from: codexSessions, limit: 24) + ptyEventSnapshots(from: ptySessions, limit: 24) + eventSnapshots(from: sessions, limit: 24) + monitorEventSnapshots(from: monitorSessions, limit: 24))
-                .sorted { ($0["timestamp"] as? String ?? "") > ($1["timestamp"] as? String ?? "") }
-                .prefix(24)
-                .map { $0 }
+            "recentEvents": recentEvents
         ]
         for (key, value) in extra {
             body[key] = value
@@ -899,6 +927,11 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     private func eventsPayload() async -> [String: Any] {
         let sessions = await sessionStore?.getAllSessions() ?? []
         let monitorStore = resolvedOverviewStore()
+        let agentCoreRows: [[String: Any]] = supportsExternalControlPlane
+            ? (await TraceFenceAgentCoreClient.shared.listSessions() ?? []).filter {
+                (($0["adapterId"] as? String) ?? "codex").lowercased() != "codex"
+            }
+            : []
         let codexSessions: [CodexSessionSnapshot] = supportsExternalControlPlane
             ? await CodexControlPlaneService.shared.sessionSnapshots()
             : []
@@ -911,7 +944,7 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             "ok": true,
             "version": 1,
             "generatedAt": Self.isoDate(Date()),
-            "events": (codexEventSnapshots(from: codexSessions, limit: 100) + ptyEventSnapshots(from: ptySessions, limit: 100) + eventSnapshots(from: sessions, limit: 100) + monitorEventSnapshots(from: monitorSessions, limit: 100))
+            "events": (codexEventSnapshots(from: codexSessions, limit: 100) + agentCoreEventSnapshots(from: agentCoreRows, limit: 100) + ptyEventSnapshots(from: ptySessions, limit: 100) + eventSnapshots(from: sessions, limit: 100) + monitorEventSnapshots(from: monitorSessions, limit: 100))
                 .sorted { ($0["timestamp"] as? String ?? "") > ($1["timestamp"] as? String ?? "") }
                 .prefix(100)
                 .map { $0 }
@@ -1125,6 +1158,71 @@ final class IOSRemoteControlGatewayService: ObservableObject {
                 "name": String(session.lastUserMessage.suffix(500)),
                 "status": session.phase
             ]],
+            "subagents": []
+        ]
+    }
+
+    private func agentCoreSessionPayload(_ raw: [String: Any]) -> [String: Any] {
+        let id = raw["id"] as? String ?? ""
+        let adapterId = raw["adapterId"] as? String ?? "agent"
+        let agentType = raw["agentType"] as? String ?? adapterId
+        let cwd = raw["cwd"] as? String ?? ""
+        let projectName = URL(fileURLWithPath: cwd).lastPathComponent
+        let project = raw["project"] as? String ?? (projectName.isEmpty ? agentType : projectName)
+        let phase = raw["phase"] as? String ?? "idle"
+        let isRunning = phase == "processing"
+        let controlAvailable = raw["controlAvailable"] as? Bool ?? false
+        let controlReason = raw["controlReason"] as? String ?? (controlAvailable ? "tracefence_agent_core" : "adapter_read_only")
+        let startsNewTask = controlReason == "new_headless_task_adapter"
+        let tokens = raw["tokens"] as? [String: Any] ?? [:]
+        let resumeNote = startsNewTask
+            ? "发送指令会在同一项目目录启动一个新的 DeepSeek Harness headless 任务，并保留原历史会话。"
+            : (raw["resumeNote"] as? String ?? "TraceFence Agent Core 会把指令交给 Mac 上的真实 Agent 运行时。")
+        return [
+            "id": id,
+            "adapterId": adapterId,
+            "agentType": agentType,
+            "engineLabel": raw["model"] as? String ?? agentType,
+            "project": project,
+            "cwd": cwd,
+            "terminal": "TraceFence Agent Core",
+            "phase": phase,
+            "startedAt": agentCoreDateString(raw["createdAt"]),
+            "lastActivityAt": agentCoreDateString(raw["updatedAt"]),
+            "durationSeconds": 0,
+            "title": raw["preview"] as? String ?? "\(agentType) 会话",
+            "lastToolName": isRunning ? "\(agentType) 正在执行" : "\(agentType) 会话",
+            "lastToolTarget": cwd,
+            "lastToolStatus": phase,
+            "lastResponse": String((raw["lastResponse"] as? String ?? "").suffix(1_000)),
+            "lastThought": "",
+            "statusLineText": isRunning
+                ? "正在 Mac 上执行"
+                : (startsNewTask ? "可从 iPhone 启动新的 Harness 任务" : "可从 iPhone 发送新指令"),
+            "canInterrupt": isRunning && controlAvailable,
+            "canResume": controlAvailable,
+            "canTerminate": isRunning && controlAvailable,
+            "resumeRequiresInstruction": raw["resumeRequiresInstruction"] as? Bool ?? true,
+            "resumeNote": resumeNote,
+            "controlMode": raw["controlMode"] as? String ?? (controlAvailable ? "tracefence_agent_core" : "display_only"),
+            "controlAvailable": controlAvailable,
+            "controlReason": controlReason,
+            "controlLimitations": startsNewTask
+                ? ["Harness 的历史压缩会话保持只读；新指令会创建新的持久化任务。", "任务启动后可从 iPhone 中断或终止其真实进程。"]
+                : ["控制能力由对应 Agent Core 适配器声明。"],
+            "deliveryModes": controlAvailable ? ["tracefence_agent_core"] : [],
+            "canRelaunch": false,
+            "source": "agent-core-adapter",
+            "sourcePath": raw["sourcePath"] as? String ?? "",
+            "contextAvailable": raw["contextAvailable"] as? Bool ?? false,
+            "tokens": [
+                "input": tokens["input"] ?? 0,
+                "output": tokens["output"] ?? 0,
+                "cacheRead": tokens["cacheRead"] ?? 0,
+                "cacheCreate": tokens["cacheCreate"] ?? 0
+            ],
+            "activeTools": [],
+            "tasks": [],
             "subagents": []
         ]
     }
@@ -1500,6 +1598,29 @@ final class IOSRemoteControlGatewayService: ObservableObject {
             }
     }
 
+    private func agentCoreEventSnapshots(from sessions: [[String: Any]], limit: Int) -> [[String: Any]] {
+        sessions
+            .sorted { agentCoreUnixTime($0["updatedAt"]) > agentCoreUnixTime($1["updatedAt"]) }
+            .prefix(limit)
+            .map { session in
+                let id = session["id"] as? String ?? UUID().uuidString
+                let agentType = session["agentType"] as? String ?? session["adapterId"] as? String ?? "Agent"
+                let cwd = session["cwd"] as? String ?? ""
+                let projectName = URL(fileURLWithPath: cwd).lastPathComponent
+                return [
+                    "id": "\(id)-agent-core-\(Int(agentCoreUnixTime(session["updatedAt"])))",
+                    "sessionId": id,
+                    "agentType": agentType,
+                    "project": session["project"] as? String ?? (projectName.isEmpty ? agentType : projectName),
+                    "type": "agent-core",
+                    "title": session["preview"] as? String ?? "\(agentType) 会话更新",
+                    "detail": String((session["lastResponse"] as? String ?? "").suffix(500)),
+                    "status": session["phase"] as? String ?? "idle",
+                    "timestamp": agentCoreDateString(session["updatedAt"])
+                ]
+            }
+    }
+
     private func monitorEventSnapshots(from sessions: [AgentMonitorSessionSnapshot], limit: Int) -> [[String: Any]] {
         sessions
             .filter(isMonitorSessionVisible(_:))
@@ -1532,6 +1653,37 @@ final class IOSRemoteControlGatewayService: ObservableObject {
         guard remoteId.hasPrefix("codex|") else { return nil }
         let value = String(remoteId.dropFirst("codex|".count))
         return value.isEmpty ? nil : value
+    }
+
+    private func agentCoreAdapterRef(from remoteId: String) -> (adapterId: String, nativeSessionId: String)? {
+        let parts = remoteId.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[0] == "adapter", !parts[1].isEmpty, !parts[2].isEmpty else { return nil }
+        return (String(parts[1]), String(parts[2]))
+    }
+
+    private func agentCoreNativeSessionId(_ raw: [String: Any]) -> String? {
+        guard let id = raw["id"] as? String, !id.isEmpty else { return nil }
+        return agentCoreAdapterRef(from: id)?.nativeSessionId ?? id
+    }
+
+    private func agentCoreDateString(_ value: Any?) -> String {
+        Self.isoDate(Date(timeIntervalSince1970: agentCoreUnixTime(value)))
+    }
+
+    private func agentCoreUnixTime(_ value: Any?) -> Double {
+        if let number = value as? NSNumber {
+            let raw = number.doubleValue
+            return raw > 9_999_999_999 ? raw / 1_000 : raw
+        }
+        if let text = value as? String {
+            if let raw = Double(text) { return raw > 9_999_999_999 ? raw / 1_000 : raw }
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: text) { return date.timeIntervalSince1970 }
+            formatter.formatOptions = [.withInternetDateTime]
+            if let date = formatter.date(from: text) { return date.timeIntervalSince1970 }
+        }
+        return 0
     }
 
     private func ptySessionId(from remoteId: String) -> String? {
@@ -2181,6 +2333,50 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     }
 
     private func applySessionCommand(_ command: SessionCommand, sessionId: String, instruction: String?) async -> [String: Any] {
+        if let adapter = agentCoreAdapterRef(from: sessionId) {
+            guard supportsExternalControlPlane else {
+                return distributionLimitedCommandPayload(command, sessionId: sessionId)
+            }
+            var params: [String: Any] = [
+                "adapterId": adapter.adapterId,
+                "sessionId": sessionId,
+                "threadId": sessionId,
+                "action": command == .resume ? "instruction" : (command == .terminate ? "terminate" : "interrupt")
+            ]
+            if command == .resume {
+                let text = instruction?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !text.isEmpty else {
+                    return [
+                        "ok": false,
+                        "error": "instruction_required",
+                        "command": command.responseName,
+                        "sessionId": sessionId,
+                        "message": "请输入要交给 \(adapter.adapterId) 的下一步指令。"
+                    ]
+                }
+                params["instruction"] = text
+            }
+            guard let response = await TraceFenceAgentCoreClient.shared.control(params) else {
+                return [
+                    "ok": false,
+                    "error": "agent_core_control_failed",
+                    "command": command.responseName,
+                    "sessionId": sessionId,
+                    "message": "TraceFence Agent Core 未能把操作交给 \(adapter.adapterId)。"
+                ]
+            }
+            return [
+                "ok": true,
+                "command": response["command"] as? String ?? command.responseName,
+                "sessionId": sessionId,
+                "pid": response["pid"] ?? NSNull(),
+                "controlMode": "tracefence_agent_core",
+                "controlAvailable": true,
+                "controlReason": "command_applied",
+                "message": response["message"] as? String ?? "操作已交给 Mac 上的真实 Agent 运行时。"
+            ]
+        }
+
         if let threadId = codexThreadId(from: sessionId) {
             guard supportsExternalControlPlane else {
                 return distributionLimitedCommandPayload(command, sessionId: sessionId)

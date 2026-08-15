@@ -216,9 +216,12 @@ final class AgentCoreHTTPGateway {
         case ("POST", "/v1/sessions/resume"):
             guard ensureControlAllowed(config, on: connection) else { return }
             controlSession(request.body, action: "instruction", on: connection)
-        case ("POST", "/v1/sessions/interrupt"), ("POST", "/v1/sessions/terminate"):
+        case ("POST", "/v1/sessions/interrupt"):
             guard ensureControlAllowed(config, on: connection) else { return }
             controlSession(request.body, action: "interrupt", on: connection)
+        case ("POST", "/v1/sessions/terminate"):
+            guard ensureControlAllowed(config, on: connection) else { return }
+            controlSession(request.body, action: "terminate", on: connection)
         case ("POST", "/v1/approvals/approve"):
             guard ensureControlAllowed(config, on: connection) else { return }
             resolveApproval(request.body, allow: true, on: connection)
@@ -713,6 +716,8 @@ final class AgentCoreHTTPGateway {
         let sourcePath = raw["sourcePath"] as? String ?? ""
         let contextAvailable = raw["contextAvailable"] as? Bool ?? contextReader.contextAvailable(sourcePath: sourcePath)
         let scheduledTask = raw["scheduledTask"] as? Bool == true
+        let startsNewTask = raw["controlReason"] as? String == "new_headless_task_adapter"
+        let rawTokens = raw["tokens"] as? [String: Any] ?? [:]
         var payload: [String: Any] = [
             "id": remoteId,
             "adapterId": adapterId,
@@ -731,14 +736,16 @@ final class AgentCoreHTTPGateway {
             "lastToolStatus": phase,
             "lastResponse": limited(raw["lastResponse"] as? String ?? "", to: 1_000),
             "lastThought": "",
-            "statusLineText": scheduledTask ? "等待下一个执行周期" : (isRunning ? "正在 Mac 上执行" : "可从 iPhone 发送新指令"),
+            "statusLineText": scheduledTask
+                ? "等待下一个执行周期"
+                : (isRunning ? "正在 Mac 上执行" : (startsNewTask ? "可从 iPhone 启动新的 Harness 任务" : "可从 iPhone 发送新指令")),
             "canInterrupt": isRunning && controlAvailable,
             "canResume": controlAvailable,
             "canTerminate": isRunning && controlAvailable,
-            "resumeRequiresInstruction": true,
-            "resumeNote": isRunning
+            "resumeRequiresInstruction": raw["resumeRequiresInstruction"] as? Bool ?? true,
+            "resumeNote": raw["resumeNote"] as? String ?? (isRunning
                 ? "发送的内容会插入当前 Agent turn；也可以先中断，再发送新的后续指令。"
-                : "发送指令会在这个真实 Agent 会话中创建新 turn。",
+                : "发送指令会在这个真实 Agent 会话中创建新 turn。"),
             "controlMode": controlMode,
             "controlAvailable": controlAvailable,
             "controlReason": raw["controlReason"] as? String ?? (controlAvailable ? "background_agent_core" : "adapter_read_only"),
@@ -751,7 +758,12 @@ final class AgentCoreHTTPGateway {
             "source": "agent-core-background",
             "sourcePath": limited(sourcePath, to: 2_048),
             "contextAvailable": contextAvailable,
-            "tokens": ["input": 0, "output": 0, "cacheRead": 0, "cacheCreate": 0],
+            "tokens": [
+                "input": rawTokens["input"] ?? 0,
+                "output": rawTokens["output"] ?? 0,
+                "cacheRead": rawTokens["cacheRead"] ?? 0,
+                "cacheCreate": rawTokens["cacheCreate"] ?? 0
+            ],
             "activeTools": [],
             "tasks": [],
             "subagents": []

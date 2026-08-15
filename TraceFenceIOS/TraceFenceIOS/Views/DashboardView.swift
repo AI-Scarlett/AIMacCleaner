@@ -2398,7 +2398,10 @@ private struct AgentSessionRow: View {
             if !session.isScheduledTask, !session.isDisplayOnly {
                 HStack(spacing: 10) {
                     Button(action: interrupt) {
-                        Label((session.isCodexNative ? "中断" : "暂停").tfLocalized, systemImage: session.isCodexNative ? "stop.fill" : "pause.fill")
+                        Label(
+                            (session.usesInterruptSemantics ? "中断" : "暂停").tfLocalized,
+                            systemImage: session.usesInterruptSemantics ? "stop.fill" : "pause.fill"
+                        )
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)

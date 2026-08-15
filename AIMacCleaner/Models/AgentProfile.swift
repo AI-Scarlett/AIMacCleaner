@@ -61,6 +61,7 @@ struct AgentIntegrationProfile: Sendable {
         case "qwen": return "qwen"
         case "kimi": return "kimi"
         case "deepseek": return "deepseek"
+        case "deepseek-harness": return "dsh"
         case "opencode": return "opencode"
         case "droid": return "droid"
         case "stepfun": return "stepfun"
@@ -90,7 +91,7 @@ struct AgentIntegrationProfile: Sendable {
         case "codebuddy", "codebuddycn": return "b.circle.fill"
         case "qwen": return "brain.head.profile"
         case "kimi": return "k.circle.fill"
-        case "deepseek": return "d.circle.fill"
+        case "deepseek", "deepseek-harness": return "d.circle.fill"
         case "opencode": return "lock.open.fill"
         case "droid": return "cpu.fill"
         case "stepfun": return "figure.walk"
@@ -222,6 +223,12 @@ extension AgentIntegrationProfile {
         configurationPath: ".deepseek/settings.json",
         events: [.plain("PreToolUse"), .plain("PostToolUse"), .plain("Notification"), .plain("Stop")], extraArgs: [])
 
+    static let deepSeekHarness = AgentIntegrationProfile(
+        id: "deepseek-harness", displayLabel: "DeepSeek Harness",
+        installationKind: .unknown,
+        configurationPath: ".dsh",
+        events: [], extraArgs: [])
+
     static let opencode = AgentIntegrationProfile(
         id: "opencode", displayLabel: "OpenCode",
         installationKind: .jsonHooks(entry: .typedCommand, nested: false),
@@ -303,7 +310,7 @@ extension AgentIntegrationProfile {
     static let allProfiles: [AgentIntegrationProfile] = [
         .claudeCode, .codex, .gemini, .cursor, .cursorCli, .copilot,
         .trae, .traeCli, .traeCN, .qoder, .qoderCli, .codebuddy, .codebuddyCN,
-        .qwen, .kimi, .deepseek, .opencode, .droid, .stepfun, .antigravity,
+        .qwen, .kimi, .deepseek, .deepSeekHarness, .opencode, .droid, .stepfun, .antigravity,
         .workbuddy, .hermes, .pi, .kiro, .openClaw, .qClaw, .easyClaw, .autoClaw,
     ]
 }

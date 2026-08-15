@@ -270,7 +270,17 @@ enum AgentIntegrationCatalog {
     }
 
     static func commandURL(_ command: String) -> URL? {
-        commandSearchDirectories()
+        let directPath = expandedPath(command)
+        if command.contains("/"), FileManager.default.isExecutableFile(atPath: directPath) {
+            return URL(fileURLWithPath: directPath)
+        }
+        if command == "dsh" {
+            let harnessCLI = expandedPath("~/deepseek-harness/apps/cli/lib/bin.js")
+            if FileManager.default.isExecutableFile(atPath: harnessCLI) {
+                return URL(fileURLWithPath: harnessCLI)
+            }
+        }
+        return commandSearchDirectories()
             .map { $0.appendingPathComponent(command) }
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
@@ -303,6 +313,8 @@ enum AgentIntegrationCatalog {
             return pathExists("/Applications/Droid.app")
         case "antigravity":
             return hasDesktopAgent(id: "antigravity")
+        case "deepseek-harness", "dsh":
+            return commandURL("dsh") != nil || pathExists("~/.dsh")
         default:
             return false
         }
@@ -323,6 +335,7 @@ enum AgentIntegrationCatalog {
         case "goose": return pathExists("~/.config/goose")
         case "aider": return pathExists("~/.aider.conf.yml") || pathExists("~/.aider")
         case "qwen": return pathExists("~/.qwen")
+        case "deepseek-harness": return pathExists("~/.dsh")
         default: return false
         }
     }

@@ -702,13 +702,24 @@ struct AgentSessionSummary: Decodable, Equatable, Identifiable {
     }
 
     var isCodexNative: Bool {
-        controlMode == "codex_native" || controlMode == "codex_desktop_owner" || controlMode == "tracefence_agent_core"
+        if controlMode == "codex_native" || controlMode == "codex_desktop_owner" {
+            return true
+        }
+        return controlMode == "tracefence_agent_core" && normalizedAdapterID == "codex"
+    }
+
+    var usesInterruptSemantics: Bool {
+        isCodexNative || controlMode == "tracefence_agent_core"
     }
 
     var controlModeTitle: String {
         switch controlMode {
         case "codex_native": return "Codex 原生控制".tfLocalized
         case "codex_desktop_owner": return "Codex 桌面控制".tfLocalized
+        case "tracefence_agent_core":
+            return normalizedAdapterID == "codex"
+                ? "Codex 原生控制".tfLocalized
+                : "Agent Core 远程控制".tfLocalized
         case "tracefence_pty": return "可控会话".tfLocalized
         case "hook_question": return "Hook 回复".tfLocalized
         case "hook_approval": return "Hook 审批".tfLocalized
