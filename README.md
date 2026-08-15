@@ -86,9 +86,9 @@
 
 ### 方式一：下载 DMG（推荐）
 
-1. 从 [Releases](https://github.com/AI-Scarlett/AIMacCleaner/releases) 下载最新版 `AIMacCleaner-v1.7.8-arm64.dmg`
+1. 从 [TraceFence Releases](https://github.com/AI-Scarlett/TraceFence/releases/latest) 下载最新版 `TraceFence-v1.2.4-arm64.dmg`
 2. 双击打开 DMG 文件
-3. 将 AIMacCleaner 拖入 Applications 文件夹
+3. 将 TraceFence 拖入 Applications 文件夹
 4. 首次打开时，右键点击应用 → 选择「打开」（需绕过 Gatekeeper 验证）
 
 ### 方式二：从源码构建
@@ -224,6 +224,8 @@ AIMacCleaner/
 ## 更新日志
 
 ### v1.2.4 (2026-08-15)
+- 插件中心明确展示 51 个目录条目：5 个系统内置组件和 46 个从 TraceFence GitHub 独立安装、独立升级的插件
+- 已安装且适合桌面工作区的插件可由用户固定为左侧主 Tab，点击后直接进入插件内容
 - 每个插件独立声明是否可显示在概览、桌面“我的插件”Tab、菜单栏“插件”Tab
 - 概览新增经过目录许可的已安装插件快捷入口，复杂工具仍留在完整工作区
 - 全部插件统一标记“免费/收费”；订阅用户对收费插件同时看到“订阅已包含”

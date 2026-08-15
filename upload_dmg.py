@@ -19,14 +19,14 @@ DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
-    "TraceFence 1.2.4 makes plugin placement and pricing explicit across the product.\n\n"
-    "- Gives each plugin independent Overview, desktop Plugins tab, and menu-bar Plugins tab eligibility.\n"
-    "- Adds an Overview shelf for installed plugins that are deliberately approved for quick access.\n"
-    "- Filters My Plugins and the menu-bar tab from the same catalog policy.\n"
-    "- Labels every plugin as Free or Paid in the current TraceFence language.\n"
-    "- Keeps commercial classification separate from entitlement, so subscribers see Paid and Included together.\n"
-    "- Shows placement eligibility in the Store and opens plugins in their intended surface.\n"
-    "- Keeps all plugin releases independent from the TraceFence host release.\n"
+    "TraceFence 1.2.4 completes the first usable GitHub-backed plugin marketplace.\n\n"
+    "- Shows all 51 catalog entries clearly: 5 built-in components and 46 independently installed plugins.\n"
+    "- Refreshes the signed catalog from the TraceFence GitHub repository and reports whether it updated, stayed current, or failed.\n"
+    "- Adds the TraceFence-native Codex Media Cleanup plugin for safe, local duplicate-media inspection and repair.\n"
+    "- Lets users pin eligible installed plugins as direct main-sidebar tabs; menu-bar favorites remain a separate preference.\n"
+    "- Gives each plugin explicit Overview, desktop Plugins tab, and menu-bar Plugins tab eligibility.\n"
+    "- Labels every plugin as Free or Paid in the current language while showing subscriber entitlement separately.\n"
+    "- Keeps every plugin version and GitHub release independent from the TraceFence host version.\n"
 )
 
 

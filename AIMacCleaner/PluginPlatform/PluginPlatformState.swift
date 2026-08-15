@@ -92,6 +92,8 @@ enum TraceFencePluginDisplayPreferences {
     static let pinnedPluginIDsKey = "traceFence.plugins.pinnedIDs"
     static let defaultPinnedPluginIDs = ["tracefence.tools.fan-control"]
     static let defaultPinnedPluginIDsJSON = "[\"tracefence.tools.fan-control\"]"
+    static let mainTabPluginIDsKey = "traceFence.plugins.mainTabIDs"
+    static let defaultMainTabPluginIDsJSON = "[]"
 
     static func pinnedPluginIDs(from rawValue: String) -> [String] {
         guard let data = rawValue.data(using: .utf8),
@@ -102,6 +104,22 @@ enum TraceFencePluginDisplayPreferences {
     }
 
     static func encodedPinnedPluginIDs(_ values: [String]) -> String {
+        guard let data = try? JSONEncoder().encode(values),
+              let string = String(data: data, encoding: .utf8) else {
+            return "[]"
+        }
+        return string
+    }
+
+    static func mainTabPluginIDs(from rawValue: String) -> [String] {
+        guard let data = rawValue.data(using: .utf8),
+              let values = try? JSONDecoder().decode([String].self, from: data) else {
+            return []
+        }
+        return values
+    }
+
+    static func encodedMainTabPluginIDs(_ values: [String]) -> String {
         guard let data = try? JSONEncoder().encode(values),
               let string = String(data: data, encoding: .utf8) else {
             return "[]"

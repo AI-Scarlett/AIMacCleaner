@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var settingsInitialTab: SettingsView.SettingsTab = .features
     @State private var showIOSRemotePairing = false
     @State private var selectedPluginID: String?
+    @State private var activeMainPluginID: String?
     @State private var sidebarCollapsed = false
     @State private var toolboxExpanded = false
     @State private var hoveredItem: NavItem?
@@ -27,6 +28,8 @@ struct ContentView: View {
     @AppStorage("colorPalette") private var colorPalette = AppColorPalette.porcelain.rawValue
     @AppStorage(IOSRemoteControlGatewayService.enabledKey) private var iOSRemoteGatewayEnabled = false
     @AppStorage(IOSRemoteControlGatewayService.portKey) private var iOSRemoteGatewayPort = 17895
+    @AppStorage(TraceFencePluginDisplayPreferences.mainTabPluginIDsKey)
+    private var mainTabPluginIDsJSON = TraceFencePluginDisplayPreferences.defaultMainTabPluginIDsJSON
 
     private enum AppearanceMode: String, CaseIterable {
         case system
@@ -214,6 +217,7 @@ struct ContentView: View {
         }
         .onReceive(pluginPresentationCenter.$request.compactMap { $0 }) { request in
             selectedPluginID = request.pluginID
+            activeMainPluginID = nil
             selectedTab = .plugins
             showSettings = false
             pluginPresentationCenter.consume(requestID: request.id)
@@ -347,6 +351,7 @@ struct ContentView: View {
                             }
                             selectedTab = .tokenScope
                         } else {
+                            activeMainPluginID = nil
                             selectedTab = item
                         }
                     } label: {
@@ -364,9 +369,90 @@ struct ContentView: View {
                         hoveredItem = hovering ? item : nil
                     }
                 }
+
+                if item == .plugins, !pinnedMainPlugins.isEmpty {
+                    pinnedMainPluginRows
+                }
             }
         }
         .padding(.horizontal, sidebarCollapsed ? Theme.Spacing.xs : Theme.Spacing.md)
+    }
+
+    private var pinnedMainPluginRows: some View {
+        VStack(alignment: sidebarCollapsed ? .center : .leading, spacing: 2) {
+            ForEach(pinnedMainPlugins) { plugin in
+                Button {
+                    selectedPluginID = plugin.id
+                    activeMainPluginID = plugin.id
+                    selectedTab = .plugins
+                } label: {
+                    if sidebarCollapsed {
+                        VStack(spacing: 3) {
+                            Image(systemName: plugin.systemImage)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(activeMainPluginID == plugin.id ? .white : Theme.Colors.accent)
+                                .frame(width: 31, height: 29)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(activeMainPluginID == plugin.id
+                                            ? AnyShapeStyle(Theme.Gradients.hero)
+                                            : AnyShapeStyle(Theme.Colors.accent.opacity(0.08)))
+                                )
+                            Text(plugin.localizedName())
+                                .font(.system(size: 7.5, weight: .medium))
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                    } else {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(activeMainPluginID == plugin.id ? Theme.Gradients.hero : LinearGradient(colors: [.clear], startPoint: .top, endPoint: .bottom))
+                                .frame(width: 3, height: 23)
+                            Image(systemName: plugin.systemImage)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(activeMainPluginID == plugin.id ? .white : Theme.Colors.accent)
+                                .frame(width: 29, height: 27)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 9)
+                                        .fill(activeMainPluginID == plugin.id
+                                            ? AnyShapeStyle(Theme.Gradients.hero)
+                                            : AnyShapeStyle(Theme.Colors.accent.opacity(0.08)))
+                                )
+                            Text(plugin.localizedName())
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundStyle(activeMainPluginID == plugin.id ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
+                                .lineLimit(1)
+                            Spacer()
+                            Image(systemName: "pin.fill")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        }
+                        .padding(.leading, Theme.Spacing.md)
+                        .padding(.trailing, Theme.Spacing.sm)
+                        .frame(minHeight: 34)
+                    }
+                }
+                .buttonStyle(.plain)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.md)
+                        .fill(activeMainPluginID == plugin.id ? Theme.Colors.elevatedCardBg : Color.clear)
+                )
+                .help(localizer.t("主 Tab：\(plugin.localizedName())", en: "Main Tab: \(plugin.localizedName())"))
+            }
+        }
+        .padding(.leading, sidebarCollapsed ? 0 : Theme.Spacing.sm)
+    }
+
+    private var pinnedMainPlugins: [TraceFencePluginDescriptor] {
+        let identifiers = TraceFencePluginDisplayPreferences.mainTabPluginIDs(from: mainTabPluginIDsJSON)
+        return identifiers.compactMap { identifier in
+            guard let plugin = marketplaceCatalogService.catalog.plugin(id: identifier),
+                  plugin.supportsPluginTab,
+                  pluginPackageManager.records[identifier]?.enabled == true else {
+                return nil
+            }
+            return plugin
+        }
     }
 
     private var toolboxSection: some View {
@@ -894,14 +980,29 @@ struct ContentView: View {
                     .environmentObject(localizer)
             }
         case .plugins:
-            TraceFencePluginWorkspaceView(
-                catalogService: marketplaceCatalogService,
-                packageManager: pluginPackageManager,
-                runtimeHost: pluginRuntimeHost,
-                selectedPluginID: $selectedPluginID,
-                openStore: { openSettings(.marketplace) }
-            )
-            .environmentObject(localizer)
+            if let activeMainPluginID,
+               pluginPackageManager.records[activeMainPluginID]?.enabled == true,
+               marketplaceCatalogService.catalog.plugin(id: activeMainPluginID)?.supportsPluginTab == true {
+                TraceFencePluginRuntimeView(
+                    runtimeHost: pluginRuntimeHost,
+                    pluginID: activeMainPluginID,
+                    presentation: .workspace,
+                    onClose: {
+                        self.activeMainPluginID = nil
+                        self.selectedPluginID = nil
+                    }
+                )
+                .environmentObject(localizer)
+            } else {
+                TraceFencePluginWorkspaceView(
+                    catalogService: marketplaceCatalogService,
+                    packageManager: pluginPackageManager,
+                    runtimeHost: pluginRuntimeHost,
+                    selectedPluginID: $selectedPluginID,
+                    openStore: { openSettings(.marketplace) }
+                )
+                .environmentObject(localizer)
+            }
         case .agentGuard:
             pluginContent("tracefence.agent-guard") {
                 AgentGuardTab()

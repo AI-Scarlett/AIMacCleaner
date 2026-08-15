@@ -92,6 +92,17 @@ def main() -> int:
         if not args.execute:
             continue
         title = f"{names.get(release['pluginID'], release['pluginID'])} v{release['version']}"
+        if release["pluginID"] == "tracefence.tools.codex-media-cleanup":
+            provenance_note = (
+                "The archive includes its TraceFence first-party license and source provenance. "
+                "It is maintained and distributed directly by TraceFence."
+            )
+        else:
+            provenance_note = (
+                "The archive includes the Apache-2.0 license and pinned source provenance. "
+                "TraceFence owns this release copy, so availability does not depend on the "
+                "upstream source repository remaining online."
+            )
         notes = (
             "Independent TraceFence plugin release.\n\n"
             "Install and update this plugin through the TraceFence Plugin Center. "
@@ -101,9 +112,9 @@ def main() -> int:
             "- PluginKit ABI: `4`\n"
             f"- SHA-256: `{release['sha256']}`\n"
             "- Architectures: `arm64`, `x86_64`\n\n"
-            "The archive includes the Apache-2.0 license and pinned source provenance. "
-            "TraceFence downloads this asset from the AI-Scarlett/TraceFence repository and "
-            "does not depend on the upstream source repository remaining available.\n"
+            f"{provenance_note}\n\n"
+            "TraceFence downloads this immutable asset from the "
+            "AI-Scarlett/TraceFence distribution repository.\n"
         )
         command([
             "gh", "release", "create", tag, str(asset_path),

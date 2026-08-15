@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-08-14T03:58:47Z",
+  "expiresAt": "2027-08-15T03:05:00Z",
   "offers": [
     {
       "active": true,
@@ -71,6 +71,11 @@
       "name": "Agent Monitor",
       "package": null,
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": false
+      },
       "pluginKitVersion": 0,
       "standaloneOfferID": null,
       "summary": "Live local status and activity for supported AI agents.",
@@ -94,6 +99,11 @@
       "name": "Agent Guard",
       "package": null,
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": false
+      },
       "pluginKitVersion": 0,
       "standaloneOfferID": "plugin.agent-guard.lifetime",
       "summary": "Review local agent operations, approvals, and safety events.",
@@ -117,6 +127,11 @@
       "name": "Token & Usage",
       "package": null,
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": false
+      },
       "pluginKitVersion": 0,
       "standaloneOfferID": null,
       "summary": "Cached multi-agent token totals, model ranking, and cost estimates.",
@@ -140,6 +155,11 @@
       "name": "Disk Advisor",
       "package": null,
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": false
+      },
       "pluginKitVersion": 0,
       "standaloneOfferID": null,
       "summary": "Bounded storage analysis for agent history, build output, and large files.",
@@ -163,6 +183,11 @@
       "name": "iOS Remote Pairing",
       "package": null,
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": false
+      },
       "pluginKitVersion": 0,
       "standaloneOfferID": null,
       "summary": "Pair TraceFence Sentinel and control supported local agent sessions.",
@@ -234,18 +259,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.activity-bar",
         "entryPoint": "ActivityBar.bundle",
-        "sha256": "caf2ebbaaef2227d6537cb87a2f4df70a3c3da18e0b9074df51f27ea91ebf3aa",
-        "sizeBytes": 867186,
+        "sha256": "4dedeb2aeb63640c4b1ca9d1da61a0a2ac88118b763fea8efb83f365417f1587",
+        "sizeBytes": 865475,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-activity-bar-v1.0.19/activity-bar-1.0.19.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-activity-bar-v1.0.20/activity-bar-1.0.20.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": true,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "data_panel"
+      },
       "standaloneOfferID": null,
       "summary": "Track input, foreground app usage time, and AI coding activity.",
       "systemImage": "chart.xyaxis.line",
       "trialHours": null,
-      "version": "1.0.19"
+      "version": "1.0.20"
     },
     {
       "capabilities": [
@@ -310,18 +344,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.app-hotkey",
         "entryPoint": "AppHotkey.bundle",
-        "sha256": "7b85ca2ade1110401824bc8890cb0b99620f45f4f91adc416087c92b51d4ce14",
-        "sizeBytes": 219461,
+        "sha256": "dd8303a006d7ba9a04b75252ac10db7606f012fdfbdee3c8b61d2baf194bf8e7",
+        "sizeBytes": 219417,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-app-hotkey-v1.0.11/app-hotkey-1.0.11.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-app-hotkey-v1.0.12/app-hotkey-1.0.12.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Bind global shortcuts to common apps for quick launch or switching.",
       "systemImage": "sparkles",
       "trialHours": null,
-      "version": "1.0.11"
+      "version": "1.0.12"
     },
     {
       "capabilities": [
@@ -387,20 +430,29 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.app-volume",
         "entryPoint": "AppVolume.bundle",
-        "sha256": "6598972e17ef90a468d21e820caa3eb00db3f59b6ea921fb4da402cc3ab0c5d7",
-        "sizeBytes": 213958,
+        "sha256": "b44372531364997d151794acd3388c77fe488a953fd560a484bb125be164fa53",
+        "sizeBytes": 213908,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-app-volume-v1.0.1/app-volume-1.0.1.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-app-volume-v1.0.2/app-volume-1.0.2.mactoolsplugin.zip"
       },
       "permissions": [
         "screen-recording"
       ],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Adjust the volume of each app currently playing audio.",
       "systemImage": "speaker.wave.2.fill",
       "trialHours": null,
-      "version": "1.0.1"
+      "version": "1.0.2"
     },
     {
       "capabilities": [
@@ -464,18 +516,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.appearance",
         "entryPoint": "Appearance.bundle",
-        "sha256": "eecb217c32368c82ea79105959f6267d76eee926f6793de1c6a27cac30840ea5",
-        "sizeBytes": 66747,
+        "sha256": "af889d0a926d372c9db5763980666b658e210572dca3e658f395f6b6643d93e9",
+        "sizeBytes": 66679,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-appearance-v1.0.10/appearance-1.0.10.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-appearance-v1.0.11/appearance-1.0.11.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Switch the system between light and dark appearance.",
       "systemImage": "display.2",
       "trialHours": null,
-      "version": "1.0.10"
+      "version": "1.0.11"
     },
     {
       "capabilities": [
@@ -539,18 +600,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.auto-hide-dock",
         "entryPoint": "AutoHideDock.bundle",
-        "sha256": "7cb354c1b6c3d57f0fb10b1620778d085ed59a26bea0bb9db9c22e8a2d46fb84",
-        "sizeBytes": 71804,
+        "sha256": "8b91cd90e8799d005984ed1ceffa6454649af0b19dc9ac087486c07fa8335084",
+        "sizeBytes": 71756,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-auto-hide-dock-v1.0.12/auto-hide-dock-1.0.12.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-auto-hide-dock-v1.0.13/auto-hide-dock-1.0.13.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Hide the Dock automatically for a cleaner desktop.",
       "systemImage": "display.2",
       "trialHours": null,
-      "version": "1.0.12"
+      "version": "1.0.13"
     },
     {
       "capabilities": [
@@ -614,18 +684,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.auto-hide-menu-bar",
         "entryPoint": "AutoHideMenuBar.bundle",
-        "sha256": "289b33bab1129471501d2c7f57e8417bdbd964791f370d3b0406399a78ebe7ee",
-        "sizeBytes": 73708,
+        "sha256": "7d53457155cf65ed26154a5d34e9c0f3f291a720a47cd4d7bdf936a883fe1124",
+        "sizeBytes": 73662,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-auto-hide-menu-bar-v1.0.9/auto-hide-menu-bar-1.0.9.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-auto-hide-menu-bar-v1.0.10/auto-hide-menu-bar-1.0.10.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Hide the menu bar automatically for more screen space.",
       "systemImage": "display.2",
       "trialHours": null,
-      "version": "1.0.9"
+      "version": "1.0.10"
     },
     {
       "capabilities": [
@@ -690,18 +769,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.auto-input",
         "entryPoint": "AutoInput.bundle",
-        "sha256": "f5c3fccc7ca4ccaf8a02abd1cf30c1bb6928a4ead9d4664816049e00a0967296",
-        "sizeBytes": 269117,
+        "sha256": "ed200ad4bce1c765eec0490e2c50e41b2fcb7f45e8797f0338fb9b8e7974aa39",
+        "sizeBytes": 269060,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-auto-input-v1.0.1/auto-input-1.0.1.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-auto-input-v1.0.2/auto-input-1.0.2.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Remember and automatically switch input sources for each app.",
       "systemImage": "sparkles",
       "trialHours": null,
-      "version": "1.0.1"
+      "version": "1.0.2"
     },
     {
       "capabilities": [
@@ -766,18 +854,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.battery-charge-limit",
         "entryPoint": "BatteryChargeLimit.bundle",
-        "sha256": "7c91135c58edbda0e66aa3e7c7b3d787ef1dd568f0fc05d532cef7baf128e8ef",
-        "sizeBytes": 250785,
+        "sha256": "3bfa67961665cda842f7ae8b69695c9e2e2e75ee1638dd70dc159dccc949b630",
+        "sizeBytes": 250722,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-battery-charge-limit-v1.0.8/battery-charge-limit-1.0.8.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-battery-charge-limit-v1.0.9/battery-charge-limit-1.0.9.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": true,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Set a battery charge limit and stop charging when it is reached; charging resumes only when you choose.",
       "systemImage": "gearshape.2.fill",
       "trialHours": null,
-      "version": "1.0.8"
+      "version": "1.0.9"
     },
     {
       "capabilities": [
@@ -844,21 +941,30 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.calendar",
         "entryPoint": "Calendar.bundle",
-        "sha256": "49f280016ba9440f6795e8cbea50720b9db3078436e5b4192fb2b0e346a95b81",
-        "sizeBytes": 379972,
+        "sha256": "a9403e6d3a6dde74d2ddd24c5656b1ebdc958bb2c0b73cece77d379746a36913",
+        "sizeBytes": 379924,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-calendar-v1.0.14/calendar-1.0.14.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-calendar-v1.0.15/calendar-1.0.15.mactoolsplugin.zip"
       },
       "permissions": [
         "automation",
         "calendarfullaccess"
       ],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "status",
+        "workspaceDefault": "data_panel"
+      },
       "standaloneOfferID": null,
       "summary": "View dates, holidays, and calendar events.",
       "systemImage": "sparkles",
       "trialHours": null,
-      "version": "1.0.14"
+      "version": "1.0.15"
     },
     {
       "capabilities": [
@@ -922,18 +1028,92 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.clipboard-clear",
         "entryPoint": "ClipboardClear.bundle",
-        "sha256": "4ccfa38f728a032104dede87654488a3c4b915b8702a2ebb81581539acf1dce7",
-        "sizeBytes": 62918,
+        "sha256": "634a942348ae352ec187a5a44f7de3b2389f420c3abf728211ae2e0dd9f984df",
+        "sizeBytes": 62865,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-clipboard-clear-v1.0.10/clipboard-clear-1.0.10.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-clipboard-clear-v1.0.11/clipboard-clear-1.0.11.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Clear the current clipboard contents with one click.",
       "systemImage": "internaldrive.fill",
       "trialHours": null,
-      "version": "1.0.10"
+      "version": "1.0.11"
+    },
+    {
+      "capabilities": [
+        "tools.primary-panel",
+        "tools.settings.workspace"
+      ],
+      "category": "Storage",
+      "delivery": "package",
+      "featured": false,
+      "id": "tracefence.tools.codex-media-cleanup",
+      "includedInAllAccess": true,
+      "isFree": false,
+      "localizedMetadata": {
+        "en": {
+          "displayName": "Codex Media Cleanup",
+          "summary": "Safely deduplicate repeated images in Codex sessions and repair local image_url values rejected by the Responses API"
+        },
+        "ja": {
+          "displayName": "Codex メディア整理",
+          "summary": "Codex セッション内の重複画像を安全に整理し、Responses API が受け付けないローカル image_url を修復します"
+        },
+        "ko": {
+          "displayName": "Codex 미디어 정리",
+          "summary": "Codex 세션의 중복 이미지를 안전하게 정리하고 Responses API가 거부하는 로컬 image_url을 복구합니다"
+        },
+        "mt": {
+          "displayName": "Tindif tal-Midja Codex",
+          "summary": "Neħħi b’mod sigur immaġnijiet duplikati fis-sessjonijiet Codex u sewwi image_url lokali miċħuda mill-Responses API"
+        },
+        "zh-Hans": {
+          "displayName": "Codex 媒体整理",
+          "summary": "安全去重 Codex 会话中的重复图片，并修复 Responses API 不接受的本地 image_url"
+        },
+        "zh-Hant": {
+          "displayName": "Codex 媒體整理",
+          "summary": "安全去重 Codex 工作階段中的重複圖片，並修復 Responses API 不接受的本機 image_url"
+        }
+      },
+      "minimumHostVersion": "1.2.4",
+      "minimumSystemVersion": "14.0",
+      "name": "Codex Media Cleanup",
+      "package": {
+        "bundleIdentifier": "com.tracefence.plugin.codex-media-cleanup",
+        "entryPoint": "CodexMediaCleanup.bundle",
+        "sha256": "f66205b05fe8c4a0aa3196d44edfbc4e14c9fb6b00fe768f9cb7a675b327fd15",
+        "sizeBytes": 531034,
+        "teamIdentifier": "UQ87N2WZ76",
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-codex-media-cleanup-v1.0.0/codex-media-cleanup-1.0.0.mactoolsplugin.zip"
+      },
+      "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
+      "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "workspace"
+      },
+      "standaloneOfferID": null,
+      "summary": "Safely deduplicate repeated images in Codex sessions and repair local image_url values rejected by the Responses API",
+      "systemImage": "photo.stack.fill",
+      "trialHours": null,
+      "version": "1.0.0"
     },
     {
       "capabilities": [
@@ -998,18 +1178,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.device-battery",
         "entryPoint": "DeviceBattery.bundle",
-        "sha256": "8d01f3c3988f8722bff6015c8537deff6e2ed7215956406b8ceb2648e5090843",
-        "sizeBytes": 916215,
+        "sha256": "0374e4bb01a52c37b9e139dd419455e65ced7caf26eefa21b01513644d160465",
+        "sizeBytes": 916156,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-device-battery-v1.0.11/device-battery-1.0.11.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-device-battery-v1.0.12/device-battery-1.0.12.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": true,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "status",
+        "workspaceDefault": "data_panel"
+      },
       "standaloneOfferID": null,
       "summary": "View battery levels for your Mac, Apple mobile devices, Bluetooth accessories, and Rapoo mice.",
       "systemImage": "wrench.and.screwdriver.fill",
       "trialHours": null,
-      "version": "1.0.11"
+      "version": "1.0.12"
     },
     {
       "capabilities": [
@@ -1074,18 +1263,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.disk-clean",
         "entryPoint": "DiskClean.bundle",
-        "sha256": "a6c9517ea95c2ddb10c4a4271f7a2e3d03555485546ad1e77e11889a4e1db63a",
-        "sizeBytes": 1494143,
+        "sha256": "f0e299a299ff6ccc28b42e69c3717e13a24589b2b36e7221e160636e3903d664",
+        "sizeBytes": 1489052,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-disk-clean-v2.0.1/disk-clean-2.0.1.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-disk-clean-v2.0.2/disk-clean-2.0.2.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "workspace"
+      },
       "standaloneOfferID": null,
       "summary": "Scan system caches, developer artifacts, and leftover installers; move to Trash by default with path safety checks before deletion",
       "systemImage": "internaldrive.fill",
       "trialHours": null,
-      "version": "2.0.1"
+      "version": "2.0.2"
     },
     {
       "capabilities": [
@@ -1150,18 +1348,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.display-brightness",
         "entryPoint": "DisplayBrightness.bundle",
-        "sha256": "563cb6b803b2c32fa66254e36ea561e429b4124dfd2453b09e1fae266d0ced69",
-        "sizeBytes": 421838,
+        "sha256": "4d6c415a89e93db084910a4713cbbd2d677469d94fbe381bd3c57dc97b1ff4a3",
+        "sizeBytes": 421729,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-display-brightness-v1.0.14/display-brightness-1.0.14.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-display-brightness-v1.0.15/display-brightness-1.0.15.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Adjust brightness for each display quickly.",
       "systemImage": "display.2",
       "trialHours": null,
-      "version": "1.0.14"
+      "version": "1.0.15"
     },
     {
       "capabilities": [
@@ -1225,18 +1432,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.display-resolution",
         "entryPoint": "DisplayResolution.bundle",
-        "sha256": "9d282ad56293973b4b6209d244900dfe46f52b372fbc7444a68cbcb3dc349e40",
-        "sizeBytes": 141782,
+        "sha256": "108f1cf9793ccc722dc580ec2d54c66674a413f307a471a65591619a5bf2912d",
+        "sizeBytes": 141689,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-display-resolution-v1.0.10/display-resolution-1.0.10.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-display-resolution-v1.0.11/display-resolution-1.0.11.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "View and switch resolutions for each display.",
       "systemImage": "display.2",
       "trialHours": null,
-      "version": "1.0.10"
+      "version": "1.0.11"
     },
     {
       "capabilities": [
@@ -1300,18 +1516,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.display-sleep",
         "entryPoint": "DisplaySleep.bundle",
-        "sha256": "4cc789ceaacaabe166808f56c9e2154cc0f1f4c01d0f4764ad71d478c38857b5",
-        "sizeBytes": 63033,
+        "sha256": "6fee1bb278f0d7b7657fb890ff2bb2cdbc83281c98024f23cf713b260ec224a4",
+        "sizeBytes": 62980,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-display-sleep-v1.0.8/display-sleep-1.0.8.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-display-sleep-v1.0.9/display-sleep-1.0.9.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Put all displays to sleep immediately.",
       "systemImage": "display.2",
       "trialHours": null,
-      "version": "1.0.8"
+      "version": "1.0.9"
     },
     {
       "capabilities": [
@@ -1375,18 +1600,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.display-true-color",
         "entryPoint": "DisplayTrueColor.bundle",
-        "sha256": "2ca86003cb99927c7e5fb2c3a06d106a58d9000518c15c4a421ebed1ef1904b1",
-        "sizeBytes": 66368,
+        "sha256": "f11a600aab7712b2dd004b1792717128cb538afd800bae990f7be2f5434e9fc5",
+        "sizeBytes": 66322,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-display-true-color-v1.0.10/display-true-color-1.0.10.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-display-true-color-v1.0.11/display-true-color-1.0.11.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Automatically adjust display colors to match ambient light.",
       "systemImage": "display.2",
       "trialHours": null,
-      "version": "1.0.10"
+      "version": "1.0.11"
     },
     {
       "capabilities": [
@@ -1419,20 +1653,29 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.dock-lock",
         "entryPoint": "DockLock.bundle",
-        "sha256": "3cca73769fecddff88ccaa7a3f6a91bca0e598aafa197bed0a16d44b1614debf",
-        "sizeBytes": 73935,
+        "sha256": "2962f7363ee3e01d804c44981fb58d4ef16bb8c650299fe84ca5798530e1aa87",
+        "sizeBytes": 73922,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-dock-lock-v1.0.0/dock-lock-1.0.0.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-dock-lock-v1.0.1/dock-lock-1.0.1.mactoolsplugin.zip"
       },
       "permissions": [
         "accessibility"
       ],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Prevent the Dock from moving between displays accidentally.",
       "systemImage": "display.2",
       "trialHours": null,
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "capabilities": [
@@ -1496,18 +1739,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.eject-disk",
         "entryPoint": "EjectDisk.bundle",
-        "sha256": "14dd9e333e133bd7ed08d467668953c2a991b11dc0d766cb48e1d680228f0378",
-        "sizeBytes": 138525,
+        "sha256": "aee326e9943d23b4673bd85809629fe923dde2981645efa4b408a6ced4a5067f",
+        "sizeBytes": 138447,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-eject-disk-v1.0.12/eject-disk-1.0.12.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-eject-disk-v1.0.13/eject-disk-1.0.13.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Eject all removable disks.",
       "systemImage": "internaldrive.fill",
       "trialHours": null,
-      "version": "1.0.12"
+      "version": "1.0.13"
     },
     {
       "capabilities": [
@@ -1571,18 +1823,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.empty-trash",
         "entryPoint": "EmptyTrash.bundle",
-        "sha256": "9050b7f9504164ebdbc5615bafcfa64b9c4d60d78c4787473e22cc0a60c6b987",
-        "sizeBytes": 89043,
+        "sha256": "659f7342f9c6c551402711ec3844cd6dbe841a1805b5272d2e6b5c7e5eb0c41d",
+        "sizeBytes": 88988,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-empty-trash-v1.0.11/empty-trash-1.0.11.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-empty-trash-v1.0.12/empty-trash-1.0.12.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Empty all items in the Trash.",
       "systemImage": "internaldrive.fill",
       "trialHours": null,
-      "version": "1.0.11"
+      "version": "1.0.12"
     },
     {
       "capabilities": [
@@ -1647,18 +1908,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.fan-control",
         "entryPoint": "FanControl.bundle",
-        "sha256": "75b14d1edcc0d53b3b795f6e149c2f6cb87c177802956f3324b9796d92f20a70",
-        "sizeBytes": 371809,
+        "sha256": "521fdd0172f4adff594d5b83f278f01830744947f15a25d3802436860b075df3",
+        "sizeBytes": 371736,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-fan-control-v1.0.16/fan-control-1.0.16.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-fan-control-v1.0.17/fan-control-1.0.17.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": true,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Manage fan speed presets with automatic, full-speed, and custom strategies.",
       "systemImage": "gearshape.2.fill",
       "trialHours": null,
-      "version": "1.0.16"
+      "version": "1.0.17"
     },
     {
       "capabilities": [
@@ -1724,18 +1994,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.fix-damaged-app",
         "entryPoint": "FixDamagedApp.bundle",
-        "sha256": "9d36bf49518d9ff63daaa44a2f25978a5ae675685a2634a7e93f89937f449bec",
-        "sizeBytes": 189700,
+        "sha256": "e476c13001bdbd0a3030d9f6204c0d13483e1e5031acb2f1d951c26d469b4061",
+        "sizeBytes": 189592,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-fix-damaged-app-v1.0.11/fix-damaged-app-1.0.11.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-fix-damaged-app-v1.0.12/fix-damaged-app-1.0.12.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "data_panel"
+      },
       "standaloneOfferID": null,
       "summary": "Remove quarantine attributes to resolve damaged or untrusted app warnings.",
       "systemImage": "sparkles",
       "trialHours": null,
-      "version": "1.0.11"
+      "version": "1.0.12"
     },
     {
       "capabilities": [
@@ -1799,18 +2078,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.hide-notch",
         "entryPoint": "HideNotch.bundle",
-        "sha256": "3df6f4ad4e570ddd8442d5e097e109001c38be52876dabe2adefb4e6b782bc3f",
-        "sizeBytes": 172320,
+        "sha256": "0cc33df92e0abfbc3e21aa7cfc27792b60619d4e5589467f607a5393c47e7c58",
+        "sizeBytes": 172247,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-hide-notch-v1.0.10/hide-notch-1.0.10.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-hide-notch-v1.0.11/hide-notch-1.0.11.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Automatically cover the top notch area on notched displays.",
       "systemImage": "display.2",
       "trialHours": null,
-      "version": "1.0.10"
+      "version": "1.0.11"
     },
     {
       "capabilities": [
@@ -1875,18 +2163,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.homebrew",
         "entryPoint": "Homebrew.bundle",
-        "sha256": "aa90630e3bd2a88de54511c707d1024323f205abb7d3f340cf3480a4362e6b78",
-        "sizeBytes": 877650,
+        "sha256": "b7ffab66bdb63fcf9ebb96db046881ee9b5d38d54c71bba3bbb381102321f827",
+        "sizeBytes": 874826,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-homebrew-v1.0.5/homebrew-1.0.5.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-homebrew-v1.0.6/homebrew-1.0.6.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "workspace"
+      },
       "standaloneOfferID": null,
       "summary": "Manage Homebrew packages, repositories, and perform system diagnostics",
       "systemImage": "gearshape.2.fill",
       "trialHours": null,
-      "version": "1.0.5"
+      "version": "1.0.6"
     },
     {
       "capabilities": [
@@ -1951,18 +2248,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.ip-overview",
         "entryPoint": "IPOverview.bundle",
-        "sha256": "6fe4959fb6ec04f193afc4ce9120ad30cd864a72e60cb21e24b4c2e435a2ef77",
-        "sizeBytes": 1113234,
+        "sha256": "998cc7adcbf8e25869ec6407e7699c21d6e09ee3ea23ae9c0d4bb117e42ea4db",
+        "sizeBytes": 1109466,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-ip-overview-v1.0.16/ip-overview-1.0.16.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-ip-overview-v1.0.17/ip-overview-1.0.17.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": true,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "workspace"
+      },
       "standaloneOfferID": null,
       "summary": "View egress IP, local IP, location, and network quality.",
       "systemImage": "chart.xyaxis.line",
       "trialHours": null,
-      "version": "1.0.16"
+      "version": "1.0.17"
     },
     {
       "capabilities": [
@@ -2027,18 +2333,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.keep-awake",
         "entryPoint": "KeepAwake.bundle",
-        "sha256": "7189b3f85f5ada4edbd7ef967492645576f83f0b13ccb61856f7e9037dfd9ae5",
-        "sizeBytes": 254197,
+        "sha256": "f95a763a41f3b09612924df1920b497baded81d479353c499447c20feb5678ac",
+        "sizeBytes": 254099,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-keep-awake-v1.2.1/keep-awake-1.2.1.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-keep-awake-v1.2.2/keep-awake-1.2.2.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Keep the Mac awake; optionally keep the display on or keep screen-based tools working. Closed-lid MacBook operation requires a power connection.",
       "systemImage": "gearshape.2.fill",
       "trialHours": null,
-      "version": "1.2.1"
+      "version": "1.2.2"
     },
     {
       "capabilities": [
@@ -2103,18 +2418,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.launch-control",
         "entryPoint": "LaunchControl.bundle",
-        "sha256": "916ba3e5d0292b4ab3fe8d0c44c50f43f945aafbcc49e07a922e4b04954b0ade",
-        "sizeBytes": 675215,
+        "sha256": "5ba1f52c624c35687b88d20a88e0512af440e85c9dabbeef09f9c4e06c8e3e32",
+        "sizeBytes": 675160,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-launch-control-v1.0.11/launch-control-1.0.11.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-launch-control-v1.0.12/launch-control-1.0.12.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "workspace"
+      },
       "standaloneOfferID": null,
       "summary": "View and manage launchctl launch items.",
       "systemImage": "sparkles",
       "trialHours": null,
-      "version": "1.0.11"
+      "version": "1.0.12"
     },
     {
       "capabilities": [
@@ -2179,18 +2503,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.launchpad",
         "entryPoint": "Launchpad.bundle",
-        "sha256": "dcadc0f328b187787f34320869de07e77cbfa7989962cdda5f14fbd5374b218a",
-        "sizeBytes": 989638,
+        "sha256": "4acff9a842ebc73279b618af9fe8ff820bfcd1e9cc653b6647714f22caeb2f98",
+        "sizeBytes": 988507,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-launchpad-v1.1.7/launchpad-1.1.7.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-launchpad-v1.1.8/launchpad-1.1.8.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Open the app grid from a global shortcut or the menu bar, then search and launch apps.",
       "systemImage": "gearshape.2.fill",
       "trialHours": null,
-      "version": "1.1.7"
+      "version": "1.1.8"
     },
     {
       "capabilities": [
@@ -2254,18 +2587,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.lock-screen",
         "entryPoint": "LockScreen.bundle",
-        "sha256": "2758cb030bc077cba9bd3e0f6e05bf0b51e337d65ea7cd3e712ee5c5c3b03492",
-        "sizeBytes": 63156,
+        "sha256": "92efedb5a96d38c521f028e97288dcd30e88d393ef3beb9fed993adef0599d55",
+        "sizeBytes": 63104,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-lock-screen-v1.0.10/lock-screen-1.0.10.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-lock-screen-v1.0.11/lock-screen-1.0.11.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Lock the screen immediately and require password unlock.",
       "systemImage": "gearshape.2.fill",
       "trialHours": null,
-      "version": "1.0.10"
+      "version": "1.0.11"
     },
     {
       "capabilities": [
@@ -2333,21 +2675,30 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.menu-bar-hidden",
         "entryPoint": "MenuBarHidden.bundle",
-        "sha256": "3ea1262198ca2524e21e6205311c2612ee9649dffb559a82f4a35c7cc5b32a12",
-        "sizeBytes": 824622,
+        "sha256": "df5d573ac37c79bdccb3011df72d820d1201dac4ab65bac0c13b7eac8b80497f",
+        "sizeBytes": 824543,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-menu-bar-hidden-v1.0.11/menu-bar-hidden-1.0.11.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-menu-bar-hidden-v1.0.12/menu-bar-hidden-1.0.12.mactoolsplugin.zip"
       },
       "permissions": [
         "accessibility",
         "screen-recording"
       ],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "data_panel"
+      },
       "standaloneOfferID": null,
       "summary": "Hide menu bar icons, arrange them by dragging, and open hidden icons from a panel.",
       "systemImage": "sparkles",
       "trialHours": null,
-      "version": "1.0.11"
+      "version": "1.0.12"
     },
     {
       "capabilities": [
@@ -2411,18 +2762,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.microphone-mute",
         "entryPoint": "MicrophoneMute.bundle",
-        "sha256": "034f2a0571a01947f56b055229d519903cf79390fc1e75cff59a643ec429a555",
-        "sizeBytes": 60746,
+        "sha256": "4717d8279224a3522d7422f622c132430b0d468db2e54929dd9f6eea3af80f91",
+        "sizeBytes": 60696,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-microphone-mute-v1.0.9/microphone-mute-1.0.9.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-microphone-mute-v1.0.10/microphone-mute-1.0.10.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Quickly mute or restore the default microphone input.",
       "systemImage": "speaker.wave.2.fill",
       "trialHours": null,
-      "version": "1.0.9"
+      "version": "1.0.10"
     },
     {
       "capabilities": [
@@ -2487,20 +2847,29 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.middle-click",
         "entryPoint": "MiddleClick.bundle",
-        "sha256": "ec3772ab040b953df06276bd7588a50e643095b798e5a4dcb653b4d2d319e138",
-        "sizeBytes": 148608,
+        "sha256": "58e93e89f984536d84ed8181973785b7d84fd45fcee3390b2d7e9b1644064e92",
+        "sizeBytes": 148594,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-middle-click-v1.0.15/middle-click-1.0.15.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-middle-click-v1.0.16/middle-click-1.0.16.mactoolsplugin.zip"
       },
       "permissions": [
         "accessibility"
       ],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "settings"
+      },
       "standaloneOfferID": null,
       "summary": "Turn trackpad taps into middle clicks.",
       "systemImage": "sparkles",
       "trialHours": null,
-      "version": "1.0.15"
+      "version": "1.0.16"
     },
     {
       "capabilities": [
@@ -2567,21 +2936,30 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.mouse-enhancer",
         "entryPoint": "MouseEnhancer.bundle",
-        "sha256": "1b031bb7a5daf90efae1fd4d51801e236111977b348c1ea39a6520a91fffacd6",
-        "sizeBytes": 179945,
+        "sha256": "4113eda7ac4f377caf36a7f4f3083d0ce676eaffe2a1b4a6c21592a990827125",
+        "sizeBytes": 179884,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-mouse-enhancer-v1.0.8/mouse-enhancer-1.0.8.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-mouse-enhancer-v1.0.9/mouse-enhancer-1.0.9.mactoolsplugin.zip"
       },
       "permissions": [
         "accessibility",
         "inputmonitoring"
       ],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Adjust mouse and trackpad scroll directions separately.",
       "systemImage": "sparkles",
       "trialHours": null,
-      "version": "1.0.8"
+      "version": "1.0.9"
     },
     {
       "capabilities": [
@@ -2645,18 +3023,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.night-shift",
         "entryPoint": "NightShift.bundle",
-        "sha256": "78363bfdbf021e0ccb4df8951adbc7d7676631ab0abdccecf6613e6f14f013b0",
-        "sizeBytes": 63581,
+        "sha256": "d2d292f7c2a64f250b9cac76a2b5eea7ae1815f52519b410a466d97a7538adc2",
+        "sizeBytes": 63513,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-night-shift-v1.0.10/night-shift-1.0.10.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-night-shift-v1.0.11/night-shift-1.0.11.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Reduce blue light with warmer screen colors.",
       "systemImage": "display.2",
       "trialHours": null,
-      "version": "1.0.10"
+      "version": "1.0.11"
     },
     {
       "capabilities": [
@@ -2722,20 +3109,29 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.physical-clean-mode",
         "entryPoint": "PhysicalCleanMode.bundle",
-        "sha256": "905f3174a5cdd217fc8b8f256e61c546e529552cb30229e39a2690721cb173fa",
-        "sizeBytes": 203204,
+        "sha256": "a1fc0f7265a52b694bea5cf89cb71d89de05281d8453a75ee093f9e556bfa3d0",
+        "sizeBytes": 203116,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-physical-clean-mode-v1.0.11/physical-clean-mode-1.0.11.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-physical-clean-mode-v1.0.12/physical-clean-mode-1.0.12.mactoolsplugin.zip"
       },
       "permissions": [
         "accessibility"
       ],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Turn the screen black and temporarily disable keyboard input.",
       "systemImage": "display.2",
       "trialHours": null,
-      "version": "1.0.11"
+      "version": "1.0.12"
     },
     {
       "capabilities": [
@@ -2799,18 +3195,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.quit-apps",
         "entryPoint": "QuitApps.bundle",
-        "sha256": "471e9ab747b4654f3a2f79add7a8f96f2811dc570126a6e47b7925d491ef6581",
-        "sizeBytes": 205767,
+        "sha256": "249242adaa2d9debfe5e9852c3d6527560ab9111f116c33c8d8e8c1f3d886ee5",
+        "sizeBytes": 205701,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-quit-apps-v1.0.10/quit-apps-1.0.10.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-quit-apps-v1.0.11/quit-apps-1.0.11.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Choose running apps to quit, or quit them all at once.",
       "systemImage": "sparkles",
       "trialHours": null,
-      "version": "1.0.10"
+      "version": "1.0.11"
     },
     {
       "capabilities": [
@@ -2874,18 +3279,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.right-click",
         "entryPoint": "RightClick.bundle",
-        "sha256": "d3323f5d2331920fbc7efba3f505fd4a564083b417eb27872d0ae8ebc5811e25",
-        "sizeBytes": 212268,
+        "sha256": "31e8fd899685102e3195fb86acf0d93fa5572289739cfd0c459b9a1e39094d7f",
+        "sizeBytes": 212230,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-right-click-v1.0.8/right-click-1.0.8.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-right-click-v1.0.9/right-click-1.0.9.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "settings"
+      },
       "standaloneOfferID": null,
       "summary": "Add quick Finder context menu actions for folders and paths.",
       "systemImage": "sparkles",
       "trialHours": null,
-      "version": "1.0.8"
+      "version": "1.0.9"
     },
     {
       "capabilities": [
@@ -2950,18 +3364,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.sidecar",
         "entryPoint": "Sidecar.bundle",
-        "sha256": "d27e03c3975e0d7bb5b22da79196bf330af42458dc44c3ce538d60c3186339c1",
-        "sizeBytes": 514685,
+        "sha256": "46d3cda65009477a3e4dea296c34fb78975ebf653a587549a2a0aa5cf1981863",
+        "sizeBytes": 514624,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-sidecar-v1.0.7/sidecar-1.0.7.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-sidecar-v1.0.8/sidecar-1.0.8.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Connect a nearby Sidecar-compatible display as an extended display.",
       "systemImage": "display.2",
       "trialHours": null,
-      "version": "1.0.7"
+      "version": "1.0.8"
     },
     {
       "capabilities": [
@@ -3025,18 +3448,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.stage-manager",
         "entryPoint": "StageManager.bundle",
-        "sha256": "647c0534f942d32bf9f8f0152e09404f3864a5edea883349bec1fec8895e68c7",
-        "sizeBytes": 70249,
+        "sha256": "26aa25457cea073eb268ece743e2a2f9e667ac7e421547ff534ac18de5e1455b",
+        "sizeBytes": 70211,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-stage-manager-v1.0.6/stage-manager-1.0.6.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-stage-manager-v1.0.7/stage-manager-1.0.7.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Turn on Stage Manager to focus the current window and keep others on the side.",
       "systemImage": "display.2",
       "trialHours": null,
-      "version": "1.0.6"
+      "version": "1.0.7"
     },
     {
       "capabilities": [
@@ -3100,18 +3532,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.system-mute",
         "entryPoint": "SystemMute.bundle",
-        "sha256": "e79ca3e19588a8d1146308544f3d36d762a0dab9c1cb60d43b69765ee6fe0351",
-        "sizeBytes": 60308,
+        "sha256": "b02ce9b50a4587f59b0a8a69f893aed33b7c7c7c30499b3a17a04c7f468dee0e",
+        "sizeBytes": 60239,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-system-mute-v1.0.8/system-mute-1.0.8.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-system-mute-v1.0.9/system-mute-1.0.9.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Quickly mute or restore system audio output.",
       "systemImage": "speaker.wave.2.fill",
       "trialHours": null,
-      "version": "1.0.8"
+      "version": "1.0.9"
     },
     {
       "capabilities": [
@@ -3176,18 +3617,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.system-status",
         "entryPoint": "SystemStatus.bundle",
-        "sha256": "7cbd1895e5bf9a39ebf33329eb12901cfc1535b73a55e2c6e81cc3f7b6c25530",
-        "sizeBytes": 718354,
+        "sha256": "8bce9968df4eeb4083c39b379fc64215bcb1b33162aae6203b6ba4fe1d75e8c0",
+        "sizeBytes": 718312,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-system-status-v1.0.19/system-status-1.0.19.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-system-status-v1.0.20/system-status-1.0.20.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": true,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "status",
+        "workspaceDefault": "data_panel"
+      },
       "standaloneOfferID": null,
       "summary": "View live system status.",
       "systemImage": "chart.xyaxis.line",
       "trialHours": null,
-      "version": "1.0.19"
+      "version": "1.0.20"
     },
     {
       "capabilities": [
@@ -3254,21 +3704,30 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.trackpad-gestures",
         "entryPoint": "TrackpadGestures.bundle",
-        "sha256": "ae49ad1976dd70d32818987ee8a0f803c05d9dbaf6c521f028fd1e149295679a",
-        "sizeBytes": 659262,
+        "sha256": "fb4ba6677eb3c2d0f46f3cf117919aa8742dc500925188dc291d2759967eded3",
+        "sizeBytes": 659218,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-trackpad-gestures-v1.0.1/trackpad-gestures-1.0.1.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-trackpad-gestures-v1.0.2/trackpad-gestures-1.0.2.mactoolsplugin.zip"
       },
       "permissions": [
         "accessibility",
         "inputmonitoring"
       ],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Map custom trackpad gestures to shortcuts or middle clicks.",
       "systemImage": "sparkles",
       "trialHours": null,
-      "version": "1.0.1"
+      "version": "1.0.2"
     },
     {
       "capabilities": [
@@ -3336,22 +3795,31 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.translator",
         "entryPoint": "Translator.bundle",
-        "sha256": "4c12b0663ab34369aaa5c6928c8de708518398c29445c11cb567198eac99dacc",
-        "sizeBytes": 795323,
+        "sha256": "718c48cc4e47c66cd570e5de6157ef3b9daf003e3b8c194189c3515ce8926089",
+        "sizeBytes": 795306,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-translator-v0.1.11/translator-0.1.11.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-translator-v0.1.12/translator-0.1.12.mactoolsplugin.zip"
       },
       "permissions": [
         "accessibility",
         "automation",
         "screen-recording"
       ],
+      "placements": {
+        "menuBarPluginTab": true,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": "quick_control",
+        "workspaceDefault": "quick_control"
+      },
       "standaloneOfferID": null,
       "summary": "Translate selected text or screenshot regions with shortcuts.",
       "systemImage": "sparkles",
       "trialHours": null,
-      "version": "0.1.11"
+      "version": "0.1.12"
     },
     {
       "capabilities": [
@@ -3416,20 +3884,29 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.window-switcher",
         "entryPoint": "WindowSwitcher.bundle",
-        "sha256": "175079a9118f77c15e576deaebe611f534ae1221ac6c62c89870b657aa2dd49b",
-        "sizeBytes": 420686,
+        "sha256": "37dac3b59a49c8c4a9fab902aa2d94a5d3a277261d5590f3b30233307556a39e",
+        "sizeBytes": 420667,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-window-switcher-v1.0.6/window-switcher-1.0.6.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-window-switcher-v1.0.7/window-switcher-1.0.7.mactoolsplugin.zip"
       },
       "permissions": [
         "accessibility"
       ],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "settings"
+      },
       "standaloneOfferID": null,
       "summary": "Quickly switch between running windows with a configurable shortcut.",
       "systemImage": "sparkles",
       "trialHours": null,
-      "version": "1.0.6"
+      "version": "1.0.7"
     },
     {
       "capabilities": [
@@ -3494,18 +3971,27 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.xcode-clean",
         "entryPoint": "XcodeClean.bundle",
-        "sha256": "a6365d4a78323795696517d6017e376f2a3aecad346425833b50780b1773d390",
-        "sizeBytes": 487086,
+        "sha256": "df73123a15d8f077c63f5011359dd710c14e4aa79814cd43e90f6d2e08319e2d",
+        "sizeBytes": 486997,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-xcode-clean-v1.0.7/xcode-clean-1.0.7.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-xcode-clean-v1.0.8/xcode-clean-1.0.8.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "workspace"
+      },
       "standaloneOfferID": null,
       "summary": "Clean Xcode DerivedData, device support files, archives, and caches by category.",
       "systemImage": "internaldrive.fill",
       "trialHours": null,
-      "version": "1.0.7"
+      "version": "1.0.8"
     },
     {
       "capabilities": [
@@ -3570,21 +4056,30 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.zsh-config",
         "entryPoint": "ZshConfig.bundle",
-        "sha256": "e85757f4d435c22c8127a488da305d574907f8f1620bebad8aa10fd3a7598fd8",
-        "sizeBytes": 483772,
+        "sha256": "d307b0c20650005ca938a35a16f18f9654364fe6377c97a783f0b92d5bd405e8",
+        "sizeBytes": 483751,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-zsh-config-v1.0.8/zsh-config-1.0.8.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-zsh-config-v1.0.9/zsh-config-1.0.9.mactoolsplugin.zip"
       },
       "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
       "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "workspace"
+      },
       "standaloneOfferID": null,
       "summary": "Edit ~/.zshrc and other zsh config files quickly, with inline editing and common snippets.",
       "systemImage": "sparkles",
       "trialHours": null,
-      "version": "1.0.8"
+      "version": "1.0.9"
     }
   ],
-  "publishedAt": "2026-08-14T03:58:47Z",
-  "revision": 7,
+  "publishedAt": "2026-08-15T03:05:00Z",
+  "revision": 8,
   "schemaVersion": 1
 }

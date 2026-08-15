@@ -285,6 +285,8 @@ struct TraceFencePluginRuntimeView: View {
     var presentation: TraceFencePluginRuntimePresentation = .workspace
     var onClose: (() -> Void)?
     var openInWorkspace: (() -> Void)?
+    @AppStorage(TraceFencePluginDisplayPreferences.mainTabPluginIDsKey)
+    private var mainTabPluginIDsJSON = TraceFencePluginDisplayPreferences.defaultMainTabPluginIDsJSON
     @State private var selectedSurface: Surface = .main
     @State private var visiblePanelSurface: PluginPanelSurface?
     @State private var didResolveDefaultSurface = false
@@ -483,6 +485,19 @@ struct TraceFencePluginRuntimeView: View {
 
     @ViewBuilder
     private var runtimeButtons: some View {
+        if showsMainTabPin, catalogDescriptor?.supportsPluginTab == true {
+            Button {
+                toggleMainTabPin()
+            } label: {
+                Image(systemName: isPinnedToMainTab ? "pin.fill" : "pin")
+                    .foregroundStyle(isPinnedToMainTab ? Theme.Colors.accent : Theme.Colors.textSecondary)
+            }
+            .buttonStyle(.borderless)
+            .help(isPinnedToMainTab
+                ? localizer.t("从主 Tab 移除", en: "Remove from Main Tabs")
+                : localizer.t("固定到主 Tab", en: "Pin to Main Tabs"))
+        }
+
         Button {
             runtimeHost.refresh(pluginID: pluginID)
         } label: {
@@ -499,6 +514,27 @@ struct TraceFencePluginRuntimeView: View {
             .buttonStyle(.borderless)
             .help(localizer.t("关闭插件", en: "Close Plugin"))
         }
+    }
+
+    private var showsMainTabPin: Bool {
+        switch presentation {
+        case .workspace: true
+        case .menuBar: false
+        }
+    }
+
+    private var isPinnedToMainTab: Bool {
+        TraceFencePluginDisplayPreferences.mainTabPluginIDs(from: mainTabPluginIDsJSON).contains(pluginID)
+    }
+
+    private func toggleMainTabPin() {
+        var values = TraceFencePluginDisplayPreferences.mainTabPluginIDs(from: mainTabPluginIDsJSON)
+        if let index = values.firstIndex(of: pluginID) {
+            values.remove(at: index)
+        } else {
+            values.append(pluginID)
+        }
+        mainTabPluginIDsJSON = TraceFencePluginDisplayPreferences.encodedMainTabPluginIDs(values)
     }
 
     @ViewBuilder
@@ -858,6 +894,8 @@ struct TraceFencePluginWorkspaceView: View {
 
     @AppStorage(TraceFencePluginDisplayPreferences.pinnedPluginIDsKey)
     private var pinnedPluginIDsJSON = TraceFencePluginDisplayPreferences.defaultPinnedPluginIDsJSON
+    @AppStorage(TraceFencePluginDisplayPreferences.mainTabPluginIDsKey)
+    private var mainTabPluginIDsJSON = TraceFencePluginDisplayPreferences.defaultMainTabPluginIDsJSON
     @State private var searchText = ""
 
     var body: some View {
@@ -932,6 +970,7 @@ struct TraceFencePluginWorkspaceView: View {
     private func pluginRailRow(_ plugin: TraceFencePluginDescriptor) -> some View {
         let isSelected = selectedPluginID == plugin.id
         let isPinned = pinnedPluginIDs.contains(plugin.id)
+        let isMainTab = mainTabPluginIDs.contains(plugin.id)
         let supportsMenuBar = plugin.supportsMenuBarQuickPanel
         return HStack(spacing: Theme.Spacing.xs) {
             Button {
@@ -973,6 +1012,19 @@ struct TraceFencePluginWorkspaceView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+
+            Button {
+                toggleMainTab(plugin.id)
+            } label: {
+                Image(systemName: isMainTab ? "pin.fill" : "pin")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(isMainTab ? Theme.Colors.accent : Theme.Colors.textTertiary)
+                    .frame(width: 24, height: 30)
+            }
+            .buttonStyle(.plain)
+            .help(isMainTab
+                ? localizer.t("从主 Tab 移除", en: "Remove from Main Tabs")
+                : localizer.t("固定到主 Tab", en: "Pin to Main Tabs"))
 
             if supportsMenuBar {
                 Button {
@@ -1032,8 +1084,8 @@ struct TraceFencePluginWorkspaceView: View {
                 Text(localizer.t("插件工作区", en: "Plugin Workspace"))
                     .font(Theme.Font.title2Bold)
                 Text(localizer.t(
-                    "从左侧打开已安装插件。常用插件可以点星标固定到菜单栏快捷区。",
-                    en: "Open an installed plugin from the left. Star frequently used plugins to pin them to the menu-bar quick area."
+                    "从左侧打开已安装插件。图钉固定到主 Tab；星标固定到菜单栏快捷区。",
+                    en: "Open an installed plugin from the left. Use the pin for Main Tabs and the star for the menu-bar quick area."
                 ))
                 .font(Theme.Font.body)
                 .foregroundStyle(Theme.Colors.textSecondary)
@@ -1071,6 +1123,10 @@ struct TraceFencePluginWorkspaceView: View {
         Set(TraceFencePluginDisplayPreferences.pinnedPluginIDs(from: pinnedPluginIDsJSON))
     }
 
+    private var mainTabPluginIDs: Set<String> {
+        Set(TraceFencePluginDisplayPreferences.mainTabPluginIDs(from: mainTabPluginIDsJSON))
+    }
+
     private func togglePinned(_ pluginID: String) {
         var values = TraceFencePluginDisplayPreferences.pinnedPluginIDs(from: pinnedPluginIDsJSON)
         if let index = values.firstIndex(of: pluginID) {
@@ -1079,6 +1135,16 @@ struct TraceFencePluginWorkspaceView: View {
             values.append(pluginID)
         }
         pinnedPluginIDsJSON = TraceFencePluginDisplayPreferences.encodedPinnedPluginIDs(values)
+    }
+
+    private func toggleMainTab(_ pluginID: String) {
+        var values = TraceFencePluginDisplayPreferences.mainTabPluginIDs(from: mainTabPluginIDsJSON)
+        if let index = values.firstIndex(of: pluginID) {
+            values.remove(at: index)
+        } else {
+            values.append(pluginID)
+        }
+        mainTabPluginIDsJSON = TraceFencePluginDisplayPreferences.encodedMainTabPluginIDs(values)
     }
 
     private func selectFirstPluginIfNeeded() {

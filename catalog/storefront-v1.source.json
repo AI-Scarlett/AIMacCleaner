@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-08-14T03:58:47Z",
+  "expiresAt": "2027-08-15T03:05:00Z",
   "offers": [
     {
       "active": true,
@@ -4079,7 +4079,7 @@
       }
     }
   ],
-  "publishedAt": "2026-08-14T03:58:47Z",
+  "publishedAt": "2026-08-15T03:05:00Z",
   "revision": 8,
   "schemaVersion": 1
 }

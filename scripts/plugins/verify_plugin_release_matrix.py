@@ -113,7 +113,7 @@ def verify_plugin(plugin: dict[str, Any], assets: Path) -> dict[str, Any]:
         manifest = json.loads(archive.read(manifest_paths[0]))
         package_root = manifest_paths[0].rsplit("/", 1)[0]
         if f"{package_root}/LICENSE" not in archive.namelist():
-            raise ValueError("Apache-2.0 license is missing from package")
+            raise ValueError("license file is missing from package")
         if f"{package_root}/TRACEFENCE-PROVENANCE.txt" not in archive.namelist():
             raise ValueError("TraceFence source provenance is missing from package")
         bundle_relative_path = manifest.get("bundleRelativePath")

@@ -1,5 +1,13 @@
 import SwiftUI
 
+private enum TraceFencePluginDeliveryFilter: String, CaseIterable, Identifiable {
+    case all
+    case package
+    case builtIn
+
+    var id: String { rawValue }
+}
+
 /// Commercial classification is immutable catalog metadata. It must stay
 /// visible even when the current subscriber already has access.
 struct TraceFencePluginPricingBadge: View {
@@ -93,6 +101,7 @@ struct TraceFencePluginStoreView: View {
     @State private var section: TraceFencePluginPlatformSection = .discover
     @State private var searchText = ""
     @State private var selectedCategory = "all"
+    @State private var selectedDelivery = TraceFencePluginDeliveryFilter.all
     @State private var detailPluginID: String?
 
     var body: some View {
@@ -194,8 +203,8 @@ struct TraceFencePluginStoreView: View {
                 Text("·")
                     .foregroundStyle(Theme.Colors.textTertiary)
                 Text(localizer.t(
-                    "修订 \(catalogService.catalog.revision) · \(downloadablePlugins.count) 个可独立升级插件",
-                    en: "Revision \(catalogService.catalog.revision) · \(downloadablePlugins.count) independently updatable plugins"
+                    "修订 \(catalogService.catalog.revision) · \(catalogPlugins.count) 个插件（\(builtInPlugins.count) 个系统内置 + \(downloadablePlugins.count) 个独立更新）",
+                    en: "Revision \(catalogService.catalog.revision) · \(catalogPlugins.count) plugins (\(builtInPlugins.count) built in + \(downloadablePlugins.count) independently updated)"
                 ))
                 .foregroundStyle(Theme.Colors.textSecondary)
                 Spacer()
@@ -208,6 +217,12 @@ struct TraceFencePluginStoreView: View {
                 }
             }
             .font(Theme.Font.captionMedium)
+
+            if let report = catalogService.lastReport {
+                Label(refreshReportText(report), systemImage: refreshReportIcon(report))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(report.status == .failed ? Theme.Colors.warning : Theme.Colors.textSecondary)
+            }
         }
         .cardStyle()
     }
@@ -347,6 +362,17 @@ struct TraceFencePluginStoreView: View {
             }
             .labelsHidden()
             .frame(width: 145)
+
+            Picker("", selection: $selectedDelivery) {
+                Text(localizer.t("全部插件", en: "All Plugins")).tag(TraceFencePluginDeliveryFilter.all)
+                Text(localizer.t("独立插件", en: "Independent")).tag(TraceFencePluginDeliveryFilter.package)
+                Text(localizer.t("系统内置", en: "Built-in")).tag(TraceFencePluginDeliveryFilter.builtIn)
+            }
+            .labelsHidden()
+            .frame(width: 125)
+            .onChange(of: selectedDelivery) { _ in
+                selectedCategory = "all"
+            }
         }
     }
 
@@ -366,6 +392,11 @@ struct TraceFencePluginStoreView: View {
                         Text(localizedCategory(plugin.category))
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Colors.textTertiary)
+                        Text(plugin.delivery == .builtIn
+                            ? localizer.t("系统内置", en: "Built-in")
+                            : localizer.t("独立安装 · GitHub 更新", en: "Independent · GitHub updates"))
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(plugin.delivery == .builtIn ? Theme.Colors.textSecondary : Theme.Colors.info)
                         TraceFencePluginPlacementSummary(plugin: plugin)
                     }
                     Spacer()
@@ -582,16 +613,32 @@ struct TraceFencePluginStoreView: View {
     }
 
     private var downloadablePlugins: [TraceFencePluginDescriptor] {
-        catalogService.catalog.plugins.filter { $0.delivery == .package }
+        catalogPlugins.filter { $0.delivery == .package }
+    }
+
+    private var builtInPlugins: [TraceFencePluginDescriptor] {
+        catalogPlugins.filter { $0.delivery == .builtIn }
+    }
+
+    private var catalogPlugins: [TraceFencePluginDescriptor] {
+        catalogService.catalog.plugins
+    }
+
+    private var discoveryPlugins: [TraceFencePluginDescriptor] {
+        switch selectedDelivery {
+        case .all: catalogPlugins
+        case .package: downloadablePlugins
+        case .builtIn: builtInPlugins
+        }
     }
 
     private var categories: [String] {
-        Array(Set(downloadablePlugins.map(\.category))).sorted()
+        Array(Set(discoveryPlugins.map(\.category))).sorted()
     }
 
     private var filteredDiscoveryPlugins: [TraceFencePluginDescriptor] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return downloadablePlugins.filter { plugin in
+        return discoveryPlugins.filter { plugin in
             let categoryMatches = selectedCategory == "all" || plugin.category == selectedCategory
             let queryMatches = query.isEmpty
                 || plugin.localizedName().lowercased().contains(query)
@@ -654,6 +701,31 @@ struct TraceFencePluginStoreView: View {
         default: category
         }
     }
+
+    private func refreshReportText(_ report: TraceFenceMarketplaceRefreshReport) -> String {
+        switch report.status {
+        case .updated:
+            return localizer.t(
+                "已从 GitHub 更新：修订 \(report.previousRevision) → \(report.currentRevision)",
+                en: "Updated from GitHub: revision \(report.previousRevision) → \(report.currentRevision)"
+            )
+        case .unchanged:
+            return localizer.t("GitHub 目录已经是最新版本", en: "The GitHub catalog is already up to date")
+        case .skipped:
+            return localizer.t("本次未联网刷新", en: "No network refresh was performed")
+        case .failed:
+            return localizer.t("GitHub 目录刷新失败：\(report.message)", en: "GitHub catalog refresh failed: \(report.message)")
+        }
+    }
+
+    private func refreshReportIcon(_ report: TraceFenceMarketplaceRefreshReport) -> String {
+        switch report.status {
+        case .updated: "arrow.down.circle.fill"
+        case .unchanged: "checkmark.circle.fill"
+        case .skipped: "pause.circle"
+        case .failed: "exclamationmark.triangle.fill"
+        }
+    }
 }
 
 private struct TraceFencePluginDetailView: View {
@@ -669,6 +741,8 @@ private struct TraceFencePluginDetailView: View {
 
     @State private var licenseKey = ""
     @State private var showingUninstallConfirmation = false
+    @AppStorage(TraceFencePluginDisplayPreferences.mainTabPluginIDsKey)
+    private var mainTabPluginIDsJSON = TraceFencePluginDisplayPreferences.defaultMainTabPluginIDsJSON
 
     var body: some View {
         ScrollView {
@@ -880,6 +954,18 @@ private struct TraceFencePluginDetailView: View {
                     .controlSize(.small)
                 }
                 HStack(spacing: Theme.Spacing.sm) {
+                    if plugin.supportsPluginTab {
+                        Button {
+                            toggleMainTabPin()
+                        } label: {
+                            Label(
+                                isPinnedToMainTab
+                                    ? localizer.t("从主 Tab 移除", en: "Remove from Main Tabs")
+                                    : localizer.t("固定到主 Tab", en: "Pin to Main Tabs"),
+                                systemImage: isPinnedToMainTab ? "pin.slash" : "pin.fill"
+                            )
+                        }
+                    }
                     Button(localizer.t("在访达中显示", en: "Reveal in Finder")) {
                         packageManager.reveal(pluginID: plugin.id)
                     }
@@ -909,6 +995,20 @@ private struct TraceFencePluginDetailView: View {
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .multilineTextAlignment(.trailing)
         }
+    }
+
+    private var isPinnedToMainTab: Bool {
+        TraceFencePluginDisplayPreferences.mainTabPluginIDs(from: mainTabPluginIDsJSON).contains(plugin.id)
+    }
+
+    private func toggleMainTabPin() {
+        var values = TraceFencePluginDisplayPreferences.mainTabPluginIDs(from: mainTabPluginIDsJSON)
+        if let index = values.firstIndex(of: plugin.id) {
+            values.remove(at: index)
+        } else {
+            values.append(plugin.id)
+        }
+        mainTabPluginIDsJSON = TraceFencePluginDisplayPreferences.encodedMainTabPluginIDs(values)
     }
 
     private var accessTitle: String {
