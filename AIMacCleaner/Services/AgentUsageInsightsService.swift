@@ -1103,6 +1103,11 @@ private struct AgentUsageEvent: Codable, Equatable, Sendable {
     let model: String?
     let projectPath: String
     let sessionID: String
+    /// Native cache splits are retained only when a provider exposes them.
+    /// They keep cached file summaries exactly repriceable without reopening
+    /// the underlying transcript after a remote pricing-catalog update.
+    var cacheReadTokens: Int64? = nil
+    var cacheWriteTokens: Int64? = nil
 }
 
 private struct AgentUsageSkillEvent: Codable, Equatable, Sendable {
@@ -1149,7 +1154,9 @@ private struct AgentUsageEventAccumulator {
                 priceKnown: existing.priceKnown && event.priceKnown,
                 model: event.model,
                 projectPath: event.projectPath,
-                sessionID: event.sessionID
+                sessionID: event.sessionID,
+                cacheReadTokens: optionalSum(existing.cacheReadTokens, event.cacheReadTokens),
+                cacheWriteTokens: optionalSum(existing.cacheWriteTokens, event.cacheWriteTokens)
             )
         } else {
             grouped[key] = event
@@ -1158,6 +1165,11 @@ private struct AgentUsageEventAccumulator {
 
     var events: [AgentUsageEvent] {
         grouped.values.sorted { $0.date < $1.date }
+    }
+
+    private func optionalSum(_ lhs: Int64?, _ rhs: Int64?) -> Int64? {
+        guard lhs != nil || rhs != nil else { return nil }
+        return AgentUsageMath.saturatingAdd(lhs ?? 0, rhs ?? 0)
     }
 }
 
@@ -1665,7 +1677,9 @@ private extension AgentUsageFileCacheEntry {
                 model: event.model,
                 date: event.date,
                 tokens: event.tokens,
-                explicitCostUSD: nil
+                explicitCostUSD: nil,
+                cacheReadTokens: event.cacheReadTokens,
+                cacheWriteTokens: event.cacheWriteTokens ?? 0
             )
             return AgentUsageEvent(
                 id: event.id,
@@ -1675,7 +1689,9 @@ private extension AgentUsageFileCacheEntry {
                 priceKnown: resolved.1,
                 model: event.model,
                 projectPath: event.projectPath,
-                sessionID: event.sessionID
+                sessionID: event.sessionID,
+                cacheReadTokens: event.cacheReadTokens,
+                cacheWriteTokens: event.cacheWriteTokens
             )
         }
         return AgentUsageFileCacheEntry(
@@ -2027,7 +2043,8 @@ private enum AgentUsageSourceFingerprint {
         case .combined:
             return currentSignatures()[AgentUsageScope.combined.rawValue] ?? ""
         }
-        return digest(scope.rawValue + "|" + roots.map(fileSignature).joined(separator: "|"))
+        let archiveSignature = scope == .deepSeekHarness ? deepSeekHarnessArchiveSignature() : ""
+        return digest(scope.rawValue + "|" + roots.map(fileSignature).joined(separator: "|") + "|" + archiveSignature)
     }
 
     private static func databaseFamily(_ database: URL) -> [URL] {
@@ -2048,6 +2065,43 @@ private enum AgentUsageSourceFingerprint {
         return "\(type):\(size):\(modified)"
     }
 
+    /// DSH can finalize a streamed usage chunk with model provenance without
+    /// changing the cumulative token values. Include bounded native archive
+    /// metadata so that model attribution refreshes even when the compact
+    /// projection's counters remain byte-for-byte identical.
+    private static func deepSeekHarnessArchiveSignature() -> String {
+        let root = AgentUsagePathPolicy.deepSeekHarnessRoot
+            .appendingPathComponent("sessions", isDirectory: true)
+            .standardizedFileURL.resolvingSymlinksInPath()
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else { return "missing" }
+        var values: [String] = []
+        var visited = 0
+        for case let rawURL as URL in enumerator {
+            visited += 1
+            if visited > 4_096 || values.count >= 512 {
+                enumerator.skipDescendants()
+                break
+            }
+            guard rawURL.lastPathComponent == "session.jsonl.zstd" else { continue }
+            let url = rawURL.standardizedFileURL.resolvingSymlinksInPath()
+            guard AgentUsagePathPolicy.isContained(url, in: root),
+                  !url.deletingLastPathComponent().lastPathComponent.hasPrefix("import-"),
+                  let metadata = try? url.resourceValues(
+                    forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+                  ),
+                  metadata.isRegularFile == true else { continue }
+            let relative = String(url.path.dropFirst(root.path.count))
+            let size = metadata.fileSize ?? -1
+            let modified = Int64((metadata.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1_000_000_000)
+            values.append("\(AgentUsagePrivacy.digest(relative)):\(size):\(modified)")
+        }
+        return digest(values.sorted().joined(separator: "|"))
+    }
+
     private static func digest(_ value: String) -> String {
         SHA256.hash(data: Data(value.utf8)).prefix(16)
             .map { String(format: "%02x", $0) }
@@ -2061,6 +2115,7 @@ private enum AgentUsageFileCacheStore {
     private static let maximumEncodedBytes = 32 * 1_024 * 1_024
     private static let codexName = "agent_usage_codex_cache_v5.json"
     private static let claudeName = "agent_usage_claude_cache_v5.json"
+    private static let deepSeekHarnessName = "agent_usage_dsh_cache_v5.json"
 
     static func load(scope: AgentUsageScope) -> AgentUsageFileCache {
         guard let url = url(scope: scope),
@@ -2115,7 +2170,7 @@ private enum AgentUsageFileCacheStore {
 
     static func clearAll() {
         for name in [
-            codexName, claudeName,
+            codexName, claudeName, deepSeekHarnessName,
             "agent_usage_codex_lineage_cache_v1.json",
             "agent_usage_codex_cache_v4.json", "agent_usage_claude_cache_v4.json",
             "agent_usage_codex_cache_v3.json", "agent_usage_claude_cache_v3.json",
@@ -2133,7 +2188,8 @@ private enum AgentUsageFileCacheStore {
         switch scope {
         case .codex: name = codexName
         case .claude: name = claudeName
-        case .openCode, .openClaw, .deepSeekHarness, .combined: return nil
+        case .deepSeekHarness: name = deepSeekHarnessName
+        case .openCode, .openClaw, .combined: return nil
         }
         return URL(fileURLWithPath: SandboxPaths.shared.dataDirectory, isDirectory: true)
             .appendingPathComponent(name)
@@ -2291,7 +2347,9 @@ private extension AgentUsageFileSummary {
                     priceKnown: $0.priceKnown,
                     model: $0.model,
                     projectPath: "",
-                    sessionID: AgentUsagePrivacy.digest($0.sessionID)
+                    sessionID: AgentUsagePrivacy.digest($0.sessionID),
+                    cacheReadTokens: $0.cacheReadTokens,
+                    cacheWriteTokens: $0.cacheWriteTokens
                 )
             },
             toolCalls: toolCalls,
@@ -2318,7 +2376,9 @@ private extension AgentUsageFileSummary {
                     priceKnown: $0.priceKnown,
                     model: $0.model,
                     projectPath: projectPath,
-                    sessionID: sessionID
+                    sessionID: sessionID,
+                    cacheReadTokens: $0.cacheReadTokens,
+                    cacheWriteTokens: $0.cacheWriteTokens
                 )
             },
             toolCalls: toolCalls,
@@ -5175,15 +5235,348 @@ private final class AgentUsageOpenCodeProvider: @unchecked Sendable {
 
 // MARK: - DeepSeek Harness provider
 
-/// DeepSeek Harness persists a compact, provider-owned projection beside its
-/// workspace index. It contains trustworthy cumulative counters without
-/// requiring TraceFence to read prompts, responses, credentials, or the much
-/// larger compressed conversation archives.
+private struct AgentUsageDeepSeekHarnessArchiveRequest {
+    let sessionID: String
+    let url: URL
+    let fingerprint: AgentUsageValues.FileFingerprint
+}
+
+private struct AgentUsageDeepSeekHarnessArchiveResponse: Decodable {
+    let sessionID: String
+    let rows: [AgentUsageDeepSeekHarnessUsageRow]
+    let error: String?
+}
+
+private struct AgentUsageDeepSeekHarnessUsageRow: Decodable {
+    let turn: Int
+    let step: Int
+    let time: Double
+    let provider: String?
+    let model: String?
+    let inputTokens: Int64
+    let outputTokens: Int64
+    let cacheReadTokens: Int64
+    let cacheWriteTokens: Int64
+    let reasoningTokens: Int64
+}
+
+private enum AgentUsageDeepSeekHarnessArchiveReaderError: Error {
+    case nodeUnavailable
+    case processFailed
+    case timedOut
+    case outputTooLarge
+    case invalidOutput
+}
+
+/// DSH uses concatenated, independently checksummed Zstandard frames. Its own
+/// runtime requires modern Node, so TraceFence asks that already-installed
+/// runtime to decode only usage/model metadata. The child never returns prompt,
+/// response, tool, media, or credential content.
+private final class AgentUsageDeepSeekHarnessArchiveReader: @unchecked Sendable {
+    private let fileManager = FileManager.default
+    private let maximumOutputBytes = 16 * 1_024 * 1_024
+    private let maximumErrorBytes = 256 * 1_024
+
+    func read(_ requests: [AgentUsageDeepSeekHarnessArchiveRequest]) throws -> [AgentUsageDeepSeekHarnessArchiveResponse] {
+        guard !requests.isEmpty else { return [] }
+        let executables = nodeExecutables()
+        guard !executables.isEmpty else {
+            throw AgentUsageDeepSeekHarnessArchiveReaderError.nodeUnavailable
+        }
+        var lastError: Error = AgentUsageDeepSeekHarnessArchiveReaderError.processFailed
+        for executable in executables {
+            do {
+                return try run(executable: executable, requests: requests)
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError
+    }
+
+    private func run(
+        executable: URL,
+        requests: [AgentUsageDeepSeekHarnessArchiveRequest]
+    ) throws -> [AgentUsageDeepSeekHarnessArchiveResponse] {
+        let process = Process()
+        let output = Pipe()
+        let error = Pipe()
+        let outputCapture = BoundedProcessOutput(limit: maximumOutputBytes)
+        let errorCapture = BoundedProcessOutput(limit: maximumErrorBytes)
+        let readers = DispatchGroup()
+        process.executableURL = executable
+        process.arguments = ["-e", Self.script, "--"] + requests.flatMap { [$0.sessionID, $0.url.path] }
+        process.standardOutput = output
+        process.standardError = error
+        process.environment = processEnvironment()
+
+        do {
+            try process.run()
+        } catch {
+            throw AgentUsageDeepSeekHarnessArchiveReaderError.processFailed
+        }
+        readers.enter()
+        DispatchQueue.global(qos: .utility).async {
+            outputCapture.drain(output.fileHandleForReading)
+            readers.leave()
+        }
+        readers.enter()
+        DispatchQueue.global(qos: .utility).async {
+            errorCapture.drain(error.fileHandleForReading)
+            readers.leave()
+        }
+
+        let deadline = Date().addingTimeInterval(30)
+        var didTimeOut = false
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if process.isRunning {
+            didTimeOut = true
+            process.terminate()
+            let terminateDeadline = Date().addingTimeInterval(1)
+            while process.isRunning, Date() < terminateDeadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            if process.isRunning { Darwin.kill(process.processIdentifier, SIGKILL) }
+        }
+        process.waitUntilExit()
+        if readers.wait(timeout: .now() + 2) == .timedOut {
+            output.fileHandleForReading.closeFile()
+            error.fileHandleForReading.closeFile()
+            _ = readers.wait(timeout: .now() + 1)
+        }
+        if didTimeOut { throw AgentUsageDeepSeekHarnessArchiveReaderError.timedOut }
+        let captured = outputCapture.snapshot()
+        if captured.wasTruncated { throw AgentUsageDeepSeekHarnessArchiveReaderError.outputTooLarge }
+        guard process.terminationReason == .exit,
+              process.terminationStatus == 0,
+              !captured.data.isEmpty else {
+            throw AgentUsageDeepSeekHarnessArchiveReaderError.processFailed
+        }
+        do {
+            return try captured.data.split(separator: 0x0A).map { line in
+                try JSONDecoder().decode(AgentUsageDeepSeekHarnessArchiveResponse.self, from: Data(line))
+            }
+        } catch {
+            throw AgentUsageDeepSeekHarnessArchiveReaderError.invalidOutput
+        }
+    }
+
+    private func nodeExecutables() -> [URL] {
+        let home = AgentUsagePathPolicy.home
+        var candidates = [
+            URL(fileURLWithPath: "/opt/homebrew/bin/node"),
+            URL(fileURLWithPath: "/usr/local/bin/node"),
+            URL(fileURLWithPath: "/usr/bin/node"),
+            home.appendingPathComponent(".volta/bin/node"),
+            home.appendingPathComponent(".local/bin/node")
+        ]
+        let versionRoots: [(URL, String)] = [
+            (home.appendingPathComponent(".nvm/versions/node", isDirectory: true), "bin/node"),
+            (home.appendingPathComponent(".fnm/node-versions", isDirectory: true), "installation/bin/node"),
+            (home.appendingPathComponent(".asdf/installs/nodejs", isDirectory: true), "bin/node"),
+            (home.appendingPathComponent(".local/share/mise/installs/node", isDirectory: true), "bin/node")
+        ]
+        for (root, suffix) in versionRoots {
+            let versions = ((try? fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []).sorted { $0.lastPathComponent > $1.lastPathComponent }
+            candidates.append(contentsOf: versions.prefix(32).map { $0.appendingPathComponent(suffix) })
+        }
+        var seen = Set<String>()
+        return candidates.compactMap { candidate in
+            let normalized = candidate.standardizedFileURL.resolvingSymlinksInPath()
+            guard seen.insert(normalized.path).inserted,
+                  fileManager.isExecutableFile(atPath: normalized.path) else { return nil }
+            return normalized
+        }
+    }
+
+    private func processEnvironment() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        let home = AgentUsagePathPolicy.home.path
+        environment["HOME"] = home
+        environment["USER"] = NSUserName()
+        environment["LOGNAME"] = NSUserName()
+        environment["PATH"] = [
+            "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin",
+            AgentUsagePathPolicy.home.appendingPathComponent(".local/bin").path,
+            AgentUsagePathPolicy.home.appendingPathComponent(".volta/bin").path
+        ].joined(separator: ":")
+        return environment
+    }
+
+    private static let script = #"""
+    'use strict';
+    const fs = require('node:fs');
+    const zlib = require('node:zlib');
+    if (typeof zlib.zstdDecompressSync !== 'function') process.exit(72);
+    const MAGIC = 0xFD2FB528;
+    const MAX_FRAME_OUTPUT = 64 * 1024 * 1024;
+    function scanFrames(buffer) {
+      const frames = [];
+      let offset = 0;
+      while (offset < buffer.length) {
+        const start = offset;
+        if (buffer.length - offset < 4) break;
+        if (buffer.readUInt32LE(offset) !== MAGIC) throw new Error('frame-magic');
+        offset += 4;
+        if (offset === buffer.length) break;
+        const descriptor = buffer.readUInt8(offset++);
+        if ((descriptor & 0x18) !== 0) throw new Error('frame-header');
+        const contentSizeFlag = descriptor >>> 6;
+        const singleSegment = (descriptor & 0x20) !== 0;
+        const checksum = (descriptor & 0x04) !== 0;
+        const dictionaryFlag = descriptor & 0x03;
+        const dictionaryBytes = dictionaryFlag === 3 ? 4 : dictionaryFlag;
+        const contentSizeBytes = contentSizeFlag === 0 ? (singleSegment ? 1 : 0) : 1 << contentSizeFlag;
+        const remainingHeaderBytes = (singleSegment ? 0 : 1) + dictionaryBytes + contentSizeBytes;
+        if (buffer.length - offset < remainingHeaderBytes) break;
+        offset += remainingHeaderBytes;
+        let complete = false;
+        for (;;) {
+          if (buffer.length - offset < 3) break;
+          const blockHeader = buffer.readUIntLE(offset, 3);
+          offset += 3;
+          const lastBlock = (blockHeader & 1) !== 0;
+          const blockType = (blockHeader >>> 1) & 3;
+          const blockSize = blockHeader >>> 3;
+          if (blockType === 3) throw new Error('block-type');
+          const payloadBytes = blockType === 1 ? 1 : blockSize;
+          if (buffer.length - offset < payloadBytes) break;
+          offset += payloadBytes;
+          if (lastBlock) { complete = true; break; }
+        }
+        if (!complete) break;
+        if (checksum) {
+          if (buffer.length - offset < 4) break;
+          offset += 4;
+        }
+        frames.push([start, offset]);
+      }
+      return frames;
+    }
+    const nonnegative = value => Number.isSafeInteger(value) && value >= 0 ? value : 0;
+    const text = value => typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+    function routeOf(data, current, previous) {
+      const candidates = [data?.message?.source, data?.provenance, data?.message?.provenance];
+      for (const candidate of candidates) {
+        const model = text(candidate?.model);
+        const provider = text(candidate?.provider);
+        if (model || provider) return { model: model ?? previous?.model ?? current.model, provider: provider ?? previous?.provider ?? current.provider };
+      }
+      return { model: previous?.model ?? current.model, provider: previous?.provider ?? current.provider };
+    }
+    function parseArchive(sessionID, archivePath) {
+      const source = fs.readFileSync(archivePath);
+      const frames = scanFrames(source);
+      let carry = '';
+      let current = {};
+      const samples = new Map();
+      function consume(record) {
+        if (!record || typeof record !== 'object') return;
+        const data = record.data;
+        if (record.type === 'request/header') {
+          const config = data?.header?.config;
+          const model = text(config?.model);
+          const provider = text(config?.provider);
+          if (model || provider) current = { model: model ?? current.model, provider: provider ?? current.provider };
+          return;
+        }
+        let usage;
+        if (record.type === 'assistant/chunk' && data?.chunk?.type === 'usage') usage = data.chunk.usage;
+        else if (record.type === 'assistant/message' && data?.usage && typeof data.usage === 'object') usage = data.usage;
+        else return;
+        const turn = Number.isSafeInteger(data?.turn) ? data.turn : -1;
+        const step = Number.isSafeInteger(data?.step) ? data.step : -1;
+        if (turn < 0 || step < 0) return;
+        const key = `${turn}:${step}`;
+        const previous = samples.get(key);
+        const route = routeOf(data, current, previous);
+        samples.set(key, {
+          turn, step,
+          time: Number.isFinite(record.time) && record.time > 0 ? record.time : (previous?.time ?? 0),
+          provider: route.provider,
+          model: route.model,
+          inputTokens: nonnegative(usage.inputTokens),
+          outputTokens: nonnegative(usage.outputTokens),
+          cacheReadTokens: nonnegative(usage.cacheReadTokens),
+          cacheWriteTokens: nonnegative(usage.cacheWriteTokens),
+          reasoningTokens: nonnegative(usage.reasoningTokens),
+        });
+      }
+      function consumeLine(line) {
+        if (!line.trim()) return;
+        consume(JSON.parse(line));
+      }
+      for (const [start, end] of frames) {
+        const decoded = zlib.zstdDecompressSync(source.subarray(start, end), { maxOutputLength: MAX_FRAME_OUTPUT });
+        const value = carry + decoded.toString('utf8');
+        const lines = value.split('\n');
+        carry = lines.pop() ?? '';
+        for (const line of lines) consumeLine(line);
+      }
+      if (carry.trim()) consumeLine(carry);
+      return Array.from(samples.values()).filter(row =>
+        row.inputTokens || row.outputTokens || row.cacheReadTokens || row.cacheWriteTokens
+      );
+    }
+    const args = process.argv.slice(1);
+    for (let index = 0; index + 1 < args.length; index += 2) {
+      const sessionID = args[index];
+      try {
+        process.stdout.write(JSON.stringify({ sessionID, rows: parseArchive(sessionID, args[index + 1]), error: null }) + '\n');
+      } catch (_) {
+        process.stdout.write(JSON.stringify({ sessionID, rows: [], error: 'archive-read-failed' }) + '\n');
+      }
+    }
+    """#
+}
+
+/// DeepSeek Harness persists authoritative cumulative projections as well as
+/// compact native archives. TraceFence reconciles the two: the projection
+/// guarantees exact totals, while the archive provides per-step time and model
+/// attribution without retaining any conversation content.
 private final class AgentUsageDeepSeekHarnessProvider: @unchecked Sendable {
     private let fileManager = FileManager.default
     private let progress: @Sendable (AgentUsageScanProgress) -> Void
     private let maximumProjectionBytes = 32 * 1_024 * 1_024
     private let maximumWorkspaceBytes = 8 * 1_024 * 1_024
+    private let maximumArchiveBytes: Int64 = 32 * 1_024 * 1_024
+    private let maximumArchiveInventoryBytes: Int64 = 128 * 1_024 * 1_024
+    private let maximumArchiveCount = 512
+
+    private struct UsageBuckets: Equatable {
+        var uncachedInput: Int64
+        var cacheRead: Int64
+        var cacheWrite: Int64
+        var output: Int64
+
+        var tokenTotals: AgentUsageTokenTotals? {
+            guard uncachedInput >= 0, cacheRead >= 0, cacheWrite >= 0, output >= 0 else { return nil }
+            let cached = AgentUsageMath.saturatingAdd(cacheRead, cacheWrite)
+            let input = AgentUsageMath.saturatingAdd(uncachedInput, cached)
+            let total = AgentUsageMath.saturatingAdd(input, output)
+            guard total > 0 else { return nil }
+            return AgentUsageTokenTotals(
+                input: input,
+                cached: cached,
+                output: output,
+                reasoning: 0,
+                total: total
+            )
+        }
+    }
+
+    private struct ProjectedSession {
+        let sessionID: String
+        let buckets: UsageBuckets
+        let eventDate: Date
+        let projectPath: String
+    }
 
     init(progress: @escaping @Sendable (AgentUsageScanProgress) -> Void) {
         self.progress = progress
@@ -5198,7 +5591,7 @@ private final class AgentUsageDeepSeekHarnessProvider: @unchecked Sendable {
         progress(AgentUsageScanProgress(
             phase: .readingDeepSeekHarnessUsage,
             current: 0,
-            total: 1,
+            total: 2,
             currentSource: nil,
             message: "Reading DeepSeek Harness native usage projection"
         ))
@@ -5214,7 +5607,7 @@ private final class AgentUsageDeepSeekHarnessProvider: @unchecked Sendable {
             progress(AgentUsageScanProgress(
                 phase: .readingDeepSeekHarnessUsage,
                 current: 1,
-                total: 1,
+                total: 2,
                 currentSource: nil,
                 message: "DeepSeek Harness usage projection is unavailable"
             ))
@@ -5235,6 +5628,7 @@ private final class AgentUsageDeepSeekHarnessProvider: @unchecked Sendable {
         }
 
         let sessions = ((projection["tables"] as? [String: Any])?["sessions"] as? [String: Any]) ?? [:]
+        var projectedSessions: [String: ProjectedSession] = [:]
         var importedSessions = 0
         var zeroUsageSessions = 0
         var invalidSessions = 0
@@ -5269,14 +5663,13 @@ private final class AgentUsageDeepSeekHarnessProvider: @unchecked Sendable {
                 zeroUsageSessions += 1
                 continue
             }
-            guard let totals = AgentUsageExplicitTokenNormalizer.totals(
-                input: uncachedInput,
+            let buckets = UsageBuckets(
+                uncachedInput: uncachedInput,
                 cacheRead: cacheRead,
                 cacheWrite: cacheWrite,
-                output: output,
-                reasoning: 0,
-                reportedTotal: nil
-            ) else {
+                output: output
+            )
+            guard buckets.tokenTotals != nil else {
                 invalidSessions += 1
                 continue
             }
@@ -5297,29 +5690,127 @@ private final class AgentUsageDeepSeekHarnessProvider: @unchecked Sendable {
             let projectPath = AgentUsageValues.string(identity["cwd"])
                 ?? AgentUsageValues.string(workspace["path"])
                 ?? ""
-            let resolvedCost = AgentUsagePricingCatalog.resolvedCost(
-                scope: .deepSeekHarness,
-                model: nil,
-                date: eventDate,
-                tokens: totals,
-                explicitCostUSD: nil,
-                cacheReadTokens: cacheRead,
-                cacheWriteTokens: cacheWrite
+            projectedSessions[sessionID] = ProjectedSession(
+                sessionID: sessionID,
+                buckets: buckets,
+                eventDate: eventDate,
+                projectPath: projectPath
             )
-            aggregate.events.append(AgentUsageEvent(
-                id: AgentUsagePrivacy.digest("dsh:" + sessionID),
-                date: eventDate,
-                tokens: totals,
-                estimatedCostUSD: resolvedCost.0,
-                priceKnown: resolvedCost.1,
-                model: nil,
-                projectPath: projectPath,
-                sessionID: sessionID
+        }
+
+        progress(AgentUsageScanProgress(
+            phase: .readingDeepSeekHarnessUsage,
+            current: 1,
+            total: 2,
+            currentSource: "DeepSeek Harness",
+            message: "Reconciling DSH model attribution with native archives"
+        ))
+
+        let archives = nativeArchives(
+            inside: root.appendingPathComponent("sessions", isDirectory: true),
+            sessionIDs: Set(projectedSessions.keys)
+        )
+        var cache = AgentUsageFileCacheStore.load(scope: .deepSeekHarness)
+        let liveKeys = Set(archives.map { AgentUsagePrivacy.cacheKey(for: $0.url) })
+        var cacheChanged = cache.entries.keys.contains { !liveKeys.contains($0) }
+        cache.entries = cache.entries.filter { liveKeys.contains($0.key) }
+        var summariesBySession: [String: AgentUsageFileSummary] = [:]
+        var changedArchives: [AgentUsageDeepSeekHarnessArchiveRequest] = []
+
+        for archive in archives {
+            let key = AgentUsagePrivacy.cacheKey(for: archive.url)
+            if let cached = cache.entries[key],
+               cached.size == archive.fingerprint.size,
+               cached.modificationTimeNanoseconds == archive.fingerprint.modificationTimeNanoseconds,
+               let projected = projectedSessions[archive.sessionID] {
+                summariesBySession[archive.sessionID] = rehydrate(
+                    cached.summary,
+                    projectPath: projected.projectPath,
+                    sessionID: archive.sessionID
+                )
+            } else {
+                changedArchives.append(archive)
+            }
+        }
+
+        var archiveReadFailures = 0
+        var invalidArchiveRows = 0
+        var archiveReaderUnavailable = false
+        if !changedArchives.isEmpty, !Task.isCancelled {
+            do {
+                let responses = try AgentUsageDeepSeekHarnessArchiveReader().read(changedArchives)
+                let requestBySession = Dictionary(uniqueKeysWithValues: changedArchives.map { ($0.sessionID, $0) })
+                let responseBySession = Dictionary(uniqueKeysWithValues: responses.map { ($0.sessionID, $0) })
+                for archive in changedArchives {
+                    guard let response = responseBySession[archive.sessionID],
+                          response.error == nil,
+                          let projected = projectedSessions[archive.sessionID] else {
+                        archiveReadFailures += 1
+                        continue
+                    }
+                    let parsed = makeSummary(rows: response.rows, projected: projected)
+                    invalidArchiveRows += parsed.invalidRows
+                    summariesBySession[archive.sessionID] = parsed.summary
+                    cache.entries[AgentUsagePrivacy.cacheKey(for: archive.url)] = AgentUsageFileCacheEntry(
+                        size: requestBySession[archive.sessionID]?.fingerprint.size ?? archive.fingerprint.size,
+                        modificationTimeNanoseconds: requestBySession[archive.sessionID]?.fingerprint.modificationTimeNanoseconds
+                            ?? archive.fingerprint.modificationTimeNanoseconds,
+                        coverageIncomplete: false,
+                        skippedRelevantRecord: parsed.invalidRows > 0,
+                        scannedFromOffset: 0,
+                        summary: parsed.summary.redactedForDisk()
+                    )
+                    cacheChanged = true
+                }
+            } catch AgentUsageDeepSeekHarnessArchiveReaderError.nodeUnavailable {
+                archiveReaderUnavailable = true
+                archiveReadFailures += changedArchives.count
+            } catch {
+                archiveReadFailures += changedArchives.count
+            }
+        }
+
+        if cacheChanged, !AgentUsageFileCacheStore.save(cache, scope: .deepSeekHarness) {
+            aggregate.partial = true
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .deepSeekHarness,
+                severity: .warning,
+                code: "dsh_cache_write_failed",
+                message: "DSH model-attribution cache could not be saved; changed archives may be decoded again on the next refresh.",
+                source: nil
             ))
         }
 
+        var exactSessions = 0
+        var fallbackSessions = 0
+        var unattributedEvents = 0
+        for projected in projectedSessions.values.sorted(by: { $0.sessionID < $1.sessionID }) {
+            if let summary = summariesBySession[projected.sessionID],
+               buckets(from: summary.events) == projected.buckets {
+                exactSessions += 1
+                aggregate.parsedFileCount += 1
+                for event in summary.events {
+                    aggregate.events.append(event)
+                    if event.model == nil { unattributedEvents += 1 }
+                }
+            } else {
+                fallbackSessions += 1
+                if let event = cumulativeFallback(for: projected) {
+                    aggregate.events.append(event)
+                    unattributedEvents += 1
+                }
+            }
+        }
+
         aggregate.tokenEventCount = aggregate.events.count
-        aggregate.sourceQuality = aggregate.events.isEmpty ? .unavailable : .approximate
+        if aggregate.events.isEmpty {
+            aggregate.sourceQuality = .unavailable
+        } else if fallbackSessions == 0, invalidSessions == 0, invalidArchiveRows == 0 {
+            aggregate.sourceQuality = .detailed
+        } else {
+            aggregate.sourceQuality = .approximate
+            aggregate.partial = true
+        }
         if importedSessions > 0 {
             aggregate.diagnostics.append(AgentUsageDiagnostic(
                 scope: .deepSeekHarness,
@@ -5330,26 +5821,70 @@ private final class AgentUsageDeepSeekHarnessProvider: @unchecked Sendable {
             ))
         }
         if !aggregate.events.isEmpty {
-            aggregate.diagnostics.append(AgentUsageDiagnostic(
-                scope: .deepSeekHarness,
-                severity: .info,
-                code: "dsh_cumulative_session_attribution",
-                message: "DSH exposes cumulative counters in its compact projection. All-time totals are complete; date-window rankings conservatively attribute each session total to its creation date.",
-                source: nil
-            ))
-            aggregate.diagnostics.append(AgentUsageDiagnostic(
-                scope: .deepSeekHarness,
-                severity: .info,
-                code: "dsh_model_unattributed",
-                message: "The compact DSH usage projection does not expose per-session model ids, so its model ranking remains explicitly unattributed.",
-                source: nil
-            ))
+            if exactSessions > 0 {
+                aggregate.diagnostics.append(AgentUsageDiagnostic(
+                    scope: .deepSeekHarness,
+                    severity: .info,
+                    code: fallbackSessions == 0 ? "dsh_native_model_attribution" : "dsh_model_attribution_partial",
+                    message: fallbackSessions == 0
+                        ? "DSH usage was attributed to the actual model of each native turn and reconciled exactly with its cumulative projection."
+                        : "\(exactSessions) DSH sessions use native per-turn model attribution; \(fallbackSessions) sessions retain conservative cumulative attribution.",
+                    source: nil
+                ))
+            }
+            if fallbackSessions > 0 {
+                aggregate.diagnostics.append(AgentUsageDiagnostic(
+                    scope: .deepSeekHarness,
+                    severity: .warning,
+                    code: "dsh_cumulative_session_attribution",
+                    message: "\(fallbackSessions) DSH sessions could not be reconciled to a readable native archive. Their all-time totals remain exact, while model and date-window attribution stays conservative.",
+                    source: nil
+                ))
+            }
+            if unattributedEvents > 0 {
+                aggregate.diagnostics.append(AgentUsageDiagnostic(
+                    scope: .deepSeekHarness,
+                    severity: .info,
+                    code: "dsh_unattributed_native_events",
+                    message: "\(unattributedEvents) DSH usage records did not carry model provenance and remain explicitly unattributed.",
+                    source: nil
+                ))
+            }
         } else {
             aggregate.diagnostics.append(AgentUsageDiagnostic(
                 scope: .deepSeekHarness,
                 severity: .info,
                 code: "dsh_usage_empty",
                 message: "DeepSeek Harness was found, but its native sessions contain no nonzero projected token usage.",
+                source: nil
+            ))
+        }
+        if archiveReaderUnavailable {
+            aggregate.partial = true
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .deepSeekHarness,
+                severity: .warning,
+                code: "dsh_model_reader_unavailable",
+                message: "DSH native model attribution needs the modern Node runtime used by DeepSeek Harness; cumulative token totals are still available.",
+                source: nil
+            ))
+        } else if archiveReadFailures > 0 {
+            aggregate.partial = true
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .deepSeekHarness,
+                severity: .warning,
+                code: "dsh_archive_read_failed",
+                message: "\(archiveReadFailures) changed DSH archives could not be decoded safely and fell back to cumulative counters.",
+                source: nil
+            ))
+        }
+        if invalidArchiveRows > 0 {
+            aggregate.partial = true
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .deepSeekHarness,
+                severity: .warning,
+                code: "dsh_archive_rows_invalid",
+                message: "\(invalidArchiveRows) malformed DSH usage rows were ignored before projection reconciliation.",
                 source: nil
             ))
         }
@@ -5374,12 +5909,206 @@ private final class AgentUsageDeepSeekHarnessProvider: @unchecked Sendable {
         }
         progress(AgentUsageScanProgress(
             phase: .readingDeepSeekHarnessUsage,
-            current: 1,
-            total: 1,
+            current: 2,
+            total: 2,
             currentSource: "DeepSeek Harness",
-            message: "Read \(aggregate.events.count) native DeepSeek Harness session counters"
+            message: "Read \(aggregate.events.count) DeepSeek Harness usage events across \(exactSessions) model-attributed sessions"
         ))
         return aggregate
+    }
+
+    private func nativeArchives(
+        inside rawRoot: URL,
+        sessionIDs: Set<String>
+    ) -> [AgentUsageDeepSeekHarnessArchiveRequest] {
+        let root = rawRoot.standardizedFileURL.resolvingSymlinksInPath()
+        guard let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else { return [] }
+        var candidates: [AgentUsageDeepSeekHarnessArchiveRequest] = []
+        var visited = 0
+        for case let rawURL as URL in enumerator {
+            visited += 1
+            if visited > 20_000 || candidates.count >= maximumArchiveCount * 2 {
+                enumerator.skipDescendants()
+                break
+            }
+            guard rawURL.lastPathComponent == "session.jsonl.zstd" else { continue }
+            let url = rawURL.standardizedFileURL.resolvingSymlinksInPath()
+            let sessionID = url.deletingLastPathComponent().lastPathComponent
+            guard sessionIDs.contains(sessionID),
+                  !sessionID.hasPrefix("import-"),
+                  AgentUsagePathPolicy.isContained(url, in: root),
+                  AgentUsagePathPolicy.isSafe(url),
+                  fileManager.isReadableFile(atPath: url.path),
+                  let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+                  values.isRegularFile == true,
+                  let size = values.fileSize,
+                  size > 0,
+                  Int64(size) <= maximumArchiveBytes,
+                  let fingerprint = AgentUsageValues.fileFingerprint(url) else { continue }
+            candidates.append(AgentUsageDeepSeekHarnessArchiveRequest(
+                sessionID: sessionID,
+                url: url,
+                fingerprint: fingerprint
+            ))
+        }
+        candidates.sort {
+            if $0.fingerprint.modificationTimeNanoseconds == $1.fingerprint.modificationTimeNanoseconds {
+                return $0.sessionID < $1.sessionID
+            }
+            return $0.fingerprint.modificationTimeNanoseconds > $1.fingerprint.modificationTimeNanoseconds
+        }
+        var selected: [AgentUsageDeepSeekHarnessArchiveRequest] = []
+        var totalBytes: Int64 = 0
+        var seenSessions = Set<String>()
+        for candidate in candidates {
+            guard selected.count < maximumArchiveCount,
+                  seenSessions.insert(candidate.sessionID).inserted,
+                  totalBytes <= maximumArchiveInventoryBytes - candidate.fingerprint.size else { continue }
+            selected.append(candidate)
+            totalBytes += candidate.fingerprint.size
+        }
+        return selected
+    }
+
+    private func makeSummary(
+        rows: [AgentUsageDeepSeekHarnessUsageRow],
+        projected: ProjectedSession
+    ) -> (summary: AgentUsageFileSummary, invalidRows: Int) {
+        var events: [AgentUsageEvent] = []
+        var invalidRows = 0
+        for row in rows {
+            let buckets = UsageBuckets(
+                uncachedInput: row.inputTokens,
+                cacheRead: row.cacheReadTokens,
+                cacheWrite: row.cacheWriteTokens,
+                output: row.outputTokens
+            )
+            guard var totals = buckets.tokenTotals else {
+                invalidRows += 1
+                continue
+            }
+            let reasoning = min(max(0, row.reasoningTokens), totals.output)
+            totals = AgentUsageTokenTotals(
+                input: totals.input,
+                cached: totals.cached,
+                output: totals.output,
+                reasoning: reasoning,
+                total: totals.total
+            )
+            let eventDate = date(fromUnixValue: row.time) ?? projected.eventDate
+            let model = normalizedModel(row.model)
+            let resolvedCost = AgentUsagePricingCatalog.resolvedCost(
+                scope: .deepSeekHarness,
+                model: model,
+                date: eventDate,
+                tokens: totals,
+                explicitCostUSD: nil,
+                cacheReadTokens: row.cacheReadTokens,
+                cacheWriteTokens: row.cacheWriteTokens
+            )
+            events.append(AgentUsageEvent(
+                id: AgentUsagePrivacy.digest("dsh:\(projected.sessionID):\(row.turn):\(row.step)"),
+                date: eventDate,
+                tokens: totals,
+                estimatedCostUSD: resolvedCost.0,
+                priceKnown: resolvedCost.1,
+                model: model,
+                projectPath: projected.projectPath,
+                sessionID: projected.sessionID,
+                cacheReadTokens: row.cacheReadTokens,
+                cacheWriteTokens: row.cacheWriteTokens
+            ))
+        }
+        return (
+            AgentUsageFileSummary(
+                events: events.sorted { $0.date < $1.date },
+                toolCalls: [:],
+                skillEvents: [],
+                lastActiveAt: events.map(\.date).max()
+            ),
+            invalidRows
+        )
+    }
+
+    private func rehydrate(
+        _ summary: AgentUsageFileSummary,
+        projectPath: String,
+        sessionID: String
+    ) -> AgentUsageFileSummary {
+        AgentUsageFileSummary(
+            events: summary.events.map { event in
+                AgentUsageEvent(
+                    id: event.id,
+                    date: event.date,
+                    tokens: event.tokens,
+                    estimatedCostUSD: event.estimatedCostUSD,
+                    priceKnown: event.priceKnown,
+                    model: event.model,
+                    projectPath: projectPath,
+                    sessionID: sessionID,
+                    cacheReadTokens: event.cacheReadTokens,
+                    cacheWriteTokens: event.cacheWriteTokens
+                )
+            },
+            toolCalls: [:],
+            skillEvents: [],
+            lastActiveAt: summary.lastActiveAt
+        )
+    }
+
+    private func buckets(from events: [AgentUsageEvent]) -> UsageBuckets? {
+        var result = UsageBuckets(uncachedInput: 0, cacheRead: 0, cacheWrite: 0, output: 0)
+        for event in events {
+            let cached = max(0, min(event.tokens.cached, event.tokens.input))
+            guard let cacheRead = event.cacheReadTokens,
+                  let cacheWrite = event.cacheWriteTokens,
+                  AgentUsageMath.saturatingAdd(cacheRead, cacheWrite) == cached else { return nil }
+            result.uncachedInput = AgentUsageMath.saturatingAdd(
+                result.uncachedInput,
+                max(0, event.tokens.input - cached)
+            )
+            result.cacheRead = AgentUsageMath.saturatingAdd(result.cacheRead, cacheRead)
+            result.cacheWrite = AgentUsageMath.saturatingAdd(result.cacheWrite, cacheWrite)
+            result.output = AgentUsageMath.saturatingAdd(result.output, event.tokens.output)
+        }
+        return result
+    }
+
+    private func cumulativeFallback(for projected: ProjectedSession) -> AgentUsageEvent? {
+        guard let totals = projected.buckets.tokenTotals else { return nil }
+        let resolvedCost = AgentUsagePricingCatalog.resolvedCost(
+            scope: .deepSeekHarness,
+            model: nil,
+            date: projected.eventDate,
+            tokens: totals,
+            explicitCostUSD: nil,
+            cacheReadTokens: projected.buckets.cacheRead,
+            cacheWriteTokens: projected.buckets.cacheWrite
+        )
+        return AgentUsageEvent(
+            id: AgentUsagePrivacy.digest("dsh:" + projected.sessionID),
+            date: projected.eventDate,
+            tokens: totals,
+            estimatedCostUSD: resolvedCost.0,
+            priceKnown: resolvedCost.1,
+            model: nil,
+            projectPath: projected.projectPath,
+            sessionID: projected.sessionID,
+            cacheReadTokens: projected.buckets.cacheRead,
+            cacheWriteTokens: projected.buckets.cacheWrite
+        )
+    }
+
+    private func normalizedModel(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, value.count <= 256,
+              !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { return nil }
+        return value
     }
 
     private func jsonObject(at url: URL, inside root: URL, maximumBytes: Int) -> [String: Any]? {
