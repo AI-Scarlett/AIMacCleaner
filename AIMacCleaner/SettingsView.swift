@@ -15,6 +15,7 @@ struct SettingsView: View {
     @StateObject private var marketplaceCatalogService = TraceFenceMarketplaceCatalogService.shared
     @StateObject private var pluginEntitlementService = TraceFencePluginEntitlementService.shared
     @StateObject private var pluginPackageService = TraceFencePluginPackageManager.shared
+    @StateObject private var pluginRuntimeService = TraceFencePluginRuntimeHost.shared
     @StateObject private var pluginPresentationCenter = TraceFencePluginPresentationCenter.shared
     @StateObject private var appStoreSubscriptionService = AppStoreSubscriptionService.shared
     @StateObject private var updateService = DirectUpdateService.shared
@@ -1096,6 +1097,7 @@ struct SettingsView: View {
             catalogService: marketplaceCatalogService,
             entitlementService: pluginEntitlementService,
             packageManager: pluginPackageService,
+            runtimeHost: pluginRuntimeService,
             openPlugin: { pluginID in
                 openPluginFromSettings(pluginID)
             },
@@ -1294,7 +1296,7 @@ struct SettingsView: View {
                             .foregroundStyle(Theme.Colors.textTertiary)
                         Toggle(localizer.t("启用", en: "Enabled"), isOn: Binding(
                             get: { enabled },
-                            set: { pluginPackageService.setEnabled($0, pluginID: plugin.id) }
+                            set: { pluginRuntimeService.setEnabled($0, pluginID: plugin.id) }
                         ))
                         .toggleStyle(.switch)
                         .controlSize(.small)

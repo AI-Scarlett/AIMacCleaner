@@ -1255,6 +1255,160 @@ final class TraceFenceMarketplaceCatalogService: ObservableObject {
     }
 }
 
+private struct TraceFenceMarketplaceInstallStatsSnapshot: Codable, Sendable {
+    let fetchedAt: Date
+    let countsByAssetURL: [String: Int]
+}
+
+private actor TraceFenceMarketplaceInstallStatsFetcher {
+    static let shared = TraceFenceMarketplaceInstallStatsFetcher()
+
+    private struct Release: Decodable, Sendable {
+        let assets: [Asset]
+    }
+
+    private struct Asset: Decodable, Sendable {
+        let browserDownloadURL: URL
+        let downloadCount: Int
+
+        private enum CodingKeys: String, CodingKey {
+            case browserDownloadURL = "browser_download_url"
+            case downloadCount = "download_count"
+        }
+    }
+
+    private let delegate = TraceFenceMarketplaceNoRedirectDelegate()
+    private let session: URLSession
+
+    private init() {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 20
+        configuration.waitsForConnectivity = false
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.tlsMinimumSupportedProtocolVersion = .TLSv12
+        session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+    }
+
+    func fetch() async throws -> TraceFenceMarketplaceInstallStatsSnapshot {
+        var countsByAssetURL: [String: Int] = [:]
+        for page in 1...3 {
+            var components = URLComponents(string: "https://api.github.com/repos/AI-Scarlett/TraceFence/releases")!
+            components.queryItems = [
+                URLQueryItem(name: "per_page", value: "100"),
+                URLQueryItem(name: "page", value: String(page))
+            ]
+            guard let url = components.url else { throw FetchError.invalidResponse }
+            var request = URLRequest(url: url)
+            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+            request.setValue("TraceFence Marketplace Install Stats", forHTTPHeaderField: "User-Agent")
+            request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  http.statusCode == 200,
+                  http.url?.scheme?.lowercased() == "https",
+                  http.url?.host?.lowercased() == "api.github.com",
+                  http.url?.path == "/repos/AI-Scarlett/TraceFence/releases",
+                  data.count <= 4 * 1_024 * 1_024 else {
+                throw FetchError.invalidResponse
+            }
+            let releases = try JSONDecoder().decode([Release].self, from: data)
+            for release in releases {
+                for asset in release.assets {
+                    countsByAssetURL[asset.browserDownloadURL.absoluteString] = max(0, asset.downloadCount)
+                }
+            }
+            if releases.count < 100 { break }
+        }
+        return TraceFenceMarketplaceInstallStatsSnapshot(
+            fetchedAt: Date(),
+            countsByAssetURL: countsByAssetURL
+        )
+    }
+
+    private enum FetchError: LocalizedError {
+        case invalidResponse
+
+        var errorDescription: String? {
+            "GitHub did not return valid plugin download statistics."
+        }
+    }
+}
+
+/// GitHub already counts downloads for each signed plugin Release asset. That
+/// gives the marketplace a credential-free, tamper-resistant approximation of
+/// installs without embedding a GitHub write token or collecting device IDs.
+/// Updates and reinstalls are downloads too, so the UI states that exact scope.
+@MainActor
+final class TraceFenceMarketplaceInstallStatsService: ObservableObject {
+    static let shared = TraceFenceMarketplaceInstallStatsService()
+
+    @Published private(set) var countsByPluginID: [String: Int] = [:]
+    @Published private(set) var isRefreshing = false
+    @Published private(set) var lastUpdatedAt: Date?
+    @Published private(set) var lastErrorMessage: String?
+
+    private static let cacheKey = "traceFence.marketplace.githubInstallStats.v1"
+    private static let minimumRefreshInterval: TimeInterval = 6 * 60 * 60
+    private var snapshot: TraceFenceMarketplaceInstallStatsSnapshot?
+
+    private init() {
+        if let data = UserDefaults.standard.data(forKey: Self.cacheKey),
+           let cached = try? JSONDecoder().decode(TraceFenceMarketplaceInstallStatsSnapshot.self, from: data) {
+            snapshot = cached
+            lastUpdatedAt = cached.fetchedAt
+        }
+    }
+
+    func count(for plugin: TraceFencePluginDescriptor) -> Int? {
+        countsByPluginID[plugin.id]
+    }
+
+    func refresh(catalog: TraceFenceMarketplaceCatalog, force: Bool = false) async {
+        apply(snapshot: snapshot, catalog: catalog)
+        guard SandboxPaths.isDirectDistribution,
+              (UserDefaults.standard.string(forKey: "networkMode") ?? "internet") == "internet",
+              !isRefreshing else { return }
+        if !force,
+           let snapshot,
+           Date().timeIntervalSince(snapshot.fetchedAt) < Self.minimumRefreshInterval {
+            return
+        }
+
+        isRefreshing = true
+        defer { isRefreshing = false }
+        do {
+            let fresh = try await TraceFenceMarketplaceInstallStatsFetcher.shared.fetch()
+            snapshot = fresh
+            lastUpdatedAt = fresh.fetchedAt
+            lastErrorMessage = nil
+            if let data = try? JSONEncoder().encode(fresh) {
+                UserDefaults.standard.set(data, forKey: Self.cacheKey)
+            }
+            apply(snapshot: fresh, catalog: catalog)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func apply(
+        snapshot: TraceFenceMarketplaceInstallStatsSnapshot?,
+        catalog: TraceFenceMarketplaceCatalog
+    ) {
+        guard let snapshot else { return }
+        countsByPluginID = Dictionary(uniqueKeysWithValues: catalog.plugins.compactMap { plugin in
+            guard let assetURL = plugin.package?.url.absoluteString,
+                  let count = snapshot.countsByAssetURL[assetURL] else { return nil }
+            return (plugin.id, count)
+        })
+    }
+}
+
 enum TraceFencePluginAccessState: Equatable {
     case free
     case allAccess

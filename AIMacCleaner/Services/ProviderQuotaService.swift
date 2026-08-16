@@ -216,6 +216,7 @@ final class ProviderQuotaService: ObservableObject {
     @Published private(set) var lastRefreshDate: Date?
     @Published private(set) var lastRefreshRequestedDate: Date?
     @Published private(set) var isQuotaPluginInstalled = true
+    @Published private(set) var isQuotaPluginEnabled = true
     @Published private(set) var quotaPluginErrorMessage: String?
 
     private static let minimumRefreshInterval: TimeInterval = 20
@@ -240,10 +241,15 @@ final class ProviderQuotaService: ObservableObject {
             requiresExplicitExecutable: requiresExplicitProviderEngine
         )
         isQuotaPluginInstalled = !SandboxPaths.isDirectDistribution
+        isQuotaPluginEnabled = !SandboxPaths.isDirectDistribution
     }
 
     var quotaPluginNeedsInstallation: Bool {
         SandboxPaths.isDirectDistribution && !isQuotaPluginInstalled
+    }
+
+    var quotaPluginNeedsEnablement: Bool {
+        SandboxPaths.isDirectDistribution && isQuotaPluginInstalled && !isQuotaPluginEnabled
     }
 
     var menuBarSummary: String? {
@@ -687,7 +693,7 @@ final class ProviderQuotaService: ObservableObject {
     }
 
     private func synchronizePluginBackend(startMonitoring: Bool) {
-        guard pluginPackageManager.record(pluginID: Self.pluginID) != nil else {
+        guard let record = pluginPackageManager.record(pluginID: Self.pluginID) else {
             if pluginMonitorStarted {
                 pluginMonitor?.stopQuotaMonitoring()
             }
@@ -695,6 +701,7 @@ final class ProviderQuotaService: ObservableObject {
             pluginMonitorIdentity = nil
             pluginMonitorStarted = false
             isQuotaPluginInstalled = false
+            isQuotaPluginEnabled = false
             quotaPluginErrorMessage = nil
             snapshots = []
             isRefreshing = false
@@ -704,6 +711,21 @@ final class ProviderQuotaService: ObservableObject {
         }
 
         isQuotaPluginInstalled = true
+        isQuotaPluginEnabled = record.enabled
+        guard record.enabled else {
+            if pluginMonitorStarted {
+                pluginMonitor?.stopQuotaMonitoring()
+            }
+            pluginMonitor = nil
+            pluginMonitorIdentity = nil
+            pluginMonitorStarted = false
+            snapshots = []
+            isRefreshing = false
+            lastRefreshDate = nil
+            lastRefreshRequestedDate = nil
+            quotaPluginErrorMessage = "The quota monitor plugin is disabled."
+            return
+        }
         if pluginRuntimeHost.plugin(pluginID: Self.pluginID) == nil {
             switch pluginRuntimeHost.state(pluginID: Self.pluginID) {
             case .idle, .unavailable:

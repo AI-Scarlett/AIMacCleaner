@@ -1,6 +1,7 @@
 import AppKit
 import CryptoKit
 import Foundation
+import MacToolsPluginKit
 
 struct TraceFenceInstalledPluginRecord: Codable, Equatable, Identifiable, Sendable {
     var id: String { catalogPluginID }
@@ -262,10 +263,14 @@ final class TraceFencePluginPackageManager: ObservableObject {
         }
     }
 
-    func uninstall(pluginID: String) async {
+    func uninstall(pluginID: String, purgeData: Bool = true) async {
         guard let record = records[pluginID] else { return }
         do {
-            try await worker.uninstall(pluginID: pluginID)
+            try await worker.uninstall(pluginID: pluginID, purgeData: purgeData)
+            if purgeData {
+                UserDefaultsPluginStorage.removeAllValues(pluginID: pluginID)
+                TraceFencePluginDisplayPreferences.remove(pluginID: pluginID)
+            }
             records.removeValue(forKey: pluginID)
             states[pluginID] = .notInstalled
         } catch {
@@ -477,17 +482,27 @@ private actor TraceFencePluginPackageWorker {
         return record
     }
 
-    func uninstall(pluginID: String) throws {
+    func uninstall(pluginID: String, purgeData: Bool) throws {
         let packageRoot = TraceFencePluginPackageManager.installedDirectory
             .appendingPathComponent(pluginID, isDirectory: true)
         let stateURL = TraceFencePluginPackageManager.stateDirectory
             .appendingPathComponent(pluginID, isDirectory: false)
             .appendingPathExtension("json")
-        if fileManager.fileExists(atPath: packageRoot.path) {
-            try fileManager.removeItem(at: packageRoot)
+
+        var paths = [packageRoot]
+        if purgeData {
+            paths.append(contentsOf: [
+                TraceFencePluginPackageManager.dataDirectory.appendingPathComponent(pluginID, isDirectory: true),
+                TraceFencePluginPackageManager.cachesDirectory.appendingPathComponent(pluginID, isDirectory: true),
+                TraceFencePluginPackageManager.temporaryDirectory.appendingPathComponent(pluginID, isDirectory: true)
+            ])
         }
-        if fileManager.fileExists(atPath: stateURL.path) {
-            try fileManager.removeItem(at: stateURL)
+        // Remove the persisted record last. If deleting plugin-owned content
+        // fails, TraceFence can still surface a recoverable installed record
+        // instead of silently losing track of leftover files.
+        paths.append(stateURL)
+        for path in paths where fileManager.fileExists(atPath: path.path) {
+            try fileManager.removeItem(at: path)
         }
     }
 

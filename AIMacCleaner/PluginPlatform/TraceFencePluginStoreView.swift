@@ -95,6 +95,8 @@ struct TraceFencePluginStoreView: View {
     @ObservedObject var catalogService: TraceFenceMarketplaceCatalogService
     @ObservedObject var entitlementService: TraceFencePluginEntitlementService
     @ObservedObject var packageManager: TraceFencePluginPackageManager
+    @ObservedObject var runtimeHost: TraceFencePluginRuntimeHost
+    @ObservedObject private var installStatsService = TraceFenceMarketplaceInstallStatsService.shared
     let openPlugin: (String) -> Void
     let openSubscription: () -> Void
 
@@ -129,6 +131,7 @@ struct TraceFencePluginStoreView: View {
                     catalog: catalogService.catalog,
                     entitlementService: entitlementService,
                     packageManager: packageManager,
+                    runtimeHost: runtimeHost,
                     openSubscription: openSubscription,
                     openRuntime: {
                         self.detailPluginID = nil
@@ -144,9 +147,13 @@ struct TraceFencePluginStoreView: View {
         }
         .task {
             packageManager.refresh(catalog: catalogService.catalog)
+            await installStatsService.refresh(catalog: catalogService.catalog)
         }
         .onChange(of: catalogService.catalog.revision) { _ in
             packageManager.refresh(catalog: catalogService.catalog)
+            Task {
+                await installStatsService.refresh(catalog: catalogService.catalog)
+            }
         }
     }
 
@@ -179,6 +186,7 @@ struct TraceFencePluginStoreView: View {
                     Task {
                         await catalogService.refresh(force: true)
                         packageManager.refresh(catalog: catalogService.catalog)
+                        await installStatsService.refresh(catalog: catalogService.catalog, force: true)
                     }
                 } label: {
                     if catalogService.isRefreshing {
@@ -424,6 +432,7 @@ struct TraceFencePluginStoreView: View {
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.warning)
                 }
+                installCountLabel(plugin, compact: true)
                 Spacer()
                 primaryAction(plugin, state: state)
             }
@@ -447,10 +456,11 @@ struct TraceFencePluginStoreView: View {
             }
             Spacer()
             TraceFencePluginPricingBadge(plugin: plugin, compact: true)
-            if case let .installed(_, enabled, _) = state {
+            installCountLabel(plugin, compact: true)
+            if let enabled = installedEnabledState(state) {
                 Toggle("", isOn: Binding(
                     get: { enabled },
-                    set: { packageManager.setEnabled($0, pluginID: plugin.id) }
+                    set: { runtimeHost.setEnabled($0, pluginID: plugin.id) }
                 ))
                 .labelsHidden()
                 .toggleStyle(.switch)
@@ -550,6 +560,33 @@ struct TraceFencePluginStoreView: View {
             .font(.system(size: 10, weight: .medium))
             .foregroundStyle(color)
             .lineLimit(1)
+    }
+
+    @ViewBuilder
+    private func installCountLabel(_ plugin: TraceFencePluginDescriptor, compact: Bool) -> some View {
+        if plugin.delivery == .package {
+            let count = installStatsService.count(for: plugin)
+            Label(
+                count.map { localizer.t("\($0.formatted()) 次安装/更新", en: "\($0.formatted()) installs/updates") }
+                    ?? (installStatsService.isRefreshing
+                        ? localizer.t("统计中", en: "Loading stats")
+                        : localizer.t("暂无统计", en: "Stats unavailable")),
+                systemImage: "chart.bar.fill"
+            )
+            .font(compact ? .system(size: 9, weight: .medium) : Theme.Font.caption)
+            .foregroundStyle(Theme.Colors.textTertiary)
+            .help(localizer.t(
+                "来自 GitHub 签名插件包的下载次数；更新和重新安装也会计入，不代表唯一设备数。",
+                en: "Based on GitHub signed-package downloads. Updates and reinstalls are included, so this is not a unique-device count."
+            ))
+        }
+    }
+
+    private func installedEnabledState(_ state: TraceFencePluginInstallationState) -> Bool? {
+        switch state {
+        case let .installed(_, enabled, _), let .updateAvailable(_, _, enabled): enabled
+        default: nil
+        }
     }
 
     private func pluginIcon(_ plugin: TraceFencePluginDescriptor, size: CGFloat) -> some View {
@@ -736,6 +773,8 @@ private struct TraceFencePluginDetailView: View {
     let catalog: TraceFenceMarketplaceCatalog
     @ObservedObject var entitlementService: TraceFencePluginEntitlementService
     @ObservedObject var packageManager: TraceFencePluginPackageManager
+    @ObservedObject var runtimeHost: TraceFencePluginRuntimeHost
+    @ObservedObject private var installStatsService = TraceFenceMarketplaceInstallStatsService.shared
     let openSubscription: () -> Void
     let openRuntime: () -> Void
 
@@ -785,14 +824,17 @@ private struct TraceFencePluginDetailView: View {
             localizer.t("卸载 \(plugin.localizedName())？", en: "Uninstall \(plugin.localizedName())?"),
             isPresented: $showingUninstallConfirmation
         ) {
-            Button(localizer.t("卸载插件", en: "Uninstall Plugin"), role: .destructive) {
-                Task { await packageManager.uninstall(pluginID: plugin.id) }
+            Button(localizer.t("完全卸载", en: "Uninstall Completely"), role: .destructive) {
+                Task { @MainActor in
+                    await runtimeHost.uninstallCompletely(pluginID: plugin.id)
+                    if packageManager.record(pluginID: plugin.id) == nil { dismiss() }
+                }
             }
             Button(localizer.cancel, role: .cancel) {}
         } message: {
             Text(localizer.t(
-                "插件程序会被移除；插件数据目录会保留，便于以后重新安装。",
-                en: "The plugin code will be removed. Its data directory is retained for a future reinstall."
+                "将删除插件程序、全部插件数据、缓存、临时文件和本机插件设置。已购买的授权仍会保留，之后可以重新安装。",
+                en: "This removes the plugin code, all plugin data, caches, temporary files, and local plugin settings. Purchased access is retained so the plugin can be installed again."
             ))
         }
     }
@@ -904,8 +946,13 @@ private struct TraceFencePluginDetailView: View {
             if plugin.delivery == .package {
                 metadataRow("PluginKit ABI", "v\(plugin.pluginKitVersion)")
                 if let size = plugin.package?.sizeBytes {
-                    metadataRow(localizer.t("下载大小", en: "Download size"), ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+                metadataRow(localizer.t("下载大小", en: "Download size"), ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
                 }
+                metadataRow(
+                    localizer.t("GitHub 安装/更新", en: "GitHub installs/updates"),
+                    installStatsService.count(for: plugin).map { $0.formatted() }
+                        ?? localizer.t("暂无统计", en: "Unavailable")
+                )
                 metadataRow(localizer.t("更新通道", en: "Update channel"), localizer.t("TraceFence 自有独立 Release", en: "TraceFence-owned independent release"))
             }
         }
@@ -928,8 +975,8 @@ private struct TraceFencePluginDetailView: View {
                 }
             }
             Text(localizer.t(
-                "插件数据、缓存和临时文件按插件 ID 分开保存；卸载不会误删用户数据。",
-                en: "Plugin data, caches, and temporary files are isolated by plugin ID; uninstalling does not silently erase user data."
+                "插件数据、缓存和临时文件按插件 ID 分开保存。选择“完全卸载”时，只删除该插件的程序和本机数据，不影响其它插件；已购买授权仍会保留。",
+                en: "Plugin data, caches, and temporary files are isolated by plugin ID. Uninstall Completely removes only this plugin's code and local data without affecting other plugins; purchased access is retained."
             ))
             .font(Theme.Font.caption)
             .foregroundStyle(Theme.Colors.textSecondary)
@@ -948,7 +995,7 @@ private struct TraceFencePluginDetailView: View {
                     Spacer()
                     Toggle(localizer.t("启用", en: "Enabled"), isOn: Binding(
                         get: { record.enabled },
-                        set: { packageManager.setEnabled($0, pluginID: plugin.id) }
+                        set: { runtimeHost.setEnabled($0, pluginID: plugin.id) }
                     ))
                     .toggleStyle(.switch)
                     .controlSize(.small)
@@ -975,7 +1022,7 @@ private struct TraceFencePluginDetailView: View {
                         }
                     }
                     Spacer()
-                    Button(localizer.t("卸载", en: "Uninstall"), role: .destructive) {
+                    Button(localizer.t("完全卸载", en: "Uninstall Completely"), role: .destructive) {
                         showingUninstallConfirmation = true
                     }
                 }

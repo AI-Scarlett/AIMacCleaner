@@ -13,18 +13,18 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.12")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.13")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
-    f"TraceFence {VERSION} moves Provider Quota Monitor into an independently updatable plugin.\n\n"
-    "- Keeps the existing menu-bar quota layout and refresh behavior unchanged.\n"
-    "- Shows an install shortcut in the same quota panel when the plugin is missing.\n"
-    "- Moves provider readers and the signed quota helper out of the website app bundle.\n"
-    "- Preserves non-interactive Keychain behavior so background refreshes do not open Chrome Safe Storage prompts.\n"
-    "- Supports signed catalog installation and independent quota-monitor plugin updates.\n"
+    f"TraceFence {VERSION} completes plugin lifecycle management and marketplace usage signals.\n\n"
+    "- Adds direct enable and disable controls in My Plugins, the library, and plugin details.\n"
+    "- Adds Complete Uninstall, which stops the plugin and removes its package, isolated data, cache, temporary files, settings, and pinned placements.\n"
+    "- Keeps purchased plugin access so a removed plugin can be installed again without repurchasing.\n"
+    "- Displays privacy-safe GitHub package download counts as installs/updates, with updates and reinstalls explicitly included.\n"
+    "- Stops the quota helper while Quota Monitor is disabled and preserves the existing menu-bar layout.\n"
 )
 
 

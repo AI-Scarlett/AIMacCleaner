@@ -136,4 +136,16 @@ enum TraceFencePluginDisplayPreferences {
         }
         return string
     }
+
+    static func remove(pluginID: String, userDefaults: UserDefaults = .standard) {
+        let pinned = pinnedPluginIDs(
+            from: userDefaults.string(forKey: pinnedPluginIDsKey) ?? defaultPinnedPluginIDsJSON
+        ).filter { $0 != pluginID }
+        userDefaults.set(encodedPinnedPluginIDs(pinned), forKey: pinnedPluginIDsKey)
+
+        let mainTabs = mainTabPluginIDs(
+            from: userDefaults.string(forKey: mainTabPluginIDsKey) ?? defaultMainTabPluginIDsJSON
+        ).filter { $0 != pluginID }
+        userDefaults.set(encodedMainTabPluginIDs(mainTabs), forKey: mainTabPluginIDsKey)
+    }
 }

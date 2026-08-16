@@ -68,8 +68,9 @@ final class TraceFencePluginRuntimeHost: ObservableObject {
             states[pluginID] = session.version == record.activeVersion ? .active : .restartRequired
             return
         }
-        if !record.enabled {
-            packageManager.setEnabled(true, pluginID: pluginID)
+        guard record.enabled else {
+            states[pluginID] = .disabled
+            return
         }
 
         states[pluginID] = .loading
@@ -94,6 +95,15 @@ final class TraceFencePluginRuntimeHost: ObservableObject {
             deactivate(pluginID: pluginID, reason: .disabled)
             states[pluginID] = .disabled
         }
+    }
+
+    func uninstallCompletely(pluginID: String) async {
+        deactivate(pluginID: pluginID, reason: .uninstalling)
+        states[pluginID] = .unavailable
+        await packageManager.uninstall(pluginID: pluginID, purgeData: true)
+        states[pluginID] = packageManager.record(pluginID: pluginID) == nil
+            ? .unavailable
+            : .failed("The plugin could not be completely removed.")
     }
 
     func refresh(pluginID: String) {
@@ -384,10 +394,7 @@ struct TraceFencePluginRuntimeView: View {
                     title: localizer.t("插件尚未安装", en: "Plugin not installed")
                 )
             case .disabled:
-                runtimeMessage(
-                    icon: "pause.circle",
-                    title: localizer.t("插件已停用", en: "Plugin disabled")
-                )
+                disabledPluginMessage
             case .idle, .loading:
                 runtimeLoadingView
             case .active:
@@ -476,6 +483,30 @@ struct TraceFencePluginRuntimeView: View {
         .padding(Theme.Spacing.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(Theme.Colors.background.opacity(0.22))
+    }
+
+    private var disabledPluginMessage: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            Image(systemName: "pause.circle")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(Theme.Colors.textSecondary)
+            Text(localizer.t("插件已停用", en: "Plugin disabled"))
+                .font(Theme.Font.bodyMedium)
+                .foregroundStyle(Theme.Colors.textSecondary)
+            Button {
+                runtimeHost.setEnabled(true, pluginID: pluginID)
+                launchPlugin()
+            } label: {
+                Label(localizer.t("启用插件", en: "Enable Plugin"), systemImage: "play.circle.fill")
+            }
+            .buttonStyle(BrandButtonStyle(
+                color: Theme.Colors.accent,
+                variant: .secondary,
+                minHeight: 34
+            ))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(Theme.Spacing.xxl)
     }
 
     /// Opening from `.task` is unsafe here because refreshing an observed
@@ -1124,6 +1155,7 @@ struct TraceFencePluginWorkspaceView: View {
     @AppStorage(TraceFencePluginDisplayPreferences.mainTabPluginIDsKey)
     private var mainTabPluginIDsJSON = TraceFencePluginDisplayPreferences.defaultMainTabPluginIDsJSON
     @State private var searchText = ""
+    @State private var pluginPendingCompleteUninstall: TraceFencePluginDescriptor?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -1142,6 +1174,31 @@ struct TraceFencePluginWorkspaceView: View {
         .onChange(of: catalogService.catalog.revision) { _ in
             packageManager.refresh(catalog: catalogService.catalog)
             selectFirstPluginIfNeeded()
+        }
+        .confirmationDialog(
+            completeUninstallTitle,
+            isPresented: Binding(
+                get: { pluginPendingCompleteUninstall != nil },
+                set: { if !$0 { pluginPendingCompleteUninstall = nil } }
+            )
+        ) {
+            if let plugin = pluginPendingCompleteUninstall {
+                Button(localizer.t("完全卸载", en: "Uninstall Completely"), role: .destructive) {
+                    Task { @MainActor in
+                        await runtimeHost.uninstallCompletely(pluginID: plugin.id)
+                        if selectedPluginID == plugin.id { selectedPluginID = nil }
+                        pluginPendingCompleteUninstall = nil
+                    }
+                }
+            }
+            Button(localizer.cancel, role: .cancel) {
+                pluginPendingCompleteUninstall = nil
+            }
+        } message: {
+            Text(localizer.t(
+                "将删除插件程序、全部插件数据、缓存、临时文件和本机插件设置。已购买的授权仍会保留，之后可以重新安装。",
+                en: "This removes the plugin code, all plugin data, caches, temporary files, and local plugin settings. Purchased access is retained so the plugin can be installed again."
+            ))
         }
     }
 
@@ -1199,6 +1256,7 @@ struct TraceFencePluginWorkspaceView: View {
         let isPinned = pinnedPluginIDs.contains(plugin.id)
         let isMainTab = mainTabPluginIDs.contains(plugin.id)
         let supportsMenuBar = plugin.supportsMenuBarQuickPanel
+        let isEnabled = packageManager.record(pluginID: plugin.id)?.enabled ?? false
         return HStack(spacing: Theme.Spacing.xs) {
             Button {
                 selectedPluginID = plugin.id
@@ -1224,6 +1282,10 @@ struct TraceFencePluginWorkspaceView: View {
                                 Image(systemName: "arrow.down.circle.fill")
                                     .foregroundStyle(Theme.Colors.accent)
                                     .help(localizer.t("可在当前插件页直接更新", en: "Update directly from this plugin page"))
+                            }
+                            if !isEnabled {
+                                Label(localizer.t("已停用", en: "Disabled"), systemImage: "pause.circle.fill")
+                                    .foregroundStyle(Theme.Colors.warning)
                             }
                             TraceFencePluginPricingBadge(plugin: plugin, compact: true)
                             if plugin.supportsOverview {
@@ -1278,6 +1340,51 @@ struct TraceFencePluginWorkspaceView: View {
                     .frame(width: 24, height: 30)
                     .help(localizer.t("仅在桌面工作区使用", en: "Desktop workspace only"))
             }
+
+            Menu {
+                Button {
+                    runtimeHost.setEnabled(!isEnabled, pluginID: plugin.id)
+                } label: {
+                    Label(
+                        isEnabled
+                            ? localizer.t("停用插件", en: "Disable Plugin")
+                            : localizer.t("启用插件", en: "Enable Plugin"),
+                        systemImage: isEnabled ? "pause.circle" : "play.circle"
+                    )
+                }
+                if case let .updateAvailable(_, targetVersion, _) = packageManager.state(for: plugin) {
+                    Button {
+                        Task { @MainActor in
+                            await packageManager.install(plugin: plugin)
+                            runtimeHost.synchronizeWithInstalledPlugins()
+                        }
+                    } label: {
+                        Label(
+                            localizer.t("更新到 v\(targetVersion)", en: "Update to v\(targetVersion)"),
+                            systemImage: "arrow.down.circle"
+                        )
+                    }
+                }
+                Button {
+                    packageManager.reveal(pluginID: plugin.id)
+                } label: {
+                    Label(localizer.t("在访达中显示", en: "Reveal in Finder"), systemImage: "folder")
+                }
+                Divider()
+                Button(role: .destructive) {
+                    pluginPendingCompleteUninstall = plugin
+                } label: {
+                    Label(localizer.t("完全卸载…", en: "Uninstall Completely…"), systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .frame(width: 24, height: 30)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help(localizer.t("管理插件", en: "Manage Plugin"))
         }
         .padding(.horizontal, Theme.Spacing.sm)
         .padding(.vertical, 5)
@@ -1385,6 +1492,16 @@ struct TraceFencePluginWorkspaceView: View {
             || catalogService.catalog.plugin(id: selectedPluginID)?.supportsPluginTab != true {
             self.selectedPluginID = nil
         }
+    }
+
+    private var completeUninstallTitle: String {
+        guard let plugin = pluginPendingCompleteUninstall else {
+            return localizer.t("完全卸载插件？", en: "Uninstall plugin completely?")
+        }
+        return localizer.t(
+            "完全卸载 \(plugin.localizedName())？",
+            en: "Uninstall \(plugin.localizedName()) completely?"
+        )
     }
 }
 
@@ -1922,6 +2039,8 @@ enum TraceFencePluginRuntimeSelfTest {
         var actionSucceeded = false
         var rollbackSucceeded: Bool?
         var removed = false
+        var disableSucceeded = false
+        var purgeSucceeded = false
 
         guard let packageURL = argumentURL("--package", arguments: arguments) else {
             finish(arguments: arguments, pluginID: pluginID, version: nil, failures: ["Missing --package."])
@@ -2043,9 +2162,56 @@ enum TraceFencePluginRuntimeSelfTest {
         if !actionSucceeded { failures.append("The plugin interaction self-test failed.") }
 
         runtime.setEnabled(false, pluginID: pluginID)
-        await manager.uninstall(pluginID: pluginID)
+        let disabledWithoutSession = runtime.state(pluginID: pluginID) == .disabled
+            && runtime.plugin(pluginID: pluginID) == nil
+        runtime.openForTesting(pluginID: pluginID)
+        let remainedDisabledWhenOpened = runtime.state(pluginID: pluginID) == .disabled
+            && manager.record(pluginID: pluginID)?.enabled == false
+        runtime.setEnabled(true, pluginID: pluginID)
+        runtime.openForTesting(pluginID: pluginID)
+        let reenabled = runtime.state(pluginID: pluginID) == .active
+        disableSucceeded = disabledWithoutSession && remainedDisabledWhenOpened && reenabled
+        if !disableSucceeded {
+            failures.append("Plugin disable/enable lifecycle failed.")
+        }
+
+        let pluginOwnedRoots = [
+            TraceFencePluginPackageManager.dataDirectory,
+            TraceFencePluginPackageManager.cachesDirectory,
+            TraceFencePluginPackageManager.temporaryDirectory
+        ].map { $0.appendingPathComponent(pluginID, isDirectory: true) }
+        for root in pluginOwnedRoots {
+            try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            try? Data("purge-sentinel".utf8).write(to: root.appendingPathComponent("sentinel"), options: .atomic)
+        }
+
+        let defaultsSuiteName = "TraceFencePluginRuntimeSelfTest.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuiteName)!
+        defaults.set("[\"\(pluginID)\",\"tracefence.tools.keep\"]", forKey: TraceFencePluginDisplayPreferences.pinnedPluginIDsKey)
+        defaults.set("[\"\(pluginID)\"]", forKey: TraceFencePluginDisplayPreferences.mainTabPluginIDsKey)
+        UserDefaultsPluginStorage(pluginID: pluginID, userDefaults: defaults).set("sentinel", forKey: "purge")
+        UserDefaultsPluginStorage.removeAllValues(pluginID: pluginID, userDefaults: defaults)
+        TraceFencePluginDisplayPreferences.remove(pluginID: pluginID, userDefaults: defaults)
+        let scopedDefaultsPurged = UserDefaultsPluginStorage(
+            pluginID: pluginID,
+            userDefaults: defaults
+        ).string(forKey: "purge") == nil
+        let displayPreferencesPurged = !TraceFencePluginDisplayPreferences.pinnedPluginIDs(
+            from: defaults.string(forKey: TraceFencePluginDisplayPreferences.pinnedPluginIDsKey) ?? "[]"
+        ).contains(pluginID) && !TraceFencePluginDisplayPreferences.mainTabPluginIDs(
+            from: defaults.string(forKey: TraceFencePluginDisplayPreferences.mainTabPluginIDsKey) ?? "[]"
+        ).contains(pluginID)
+        defaults.removePersistentDomain(forName: defaultsSuiteName)
+
+        await runtime.uninstallCompletely(pluginID: pluginID)
         removed = manager.record(pluginID: pluginID) == nil
         if !removed { failures.append("Plugin uninstall failed.") }
+        purgeSucceeded = pluginOwnedRoots.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) }
+            && scopedDefaultsPurged
+            && displayPreferencesPurged
+        if !purgeSucceeded {
+            failures.append("Complete uninstall left plugin-owned data or settings behind.")
+        }
 
         finish(
             arguments: arguments,
@@ -2057,7 +2223,9 @@ enum TraceFencePluginRuntimeSelfTest {
             usableSurface: usableSurface,
             actionSucceeded: actionSucceeded,
             rollbackSucceeded: rollbackSucceeded,
-            removed: removed
+            removed: removed,
+            disableSucceeded: disableSucceeded,
+            purgeSucceeded: purgeSucceeded
         )
     }
 
@@ -2091,7 +2259,9 @@ enum TraceFencePluginRuntimeSelfTest {
         usableSurface: Bool = false,
         actionSucceeded: Bool = false,
         rollbackSucceeded: Bool? = nil,
-        removed: Bool = false
+        removed: Bool = false,
+        disableSucceeded: Bool = false,
+        purgeSucceeded: Bool = false
     ) -> Never {
         let payload: [String: Any] = [
             "succeeded": failures.isEmpty,
@@ -2103,6 +2273,8 @@ enum TraceFencePluginRuntimeSelfTest {
             "actionSucceeded": actionSucceeded,
             "rollbackSucceeded": rollbackSucceeded as Any? ?? NSNull(),
             "uninstalled": removed,
+            "disableSucceeded": disableSucceeded,
+            "purgeSucceeded": purgeSucceeded,
             "failures": failures
         ]
         if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
