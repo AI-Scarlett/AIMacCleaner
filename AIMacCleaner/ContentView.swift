@@ -204,7 +204,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 960, minHeight: 640)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.clear)
+        .background(Theme.Colors.background)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 topProtectionStatus
@@ -346,18 +346,7 @@ struct ContentView: View {
             sidebarFooter
         }
         .frame(width: sidebarCollapsed ? Theme.Sidebar.collapsedWidth : Theme.Sidebar.expandedWidth)
-        .background(
-            ZStack {
-                Theme.Gradients.sidebar
-                Circle()
-                    .fill(Theme.Colors.accent.opacity(0.16))
-                    .frame(width: 170, height: 170)
-                    .blur(radius: 42)
-                    .offset(x: -72, y: -260)
-                Rectangle()
-                    .fill(Theme.Colors.sidebarBg.opacity(0.82))
-            }
-        )
+        .background(Theme.Colors.sidebarBg)
         .overlay(alignment: .trailing) {
             Rectangle()
                 .fill(Theme.Colors.separator)
@@ -369,20 +358,19 @@ struct ContentView: View {
         HStack(spacing: 0) {
             if !sidebarCollapsed {
                 HStack(spacing: Theme.Spacing.sm + 2) {
-                    AgentGuardMark(size: 46)
-                    VStack(alignment: .leading, spacing: 4) {
+                    AgentGuardMark(size: 34)
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(localizer.appName)
-                            .font(.system(size: 18, weight: .black, design: .rounded))
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Theme.Colors.textPrimary)
                             .lineLimit(1)
                         HStack(spacing: 6) {
                             Circle()
                                 .fill(Theme.Colors.success)
-                                .frame(width: 7, height: 7)
-                                .shadow(color: Theme.Colors.success.opacity(0.65), radius: 5)
+                                .frame(width: 6, height: 6)
                             Text(localizer.monitoringLive)
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(Theme.Colors.success)
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
                                 .lineLimit(1)
                         }
                     }
@@ -393,7 +381,7 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .padding(.top, Theme.Spacing.xl)
+        .padding(.top, Theme.Spacing.lg)
         .padding(.bottom, Theme.Spacing.md)
         .padding(.horizontal, sidebarCollapsed ? Theme.Spacing.xs : Theme.Spacing.md)
     }
@@ -402,16 +390,16 @@ struct ContentView: View {
         VStack(alignment: sidebarCollapsed ? .center : .leading, spacing: Theme.Spacing.xs) {
             if !sidebarCollapsed {
                 Text(localizer.workspaceSection)
-                    .font(.system(size: 10, weight: .black))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .textCase(.uppercase)
-                    .tracking(1.2)
+                    .tracking(0.7)
                     .padding(.horizontal, Theme.Spacing.lg)
                     .padding(.top, Theme.Spacing.lg)
                     .padding(.bottom, Theme.Spacing.xs)
             } else {
                 Text("AI")
-                    .font(.system(size: 8, weight: .black))
+                    .font(.system(size: 8, weight: .medium))
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .padding(.top, Theme.Spacing.lg)
                     .padding(.bottom, Theme.Spacing.xs)
@@ -467,13 +455,11 @@ struct ContentView: View {
                         VStack(spacing: 3) {
                             Image(systemName: plugin.systemImage)
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(activeMainPluginID == plugin.id ? .white : Theme.Colors.accent)
+                                .foregroundStyle(Theme.Colors.accent)
                                 .frame(width: 31, height: 29)
                                 .background(
                                     RoundedRectangle(cornerRadius: 10)
-                                        .fill(activeMainPluginID == plugin.id
-                                            ? AnyShapeStyle(Theme.Gradients.hero)
-                                            : AnyShapeStyle(Theme.Colors.accent.opacity(0.08)))
+                                        .fill(Theme.Colors.accent.opacity(activeMainPluginID == plugin.id ? 0.14 : 0.08))
                                 )
                             Text(plugin.localizedName())
                                 .font(.system(size: 7.5, weight: .medium))
@@ -483,17 +469,15 @@ struct ContentView: View {
                     } else {
                         HStack(spacing: Theme.Spacing.sm) {
                             RoundedRectangle(cornerRadius: 2)
-                                .fill(activeMainPluginID == plugin.id ? Theme.Gradients.hero : LinearGradient(colors: [.clear], startPoint: .top, endPoint: .bottom))
+                                .fill(activeMainPluginID == plugin.id ? Theme.Colors.accent : Color.clear)
                                 .frame(width: 3, height: 23)
                             Image(systemName: plugin.systemImage)
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(activeMainPluginID == plugin.id ? .white : Theme.Colors.accent)
+                                .foregroundStyle(Theme.Colors.accent)
                                 .frame(width: 29, height: 27)
                                 .background(
                                     RoundedRectangle(cornerRadius: 9)
-                                        .fill(activeMainPluginID == plugin.id
-                                            ? AnyShapeStyle(Theme.Gradients.hero)
-                                            : AnyShapeStyle(Theme.Colors.accent.opacity(0.08)))
+                                        .fill(Theme.Colors.accent.opacity(activeMainPluginID == plugin.id ? 0.14 : 0.08))
                                 )
                             Text(plugin.localizedName())
                                 .font(.system(size: 11.5, weight: .semibold))
@@ -545,16 +529,16 @@ struct ContentView: View {
                         .frame(width: 3, height: Theme.Sidebar.itemHeight * 0.5)
 
                     Image(systemName: NavItem.toolbox.icon)
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(hoveredItem == .toolbox ? Theme.Colors.accent : Theme.Colors.textSecondary)
-                        .frame(width: 36, height: 32)
+                        .frame(width: 30, height: 28)
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Theme.Colors.textPrimary.opacity(0.045))
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .fill(Theme.Colors.cardHover.opacity(0.72))
                         )
 
                     Text(NavItem.toolbox.label(localizer))
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(hoveredItem == .toolbox ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
 
                     Spacer()
@@ -583,17 +567,17 @@ struct ContentView: View {
                         } label: {
                             HStack(spacing: Theme.Spacing.sm) {
                                 Image(systemName: item.icon)
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(selectedTab == item ? Color.white : Theme.Colors.textTertiary)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(selectedTab == item ? Theme.Colors.accent : Theme.Colors.textTertiary)
                                     .frame(width: 26, height: 24)
                                     .background(
-                                        RoundedRectangle(cornerRadius: 9)
-                                            .fill(selectedTab == item ? AnyShapeStyle(Theme.Gradients.hero) : AnyShapeStyle(Theme.Colors.textPrimary.opacity(0.035)))
+                                        RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                            .fill(selectedTab == item ? AnyShapeStyle(Theme.Colors.accent.opacity(0.10)) : AnyShapeStyle(Color.clear))
                                     )
 
                                 Text(item.label(localizer))
                                     .font(.system(size: 12))
-                                    .fontWeight(selectedTab == item ? .bold : .semibold)
+                                    .fontWeight(.medium)
                                     .foregroundStyle(selectedTab == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
 
                                 Spacer()
@@ -608,7 +592,7 @@ struct ContentView: View {
                             .padding(.vertical, Theme.Spacing.xs + 2)
                             .background(
                                 RoundedRectangle(cornerRadius: Theme.Radius.md)
-                                    .fill(selectedTab == item ? Theme.Colors.elevatedCardBg.opacity(0.82) : Color.clear)
+                                    .fill(selectedTab == item ? Theme.Colors.accent.opacity(0.08) : Color.clear)
                             )
                         }
                         .buttonStyle(.plain)
@@ -625,21 +609,20 @@ struct ContentView: View {
     private func sidebarExpandedItem(_ item: NavItem) -> some View {
         HStack(spacing: Theme.Spacing.sm + 2) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(selectedTab == item ? Theme.Gradients.hero : LinearGradient(colors: [.clear], startPoint: .top, endPoint: .bottom))
+                .fill(selectedTab == item ? Theme.Colors.accent : Color.clear)
                 .frame(width: 3, height: Theme.Sidebar.itemHeight * 0.52)
 
             Image(systemName: item.icon)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(selectedTab == item ? Color.white : (hoveredItem == item ? Theme.Colors.accent : Theme.Colors.textSecondary))
-                .frame(width: 36, height: 32)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(selectedTab == item ? Theme.Colors.accent : (hoveredItem == item ? Theme.Colors.accent : Theme.Colors.textSecondary))
+                .frame(width: 30, height: 28)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(selectedTab == item ? AnyShapeStyle(Theme.Gradients.hero) : AnyShapeStyle(Theme.Colors.textPrimary.opacity(0.045)))
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .fill(selectedTab == item ? AnyShapeStyle(Theme.Colors.accent.opacity(0.10)) : AnyShapeStyle(Color.clear))
                 )
-                .shadow(color: selectedTab == item ? Theme.Colors.accent.opacity(0.20) : .clear, radius: 10, y: 5)
 
             Text(item.label(localizer))
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(selectedTab == item ? Theme.Colors.textPrimary : (hoveredItem == item ? Theme.Colors.textPrimary : Theme.Colors.textSecondary))
                 .lineLimit(1)
 
@@ -653,7 +636,7 @@ struct ContentView: View {
 
             if selectedTab == item {
                 Text(navMeta(for: item))
-                    .font(.system(size: 10, weight: .black))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
         }
@@ -661,13 +644,8 @@ struct ContentView: View {
         .padding(.horizontal, Theme.Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: Theme.Sidebar.itemRadius)
-                .fill(selectedTab == item ? Theme.Colors.elevatedCardBg : (hoveredItem == item ? Theme.Colors.cardHover : Color.clear))
+                .fill(selectedTab == item ? Theme.Colors.accent.opacity(0.10) : (hoveredItem == item ? Theme.Colors.cardHover : Color.clear))
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Sidebar.itemRadius)
-                .stroke(selectedTab == item ? Theme.Colors.separator : Color.clear, lineWidth: 1)
-        )
-        .shadow(color: selectedTab == item ? Theme.Shadow.mdColor : .clear, radius: 12, y: 6)
     }
 
     private func navMeta(for item: NavItem) -> String {
@@ -697,12 +675,12 @@ struct ContentView: View {
     private func sidebarCollapsedItem(_ item: NavItem) -> some View {
         VStack(spacing: Theme.Spacing.xs) {
             Image(systemName: item.icon)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(selectedTab == item ? Color.white : (hoveredItem == item ? Theme.Colors.accent : Theme.Colors.textSecondary))
-                .frame(width: 34, height: 32)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(selectedTab == item ? Theme.Colors.accent : (hoveredItem == item ? Theme.Colors.accent : Theme.Colors.textSecondary))
+                .frame(width: 32, height: 30)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(selectedTab == item ? AnyShapeStyle(Theme.Gradients.hero) : AnyShapeStyle(Theme.Colors.textPrimary.opacity(0.045)))
+                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                        .fill(selectedTab == item ? AnyShapeStyle(Theme.Colors.accent.opacity(0.10)) : AnyShapeStyle(Color.clear))
                 )
                 .overlay(alignment: .topTrailing) {
                     if isDirectPluginLocked(item) {
@@ -722,11 +700,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .fill(selectedTab == item ? Theme.Colors.elevatedCardBg : (hoveredItem == item ? Theme.Colors.cardHover : Color.clear))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(selectedTab == item ? Theme.Colors.separator : Color.clear, lineWidth: 1)
+                .fill(selectedTab == item ? Theme.Colors.accent.opacity(0.10) : (hoveredItem == item ? Theme.Colors.cardHover : Color.clear))
         )
     }
 
@@ -884,86 +858,68 @@ struct ContentView: View {
         HStack(spacing: 7) {
             Circle()
                 .fill(networkMode == "internet" ? Theme.Colors.success : Theme.Colors.warning)
-                .frame(width: 7, height: 7)
-                .shadow(
-                    color: (networkMode == "internet" ? Theme.Colors.success : Theme.Colors.warning).opacity(0.55),
-                    radius: 4
-                )
+                .frame(width: 6, height: 6)
             Text(localizer.protectionOn)
-                .font(.system(size: 11, weight: .bold))
+                .font(Theme.Font.captionMedium)
                 .foregroundStyle(Theme.Colors.textPrimary)
             Text("\(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus) · v\(service.currentVersion)")
-                .font(.system(size: 10, weight: .semibold))
+                .font(Theme.Font.caption)
                 .foregroundStyle(Theme.Colors.textTertiary)
                 .lineLimit(1)
         }
         .fixedSize(horizontal: true, vertical: false)
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 8)
         .frame(height: 28)
-        .background(
-            Capsule()
-                .fill((networkMode == "internet" ? Theme.Colors.success : Theme.Colors.warning).opacity(0.09))
-        )
-        .overlay(
-            Capsule()
-                .stroke(Theme.Colors.separator.opacity(0.85), lineWidth: 1)
-        )
         .help("\(localizer.protectionOn) · \(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus) · v\(service.currentVersion)")
     }
 
     private func topToolbarControl(icon: String, title: String, color: Color) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(color)
             Text(title)
-                .font(.system(size: 10, weight: .bold))
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
                 .lineLimit(1)
         }
         .fixedSize(horizontal: true, vertical: false)
-        .foregroundStyle(color)
         .padding(.horizontal, 9)
         .frame(height: 28)
         .background(
-            Capsule()
-                .fill(color.opacity(0.09))
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .fill(Theme.Colors.cardBg)
         )
         .overlay(
-            Capsule()
-                .stroke(color.opacity(0.28), lineWidth: 1)
+            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                .stroke(Theme.Colors.separator, lineWidth: 1)
         )
     }
 
     private func footerGlassControl(icon: String, title: String, color: Color) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon)
-                .font(.system(size: sidebarCollapsed ? 12 : 11, weight: .semibold))
+                .font(.system(size: sidebarCollapsed ? 12 : 11, weight: .medium))
+                .foregroundStyle(color)
             if !title.isEmpty {
                 Text(title)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
             }
         }
-        .foregroundStyle(color)
         .frame(width: sidebarCollapsed ? 30 : nil, height: 30)
         .frame(maxWidth: sidebarCollapsed ? nil : .infinity)
         .padding(.horizontal, sidebarCollapsed ? 0 : 7)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(color.opacity(0.10))
+                .fill(Theme.Colors.cardBg)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(
-                    LinearGradient(
-                        colors: [color.opacity(0.62), color.opacity(0.16)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
+                .stroke(Theme.Colors.separator, lineWidth: 1)
         )
-        .shadow(color: color.opacity(0.12), radius: 6, x: 0, y: 0)
     }
 
     @ViewBuilder
@@ -1179,7 +1135,7 @@ struct TraceFenceIOSPairingSheet: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(localizer.t("iOS 远程配对", en: "iOS Remote Pairing", zhHant: "iOS 遠端配對", ja: "iOS リモートペアリング", ko: "iOS 원격 페어링", mt: "iOS Remote Pairing"))
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .font(Theme.Font.title2)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Text(localizer.t(
                     "TraceFence Sentinel 通过本地 API 直接连接这台 Mac。",
@@ -1196,18 +1152,21 @@ struct TraceFenceIOSPairingSheet: View {
             Spacer()
 
             Button { dismiss() } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20, weight: .semibold))
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.Colors.textTertiary)
+                    .frame(width: 28, height: 28)
+                    .background(Theme.Colors.cardHover)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             }
             .buttonStyle(.plain)
         }
-        .padding(Theme.Spacing.xl)
-        .background(.ultraThinMaterial)
-        .background(Theme.Colors.elevatedCardBg.opacity(0.72))
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.lg)
+        .background(Theme.Colors.cardBg)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Theme.Gradients.glassStroke)
+                .fill(Theme.Colors.separator)
                 .frame(height: 1)
         }
     }
@@ -1886,25 +1845,22 @@ struct PageHeader: View {
     }
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.lg) {
+        HStack(spacing: Theme.Spacing.md) {
             ZStack {
-                RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                    .fill(Theme.Gradients.hero)
-                RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                    .stroke(Color.white.opacity(0.70), lineWidth: 1)
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                    .fill(color.opacity(0.10))
                 Image(systemName: icon)
-                    .font(.system(size: 21, weight: .bold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(color)
             }
-            .frame(width: 38, height: 38)
-            .shadow(color: Theme.Colors.accent.opacity(0.18), radius: 10, y: 5)
+            .frame(width: 34, height: 34)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 22, weight: .black, design: .rounded))
+                    .font(.title2.weight(.semibold))
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Text(subtitle)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(Theme.Font.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
             }
 
@@ -1913,8 +1869,8 @@ struct PageHeader: View {
             trailing
         }
         .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, Theme.Spacing.sm + 2)
-        .background(Theme.Colors.elevatedCardBg.opacity(0.68))
+        .padding(.vertical, Theme.Spacing.lg)
+        .background(Theme.Colors.background)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Theme.Colors.separator)
@@ -1945,7 +1901,6 @@ struct ScanningStatusPill: View {
             RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .stroke(color.opacity(0.20), lineWidth: 1)
         }
-        .shadow(color: color.opacity(0.16), radius: 10, x: 0, y: 0)
     }
 }
 
@@ -1996,7 +1951,6 @@ struct RadarScanGlyph: View {
             Circle()
                 .fill(color)
                 .frame(width: 5, height: 5)
-                .shadow(color: color.opacity(0.7), radius: 6)
         }
         .frame(width: 26, height: 26)
         .drawingGroup()
@@ -2029,14 +1983,13 @@ struct ScanningProgressCaption: View {
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [color.opacity(0), color.opacity(0.95), Color.white.opacity(0.85), color.opacity(0)],
+                                colors: [color.opacity(0), color.opacity(0.90), color.opacity(0)],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
                         )
                         .frame(width: max(42, proxy.size.width * 0.42))
                         .offset(x: proxy.size.width * progress)
-                        .shadow(color: color.opacity(0.35), radius: 6, x: 0, y: 0)
                 }
             }
             .frame(width: 142, height: 4)
@@ -6606,13 +6559,10 @@ private struct CommandCenterPanel<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             Text(title)
-                .font(.system(size: 14, weight: .black, design: .rounded))
+                .font(Theme.Font.subheadlineMedium)
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .padding(.horizontal, Theme.Spacing.sm)
                 .padding(.vertical, 2)
-                .background(color.opacity(0.10))
-                .clipShape(Capsule())
-                .offset(y: -2)
 
             content
                 .padding(.horizontal, Theme.Spacing.sm)
@@ -6622,13 +6572,12 @@ private struct CommandCenterPanel<Content: View>: View {
         .padding(.top, Theme.Spacing.xs)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .fill(Theme.Colors.elevatedCardBg.opacity(0.78))
+                .fill(Theme.Colors.cardBg)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .stroke(Theme.Colors.separator, lineWidth: 1)
                 )
         )
-        .shadow(color: Theme.Shadow.smColor, radius: 8, y: 4)
     }
 }
 
@@ -7366,28 +7315,13 @@ private struct HUDIconChrome: ViewModifier {
             .frame(width: size, height: size)
             .background(
                 RoundedRectangle(cornerRadius: radius)
-                    .fill(disabled ? Theme.Colors.sidebarBg.opacity(0.45) : color.opacity(0.1))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: radius)
-                            .fill(Theme.Colors.cardBg.opacity(disabled ? 0.45 : 0.55))
-                    )
+                    .fill(disabled ? Theme.Colors.sidebarBg.opacity(0.45) : color.opacity(0.10))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: radius)
-                    .stroke(
-                        LinearGradient(
-                            colors: disabled
-                                ? [Theme.Colors.separator.opacity(0.5), Theme.Colors.separator.opacity(0.2)]
-                                : [color.opacity(0.65), color.opacity(0.16)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
+                    .stroke(disabled ? Theme.Colors.separator.opacity(0.5) : color.opacity(0.22), lineWidth: 1)
             )
-            .shadow(color: disabled ? .clear : color.opacity(0.14), radius: 7, x: 0, y: 0)
             .opacity(disabled ? 0.55 : 1)
-            .scaleEffect(disabled ? 1 : 1.0)
             .animation(.spring(response: 0.22, dampingFraction: 0.78), value: disabled)
     }
 }
@@ -7410,10 +7344,6 @@ private struct AgentCommandDashboardData {
     let networkConnections: [AgentNetworkConnection]
     let totalTokens: Int
     let projectRows: [AgentCommandProjectRow]
-    let sessionChartValues: [Double]
-    let activeChartValues: [Double]
-    let projectChartValues: [Double]
-    let tokenChartValues: [Double]
     let realtimeToolCallCount: Int
     let realtimeAgentRunCount: Int
     let sessionSignature: String
@@ -7490,10 +7420,6 @@ private struct AgentCommandDashboardView: View {
 
         let combinedUsage = usageInsightsService.snapshot(for: .combined)
         let totalTokens = Int(clamping: combinedUsage.allTime.total)
-        let activeChartValues = activeSessions
-            .sorted { $0.contextPercent > $1.contextPercent }
-            .prefix(6)
-            .map { max($0.contextPercent, 0.18) }
         let livePids = Set(activeSessions.compactMap(\.pid))
 
         return AgentCommandDashboardData(
@@ -7505,22 +7431,6 @@ private struct AgentCommandDashboardView: View {
             networkConnections: networkConnections,
             totalTokens: totalTokens,
             projectRows: projectRows,
-            sessionChartValues: Dictionary(grouping: allSessions, by: \.agentName)
-                .map { Double($0.value.count) }
-                .sorted(by: >)
-                .prefix(6)
-                .map { $0 },
-            activeChartValues: activeChartValues.isEmpty && !allSessions.isEmpty ? [0.08] : activeChartValues,
-            projectChartValues: projectRows
-                .map { Double($0.count) }
-                .sorted(by: >)
-                .prefix(6)
-                .map { $0 },
-            tokenChartValues: combinedUsage.projectRankingsAllTime
-                .map { Double($0.tokens.total) }
-                .sorted(by: >)
-                .prefix(6)
-                .map { $0 },
             realtimeToolCallCount: activeSessions.reduce(0) { total, session in
                 let liveTools = max(session.runningToolCount, session.status == "Executing" && session.toolCount > 0 ? 1 : 0)
                 return total + liveTools
@@ -7661,53 +7571,6 @@ private struct AgentCommandDashboardView: View {
             return "Grouped \(data.allSessions.count) sessions, \(data.activeSessions.count) active, \(data.projectRows.count) projects, \(compactCount(data.totalTokens)) tokens, and \(data.networkConnections.count) egress connections."
         }
     }
-    private var localizedCommandCenterIntro: String {
-        switch localizer.language {
-        case .simplifiedChinese:
-            return "关键数据已按会话、活跃状态、项目和 Token 聚合。"
-        case .traditionalChinese:
-            return "關鍵資料已按會話、活躍狀態、專案和 Token 彙總。"
-        case .japanese:
-            return "主要データをセッション、稼働状況、プロジェクト、Token 別に集計しています。"
-        case .korean:
-            return "핵심 데이터를 세션, 활성 상태, 프로젝트, Token 기준으로 집계했습니다."
-        case .english, .maltese:
-            return "Key data is grouped by sessions, activity, projects, and tokens."
-        }
-    }
-
-    private var sessionChartValues: [Double] {
-        Dictionary(grouping: allSessions, by: \.agentName)
-            .map { Double($0.value.count) }
-            .sorted(by: >)
-            .prefix(6)
-            .map { $0 }
-    }
-
-    private var activeChartValues: [Double] {
-        let values = activeSessions
-            .sorted { $0.contextPercent > $1.contextPercent }
-            .prefix(6)
-            .map { max($0.contextPercent, 0.18) }
-        return values.isEmpty && !allSessions.isEmpty ? [0.08] : values
-    }
-
-    private var projectChartValues: [Double] {
-        projectRows
-            .map { Double($0.count) }
-            .sorted(by: >)
-            .prefix(6)
-            .map { $0 }
-    }
-
-    private var tokenChartValues: [Double] {
-        usageInsightsService.snapshot(for: .combined).projectRankingsAllTime
-            .map { Double($0.tokens.total) }
-            .sorted(by: >)
-            .prefix(6)
-            .map { $0 }
-    }
-
     private var projectRows: [(name: String, context: Double, tokens: Int, count: Int)] {
         Dictionary(grouping: allSessions, by: \.projectName)
             .map { name, rows in
@@ -7757,7 +7620,7 @@ private struct AgentCommandDashboardView: View {
                 }
                 .padding(Theme.Spacing.xl)
             }
-            .background(Theme.Colors.sidebarBg.opacity(0.24))
+            .background(Theme.Colors.background)
         }
         .onAppear {
             pluginPackageManager.refresh(catalog: pluginCatalogService.catalog)
@@ -7901,42 +7764,7 @@ private struct AgentCommandDashboardView: View {
     }
 
     private func commandCenterHero(_ data: AgentCommandDashboardData) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            HStack(alignment: .center, spacing: Theme.Spacing.sm + 2) {
-                ZStack(alignment: .bottomTrailing) {
-                    AgentGuardMark(size: 28, showGlow: false)
-                    Circle()
-                        .fill(data.activeSessions.isEmpty ? Theme.Colors.textTertiary : Theme.Colors.success)
-                        .frame(width: 9, height: 9)
-                        .overlay(
-                            Circle()
-                                .stroke(Theme.Colors.elevatedCardBg, lineWidth: 2)
-                        )
-                        .shadow(color: Theme.Colors.success.opacity(data.activeSessions.isEmpty ? 0 : 0.55), radius: 7)
-                }
-
-                Text(data.activeSessions.isEmpty ? localizer.overviewWaitingSessions : localizer.overviewLiveActivity)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(data.activeSessions.isEmpty ? Theme.Colors.textSecondary : Theme.Colors.success)
-                    .textCase(.uppercase)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(localizer.commandCenterTitle)
-                        .font(.system(size: 15, weight: .black, design: .rounded))
-                        .foregroundStyle(Theme.Colors.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-
-                    Text(localizedCommandCenterIntro)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-                }
-
-                Spacer(minLength: 0)
-            }
-
+        VStack(alignment: .leading, spacing: 0) {
             heroMetricsGrid(data)
 
             HStack(alignment: .center, spacing: Theme.Spacing.md) {
@@ -7991,78 +7819,47 @@ private struct AgentCommandDashboardView: View {
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .primary, minHeight: 30))
             }
             .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.vertical, Theme.Spacing.sm + 2)
-            .background(Theme.Colors.elevatedCardBg.opacity(0.58))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                    .stroke(dataStatusColor.opacity(0.16), lineWidth: 1)
-            )
-        }
-        .padding(Theme.Spacing.md)
-        .background(
-            ZStack(alignment: .topTrailing) {
-                LinearGradient(
-                    colors: [
-                        Theme.Colors.elevatedCardBg,
-                        Theme.Colors.accent.opacity(0.055),
-                        Theme.Colors.info.opacity(0.035)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                Circle()
-                    .fill(Theme.Colors.accent.opacity(0.075))
-                    .frame(width: 180, height: 180)
-                    .blur(radius: 34)
-                    .offset(x: 76, y: -90)
-                Circle()
-                    .stroke(Theme.Colors.info.opacity(0.12), lineWidth: 1)
-                    .frame(width: 132, height: 132)
-                    .offset(x: -40, y: 58)
+            .padding(.vertical, Theme.Spacing.md)
+            .background(Theme.Colors.cardBg)
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(Theme.Colors.separator)
+                    .frame(height: 1)
             }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.xxl))
+        }
+        .background(Theme.Colors.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
         .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.xxl)
-                .stroke(Theme.Gradients.glassStroke, lineWidth: 1)
+            RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                .stroke(Theme.Colors.separator, lineWidth: 1)
         )
-        .shadow(color: Theme.Shadow.lgColor, radius: 26, y: 14)
     }
 
     private func heroMetricsGrid(_ data: AgentCommandDashboardData) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 124), spacing: Theme.Spacing.sm), count: 4), spacing: Theme.Spacing.sm) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 124), spacing: 0), count: 4), spacing: 0) {
             heroMetricChart(
                 title: localizer.overviewSessions,
                 value: "\(data.allSessions.count)",
                 detail: localizer.overviewLiveAndHistory,
-                icon: "rectangle.3.group",
-                color: Theme.Colors.info,
-                values: data.sessionChartValues
+                icon: "rectangle.3.group"
             )
             heroMetricChart(
                 title: localizer.activeAgents,
                 value: "\(data.activeSessions.count)",
                 detail: localizer.overviewLiveActivity,
-                icon: "dot.radiowaves.left.and.right",
-                color: Theme.Colors.success,
-                values: data.activeChartValues
+                icon: "dot.radiowaves.left.and.right"
             )
             heroMetricChart(
                 title: localizer.overviewProject,
                 value: "\(data.projectRows.count)",
                 detail: localizer.overviewProjectContext,
-                icon: "folder.fill",
-                color: Theme.Colors.warning,
-                values: data.projectChartValues
+                icon: "folder.fill"
             )
             heroMetricChart(
                 title: localizer.t("全部可信 Agent · 全部时间 Token", en: "All Trusted Agents · All-time Tokens", zhHant: "全部可信 Agent · 全部時間 Token", ja: "信頼済み Agent · 全期間 Token", ko: "신뢰할 수 있는 Agent · 전체 기간 Token", mt: "All Trusted Agents · All-time Tokens"),
                 value: compactCount(data.totalTokens),
                 detail: overviewTokenDetail(data.totalTokens),
-                icon: "sum",
-                color: Theme.Colors.purple,
-                values: data.tokenChartValues
+                icon: "sum"
             )
         }
     }
@@ -8079,86 +7876,26 @@ private struct AgentCommandDashboardView: View {
         )
     }
 
-    private func heroMetricChart(title: String, value: String, detail: String, icon: String, color: Color, values: [Double]) -> some View {
-        let safeValues = values.isEmpty ? [0.08, 0.16, 0.10, 0.22] : values
-        let maxValue = max(safeValues.max() ?? 1, 1)
-
-        return VStack(alignment: .leading, spacing: Theme.Spacing.xs + 1) {
-            HStack(alignment: .top, spacing: Theme.Spacing.xs + 2) {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 22, height: 22)
-                    .background(color)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                        .lineLimit(1)
-                    Text(value)
-                        .font(.system(size: 18, weight: .black, design: .rounded))
-                        .foregroundStyle(Theme.Colors.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                }
-
-                Spacer(minLength: 0)
-            }
-
-            HStack(alignment: .bottom, spacing: 4) {
-                ForEach(Array(safeValues.enumerated()), id: \.offset) { index, item in
-                    Capsule()
-                        .fill(color.opacity(index == 0 ? 0.95 : 0.34 + min(0.36, item / maxValue * 0.36)))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: max(5, CGFloat(item / maxValue) * 20))
-                }
-            }
-            .frame(height: 22, alignment: .bottom)
-
+    private func heroMetricChart(title: String, value: String, detail: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: icon)
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .lineLimit(1)
+            Text(value)
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
             Text(detail)
-                .font(.system(size: 8, weight: .semibold))
+                .font(Theme.Font.caption)
                 .foregroundStyle(Theme.Colors.textTertiary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
         }
-        .padding(.horizontal, Theme.Spacing.md)
-        .padding(.vertical, Theme.Spacing.sm + 1)
-        .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
-        .background(Theme.Colors.elevatedCardBg.opacity(0.74))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                .stroke(color.opacity(0.18), lineWidth: 1)
-        )
-    }
-
-    private func heroSignal(title: String, value: String, icon: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 28, height: 28)
-                .background(Theme.Gradients.hero)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-            Text(value)
-                .font(.system(size: 22, weight: .black, design: .rounded))
-                .foregroundStyle(Theme.Colors.textPrimary)
-                .lineLimit(1)
-            Text(title)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.Colors.textSecondary)
-                .lineLimit(1)
-        }
-        .frame(width: 116, alignment: .leading)
-        .padding(Theme.Spacing.md)
-        .background(Theme.Colors.elevatedCardBg.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                .stroke(Theme.Colors.separator, lineWidth: 1)
-        )
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.md)
+        .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
     }
 
     private var commandToolbar: some View {
@@ -8329,14 +8066,12 @@ private struct AgentCommandDashboardView: View {
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.md)
-        .background(.ultraThinMaterial)
-        .background(Theme.Colors.elevatedCardBg)
+        .background(Theme.Colors.cardBg)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .stroke(dataStatusColor.opacity(0.18), lineWidth: 1)
         )
-        .shadow(color: dataStatusColor.opacity(0.06), radius: 16, y: 8)
     }
 
     private var metricStrip: some View {
@@ -8354,12 +8089,11 @@ private struct AgentCommandDashboardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: Theme.Spacing.xs) {
                     Image(systemName: icon)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(color)
                         .frame(width: 30, height: 30)
-                        .background(Theme.Gradients.hero)
-                        .clipShape(RoundedRectangle(cornerRadius: 11))
-                        .shadow(color: Theme.Colors.accent.opacity(0.18), radius: 8, y: 4)
+                        .background(color.opacity(0.10))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                     Text(title)
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
@@ -8379,14 +8113,12 @@ private struct AgentCommandDashboardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Theme.Spacing.md)
         .padding(.vertical, Theme.Spacing.sm)
-        .background(.ultraThinMaterial)
-        .background(Theme.Colors.elevatedCardBg)
+        .background(Theme.Colors.cardBg)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .stroke(Theme.Colors.separator, lineWidth: 1)
         )
-        .shadow(color: Theme.Shadow.mdColor, radius: 12, y: 6)
     }
 
     private var exactTokenHeadline: String {
@@ -8803,13 +8535,12 @@ private struct AgentCommandDashboardView: View {
                 }
             }
             .padding(Theme.Spacing.md)
-            .background(selected ? Theme.Colors.accent.opacity(0.12) : Theme.Colors.elevatedCardBg.opacity(0.58))
+            .background(selected ? Theme.Colors.accent.opacity(0.10) : Theme.Colors.cardBg)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
                     .stroke(selected ? Theme.Colors.accent.opacity(0.44) : Theme.Colors.separator.opacity(0.18), lineWidth: 1)
             )
-            .shadow(color: selected ? Theme.Colors.accent.opacity(0.08) : .clear, radius: 5, y: 2)
         }
         .buttonStyle(.plain)
     }
@@ -8825,13 +8556,12 @@ private struct AgentCommandDashboardView: View {
             HStack(spacing: Theme.Spacing.sm) {
                 Image(systemName: icon)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(color)
                     .frame(width: 30, height: 30)
-                    .background(Theme.Gradients.hero)
-                    .clipShape(RoundedRectangle(cornerRadius: 11))
-                    .shadow(color: Theme.Colors.accent.opacity(0.16), radius: 8, y: 4)
+                    .background(color.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 Text(title)
-                    .font(.system(size: 15, weight: .black, design: .rounded))
+                    .font(Theme.Font.subheadlineMedium)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
                 actions()
@@ -8840,13 +8570,12 @@ private struct AgentCommandDashboardView: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(Theme.Spacing.md)
-        .background(Theme.Colors.elevatedCardBg.opacity(0.86))
+        .background(Theme.Colors.cardBg)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .stroke(Theme.Colors.separator, lineWidth: 1)
         )
-        .shadow(color: Theme.Shadow.mdColor, radius: 18, y: 9)
     }
 
     private func tokenRow(_ title: String, value: Int, total: Int, color: Color) -> some View {
@@ -9414,8 +9143,10 @@ private struct ActiveSessionDetailSheet: View {
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.md)
-        .background(.ultraThinMaterial)
-        .background(Theme.Colors.elevatedCardBg.opacity(0.52))
+        .background(Theme.Colors.cardBg)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Theme.Colors.separator).frame(height: 1)
+        }
     }
 
     private func infoTile(_ title: String, _ value: String, _ color: Color) -> some View {
@@ -13283,14 +13014,12 @@ struct MacCleanerTab: View {
                 }
                 .padding(.horizontal, Theme.Spacing.lg)
                 .padding(.vertical, Theme.Spacing.md)
-                .background(.ultraThinMaterial)
-                .background(Theme.Colors.elevatedCardBg)
+                .background(Theme.Colors.cardBg)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .stroke(Theme.Gradients.glassStroke, lineWidth: 1)
+                        .stroke(Theme.Colors.separator, lineWidth: 1)
                 )
-                .shadow(color: Theme.Colors.info.opacity(0.06), radius: 18, y: 8)
                 .padding(.horizontal, Theme.Spacing.lg)
                 .padding(.vertical, Theme.Spacing.xs)
             }
@@ -13336,8 +13065,7 @@ struct MacCleanerTab: View {
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.xs + 1)
-        .background(.ultraThinMaterial)
-        .background(Theme.Colors.accent.opacity(0.045))
+        .background(Theme.Colors.cardBg)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Theme.Colors.accent.opacity(0.12))
@@ -14217,13 +13945,12 @@ struct AppManagerTab: View {
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, 7)
         .frame(minHeight: 32)
-        .background(color.opacity(isUnavailable ? 0.62 : 0.76))
+        .background(color.opacity(isUnavailable ? 0.46 : 1))
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(Color.white.opacity(isUnavailable ? 0.28 : 0.34), lineWidth: 0.8)
+                .stroke(Color.white.opacity(isUnavailable ? 0.16 : 0.20), lineWidth: 0.8)
         )
-        .shadow(color: color.opacity(isUnavailable ? 0.12 : 0.2), radius: 5, y: 2)
     }
 
     private func bulkOperationLabel(action: AppAction, isUnavailable: Bool = false) -> some View {
@@ -14240,13 +13967,12 @@ struct AppManagerTab: View {
         .padding(.horizontal, Theme.Spacing.md)
         .padding(.vertical, 6)
         .frame(minHeight: 28)
-        .background(action.color.opacity(isUnavailable ? 0.62 : 0.76))
+        .background(action.color.opacity(isUnavailable ? 0.46 : 1))
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(Color.white.opacity(isUnavailable ? 0.28 : 0.34), lineWidth: 0.9)
+                .stroke(Color.white.opacity(isUnavailable ? 0.16 : 0.20), lineWidth: 0.8)
         )
-        .shadow(color: action.color.opacity(isUnavailable ? 0.12 : 0.22), radius: 5, y: 2)
     }
 
     private func toolbarActionLabel(icon: String, title: String, color: Color, isPrimary: Bool) -> some View {

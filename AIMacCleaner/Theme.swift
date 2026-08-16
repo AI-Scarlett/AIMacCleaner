@@ -99,86 +99,69 @@ enum Theme {
         private static func makePalette(for palette: AppColorPalette) -> PaletteSpec {
             switch palette {
             case .aurora:
-                return PaletteSpec(
-                    backgroundLight: c(0.918, 0.984, 0.984), backgroundDark: c(0.038, 0.075, 0.082),
-                    surfaceLight: c(0.970, 1.000, 1.000), surfaceDark: c(0.063, 0.118, 0.128),
-                    sidebarLight: c(0.875, 0.976, 0.965, 0.96), sidebarDark: c(0.047, 0.102, 0.108, 0.96),
-                    cardLight: c(1, 1, 1, 0.78), cardDark: c(0.078, 0.145, 0.156, 0.82),
-                    elevatedLight: c(1, 1, 1, 0.88), elevatedDark: c(0.095, 0.172, 0.184, 0.90),
-                    hoverLight: c(0.13, 0.78, 0.84, 0.10), hoverDark: c(0.13, 0.78, 0.84, 0.16),
-                    separatorLight: c(0.06, 0.34, 0.38, 0.14), separatorDark: c(0.42, 0.92, 0.90, 0.16),
-                    textPrimaryLight: c(0.063, 0.145, 0.173), textPrimaryDark: c(0.905, 0.984, 0.980),
-                    textSecondaryLight: c(0.333, 0.443, 0.478), textSecondaryDark: c(0.650, 0.790, 0.805),
-                    textTertiaryLight: c(0.494, 0.596, 0.624), textTertiaryDark: c(0.455, 0.610, 0.630),
-                    accent: Color(red: 0.129, green: 0.784, blue: 0.839),
-                    success: Color(red: 0.204, green: 0.851, blue: 0.565),
-                    info: Color(red: 0.294, green: 0.639, blue: 1.000),
-                    purple: Color(red: 0.455, green: 0.416, blue: 0.930),
-                    teal: Color(red: 0.114, green: 0.780, blue: 0.490),
-                    cyan: Color(red: 0.129, green: 0.784, blue: 0.839),
-                    shadow: Color(red: 0.067, green: 0.431, blue: 0.471)
+                return neutralPalette(
+                    accent: Color(red: 0.165, green: 0.620, blue: 0.650),
+                    info: Color(red: 0.235, green: 0.490, blue: 0.790),
+                    purple: Color(red: 0.430, green: 0.390, blue: 0.780),
+                    teal: Color(red: 0.160, green: 0.570, blue: 0.470),
+                    cyan: Color(red: 0.165, green: 0.620, blue: 0.650)
                 )
             case .rose:
-                return PaletteSpec(
-                    backgroundLight: c(1.000, 0.940, 0.972), backgroundDark: c(0.110, 0.044, 0.078),
-                    surfaceLight: c(1.000, 0.982, 0.992), surfaceDark: c(0.150, 0.068, 0.112),
-                    sidebarLight: c(1.000, 0.914, 0.956, 0.96), sidebarDark: c(0.125, 0.052, 0.095, 0.96),
-                    cardLight: c(1, 1, 1, 0.80), cardDark: c(0.180, 0.078, 0.128, 0.84),
-                    elevatedLight: c(1, 1, 1, 0.90), elevatedDark: c(0.212, 0.092, 0.148, 0.90),
-                    hoverLight: c(0.94, 0.26, 0.55, 0.10), hoverDark: c(0.96, 0.32, 0.62, 0.18),
-                    separatorLight: c(0.54, 0.12, 0.30, 0.14), separatorDark: c(1.00, 0.54, 0.75, 0.18),
-                    textPrimaryLight: c(0.180, 0.071, 0.112), textPrimaryDark: c(1.000, 0.916, 0.956),
-                    textSecondaryLight: c(0.500, 0.300, 0.390), textSecondaryDark: c(0.860, 0.650, 0.760),
-                    textTertiaryLight: c(0.650, 0.440, 0.535), textTertiaryDark: c(0.690, 0.475, 0.590),
-                    accent: Color(red: 0.933, green: 0.267, blue: 0.553),
-                    success: Color(red: 0.184, green: 0.792, blue: 0.525),
-                    info: Color(red: 0.550, green: 0.500, blue: 1.000),
-                    purple: Color(red: 0.702, green: 0.365, blue: 0.930),
-                    teal: Color(red: 0.116, green: 0.720, blue: 0.620),
-                    cyan: Color(red: 0.250, green: 0.760, blue: 0.900),
-                    shadow: Color(red: 0.560, green: 0.120, blue: 0.320)
+                return neutralPalette(
+                    accent: Color(red: 0.790, green: 0.310, blue: 0.490),
+                    info: Color(red: 0.460, green: 0.420, blue: 0.760),
+                    purple: Color(red: 0.610, green: 0.350, blue: 0.740),
+                    teal: Color(red: 0.220, green: 0.550, blue: 0.500),
+                    cyan: Color(red: 0.250, green: 0.570, blue: 0.690)
                 )
             case .shield:
-                return PaletteSpec(
-                    backgroundLight: c(0.915, 0.950, 1.000), backgroundDark: c(0.018, 0.038, 0.080),
-                    surfaceLight: c(0.974, 0.986, 1.000), surfaceDark: c(0.038, 0.067, 0.125),
-                    sidebarLight: c(0.888, 0.930, 1.000, 0.96), sidebarDark: c(0.027, 0.055, 0.110, 0.96),
-                    cardLight: c(1, 1, 1, 0.80), cardDark: c(0.050, 0.082, 0.148, 0.84),
-                    elevatedLight: c(1, 1, 1, 0.92), elevatedDark: c(0.065, 0.102, 0.180, 0.90),
-                    hoverLight: c(0.286, 0.416, 0.686, 0.12), hoverDark: c(0.320, 0.520, 1.000, 0.18),
-                    separatorLight: c(0.120, 0.240, 0.500, 0.15), separatorDark: c(0.520, 0.700, 1.000, 0.20),
-                    textPrimaryLight: c(0.048, 0.095, 0.170), textPrimaryDark: c(0.910, 0.950, 1.000),
-                    textSecondaryLight: c(0.310, 0.420, 0.585), textSecondaryDark: c(0.660, 0.760, 0.900),
-                    textTertiaryLight: c(0.490, 0.585, 0.720), textTertiaryDark: c(0.455, 0.555, 0.720),
-                    accent: Color(red: 0.286, green: 0.416, blue: 0.686),
-                    success: Color(red: 0.392, green: 0.610, blue: 1.000),
-                    info: Color(red: 0.250, green: 0.520, blue: 1.000),
-                    purple: Color(red: 0.455, green: 0.500, blue: 0.960),
-                    teal: Color(red: 0.290, green: 0.620, blue: 0.930),
-                    cyan: Color(red: 0.392, green: 0.610, blue: 1.000),
-                    shadow: Color(red: 0.065, green: 0.130, blue: 0.330)
+                return neutralPalette(
+                    accent: Color(red: 0.247, green: 0.400, blue: 0.710),
+                    info: Color(red: 0.220, green: 0.470, blue: 0.790),
+                    purple: Color(red: 0.410, green: 0.430, blue: 0.760),
+                    teal: Color(red: 0.220, green: 0.500, blue: 0.650),
+                    cyan: Color(red: 0.250, green: 0.520, blue: 0.720)
                 )
             case .porcelain:
-                return PaletteSpec(
-                    backgroundLight: c(0.997, 0.998, 1.000), backgroundDark: c(0.045, 0.049, 0.060),
-                    surfaceLight: c(1.000, 1.000, 1.000), surfaceDark: c(0.072, 0.078, 0.094),
-                    sidebarLight: c(0.982, 0.986, 0.994, 0.98), sidebarDark: c(0.058, 0.064, 0.080, 0.96),
-                    cardLight: c(1, 1, 1, 0.96), cardDark: c(0.094, 0.102, 0.122, 0.88),
-                    elevatedLight: c(1, 1, 1, 0.99), elevatedDark: c(0.118, 0.128, 0.150, 0.94),
-                    hoverLight: c(0.110, 0.155, 0.235, 0.045), hoverDark: c(0.760, 0.820, 0.900, 0.10),
-                    separatorLight: c(0.125, 0.160, 0.220, 0.105), separatorDark: c(0.720, 0.780, 0.860, 0.14),
-                    textPrimaryLight: c(0.052, 0.070, 0.100), textPrimaryDark: c(0.940, 0.948, 0.962),
-                    textSecondaryLight: c(0.310, 0.360, 0.430), textSecondaryDark: c(0.690, 0.730, 0.790),
-                    textTertiaryLight: c(0.520, 0.570, 0.640), textTertiaryDark: c(0.475, 0.525, 0.595),
-                    accent: Color(red: 0.286, green: 0.416, blue: 0.686),
-                    success: Color(red: 0.392, green: 0.610, blue: 1.000),
-                    info: Color(red: 0.250, green: 0.520, blue: 1.000),
-                    purple: Color(red: 0.470, green: 0.510, blue: 0.920),
-                    teal: Color(red: 0.355, green: 0.525, blue: 0.850),
-                    cyan: Color(red: 0.392, green: 0.610, blue: 1.000),
-                    shadow: Color(red: 0.110, green: 0.145, blue: 0.220)
+                return neutralPalette(
+                    accent: Color(red: 0.322, green: 0.455, blue: 0.741),
+                    info: Color(red: 0.220, green: 0.470, blue: 0.790),
+                    purple: Color(red: 0.430, green: 0.420, blue: 0.760),
+                    teal: Color(red: 0.210, green: 0.500, blue: 0.450),
+                    cyan: Color(red: 0.240, green: 0.520, blue: 0.680)
                 )
             }
+        }
+
+        /// Theme choices intentionally affect only the brand accent. Shared
+        /// surfaces remain neutral so every native view and every plugin keeps
+        /// the same hierarchy in light and dark appearance.
+        private static func neutralPalette(
+            accent: Color,
+            info: Color,
+            purple: Color,
+            teal: Color,
+            cyan: Color
+        ) -> PaletteSpec {
+            PaletteSpec(
+                backgroundLight: c(0.965, 0.969, 0.976), backgroundDark: c(0.067, 0.075, 0.094),
+                surfaceLight: c(0.973, 0.976, 0.984), surfaceDark: c(0.071, 0.078, 0.098),
+                sidebarLight: c(0.945, 0.953, 0.965), sidebarDark: c(0.094, 0.102, 0.122),
+                cardLight: c(1.000, 1.000, 1.000), cardDark: c(0.102, 0.114, 0.137),
+                elevatedLight: c(1.000, 1.000, 1.000), elevatedDark: c(0.125, 0.137, 0.165),
+                hoverLight: c(0.925, 0.933, 0.953), hoverDark: c(0.165, 0.180, 0.212),
+                separatorLight: c(0.875, 0.890, 0.914), separatorDark: c(0.188, 0.204, 0.239),
+                textPrimaryLight: c(0.122, 0.141, 0.188), textPrimaryDark: c(0.949, 0.957, 0.973),
+                textSecondaryLight: c(0.424, 0.455, 0.502), textSecondaryDark: c(0.682, 0.706, 0.749),
+                textTertiaryLight: c(0.541, 0.573, 0.620), textTertiaryDark: c(0.522, 0.553, 0.600),
+                accent: accent,
+                success: Color(red: 0.157, green: 0.663, blue: 0.420),
+                info: info,
+                purple: purple,
+                teal: teal,
+                cyan: cyan,
+                shadow: Color.black
+            )
         }
 
         static func statusColor(for value: Double, thresholds: (warn: Double, danger: Double) = (0.7, 0.85)) -> Color {
@@ -189,48 +172,16 @@ enum Theme {
     }
 
     enum Gradients {
-        static var accent: LinearGradient { LinearGradient(
-            colors: [Colors.accent, Colors.info],
-            startPoint: .topLeading, endPoint: .bottomTrailing
-        ) }
-        static var hero: LinearGradient { LinearGradient(
-            colors: [Colors.accent, Colors.info],
-            startPoint: .topLeading, endPoint: .bottomTrailing
-        ) }
-        static var success: LinearGradient { LinearGradient(
-            colors: [Colors.accent.opacity(0.82), Colors.info.opacity(0.62)],
-            startPoint: .topLeading, endPoint: .bottomTrailing
-        ) }
-        static var danger: LinearGradient { LinearGradient(
-            colors: [Color.red.opacity(0.7), Color.orange.opacity(0.5)],
-            startPoint: .topLeading, endPoint: .bottomTrailing
-        ) }
-        static var sidebar: LinearGradient { LinearGradient(
-            colors: [
-                Colors.elevatedCardBg.opacity(0.88),
-                Colors.sidebarBg.opacity(0.96),
-                Colors.accent.opacity(0.035)
-            ],
-            startPoint: .top, endPoint: .bottom
-        ) }
-        static var appBackground: LinearGradient { LinearGradient(
-            colors: [
-                Colors.surface,
-                Colors.background,
-                Colors.accent.opacity(0.035)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        ) }
-        static var glassStroke: LinearGradient { LinearGradient(
-            colors: [
-                Color.white.opacity(0.92),
-                Colors.accent.opacity(0.18),
-                Colors.separator.opacity(0.64)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        ) }
+        // Compatibility aliases for existing surfaces. They intentionally use
+        // solid styles now, avoiding unnecessary gradient layers while the UI
+        // keeps one consistent visual hierarchy.
+        static var accent: Color { Colors.accent }
+        static var hero: Color { Colors.accent }
+        static var success: Color { Colors.success }
+        static var danger: Color { Colors.danger }
+        static var sidebar: Color { Colors.sidebarBg }
+        static var appBackground: Color { Colors.background }
+        static var glassStroke: Color { Colors.separator }
     }
 
     enum Spacing {
@@ -243,23 +194,23 @@ enum Theme {
     }
 
     enum Radius {
-        static let sm: CGFloat = 8
-        static let md: CGFloat = 12
-        static let lg: CGFloat = 16
-        static let xl: CGFloat = 22
-        static let xxl: CGFloat = 28
+        static let sm: CGFloat = 6
+        static let md: CGFloat = 8
+        static let lg: CGFloat = 10
+        static let xl: CGFloat = 12
+        static let xxl: CGFloat = 14
     }
 
     enum Shadow {
-        static var smColor: Color { Colors.shadowTint.opacity(0.08) }
-        static let smRadius: CGFloat = 4
-        static let smY: CGFloat = 2
-        static var mdColor: Color { Colors.shadowTint.opacity(0.11) }
-        static let mdRadius: CGFloat = 8
-        static let mdY: CGFloat = 4
-        static var lgColor: Color { Colors.shadowTint.opacity(0.16) }
-        static let lgRadius: CGFloat = 16
-        static let lgY: CGFloat = 8
+        static var smColor: Color { Colors.shadowTint.opacity(0.035) }
+        static let smRadius: CGFloat = 2
+        static let smY: CGFloat = 1
+        static var mdColor: Color { Colors.shadowTint.opacity(0.055) }
+        static let mdRadius: CGFloat = 4
+        static let mdY: CGFloat = 2
+        static var lgColor: Color { Colors.shadowTint.opacity(0.075) }
+        static let lgRadius: CGFloat = 7
+        static let lgY: CGFloat = 3
     }
 
     enum Font {
@@ -271,16 +222,16 @@ enum Theme {
         static let subheadlineMedium = SwiftUI.Font.subheadline.weight(.medium)
         static let headline = SwiftUI.Font.headline
         static let title2 = SwiftUI.Font.title2
-        static let title2Bold = SwiftUI.Font.title2.weight(.bold)
-        static let largeTitle = SwiftUI.Font.largeTitle.weight(.bold)
+        static let title2Bold = SwiftUI.Font.title2.weight(.semibold)
+        static let largeTitle = SwiftUI.Font.largeTitle.weight(.semibold)
     }
 
     enum Sidebar {
-        static let expandedWidth: CGFloat = 258
-        static let collapsedWidth: CGFloat = 64
-        static let iconSize: CGFloat = 20
-        static let itemHeight: CGFloat = 46
-        static let itemRadius: CGFloat = 16
+        static let expandedWidth: CGFloat = 220
+        static let collapsedWidth: CGFloat = 62
+        static let iconSize: CGFloat = 16
+        static let itemHeight: CGFloat = 36
+        static let itemRadius: CGFloat = 8
     }
 
     enum Card {
@@ -291,14 +242,12 @@ enum Theme {
 
 struct AgentGuardMark: View {
     var size: CGFloat = 34
-    var showGlow = true
+    var showGlow = false
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.28)
-                .fill(Theme.Gradients.hero)
-            RoundedRectangle(cornerRadius: size * 0.28)
-                .stroke(Color.white.opacity(0.34), lineWidth: 1)
+                .fill(Theme.Colors.accent)
             Image(nsImage: MenuBarShieldEyeTemplateImage.shared)
                 .resizable()
                 .renderingMode(.template)
@@ -306,10 +255,9 @@ struct AgentGuardMark: View {
                 .aspectRatio(contentMode: .fit)
                 .foregroundStyle(.white)
                 .frame(width: size * 0.58, height: size * 0.58)
-                .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
         }
         .frame(width: size, height: size)
-        .shadow(color: showGlow ? Theme.Colors.accent.opacity(0.24) : .clear, radius: size * 0.36, y: size * 0.12)
+        .shadow(color: showGlow ? Theme.Shadow.smColor : .clear, radius: Theme.Shadow.smRadius, y: Theme.Shadow.smY)
     }
 }
 
@@ -324,7 +272,7 @@ struct BrandButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12, weight: .semibold))
+            .font(Theme.Font.captionMedium)
             .foregroundStyle(foregroundColor)
             .padding(.horizontal, Theme.Spacing.md)
             .frame(minHeight: minHeight)
@@ -334,9 +282,9 @@ struct BrandButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
                     .stroke(strokeColor, lineWidth: 1)
             )
-            .shadow(color: shadowColor(configuration.isPressed), radius: configuration.isPressed ? 4 : 14, y: configuration.isPressed ? 1 : 6)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.spring(response: 0.22, dampingFraction: 0.78), value: configuration.isPressed)
+            .shadow(color: shadowColor(configuration.isPressed), radius: Theme.Shadow.smRadius, y: Theme.Shadow.smY)
+            .scaleEffect(configuration.isPressed ? 0.99 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 
     private var foregroundColor: Color {
@@ -348,16 +296,17 @@ struct BrandButtonStyle: ButtonStyle {
 
     private var strokeColor: Color {
         switch variant {
-        case .primary, .danger: return Color.white.opacity(0.28)
-        case .secondary: return color.opacity(0.34)
-        case .ghost: return color.opacity(0.18)
+        case .primary, .danger: return Color.clear
+        case .secondary: return Theme.Colors.separator
+        case .ghost: return Color.clear
         }
     }
 
     private func shadowColor(_ pressed: Bool) -> Color {
         guard !pressed else { return .clear }
         switch variant {
-        case .primary, .secondary, .danger: return color.opacity(0.18)
+        case .primary, .danger: return Theme.Shadow.smColor
+        case .secondary: return Theme.Shadow.smColor
         case .ghost: return .clear
         }
     }
@@ -366,18 +315,15 @@ struct BrandButtonStyle: ButtonStyle {
     private func background(_ pressed: Bool) -> some View {
         switch variant {
         case .primary:
-            Theme.Gradients.accent
-                .overlay(color.opacity(pressed ? 0.12 : 0))
+            color.opacity(pressed ? 0.82 : 1)
         case .danger:
-            Theme.Gradients.danger
-                .overlay(color.opacity(pressed ? 0.12 : 0))
+            color.opacity(pressed ? 0.82 : 1)
         case .secondary:
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .fill(.ultraThinMaterial)
-                .overlay(color.opacity(pressed ? 0.18 : 0.11))
+                .fill(pressed ? Theme.Colors.cardHover : Theme.Colors.cardBg)
         case .ghost:
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .fill(pressed ? color.opacity(0.12) : Theme.Colors.elevatedCardBg.opacity(0.62))
+                .fill(pressed ? Theme.Colors.cardHover : Color.clear)
         }
     }
 }
@@ -386,9 +332,9 @@ struct CardView<Content: View>: View {
     let content: Content
     var padding: CGFloat = Theme.Card.padding
     var cornerRadius: CGFloat = Theme.Radius.md
-    var showShadow: Bool = true
+    var showShadow: Bool = false
 
-    init(padding: CGFloat = Theme.Card.padding, cornerRadius: CGFloat = Theme.Radius.md, showShadow: Bool = true, @ViewBuilder content: () -> Content) {
+    init(padding: CGFloat = Theme.Card.padding, cornerRadius: CGFloat = Theme.Radius.md, showShadow: Bool = false, @ViewBuilder content: () -> Content) {
         self.padding = padding
         self.cornerRadius = cornerRadius
         self.showShadow = showShadow
@@ -398,12 +344,12 @@ struct CardView<Content: View>: View {
     var body: some View {
         content
             .padding(padding)
-            .background(Theme.Colors.elevatedCardBg)
+            .background(Theme.Colors.cardBg)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-            .shadow(color: showShadow ? Theme.Shadow.lgColor : .clear, radius: showShadow ? 18 : 0, y: showShadow ? 8 : 0)
+            .shadow(color: showShadow ? Theme.Shadow.smColor : .clear, radius: showShadow ? Theme.Shadow.smRadius : 0, y: showShadow ? Theme.Shadow.smY : 0)
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(Theme.Gradients.glassStroke, lineWidth: 1)
+                    .stroke(Theme.Colors.separator, lineWidth: 1)
             )
     }
 }
@@ -438,12 +384,11 @@ struct StatCardView: View {
         CardView {
             HStack(spacing: Theme.Spacing.md) {
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(Theme.Gradients.hero)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 40, height: 40)
+                    .background(iconColor.opacity(0.10))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-                    .shadow(color: Theme.Colors.accent.opacity(0.16), radius: 9, y: 4)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -648,12 +593,11 @@ extension View {
     func cardStyle(padding: CGFloat = Theme.Card.padding, cornerRadius: CGFloat = Theme.Radius.md) -> some View {
         self
             .padding(padding)
-            .background(Theme.Colors.elevatedCardBg)
+            .background(Theme.Colors.cardBg)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-            .shadow(color: Theme.Shadow.lgColor, radius: 16, y: 8)
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(Theme.Gradients.glassStroke, lineWidth: 1)
+                    .stroke(Theme.Colors.separator, lineWidth: 1)
             )
     }
 
@@ -662,21 +606,7 @@ extension View {
     }
 
     func appCanvas() -> some View {
-        self.background(
-            ZStack {
-                Theme.Gradients.appBackground
-                Circle()
-                    .fill(Theme.Colors.accent.opacity(0.055))
-                    .frame(width: 420, height: 420)
-                    .blur(radius: 70)
-                    .offset(x: -260, y: -240)
-                Circle()
-                    .fill(Theme.Colors.info.opacity(0.045))
-                    .frame(width: 360, height: 360)
-                    .blur(radius: 65)
-                    .offset(x: 360, y: 250)
-            }
-        )
+        self.background(Theme.Colors.background)
     }
 }
 

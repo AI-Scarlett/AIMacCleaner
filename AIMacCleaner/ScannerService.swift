@@ -25,8 +25,15 @@ class ScannerService: ObservableObject {
     private var ignoredIds: Set<String> = []
     private var ignoreFilePath: String { SandboxPaths.shared.ignoreListPath }
     private var aiConfigFilePath: String { SandboxPaths.shared.aiConfigPath }
-    private let aiKeychainService = "com.tracefence.ai-provider"
+    private var aiKeychainService: String {
+        Bundle.main.bundleIdentifier == "com.tracefence.uipreview"
+            ? "com.tracefence.uipreview.ai-provider"
+            : "com.tracefence.ai-provider"
+    }
     private let aiKeychainAccount = "api-key"
+    private var allowsAIKeychainAccess: Bool {
+        Bundle.main.bundleIdentifier != "com.tracefence.uipreview"
+    }
     private var scanBookmarksPath: String { SandboxPaths.shared.scanBookmarksPath }
     private var scannerCachePath: String { SandboxPaths.shared.scannerCachePath }
     private var authorizedScanRoots: Set<String> = []
@@ -1220,6 +1227,13 @@ class ScannerService: ObservableObject {
     // MARK: - AI Config
 
     func loadAIConfigFromDisk() {
+        // UI preview builds use a different bundle identity and must not request
+        // access to credentials owned by the installed production app. Keeping
+        // the preview credential-free also makes visual QA deterministic.
+        if ProcessInfo.processInfo.arguments.contains("--tracefence-ui-preview") {
+            aiConfig = defaultAIConfig()
+            return
+        }
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: aiConfigFilePath)),
               let config = try? JSONDecoder().decode(AIConfig.self, from: data) else {
             aiConfig = defaultAIConfig()
@@ -1302,6 +1316,7 @@ class ScannerService: ObservableObject {
     }
 
     private func readAIAPIKey() -> String? {
+        guard allowsAIKeychainAccess else { return nil }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: aiKeychainService,
@@ -1321,6 +1336,7 @@ class ScannerService: ObservableObject {
 
     @discardableResult
     private func storeAIAPIKey(_ value: String) -> Bool {
+        guard allowsAIKeychainAccess else { return false }
         let key = Data(value.utf8)
         let identity: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -1340,6 +1356,7 @@ class ScannerService: ObservableObject {
     }
 
     private func deleteAIAPIKey() {
+        guard allowsAIKeychainAccess else { return }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: aiKeychainService,

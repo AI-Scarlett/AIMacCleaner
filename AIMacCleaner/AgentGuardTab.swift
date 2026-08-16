@@ -107,7 +107,7 @@ struct AgentGuardTab: View {
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.md)
-        .background(Theme.Colors.elevatedCardBg.opacity(0.66))
+        .background(Theme.Colors.cardBg)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Theme.Colors.separator)
@@ -1561,17 +1561,16 @@ struct SegmentButton: View {
                 Text(title)
                     .font(.system(size: 11, weight: selected == index ? .bold : .semibold))
             }
-            .foregroundStyle(selected == index ? .white : Theme.Colors.textSecondary)
+            .foregroundStyle(selected == index ? Theme.Colors.accent : Theme.Colors.textSecondary)
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .fill(selected == index ? AnyShapeStyle(Theme.Gradients.hero) : AnyShapeStyle(Theme.Colors.elevatedCardBg.opacity(0.55)))
-                    .shadow(color: selected == index ? tint.opacity(0.28) : .clear, radius: 10, y: 4)
+                    .fill(selected == index ? AnyShapeStyle(tint.opacity(0.12)) : AnyShapeStyle(Theme.Colors.cardBg))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                    .stroke(selected == index ? Color.white.opacity(0.28) : Theme.Colors.separator, lineWidth: 1)
+                    .stroke(selected == index ? tint.opacity(0.28) : Theme.Colors.separator, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -1588,11 +1587,10 @@ struct StatCard: View {
         VStack(spacing: Theme.Spacing.sm) {
             Image(systemName: icon)
                 .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(color)
                 .frame(width: 38, height: 38)
-                .background(Theme.Gradients.hero)
-                .clipShape(RoundedRectangle(cornerRadius: 13))
-                .shadow(color: Theme.Colors.accent.opacity(0.18), radius: 9, y: 4)
+                .background(color.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             Text(value)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
                 .foregroundStyle(Theme.Colors.textPrimary)
@@ -1609,12 +1607,11 @@ struct StatCard: View {
         .padding(.vertical, Theme.Spacing.lg)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .fill(Theme.Colors.elevatedCardBg)
+                .fill(Theme.Colors.cardBg)
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .stroke(Theme.Colors.separator, lineWidth: 1)
         )
-        .shadow(color: Theme.Shadow.mdColor, radius: 14, y: 6)
     }
 }

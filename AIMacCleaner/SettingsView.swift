@@ -124,30 +124,25 @@ struct SettingsView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                ZStack {
-                    RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                        .fill(Theme.Colors.accent.opacity(0.14))
-                    Image(systemName: "gearshape.2.fill")
-                        .font(Theme.Font.title2)
-                        .foregroundStyle(Theme.Colors.accent)
-                }
-                .frame(width: 44, height: 44)
                 Text(localizer.settingsTitle)
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .font(.headline)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Spacer()
                 Button { dismiss() } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .frame(width: 28, height: 28)
+                        .background(Theme.Colors.cardHover, in: RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
                 .buttonStyle(.plain)
             }
-            .padding(Theme.Spacing.xl)
-            .background(.ultraThinMaterial)
-            .background(Theme.Colors.elevatedCardBg.opacity(0.58))
+            .padding(.horizontal, Theme.Spacing.lg)
+            .frame(height: 48)
+            .background(Theme.Colors.cardBg)
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(Theme.Gradients.glassStroke)
+                    .fill(Theme.Colors.separator)
                     .frame(height: 1)
             }
 
@@ -176,10 +171,10 @@ struct SettingsView: View {
                                 Spacer()
                             }
                             .padding(.horizontal, Theme.Spacing.md)
-                            .padding(.vertical, Theme.Spacing.sm)
+                            .frame(minHeight: 34)
                             .background(
                                 RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                    .fill(selectedTab == tab ? Theme.Colors.accent.opacity(0.08) : Color.clear)
+                                    .fill(selectedTab == tab ? Theme.Colors.accent.opacity(0.10) : Color.clear)
                             )
                             .contentShape(Rectangle())
                         }
@@ -188,14 +183,13 @@ struct SettingsView: View {
                     }
                     Spacer()
                 }
-                .frame(width: 140)
+                .frame(width: 164)
                 .padding(.horizontal, Theme.Spacing.sm)
                 .padding(.vertical, Theme.Spacing.md)
-                .background(Theme.Gradients.sidebar)
-                .background(.ultraThinMaterial)
+                .background(Theme.Colors.sidebarBg)
                 .overlay(alignment: .trailing) {
                     Rectangle()
-                        .fill(Theme.Gradients.glassStroke)
+                        .fill(Theme.Colors.separator)
                         .frame(width: 1)
                 }
 
@@ -242,15 +236,14 @@ struct SettingsView: View {
                     .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
             }
             .padding(Theme.Spacing.lg)
-            .background(.ultraThinMaterial)
-            .background(Theme.Colors.elevatedCardBg.opacity(0.52))
+            .background(Theme.Colors.cardBg)
             .overlay(alignment: .top) {
                 Rectangle()
-                    .fill(Theme.Gradients.glassStroke)
+                    .fill(Theme.Colors.separator)
                     .frame(height: 1)
             }
         }
-        .frame(width: 760, height: 640)
+        .frame(width: 780, height: 620)
         .appCanvas()
         .sheet(isPresented: $showAIConfig) {
             AIConfigView()
@@ -259,9 +252,6 @@ struct SettingsView: View {
         }
         .onAppear {
             selectedTab = initialTab
-        }
-        .onDisappear {
-            stopShortcutRecording()
         }
         .task {
             licenseService.refreshTrialState()
@@ -296,8 +286,8 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             SectionHeader(title: localizer.t("主题色彩", en: "Color Themes"), icon: "paintpalette.fill")
             Text(localizer.t(
-                "每套主题都有自己的性格，并自动适配浅色和深色模式。",
-                en: "Each theme has its own story and automatically adapts to light and dark mode."
+                "主题只改变品牌强调色；窗口、卡片、插件和菜单栏始终使用同一套层级，并自动适配浅色与深色模式。",
+                en: "Themes change only the brand accent. Windows, cards, plugins, and the menu bar keep one consistent hierarchy in light and dark mode."
             ))
             .font(Theme.Font.caption)
             .foregroundStyle(Theme.Colors.textSecondary)
@@ -398,13 +388,13 @@ struct SettingsView: View {
     private func paletteStory(_ palette: AppColorPalette) -> String {
         switch palette {
         case .aurora:
-            return localizer.t("像凌晨的状态面板，保留现在这套清爽科技感。", en: "A calm early-morning operations board; this keeps the current fresh tech mood.")
+            return localizer.t("低饱和青绿色强调，不改变页面底色。", en: "A restrained cyan accent without changing page surfaces.", zhHant: "低飽和青綠色強調，不改變頁面底色。", ja: "落ち着いたシアンのアクセント。画面の背景色は変わりません。", ko: "절제된 시안 강조색이며 화면 배경은 바뀌지 않습니다.", mt: "A restrained cyan accent without changing page surfaces.")
         case .rose:
-            return localizer.t("更柔和、更有亲和力，适合想要一点情绪温度的工作台。", en: "Softer and warmer, for a workspace with a little more emotional temperature.")
+            return localizer.t("柔和玫瑰强调，不改变信息层级。", en: "A warm rose accent with the same information hierarchy.", zhHant: "柔和玫瑰強調，不改變資訊層級。", ja: "柔らかなローズのアクセント。情報階層はそのままです。", ko: "부드러운 로즈 강조색이며 정보 계층은 그대로 유지됩니다.", mt: "A warm rose accent with the same information hierarchy.")
         case .shield:
-            return localizer.t("取自图标的深蓝玻璃与电光蓝高光，更像品牌默认主题。", en: "Deep glass blue and electric highlights sampled from the app icon, intended as the brand default.")
+            return localizer.t("更深的蓝盾强调色，适合高对比操作。", en: "A deeper shield-blue accent for stronger action contrast.", zhHant: "更深的藍盾強調色，適合高對比操作。", ja: "操作を見分けやすい、より深いシールドブルーです。", ko: "작업 대비를 높이는 짙은 실드 블루 강조색입니다.", mt: "A deeper shield-blue accent for stronger action contrast.")
         case .porcelain:
-            return localizer.t("默认主题。白底、蓝盾强调、低灰度层级，适合长时间盯数据。", en: "The default theme: white canvas, blue shield accents, and quiet layers for dense data.")
+            return localizer.t("默认蓝色强调，搭配统一中性色层级。", en: "The default blue accent with a unified neutral hierarchy.", zhHant: "預設藍色強調，搭配統一中性色層級。", ja: "統一されたニュートラル階層に標準のブルーを合わせます。", ko: "통일된 중성 계층에 기본 블루 강조색을 사용합니다.", mt: "The default blue accent with a unified neutral hierarchy.")
         }
     }
 
@@ -2954,28 +2944,10 @@ struct ToggleSetting: View {
                     .foregroundStyle(Theme.Colors.textSecondary)
             }
             Spacer()
-            Button {
-                withAnimation(.spring(response: 0.24, dampingFraction: 0.78)) {
-                    isOn.toggle()
-                }
-            } label: {
-                ZStack(alignment: isOn ? .trailing : .leading) {
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(isOn ? Theme.Colors.accent.opacity(0.92) : Theme.Colors.sidebarBg.opacity(0.8))
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 20, height: 20)
-                        .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
-                        .padding(3)
-                }
-                .frame(width: 48, height: 26)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(isOn ? Color.white.opacity(0.28) : Theme.Colors.separator.opacity(0.6), lineWidth: 1)
-                )
-                .shadow(color: isOn ? Theme.Colors.accent.opacity(0.18) : .clear, radius: 9, y: 4)
-            }
-            .buttonStyle(.plain)
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(Theme.Colors.accent)
         }
         .padding(.vertical, Theme.Spacing.xs)
         .frame(minHeight: 54)

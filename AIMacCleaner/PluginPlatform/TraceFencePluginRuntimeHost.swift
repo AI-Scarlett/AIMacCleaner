@@ -659,7 +659,7 @@ struct TraceFencePluginRuntimeView: View {
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.Colors.elevatedCardBg.opacity(0.42))
+        .background(Theme.Colors.cardBg)
     }
 
     private func compactHeader(_ plugin: any MacToolsPlugin) -> some View {
@@ -1158,15 +1158,65 @@ struct TraceFencePluginWorkspaceView: View {
     @State private var pluginPendingCompleteUninstall: TraceFencePluginDescriptor?
 
     var body: some View {
-        HStack(spacing: 0) {
-            pluginRail
-                .frame(width: 286)
-            Rectangle()
-                .fill(Theme.Colors.separator)
-                .frame(width: 1)
-            workspaceContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: Theme.Spacing.lg) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(localizer.t(
+                        "插件工作区",
+                        en: "Plugin Workspace",
+                        zhHant: "外掛工作區",
+                        ja: "プラグインワークスペース",
+                        ko: "플러그인 작업 공간",
+                        mt: "Workspace tal-plugins"
+                    ))
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(localizer.t(
+                        "运行、更新和管理已安装的 TraceFence 插件",
+                        en: "Run, update, and manage installed TraceFence plugins",
+                        zhHant: "執行、更新並管理已安裝的 TraceFence 外掛",
+                        ja: "インストール済みの TraceFence プラグインを実行、更新、管理",
+                        ko: "설치된 TraceFence 플러그인 실행, 업데이트 및 관리",
+                        mt: "Run, update, and manage installed TraceFence plugins"
+                    ))
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                }
+
+                Spacer()
+
+                Button(action: openStore) {
+                    Label(localizer.t(
+                        "插件商城",
+                        en: "Plugin Store",
+                        zhHant: "外掛商城",
+                        ja: "プラグインストア",
+                        ko: "플러그인 스토어",
+                        mt: "Plugin Store"
+                    ), systemImage: "plus")
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 32))
+            }
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.lg)
+            .background(Theme.Colors.background)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Theme.Colors.separator)
+                    .frame(height: 1)
+            }
+
+            HStack(spacing: 0) {
+                pluginRail
+                    .frame(width: 292)
+                Rectangle()
+                    .fill(Theme.Colors.separator)
+                    .frame(width: 1)
+                workspaceContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
+        .background(Theme.Colors.background)
         .task {
             packageManager.refresh(catalog: catalogService.catalog)
             selectFirstPluginIfNeeded()
@@ -1206,9 +1256,23 @@ struct TraceFencePluginWorkspaceView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             HStack(spacing: Theme.Spacing.sm) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(localizer.t("我的插件", en: "My Plugins"))
+                    Text(localizer.t(
+                        "已安装",
+                        en: "Installed",
+                        zhHant: "已安裝",
+                        ja: "インストール済み",
+                        ko: "설치됨",
+                        mt: "Installati"
+                    ))
                         .font(Theme.Font.headline)
-                    Text(localizer.t("已安装 \(installedPlugins.count) 个", en: "\(installedPlugins.count) installed"))
+                    Text(localizer.t(
+                        "已安装 \(installedPlugins.count) 个",
+                        en: "\(installedPlugins.count) installed",
+                        zhHant: "已安裝 \(installedPlugins.count) 個",
+                        ja: "\(installedPlugins.count) 個インストール済み",
+                        ko: "\(installedPlugins.count)개 설치됨",
+                        mt: "\(installedPlugins.count) installati"
+                    ))
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textTertiary)
                 }
@@ -1248,7 +1312,7 @@ struct TraceFencePluginWorkspaceView: View {
             }
         }
         .padding(Theme.Spacing.lg)
-        .background(Theme.Gradients.sidebar)
+        .background(Theme.Colors.cardBg)
     }
 
     private func pluginRailRow(_ plugin: TraceFencePluginDescriptor) -> some View {
@@ -1265,12 +1329,12 @@ struct TraceFencePluginWorkspaceView: View {
             } label: {
                 HStack(spacing: Theme.Spacing.sm) {
                     Image(systemName: plugin.systemImage)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(isSelected ? .white : Theme.Colors.accent)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Theme.Colors.accent)
                         .frame(width: 34, height: 34)
                         .background(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                                .fill(isSelected ? AnyShapeStyle(Theme.Gradients.hero) : AnyShapeStyle(Theme.Colors.accent.opacity(0.10)))
+                                .fill(AnyShapeStyle(Theme.Colors.accent.opacity(isSelected ? 0.14 : 0.08)))
                         )
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
@@ -1386,10 +1450,9 @@ struct TraceFencePluginWorkspaceView: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.Colors.textTertiary)
                     .frame(width: 28, height: 34)
-                    .background(Theme.Colors.elevatedCardBg.opacity(0.72), in: Circle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -1402,11 +1465,7 @@ struct TraceFencePluginWorkspaceView: View {
             RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .fill(isSelected
                     ? Theme.Colors.accent.opacity(0.10)
-                    : Theme.Colors.elevatedCardBg.opacity(0.34))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(isSelected ? Theme.Colors.accent.opacity(0.30) : Color.clear, lineWidth: 1)
+                    : Color.clear)
         )
     }
 

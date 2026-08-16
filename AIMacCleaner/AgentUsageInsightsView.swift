@@ -99,62 +99,46 @@ struct AgentUsageInsightsView: View {
     // MARK: Header and scan state
 
     private var dashboardHeader: some View {
-        CardView(padding: Theme.Spacing.lg) {
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                HStack(alignment: .center, spacing: Theme.Spacing.md) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: Theme.Radius.md)
-                            .fill(Theme.Gradients.accent)
-                        Image(systemName: "chart.xyaxis.line")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-                    .frame(width: 44, height: 44)
+        HStack(spacing: Theme.Spacing.sm) {
+            Text(localizer.t(
+                "数据范围",
+                en: "Data scope",
+                zhHant: "資料範圍",
+                ja: "データ範囲",
+                ko: "데이터 범위",
+                mt: "Ambitu tad-data"
+            ))
+                .font(Theme.Font.captionMedium)
+                .foregroundStyle(Theme.Colors.textSecondary)
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(dashboardTitle)
-                            .font(Theme.Font.title2Bold)
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                        Text(dashboardSubtitle)
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                    }
-
-                    Spacer(minLength: Theme.Spacing.md)
-
-                    statusBadge
-
-                    Button {
-                        performScanAction()
-                    } label: {
-                        Label(scanActionTitle, systemImage: scanActionIcon)
-                    }
-                    .buttonStyle(BrandButtonStyle(variant: .secondary, minHeight: 30))
-                    .help(scanActionHelp)
-                }
-
-                Divider().overlay(Theme.Colors.separator)
-
-                HStack(spacing: Theme.Spacing.sm) {
-                    Text(localizer.t("显示范围", en: "Display scope"))
-                        .font(Theme.Font.captionMedium)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-
-                    ForEach(AgentUsageScope.allCases) { scope in
-                        scopeButton(scope)
-                    }
-
-                    Spacer()
-
-                    Label(
-                        localizer.t("统计时区：", en: "Statistics time zone: ") + service.snapshot.timeZoneIdentifier,
-                        systemImage: "globe"
-                    )
-                    .font(Theme.Font.caption)
-                    .foregroundStyle(Theme.Colors.textTertiary)
-                    .lineLimit(1)
-                }
+            ForEach(AgentUsageScope.allCases) { scope in
+                scopeButton(scope)
             }
+
+            Spacer(minLength: Theme.Spacing.md)
+
+            Label(service.snapshot.timeZoneIdentifier, systemImage: "globe")
+                .font(Theme.Font.caption)
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .lineLimit(1)
+
+            statusBadge
+
+            Button {
+                performScanAction()
+            } label: {
+                Label(scanActionTitle, systemImage: scanActionIcon)
+            }
+            .buttonStyle(BrandButtonStyle(variant: .secondary, minHeight: 30))
+            .help(scanActionHelp)
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(Theme.Colors.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .stroke(Theme.Colors.separator, lineWidth: 1)
         }
     }
 
@@ -1785,13 +1769,12 @@ struct AgentUsageRuntimeSummaryView: View {
             HStack(spacing: Theme.Spacing.sm) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Theme.Gradients.hero)
+                        .fill(Theme.Colors.accent.opacity(0.10))
                     Image(systemName: "waveform.path.ecg")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.Colors.accent)
                 }
                 .frame(width: 34, height: 34)
-                .shadow(color: Theme.Colors.accent.opacity(0.22), radius: 7, y: 3)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(localizer.t("实时 Token 用量", en: "Live Token Usage", zhHant: "即時 Token 用量", ja: "リアルタイム Token 使用量", ko: "실시간 Token 사용량", mt: "Live Token Usage"))
@@ -1897,23 +1880,12 @@ struct AgentUsageRuntimeSummaryView: View {
             .foregroundStyle(Theme.Colors.textTertiary)
         }
         .padding(Theme.Spacing.md)
-        .background {
-            ZStack {
-                RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
-                    .fill(Theme.Colors.elevatedCardBg.opacity(0.82))
-                LinearGradient(
-                    colors: [Theme.Colors.accent.opacity(0.10), .clear, Theme.Colors.purple.opacity(0.04)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
-        }
+        .background(Theme.Colors.cardBg)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
-                .stroke(Theme.Gradients.glassStroke, lineWidth: 1)
+                .stroke(Theme.Colors.separator, lineWidth: 1)
         }
-        .shadow(color: Theme.Colors.shadowTint.opacity(0.08), radius: 9, y: 4)
         .onAppear { service.startScheduling() }
     }
 
