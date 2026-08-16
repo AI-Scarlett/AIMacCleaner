@@ -58,19 +58,21 @@ enum AgentUsageRemotePricingCatalog {
         at date: Date? = nil
     ) -> AgentUsageRemoteModelPrice? {
         guard SandboxPaths.isDirectDistribution, let model else { return nil }
-        let providers: [Provider]
+        let allowedProviders: Set<String>?
         switch scope {
         case .codex:
-            providers = [.openAI]
+            allowedProviders = ["openai"]
         case .claude:
-            providers = [.anthropic]
+            allowedProviders = ["anthropic"]
         case .openCode, .openClaw, .deepSeekHarness:
-            providers = [.miniMax, .deepSeek, .xAI, .moonshot, .openAI, .anthropic]
+            // These runtimes can route to any provider. Exact globally unique
+            // model IDs keep provider additions data-driven in the remote JSON.
+            allowedProviders = nil
         case .combined:
             return nil
         }
         guard let catalog = state.snapshot() else { return nil }
-        return catalog.price(providers: providers, model: model, at: date ?? Date())
+        return catalog.price(allowedProviders: allowedProviders, model: model, at: date ?? Date())
     }
 
     static func installValidatedCatalogData(_ data: Data) throws -> (previous: String, current: String) {
@@ -124,10 +126,13 @@ enum AgentUsageRemotePricingCatalog {
 
         var validatedEntries: [ValidatedEntry] = []
         validatedEntries.reserveCapacity(document.entries.count)
-        var aliasesByProvider: [Provider: [String: String]] = [:]
+        var ownersByIdentifier: [String: String] = [:]
         for entry in document.entries {
+            let provider = entry.provider.lowercased()
             let model = entry.model.lowercased()
-            guard model == entry.model,
+            guard provider == entry.provider,
+                  isSafeProviderID(provider),
+                  model == entry.model,
                   isSafeModelID(model),
                   entry.aliases.count <= 24 else {
                 throw ValidationError.invalidModel
@@ -190,17 +195,16 @@ enum AgentUsageRemotePricingCatalog {
                 }
             }
 
-            var providerAliases = aliasesByProvider[entry.provider, default: [:]]
+            let owner = "\(provider)|\(model)"
             for identifier in [model] + aliases {
-                if let owner = providerAliases[identifier], owner != model {
+                if let existingOwner = ownersByIdentifier[identifier], existingOwner != owner {
                     throw ValidationError.ambiguousAlias
                 }
-                providerAliases[identifier] = model
+                ownersByIdentifier[identifier] = owner
             }
-            aliasesByProvider[entry.provider] = providerAliases
 
             validatedEntries.append(ValidatedEntry(
-                provider: entry.provider,
+                provider: provider,
                 model: model,
                 aliases: aliases,
                 effectiveFrom: entry.effectiveFrom,
@@ -219,7 +223,7 @@ enum AgentUsageRemotePricingCatalog {
             ))
         }
 
-        let grouped = Dictionary(grouping: validatedEntries) { "\($0.provider.rawValue)|\($0.model)" }
+        let grouped = Dictionary(grouping: validatedEntries) { "\($0.provider)|\($0.model)" }
         for entries in grouped.values {
             let sorted = entries.sorted { ($0.effectiveFrom ?? .distantPast) < ($1.effectiveFrom ?? .distantPast) }
             for index in 0..<max(0, sorted.count - 1) {
@@ -267,7 +271,7 @@ enum AgentUsageRemotePricingCatalog {
               "rates": {"inputPerMillion": 2, "cachedInputPerMillion": 0.2, "outputPerMillion": 12}
             },
             {
-              "provider": "deepseek",
+              "provider": "futurevendor",
               "model": "deepseek-test",
               "rates": {
                 "inputPerMillion": 0.44,
@@ -288,29 +292,30 @@ enum AgentUsageRemotePricingCatalog {
         do {
             let catalog = try decodeAndValidate(fixture)
             let before = catalog.price(
-                providers: [.openAI],
+                allowedProviders: ["openai"],
                 model: "vendor/gpt-test",
                 at: Date(timeIntervalSince1970: 1_785_369_599)
             )
             let after = catalog.price(
-                providers: [.openAI],
+                allowedProviders: ["openai"],
                 model: "gpt-test",
                 at: Date(timeIntervalSince1970: 1_785_369_600)
             )
             expect(before?.inputPerMillion == 2.5 && before?.outputPerMillion == 15, "remote pricing must retain the pre-change historical tier")
             expect(after?.inputPerMillion == 2 && after?.outputPerMillion == 12, "remote pricing must switch tiers at the published effective date")
             let peak = catalog.price(
-                providers: [.deepSeek],
+                allowedProviders: nil,
                 model: "deepseek-test",
                 at: Date(timeIntervalSince1970: 1_786_932_000)
             )
             let offPeak = catalog.price(
-                providers: [.deepSeek],
+                allowedProviders: nil,
                 model: "deepseek-test",
                 at: Date(timeIntervalSince1970: 1_786_942_800)
             )
             expect(peak?.inputPerMillion == 0.44 && peak?.cachedInputPerMillion == 0.014 && peak?.outputPerMillion == 1.32, "remote pricing must preserve published UTC peak rates")
             expect(offPeak?.inputPerMillion == 0.22 && offPeak?.cachedInputPerMillion == 0.007 && offPeak?.outputPerMillion == 0.66, "remote pricing must apply the published UTC off-peak multiplier")
+            expect(catalog.price(allowedProviders: nil, model: "deepseek-test", at: Date()) != nil, "shared runtimes must accept providers introduced only by the remote catalog")
         } catch {
             failures.append("valid remote pricing fixture must decode: \(error.localizedDescription)")
         }
@@ -348,23 +353,25 @@ enum AgentUsageRemotePricingCatalog {
         fileprivate let contentSHA256: String
         fileprivate let revision: String
 
-        fileprivate func price(providers: [Provider], model: String, at date: Date) -> AgentUsageRemoteModelPrice? {
+        fileprivate func price(
+            allowedProviders: Set<String>?,
+            model: String,
+            at date: Date
+        ) -> AgentUsageRemoteModelPrice? {
             let normalized = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard !normalized.isEmpty else { return nil }
-            for provider in providers {
-                let candidates: [(entry: ValidatedEntry, score: Int)] = entries.compactMap { entry in
-                    guard entry.provider == provider,
-                          let score = entry.matchScore(normalized),
-                          entry.effectiveFrom.map({ $0 <= date }) ?? true,
-                          entry.effectiveUntil.map({ date < $0 }) ?? true else { return nil }
-                    return (entry, score)
-                }
-                if let selected = candidates.max(by: { lhs, rhs in
-                    if lhs.score != rhs.score { return lhs.score < rhs.score }
-                    return (lhs.entry.effectiveFrom ?? .distantPast) < (rhs.entry.effectiveFrom ?? .distantPast)
-                }) {
-                    return selected.entry.price(at: date)
-                }
+            let candidates: [(entry: ValidatedEntry, score: Int)] = entries.compactMap { entry in
+                guard allowedProviders?.contains(entry.provider) ?? true,
+                      let score = entry.matchScore(normalized),
+                      entry.effectiveFrom.map({ $0 <= date }) ?? true,
+                      entry.effectiveUntil.map({ date < $0 }) ?? true else { return nil }
+                return (entry, score)
+            }
+            if let selected = candidates.max(by: { lhs, rhs in
+                if lhs.score != rhs.score { return lhs.score < rhs.score }
+                return (lhs.entry.effectiveFrom ?? .distantPast) < (rhs.entry.effectiveFrom ?? .distantPast)
+            }) {
+                return selected.entry.price(at: date)
             }
             return nil
         }
@@ -387,7 +394,7 @@ enum AgentUsageRemotePricingCatalog {
     }
 
     fileprivate struct Entry: Codable, Sendable {
-        let provider: Provider
+        let provider: String
         let model: String
         let aliases: [String]
         let effectiveFrom: Date?
@@ -401,7 +408,7 @@ enum AgentUsageRemotePricingCatalog {
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            provider = try container.decode(Provider.self, forKey: .provider)
+            provider = try container.decode(String.self, forKey: .provider)
             model = try container.decode(String.self, forKey: .model)
             aliases = try container.decodeIfPresent([String].self, forKey: .aliases) ?? []
             effectiveFrom = try container.decodeIfPresent(Date.self, forKey: .effectiveFrom)
@@ -444,17 +451,8 @@ enum AgentUsageRemotePricingCatalog {
         let endMinute: Int
     }
 
-    fileprivate enum Provider: String, Codable, Sendable {
-        case openAI = "openai"
-        case anthropic
-        case miniMax = "minimax"
-        case deepSeek = "deepseek"
-        case xAI = "xai"
-        case moonshot
-    }
-
     fileprivate struct ValidatedEntry: Sendable {
-        let provider: Provider
+        let provider: String
         let model: String
         let aliases: [String]
         let effectiveFrom: Date?
@@ -621,6 +619,12 @@ enum AgentUsageRemotePricingCatalog {
     private static func isSafeVersion(_ value: String) -> Bool {
         guard 1...80 ~= value.count else { return false }
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+        return value.unicodeScalars.allSatisfy { allowed.contains($0) }
+    }
+
+    private static func isSafeProviderID(_ value: String) -> Bool {
+        guard 1...80 ~= value.count else { return false }
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789._-")
         return value.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 

@@ -10,7 +10,7 @@ All notable changes to AIMacCleaner will be documented in this file.
 - 取消将 `gpt-5.3-codex-spark` 等仅限产品内部使用的模型别名套用 GPT-5.2 价格；无公开 API 价格的模型明确显示“价格未知”。
 
 ### Improved
-- 官网版价格目录新增 xAI、DeepSeek 与 Moonshot 提供商，可继续通过 GitHub 独立更新，不必每次因价格变化重发客户端。
+- 官网版价格目录改为数据驱动的厂商标识，并新增通用峰谷时段规则；以后新增普通模型、厂商、别名或调整现有价格，只需更新 GitHub 文件，不必重发客户端。
 - DeepSeek V4 新旧价格按生效时间保留，新的峰值/非峰值单价按官方 UTC 时段自动计算，历史会话仍使用发生时的价格。
 
 ## [1.2.8] - 2026-08-16

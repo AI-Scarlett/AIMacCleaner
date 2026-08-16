@@ -17,4 +17,8 @@ rates in the entry and use `utcRateSchedule.offPeakMultiplier` plus non-overlapp
 `peakWindows` expressed as minutes after 00:00 UTC. Preserve the prior flat rate
 as a historical entry ending at the provider's published transition instant.
 
+Provider identifiers are validated lowercase data, not a client enum. Codex and
+Claude remain restricted to `openai` and `anthropic`; multi-provider runtimes use
+globally unique model IDs and can accept a new provider through this file alone.
+
 Do not use a zero rate for an unknown or unpublished price. Omit the model instead so TraceFence can label its estimate as unavailable. When a provider does not publish a cached-input or cache-write rate, omit that field; the client conservatively falls back to the normal input rate.
