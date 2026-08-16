@@ -13,18 +13,17 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.13")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.14")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
-    f"TraceFence {VERSION} completes plugin lifecycle management and marketplace usage signals.\n\n"
-    "- Adds direct enable and disable controls in My Plugins, the library, and plugin details.\n"
-    "- Adds Complete Uninstall, which stops the plugin and removes its package, isolated data, cache, temporary files, settings, and pinned placements.\n"
-    "- Keeps purchased plugin access so a removed plugin can be installed again without repurchasing.\n"
-    "- Displays privacy-safe GitHub package download counts as installs/updates, with updates and reinstalls explicitly included.\n"
-    "- Stops the quota helper while Quota Monitor is disabled and preserves the existing menu-bar layout.\n"
+    f"TraceFence {VERSION} repairs the installed-plugin workspace for real-world sidebar widths.\n\n"
+    "- Prevents plugin versions, pricing badges, and update states from wrapping into vertical text.\n"
+    "- Reduces every plugin row to one clear overflow action while keeping pin state visible.\n"
+    "- Moves enable/disable, Main Tab, menu-bar, reveal, update, and complete-uninstall actions into one consistent menu.\n"
+    "- Uses responsive spacing and card surfaces in both light and dark themes.\n"
 )
 
 

@@ -1160,7 +1160,7 @@ struct TraceFencePluginWorkspaceView: View {
     var body: some View {
         HStack(spacing: 0) {
             pluginRail
-                .frame(width: 250)
+                .frame(width: 286)
             Rectangle()
                 .fill(Theme.Colors.separator)
                 .frame(width: 1)
@@ -1257,89 +1257,73 @@ struct TraceFencePluginWorkspaceView: View {
         let isMainTab = mainTabPluginIDs.contains(plugin.id)
         let supportsMenuBar = plugin.supportsMenuBarQuickPanel
         let isEnabled = packageManager.record(pluginID: plugin.id)?.enabled ?? false
-        return HStack(spacing: Theme.Spacing.xs) {
+        let installationState = packageManager.state(for: plugin)
+        let installedVersion = installationState.installedVersion ?? plugin.version
+        return HStack(spacing: Theme.Spacing.sm) {
             Button {
                 selectedPluginID = plugin.id
             } label: {
                 HStack(spacing: Theme.Spacing.sm) {
                     Image(systemName: plugin.systemImage)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(isSelected ? .white : Theme.Colors.accent)
-                        .frame(width: 30, height: 30)
+                        .frame(width: 34, height: 34)
                         .background(
                             RoundedRectangle(cornerRadius: Theme.Radius.sm)
                                 .fill(isSelected ? AnyShapeStyle(Theme.Gradients.hero) : AnyShapeStyle(Theme.Colors.accent.opacity(0.10)))
                         )
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(plugin.localizedName())
-                            .font(Theme.Font.captionMedium)
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                            .lineLimit(1)
-                        HStack(spacing: 4) {
-                            Text("v\(packageManager.state(for: plugin).installedVersion ?? plugin.version)")
-                                .font(.system(size: 9, design: .monospaced))
-                            if case .updateAvailable = packageManager.state(for: plugin) {
-                                Image(systemName: "arrow.down.circle.fill")
-                                    .foregroundStyle(Theme.Colors.accent)
-                                    .help(localizer.t("可在当前插件页直接更新", en: "Update directly from this plugin page"))
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text(plugin.localizedName())
+                                .font(Theme.Font.captionMedium)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .layoutPriority(1)
+                            Spacer(minLength: 2)
+                            TraceFencePluginPricingBadge(plugin: plugin, compact: true)
+                                .fixedSize()
+                        }
+                        HStack(spacing: 5) {
+                            Text("v\(installedVersion)")
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .fixedSize(horizontal: true, vertical: false)
+                            if case .updateAvailable = installationState {
+                                compactRailStatus(
+                                    localizer.t("可更新", en: "Update"),
+                                    color: Theme.Colors.accent,
+                                    icon: "arrow.down.circle.fill"
+                                )
                             }
                             if !isEnabled {
-                                Label(localizer.t("已停用", en: "Disabled"), systemImage: "pause.circle.fill")
-                                    .foregroundStyle(Theme.Colors.warning)
-                            }
-                            TraceFencePluginPricingBadge(plugin: plugin, compact: true)
-                            if plugin.supportsOverview {
-                                Image(systemName: "rectangle.grid.2x2")
-                                    .help(localizer.t("可在概览显示", en: "Available on Overview"))
-                            }
-                            if supportsMenuBar {
-                                Image(systemName: "menubar.rectangle")
-                                    .help(localizer.t("可在菜单栏显示", en: "Available in Menu Bar"))
+                                compactRailStatus(
+                                    localizer.t("已停用", en: "Disabled"),
+                                    color: Theme.Colors.warning,
+                                    icon: "pause.circle.fill"
+                                )
                             }
                             Spacer(minLength: 0)
+                            if isMainTab {
+                                Image(systemName: "pin.fill")
+                                    .foregroundStyle(Theme.Colors.accent)
+                                    .help(localizer.t("已固定到主 Tab", en: "Pinned to Main Tabs"))
+                            }
+                            if isPinned {
+                                Image(systemName: "star.fill")
+                                    .foregroundStyle(Theme.Colors.warning)
+                                    .help(localizer.t("已固定到菜单栏", en: "Pinned to Menu Bar"))
+                            }
                         }
                         .font(.system(size: 9))
                         .foregroundStyle(Theme.Colors.textTertiary)
                     }
-                    Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-
-            Button {
-                toggleMainTab(plugin.id)
-            } label: {
-                Image(systemName: isMainTab ? "pin.fill" : "pin")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isMainTab ? Theme.Colors.accent : Theme.Colors.textTertiary)
-                    .frame(width: 24, height: 30)
-            }
-            .buttonStyle(.plain)
-            .help(isMainTab
-                ? localizer.t("从主 Tab 移除", en: "Remove from Main Tabs")
-                : localizer.t("固定到主 Tab", en: "Pin to Main Tabs"))
-
-            if supportsMenuBar {
-                Button {
-                    togglePinned(plugin.id)
-                } label: {
-                    Image(systemName: isPinned ? "star.fill" : "star")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(isPinned ? Theme.Colors.warning : Theme.Colors.textTertiary)
-                        .frame(width: 24, height: 30)
-                }
-                .buttonStyle(.plain)
-                .help(isPinned
-                    ? localizer.t("从菜单栏快捷插件移除", en: "Remove from Menu Bar Plugins")
-                    : localizer.t("固定到菜单栏快捷插件", en: "Pin to Menu Bar Plugins"))
-            } else {
-                Image(systemName: "macwindow")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.textTertiary)
-                    .frame(width: 24, height: 30)
-                    .help(localizer.t("仅在桌面工作区使用", en: "Desktop workspace only"))
-            }
+            .layoutPriority(1)
 
             Menu {
                 Button {
@@ -1365,6 +1349,30 @@ struct TraceFencePluginWorkspaceView: View {
                         )
                     }
                 }
+                Divider()
+                Button {
+                    toggleMainTab(plugin.id)
+                } label: {
+                    Label(
+                        isMainTab
+                            ? localizer.t("从主 Tab 移除", en: "Remove from Main Tabs")
+                            : localizer.t("固定到主 Tab", en: "Pin to Main Tabs"),
+                        systemImage: isMainTab ? "pin.slash" : "pin"
+                    )
+                }
+                if supportsMenuBar {
+                    Button {
+                        togglePinned(plugin.id)
+                    } label: {
+                        Label(
+                            isPinned
+                                ? localizer.t("从菜单栏移除", en: "Remove from Menu Bar")
+                                : localizer.t("固定到菜单栏", en: "Pin to Menu Bar"),
+                            systemImage: isPinned ? "star.slash" : "star"
+                        )
+                    }
+                }
+                Divider()
                 Button {
                     packageManager.reveal(pluginID: plugin.id)
                 } label: {
@@ -1377,25 +1385,37 @@ struct TraceFencePluginWorkspaceView: View {
                     Label(localizer.t("完全卸载…", en: "Uninstall Completely…"), systemImage: "trash")
                 }
             } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 11, weight: .semibold))
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Theme.Colors.textTertiary)
-                    .frame(width: 24, height: 30)
+                    .frame(width: 28, height: 34)
+                    .background(Theme.Colors.elevatedCardBg.opacity(0.72), in: Circle())
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .fixedSize()
             .help(localizer.t("管理插件", en: "Manage Plugin"))
         }
         .padding(.horizontal, Theme.Spacing.sm)
-        .padding(.vertical, 5)
+        .padding(.vertical, 7)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .fill(isSelected ? Theme.Colors.elevatedCardBg : Color.clear)
+                .fill(isSelected
+                    ? Theme.Colors.accent.opacity(0.10)
+                    : Theme.Colors.elevatedCardBg.opacity(0.34))
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(isSelected ? Theme.Colors.separator : Color.clear, lineWidth: 1)
+                .stroke(isSelected ? Theme.Colors.accent.opacity(0.30) : Color.clear, lineWidth: 1)
         )
+    }
+
+    private func compactRailStatus(_ title: String, color: Color, icon: String) -> some View {
+        Label(title, systemImage: icon)
+            .font(.system(size: 8, weight: .semibold))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
     }
 
     @ViewBuilder
