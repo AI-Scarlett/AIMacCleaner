@@ -23,6 +23,7 @@ RELEASE_BODY = (
     "- Prevents plugin versions, pricing badges, and update states from wrapping into vertical text.\n"
     "- Reduces every plugin row to one clear overflow action while keeping pin state visible.\n"
     "- Moves enable/disable, Main Tab, menu-bar, reveal, update, and complete-uninstall actions into one consistent menu.\n"
+    "- Moves protection, version, iOS pairing, appearance, and language controls into the unified window toolbar, leaving only Settings and Collapse in the sidebar footer.\n"
     "- Uses responsive spacing and card surfaces in both light and dark themes.\n"
 )
 

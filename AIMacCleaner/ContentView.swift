@@ -205,6 +205,39 @@ struct ContentView: View {
         .frame(minWidth: 960, minHeight: 640)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.clear)
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                topProtectionStatus
+
+                Button {
+                    openIOSRemotePairing()
+                } label: {
+                    topToolbarControl(
+                        icon: iosRemoteFooterIcon,
+                        title: iosRemoteFooterTitle,
+                        color: iosRemoteFooterColor
+                    )
+                }
+                .buttonStyle(.plain)
+                .help(iosRemoteFooterHelp)
+
+                appearanceModeButton
+                languageToggleButton
+
+                if TraceFenceDistributionPolicy.currentChannel.isAppStore {
+                    Button {
+                        openSettings(.license)
+                    } label: {
+                        topToolbarControl(
+                            icon: "creditcard.fill",
+                            title: localizer.t("订阅 Standard", en: "Subscribe Standard"),
+                            color: Theme.Colors.accent
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
         .id(colorPalette)
         .onAppear {
             licenseService.refreshTrialState()
@@ -707,88 +740,23 @@ struct ContentView: View {
                         }
                     }
 
-                    footerIconButton(icon: iosRemoteFooterIcon, color: iosRemoteFooterColor, help: iosRemoteFooterHelp) {
-                        openIOSRemotePairing()
-                    }
-
-                    if TraceFenceDistributionPolicy.currentChannel.isAppStore {
-                        footerIconButton(
-                            icon: "creditcard.fill",
-                            color: Theme.Colors.accent,
-                            help: localizer.t("订阅 TraceFence Standard", en: "Subscribe to TraceFence Standard")
-                        ) {
-                            openSettings(.license)
-                        }
-                    }
-
                     footerIconButton(icon: "gearshape", color: Theme.Colors.textSecondary, help: localizer.settings) {
                         openSettings()
                     }
-
-                    appearanceModeButton
-                    languageToggleButton
-
-                    footerStatusDot
                 }
                 .padding(.horizontal, 6)
-                .padding(.vertical, 8)
-                .background(footerPanelBackground(cornerRadius: 12))
-                .padding(.vertical, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.md)
             } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .top, spacing: 8) {
-                        Circle()
-                            .fill(networkMode == "internet" ? Theme.Colors.success : Theme.Colors.warning)
-                            .frame(width: 8, height: 8)
-                            .shadow(color: (networkMode == "internet" ? Theme.Colors.success : Theme.Colors.warning).opacity(0.55), radius: 5)
-                            .padding(.top, 4)
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(localizer.protectionOn)
-                                .font(.system(size: 12, weight: .black))
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                            HStack(spacing: 6) {
-                                Text("\(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus) · v\(service.currentVersion)")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(Theme.Colors.textTertiary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.78)
-                                Spacer(minLength: 2)
-                                footerLabeledButton(icon: iosRemoteFooterIcon, title: iosRemoteFooterTitle, color: iosRemoteFooterColor) {
-                                    openIOSRemotePairing()
-                                }
-                                .frame(width: 98)
-                            }
-                        }
+                HStack(spacing: 6) {
+                    footerLabeledButton(icon: "gearshape", title: localizer.settings, color: Theme.Colors.textSecondary) {
+                        openSettings()
                     }
-
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
-                        appearanceModeButton
-                        languageToggleButton
-                    }
-
-                    if TraceFenceDistributionPolicy.currentChannel.isAppStore {
-                        footerLabeledButton(
-                            icon: "creditcard.fill",
-                            title: localizer.t("订阅 Standard", en: "Subscribe Standard"),
-                            color: Theme.Colors.accent
-                        ) {
-                            openSettings(.license)
-                        }
-                    }
-
-                    HStack(spacing: 6) {
-                        footerLabeledButton(icon: "gearshape", title: localizer.settings, color: Theme.Colors.textSecondary) {
-                            openSettings()
-                        }
-                        footerLabeledButton(icon: "sidebar.left", title: localizer.collapseSidebar, color: Theme.Colors.textTertiary) {
-                            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                                sidebarCollapsed = true
-                            }
+                    footerLabeledButton(icon: "sidebar.left", title: localizer.collapseSidebar, color: Theme.Colors.textTertiary) {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            sidebarCollapsed = true
                         }
                     }
                 }
-                .padding(10)
-                .background(footerPanelBackground(cornerRadius: 14))
                 .padding(.horizontal, Theme.Spacing.md)
                 .padding(.vertical, Theme.Spacing.md)
             }
@@ -839,27 +807,6 @@ struct ContentView: View {
         localizer.t("iOS 远程配对", en: "iOS Remote Pairing", zhHant: "iOS 遠端配對", ja: "iOS リモートペアリング", ko: "iOS 원격 페어링", mt: "iOS Remote Pairing")
     }
 
-    private func footerPanelBackground(cornerRadius: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: cornerRadius)
-            .fill(Theme.Colors.elevatedCardBg.opacity(0.76))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.86),
-                                Theme.Colors.accent.opacity(0.22),
-                                Theme.Colors.separator
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            )
-            .shadow(color: Theme.Shadow.mdColor, radius: 12, x: 0, y: 6)
-    }
-
     private func footerIconButton(icon: String, color: Color, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
@@ -878,20 +825,6 @@ struct ContentView: View {
         .help(title)
     }
 
-    private var footerStatusDot: some View {
-        VStack(spacing: 5) {
-            Circle()
-                .fill(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
-                .frame(width: 5, height: 5)
-                .shadow(color: (networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning).opacity(0.55), radius: 4, x: 0, y: 0)
-            Text("v")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(Theme.Colors.textTertiary)
-        }
-        .frame(width: 30, height: 30)
-        .help("\(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus) · v\(service.currentVersion)")
-    }
-
     private var appearanceModeButton: some View {
         Menu {
             ForEach(AppearanceMode.allCases, id: \.self) { mode in
@@ -902,13 +835,14 @@ struct ContentView: View {
                 }
             }
         } label: {
-            footerGlassControl(
+            topToolbarControl(
                 icon: currentAppearanceMode.icon,
-                title: sidebarCollapsed ? "" : appearanceModeTitle(currentAppearanceMode),
+                title: appearanceModeTitle(currentAppearanceMode),
                 color: Theme.Colors.accent
             )
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .buttonStyle(.plain)
         .help(appearanceModeTitle(currentAppearanceMode))
     }
@@ -934,15 +868,69 @@ struct ContentView: View {
                 }
             }
         } label: {
-            footerGlassControl(
+            topToolbarControl(
                 icon: "globe.asia.australia",
-                title: sidebarCollapsed ? "" : localizer.language.nativeName,
+                title: localizer.language.nativeName,
                 color: Theme.Colors.info
             )
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .buttonStyle(.plain)
         .help(localizer.languageLabel)
+    }
+
+    private var topProtectionStatus: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(networkMode == "internet" ? Theme.Colors.success : Theme.Colors.warning)
+                .frame(width: 7, height: 7)
+                .shadow(
+                    color: (networkMode == "internet" ? Theme.Colors.success : Theme.Colors.warning).opacity(0.55),
+                    radius: 4
+                )
+            Text(localizer.protectionOn)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Theme.Colors.textPrimary)
+            Text("\(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus) · v\(service.currentVersion)")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .lineLimit(1)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, 10)
+        .frame(height: 28)
+        .background(
+            Capsule()
+                .fill((networkMode == "internet" ? Theme.Colors.success : Theme.Colors.warning).opacity(0.09))
+        )
+        .overlay(
+            Capsule()
+                .stroke(Theme.Colors.separator.opacity(0.85), lineWidth: 1)
+        )
+        .help("\(localizer.protectionOn) · \(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus) · v\(service.currentVersion)")
+    }
+
+    private func topToolbarControl(icon: String, title: String, color: Color) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+            Text(title)
+                .font(.system(size: 10, weight: .bold))
+                .lineLimit(1)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .foregroundStyle(color)
+        .padding(.horizontal, 9)
+        .frame(height: 28)
+        .background(
+            Capsule()
+                .fill(color.opacity(0.09))
+        )
+        .overlay(
+            Capsule()
+                .stroke(color.opacity(0.28), lineWidth: 1)
+        )
     }
 
     private func footerGlassControl(icon: String, title: String, color: Color) -> some View {
@@ -976,25 +964,6 @@ struct ContentView: View {
                 )
         )
         .shadow(color: color.opacity(0.12), radius: 6, x: 0, y: 0)
-    }
-
-    private var networkStatusBadge: some View {
-        HStack(spacing: 3) {
-            Image(systemName: networkMode == "internet" ? "globe" : "lock.circle")
-                .font(.system(size: 9))
-                .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
-            if !sidebarCollapsed {
-                Text(networkMode == "internet" ? localizer.internetStatus : localizer.offlineStatus)
-                    .font(.system(size: 9))
-                    .foregroundStyle(networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning)
-            }
-        }
-        .padding(.horizontal, sidebarCollapsed ? 0 : Theme.Spacing.xs + 1)
-        .padding(.vertical, 2)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .fill((networkMode == "internet" ? Theme.Colors.info : Theme.Colors.warning).opacity(sidebarCollapsed ? 0 : 0.08))
-        )
     }
 
     @ViewBuilder
