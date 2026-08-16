@@ -2,6 +2,20 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.2.8] - 2026-08-16
+
+### Added
+- Token 与用量新增 DeepSeek Harness 独立来源，仅读取其原生累计投影；自动排除 `import-*` 导入索引，避免与 Codex、Claude 重复计数。
+- 模型排行新增“当日 / 7 日 / 30 日 / 总排行”四档时间范围，各档按同一统计时区独立聚合。
+
+### Fixed
+- 当前活跃会话统一使用 30 分钟内的真实 `Thinking/Executing` 活动判定，不再把历史 `Waiting/Paused` 会话算作正在运行。
+- 不再因 Codex 等桌面 Agent 的共享进程仍存在，或历史会话保留旧任务标题，就把多个旧会话错误提升为执行中。
+
+### Improved
+- DSH 累计会话用量按会话创建日做保守的短周期归因，总排行保留完整累计值；诊断页会明确披露该近似口径和无法从紧凑投影获得的模型归因。
+- 最终用量快照缓存升级到 v5，并把 DSH 投影纳入快速指纹；无变化时继续直接使用缓存，不重复扫描大型 Agent 历史。
+
 ## [1.2.7] - 2026-08-15
 
 ### Fixed

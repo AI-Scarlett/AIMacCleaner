@@ -64,7 +64,7 @@ enum AgentUsageRemotePricingCatalog {
             providers = [.openAI]
         case .claude:
             providers = [.anthropic]
-        case .openCode, .openClaw:
+        case .openCode, .openClaw, .deepSeekHarness:
             providers = [.miniMax, .openAI, .anthropic]
         case .combined:
             return nil

@@ -27,6 +27,7 @@ struct AgentUsageInsightsView: View {
     let mode: AgentUsageInsightsMode
 
     @State private var projectPeriod: AgentUsageProjectPeriod = .last7Days
+    @State private var modelPeriod: AgentUsageModelPeriod = .allTime
     @State private var fixedTimeZoneIdentifier: String
     @State private var alert: AgentUsageDashboardAlert?
 
@@ -890,15 +891,28 @@ struct AgentUsageInsightsView: View {
     private var modelRankingCard: some View {
         CardView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                Text(localizer.t("模型排行", en: "Models"))
-                    .font(Theme.Font.subheadlineMedium)
-                    .foregroundStyle(Theme.Colors.textPrimary)
+                HStack {
+                    Text(localizer.t("模型排行", en: "Models"))
+                        .font(Theme.Font.subheadlineMedium)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Spacer()
+                    HStack(spacing: 2) {
+                        modelPeriodButton(.today, title: localizer.t("当日", en: "Today"))
+                        modelPeriodButton(.last7Days, title: localizer.t("7 日", en: "7 days"))
+                        modelPeriodButton(.last30Days, title: localizer.t("30 日", en: "30 days"))
+                        modelPeriodButton(.allTime, title: localizer.t("总排行", en: "All time"))
+                    }
+                    .padding(2)
+                    .background(Theme.Colors.cardBg)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                }
 
-                if service.snapshot.modelRankings.isEmpty {
+                let models = selectedModelRankings
+                if models.isEmpty {
                     emptyState(localizer.t("暂无模型归因", en: "No model attribution yet"), icon: "cpu")
                 } else {
                     VStack(spacing: 0) {
-                        ForEach(Array(service.snapshot.modelRankings.prefix(12).enumerated()), id: \.element.id) { index, model in
+                        ForEach(Array(models.prefix(12).enumerated()), id: \.element.id) { index, model in
                             HStack(spacing: Theme.Spacing.sm) {
                                 Text("\(index + 1)")
                                     .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -924,7 +938,7 @@ struct AgentUsageInsightsView: View {
                                 }
                             }
                             .padding(.vertical, 7)
-                            if index < min(service.snapshot.modelRankings.count, 12) - 1 {
+                            if index < min(models.count, 12) - 1 {
                                 Divider().overlay(Theme.Colors.separator.opacity(0.5))
                             }
                         }
@@ -1408,6 +1422,19 @@ struct AgentUsageInsightsView: View {
             .buttonStyle(.plain)
     }
 
+    private func modelPeriodButton(_ period: AgentUsageModelPeriod, title: String) -> some View {
+        let selected = modelPeriod == period
+        return Button(title) { modelPeriod = period }
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(selected ? .white : Theme.Colors.textSecondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(selected ? Theme.Colors.accent : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .buttonStyle(.plain)
+            .accessibilityValue(selected ? localizer.t("已选择", en: "Selected") : localizer.t("未选择", en: "Not selected"))
+    }
+
     private func timeZoneModeButton(_ kind: AgentUsageTimeZoneKind, title: String) -> some View {
         let selected = currentTimeZoneKind == kind
         return Button(title) {
@@ -1516,6 +1543,8 @@ struct AgentUsageInsightsView: View {
             return localizer.t("TraceFence 正在本机读取 OpenCode / MiniMax 原生 Token\(count)", en: "TraceFence is reading native OpenCode / MiniMax tokens\(count)")
         case .scanningOpenClawSessions:
             return localizer.t("TraceFence 正在本机解析 OpenClaw / QClaw 原生 Token\(count)", en: "TraceFence is scanning native OpenClaw / QClaw tokens\(count)")
+        case .readingDeepSeekHarnessUsage:
+            return localizer.t("TraceFence 正在本机读取 DeepSeek Harness 原生 Token\(count)", en: "TraceFence is reading native DeepSeek Harness tokens\(count)")
         case .readingTasks:
             return localizer.t("TraceFence 正在本机读取 Agent 任务状态\(count)", en: "TraceFence is reading local Agent task state\(count)")
         case .aggregating:
@@ -1551,6 +1580,15 @@ struct AgentUsageInsightsView: View {
         switch projectPeriod {
         case .last7Days: return service.snapshot.projectRankings7Days
         case .allTime: return service.snapshot.projectRankingsAllTime
+        }
+    }
+
+    private var selectedModelRankings: [AgentUsageModelUsage] {
+        switch modelPeriod {
+        case .today: return service.snapshot.modelRankingsToday
+        case .last7Days: return service.snapshot.modelRankings7Days
+        case .last30Days: return service.snapshot.modelRankings30Days
+        case .allTime: return service.snapshot.modelRankingsAllTime
         }
     }
 
@@ -1602,6 +1640,7 @@ struct AgentUsageInsightsView: View {
         case .claude: return "Claude Code"
         case .openCode: return "OpenCode / MiniMax"
         case .openClaw: return "OpenClaw / QClaw"
+        case .deepSeekHarness: return "DeepSeek Harness"
         case .combined: return localizer.t("全部可信来源", en: "All trusted sources")
         }
     }
@@ -1614,6 +1653,7 @@ struct AgentUsageInsightsView: View {
         case .scanningClaudeTranscripts: return localizer.t("解析 Claude Code 会话", en: "Scanning Claude Code sessions")
         case .readingOpenCodeDatabase: return localizer.t("读取 OpenCode / MiniMax 原生计数", en: "Reading OpenCode / MiniMax counters")
         case .scanningOpenClawSessions: return localizer.t("解析 OpenClaw / QClaw 会话", en: "Scanning OpenClaw / QClaw sessions")
+        case .readingDeepSeekHarnessUsage: return localizer.t("读取 DeepSeek Harness 用量", en: "Reading DeepSeek Harness usage")
         case .readingTasks: return localizer.t("读取任务状态", en: "Reading task status")
         case .aggregating: return localizer.t("汇总统计", en: "Aggregating statistics")
         case .completed: return localizer.t("扫描完成", en: "Scan complete")
@@ -1988,6 +2028,7 @@ struct AgentUsageRuntimeSummaryView: View {
         case .claude: return "Claude Code"
         case .openCode: return "OpenCode / MiniMax"
         case .openClaw: return "OpenClaw / QClaw"
+        case .deepSeekHarness: return "DeepSeek Harness"
         case .combined: return localizer.t("全部可信来源", en: "All trusted sources")
         }
     }
@@ -2005,6 +2046,7 @@ struct AgentUsageRuntimeSummaryView: View {
         case .scanningClaudeTranscripts: return localizer.t("解析 Claude 会话", en: "Scanning Claude sessions")
         case .readingOpenCodeDatabase: return localizer.t("读取 OpenCode / MiniMax", en: "Reading OpenCode / MiniMax")
         case .scanningOpenClawSessions: return localizer.t("解析 OpenClaw / QClaw", en: "Scanning OpenClaw / QClaw")
+        case .readingDeepSeekHarnessUsage: return localizer.t("读取 DeepSeek Harness", en: "Reading DeepSeek Harness")
         case .readingTasks: return localizer.t("读取任务", en: "Reading tasks")
         case .aggregating: return localizer.t("汇总统计", en: "Aggregating")
         case .completed: return localizer.t("扫描完成", en: "Complete")
@@ -2472,6 +2514,13 @@ private struct AgentUsageDiagnosticRow: View {
 
 private enum AgentUsageProjectPeriod {
     case last7Days
+    case allTime
+}
+
+private enum AgentUsageModelPeriod {
+    case today
+    case last7Days
+    case last30Days
     case allTime
 }
 

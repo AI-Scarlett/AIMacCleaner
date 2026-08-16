@@ -2259,6 +2259,71 @@ struct AgentMonitorSessionSnapshot: Identifiable, Codable {
     let sourcePath: String
 }
 
+/// One liveness policy is shared by the scanner, cache merger, overview, and
+/// Agent Monitor UI. A running app-level process is not sufficient evidence:
+/// Codex and other desktop agents reuse one process across many historical
+/// sessions. Only recently active work states count as live.
+enum AgentMonitorSessionLiveness {
+    static let defaultWindow: TimeInterval = 30 * 60
+
+    static func isActive(
+        _ session: AgentMonitorSessionSnapshot,
+        now: Date = Date(),
+        window: TimeInterval = defaultWindow
+    ) -> Bool {
+        isActive(
+            status: session.status,
+            latestActivity: session.latestActivity,
+            instructionDate: session.instructionDate,
+            now: now,
+            window: window
+        )
+    }
+
+    static func isActive(
+        status: String,
+        latestActivity: Date?,
+        instructionDate: Date?,
+        now: Date = Date(),
+        window: TimeInterval = defaultWindow
+    ) -> Bool {
+        guard status == "Thinking" || status == "Executing" else { return false }
+        let activity = [latestActivity, instructionDate].compactMap { $0 }.max()
+        guard let activity else { return false }
+        return activity >= now.addingTimeInterval(-window)
+            && activity <= now.addingTimeInterval(5 * 60)
+    }
+
+    static func debugSelfTestFailures() -> [String] {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var failures: [String] = []
+        func expect(_ value: Bool, _ message: String) {
+            if !value { failures.append(message) }
+        }
+        expect(
+            isActive(status: "Executing", latestActivity: now.addingTimeInterval(-60), instructionDate: nil, now: now),
+            "a recent executing session must be active"
+        )
+        expect(
+            !isActive(status: "Waiting", latestActivity: now.addingTimeInterval(-60), instructionDate: nil, now: now),
+            "a waiting session must not be counted as a running Agent"
+        )
+        expect(
+            !isActive(status: "Paused", latestActivity: now.addingTimeInterval(-60), instructionDate: nil, now: now),
+            "a paused session must not be counted as a running Agent"
+        )
+        expect(
+            !isActive(status: "Executing", latestActivity: now.addingTimeInterval(-31 * 60), instructionDate: nil, now: now),
+            "a stale executing label must not keep a historical session active"
+        )
+        expect(
+            !isActive(status: "Thinking", latestActivity: nil, instructionDate: nil, now: now),
+            "a thinking label without observed activity must fail closed"
+        )
+        return failures
+    }
+}
+
 struct AgentNetworkConnection: Identifiable, Codable, Hashable {
     let id: String
     let agentName: String
@@ -2308,7 +2373,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
     private var lastFocusedRefreshByKey: [String: Date] = [:]
     private var lastRealtimeRefreshDate: Date?
     private var lastFullScanDate: Date?
-    private let activeRetentionWindow: TimeInterval = 30 * 60
+    private let activeRetentionWindow = AgentMonitorSessionLiveness.defaultWindow
     private let maxCachedSessions = 120
 
     private struct Cache: Codable {
@@ -2461,8 +2526,7 @@ final class AgentMonitorOverviewStore: ObservableObject {
     }
 
     private static func isActiveSession(_ session: AgentMonitorSessionSnapshot) -> Bool {
-        ["Thinking", "Executing", "Waiting", "Paused"].contains(session.status) ||
-        (!session.currentTask.isEmpty && session.status != "History" && session.status != "Done")
+        AgentMonitorSessionLiveness.isActive(session)
     }
 
     private static func usageSnapshots(from sessions: [AgentMonitorSessionSnapshot]) -> [AgentMonitorUsageSnapshot] {
@@ -2537,17 +2601,10 @@ final class AgentMonitorOverviewStore: ObservableObject {
             }
         }
 
-        let activeCutoff = Date().addingTimeInterval(-activeRetentionWindow)
-        let rows = byKey.values.filter { session in
-            if session.status == "Paused" || session.status == "Waiting" { return true }
-            if isActiveSession(session) {
-                return (session.latestActivity ?? .distantPast) >= activeCutoff
-            }
-            return true
-        }
-        .sorted {
-            let leftActive = isActiveSession($0)
-            let rightActive = isActiveSession($1)
+        let now = Date()
+        let rows = byKey.values.sorted {
+            let leftActive = AgentMonitorSessionLiveness.isActive($0, now: now, window: activeRetentionWindow)
+            let rightActive = AgentMonitorSessionLiveness.isActive($1, now: now, window: activeRetentionWindow)
             if leftActive != rightActive { return leftActive }
             let left = $0.latestActivity ?? .distantPast
             let right = $1.latestActivity ?? .distantPast
@@ -3194,13 +3251,15 @@ private final class AgentMonitorOverviewScanner {
     }
 
     private func isRealtimeActiveSession(_ session: AgentMonitorSessionSnapshot) -> Bool {
-        ["Thinking", "Executing", "Waiting", "Paused"].contains(session.status) ||
-        (!session.currentTask.isEmpty && session.status != "History" && session.status != "Done")
+        AgentMonitorSessionLiveness.isActive(session)
     }
 
     private func isParsedSessionActive(_ session: ParsedSession) -> Bool {
-        ["Thinking", "Executing", "Waiting", "Paused"].contains(session.status) ||
-        (!session.currentTask.isEmpty && session.status != "History" && session.status != "Done")
+        AgentMonitorSessionLiveness.isActive(
+            status: session.status,
+            latestActivity: session.latestActivity,
+            instructionDate: session.instructionDate
+        )
     }
 
     private func uniqueSessions(_ sessions: [AgentMonitorSessionSnapshot]) -> [AgentMonitorSessionSnapshot] {
@@ -4467,19 +4526,22 @@ private final class AgentMonitorOverviewScanner {
         process: ProcessInfo?,
         childPids: [Int],
         processInfo: [Int: ProcessInfo],
-        currentTask: String,
+        currentTask _: String,
         parsedStatus: String
     ) -> String {
-        if ["Executing", "Thinking", "Paused"].contains(parsedStatus) {
+        // The transcript state belongs to the session; the desktop process is
+        // shared by many sessions. Never promote a terminal/waiting transcript
+        // merely because that shared process is alive or an old task title is
+        // still present.
+        if ["Executing", "Thinking", "Paused", "Waiting", "Done", "History"].contains(parsedStatus) {
             return parsedStatus
         }
-        guard isAlive else { return parsedStatus == "History" ? "Done" : parsedStatus }
+        guard isAlive else { return parsedStatus }
         let childCpu = childPids.map { processInfo[$0]?.cpu ?? 0 }.max() ?? 0
         let ownCpu = process?.cpu ?? 0
-        if !currentTask.isEmpty || childCpu > 5.0 { return "Executing" }
+        if childCpu > 5.0 { return "Executing" }
         if ownCpu > 2.0 || childCpu > 1.0 { return "Thinking" }
-        if parsedStatus == "Done" { return "Waiting" }
-        return parsedStatus == "History" ? "History" : parsedStatus
+        return parsedStatus
     }
 
     private func parseSessionFile(_ url: URL) -> ParsedSession? {
@@ -7694,8 +7756,7 @@ private struct AgentCommandDashboardView: View {
     }
 
     private func isActiveSession(_ session: AgentMonitorSessionSnapshot) -> Bool {
-        ["Thinking", "Executing", "Waiting", "Paused"].contains(session.status) ||
-        (!session.currentTask.isEmpty && session.status != "History" && session.status != "Done")
+        AgentMonitorSessionLiveness.isActive(session)
     }
 
     var body: some View {

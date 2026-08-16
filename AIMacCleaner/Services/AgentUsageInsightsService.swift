@@ -12,6 +12,7 @@ enum AgentUsageScope: String, CaseIterable, Codable, Identifiable, Sendable {
     case claude
     case openCode
     case openClaw
+    case deepSeekHarness
     case combined
 
     var id: String { rawValue }
@@ -22,6 +23,7 @@ enum AgentUsageScope: String, CaseIterable, Codable, Identifiable, Sendable {
         case .claude: return "Claude Code"
         case .openCode: return "OpenCode"
         case .openClaw: return "OpenClaw / QClaw"
+        case .deepSeekHarness: return "DeepSeek Harness"
         case .combined: return "All trusted sources"
         }
     }
@@ -337,7 +339,10 @@ struct AgentUsageSnapshot: Codable, Equatable, Sendable {
     let previous7DayComparison: AgentUsagePeriodComparison
     let projectRankings7Days: [AgentUsageProjectUsage]
     let projectRankingsAllTime: [AgentUsageProjectUsage]
-    let modelRankings: [AgentUsageModelUsage]
+    let modelRankingsToday: [AgentUsageModelUsage]
+    let modelRankings7Days: [AgentUsageModelUsage]
+    let modelRankings30Days: [AgentUsageModelUsage]
+    let modelRankingsAllTime: [AgentUsageModelUsage]
     let recentSessions: [AgentUsageSessionUsage]
     let sourceSummaries: [AgentUsageSourceSummary]
     let topTools: [AgentUsageToolUsage]
@@ -366,7 +371,10 @@ struct AgentUsageSnapshot: Codable, Equatable, Sendable {
             previous7DayComparison: AgentUsagePeriodComparison(current: .zero, previous: .zero, changePercent: nil, isNewActivity: false),
             projectRankings7Days: [],
             projectRankingsAllTime: [],
-            modelRankings: [],
+            modelRankingsToday: [],
+            modelRankings7Days: [],
+            modelRankings30Days: [],
+            modelRankingsAllTime: [],
             recentSessions: [],
             sourceSummaries: [],
             topTools: [],
@@ -395,6 +403,7 @@ enum AgentUsageScanPhase: String, Codable, Equatable, Sendable {
     case scanningClaudeTranscripts
     case readingOpenCodeDatabase
     case scanningOpenClawSessions
+    case readingDeepSeekHarnessUsage
     case readingTasks
     case aggregating
     case completed
@@ -1054,7 +1063,10 @@ private extension AgentUsageSnapshot {
             previous7DayComparison: previous7DayComparison,
             projectRankings7Days: redactProjects(projectRankings7Days),
             projectRankingsAllTime: redactProjects(projectRankingsAllTime),
-            modelRankings: modelRankings,
+            modelRankingsToday: modelRankingsToday,
+            modelRankings7Days: modelRankings7Days,
+            modelRankings30Days: modelRankings30Days,
+            modelRankingsAllTime: modelRankingsAllTime,
             recentSessions: redactedSessions,
             sourceSummaries: sourceSummaries,
             topTools: topTools,
@@ -1336,6 +1348,10 @@ private struct AgentUsageStatisticsContext: Sendable {
         calendar.date(byAdding: .day, value: -6, to: todayStart) ?? todayStart
     }
 
+    var thirtyDayStart: Date {
+        calendar.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
+    }
+
     var previousSevenDayStart: Date {
         calendar.date(byAdding: .day, value: -13, to: todayStart) ?? todayStart
     }
@@ -1418,7 +1434,7 @@ private enum AgentUsagePricingCatalog {
             return openAIPrice(value, at: date)
         case .claude:
             return claudePrice(value, at: date)
-        case .openCode, .openClaw:
+        case .openCode, .openClaw, .deepSeekHarness:
             // Prefer the runtime's explicit per-message cost. When it is
             // absent, resolve only public model IDs; router aliases remain
             // unknown rather than inheriting a guessed price.
@@ -1724,6 +1740,11 @@ private enum AgentUsagePathPolicy {
             .standardizedFileURL.resolvingSymlinksInPath()
     }
 
+    static var deepSeekHarnessRoot: URL {
+        home.appendingPathComponent(".dsh", isDirectory: true)
+            .standardizedFileURL.resolvingSymlinksInPath()
+    }
+
     static var allowedSkillRoots: [URL] {
         [
             codexRoot.appendingPathComponent("skills", isDirectory: true),
@@ -1875,7 +1896,10 @@ private extension AgentUsageSnapshot {
             previous7DayComparison: previous7DayComparison,
             projectRankings7Days: Array(projectRankings7Days.prefix(80)),
             projectRankingsAllTime: Array(projectRankingsAllTime.prefix(160)),
-            modelRankings: Array(modelRankings.prefix(120)),
+            modelRankingsToday: Array(modelRankingsToday.prefix(120)),
+            modelRankings7Days: Array(modelRankings7Days.prefix(120)),
+            modelRankings30Days: Array(modelRankings30Days.prefix(120)),
+            modelRankingsAllTime: Array(modelRankingsAllTime.prefix(120)),
             recentSessions: Array(recentSessions.prefix(40)),
             sourceSummaries: sourceSummaries,
             topTools: Array(topTools.prefix(60)),
@@ -1894,9 +1918,10 @@ private extension AgentUsageSnapshot {
 }
 
 private enum AgentUsageSnapshotCacheStore {
-    // v4 adds the active pricing revision to final aggregate fingerprints so a
-    // remote catalog change can reprice compact counters without stale totals.
-    private static let version = 4
+    // v5 adds DeepSeek Harness and period-specific model rankings. Older
+    // compact snapshots are intentionally rebuilt so new source totals and
+    // ranking windows cannot be mixed with stale cached fields.
+    private static let version = 5
     private static let maximumEncodedBytes = 32 * 1_024 * 1_024
 
     static func load() -> AgentUsageSnapshotCache? {
@@ -1960,7 +1985,8 @@ private enum AgentUsageSourceFingerprint {
             .codex: signature(for: .codex),
             .claude: signature(for: .claude),
             .openCode: signature(for: .openCode),
-            .openClaw: signature(for: .openClaw)
+            .openClaw: signature(for: .openClaw),
+            .deepSeekHarness: signature(for: .deepSeekHarness)
         ]
         var result = Dictionary(uniqueKeysWithValues: values.map { ($0.key.rawValue, $0.value) })
         let combined = values.keys.sorted { $0.rawValue < $1.rawValue }
@@ -1993,6 +2019,11 @@ private enum AgentUsageSourceFingerprint {
                 + databaseFamily(AgentUsagePathPolicy.miniMaxRoot.appendingPathComponent("sqlite.db"))
         case .openClaw:
             roots = [AgentUsagePathPolicy.qClawRoot, AgentUsagePathPolicy.openClawRoot]
+        case .deepSeekHarness:
+            roots = [
+                AgentUsagePathPolicy.deepSeekHarnessRoot.appendingPathComponent("storages/session_projcache.json"),
+                AgentUsagePathPolicy.deepSeekHarnessRoot.appendingPathComponent("storages/workspace.json")
+            ]
         case .combined:
             return currentSignatures()[AgentUsageScope.combined.rawValue] ?? ""
         }
@@ -2102,7 +2133,7 @@ private enum AgentUsageFileCacheStore {
         switch scope {
         case .codex: name = codexName
         case .claude: name = claudeName
-        case .openCode, .openClaw, .combined: return nil
+        case .openCode, .openClaw, .deepSeekHarness, .combined: return nil
         }
         return URL(fileURLWithPath: SandboxPaths.shared.dataDirectory, isDirectory: true)
             .appendingPathComponent(name)
@@ -5142,6 +5173,245 @@ private final class AgentUsageOpenCodeProvider: @unchecked Sendable {
     }
 }
 
+// MARK: - DeepSeek Harness provider
+
+/// DeepSeek Harness persists a compact, provider-owned projection beside its
+/// workspace index. It contains trustworthy cumulative counters without
+/// requiring TraceFence to read prompts, responses, credentials, or the much
+/// larger compressed conversation archives.
+private final class AgentUsageDeepSeekHarnessProvider: @unchecked Sendable {
+    private let fileManager = FileManager.default
+    private let progress: @Sendable (AgentUsageScanProgress) -> Void
+    private let maximumProjectionBytes = 32 * 1_024 * 1_024
+    private let maximumWorkspaceBytes = 8 * 1_024 * 1_024
+
+    init(progress: @escaping @Sendable (AgentUsageScanProgress) -> Void) {
+        self.progress = progress
+    }
+
+    func load() -> AgentUsageRuntimeAggregate {
+        var aggregate = AgentUsageRuntimeAggregate(scope: .deepSeekHarness)
+        let root = AgentUsagePathPolicy.deepSeekHarnessRoot
+        let projectionURL = root.appendingPathComponent("storages/session_projcache.json")
+        let workspaceURL = root.appendingPathComponent("storages/workspace.json")
+
+        progress(AgentUsageScanProgress(
+            phase: .readingDeepSeekHarnessUsage,
+            current: 0,
+            total: 1,
+            currentSource: nil,
+            message: "Reading DeepSeek Harness native usage projection"
+        ))
+
+        guard let projection = jsonObject(at: projectionURL, inside: root, maximumBytes: maximumProjectionBytes) else {
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .deepSeekHarness,
+                severity: .info,
+                code: "dsh_usage_projection_missing",
+                message: "No readable DeepSeek Harness usage projection was found.",
+                source: nil
+            ))
+            progress(AgentUsageScanProgress(
+                phase: .readingDeepSeekHarnessUsage,
+                current: 1,
+                total: 1,
+                currentSource: nil,
+                message: "DeepSeek Harness usage projection is unavailable"
+            ))
+            return aggregate
+        }
+
+        aggregate.available = true
+        aggregate.parsedFileCount = 1
+        let workspace = jsonObject(at: workspaceURL, inside: root, maximumBytes: maximumWorkspaceBytes)
+        if workspace != nil { aggregate.parsedFileCount += 1 }
+        let workspaces = ((workspace?["tables"] as? [String: Any])?["workspaces"] as? [String: Any]) ?? [:]
+        var workspaceBySession: [String: [String: Any]] = [:]
+        for rawWorkspace in workspaces.values {
+            guard let value = rawWorkspace as? [String: Any] else { continue }
+            for sessionID in value["sessionIds"] as? [String] ?? [] {
+                workspaceBySession[sessionID] = value
+            }
+        }
+
+        let sessions = ((projection["tables"] as? [String: Any])?["sessions"] as? [String: Any]) ?? [:]
+        var importedSessions = 0
+        var zeroUsageSessions = 0
+        var invalidSessions = 0
+        for (sessionID, rawSession) in sessions {
+            if sessionID.hasPrefix("import-") {
+                // DSH can import Codex/Claude archives. Those sessions remain
+                // owned by their original provider and must never be counted a
+                // second time in the combined TraceFence total.
+                importedSessions += 1
+                continue
+            }
+            guard let session = rawSession as? [String: Any] else {
+                invalidSessions += 1
+                continue
+            }
+            let identity = session["identity"] as? [String: Any] ?? [:]
+            let rows = session["rows"] as? [String: Any] ?? [:]
+            let usage = rowValue(rows, key: "tokenUsage")
+            let totalsObject = usage["totals"] as? [String: Any] ?? [:]
+            let uncachedInput = AgentUsageValues.int64(totalsObject["uncachedInputTokens"]) ?? 0
+            let cacheRead = AgentUsageValues.int64(totalsObject["cacheReadTokens"]) ?? 0
+            let cacheWrite = AgentUsageValues.int64(totalsObject["cacheWriteTokens"]) ?? 0
+            let output = AgentUsageValues.int64(totalsObject["outputTokens"]) ?? 0
+            if AgentUsageExplicitTokenNormalizer.isZeroUsage(
+                input: uncachedInput,
+                cacheRead: cacheRead,
+                cacheWrite: cacheWrite,
+                output: output,
+                reasoning: 0,
+                reportedTotal: nil
+            ) {
+                zeroUsageSessions += 1
+                continue
+            }
+            guard let totals = AgentUsageExplicitTokenNormalizer.totals(
+                input: uncachedInput,
+                cacheRead: cacheRead,
+                cacheWrite: cacheWrite,
+                output: output,
+                reasoning: 0,
+                reportedTotal: nil
+            ) else {
+                invalidSessions += 1
+                continue
+            }
+
+            let workspace = workspaceBySession[sessionID] ?? [:]
+            let metadata = rowValue(rows, key: "sessionListMetadata")
+            // The projection exposes cumulative session totals, not every
+            // turn's timestamp. Assigning the counter to session creation
+            // keeps all-time exact and makes shorter period windows
+            // conservative instead of charging an old session's entire
+            // history to its latest prompt.
+            let createdAt = date(fromUnixValue: identity["createdAt"] ?? workspace["createdAt"])
+            let lastPromptAt = date(fromUnixValue: metadata["lastPromptAt"] ?? workspace["updatedAt"])
+            guard let eventDate = createdAt ?? lastPromptAt else {
+                invalidSessions += 1
+                continue
+            }
+            let projectPath = AgentUsageValues.string(identity["cwd"])
+                ?? AgentUsageValues.string(workspace["path"])
+                ?? ""
+            let resolvedCost = AgentUsagePricingCatalog.resolvedCost(
+                scope: .deepSeekHarness,
+                model: nil,
+                date: eventDate,
+                tokens: totals,
+                explicitCostUSD: nil,
+                cacheReadTokens: cacheRead,
+                cacheWriteTokens: cacheWrite
+            )
+            aggregate.events.append(AgentUsageEvent(
+                id: AgentUsagePrivacy.digest("dsh:" + sessionID),
+                date: eventDate,
+                tokens: totals,
+                estimatedCostUSD: resolvedCost.0,
+                priceKnown: resolvedCost.1,
+                model: nil,
+                projectPath: projectPath,
+                sessionID: sessionID
+            ))
+        }
+
+        aggregate.tokenEventCount = aggregate.events.count
+        aggregate.sourceQuality = aggregate.events.isEmpty ? .unavailable : .approximate
+        if importedSessions > 0 {
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .deepSeekHarness,
+                severity: .info,
+                code: "dsh_imports_deduplicated",
+                message: "\(importedSessions) imported DSH session indexes were excluded to prevent duplicate Codex or Claude usage.",
+                source: nil
+            ))
+        }
+        if !aggregate.events.isEmpty {
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .deepSeekHarness,
+                severity: .info,
+                code: "dsh_cumulative_session_attribution",
+                message: "DSH exposes cumulative counters in its compact projection. All-time totals are complete; date-window rankings conservatively attribute each session total to its creation date.",
+                source: nil
+            ))
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .deepSeekHarness,
+                severity: .info,
+                code: "dsh_model_unattributed",
+                message: "The compact DSH usage projection does not expose per-session model ids, so its model ranking remains explicitly unattributed.",
+                source: nil
+            ))
+        } else {
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .deepSeekHarness,
+                severity: .info,
+                code: "dsh_usage_empty",
+                message: "DeepSeek Harness was found, but its native sessions contain no nonzero projected token usage.",
+                source: nil
+            ))
+        }
+        if invalidSessions > 0 {
+            aggregate.partial = true
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .deepSeekHarness,
+                severity: .warning,
+                code: "dsh_usage_inconsistent",
+                message: "\(invalidSessions) DeepSeek Harness projection rows were invalid and were skipped.",
+                source: nil
+            ))
+        }
+        if zeroUsageSessions > 0 {
+            aggregate.diagnostics.append(AgentUsageDiagnostic(
+                scope: .deepSeekHarness,
+                severity: .info,
+                code: "dsh_zero_usage_sessions",
+                message: "\(zeroUsageSessions) native DeepSeek Harness sessions currently have no projected token usage.",
+                source: nil
+            ))
+        }
+        progress(AgentUsageScanProgress(
+            phase: .readingDeepSeekHarnessUsage,
+            current: 1,
+            total: 1,
+            currentSource: "DeepSeek Harness",
+            message: "Read \(aggregate.events.count) native DeepSeek Harness session counters"
+        ))
+        return aggregate
+    }
+
+    private func jsonObject(at url: URL, inside root: URL, maximumBytes: Int) -> [String: Any]? {
+        let normalized = url.standardizedFileURL.resolvingSymlinksInPath()
+        guard AgentUsagePathPolicy.isContained(normalized, in: root),
+              fileManager.isReadableFile(atPath: normalized.path),
+              let values = try? normalized.resourceValues(forKeys: [.fileSizeKey]),
+              let size = values.fileSize,
+              size > 0,
+              size <= maximumBytes,
+              let data = try? Data(contentsOf: normalized, options: [.mappedIfSafe]),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return object
+    }
+
+    private func rowValue(_ rows: [String: Any], key: String) -> [String: Any] {
+        guard let wrapper = rows[key] as? [String: Any] else { return [:] }
+        return wrapper["val"] as? [String: Any] ?? wrapper
+    }
+
+    private func date(fromUnixValue value: Any?) -> Date? {
+        guard let raw = AgentUsageValues.double(value), raw > 0 else { return nil }
+        let seconds = raw > 10_000_000_000 ? raw / 1_000 : raw
+        let result = Date(timeIntervalSince1970: seconds)
+        guard result.timeIntervalSince1970 > 0,
+              result <= Date().addingTimeInterval(24 * 60 * 60) else { return nil }
+        return result
+    }
+}
+
 // MARK: - OpenClaw / QClaw provider family
 
 private final class AgentUsageOpenClawProvider: @unchecked Sendable {
@@ -5371,6 +5641,7 @@ private struct AgentUsageProviderBundle: Sendable {
     let claude: AgentUsageRuntimeAggregate
     let openCode: AgentUsageRuntimeAggregate
     let openClaw: AgentUsageRuntimeAggregate
+    let deepSeekHarness: AgentUsageRuntimeAggregate
 }
 
 private struct AgentUsageInsightsLoadPayload: Sendable {
@@ -5398,7 +5669,7 @@ private struct AgentUsageInsightsLoader: Sendable {
         let lease = AgentUsageSecurityScopeLease.acquire()
         defer { lease.stop() }
         let skillIndex = AgentUsageSkillIndex.shared
-        // Provider parsers are intentionally serialized. Running four local
+        // Provider parsers are intentionally serialized. Running local
         // history readers at once multiplies transient Foundation allocations
         // and disk pressure without making a cached refresh meaningfully faster.
         let worker = Task.detached(priority: .utility) {
@@ -5415,11 +5686,13 @@ private struct AgentUsageInsightsLoader: Sendable {
                 ).load()
             let openCode = AgentUsageOpenCodeProvider(progress: progress).load()
             let openClaw = AgentUsageOpenClawProvider(progress: progress).load()
+            let deepSeekHarness = AgentUsageDeepSeekHarnessProvider(progress: progress).load()
             return AgentUsageProviderBundle(
                 codex: codex,
                 claude: claude,
                 openCode: openCode,
-                openClaw: openClaw
+                openClaw: openClaw,
+                deepSeekHarness: deepSeekHarness
             )
         }
         let providers = await withTaskCancellationHandler {
@@ -5431,6 +5704,7 @@ private struct AgentUsageInsightsLoader: Sendable {
         var claude = providers.claude
         var openCode = providers.openCode
         var openClaw = providers.openClaw
+        var deepSeekHarness = providers.deepSeekHarness
 
         if Task.isCancelled {
             return .failure(.unexpected("Local usage scan was cancelled."))
@@ -5440,20 +5714,22 @@ private struct AgentUsageInsightsLoader: Sendable {
             claude.diagnostics.append(contentsOf: lease.diagnostics)
             openCode.diagnostics.append(contentsOf: lease.diagnostics)
             openClaw.diagnostics.append(contentsOf: lease.diagnostics)
+            deepSeekHarness.diagnostics.append(contentsOf: lease.diagnostics)
             codex.partial = true
             claude.partial = true
             openCode.partial = true
             openClaw.partial = true
+            deepSeekHarness.partial = true
         }
         progress(AgentUsageScanProgress(
             phase: .aggregating,
             current: 0,
-            total: 5,
+            total: 6,
             currentSource: nil,
             message: "Aggregating local usage metrics"
         ))
 
-        if !codex.available && !claude.available && !openCode.available && !openClaw.available
+        if !codex.available && !claude.available && !openCode.available && !openClaw.available && !deepSeekHarness.available
             && lease.diagnostics.isEmpty {
             return .failure(.noLocalSources)
         }
@@ -5462,7 +5738,7 @@ private struct AgentUsageInsightsLoader: Sendable {
         progress(AgentUsageScanProgress(
             phase: .aggregating,
             current: 1,
-            total: 5,
+            total: 6,
             currentSource: "Codex",
             message: "Aggregated Codex usage"
         ))
@@ -5470,7 +5746,7 @@ private struct AgentUsageInsightsLoader: Sendable {
         progress(AgentUsageScanProgress(
             phase: .aggregating,
             current: 2,
-            total: 5,
+            total: 6,
             currentSource: "Claude Code",
             message: "Aggregated Claude Code usage"
         ))
@@ -5478,7 +5754,7 @@ private struct AgentUsageInsightsLoader: Sendable {
         progress(AgentUsageScanProgress(
             phase: .aggregating,
             current: 3,
-            total: 5,
+            total: 6,
             currentSource: "OpenCode / MiniMax",
             message: "Aggregated OpenCode / MiniMax usage"
         ))
@@ -5486,17 +5762,26 @@ private struct AgentUsageInsightsLoader: Sendable {
         progress(AgentUsageScanProgress(
             phase: .aggregating,
             current: 4,
-            total: 5,
+            total: 6,
             currentSource: "OpenClaw / QClaw",
             message: "Aggregated OpenClaw / QClaw usage"
         ))
-        let combinedSnapshot = builder.build(scope: .combined, providers: [codex, claude, openCode, openClaw])
+        let deepSeekHarnessSnapshot = builder.build(scope: .deepSeekHarness, providers: [deepSeekHarness])
+        progress(AgentUsageScanProgress(
+            phase: .aggregating,
+            current: 5,
+            total: 6,
+            currentSource: "DeepSeek Harness",
+            message: "Aggregated DeepSeek Harness usage"
+        ))
+        let combinedSnapshot = builder.build(scope: .combined, providers: [codex, claude, openCode, openClaw, deepSeekHarness])
         return .success(AgentUsageInsightsLoadPayload(
             snapshots: [
                 .codex: codexSnapshot,
                 .claude: claudeSnapshot,
                 .openCode: openCodeSnapshot,
                 .openClaw: openClawSnapshot,
+                .deepSeekHarness: deepSeekHarnessSnapshot,
                 .combined: combinedSnapshot
             ],
             backfillStatus: codex.backfillStatus
@@ -5563,7 +5848,10 @@ private struct AgentUsageSnapshotBuilder {
             previous7DayComparison: comparison,
             projectRankings7Days: projectRankings(providers: providers, since: context.sevenDayStart, approximateFallback: false),
             projectRankingsAllTime: projectRankings(providers: providers, since: nil, approximateFallback: true),
-            modelRankings: modelRankings(providers),
+            modelRankingsToday: modelRankings(providers, since: context.todayStart),
+            modelRankings7Days: modelRankings(providers, since: context.sevenDayStart),
+            modelRankings30Days: modelRankings(providers, since: context.thirtyDayStart),
+            modelRankingsAllTime: modelRankings(providers, since: nil),
             recentSessions: recentSessions(providers),
             sourceSummaries: sourceSummaries(providers),
             topTools: topTools(providers),
@@ -5727,7 +6015,10 @@ private struct AgentUsageSnapshotBuilder {
         }
     }
 
-    private func modelRankings(_ providers: [AgentUsageRuntimeAggregate]) -> [AgentUsageModelUsage] {
+    private func modelRankings(
+        _ providers: [AgentUsageRuntimeAggregate],
+        since: Date?
+    ) -> [AgentUsageModelUsage] {
         struct Accumulator {
             var tokens = AgentUsageTokenTotals.zero
             var cost: Double = 0
@@ -5737,7 +6028,7 @@ private struct AgentUsageSnapshotBuilder {
         var result: [AgentUsageModelUsage] = []
         for provider in providers {
             var grouped: [String: Accumulator] = [:]
-            for event in provider.events {
+            for event in provider.events where since.map({ event.date >= $0 }) ?? true {
                 let model = event.model?.trimmingCharacters(in: .whitespacesAndNewlines)
                 let key = (model?.isEmpty == false ? model! : "Unknown model")
                 var value = grouped[key, default: Accumulator()]
@@ -5918,6 +6209,7 @@ private struct AgentUsageSnapshotBuilder {
 extension AgentUsageInsightsService {
     nonisolated static func debugUsageInsightsSelfTestFailures() -> [String] {
         var failures = AgentUsageRemotePricingCatalog.debugSelfTestFailures()
+            + AgentMonitorSessionLiveness.debugSelfTestFailures()
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {
             if !value() { failures.append(message) }
         }
@@ -6412,6 +6704,37 @@ extension AgentUsageInsightsService {
         )
         expect(combinedReconciliation.reported.total == 1_200, "combined all-time inventory must add provider headlines once")
         expect(combinedReconciliation.detailed.total == 200, "combined parsed detail must add provider detail once")
+
+        let rankingNow = Date(timeIntervalSince1970: 1_800_014_400)
+        var rankingProvider = AgentUsageRuntimeAggregate(scope: .deepSeekHarness)
+        rankingProvider.available = true
+        rankingProvider.sourceQuality = .approximate
+        rankingProvider.events = [
+            ("today-model", rankingNow.addingTimeInterval(-60 * 60)),
+            ("week-model", rankingNow.addingTimeInterval(-5 * 24 * 60 * 60)),
+            ("month-model", rankingNow.addingTimeInterval(-20 * 24 * 60 * 60)),
+            ("all-time-model", rankingNow.addingTimeInterval(-40 * 24 * 60 * 60))
+        ].enumerated().map { index, value in
+            AgentUsageEvent(
+                id: "ranking-\(index)",
+                date: value.1,
+                tokens: AgentUsageTokenTotals(input: 10, cached: 0, output: 0, reasoning: 0, total: 10),
+                estimatedCostUSD: 0,
+                priceKnown: false,
+                model: value.0,
+                projectPath: "/fixture/rankings",
+                sessionID: "ranking-\(index)"
+            )
+        }
+        rankingProvider.tokenEventCount = rankingProvider.events.count
+        let rankingSnapshot = AgentUsageSnapshotBuilder(
+            context: AgentUsageStatisticsContext(mode: .utc, now: rankingNow),
+            skillIndex: .shared
+        ).build(scope: .deepSeekHarness, providers: [rankingProvider])
+        expect(rankingSnapshot.modelRankingsToday.map(\.model) == ["today-model"], "today model ranking must exclude older sessions")
+        expect(Set(rankingSnapshot.modelRankings7Days.map(\.model)) == Set(["today-model", "week-model"]), "7-day model ranking must use an inclusive seven-day window")
+        expect(Set(rankingSnapshot.modelRankings30Days.map(\.model)) == Set(["today-model", "week-model", "month-model"]), "30-day model ranking must exclude older all-time rows")
+        expect(rankingSnapshot.modelRankingsAllTime.count == 4, "all-time model ranking must retain every dated model event")
         expect(AgentUsageInsightsMode.tokenAnalytics.entryScope == .combined, "Token & Usage must enter on the same combined scope used by Overview")
         expect(AgentUsageInsightsMode.projectMonitor.entryScope == nil, "project drill-down must preserve the user's explicit source filter")
         expect(AgentUsageTokenFormatter.string(40_254_839_013) == "40.25B", "shared token formatter must use the B unit consistently")
