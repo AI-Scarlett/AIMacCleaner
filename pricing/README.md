@@ -12,4 +12,9 @@ The client accepts this file only from the fixed HTTPS GitHub endpoint. It valid
 4. Keep the document below 256 KiB and use non-negative finite rates only.
 5. Validate the JSON and run the TraceFence pricing self-test before merging.
 
+For providers with recurring UTC peak/off-peak billing, keep the published peak
+rates in the entry and use `utcRateSchedule.offPeakMultiplier` plus non-overlapping
+`peakWindows` expressed as minutes after 00:00 UTC. Preserve the prior flat rate
+as a historical entry ending at the provider's published transition instant.
+
 Do not use a zero rate for an unknown or unpublished price. Omit the model instead so TraceFence can label its estimate as unavailable. When a provider does not publish a cached-input or cache-write rate, omit that field; the client conservatively falls back to the normal input rate.

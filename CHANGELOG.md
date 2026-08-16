@@ -2,6 +2,17 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.2.9] - 2026-08-16
+
+### Fixed
+- 补齐 Grok 4.6、DeepSeek V4 Flash/Pro 和 Kimi K2.6 的官方公开输入、缓存输入与输出单价；DSH、OpenCode 与 OpenClaw 的公开模型不再显示空价格。
+- Claude Sonnet 5 按官方更新后的永久发布价计算，不再在 2026 年 9 月错误切回旧标准价。
+- 取消将 `gpt-5.3-codex-spark` 等仅限产品内部使用的模型别名套用 GPT-5.2 价格；无公开 API 价格的模型明确显示“价格未知”。
+
+### Improved
+- 官网版价格目录新增 xAI、DeepSeek 与 Moonshot 提供商，可继续通过 GitHub 独立更新，不必每次因价格变化重发客户端。
+- DeepSeek V4 新旧价格按生效时间保留，新的峰值/非峰值单价按官方 UTC 时段自动计算，历史会话仍使用发生时的价格。
+
 ## [1.2.8] - 2026-08-16
 
 ### Added

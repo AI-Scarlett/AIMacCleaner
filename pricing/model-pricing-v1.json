@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "catalogVersion": "2026-07-30.1",
+  "catalogVersion": "2026-08-16.1",
   "currency": "USD",
   "unit": "USD_per_1M_tokens",
   "serviceTier": "standard",
-  "updatedAt": "2026-07-30T00:00:00Z",
+  "updatedAt": "2026-08-16T03:00:00Z",
   "description": "API-equivalent reference prices used for local TraceFence estimates. These values are not invoices.",
   "sources": [
     {
@@ -14,6 +14,26 @@
     {
       "name": "OpenAI API changelog - July 30, 2026",
       "url": "https://developers.openai.com/api/docs/changelog"
+    },
+    {
+      "name": "Claude API pricing",
+      "url": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    {
+      "name": "MiniMax pay-as-you-go pricing",
+      "url": "https://platform.minimax.io/subscribe/token-plan?tab=api-enterprise"
+    },
+    {
+      "name": "xAI Grok 4.6 model pricing",
+      "url": "https://docs.x.ai/developers/models/grok-4.6"
+    },
+    {
+      "name": "DeepSeek models and pricing",
+      "url": "https://api-docs.deepseek.com/quick_start/pricing/"
+    },
+    {
+      "name": "Kimi K2.6 model pricing",
+      "url": "https://platform.kimi.ai/docs/pricing/chat-k26"
     }
   ],
   "entries": [
@@ -348,6 +368,307 @@
         "inputPerMillion": 1.1,
         "cachedInputPerMillion": 0.275,
         "outputPerMillion": 4.4
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-fable-5",
+      "rates": {
+        "inputPerMillion": 10,
+        "cachedInputPerMillion": 1,
+        "cacheWrite5mPerMillion": 12.5,
+        "cacheWrite1hPerMillion": 20,
+        "outputPerMillion": 50
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-mythos-5",
+      "rates": {
+        "inputPerMillion": 10,
+        "cachedInputPerMillion": 1,
+        "cacheWrite5mPerMillion": 12.5,
+        "cacheWrite1hPerMillion": 20,
+        "outputPerMillion": 50
+      },
+      "provenance": "published_limited_availability"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "rates": {
+        "inputPerMillion": 5,
+        "cachedInputPerMillion": 0.5,
+        "cacheWrite5mPerMillion": 6.25,
+        "cacheWrite1hPerMillion": 10,
+        "outputPerMillion": 25
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-4-8",
+      "rates": {
+        "inputPerMillion": 5,
+        "cachedInputPerMillion": 0.5,
+        "cacheWrite5mPerMillion": 6.25,
+        "cacheWrite1hPerMillion": 10,
+        "outputPerMillion": 25
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-4-7",
+      "rates": {
+        "inputPerMillion": 5,
+        "cachedInputPerMillion": 0.5,
+        "cacheWrite5mPerMillion": 6.25,
+        "cacheWrite1hPerMillion": 10,
+        "outputPerMillion": 25
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-4-6",
+      "rates": {
+        "inputPerMillion": 5,
+        "cachedInputPerMillion": 0.5,
+        "cacheWrite5mPerMillion": 6.25,
+        "cacheWrite1hPerMillion": 10,
+        "outputPerMillion": 25
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-4-5",
+      "rates": {
+        "inputPerMillion": 5,
+        "cachedInputPerMillion": 0.5,
+        "cacheWrite5mPerMillion": 6.25,
+        "cacheWrite1hPerMillion": 10,
+        "outputPerMillion": 25
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-5",
+      "rates": {
+        "inputPerMillion": 2,
+        "cachedInputPerMillion": 0.2,
+        "cacheWrite5mPerMillion": 2.5,
+        "cacheWrite1hPerMillion": 4,
+        "outputPerMillion": 10
+      },
+      "provenance": "published_permanent_launch_price"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "rates": {
+        "inputPerMillion": 3,
+        "cachedInputPerMillion": 0.3,
+        "cacheWrite5mPerMillion": 3.75,
+        "cacheWrite1hPerMillion": 6,
+        "outputPerMillion": 15
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5",
+      "rates": {
+        "inputPerMillion": 3,
+        "cachedInputPerMillion": 0.3,
+        "cacheWrite5mPerMillion": 3.75,
+        "cacheWrite1hPerMillion": 6,
+        "outputPerMillion": 15
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4",
+      "rates": {
+        "inputPerMillion": 3,
+        "cachedInputPerMillion": 0.3,
+        "cacheWrite5mPerMillion": 3.75,
+        "cacheWrite1hPerMillion": 6,
+        "outputPerMillion": 15
+      },
+      "provenance": "published_retired_first_party"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "rates": {
+        "inputPerMillion": 1,
+        "cachedInputPerMillion": 0.1,
+        "cacheWrite5mPerMillion": 1.25,
+        "cacheWrite1hPerMillion": 2,
+        "outputPerMillion": 5
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-haiku-3-5",
+      "rates": {
+        "inputPerMillion": 0.8,
+        "cachedInputPerMillion": 0.08,
+        "cacheWrite5mPerMillion": 1,
+        "cacheWrite1hPerMillion": 1.6,
+        "outputPerMillion": 4
+      },
+      "provenance": "published_retired_first_party"
+    },
+    {
+      "provider": "minimax",
+      "model": "minimax-m3",
+      "rates": {
+        "inputPerMillion": 0.3,
+        "cachedInputPerMillion": 0.06,
+        "cacheWrite5mPerMillion": 0.3,
+        "cacheWrite1hPerMillion": 0.3,
+        "outputPerMillion": 1.2,
+        "longContextThreshold": 512000,
+        "longContextInputMultiplier": 2,
+        "longContextOutputMultiplier": 2
+      },
+      "provenance": "published_permanent_discount"
+    },
+    {
+      "provider": "minimax",
+      "model": "minimax-m2.7",
+      "rates": {
+        "inputPerMillion": 0.3,
+        "cachedInputPerMillion": 0.06,
+        "cacheWrite5mPerMillion": 0.375,
+        "cacheWrite1hPerMillion": 0.375,
+        "outputPerMillion": 1.2
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "minimax",
+      "model": "minimax-m2.7-highspeed",
+      "rates": {
+        "inputPerMillion": 0.6,
+        "cachedInputPerMillion": 0.06,
+        "cacheWrite5mPerMillion": 0.375,
+        "cacheWrite1hPerMillion": 0.375,
+        "outputPerMillion": 2.4
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "minimax",
+      "model": "minimax-m2.5",
+      "rates": {
+        "inputPerMillion": 0.3,
+        "cachedInputPerMillion": 0.03,
+        "cacheWrite5mPerMillion": 0.375,
+        "cacheWrite1hPerMillion": 0.375,
+        "outputPerMillion": 1.2
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "minimax",
+      "model": "minimax-m2.5-highspeed",
+      "rates": {
+        "inputPerMillion": 0.6,
+        "cachedInputPerMillion": 0.03,
+        "cacheWrite5mPerMillion": 0.375,
+        "cacheWrite1hPerMillion": 0.375,
+        "outputPerMillion": 2.4
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "xai",
+      "model": "grok-4.6",
+      "rates": {
+        "inputPerMillion": 2,
+        "cachedInputPerMillion": 0.5,
+        "outputPerMillion": 6,
+        "longContextThreshold": 200000,
+        "longContextInputMultiplier": 2,
+        "longContextOutputMultiplier": 2
+      },
+      "provenance": "published"
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "effectiveUntil": "2026-08-16T16:00:00Z",
+      "rates": {
+        "inputPerMillion": 0.14,
+        "cachedInputPerMillion": 0.0028,
+        "outputPerMillion": 0.28
+      },
+      "provenance": "published_historical"
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "effectiveFrom": "2026-08-16T16:00:00Z",
+      "rates": {
+        "inputPerMillion": 0.44,
+        "cachedInputPerMillion": 0.014,
+        "outputPerMillion": 1.32,
+        "utcRateSchedule": {
+          "offPeakMultiplier": 0.5,
+          "peakWindows": [
+            {"startMinute": 60, "endMinute": 240},
+            {"startMinute": 360, "endMinute": 600}
+          ]
+        }
+      },
+      "provenance": "published_peak_and_off_peak"
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "effectiveUntil": "2026-08-16T16:00:00Z",
+      "rates": {
+        "inputPerMillion": 0.435,
+        "cachedInputPerMillion": 0.003625,
+        "outputPerMillion": 0.87
+      },
+      "provenance": "published_historical"
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "effectiveFrom": "2026-08-16T16:00:00Z",
+      "rates": {
+        "inputPerMillion": 1.32,
+        "cachedInputPerMillion": 0.044,
+        "outputPerMillion": 3.96,
+        "utcRateSchedule": {
+          "offPeakMultiplier": 0.5,
+          "peakWindows": [
+            {"startMinute": 60, "endMinute": 240},
+            {"startMinute": 360, "endMinute": 600}
+          ]
+        }
+      },
+      "provenance": "published_peak_and_off_peak"
+    },
+    {
+      "provider": "moonshot",
+      "model": "kimi-k2.6",
+      "aliases": ["pool-kimi-k2.6"],
+      "rates": {
+        "inputPerMillion": 0.95,
+        "cachedInputPerMillion": 0.16,
+        "outputPerMillion": 4
       },
       "provenance": "published"
     }

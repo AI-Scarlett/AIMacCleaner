@@ -38,7 +38,7 @@ enum AgentUsageRemotePricingCatalog {
         string: "https://raw.githubusercontent.com/AI-Scarlett/TraceFence/main/pricing/model-pricing-v1.json"
     )!
 
-    private static let builtInRevision = "builtin-2026-07-30.1"
+    private static let builtInRevision = "builtin-2026-08-16.1"
     private static let maximumCatalogBytes = 256 * 1_024
     private static let state = State()
 
@@ -65,7 +65,7 @@ enum AgentUsageRemotePricingCatalog {
         case .claude:
             providers = [.anthropic]
         case .openCode, .openClaw, .deepSeekHarness:
-            providers = [.miniMax, .openAI, .anthropic]
+            providers = [.miniMax, .deepSeek, .xAI, .moonshot, .openAI, .anthropic]
         case .combined:
             return nil
         }
@@ -167,6 +167,28 @@ enum AgentUsageRemotePricingCatalog {
             } else if rates.longContextInputMultiplier != nil || rates.longContextOutputMultiplier != nil {
                 throw ValidationError.invalidLongContext
             }
+            if let schedule = rates.utcRateSchedule {
+                guard schedule.offPeakMultiplier.isFinite,
+                      schedule.offPeakMultiplier > 0,
+                      schedule.offPeakMultiplier <= 1,
+                      !schedule.peakWindows.isEmpty,
+                      schedule.peakWindows.count <= 12 else {
+                    throw ValidationError.invalidRateSchedule
+                }
+                let sortedWindows = schedule.peakWindows.sorted { $0.startMinute < $1.startMinute }
+                for window in sortedWindows {
+                    guard window.startMinute >= 0,
+                          window.endMinute <= 24 * 60,
+                          window.startMinute < window.endMinute else {
+                        throw ValidationError.invalidRateSchedule
+                    }
+                }
+                for index in 0..<max(0, sortedWindows.count - 1) {
+                    guard sortedWindows[index].endMinute <= sortedWindows[index + 1].startMinute else {
+                        throw ValidationError.invalidRateSchedule
+                    }
+                }
+            }
 
             var providerAliases = aliasesByProvider[entry.provider, default: [:]]
             for identifier in [model] + aliases {
@@ -192,7 +214,8 @@ enum AgentUsageRemotePricingCatalog {
                     longContextThreshold: rates.longContextThreshold,
                     longContextInputMultiplier: rates.longContextInputMultiplier ?? 1,
                     longContextOutputMultiplier: rates.longContextOutputMultiplier ?? 1
-                )
+                ),
+                utcRateSchedule: rates.utcRateSchedule
             ))
         }
 
@@ -242,6 +265,22 @@ enum AgentUsageRemotePricingCatalog {
               "model": "gpt-test",
               "effectiveFrom": "2026-07-30T00:00:00Z",
               "rates": {"inputPerMillion": 2, "cachedInputPerMillion": 0.2, "outputPerMillion": 12}
+            },
+            {
+              "provider": "deepseek",
+              "model": "deepseek-test",
+              "rates": {
+                "inputPerMillion": 0.44,
+                "cachedInputPerMillion": 0.014,
+                "outputPerMillion": 1.32,
+                "utcRateSchedule": {
+                  "offPeakMultiplier": 0.5,
+                  "peakWindows": [
+                    {"startMinute": 60, "endMinute": 240},
+                    {"startMinute": 360, "endMinute": 600}
+                  ]
+                }
+              }
             }
           ]
         }
@@ -260,6 +299,18 @@ enum AgentUsageRemotePricingCatalog {
             )
             expect(before?.inputPerMillion == 2.5 && before?.outputPerMillion == 15, "remote pricing must retain the pre-change historical tier")
             expect(after?.inputPerMillion == 2 && after?.outputPerMillion == 12, "remote pricing must switch tiers at the published effective date")
+            let peak = catalog.price(
+                providers: [.deepSeek],
+                model: "deepseek-test",
+                at: Date(timeIntervalSince1970: 1_786_932_000)
+            )
+            let offPeak = catalog.price(
+                providers: [.deepSeek],
+                model: "deepseek-test",
+                at: Date(timeIntervalSince1970: 1_786_942_800)
+            )
+            expect(peak?.inputPerMillion == 0.44 && peak?.cachedInputPerMillion == 0.014 && peak?.outputPerMillion == 1.32, "remote pricing must preserve published UTC peak rates")
+            expect(offPeak?.inputPerMillion == 0.22 && offPeak?.cachedInputPerMillion == 0.007 && offPeak?.outputPerMillion == 0.66, "remote pricing must apply the published UTC off-peak multiplier")
         } catch {
             failures.append("valid remote pricing fixture must decode: \(error.localizedDescription)")
         }
@@ -312,7 +363,7 @@ enum AgentUsageRemotePricingCatalog {
                     if lhs.score != rhs.score { return lhs.score < rhs.score }
                     return (lhs.entry.effectiveFrom ?? .distantPast) < (rhs.entry.effectiveFrom ?? .distantPast)
                 }) {
-                    return selected.entry.price
+                    return selected.entry.price(at: date)
                 }
             }
             return nil
@@ -380,12 +431,26 @@ enum AgentUsageRemotePricingCatalog {
         let longContextThreshold: Int64?
         let longContextInputMultiplier: Double?
         let longContextOutputMultiplier: Double?
+        let utcRateSchedule: UTCRateSchedule?
+    }
+
+    fileprivate struct UTCRateSchedule: Codable, Sendable {
+        let offPeakMultiplier: Double
+        let peakWindows: [UTCMinuteRange]
+    }
+
+    fileprivate struct UTCMinuteRange: Codable, Sendable {
+        let startMinute: Int
+        let endMinute: Int
     }
 
     fileprivate enum Provider: String, Codable, Sendable {
         case openAI = "openai"
         case anthropic
         case miniMax = "minimax"
+        case deepSeek = "deepseek"
+        case xAI = "xai"
+        case moonshot
     }
 
     fileprivate struct ValidatedEntry: Sendable {
@@ -395,6 +460,30 @@ enum AgentUsageRemotePricingCatalog {
         let effectiveFrom: Date?
         let effectiveUntil: Date?
         let price: AgentUsageRemoteModelPrice
+        let utcRateSchedule: UTCRateSchedule?
+
+        func price(at date: Date) -> AgentUsageRemoteModelPrice {
+            guard let schedule = utcRateSchedule else { return price }
+            let secondsPerDay = 24 * 60 * 60
+            let wholeSeconds = Int(floor(date.timeIntervalSince1970))
+            let secondsSinceMidnight = ((wholeSeconds % secondsPerDay) + secondsPerDay) % secondsPerDay
+            let minute = secondsSinceMidnight / 60
+            let isPeak = schedule.peakWindows.contains {
+                $0.startMinute <= minute && minute < $0.endMinute
+            }
+            let multiplier = isPeak ? 1 : schedule.offPeakMultiplier
+            guard multiplier != 1 else { return price }
+            return AgentUsageRemoteModelPrice(
+                inputPerMillion: price.inputPerMillion * multiplier,
+                cachedInputPerMillion: price.cachedInputPerMillion * multiplier,
+                cacheWrite5mPerMillion: price.cacheWrite5mPerMillion * multiplier,
+                cacheWrite1hPerMillion: price.cacheWrite1hPerMillion * multiplier,
+                outputPerMillion: price.outputPerMillion * multiplier,
+                longContextThreshold: price.longContextThreshold,
+                longContextInputMultiplier: price.longContextInputMultiplier,
+                longContextOutputMultiplier: price.longContextOutputMultiplier
+            )
+        }
 
         func matchScore(_ value: String) -> Int? {
             let unnamespaced = value.split(separator: "/").last.map(String.init) ?? value
@@ -422,6 +511,7 @@ enum AgentUsageRemotePricingCatalog {
         case invalidModel
         case invalidRate
         case invalidLongContext
+        case invalidRateSchedule
         case invalidEffectiveRange
         case overlappingRanges
         case ambiguousAlias
@@ -440,6 +530,7 @@ enum AgentUsageRemotePricingCatalog {
             case .invalidModel: return "Pricing catalog model identifier is invalid."
             case .invalidRate: return "Pricing catalog contains an invalid rate."
             case .invalidLongContext: return "Pricing catalog long-context tier is invalid."
+            case .invalidRateSchedule: return "Pricing catalog UTC rate schedule is invalid."
             case .invalidEffectiveRange: return "Pricing catalog effective range is invalid."
             case .overlappingRanges: return "Pricing catalog effective ranges overlap."
             case .ambiguousAlias: return "Pricing catalog contains an ambiguous alias."

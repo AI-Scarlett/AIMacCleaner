@@ -1451,6 +1451,9 @@ private enum AgentUsagePricingCatalog {
             // absent, resolve only public model IDs; router aliases remain
             // unknown rather than inheriting a guessed price.
             return miniMaxPrice(value)
+                ?? deepSeekPrice(value, at: date)
+                ?? xAIPrice(value)
+                ?? moonshotPrice(value)
                 ?? openAIPrice(value, at: date)
                 ?? claudePrice(value, at: date)
         case .combined:
@@ -1514,8 +1517,7 @@ private enum AgentUsagePricingCatalog {
         if value.contains("gpt-5.4") {
             return AgentUsageModelPrice(inputPerMillion: 2.5, cachedInputPerMillion: 0.25, outputPerMillion: 15)
         }
-        if value.contains("gpt-5.3-codex") || value.contains("gpt-5.2-codex")
-            || value.contains("gpt-5.3-chat") || value.contains("gpt-5.2") {
+        if value.contains("gpt-5.2-codex") || value.contains("gpt-5.2") {
             return AgentUsageModelPrice(inputPerMillion: 1.75, cachedInputPerMillion: 0.175, outputPerMillion: 14)
         }
         if value.contains("gpt-5-codex") || value == "gpt-5" {
@@ -1546,11 +1548,7 @@ private enum AgentUsagePricingCatalog {
             return AgentUsageModelPrice(inputPerMillion: 15, cachedInputPerMillion: 1.5, cacheWrite5mPerMillion: 18.75, cacheWrite1hPerMillion: 30, outputPerMillion: 75)
         }
         if containsClaudeVersion(value, family: "sonnet", versions: ["5", "5-0"]) {
-            let introductoryPriceEnds = Date(timeIntervalSince1970: 1_788_220_800) // 2026-09-01 00:00:00 UTC
-            if (date ?? Date()) < introductoryPriceEnds {
-                return AgentUsageModelPrice(inputPerMillion: 2, cachedInputPerMillion: 0.2, cacheWrite5mPerMillion: 2.5, cacheWrite1hPerMillion: 4, outputPerMillion: 10)
-            }
-            return AgentUsageModelPrice(inputPerMillion: 3, cachedInputPerMillion: 0.3, cacheWrite5mPerMillion: 3.75, cacheWrite1hPerMillion: 6, outputPerMillion: 15)
+            return AgentUsageModelPrice(inputPerMillion: 2, cachedInputPerMillion: 0.2, cacheWrite5mPerMillion: 2.5, cacheWrite1hPerMillion: 4, outputPerMillion: 10)
         }
         if value.contains("sonnet") {
             return AgentUsageModelPrice(inputPerMillion: 3, cachedInputPerMillion: 0.3, cacheWrite5mPerMillion: 3.75, cacheWrite1hPerMillion: 6, outputPerMillion: 15)
@@ -1593,6 +1591,64 @@ private enum AgentUsagePricingCatalog {
             return AgentUsageModelPrice(inputPerMillion: 0.3, cachedInputPerMillion: 0.03, cacheWrite5mPerMillion: 0.375, cacheWrite1hPerMillion: 0.375, outputPerMillion: 1.2)
         }
         return nil
+    }
+
+    private static func xAIPrice(_ value: String) -> AgentUsageModelPrice? {
+        guard matchesModelID(value, id: "grok-4.6") else { return nil }
+        return AgentUsageModelPrice(
+            inputPerMillion: 2,
+            cachedInputPerMillion: 0.5,
+            outputPerMillion: 6,
+            longContextThreshold: 200_000,
+            longContextInputMultiplier: 2,
+            longContextOutputMultiplier: 2
+        )
+    }
+
+    private static func deepSeekPrice(_ value: String, at date: Date?) -> AgentUsageModelPrice? {
+        let historicalRates: (input: Double, cached: Double, output: Double)
+        let currentPeakRates: (input: Double, cached: Double, output: Double)
+        if matchesModelID(value, id: "deepseek-v4-flash") {
+            historicalRates = (0.14, 0.0028, 0.28)
+            currentPeakRates = (0.44, 0.014, 1.32)
+        } else if matchesModelID(value, id: "deepseek-v4-pro") {
+            historicalRates = (0.435, 0.003625, 0.87)
+            currentPeakRates = (1.32, 0.044, 3.96)
+        } else {
+            return nil
+        }
+        let priceChange = Date(timeIntervalSince1970: 1_786_896_000) // 2026-08-16 16:00:00 UTC
+        let eventDate = date ?? Date()
+        if eventDate < priceChange {
+            return AgentUsageModelPrice(
+                inputPerMillion: historicalRates.input,
+                cachedInputPerMillion: historicalRates.cached,
+                outputPerMillion: historicalRates.output
+            )
+        }
+        let secondsPerDay = 24 * 60 * 60
+        let wholeSeconds = Int(floor(eventDate.timeIntervalSince1970))
+        let secondsSinceMidnight = ((wholeSeconds % secondsPerDay) + secondsPerDay) % secondsPerDay
+        let minute = secondsSinceMidnight / 60
+        let isPeak = (60..<240).contains(minute) || (360..<600).contains(minute)
+        let multiplier = isPeak ? 1.0 : 0.5
+        return AgentUsageModelPrice(
+            inputPerMillion: currentPeakRates.input * multiplier,
+            cachedInputPerMillion: currentPeakRates.cached * multiplier,
+            outputPerMillion: currentPeakRates.output * multiplier
+        )
+    }
+
+    private static func moonshotPrice(_ value: String) -> AgentUsageModelPrice? {
+        let unnamespaced = value.split(separator: "/").last.map(String.init) ?? value
+        guard unnamespaced == "kimi-k2.6"
+                || unnamespaced == "pool-kimi-k2.6"
+                || unnamespaced.hasPrefix("kimi-k2.6-20") else { return nil }
+        return AgentUsageModelPrice(
+            inputPerMillion: 0.95,
+            cachedInputPerMillion: 0.16,
+            outputPerMillion: 4
+        )
     }
 
     private static func containsClaudeVersion(_ value: String, family: String, versions: [String]) -> Bool {
@@ -7472,18 +7528,18 @@ extension AgentUsageInsightsService {
         expect(AgentUsageTokenFormatter.exactString(40_747_845_038) == "40,747,845,038", "exact token formatter must preserve every digit")
         let opus48 = AgentUsagePricingCatalog.price(scope: .claude, model: "claude-opus-4-8")
         expect(opus48?.inputPerMillion == 5 && opus48?.outputPerMillion == 25, "Claude Opus 4.8 must use its current model-specific price")
-        let sonnet5Intro = AgentUsagePricingCatalog.price(
+        let sonnet5Launch = AgentUsagePricingCatalog.price(
             scope: .claude,
             model: "claude-sonnet-5",
             at: Date(timeIntervalSince1970: 1_785_000_000)
         )
-        expect(sonnet5Intro?.inputPerMillion == 2 && sonnet5Intro?.outputPerMillion == 10, "Claude Sonnet 5 introductory pricing must apply to usage before September 2026")
-        let sonnet5Standard = AgentUsagePricingCatalog.price(
+        expect(sonnet5Launch?.inputPerMillion == 2 && sonnet5Launch?.outputPerMillion == 10, "Claude Sonnet 5 launch pricing must match the published rate")
+        let sonnet5Current = AgentUsagePricingCatalog.price(
             scope: .claude,
             model: "claude-sonnet-5",
             at: Date(timeIntervalSince1970: 1_788_220_800)
         )
-        expect(sonnet5Standard?.inputPerMillion == 3 && sonnet5Standard?.outputPerMillion == 15, "Claude Sonnet 5 standard pricing must apply after the introductory period")
+        expect(sonnet5Current?.inputPerMillion == 2 && sonnet5Current?.outputPerMillion == 10, "Claude Sonnet 5 must retain the now-permanent published launch price")
         let haiku45 = AgentUsagePricingCatalog.price(scope: .claude, model: "claude-haiku-4-5")
         expect(haiku45?.inputPerMillion == 1 && haiku45?.outputPerMillion == 5, "Claude Haiku 4.5 must not inherit the older Haiku 3.5 price")
         let gpt56Sol = AgentUsagePricingCatalog.price(scope: .codex, model: "gpt-5.6-sol")
@@ -7506,12 +7562,41 @@ extension AgentUsageInsightsService {
         expect(miniMaxM3?.inputPerMillion == 0.3 && miniMaxM3?.cachedInputPerMillion == 0.06 && miniMaxM3?.outputPerMillion == 1.2, "MiniMax M3 must resolve through its namespaced OpenCode model ID")
         let miniMaxM27 = AgentUsagePricingCatalog.price(scope: .openClaw, model: "MiniMax-M2.7")
         expect(miniMaxM27?.inputPerMillion == 0.3 && miniMaxM27?.cachedInputPerMillion == 0.06 && miniMaxM27?.outputPerMillion == 1.2, "MiniMax M2.7 must fall back to public pricing when the runtime omits cost")
+        let grok46 = AgentUsagePricingCatalog.price(scope: .deepSeekHarness, model: "grok-4.6")
+        expect(grok46?.inputPerMillion == 2 && grok46?.cachedInputPerMillion == 0.5 && grok46?.outputPerMillion == 6, "Grok 4.6 must use xAI's published token prices")
+        let deepSeekHistorical = AgentUsagePricingCatalog.price(
+            scope: .deepSeekHarness,
+            model: "deepseek-v4-flash",
+            at: Date(timeIntervalSince1970: 1_786_895_999)
+        )
+        expect(deepSeekHistorical?.inputPerMillion == 0.14 && deepSeekHistorical?.cachedInputPerMillion == 0.0028 && deepSeekHistorical?.outputPerMillion == 0.28, "DeepSeek V4 Flash must retain the price before its August 16 change")
+        let deepSeekPeak = AgentUsagePricingCatalog.price(
+            scope: .deepSeekHarness,
+            model: "deepseek-v4-flash",
+            at: Date(timeIntervalSince1970: 1_786_932_000)
+        )
+        expect(deepSeekPeak?.inputPerMillion == 0.44 && deepSeekPeak?.cachedInputPerMillion == 0.014 && deepSeekPeak?.outputPerMillion == 1.32, "DeepSeek V4 Flash must use published UTC peak prices")
+        let deepSeekOffPeak = AgentUsagePricingCatalog.price(
+            scope: .deepSeekHarness,
+            model: "deepseek-v4-flash",
+            at: Date(timeIntervalSince1970: 1_786_942_800)
+        )
+        expect(deepSeekOffPeak?.inputPerMillion == 0.22 && deepSeekOffPeak?.cachedInputPerMillion == 0.007 && deepSeekOffPeak?.outputPerMillion == 0.66, "DeepSeek V4 Flash must apply the published UTC off-peak discount")
+        let deepSeekProPeak = AgentUsagePricingCatalog.price(
+            scope: .deepSeekHarness,
+            model: "deepseek-v4-pro",
+            at: Date(timeIntervalSince1970: 1_786_932_000)
+        )
+        expect(deepSeekProPeak?.inputPerMillion == 1.32 && deepSeekProPeak?.cachedInputPerMillion == 0.044 && deepSeekProPeak?.outputPerMillion == 3.96, "DeepSeek V4 Pro must use published UTC peak prices")
+        let kimiK26 = AgentUsagePricingCatalog.price(scope: .openClaw, model: "pool-kimi-k2.6")
+        expect(kimiK26?.inputPerMillion == 0.95 && kimiK26?.cachedInputPerMillion == 0.16 && kimiK26?.outputPerMillion == 4, "Kimi K2.6 pool aliases must use Moonshot's published price")
         let longContextEstimate = AgentUsagePricingCatalog.estimatedCost(
             tokens: AgentUsageTokenTotals(input: 300_000, cached: 0, output: 10_000, reasoning: 0, total: 310_000),
             price: gpt56Sol
         )
         expect(abs(longContextEstimate.0 - 3.45) < 0.000_001, "GPT-5.6 requests above 272K input must use the published long-context multipliers")
         expect(AgentUsagePricingCatalog.price(scope: .codex, model: "gpt-5.6-sol-pro") == nil, "Non-API Sol Pro aliases must not inherit the public Sol API price")
+        expect(AgentUsagePricingCatalog.price(scope: .codex, model: "gpt-5.3-codex-spark") == nil, "Codex-only model aliases without a public API price must remain unpriced")
         expect(AgentUsagePricingCatalog.price(scope: .codex, model: "codex-auto-review") == nil, "Internal router aliases must remain explicitly unpriced")
         return failures
     }
