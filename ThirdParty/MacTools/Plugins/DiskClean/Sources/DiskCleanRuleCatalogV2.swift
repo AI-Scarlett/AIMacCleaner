@@ -52,7 +52,8 @@ struct DiskCleanRuleCatalogV2: Sendable {
 
     static let current = DiskCleanRuleCatalogV2(
         targets: userAndAppTargets + developerTargets + browserTargets
-            + developerArtifactTargets + installerTargets
+            + developerArtifactTargets + installerTargets + userFileTargets
+            + advisorFindingTargets
     )
 
     /// Targets for the rule-expansion phase. P2 synthetic targets are excluded—their candidates come from dedicated scanners.
@@ -1642,4 +1643,41 @@ struct DiskCleanRuleCatalogV2: Sendable {
             reservedRootPaths: [DiskCleanInstallerScanner.defaultDownloadsPath]
         )
     }
+
+    // MARK: - Advisor file inventory
+
+    /// The inventory never discovers a broad path for deletion. It passes only the exact files
+    /// that the user checked, and those paths still go through safety validation, identity
+    /// capture, plan minting, staging, and audit just like every other cleanup candidate.
+    private static let userFileTargets: [DiskCleanRuleTarget] = [
+        DiskCleanRuleTarget(
+            id: DiskCleanUserFileExpansion.targetID,
+            legacyRuleID: DiskCleanUserFileExpansion.targetID,
+            category: .userFiles,
+            risk: .high,
+            kind: .external,
+            reservedRootPaths: []
+        )
+    ]
+
+    /// Exact findings from `StorageOptimizationCore`. Both remain high risk and have no broad
+    /// reserved root because the advisor hands the expansion a finite set of user-reviewed paths.
+    private static let advisorFindingTargets: [DiskCleanRuleTarget] = [
+        DiskCleanRuleTarget(
+            id: DiskCleanAdvisorFindingExpansion.historicalBuildTargetID,
+            legacyRuleID: DiskCleanAdvisorFindingExpansion.historicalBuildTargetID,
+            category: .advisorFindings,
+            risk: .high,
+            kind: .external,
+            reservedRootPaths: []
+        ),
+        DiskCleanRuleTarget(
+            id: DiskCleanAdvisorFindingExpansion.installerArtifactTargetID,
+            legacyRuleID: DiskCleanAdvisorFindingExpansion.installerArtifactTargetID,
+            category: .advisorFindings,
+            risk: .high,
+            kind: .external,
+            reservedRootPaths: []
+        )
+    ]
 }

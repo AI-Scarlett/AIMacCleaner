@@ -232,3 +232,257 @@ struct DiskCleanInstallerExpansion: DiskCleanExternalExpanding {
         }
     }
 }
+
+// MARK: - User-selected inventory files
+
+/// Bridges the advisor's metadata-only inventory back into the authoritative cleanup pipeline.
+///
+/// The scanner receives exact paths selected by the user; it never expands a directory or glob.
+/// A selected file is still looked up afresh, physical-path normalized by the candidate assembler,
+/// checked by `DiskCleanSafetyPolicy`, sized, identity-stamped, planned, staged, and audited.
+struct DiskCleanUserFileExpansion: DiskCleanExternalExpanding {
+    static let targetID = "inventory.user-file"
+    static let maximumSelectionCount = 500
+
+    private let fileSystem: any DiskCleanFileSystemProviding
+
+    init(fileSystem: any DiskCleanFileSystemProviding = LocalDiskCleanFileSystem()) {
+        self.fileSystem = fileSystem
+    }
+
+    func expand(
+        scope: DiskCleanScanScope,
+        catalog: DiskCleanRuleCatalogV2,
+        localization: PluginLocalization
+    ) async -> DiskCleanExternalExpansion {
+        var expansion = DiskCleanExternalExpansion()
+        guard case let .userFiles(rawPaths) = scope else { return expansion }
+        guard let target = catalog.target(id: Self.targetID) else {
+            expansion.logMessages.append(
+                DiskCleanScanLogMessage(
+                    text: localization.format(
+                        "scanLog.missingTarget",
+                        defaultValue: "规则目录缺少 target %@，已跳过对应候选",
+                        Self.targetID
+                    ),
+                    tone: .error
+                )
+            )
+            return expansion
+        }
+
+        var seen = Set<String>()
+        let paths = rawPaths
+            .map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+            .filter { seen.insert($0).inserted }
+            .sorted()
+
+        if paths.count > Self.maximumSelectionCount {
+            expansion.logMessages.append(
+                DiskCleanScanLogMessage(
+                    text: localization.format(
+                        "scanLog.inventory.selectionLimited",
+                        defaultValue: "一次最多安全检查 %d 个文件；其余文件留待下一批。",
+                        Self.maximumSelectionCount
+                    ),
+                    tone: .warning
+                )
+            )
+        }
+
+        for path in paths.prefix(Self.maximumSelectionCount) {
+            guard !Task.isCancelled else { break }
+            do {
+                guard let item = try fileSystem.itemInfo(at: path) else {
+                    expansion.logMessages.append(
+                        DiskCleanScanLogMessage(
+                            text: localization.format(
+                                "scanLog.inventory.fileMissing",
+                                defaultValue: "文件已不存在：%@",
+                                path
+                            ),
+                            tone: .warning
+                        )
+                    )
+                    continue
+                }
+                guard !item.isDirectory else {
+                    expansion.logMessages.append(
+                        DiskCleanScanLogMessage(
+                            text: localization.format(
+                                "scanLog.inventory.directorySkipped",
+                                defaultValue: "文件分析不清理目录：%@",
+                                path
+                            ),
+                            tone: .warning
+                        )
+                    )
+                    continue
+                }
+                expansion.hits.append(
+                    DiskCleanTargetHit(
+                        target: target,
+                        item: item,
+                        logicalPath: path,
+                        specificity: path.count,
+                        // Original user files remain high risk even though the inventory checkbox
+                        // selected the batch. The cleanup list is a second, explicit review gate;
+                        // nothing from Documents/Desktop should become preselected for deletion.
+                        facts: .inherited
+                    )
+                )
+            } catch {
+                expansion.logMessages.append(
+                    DiskCleanScanLogMessage(
+                        text: localization.format(
+                            "scanLog.inventory.fileFailed",
+                            defaultValue: "无法检查 %@（%@）",
+                            path,
+                            error.localizedDescription
+                        ),
+                        tone: .warning
+                    )
+                )
+            }
+        }
+
+        expansion.logMessages.append(
+            DiskCleanScanLogMessage(
+                text: localization.format(
+                    "scanLog.inventory.prepared",
+                    defaultValue: "已将 %d 个所选文件送入安全清理流程",
+                    expansion.hits.count
+                ),
+                tone: expansion.hits.isEmpty ? .info : .success
+            )
+        )
+        return expansion
+    }
+}
+
+// MARK: - AI Disk Advisor findings
+
+/// Sends the shared native advisor's exact historical-build and installer findings through the
+/// same physical-path, safety, sizing, identity, plan, staging, and audit pipeline as Mac Cleanup.
+/// Directories are accepted here because Xcode archives/results and versioned build outputs are
+/// directories; unlike the developer sweep, this expansion never walks or infers a parent root.
+struct DiskCleanAdvisorFindingExpansion: DiskCleanExternalExpanding {
+    static let historicalBuildTargetID = "advisor.historical-build"
+    static let installerArtifactTargetID = "advisor.installer-artifact"
+    static let maximumSelectionCount = 500
+
+    private let fileSystem: any DiskCleanFileSystemProviding
+
+    init(fileSystem: any DiskCleanFileSystemProviding = LocalDiskCleanFileSystem()) {
+        self.fileSystem = fileSystem
+    }
+
+    func expand(
+        scope: DiskCleanScanScope,
+        catalog: DiskCleanRuleCatalogV2,
+        localization: PluginLocalization
+    ) async -> DiskCleanExternalExpansion {
+        var expansion = DiskCleanExternalExpansion()
+        guard case let .advisorFindings(rawItems) = scope else { return expansion }
+
+        var seenPaths = Set<String>()
+        let items = rawItems
+            .map {
+                DiskCleanAdvisorFinding(
+                    path: URL(fileURLWithPath: $0.path).standardizedFileURL.path,
+                    kind: $0.kind
+                )
+            }
+            .filter { seenPaths.insert($0.path).inserted }
+            .sorted { $0.path < $1.path }
+
+        if items.count > Self.maximumSelectionCount {
+            expansion.logMessages.append(
+                DiskCleanScanLogMessage(
+                    text: localization.format(
+                        "scanLog.inventory.selectionLimited",
+                        defaultValue: "一次最多安全检查 %d 个文件；其余文件留待下一批。",
+                        Self.maximumSelectionCount
+                    ),
+                    tone: .warning
+                )
+            )
+        }
+
+        for finding in items.prefix(Self.maximumSelectionCount) {
+            guard !Task.isCancelled else { break }
+            let targetID = Self.targetID(for: finding.kind)
+            guard let target = catalog.target(id: targetID) else {
+                expansion.logMessages.append(
+                    DiskCleanScanLogMessage(
+                        text: localization.format(
+                            "scanLog.missingTarget",
+                            defaultValue: "规则目录缺少 target %@，已跳过对应候选",
+                            targetID
+                        ),
+                        tone: .error
+                    )
+                )
+                continue
+            }
+
+            do {
+                guard let item = try fileSystem.itemInfo(at: finding.path) else {
+                    expansion.logMessages.append(
+                        DiskCleanScanLogMessage(
+                            text: localization.format(
+                                "scanLog.inventory.fileMissing",
+                                defaultValue: "文件已不存在：%@",
+                                finding.path
+                            ),
+                            tone: .warning
+                        )
+                    )
+                    continue
+                }
+                expansion.hits.append(
+                    DiskCleanTargetHit(
+                        target: target,
+                        item: item,
+                        logicalPath: finding.path,
+                        specificity: finding.path.count,
+                        facts: .inherited
+                    )
+                )
+            } catch {
+                expansion.logMessages.append(
+                    DiskCleanScanLogMessage(
+                        text: localization.format(
+                            "scanLog.inventory.fileFailed",
+                            defaultValue: "无法检查 %@（%@）",
+                            finding.path,
+                            error.localizedDescription
+                        ),
+                        tone: .warning
+                    )
+                )
+            }
+        }
+
+        expansion.logMessages.append(
+            DiskCleanScanLogMessage(
+                text: localization.format(
+                    "scanLog.inventory.prepared",
+                    defaultValue: "已将 %d 个所选文件送入安全清理流程",
+                    expansion.hits.count
+                ),
+                tone: expansion.hits.isEmpty ? .info : .success
+            )
+        )
+        return expansion
+    }
+
+    private static func targetID(for kind: StorageCleanupItemKind) -> String {
+        switch kind {
+        case .historicalBuild:
+            return historicalBuildTargetID
+        case .installerArtifact:
+            return installerArtifactTargetID
+        }
+    }
+}

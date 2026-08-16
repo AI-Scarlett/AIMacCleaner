@@ -44,6 +44,12 @@ enum DiskCleanCategoryID: String, CaseIterable, Identifiable, Hashable, Sendable
     case developerArtifacts
     /// P2 leftover installers (design §10.2).
     case installers
+    /// User files explicitly selected from the advisor inventory. These are never discovered by
+    /// a broad cleanup rule and only enter the pipeline after an explicit user selection.
+    case userFiles
+    /// Historical build/install artifacts discovered by the shared AI Disk Advisor scanner.
+    /// Exact paths only; no directory is inferred from the category itself.
+    case advisorFindings
 
     var id: String { rawValue }
 
@@ -67,7 +73,9 @@ enum DiskCleanCategoryID: String, CaseIterable, Identifiable, Hashable, Sendable
         .systemCaches,
         .virtualization,
         .installers,
-        .developerArtifacts
+        .developerArtifacts,
+        .userFiles,
+        .advisorFindings
     ]
 
     var risk: DiskCleanRisk {
@@ -78,6 +86,8 @@ enum DiskCleanCategoryID: String, CaseIterable, Identifiable, Hashable, Sendable
         // "auto-rebuild" path, only re-download — shown at the same level as developer artifacts.
         case .developer, .systemCaches, .virtualization, .developerArtifacts, .installers:
             return .medium
+        case .userFiles, .advisorFindings:
+            return .high
         }
     }
 
@@ -107,6 +117,10 @@ enum DiskCleanCategoryID: String, CaseIterable, Identifiable, Hashable, Sendable
             return "shippingbox"
         case .installers:
             return "arrow.down.circle"
+        case .userFiles:
+            return "doc.badge.magnifyingglass"
+        case .advisorFindings:
+            return "sparkles.rectangle.stack"
         }
     }
 
@@ -149,6 +163,10 @@ enum DiskCleanCategoryID: String, CaseIterable, Identifiable, Hashable, Sendable
             return "开发产物"
         case .installers:
             return "残留安装包"
+        case .userFiles:
+            return "用户文件"
+        case .advisorFindings:
+            return "磁盘顾问建议"
         }
     }
 
@@ -178,6 +196,10 @@ enum DiskCleanCategoryID: String, CaseIterable, Identifiable, Hashable, Sendable
             return "源码与提交不受影响，依赖需要重新安装、产物需要重新构建。"
         case .installers:
             return "已安装的应用不受影响，安装包需要时可重新下载。"
+        case .userFiles:
+            return "这些是用户主动选择的原始文件；移到废纸篓前请确认内容。"
+        case .advisorFindings:
+            return "这些是历史构建或分发产物；请确认已备份、已上传或可以重新构建。"
         }
     }
 }

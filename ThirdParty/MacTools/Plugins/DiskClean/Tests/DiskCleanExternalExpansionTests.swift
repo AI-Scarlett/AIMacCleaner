@@ -211,6 +211,83 @@ final class DiskCleanExternalExpansionTests: XCTestCase {
         )
     }
 
+    // MARK: - Advisor user files
+
+    func testUserFileExpansionAcceptsOnlyExactSelectedFiles() async throws {
+        let root = try makeTemporaryDirectory()
+        let selected = root + "/selected.txt"
+        let unselected = root + "/unselected.txt"
+        try Data("selected".utf8).write(to: URL(fileURLWithPath: selected))
+        try Data("unselected".utf8).write(to: URL(fileURLWithPath: unselected))
+
+        let expansion = await DiskCleanUserFileExpansion().expand(
+            scope: .userFiles(paths: [selected, selected]),
+            catalog: catalog,
+            localization: localization
+        )
+
+        XCTAssertEqual(expansion.hits.count, 1, "duplicate selections must collapse")
+        XCTAssertEqual(
+            expansion.hits.first?.item.path,
+            URL(fileURLWithPath: selected).standardizedFileURL.path
+        )
+        XCTAssertEqual(expansion.hits.first?.target.id, DiskCleanUserFileExpansion.targetID)
+        XCTAssertNil(
+            expansion.hits.first?.facts.risk,
+            "original user files must inherit high risk and require a second cleanup-list review"
+        )
+        XCTAssertFalse(expansion.hits.contains {
+            $0.item.path == URL(fileURLWithPath: unselected).standardizedFileURL.path
+        })
+        XCTAssertTrue(expansion.reservedRootPaths.isEmpty, "an exact file selection reserves no broad root")
+    }
+
+    func testUserFileExpansionRejectsDirectories() async throws {
+        let root = try makeTemporaryDirectory()
+
+        let expansion = await DiskCleanUserFileExpansion().expand(
+            scope: .userFiles(paths: [root]),
+            catalog: catalog,
+            localization: localization
+        )
+
+        XCTAssertTrue(expansion.hits.isEmpty)
+        XCTAssertTrue(expansion.logMessages.contains { $0.tone == .warning })
+    }
+
+    func testAdvisorFindingExpansionAcceptsOnlyExactBuildAndInstallerItems() async throws {
+        let root = try makeTemporaryDirectory()
+        let build = root + "/old.xcarchive"
+        let installer = root + "/release.dmg"
+        let unrelated = root + "/keep.txt"
+        try FileManager.default.createDirectory(atPath: build, withIntermediateDirectories: true)
+        try Data("installer".utf8).write(to: URL(fileURLWithPath: installer))
+        try Data("keep".utf8).write(to: URL(fileURLWithPath: unrelated))
+
+        let expansion = await DiskCleanAdvisorFindingExpansion().expand(
+            scope: .advisorFindings(items: [
+                DiskCleanAdvisorFinding(path: build, kind: .historicalBuild),
+                DiskCleanAdvisorFinding(path: installer, kind: .installerArtifact)
+            ]),
+            catalog: catalog,
+            localization: localization
+        )
+
+        XCTAssertEqual(expansion.hits.count, 2)
+        XCTAssertEqual(
+            Set(expansion.hits.map(\.target.id)),
+            [
+                DiskCleanAdvisorFindingExpansion.historicalBuildTargetID,
+                DiskCleanAdvisorFindingExpansion.installerArtifactTargetID
+            ]
+        )
+        XCTAssertTrue(expansion.hits.contains { $0.item.isDirectory })
+        XCTAssertFalse(expansion.hits.contains {
+            $0.item.path == URL(fileURLWithPath: unrelated).standardizedFileURL.path
+        })
+        XCTAssertTrue(expansion.hits.allSatisfy { $0.facts.risk == nil })
+    }
+
     // MARK: - Helpers
 
     private func candidate(gitState: DiskCleanPurgeGitState) -> DiskCleanPurgeCandidate {

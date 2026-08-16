@@ -48,12 +48,16 @@ private struct DiskCleanPluginProvider: PluginProvider {
         }
 
         let purgeRoots = DiskCleanPurgeRootsModel()
+        let advisorModel = DiskCleanAdvisorModel(cacheDirectory: context.cacheDirectory)
         return [
             DiskCleanPlugin(
                 controller: makeController(scope: .rules(choices: Set(DiskCleanChoice.allCases))),
                 developerArtifactsController: makeController(scope: purgeRoots.scope),
                 installersController: makeController(scope: .installers),
+                userFilesController: makeController(scope: .userFiles(paths: [])),
+                advisorFindingsController: makeController(scope: .advisorFindings(items: [])),
                 purgeRoots: purgeRoots,
+                advisorModel: advisorModel,
                 localization: localization,
                 storageDirectory: storageDirectory,
                 journal: journal,
@@ -88,14 +92,17 @@ final class DiskCleanPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginSettingsP
     var requestSettingsPresentation: (() -> Void)?
 
     private let controller: DiskCleanControlling
-    /// Controllers for the two P2 sections on the detail page (design §10).
+    /// Controllers for independent cleanup sections on the detail page (design §10).
     ///
     /// They only appear in Settings and **do not wire `onStateChange`**: the menu-bar panel reflects
-    /// the rules section only, so rebuilding the host menu on every P2 candidate stream would be
+    /// the rules section only, so rebuilding the host menu on every section candidate stream would be
     /// pure overhead.
     private let developerArtifactsController: DiskCleanController
     private let installersController: DiskCleanController
+    private let userFilesController: DiskCleanController
+    private let advisorFindingsController: DiskCleanController
     private let purgeRoots: DiskCleanPurgeRootsModel
+    private let advisorModel: DiskCleanAdvisorModel
     private let localization: PluginLocalization
     private let storageDirectory: URL
     private let journal: DiskCleanStagingJournal
@@ -108,7 +115,10 @@ final class DiskCleanPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginSettingsP
         controller: DiskCleanControlling = DiskCleanController(),
         developerArtifactsController: DiskCleanController = DiskCleanController(),
         installersController: DiskCleanController = DiskCleanController(),
+        userFilesController: DiskCleanController = DiskCleanController(),
+        advisorFindingsController: DiskCleanController = DiskCleanController(),
         purgeRoots: DiskCleanPurgeRootsModel = DiskCleanPurgeRootsModel(),
+        advisorModel: DiskCleanAdvisorModel = DiskCleanAdvisorModel(cacheDirectory: nil),
         localization: PluginLocalization = PluginLocalization(bundle: .main),
         storageDirectory: URL = DiskCleanStorageLocation.fallbackDirectory,
         journal: DiskCleanStagingJournal? = nil,
@@ -119,7 +129,10 @@ final class DiskCleanPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginSettingsP
         self.controller = controller
         self.developerArtifactsController = developerArtifactsController
         self.installersController = installersController
+        self.userFilesController = userFilesController
+        self.advisorFindingsController = advisorFindingsController
         self.purgeRoots = purgeRoots
+        self.advisorModel = advisorModel
         self.localization = localization
         self.storageDirectory = storageDirectory
         self.journal = journal ?? DiskCleanStagingJournal(directory: storageDirectory)
@@ -134,7 +147,7 @@ final class DiskCleanPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginSettingsP
             order: 90,
             defaultDescription: localization.string(
                 "metadata.description",
-                defaultValue: "扫描系统缓存、开发产物与残留安装包，默认移到废纸篓，执行前校验路径安全"
+                defaultValue: "整合 AI 磁盘顾问与 Mac 清理：分析 Agent 存储、文件活跃度、缓存、开发产物和安装包，并通过统一安全流程清理"
             )
         )
         self.controller.onStateChange = { [weak self] in
@@ -173,13 +186,19 @@ final class DiskCleanPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginSettingsP
         let historyProvider = DiskCleanAuditLogHistoryProvider(directory: storageDirectory)
         let developerArtifactsController = developerArtifactsController
         let installersController = installersController
+        let userFilesController = userFilesController
+        let advisorFindingsController = advisorFindingsController
         let purgeRoots = purgeRoots
+        let advisorModel = advisorModel
         return .workspace(description: metadata.defaultDescription, scrolling: .host) { _ in
             DiskCleanDetailView(
                 controller: controller,
                 developerArtifactsController: developerArtifactsController,
                 installersController: installersController,
+                userFilesController: userFilesController,
+                advisorFindingsController: advisorFindingsController,
                 purgeRoots: purgeRoots,
+                advisorModel: advisorModel,
                 localization: localization,
                 historyProvider: historyProvider,
                 showsHeader: false,
@@ -205,6 +224,8 @@ final class DiskCleanPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginSettingsP
         let rulesController = controller as? DiskCleanController
         let developerController = developerArtifactsController
         let installersController = installersController
+        let userFilesController = userFilesController
+        let advisorFindingsController = advisorFindingsController
         Task.detached(priority: .utility) {
             // Shared journal instance is required: separate journals have separate locks and can
             // compact a live begin record while rename is still in flight.
@@ -218,6 +239,8 @@ final class DiskCleanPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginSettingsP
                 rulesController?.refreshCleanupReadiness()
                 developerController.refreshCleanupReadiness()
                 installersController.refreshCleanupReadiness()
+                userFilesController.refreshCleanupReadiness()
+                advisorFindingsController.refreshCleanupReadiness()
             }
         }
     }
@@ -226,6 +249,8 @@ final class DiskCleanPlugin: MacToolsPlugin, PluginPrimaryPanel, PluginSettingsP
         controller.cancelCurrentOperation()
         developerArtifactsController.cancelCurrentOperation()
         installersController.cancelCurrentOperation()
+        userFilesController.cancelCurrentOperation()
+        advisorFindingsController.cancelCurrentOperation()
     }
 
     func handleAction(_ action: PluginPanelAction) {

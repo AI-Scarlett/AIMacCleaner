@@ -84,6 +84,8 @@ struct DiskCleanScanEngine: DiskCleanScanning {
     /// Expansion sources for P2 sections (design §10).
     let developerArtifactExpansion: any DiskCleanExternalExpanding
     let installerExpansion: any DiskCleanExternalExpanding
+    let userFileExpansion: any DiskCleanExternalExpanding
+    let advisorFindingExpansion: any DiskCleanExternalExpanding
     let configuration: DiskCleanScanEngineConfiguration
     let localization: PluginLocalization
     let now: @Sendable () -> Date
@@ -100,6 +102,8 @@ struct DiskCleanScanEngine: DiskCleanScanning {
         fullDiskAccess: any DiskCleanFullDiskAccessProbing = DiskCleanFullDiskAccessProbe.shared,
         developerArtifactExpansion: any DiskCleanExternalExpanding = DiskCleanDeveloperArtifactExpansion(),
         installerExpansion: any DiskCleanExternalExpanding = DiskCleanInstallerExpansion(),
+        userFileExpansion: any DiskCleanExternalExpanding = DiskCleanUserFileExpansion(),
+        advisorFindingExpansion: any DiskCleanExternalExpanding = DiskCleanAdvisorFindingExpansion(),
         configuration: DiskCleanScanEngineConfiguration = DiskCleanScanEngineConfiguration(),
         localization: PluginLocalization = PluginLocalization(bundle: .main),
         now: @escaping @Sendable () -> Date = Date.init
@@ -115,6 +119,8 @@ struct DiskCleanScanEngine: DiskCleanScanning {
         self.fullDiskAccess = fullDiskAccess
         self.developerArtifactExpansion = developerArtifactExpansion
         self.installerExpansion = installerExpansion
+        self.userFileExpansion = userFileExpansion
+        self.advisorFindingExpansion = advisorFindingExpansion
         self.configuration = configuration
         self.localization = localization
         self.now = now
@@ -267,6 +273,10 @@ struct DiskCleanScanEngine: DiskCleanScanning {
             return catalog.targets(in: .developerArtifacts)
         case .installers:
             return catalog.targets(in: .installers)
+        case .userFiles:
+            return catalog.targets(in: .userFiles)
+        case .advisorFindings:
+            return catalog.targets(in: .advisorFindings)
         }
     }
 
@@ -303,6 +313,22 @@ struct DiskCleanScanEngine: DiskCleanScanning {
         case .installers:
             hits = await expandExternally(
                 using: installerExpansion,
+                scope: scope,
+                outcome: &outcome,
+                collector: &collector,
+                continuation: continuation
+            )
+        case .userFiles:
+            hits = await expandExternally(
+                using: userFileExpansion,
+                scope: scope,
+                outcome: &outcome,
+                collector: &collector,
+                continuation: continuation
+            )
+        case .advisorFindings:
+            hits = await expandExternally(
+                using: advisorFindingExpansion,
                 scope: scope,
                 outcome: &outcome,
                 collector: &collector,

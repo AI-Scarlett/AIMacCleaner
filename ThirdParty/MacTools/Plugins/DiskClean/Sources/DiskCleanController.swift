@@ -934,6 +934,18 @@ final class DiskCleanController: ObservableObject, DiskCleanControlling {
             return roots.joined(separator: separator)
         case .installers:
             return DiskCleanCategoryID.installers.title(localization: localization)
+        case let .userFiles(paths):
+            return localization.format(
+                "scope.inventoryFiles",
+                defaultValue: "%d 个所选文件",
+                paths.count
+            )
+        case let .advisorFindings(items):
+            return localization.format(
+                "scope.advisorFindings",
+                defaultValue: "%d 项磁盘顾问建议",
+                items.count
+            )
         }
     }
 

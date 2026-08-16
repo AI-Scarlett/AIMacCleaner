@@ -33,6 +33,7 @@ scanner.py
 build.sh
 project.yml
 !TraceFencePlugins/project.yml
+!ThirdParty/MacTools/Plugins/DiskClean/project.yml
 static/
 build/MacOS/
 build/Info.plist

@@ -1,54 +1,54 @@
 {
   "id": "disk-clean",
   "displayName": "磁盘清理",
-  "summary": "扫描系统缓存、开发产物与残留安装包，默认移到废纸篓，执行前校验路径安全",
+  "summary": "整合 AI 磁盘顾问与 Mac 清理：分析 Agent 存储、文件活跃度、缓存、开发产物和安装包，并通过统一安全流程清理",
   "localizedMetadata": {
     "ar": {
       "displayName": "تنظيف القرص",
-      "summary": "يمسح ذاكرات التخزين المؤقت للنظام ومخرجات التطوير وبرامج التثبيت المتبقية؛ ينقل افتراضيًا إلى سلة المهملات مع فحوصات أمان المسار قبل الحذف."
+      "summary": "مستشار قرص بالذكاء الاصطناعي وتنظيف Mac في مكوّن واحد: تحليل تخزين الوكلاء ونشاط الملفات والذاكرة المؤقتة ومخرجات التطوير وحزم التثبيت عبر مسار آمن موحد"
     },
     "de": {
       "displayName": "Datenträgerbereinigung",
-      "summary": "System-Caches, Entwicklerartefakte und übrig gebliebene Installer scannen; standardmäßig in den Papierkorb, mit Pfadsicherheitsprüfung vor dem Löschen."
+      "summary": "KI-Festplattenberater und Mac-Bereinigung in einem Plugin: Agent-Speicher, Dateiaktivität, Caches, Entwicklerartefakte und Installer sicher analysieren und bereinigen"
     },
     "en": {
       "displayName": "Disk Cleanup",
-      "summary": "Scan system caches, developer artifacts, and leftover installers; move to Trash by default with path safety checks before deletion"
+      "summary": "AI Disk Advisor and Mac Cleanup in one plugin: analyze Agent storage, file activity, caches, developer artifacts, and installers with one safe cleanup pipeline"
     },
     "es": {
       "displayName": "Limpieza de disco",
-      "summary": "Escanea cachés del sistema, artefactos de desarrollo e instaladores residuales; por defecto mueve a la Papelera, con comprobaciones de seguridad de ruta antes de borrar."
+      "summary": "Asesor de disco con IA y limpieza del Mac en un complemento: analiza agentes, actividad de archivos, cachés, artefactos e instaladores con un flujo seguro"
     },
     "fr": {
       "displayName": "Nettoyage du disque",
-      "summary": "Analyse les caches système, les artefacts de développement et les installateurs restants ; met à la corbeille par défaut, avec contrôles de sécurité des chemins avant suppression."
+      "summary": "Conseiller de disque IA et nettoyage du Mac réunis : analyse du stockage des agents, de l’activité des fichiers, des caches, artefacts et installateurs via un processus sécurisé"
     },
     "ja": {
       "displayName": "ディスククリーンアップ",
-      "summary": "システムキャッシュ、開発成果物、残留インストーラをスキャン。既定でゴミ箱へ移動し、削除前にパス安全性を確認します。"
+      "summary": "AI ディスクアドバイザーと Mac クリーンアップを統合。Agent ストレージ、ファイル利用状況、キャッシュ、開発成果物、インストーラを共通の安全処理で分析・整理します"
     },
     "ko": {
       "displayName": "디스크 정리",
-      "summary": "시스템 캐시, 개발 산출물, 잔여 설치 패키지를 스캔합니다. 기본적으로 휴지통으로 옮기며 삭제 전 경로 안전성을 검사합니다."
+      "summary": "AI 디스크 어드바이저와 Mac 정리를 통합하여 Agent 저장 공간, 파일 활동, 캐시, 개발 산출물 및 설치 파일을 하나의 안전한 절차로 분석하고 정리합니다"
     },
     "pt": {
       "displayName": "Limpeza de disco",
-      "summary": "Analisa caches do sistema, artefactos de desenvolvimento e instaladores residuais; por predefinição move para o Lixo, com verificações de segurança do caminho antes de apagar."
+      "summary": "Consultor de disco com IA e Limpeza do Mac num só plugin: analisa agentes, atividade de ficheiros, caches, artefactos e instaladores com um processo seguro"
     },
     "ru": {
       "displayName": "Очистка диска",
-      "summary": "Сканирует системные кэши, артефакты разработки и оставшиеся установщики; по умолчанию перемещает в Корзину с проверкой безопасности пути перед удалением."
+      "summary": "ИИ-советник и очистка Mac в одном плагине: анализ хранилища агентов, активности файлов, кэшей, артефактов и установщиков через единый безопасный процесс"
     },
     "zh-Hans": {
       "displayName": "磁盘清理",
-      "summary": "扫描系统缓存、开发产物与残留安装包，默认移到废纸篓，执行前校验路径安全"
+      "summary": "整合 AI 磁盘顾问与 Mac 清理：分析 Agent 存储、文件活跃度、缓存、开发产物和安装包，并通过统一安全流程清理"
     },
     "zh-Hant": {
       "displayName": "磁碟清理",
-      "summary": "掃描系統快取、開發產物與殘留安裝包，預設移到廢紙簍，執行前校驗路徑安全"
+      "summary": "整合 AI 磁碟顧問與 Mac 清理：分析 Agent 儲存、檔案活動、快取、開發產物和安裝包，並透過統一安全流程清理"
     }
   },
-  "version": "2.0.2",
+  "version": "2.1.0",
   "minHostVersion": "1.1.6",
   "pluginKitVersion": 4,
   "bundleRelativePath": "DiskClean.bundle",

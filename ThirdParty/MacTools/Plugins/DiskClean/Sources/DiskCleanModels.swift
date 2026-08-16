@@ -63,6 +63,13 @@ enum DiskCleanScanScope: Equatable, Sendable {
     case developerArtifacts(roots: [String])
     /// Leftover installers (design §10.2). Scope is fixed to top-level `~/Downloads`; no parameters.
     case installers
+    /// Explicit files selected in the advisor inventory. The inventory itself is read-only;
+    /// selected paths re-enter the normal safety/sizing/planning pipeline through this scope
+    /// before any removal is enabled.
+    case userFiles(paths: [String])
+    /// Exact build/install artifacts selected from the migrated AI Disk Advisor. These are
+    /// discoveries from the shared native scanner, not broad user-provided scan roots.
+    case advisorFindings(items: [DiskCleanAdvisorFinding])
 
     /// Section identity (parameters excluded). Used where only "which section" matters—selection UI,
     /// log prefixes, etc.
@@ -74,6 +81,10 @@ enum DiskCleanScanScope: Equatable, Sendable {
             return .developerArtifacts
         case .installers:
             return .installers
+        case .userFiles:
+            return .userFiles
+        case .advisorFindings:
+            return .advisorFindings
         }
     }
 
@@ -88,6 +99,10 @@ enum DiskCleanScanScope: Equatable, Sendable {
             return roots.isEmpty
         case .installers:
             return false
+        case let .userFiles(paths):
+            return paths.isEmpty
+        case let .advisorFindings(items):
+            return items.isEmpty
         }
     }
 
@@ -101,12 +116,29 @@ enum DiskCleanScanScope: Equatable, Sendable {
         guard case let .developerArtifacts(roots) = self else { return [] }
         return roots
     }
+
+    var userFilePaths: [String] {
+        guard case let .userFiles(paths) = self else { return [] }
+        return paths
+    }
+
+    var advisorFindings: [DiskCleanAdvisorFinding] {
+        guard case let .advisorFindings(items) = self else { return [] }
+        return items
+    }
+}
+
+struct DiskCleanAdvisorFinding: Hashable, Sendable {
+    let path: String
+    let kind: StorageCleanupItemKind
 }
 
 enum DiskCleanScanSection: String, CaseIterable, Identifiable, Hashable, Sendable {
     case rules
     case developerArtifacts
     case installers
+    case userFiles
+    case advisorFindings
 
     var id: String { rawValue }
 }

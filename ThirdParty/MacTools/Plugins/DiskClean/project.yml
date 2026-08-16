@@ -1,0 +1,9 @@
+core:
+  sources:
+    # These two scanners remain the single source of truth for the native
+    # AI Disk Advisor and the Disk Cleanup plugin. Compiling the same sources
+    # into both targets keeps the native fallback intact without maintaining
+    # a second implementation inside the plugin.
+    - path: ../../../../AIMacCleaner/StorageOptimizationCore.swift
+    - path: ../../../../AIMacCleaner/DiskFileInventoryCore.swift
+    - path: ../../../../AIMacCleaner/AgentDataProtection.swift

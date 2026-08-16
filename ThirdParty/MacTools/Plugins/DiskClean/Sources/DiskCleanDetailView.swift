@@ -10,7 +10,7 @@ import MacToolsPluginKit
 /// The view holds no business state: checks, removal mode, and confirm all command the Controller; only the snapshot is read back.
 /// The only local state is "which cards are expanded" and the history section's load cache—purely presentational.
 ///
-/// Each of the three segments has its own `DiskCleanController` with distinct scope and non-interfering state, but they **share the same type
+/// Each cleanup segment has its own `DiskCleanController` with distinct scope and non-interfering state, but they **share the same type
 /// and the same pipeline** (design §10): P2 candidates still go through sizing, completeness, Planner cast, and execution primitives—
 /// there is no second deletion path.
 struct DiskCleanDetailView: View {
@@ -18,7 +18,10 @@ struct DiskCleanDetailView: View {
     /// Purge segment. nil means the host did not wire it (e.g. tests that only care about the rules segment).
     @ObservedObject private var developerArtifactsController: DiskCleanController
     @ObservedObject private var installersController: DiskCleanController
+    @ObservedObject private var userFilesController: DiskCleanController
+    @ObservedObject private var advisorFindingsController: DiskCleanController
     @ObservedObject private var purgeRoots: DiskCleanPurgeRootsModel
+    @ObservedObject private var advisorModel: DiskCleanAdvisorModel
     private let localization: PluginLocalization
     private let historyProvider: (any DiskCleanCleanupHistoryProviding)?
     private let fullDiskAccess: any DiskCleanFullDiskAccessProbing
@@ -28,12 +31,24 @@ struct DiskCleanDetailView: View {
 
     @State private var expandedCategories: Set<DiskCleanCategoryID> = []
     @State private var isScanLogExpanded = false
+    @State private var workspace: Workspace = .advisor
+
+    private enum Workspace: String, CaseIterable, Identifiable {
+        case advisor
+        case cleanup
+        case files
+
+        var id: String { rawValue }
+    }
 
     init(
         controller: DiskCleanController,
         developerArtifactsController: DiskCleanController,
         installersController: DiskCleanController,
+        userFilesController: DiskCleanController = DiskCleanController(),
+        advisorFindingsController: DiskCleanController = DiskCleanController(),
         purgeRoots: DiskCleanPurgeRootsModel,
+        advisorModel: DiskCleanAdvisorModel = DiskCleanAdvisorModel(cacheDirectory: nil),
         localization: PluginLocalization = PluginLocalization(bundle: .main),
         historyProvider: (any DiskCleanCleanupHistoryProviding)? = nil,
         fullDiskAccess: any DiskCleanFullDiskAccessProbing = DiskCleanFullDiskAccessProbe.shared,
@@ -44,7 +59,10 @@ struct DiskCleanDetailView: View {
         self.controller = controller
         self.developerArtifactsController = developerArtifactsController
         self.installersController = installersController
+        self.userFilesController = userFilesController
+        self.advisorFindingsController = advisorFindingsController
         self.purgeRoots = purgeRoots
+        self.advisorModel = advisorModel
         self.localization = localization
         self.historyProvider = historyProvider
         self.fullDiskAccess = fullDiskAccess
@@ -58,16 +76,8 @@ struct DiskCleanDetailView: View {
             if showsHeader {
                 header
             }
-            fullDiskAccessCard
-            limitationsBanner
-            errorBanner
-            scopeSection
-            categorySection
-            executionResultSection
-            developerArtifactsSection
-            installersSection
-            settingsSection
-            scanLogSection
+            workspacePicker
+            workspaceContent
         }
         .padding(contentPadding)
         .frame(maxWidth: .infinity, minHeight: minimumContentHeight, alignment: .topLeading)
@@ -109,6 +119,66 @@ struct DiskCleanDetailView: View {
             Text(snapshot.subtitle(localization: localization))
                 .font(PluginSettingsTheme.Typography.pageDescription)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private var workspacePicker: some View {
+        Picker("", selection: $workspace) {
+            Label(
+                localization.string("workspace.advisor", defaultValue: "AI 磁盘顾问"),
+                systemImage: "sparkles"
+            )
+            .tag(Workspace.advisor)
+            Label(
+                localization.string("workspace.cleanup", defaultValue: "Mac 清理"),
+                systemImage: "trash"
+            )
+            .tag(Workspace.cleanup)
+            Label(
+                localization.string("workspace.files", defaultValue: "文件分析"),
+                systemImage: "doc.badge.magnifyingglass"
+            )
+            .tag(Workspace.files)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: 560)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var workspaceContent: some View {
+        switch workspace {
+        case .advisor:
+            DiskCleanAdvisorOverviewView(
+                model: advisorModel,
+                cleanupController: advisorFindingsController,
+                localization: localization,
+                openCleanup: { workspace = .cleanup }
+            )
+        case .cleanup:
+            cleanupWorkspace
+        case .files:
+            DiskCleanFileInventoryView(
+                model: advisorModel,
+                cleanupController: userFilesController,
+                localization: localization
+            )
+        }
+    }
+
+    private var cleanupWorkspace: some View {
+        VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.section) {
+            fullDiskAccessCard
+            limitationsBanner
+            errorBanner
+            scopeSection
+            categorySection
+            executionResultSection
+            developerArtifactsSection
+            installersSection
+            settingsSection
+            scanLogSection
         }
     }
 

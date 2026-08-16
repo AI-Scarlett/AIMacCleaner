@@ -105,11 +105,12 @@ final class DiskCleanRuleCatalogV2Tests: XCTestCase {
     func testReservedRootPathsAreNonEmptyNormalizedAbsolutePaths() {
         let home = "/Users/diskclean-tests"
         for target in catalog.targets {
-            if target.id.hasPrefix("purge.") {
-                // Only allowed empty class: scan roots are user-configured; the catalog has no fixed prefix.
-                // Reserved roots come from the expansion source at runtime; see
-                // `DiskCleanScanEngineTests.testDeveloperArtifactScanReservesConfiguredRoots`.
-                XCTAssertTrue(target.reservedRootPaths.isEmpty, "developer-artifact target must not hardcode reserved roots: \(target.id)")
+            if target.id.hasPrefix("purge.")
+                || target.id.hasPrefix("advisor.")
+                || target.id == DiskCleanUserFileExpansion.targetID {
+                // Runtime-only targets have no catalog-wide deletion prefix. Developer-artifact
+                // roots come from configuration; inventory cleanup receives exact selected files.
+                XCTAssertTrue(target.reservedRootPaths.isEmpty, "runtime target must not hardcode reserved roots: \(target.id)")
             } else {
                 XCTAssertFalse(target.reservedRootPaths.isEmpty, "target missing reserved roots: \(target.id)")
             }
@@ -355,7 +356,21 @@ final class DiskCleanRuleCatalogV2Tests: XCTestCase {
             catalog.targets(in: .installers).map(\.id),
             DiskCleanInstallerKind.allCases.map(\.targetID)
         )
-        for target in catalog.targets(in: .developerArtifacts) + catalog.targets(in: .installers) {
+        XCTAssertEqual(
+            catalog.targets(in: .userFiles).map(\.id),
+            [DiskCleanUserFileExpansion.targetID]
+        )
+        XCTAssertEqual(
+            Set(catalog.targets(in: .advisorFindings).map(\.id)),
+            [
+                DiskCleanAdvisorFindingExpansion.historicalBuildTargetID,
+                DiskCleanAdvisorFindingExpansion.installerArtifactTargetID
+            ]
+        )
+        for target in catalog.targets(in: .developerArtifacts)
+            + catalog.targets(in: .installers)
+            + catalog.targets(in: .userFiles)
+            + catalog.targets(in: .advisorFindings) {
             XCTAssertTrue(target.isExternallyDiscovered, "P2 target should be external: \(target.id)")
             XCTAssertTrue(target.pathGlobs.isEmpty, "P2 target must not have globs: \(target.id)")
             // Fallback risk must be >= medium: if the expansion source omits an override, default to not selected.
@@ -372,12 +387,18 @@ final class DiskCleanRuleCatalogV2Tests: XCTestCase {
         for kind in DiskCleanInstallerKind.allCases {
             XCTAssertNotNil(catalog.target(id: kind.targetID), "missing target: \(kind.targetID)")
         }
+        XCTAssertNotNil(catalog.target(id: DiskCleanUserFileExpansion.targetID))
+        XCTAssertNotNil(catalog.target(id: DiskCleanAdvisorFindingExpansion.historicalBuildTargetID))
+        XCTAssertNotNil(catalog.target(id: DiskCleanAdvisorFindingExpansion.installerArtifactTargetID))
     }
 
     func testRuleTargetsExcludeExternalTargets() {
         XCTAssertFalse(catalog.ruleTargets.contains { $0.isExternallyDiscovered })
         XCTAssertEqual(
-            catalog.ruleTargets.count + DiskCleanPurgeKind.allCases.count + DiskCleanInstallerKind.allCases.count,
+            catalog.ruleTargets.count
+                + DiskCleanPurgeKind.allCases.count
+                + DiskCleanInstallerKind.allCases.count
+                + 3,
             catalog.targets.count
         )
     }
