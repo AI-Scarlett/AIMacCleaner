@@ -383,6 +383,22 @@ final class ProviderQuotaService: ObservableObject {
             !ProviderQuotaFetchPolicy.autoDiscoveredProviderIDs(directDistribution: true).contains("cursor"),
             "direct builds must not auto-discover browser-backed providers"
         )
+        let protectedEnvironment = ProviderQuotaFetchPolicy.backgroundProcessEnvironment(
+            [
+                "CODEXBAR_ALLOW_BROWSER_COOKIE_IMPORT": "1",
+                "CODEXBAR_ALLOW_TEST_BROWSER_COOKIE_ACCESS": "1"
+            ],
+            directDistribution: true
+        )
+        expect(
+            protectedEnvironment["CODEXBAR_DISABLE_KEYCHAIN_ACCESS"] == "1",
+            "direct background refreshes must disable Keychain access for every provider"
+        )
+        expect(
+            protectedEnvironment["CODEXBAR_ALLOW_BROWSER_COOKIE_IMPORT"] == nil
+                && protectedEnvironment["CODEXBAR_ALLOW_TEST_BROWSER_COOKIE_ACCESS"] == nil,
+            "direct background refreshes must strip inherited browser-cookie overrides"
+        )
 
         let successfulAt = Date(timeIntervalSince1970: 1_800_000_000)
         let attemptedAt = successfulAt.addingTimeInterval(120)
@@ -1638,7 +1654,13 @@ private struct CodexBarQuotaProvider {
             "AppleLocale",
             "AppleLanguages"
         ].forEach { environment.removeValue(forKey: $0) }
-        if isDirectDistributionCodexBar(executable) {
+        let directDistribution = SandboxPaths.isDirectDistribution
+            || isDirectDistributionCodexBar(executable)
+        environment = ProviderQuotaFetchPolicy.backgroundProcessEnvironment(
+            environment,
+            directDistribution: directDistribution
+        )
+        if directDistribution {
             environment.removeValue(forKey: "APP_SANDBOX_CONTAINER_ID")
             environment["TRACEFENCE_PROVIDER_ENGINE"] = "direct-distribution"
         }
@@ -2683,6 +2705,22 @@ private struct CodexBarProviderConfigPayload: Decodable {
 /// updates. Direct builds use first-party OAuth/CLI data instead; browser-backed
 /// sources remain available only to the sandboxed distribution path.
 private enum ProviderQuotaFetchPolicy {
+    /// TraceFence quota refreshes are unattended. Never let a provider's
+    /// `auto` strategy turn one of those refreshes into a macOS Keychain
+    /// password prompt. Grok can still use its own CLI auth/session with this
+    /// guard enabled, while browser-backed fallbacks return a normal diagnostic.
+    static func backgroundProcessEnvironment(
+        _ environment: [String: String],
+        directDistribution: Bool
+    ) -> [String: String] {
+        guard directDistribution else { return environment }
+        var protected = environment
+        protected.removeValue(forKey: "CODEXBAR_ALLOW_BROWSER_COOKIE_IMPORT")
+        protected.removeValue(forKey: "CODEXBAR_ALLOW_TEST_BROWSER_COOKIE_ACCESS")
+        protected["CODEXBAR_DISABLE_KEYCHAIN_ACCESS"] = "1"
+        return protected
+    }
+
     static func allowsCodexBrowserCredentialSources(directDistribution: Bool) -> Bool {
         !directDistribution
     }
