@@ -3,8 +3,8 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="TraceFence"
-VERSION="${TRACEFENCE_VERSION:-1.2.9}"
-BUILD_NUMBER="${TRACEFENCE_BUILD_NUMBER:-130}"
+VERSION="${TRACEFENCE_VERSION:-1.2.10}"
+BUILD_NUMBER="${TRACEFENCE_BUILD_NUMBER:-131}"
 TAG="v${VERSION}"
 SCHEME="AIMacCleaner"
 CONFIGURATION="Release"
@@ -19,6 +19,7 @@ OUTPUT_ZIP="$OUTPUT_DIR/${APP_NAME}-${TAG}-arm64.zip"
 SWIFT_COMPILATION_MODE="${TRACEFENCE_SWIFT_COMPILATION_MODE:-singlefile}"
 BUILD_JOBS="${TRACEFENCE_BUILD_JOBS:-2}"
 SIGN_IDENTITY="${TRACEFENCE_SIGN_IDENTITY:-Developer ID Application: xiaoming zhou (UQ87N2WZ76)}"
+PROVIDER_ENGINE_IDENTIFIER="com.tracefence.app.codexbar"
 ENTITLEMENTS="$PROJECT_DIR/AIMacCleaner/AIMacCleaner.entitlements"
 DEFAULT_NOTARY_KEY="$HOME/.appstoreconnect/private_keys/AuthKey_JHKYSFS5HM.p8"
 if [ ! -f "$DEFAULT_NOTARY_KEY" ]; then
@@ -155,6 +156,7 @@ codesign_with_retry --force \
 codesign_with_retry --force \
   --options runtime \
   --timestamp \
+  --identifier "$PROVIDER_ENGINE_IDENTIFIER" \
   --sign "$SIGN_IDENTITY" \
   "$PROVIDER_ENGINE"
 
@@ -172,6 +174,11 @@ codesign --verify --deep --strict --verbose=2 "$BUILT_APP"
 # code explicitly signed above, then sign only the outer bundle here.
 MAIN_ENTITLEMENTS_OUTPUT="$(codesign -d --entitlements - "$BUILT_APP" 2>&1 || true)"
 HELPER_ENTITLEMENTS_OUTPUT="$(codesign -d --entitlements - "$PROVIDER_ENGINE" 2>&1 || true)"
+HELPER_IDENTIFIER="$(codesign -dvv "$PROVIDER_ENGINE" 2>&1 | awk -F= '/^Identifier=/{value=$2} END{print value}')"
+[[ "$HELPER_IDENTIFIER" == "$PROVIDER_ENGINE_IDENTIFIER" ]] || {
+  echo "Bundled codexbar helper has unstable signing identifier: $HELPER_IDENTIFIER" >&2
+  exit 1
+}
 [[ "$MAIN_ENTITLEMENTS_OUTPUT" == *"com.apple.security.network.server"* ]] || {
   echo "Main TraceFence app is missing com.apple.security.network.server" >&2
   exit 1

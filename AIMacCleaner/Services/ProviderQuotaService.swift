@@ -363,6 +363,27 @@ final class ProviderQuotaService: ObservableObject {
         )
         expect(!missingWeekly.isAuthoritative, "a partial payload missing the 7d window must not evict complete quota data")
 
+        expect(
+            ProviderQuotaFetchPolicy.source(for: "codex", directDistribution: true) == "oauth",
+            "direct builds must read Codex quota through OAuth instead of browser cookies"
+        )
+        expect(
+            ProviderQuotaFetchPolicy.source(for: "claude", directDistribution: true) == "cli",
+            "direct builds must not ask the helper to read Claude browser cookies"
+        )
+        expect(
+            !ProviderQuotaFetchPolicy.allowsCodexBrowserCredentialSources(directDistribution: true),
+            "direct builds must not run unattended Codex auto/web cookie reads"
+        )
+        expect(
+            ProviderQuotaFetchPolicy.allowsCodexBrowserCredentialSources(directDistribution: false),
+            "sandboxed builds should retain their existing provider-source policy"
+        )
+        expect(
+            !ProviderQuotaFetchPolicy.autoDiscoveredProviderIDs(directDistribution: true).contains("cursor"),
+            "direct builds must not auto-discover browser-backed providers"
+        )
+
         let successfulAt = Date(timeIntervalSince1970: 1_800_000_000)
         let attemptedAt = successfulAt.addingTimeInterval(120)
         let weekly = ProviderQuotaWindow(
@@ -843,16 +864,24 @@ private struct CodexBarQuotaProvider {
         let configs = readProviderConfigs(from: executable)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = quotaDateDecodingStrategy()
+        let directDistribution = SandboxPaths.isDirectDistribution
         let autoPayloads = readProviderPayloads(from: executable, configs: configs)
-        var payloads = payloadsByMergingCodexSources(
-            autoPayloads,
-            with: readCodexAutoPayloads(from: executable, decoder: decoder)
-        )
+        var payloads = autoPayloads
+        if ProviderQuotaFetchPolicy.allowsCodexBrowserCredentialSources(
+            directDistribution: directDistribution
+        ) {
+            payloads = payloadsByMergingCodexSources(
+                payloads,
+                with: readCodexAutoPayloads(from: executable, decoder: decoder)
+            )
+        }
         payloads = payloadsByMergingCodexSources(
             payloads,
             with: readCodexOAuthPayloads(from: executable, decoder: decoder)
         )
-        if !codexPayloadsHaveCompleteSupplementalData(payloads) {
+        if ProviderQuotaFetchPolicy.allowsCodexBrowserCredentialSources(
+            directDistribution: directDistribution
+        ), !codexPayloadsHaveCompleteSupplementalData(payloads) {
             payloads = payloadsByMergingCodexSources(
                 payloads,
                 with: readCodexWebPayloads(from: executable, decoder: decoder)
@@ -990,6 +1019,10 @@ private struct CodexBarQuotaProvider {
         from executable: URL,
         configs: [String: CodexBarProviderConfigPayload]
     ) -> [CodexBarProviderPayload] {
+        let source = ProviderQuotaFetchPolicy.source(
+            for: providerID,
+            directDistribution: SandboxPaths.isDirectDistribution
+        )
         do {
             let data = try runCodexBarCommand(
                 at: executable,
@@ -997,7 +1030,7 @@ private struct CodexBarQuotaProvider {
                     "usage",
                     "--provider", providerID,
                     "--format", "json",
-                    "--source", "auto"
+                    "--source", source
                 ],
                 timeout: providerID == "codex" || providerID == "grok" ? 12 : 4
             )
@@ -1050,12 +1083,10 @@ private struct CodexBarQuotaProvider {
         let configured = configs.values
             .filter { $0.enabled || $0.defaultEnabled }
             .map(\.provider)
-        let installed = configs.keys.filter { isProviderLikelyInstalled($0) }
-        let fallbackInstalled = [
-            "codex", "claude", "cursor", "grok", "gemini", "openrouter",
-            "qwen", "amp", "opencode", "goose", "aider"
-        ].filter(isProviderLikelyInstalled)
-        return stableUnique(["codex"] + configured + installed + fallbackInstalled)
+        let discovered = ProviderQuotaFetchPolicy.autoDiscoveredProviderIDs(
+            directDistribution: SandboxPaths.isDirectDistribution
+        ).filter(isProviderLikelyInstalled)
+        return stableUnique(["codex"] + configured + discovered)
     }
 
     private func stableUnique(_ values: [String]) -> [String] {
@@ -2644,6 +2675,42 @@ private struct CodexBarProviderConfigPayload: Decodable {
     let displayName: String
     let enabled: Bool
     let defaultEnabled: Bool
+}
+
+/// Keeps browser-cookie access out of unattended quota refreshes in the direct
+/// build. Browser Safe Storage belongs to the browser, and invoking it from a
+/// frequently replaced helper causes macOS to ask for Keychain approval after
+/// updates. Direct builds use first-party OAuth/CLI data instead; browser-backed
+/// sources remain available only to the sandboxed distribution path.
+private enum ProviderQuotaFetchPolicy {
+    static func allowsCodexBrowserCredentialSources(directDistribution: Bool) -> Bool {
+        !directDistribution
+    }
+
+    static func source(for providerID: String, directDistribution: Bool) -> String {
+        guard directDistribution else { return "auto" }
+        switch providerID.lowercased() {
+        case "codex":
+            return "oauth"
+        case "claude", "cursor":
+            return "cli"
+        default:
+            return "auto"
+        }
+    }
+
+    static func autoDiscoveredProviderIDs(directDistribution: Bool) -> [String] {
+        if directDistribution {
+            // These providers use their own local CLI/config data. Claude is
+            // read by ClaudeDesktopQuotaReader and browser-backed providers must
+            // be explicitly enabled before the helper is allowed to query them.
+            return ["grok", "gemini", "openrouter", "qwen", "amp", "opencode", "goose", "aider"]
+        }
+        return [
+            "codex", "claude", "cursor", "grok", "gemini", "openrouter",
+            "qwen", "amp", "opencode", "goose", "aider"
+        ]
+    }
 }
 
 private struct CodexBarUsagePayload: Decodable {
