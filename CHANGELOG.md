@@ -2,6 +2,18 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.2.12] - 2026-08-16
+
+### Added
+- 官网版将 Codex、Claude、Grok 等 Provider 的额度读取器迁移为独立“额度监控”插件；插件可通过商城单独安装和更新，不再要求每次 Provider 适配变化都重发主程序。
+
+### Fixed
+- 未安装额度插件时不再启动或回退到宿主内置的 `codexbar` Helper，避免刷新额度时反复触发“Chrome Safe Storage”钥匙串授权提示。
+
+### Improved
+- 任务栏弹窗继续由 TraceFence 宿主渲染，尺寸、圆角、标签与额度卡片布局保持不变；插件缺失时仅在原额度区域显示商城安装入口。
+- 官网版安装包不再重复携带 49 MB 的额度 Helper，Helper 只存在于独立签名插件包中；App Store 渠道仍保留不可下载代码的内置实现。
+
 ## [1.2.9] - 2026-08-16
 
 ### Fixed

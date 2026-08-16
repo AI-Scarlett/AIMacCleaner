@@ -1,0 +1,7 @@
+"metadata.title" = "Monitor de quota";
+"metadata.description" = "Lê quotas e horários de reposição de Codex, Claude, Grok e outros fornecedores sem alterar a interface da barra de menus do TraceFence.";
+"panel.refreshing" = "A ler quotas…";
+"panel.waiting" = "A aguardar a primeira leitura";
+"panel.providersFormat" = "%lld fornecedores atualizados";
+"action.refreshing" = "A atualizar…";
+"action.refresh" = "Atualizar quotas";

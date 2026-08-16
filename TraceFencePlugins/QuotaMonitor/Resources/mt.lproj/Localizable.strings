@@ -1,0 +1,7 @@
+"metadata.title" = "Quota Monitor";
+"metadata.description" = "Reads quota windows and reset times for Codex, Claude, Grok, and other providers while TraceFence keeps the menu-bar interface unchanged.";
+"panel.refreshing" = "Reading provider quotas…";
+"panel.waiting" = "Waiting for the first quota read";
+"panel.providersFormat" = "%lld providers updated";
+"action.refreshing" = "Refreshing…";
+"action.refresh" = "Refresh quotas";

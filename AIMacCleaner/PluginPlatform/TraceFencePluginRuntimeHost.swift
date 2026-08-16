@@ -2021,6 +2021,18 @@ enum TraceFencePluginRuntimeSelfTest {
                     action: .invokeAction(controlID: "execute")
                 )
                 actionSucceeded = pasteboard.pasteboardItems?.isEmpty ?? true
+            } else if pluginID == ProviderQuotaService.pluginID,
+                      let quotaMonitor = runtimePlugin as? any PluginQuotaMonitoring {
+                let payloadIsDecodable: Bool
+                if let payload = quotaMonitor.quotaSnapshotPayload {
+                    payloadIsDecodable = (try? JSONDecoder().decode(
+                        [ProviderQuotaSnapshot].self,
+                        from: payload
+                    )) != nil
+                } else {
+                    payloadIsDecodable = false
+                }
+                actionSucceeded = payloadIsDecodable
             } else {
                 actionSucceeded = usableSurface
             }

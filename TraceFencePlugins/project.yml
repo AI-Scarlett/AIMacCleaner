@@ -26,6 +26,8 @@ targets:
         PRODUCT_MODULE_NAME: MacToolsPluginKit
         PRODUCT_BUNDLE_IDENTIFIER: com.tracefence.plugin-kit.development
         GENERATE_INFOPLIST_FILE: true
+        ARCHS: "arm64 x86_64"
+        ONLY_ACTIVE_ARCH: false
   TraceFenceCodexMediaWorker:
     type: tool
     platform: macOS
@@ -103,6 +105,60 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tracefence.plugin.codex-media-cleanup.tests
         GENERATE_INFOPLIST_FILE: true
+  QuotaMonitorPluginCore:
+    type: library.static
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: QuotaMonitor/Sources
+      - path: ../AIMacCleaner/Services/ProviderQuotaService.swift
+    dependencies:
+      - target: MacToolsPluginKit
+    settings:
+      base:
+        PRODUCT_MODULE_NAME: QuotaMonitorPlugin
+        PRODUCT_NAME: QuotaMonitorPluginCore
+        PRODUCT_BUNDLE_IDENTIFIER: com.tracefence.plugin.quota-monitor.core
+        GENERATE_INFOPLIST_FILE: true
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TRACEFENCE_QUOTA_PLUGIN"
+        SWIFT_STRICT_CONCURRENCY: minimal
+        ARCHS: "arm64 x86_64"
+        ONLY_ACTIVE_ARCH: false
+  QuotaMonitorPlugin:
+    type: bundle
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: QuotaMonitor/Bundle
+      - path: QuotaMonitor/Resources
+    dependencies:
+      - target: MacToolsPluginKit
+        embed: false
+      - target: QuotaMonitorPluginCore
+        link: true
+    settings:
+      base:
+        PRODUCT_NAME: QuotaMonitor
+        PRODUCT_MODULE_NAME: QuotaMonitorPluginBundle
+        PRODUCT_BUNDLE_IDENTIFIER: com.tracefence.plugin.quota-monitor
+        GENERATE_INFOPLIST_FILE: true
+        WRAPPER_EXTENSION: bundle
+        ARCHS: "arm64 x86_64"
+        ONLY_ACTIVE_ARCH: false
+    postBuildScripts:
+      - name: Copy quota monitor engine
+        script: |
+          set -euo pipefail
+          engine_source="$SRCROOT/../AIMacCleaner/Resources/codexbar"
+          helper_dir="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Helpers"
+          test -x "$engine_source"
+          mkdir -p "$helper_dir"
+          ditto "$engine_source" "$helper_dir/codexbar"
+          chmod 755 "$helper_dir/codexbar"
+        inputFiles:
+          - "$(SRCROOT)/../AIMacCleaner/Resources/codexbar"
+        outputFiles:
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Helpers/codexbar"
 schemes:
   CodexMediaCleanupPlugin:
     build:
@@ -114,6 +170,14 @@ schemes:
       gatherCoverageData: true
       targets:
         - CodexMediaCleanupPluginTests
+    run:
+      config: Debug
+    archive:
+      config: Release
+  QuotaMonitorPlugin:
+    build:
+      targets:
+        QuotaMonitorPlugin: all
     run:
       config: Debug
     archive:

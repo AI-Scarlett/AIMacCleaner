@@ -1,0 +1,7 @@
+"metadata.title" = "Kontingentmonitor";
+"metadata.description" = "Liest Kontingente und Rücksetzzeiten von Codex, Claude, Grok und weiteren Providern, ohne die TraceFence-Menüleistenansicht zu verändern.";
+"panel.refreshing" = "Provider-Kontingente werden gelesen…";
+"panel.waiting" = "Warten auf die erste Kontingentabfrage";
+"panel.providersFormat" = "%lld Provider aktualisiert";
+"action.refreshing" = "Wird aktualisiert…";
+"action.refresh" = "Kontingente aktualisieren";

@@ -1,0 +1,72 @@
+{
+  "id": "quota-monitor",
+  "displayName": "额度监控",
+  "summary": "在 TraceFence 固定菜单栏界面中读取 Codex、Claude、Grok 等 Provider 的额度与重置时间",
+  "localizedMetadata": {
+    "ar": {
+      "displayName": "مراقبة الحصة",
+      "summary": "قراءة حصص Codex وClaude وGrok ومواعيد إعادة الضبط داخل واجهة شريط القوائم الثابتة في TraceFence"
+    },
+    "de": {
+      "displayName": "Kontingentmonitor",
+      "summary": "Kontingente und Rücksetzzeiten von Codex, Claude, Grok und weiteren Providern in der festen TraceFence-Menüleistenansicht anzeigen"
+    },
+    "en": {
+      "displayName": "Quota Monitor",
+      "summary": "Read quota windows and reset times for Codex, Claude, Grok, and other providers in TraceFence's fixed menu-bar interface"
+    },
+    "es": {
+      "displayName": "Monitor de cuota",
+      "summary": "Consulta cuotas y tiempos de restablecimiento de Codex, Claude, Grok y otros proveedores en la interfaz fija de la barra de menús de TraceFence"
+    },
+    "fr": {
+      "displayName": "Suivi des quotas",
+      "summary": "Consultez les quotas et dates de réinitialisation de Codex, Claude, Grok et d’autres fournisseurs dans l’interface fixe de la barre de menus TraceFence"
+    },
+    "ja": {
+      "displayName": "クォータモニター",
+      "summary": "TraceFence の固定メニューバー画面で Codex、Claude、Grok などのクォータとリセット時刻を確認します"
+    },
+    "ko": {
+      "displayName": "할당량 모니터",
+      "summary": "TraceFence의 고정 메뉴 막대 화면에서 Codex, Claude, Grok 등의 할당량과 재설정 시간을 확인합니다"
+    },
+    "pt": {
+      "displayName": "Monitor de quota",
+      "summary": "Consulte quotas e horários de reposição de Codex, Claude, Grok e outros fornecedores na interface fixa da barra de menus do TraceFence"
+    },
+    "ru": {
+      "displayName": "Монитор квот",
+      "summary": "Показывает квоты и время сброса Codex, Claude, Grok и других провайдеров в неизменном интерфейсе строки меню TraceFence"
+    },
+    "zh-Hans": {
+      "displayName": "额度监控",
+      "summary": "在 TraceFence 固定菜单栏界面中读取 Codex、Claude、Grok 等 Provider 的额度与重置时间"
+    },
+    "zh-Hant": {
+      "displayName": "額度監控",
+      "summary": "在 TraceFence 固定選單列介面中讀取 Codex、Claude、Grok 等 Provider 的額度與重設時間"
+    }
+  },
+  "version": "1.0.0",
+  "minHostVersion": "1.2.12",
+  "pluginKitVersion": 4,
+  "bundleRelativePath": "QuotaMonitor.bundle",
+  "factoryClass": "QuotaMonitorPlugin.QuotaMonitorPluginFactory",
+  "build": {
+    "project": "../TraceFenceCodexPlugins.xcodeproj",
+    "scheme": "QuotaMonitorPlugin"
+  },
+  "capabilities": {
+    "primaryPanel": true,
+    "componentPanel": false,
+    "settings": "none"
+  },
+  "permissions": [],
+  "category": "monitoring",
+  "package": {
+    "signPaths": [
+      "QuotaMonitor.bundle/Contents/Resources/Helpers/codexbar"
+    ]
+  }
+}

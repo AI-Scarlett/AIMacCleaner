@@ -1,0 +1,7 @@
+"metadata.title" = "Монитор квот";
+"metadata.description" = "Показывает квоты и время сброса Codex, Claude, Grok и других провайдеров, не меняя интерфейс строки меню TraceFence.";
+"panel.refreshing" = "Чтение квот провайдеров…";
+"panel.waiting" = "Ожидание первого чтения квот";
+"panel.providersFormat" = "Обновлено провайдеров: %lld";
+"action.refreshing" = "Обновление…";
+"action.refresh" = "Обновить квоты";

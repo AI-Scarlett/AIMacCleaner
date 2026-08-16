@@ -1,7 +1,7 @@
 {
   "algorithm": "ed25519",
-  "contentSHA256": "cb889f73c64b285add7cdf9288036ba3fd83a43eca9bb0ffddb6b597f8015f47",
+  "contentSHA256": "ffa82290f0ae18b346e0ef56acad18c3f5db3dfc8307e6724876d95f32b4ef56",
   "keyID": "catalog-2026-01",
   "schemaVersion": 1,
-  "signature": "cl0xe3s+LISwW5Ho1TE/fMaEO2NDpUkM+wTk6w3iubVhUohKChgNaerprevuJB9+lYEhvVeyfzy1nUI5Wh+7BA=="
+  "signature": "FgHYmVsBXrmC3p5Jv8xuVyfTRAmzz0u2ABQxk1kFVnSiRUIoZM75Vycyl57HSzYF9WbS7Fn8/HMZ8mTAV4wYCw=="
 }

@@ -539,6 +539,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
 #if DEBUG
         let pluginSelfTestArguments = ProcessInfo.processInfo.arguments
+        if pluginSelfTestArguments.contains("--tracefence-quota-plugin-probe") {
+            Task { @MainActor in
+                let service = ProviderQuotaService()
+                service.start()
+                let deadline = Date().addingTimeInterval(60)
+                while service.lastRefreshDate == nil, Date() < deadline {
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                }
+                let providers = service.snapshots.map { snapshot in
+                    [
+                        "provider": snapshot.providerName,
+                        "readable": snapshot.quotaReadSucceeded,
+                        "windowCount": snapshot.windows.count
+                    ] as [String: Any]
+                }
+                let succeeded = service.isQuotaPluginInstalled
+                    && service.lastRefreshDate != nil
+                    && !service.isRefreshing
+                service.stop()
+                let payload: [String: Any] = [
+                    "succeeded": succeeded,
+                    "pluginInstalled": service.isQuotaPluginInstalled,
+                    "refreshCompleted": service.lastRefreshDate != nil,
+                    "providers": providers,
+                    "error": service.quotaPluginErrorMessage as Any? ?? NSNull()
+                ]
+                if let data = try? JSONSerialization.data(
+                    withJSONObject: payload,
+                    options: [.prettyPrinted, .sortedKeys]
+                ) {
+                    FileHandle.standardOutput.write(data)
+                    FileHandle.standardOutput.write(Data("\n".utf8))
+                }
+                Darwin.exit(succeeded ? 0 : 2)
+            }
+            return
+        }
         if pluginSelfTestArguments.contains("--tracefence-plugin-runtime-self-test") {
             Task { @MainActor in
                 await TraceFencePluginRuntimeSelfTest.run(arguments: pluginSelfTestArguments)

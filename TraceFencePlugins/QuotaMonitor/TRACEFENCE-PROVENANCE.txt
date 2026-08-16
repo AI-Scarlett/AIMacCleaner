@@ -1,0 +1,14 @@
+TraceFence first-party plugin distribution
+Plugin: quota-monitor 1.0.0
+Source owner: TraceFence
+Source location: private TraceFence application repository
+Runtime distribution: AI-Scarlett/TraceFence immutable per-plugin release
+PluginKit ABI: 4
+Minimum TraceFence version: 1.2.12
+Minimum macOS version: 14.0
+
+This package is developed, built, signed, and distributed by TraceFence. It
+does not download executable code from third parties. Provider credentials are
+read locally and only when the user refreshes or enables quota monitoring;
+quota results are returned to the TraceFence host and are not uploaded by this
+plugin.

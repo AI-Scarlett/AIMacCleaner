@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-08-16T05:17:00Z",
+  "expiresAt": "2027-08-16T12:39:47Z",
   "offers": [
     {
       "active": true,
@@ -1114,6 +1114,91 @@
       "systemImage": "photo.stack.fill",
       "trialHours": null,
       "version": "1.0.2"
+    },
+    {
+      "capabilities": [
+        "usage.quota",
+        "tools.primary-panel"
+      ],
+      "category": "Analytics",
+      "delivery": "package",
+      "featured": true,
+      "id": "tracefence.tools.quota-monitor",
+      "includedInAllAccess": true,
+      "isFree": true,
+      "localizedMetadata": {
+        "ar": {
+          "displayName": "مراقبة الحصة",
+          "summary": "قراءة حصص Codex وClaude وGrok ومواعيد إعادة الضبط داخل واجهة شريط القوائم الثابتة في TraceFence"
+        },
+        "de": {
+          "displayName": "Kontingentmonitor",
+          "summary": "Kontingente und Rücksetzzeiten von Codex, Claude, Grok und weiteren Providern in der festen TraceFence-Menüleistenansicht anzeigen"
+        },
+        "en": {
+          "displayName": "Quota Monitor",
+          "summary": "Read quota windows and reset times for Codex, Claude, Grok, and other providers in TraceFence's fixed menu-bar interface"
+        },
+        "es": {
+          "displayName": "Monitor de cuota",
+          "summary": "Consulta cuotas y tiempos de restablecimiento de Codex, Claude, Grok y otros proveedores en la interfaz fija de la barra de menús de TraceFence"
+        },
+        "fr": {
+          "displayName": "Suivi des quotas",
+          "summary": "Consultez les quotas et dates de réinitialisation de Codex, Claude, Grok et d’autres fournisseurs dans l’interface fixe de la barre de menus TraceFence"
+        },
+        "ja": {
+          "displayName": "クォータモニター",
+          "summary": "TraceFence の固定メニューバー画面で Codex、Claude、Grok などのクォータとリセット時刻を確認します"
+        },
+        "ko": {
+          "displayName": "할당량 모니터",
+          "summary": "TraceFence의 고정 메뉴 막대 화면에서 Codex, Claude, Grok 등의 할당량과 재설정 시간을 확인합니다"
+        },
+        "pt": {
+          "displayName": "Monitor de quota",
+          "summary": "Consulte quotas e horários de reposição de Codex, Claude, Grok e outros fornecedores na interface fixa da barra de menus do TraceFence"
+        },
+        "ru": {
+          "displayName": "Монитор квот",
+          "summary": "Показывает квоты и время сброса Codex, Claude, Grok и других провайдеров в неизменном интерфейсе строки меню TraceFence"
+        },
+        "zh-Hans": {
+          "displayName": "额度监控",
+          "summary": "在 TraceFence 固定菜单栏界面中读取 Codex、Claude、Grok 等 Provider 的额度与重置时间"
+        },
+        "zh-Hant": {
+          "displayName": "額度監控",
+          "summary": "在 TraceFence 固定選單列介面中讀取 Codex、Claude、Grok 等 Provider 的額度與重設時間"
+        }
+      },
+      "minimumHostVersion": "1.2.12",
+      "minimumSystemVersion": "14.0",
+      "name": "Quota Monitor",
+      "package": {
+        "bundleIdentifier": "com.tracefence.plugin.quota-monitor",
+        "entryPoint": "QuotaMonitor.bundle",
+        "sha256": "fab560b9716f6c8b5d60eb7cd3ef7facf53ede2c4f0a970fce456ab499090caf",
+        "sizeBytes": 15404274,
+        "teamIdentifier": "UQ87N2WZ76",
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-quota-monitor-v1.0.0/quota-monitor-1.0.0.mactoolsplugin.zip"
+      },
+      "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
+      "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "quick_control"
+      },
+      "standaloneOfferID": null,
+      "summary": "Read quota windows and reset times for Codex, Claude, Grok, and other providers in TraceFence's fixed menu-bar interface.",
+      "systemImage": "waveform.path.ecg.rectangle",
+      "trialHours": null,
+      "version": "1.0.0"
     },
     {
       "capabilities": [
@@ -4079,7 +4164,7 @@
       "version": "1.0.9"
     }
   ],
-  "publishedAt": "2026-08-16T05:17:00Z",
-  "revision": 12,
+  "publishedAt": "2026-08-16T12:39:47Z",
+  "revision": 13,
   "schemaVersion": 1
 }

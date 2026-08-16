@@ -1,0 +1,7 @@
+"metadata.title" = "額度監控";
+"metadata.description" = "讀取 Codex、Claude、Grok 等 Provider 的額度與重設時間；選單列介面由 TraceFence 保持不變。";
+"panel.refreshing" = "正在讀取 Provider 額度…";
+"panel.waiting" = "等待首次額度讀取";
+"panel.providersFormat" = "%lld 個 Provider 已更新";
+"action.refreshing" = "重新整理中…";
+"action.refresh" = "重新整理額度";

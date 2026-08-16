@@ -1,0 +1,7 @@
+"metadata.title" = "مراقبة الحصة";
+"metadata.description" = "قراءة حصص Codex وClaude وGrok ومواعيد إعادة الضبط مع الحفاظ على واجهة شريط القوائم في TraceFence دون تغيير.";
+"panel.refreshing" = "جارٍ قراءة حصص المزوّدين…";
+"panel.waiting" = "بانتظار أول قراءة للحصة";
+"panel.providersFormat" = "تم تحديث %lld من المزوّدين";
+"action.refreshing" = "جارٍ التحديث…";
+"action.refresh" = "تحديث الحصص";

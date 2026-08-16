@@ -1,7 +1,9 @@
+import Combine
 import Foundation
 import Darwin
 import CommonCrypto
 import LocalAuthentication
+import MacToolsPluginKit
 import os
 import Security
 import SQLite3
@@ -205,16 +207,44 @@ struct ProviderQuotaResetCredit: Identifiable, Codable {
     }
 }
 
+@MainActor
 final class ProviderQuotaService: ObservableObject {
+    static let pluginID = "tracefence.tools.quota-monitor"
+
     @Published private(set) var snapshots: [ProviderQuotaSnapshot] = []
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastRefreshDate: Date?
     @Published private(set) var lastRefreshRequestedDate: Date?
+    @Published private(set) var isQuotaPluginInstalled = true
+    @Published private(set) var quotaPluginErrorMessage: String?
 
     private static let minimumRefreshInterval: TimeInterval = 20
-    private let provider = CodexBarQuotaProvider()
+    private let provider: CodexBarQuotaProvider
     private let logger = Logger(subsystem: "com.tracefence.app", category: "provider-quota")
     private var timer: Timer?
+
+#if !TRACEFENCE_QUOTA_PLUGIN
+    private let pluginPackageManager = TraceFencePluginPackageManager.shared
+    private let pluginRuntimeHost = TraceFencePluginRuntimeHost.shared
+    private let pluginCatalogService = TraceFenceMarketplaceCatalogService.shared
+    private var pluginMonitor: (any PluginQuotaMonitoring)?
+    private var pluginMonitorIdentity: ObjectIdentifier?
+    private var pluginMonitorStarted = false
+    private var pluginBackendStarted = false
+    private var pluginCancellables: Set<AnyCancellable> = []
+#endif
+
+    init(providerEngineURL: URL? = nil, requiresExplicitProviderEngine: Bool = false) {
+        provider = CodexBarQuotaProvider(
+            explicitExecutableURL: providerEngineURL,
+            requiresExplicitExecutable: requiresExplicitProviderEngine
+        )
+        isQuotaPluginInstalled = !SandboxPaths.isDirectDistribution
+    }
+
+    var quotaPluginNeedsInstallation: Bool {
+        SandboxPaths.isDirectDistribution && !isQuotaPluginInstalled
+    }
 
     var menuBarSummary: String? {
         snapshots
@@ -525,23 +555,57 @@ final class ProviderQuotaService: ObservableObject {
 #endif
 
     func start() {
+#if !TRACEFENCE_QUOTA_PLUGIN
+        if SandboxPaths.isDirectDistribution {
+            startPluginBackend()
+            return
+        }
+#endif
+        startBuiltInBackend()
+    }
+
+    private func startBuiltInBackend() {
         logger.info("Quota service start requested; snapshots=\(self.snapshots.count, privacy: .public) refreshing=\(self.isRefreshing, privacy: .public)")
         if timer == nil {
             timer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
-                self?.refresh()
+                Task { @MainActor in
+                    self?.refresh()
+                }
             }
         }
         if snapshots.isEmpty, !isRefreshing {
-            refresh()
+            refreshBuiltInBackend()
         }
     }
 
     func stop() {
+#if !TRACEFENCE_QUOTA_PLUGIN
+        if SandboxPaths.isDirectDistribution {
+            if pluginMonitorStarted {
+                pluginMonitor?.stopQuotaMonitoring()
+            }
+            pluginMonitorStarted = false
+            pluginBackendStarted = false
+            return
+        }
+#endif
         timer?.invalidate()
         timer = nil
     }
 
     func refresh(force: Bool = false) {
+#if !TRACEFENCE_QUOTA_PLUGIN
+        if SandboxPaths.isDirectDistribution {
+            synchronizePluginBackend(startMonitoring: true)
+            pluginMonitor?.refreshQuotaMonitoring(force: force)
+            synchronizePluginSnapshot()
+            return
+        }
+#endif
+        refreshBuiltInBackend(force: force)
+    }
+
+    private func refreshBuiltInBackend(force: Bool = false) {
         guard !isRefreshing else { return }
         if let lastRefreshDate, !force {
             let interval = Date().timeIntervalSince(lastRefreshDate)
@@ -556,7 +620,7 @@ final class ProviderQuotaService: ObservableObject {
 
         DispatchQueue.global(qos: .utility).async { [provider] in
             let result = provider.fetch()
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 let completedAt = Date()
                 self.snapshots = Self.reconcileQuotaSnapshots(
                     previous: self.snapshots,
@@ -577,9 +641,130 @@ final class ProviderQuotaService: ObservableObject {
     }
 
     func refreshCooldownRemaining() -> TimeInterval {
+#if !TRACEFENCE_QUOTA_PLUGIN
+        if SandboxPaths.isDirectDistribution, let pluginMonitor {
+            return pluginMonitor.quotaMonitoringRefreshCooldownRemaining()
+        }
+#endif
         guard let lastRefreshDate else { return 0 }
         return max(0, Self.minimumRefreshInterval - Date().timeIntervalSince(lastRefreshDate))
     }
+
+#if !TRACEFENCE_QUOTA_PLUGIN
+    private func startPluginBackend() {
+        guard !pluginBackendStarted else {
+            synchronizePluginBackend(startMonitoring: true)
+            return
+        }
+        pluginBackendStarted = true
+
+        pluginRuntimeHost.objectWillChange
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.synchronizePluginBackend(startMonitoring: true)
+                }
+            }
+            .store(in: &pluginCancellables)
+        pluginPackageManager.objectWillChange
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.synchronizePluginBackend(startMonitoring: true)
+                }
+            }
+            .store(in: &pluginCancellables)
+        pluginCatalogService.objectWillChange
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.pluginPackageManager.refresh(catalog: self.pluginCatalogService.catalog)
+                    self.synchronizePluginBackend(startMonitoring: true)
+                }
+            }
+            .store(in: &pluginCancellables)
+
+        pluginPackageManager.refresh(catalog: pluginCatalogService.catalog)
+        synchronizePluginBackend(startMonitoring: true)
+    }
+
+    private func synchronizePluginBackend(startMonitoring: Bool) {
+        guard pluginPackageManager.record(pluginID: Self.pluginID) != nil else {
+            if pluginMonitorStarted {
+                pluginMonitor?.stopQuotaMonitoring()
+            }
+            pluginMonitor = nil
+            pluginMonitorIdentity = nil
+            pluginMonitorStarted = false
+            isQuotaPluginInstalled = false
+            quotaPluginErrorMessage = nil
+            snapshots = []
+            isRefreshing = false
+            lastRefreshDate = nil
+            lastRefreshRequestedDate = nil
+            return
+        }
+
+        isQuotaPluginInstalled = true
+        if pluginRuntimeHost.plugin(pluginID: Self.pluginID) == nil {
+            switch pluginRuntimeHost.state(pluginID: Self.pluginID) {
+            case .idle, .unavailable:
+                pluginRuntimeHost.open(pluginID: Self.pluginID)
+            case .disabled, .loading, .active, .failed, .restartRequired:
+                break
+            }
+        }
+        guard let monitor = pluginRuntimeHost.plugin(pluginID: Self.pluginID) as? any PluginQuotaMonitoring else {
+            switch pluginRuntimeHost.state(pluginID: Self.pluginID) {
+            case let .failed(message):
+                quotaPluginErrorMessage = message
+            case .restartRequired:
+                quotaPluginErrorMessage = "Restart TraceFence to finish updating the quota monitor plugin."
+            case .loading, .idle:
+                quotaPluginErrorMessage = nil
+            case .disabled:
+                quotaPluginErrorMessage = "The quota monitor plugin is disabled."
+            case .unavailable:
+                isQuotaPluginInstalled = false
+                quotaPluginErrorMessage = nil
+            case .active:
+                quotaPluginErrorMessage = "The installed quota monitor plugin is incompatible with this TraceFence version."
+            }
+            return
+        }
+
+        let identity = ObjectIdentifier(monitor)
+        if pluginMonitorIdentity != identity {
+            if pluginMonitorStarted {
+                pluginMonitor?.stopQuotaMonitoring()
+            }
+            pluginMonitor = monitor
+            pluginMonitorIdentity = identity
+            pluginMonitorStarted = false
+        }
+        quotaPluginErrorMessage = nil
+        if startMonitoring, !pluginMonitorStarted {
+            pluginMonitorStarted = true
+            monitor.startQuotaMonitoring()
+        }
+        synchronizePluginSnapshot()
+    }
+
+    private func synchronizePluginSnapshot() {
+        guard let pluginMonitor else { return }
+        if let data = pluginMonitor.quotaSnapshotPayload {
+            do {
+                snapshots = try JSONDecoder().decode([ProviderQuotaSnapshot].self, from: data)
+                    .sortedByQuotaReadiness()
+                quotaPluginErrorMessage = nil
+            } catch {
+                quotaPluginErrorMessage = "The quota monitor plugin returned an unreadable snapshot."
+                logger.error("Quota plugin snapshot decode failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        isRefreshing = pluginMonitor.quotaMonitoringIsRefreshing
+        lastRefreshDate = pluginMonitor.quotaMonitoringLastRefreshDate
+        lastRefreshRequestedDate = pluginMonitor.quotaMonitoringLastRefreshRequestedDate
+    }
+#endif
 }
 
 private extension Array where Element == ProviderQuotaSnapshot {
@@ -855,6 +1040,13 @@ final class BoundedProcessOutput: @unchecked Sendable {
 
 private struct CodexBarQuotaProvider {
     private let logger = Logger(subsystem: "com.tracefence.app", category: "provider-quota")
+    private let explicitExecutableURL: URL?
+    private let requiresExplicitExecutable: Bool
+
+    init(explicitExecutableURL: URL? = nil, requiresExplicitExecutable: Bool = false) {
+        self.explicitExecutableURL = explicitExecutableURL
+        self.requiresExplicitExecutable = requiresExplicitExecutable
+    }
 
     func fetch() -> [ProviderQuotaSnapshot] {
         guard let executable = findExecutable() else {
@@ -958,6 +1150,13 @@ private struct CodexBarQuotaProvider {
 
     private func findExecutable() -> URL? {
         let fileManager = FileManager.default
+        if requiresExplicitExecutable {
+            guard let explicitExecutableURL,
+                  fileManager.isExecutableFile(atPath: explicitExecutableURL.path) else {
+                return nil
+            }
+            return explicitExecutableURL
+        }
         let bundleURL = Bundle.main.bundleURL
         let helperExecutable = bundleURL
             .appendingPathComponent("Contents/Helpers/CodexBarHelper.app/Contents/MacOS/codexbar")
@@ -966,7 +1165,8 @@ private struct CodexBarQuotaProvider {
             Bundle.main.url(forResource: "codexbar", withExtension: nil),
             helperExecutable
         ].compactMap(\.self)
-        let candidates = bundledCandidates
+        let candidates = [explicitExecutableURL].compactMap(\.self)
+            + bundledCandidates
             + (TraceFenceDistributionPolicy.currentChannel.isDirect
                 ? directDistributionCodexBarCandidates()
                 : [])
@@ -1668,7 +1868,10 @@ private struct CodexBarQuotaProvider {
     }
 
     private func isDirectDistributionCodexBar(_ executable: URL) -> Bool {
-        directDistributionCodexBarCandidates()
+        if explicitExecutableURL?.standardizedFileURL.path == executable.standardizedFileURL.path {
+            return true
+        }
+        return directDistributionCodexBarCandidates()
             .contains { $0.standardizedFileURL.path == executable.standardizedFileURL.path }
     }
 

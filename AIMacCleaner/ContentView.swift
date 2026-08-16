@@ -242,6 +242,10 @@ struct ContentView: View {
             showSettings = false
             pluginPresentationCenter.consume(requestID: request.id)
         }
+        .onReceive(pluginPresentationCenter.$storeRequestID.compactMap { $0 }) { requestID in
+            openSettings(.marketplace)
+            pluginPresentationCenter.consumeStoreRequest(requestID: requestID)
+        }
         .preferredColorScheme(currentAppearanceMode.colorScheme)
     }
 

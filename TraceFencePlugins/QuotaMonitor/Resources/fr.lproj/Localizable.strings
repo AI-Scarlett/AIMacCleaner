@@ -1,0 +1,7 @@
+"metadata.title" = "Suivi des quotas";
+"metadata.description" = "Consulte les quotas et dates de réinitialisation de Codex, Claude, Grok et d’autres fournisseurs sans modifier l’interface de barre de menus TraceFence.";
+"panel.refreshing" = "Lecture des quotas…";
+"panel.waiting" = "En attente de la première lecture";
+"panel.providersFormat" = "%lld fournisseurs mis à jour";
+"action.refreshing" = "Actualisation…";
+"action.refresh" = "Actualiser les quotas";

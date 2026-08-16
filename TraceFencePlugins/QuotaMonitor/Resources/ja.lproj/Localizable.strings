@@ -1,0 +1,7 @@
+"metadata.title" = "クォータモニター";
+"metadata.description" = "TraceFence のメニューバー画面を変えずに、Codex、Claude、Grok などのクォータとリセット時刻を読み取ります。";
+"panel.refreshing" = "Provider クォータを読み取り中…";
+"panel.waiting" = "最初のクォータ読み取りを待機中";
+"panel.providersFormat" = "%lld 件の Provider を更新";
+"action.refreshing" = "更新中…";
+"action.refresh" = "クォータを更新";

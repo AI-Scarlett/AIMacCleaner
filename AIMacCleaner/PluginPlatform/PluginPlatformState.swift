@@ -71,6 +71,7 @@ final class TraceFencePluginPresentationCenter: ObservableObject {
     static let shared = TraceFencePluginPresentationCenter()
 
     @Published private(set) var request: TraceFencePluginPresentationRequest?
+    @Published private(set) var storeRequestID: UUID?
 
     private init() {}
 
@@ -82,9 +83,18 @@ final class TraceFencePluginPresentationCenter: ObservableObject {
         request = TraceFencePluginPresentationRequest(pluginID: nil)
     }
 
+    func openStore() {
+        storeRequestID = UUID()
+    }
+
     func consume(requestID: UUID) {
         guard request?.id == requestID else { return }
         request = nil
+    }
+
+    func consumeStoreRequest(requestID: UUID) {
+        guard storeRequestID == requestID else { return }
+        storeRequestID = nil
     }
 }
 

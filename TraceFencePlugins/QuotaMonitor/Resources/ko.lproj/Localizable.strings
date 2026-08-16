@@ -1,0 +1,7 @@
+"metadata.title" = "할당량 모니터";
+"metadata.description" = "TraceFence 메뉴 막대 화면을 그대로 유지하면서 Codex, Claude, Grok 등의 할당량과 재설정 시간을 읽습니다.";
+"panel.refreshing" = "Provider 할당량 읽는 중…";
+"panel.waiting" = "첫 할당량 읽기 대기 중";
+"panel.providersFormat" = "Provider %lld개 업데이트됨";
+"action.refreshing" = "새로 고치는 중…";
+"action.refresh" = "할당량 새로 고침";

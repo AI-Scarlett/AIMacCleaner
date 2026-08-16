@@ -3,8 +3,8 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="TraceFence"
-VERSION="${TRACEFENCE_VERSION:-1.2.11}"
-BUILD_NUMBER="${TRACEFENCE_BUILD_NUMBER:-132}"
+VERSION="${TRACEFENCE_VERSION:-1.2.12}"
+BUILD_NUMBER="${TRACEFENCE_BUILD_NUMBER:-133}"
 TAG="v${VERSION}"
 SCHEME="AIMacCleaner"
 CONFIGURATION="Release"
@@ -19,7 +19,6 @@ OUTPUT_ZIP="$OUTPUT_DIR/${APP_NAME}-${TAG}-arm64.zip"
 SWIFT_COMPILATION_MODE="${TRACEFENCE_SWIFT_COMPILATION_MODE:-singlefile}"
 BUILD_JOBS="${TRACEFENCE_BUILD_JOBS:-2}"
 SIGN_IDENTITY="${TRACEFENCE_SIGN_IDENTITY:-Developer ID Application: xiaoming zhou (UQ87N2WZ76)}"
-PROVIDER_ENGINE_IDENTIFIER="com.tracefence.app.codexbar"
 ENTITLEMENTS="$PROJECT_DIR/AIMacCleaner/AIMacCleaner.entitlements"
 DEFAULT_NOTARY_KEY="$HOME/.appstoreconnect/private_keys/AuthKey_JHKYSFS5HM.p8"
 if [ ! -f "$DEFAULT_NOTARY_KEY" ]; then
@@ -34,8 +33,6 @@ NOTARYTOOL_ARGS=()
 if [ "${NOTARYTOOL_S3_ACCELERATION:-0}" != "1" ]; then
   NOTARYTOOL_ARGS+=(--no-s3-acceleration)
 fi
-CODEXBAR_DIR="${CODEXBAR_DIR:-}"
-CODEXBAR_BINARY="${CODEXBAR_BINARY:-$PROJECT_DIR/AIMacCleaner/Resources/codexbar}"
 
 notarytool_submit() {
   local artifact="$1"
@@ -88,17 +85,6 @@ CLANG_MODULE_CACHE_PATH="$QR_MODULE_CACHE" \
 rm -rf "$BUILD_ROOT" "$STAGING_DIR" "$OUTPUT_DIR"
 mkdir -p "$BUILD_ROOT" "$STAGING_DIR" "$OUTPUT_DIR"
 
-if [ ! -x "$CODEXBAR_BINARY" ]; then
-  if [ -z "$CODEXBAR_DIR" ] || [ ! -d "$CODEXBAR_DIR" ]; then
-    echo "Bundled CodexBar provider engine not found: $CODEXBAR_BINARY" >&2
-    echo "Set CODEXBAR_BINARY to a built CodexBarCLI only for local recovery builds." >&2
-    exit 1
-  fi
-  echo "Building CodexBar provider engine..."
-  (cd "$CODEXBAR_DIR" && swift build -c release --product CodexBarCLI)
-  CODEXBAR_BINARY="$CODEXBAR_DIR/.build/release/CodexBarCLI"
-fi
-
 xcodebuild \
   -project "$PROJECT_DIR/AIMacCleaner.xcodeproj" \
   -scheme "$SCHEME" \
@@ -129,10 +115,15 @@ BUILT_MUSIC_PURPOSE="$(/usr/libexec/PlistBuddy -c 'Print :NSAppleMusicUsageDescr
 [ "$BUILT_CHANNEL" = "direct" ] || { echo "Wrong built distribution channel: $BUILT_CHANNEL" >&2; exit 1; }
 [ -n "$BUILT_MUSIC_PURPOSE" ] || { echo "Missing Apple Music purpose string" >&2; exit 1; }
 
-PROVIDER_ENGINE="$BUILT_APP/Contents/MacOS/codexbar"
-if [ ! -x "$PROVIDER_ENGINE" ]; then
-  install -m 755 "$CODEXBAR_BINARY" "$PROVIDER_ENGINE"
-fi
+# The direct-distribution app gets quota provider readers exclusively from the
+# independently signed quota-monitor plugin. Xcode still copies the helper for
+# the App Store target, so strip that duplicate from the website build before
+# signing. A missing plugin must therefore remain a zero-work install prompt.
+rm -f "$BUILT_APP/Contents/MacOS/codexbar"
+[ ! -e "$BUILT_APP/Contents/MacOS/codexbar" ] || {
+  echo "Direct website build must not embed the quota provider engine" >&2
+  exit 1
+}
 
 PLUGIN_FRAMEWORK="$BUILT_APP/Contents/Frameworks/MacToolsPluginKit.framework"
 if [ ! -d "$PLUGIN_FRAMEWORK" ]; then
@@ -156,35 +147,17 @@ codesign_with_retry --force \
 codesign_with_retry --force \
   --options runtime \
   --timestamp \
-  --identifier "$PROVIDER_ENGINE_IDENTIFIER" \
-  --sign "$SIGN_IDENTITY" \
-  "$PROVIDER_ENGINE"
-
-codesign_with_retry --force \
-  --options runtime \
-  --timestamp \
   --entitlements "$ENTITLEMENTS" \
   --sign "$SIGN_IDENTITY" \
   "$BUILT_APP"
 codesign --verify --deep --strict --verbose=2 "$BUILT_APP"
 
-# The iOS Remote Pairing listener belongs to the main app only. Signing the
-# outer bundle with --deep would re-sign codexbar using the main app's
-# entitlements and incorrectly grant the helper network.server. Keep nested
-# code explicitly signed above, then sign only the outer bundle here.
+# The iOS Remote Pairing listener belongs to the main app only. The website app
+# no longer embeds a quota helper; that executable ships inside the separately
+# signed plugin package. Keep the network-server entitlement on the app only.
 MAIN_ENTITLEMENTS_OUTPUT="$(codesign -d --entitlements - "$BUILT_APP" 2>&1 || true)"
-HELPER_ENTITLEMENTS_OUTPUT="$(codesign -d --entitlements - "$PROVIDER_ENGINE" 2>&1 || true)"
-HELPER_IDENTIFIER="$(codesign -dvv "$PROVIDER_ENGINE" 2>&1 | awk -F= '/^Identifier=/{value=$2} END{print value}')"
-[[ "$HELPER_IDENTIFIER" == "$PROVIDER_ENGINE_IDENTIFIER" ]] || {
-  echo "Bundled codexbar helper has unstable signing identifier: $HELPER_IDENTIFIER" >&2
-  exit 1
-}
 [[ "$MAIN_ENTITLEMENTS_OUTPUT" == *"com.apple.security.network.server"* ]] || {
   echo "Main TraceFence app is missing com.apple.security.network.server" >&2
-  exit 1
-}
-[[ "$HELPER_ENTITLEMENTS_OUTPUT" != *"com.apple.security.network.server"* ]] || {
-  echo "Bundled codexbar helper must not receive com.apple.security.network.server" >&2
   exit 1
 }
 

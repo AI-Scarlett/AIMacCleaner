@@ -13,18 +13,18 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.11")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.12")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
-    f"TraceFence {VERSION} prevents every unattended provider refresh from opening a Chrome Keychain prompt.\n\n"
-    "- Forces the bundled quota helper into non-interactive Keychain mode for the website build.\n"
-    "- Strips inherited browser-cookie override flags before starting any provider helper process.\n"
-    "- Keeps Codex on OAuth and lets Grok use its own local CLI authentication without prompting.\n"
-    "- Keeps the bundled codexbar helper's stable code-signing identifier and packaging verification.\n"
-    "- Includes the Disk Cleanup 2.1.0 plugin integration and marketplace update flow.\n"
+    f"TraceFence {VERSION} moves Provider Quota Monitor into an independently updatable plugin.\n\n"
+    "- Keeps the existing menu-bar quota layout and refresh behavior unchanged.\n"
+    "- Shows an install shortcut in the same quota panel when the plugin is missing.\n"
+    "- Moves provider readers and the signed quota helper out of the website app bundle.\n"
+    "- Preserves non-interactive Keychain behavior so background refreshes do not open Chrome Safe Storage prompts.\n"
+    "- Supports signed catalog installation and independent quota-monitor plugin updates.\n"
 )
 
 

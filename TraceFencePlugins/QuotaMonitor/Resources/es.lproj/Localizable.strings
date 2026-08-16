@@ -1,0 +1,7 @@
+"metadata.title" = "Monitor de cuota";
+"metadata.description" = "Consulta cuotas y tiempos de restablecimiento de Codex, Claude, Grok y otros proveedores sin cambiar la interfaz de la barra de menús de TraceFence.";
+"panel.refreshing" = "Leyendo cuotas…";
+"panel.waiting" = "Esperando la primera lectura";
+"panel.providersFormat" = "%lld proveedores actualizados";
+"action.refreshing" = "Actualizando…";
+"action.refresh" = "Actualizar cuotas";

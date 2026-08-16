@@ -183,6 +183,27 @@ public protocol PluginRuntimeLocalizationRefreshing: AnyObject {
     func refreshLocalization()
 }
 
+/// Optional bridge for a plugin that supplies provider quota snapshots to the
+/// host's fixed menu-bar surface. The payload is JSON owned by the host/plugin
+/// feature contract, so the menu-bar presentation can remain in TraceFence
+/// while provider readers and their helper binary update independently.
+///
+/// State changes are announced through `MacToolsPlugin.onStateChange`; this
+/// keeps the existing plugin witness table stable for every PluginKit v4
+/// bundle that does not implement quota monitoring.
+@MainActor
+public protocol PluginQuotaMonitoring: AnyObject {
+    var quotaSnapshotPayload: Data? { get }
+    var quotaMonitoringIsRefreshing: Bool { get }
+    var quotaMonitoringLastRefreshDate: Date? { get }
+    var quotaMonitoringLastRefreshRequestedDate: Date? { get }
+
+    func startQuotaMonitoring()
+    func stopQuotaMonitoring()
+    func refreshQuotaMonitoring(force: Bool)
+    func quotaMonitoringRefreshCooldownRemaining() -> TimeInterval
+}
+
 /// Optional hook for plugins whose dynamic shortcut definitions need to retain a shortcut after
 /// the host accepts, clears, or restores its binding. Registration and conflict validation remain
 /// owned by the host's shared shortcut manager.

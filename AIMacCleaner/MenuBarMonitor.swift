@@ -1433,33 +1433,58 @@ struct MenuBarMonitor: View {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Image(systemName: "magnifyingglass")
+                        Image(systemName: quotaService.quotaPluginNeedsInstallation
+                            ? "puzzlepiece.extension"
+                            : "magnifyingglass")
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(Theme.Colors.accent)
                     }
                 }
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                    Text(quotaService.isRefreshing
-                        ? localizer.t("正在读取额度数据", en: "Reading quota data", zhHant: "正在讀取額度資料", ja: "クォータデータを読み取り中", ko: "할당량 데이터를 읽는 중", mt: "Reading quota data")
-                        : localizer.t("准备检查 provider 状态", en: "Ready to check provider status", zhHant: "準備檢查 provider 狀態", ja: "Provider 状態を確認できます", ko: "Provider 상태 확인 준비됨", mt: "Ready to check provider status"))
+                    Text(quotaService.quotaPluginNeedsInstallation
+                        ? localizer.t("安装额度监控插件", en: "Install Quota Monitor", zhHant: "安裝額度監控外掛", ja: "クォータモニターをインストール", ko: "할당량 모니터 설치", mt: "Install Quota Monitor")
+                        : (quotaService.isRefreshing
+                            ? localizer.t("正在读取额度数据", en: "Reading quota data", zhHant: "正在讀取額度資料", ja: "クォータデータを読み取り中", ko: "할당량 데이터를 읽는 중", mt: "Reading quota data")
+                            : localizer.t("准备检查 provider 状态", en: "Ready to check provider status", zhHant: "準備檢查 provider 狀態", ja: "Provider 状態を確認できます", ko: "Provider 상태 확인 준비됨", mt: "Ready to check provider status")))
                         .font(Theme.Font.subheadlineMedium)
                         .foregroundStyle(Theme.Colors.textPrimary)
 
-                    Text(localizer.t(
-                        "TraceFence 正在通过本机的 Codex、Claude、Cursor 等 provider 读取 5 小时、周/月额度和重置时间。首次读取可能需要几秒；如果缺少登录、API Key 或完全磁盘访问权限，结果会在这里给出处理建议。",
-                        en: "TraceFence is reading 5-hour, weekly/monthly quota windows and reset times from local providers such as Codex, Claude, and Cursor. The first read can take a few seconds; missing login, API key, or Full Disk Access issues will appear here with next steps.",
-                        zhHant: "TraceFence 正在透過本機的 Codex、Claude、Cursor 等 provider 讀取 5 小時、週/月額度與重置時間。首次讀取可能需要幾秒；如果缺少登入、API Key 或完整磁碟存取權限，結果會在這裡給出處理建議。",
-                        ja: "TraceFence は Codex、Claude、Cursor などのローカル provider から 5 時間、週/月クォータとリセット時刻を読み取っています。初回読み取りには数秒かかる場合があります。ログイン、API キー、フルディスクアクセスが不足している場合は、ここに対処方法が表示されます。",
-                        ko: "TraceFence는 Codex, Claude, Cursor 같은 로컬 provider에서 5시간, 주간/월간 할당량과 재설정 시간을 읽고 있습니다. 첫 읽기에는 몇 초가 걸릴 수 있으며 로그인, API Key, 전체 디스크 접근 권한 문제가 있으면 여기에서 처리 방법을 안내합니다.",
-                        mt: "TraceFence is reading 5-hour, weekly/monthly quota windows and reset times from local providers such as Codex, Claude, and Cursor. The first read can take a few seconds; missing login, API key, or Full Disk Access issues will appear here with next steps."))
+                    Text(quotaService.quotaPluginNeedsInstallation
+                        ? localizer.t(
+                            "额度采集已改为独立插件，菜单栏样式和使用方式保持不变。安装后可单独更新 Provider 适配，无需等待 TraceFence 主程序升级。",
+                            en: "Quota collection is now an independent plugin. This menu-bar layout and workflow stay unchanged, while provider adapters can update without a TraceFence app update.",
+                            zhHant: "額度採集已改為獨立外掛，選單列樣式與使用方式保持不變。安裝後可單獨更新 Provider 適配，無需等待 TraceFence 主程式升級。",
+                            ja: "クォータ収集は独立プラグインになりました。メニューバーの表示と操作は変わらず、Provider 対応だけを個別に更新できます。",
+                            ko: "할당량 수집은 독립 플러그인으로 제공됩니다. 메뉴 막대의 화면과 사용 방식은 그대로이며 Provider 어댑터만 별도로 업데이트할 수 있습니다.",
+                            mt: "Quota collection is now an independent plugin. This menu-bar layout and workflow stay unchanged, while provider adapters can update separately.")
+                        : localizer.t(
+                            "TraceFence 正在通过本机的 Codex、Claude、Cursor 等 provider 读取 5 小时、周/月额度和重置时间。首次读取可能需要几秒；如果缺少登录、API Key 或完全磁盘访问权限，结果会在这里给出处理建议。",
+                            en: "TraceFence is reading 5-hour, weekly/monthly quota windows and reset times from local providers such as Codex, Claude, and Cursor. The first read can take a few seconds; missing login, API key, or Full Disk Access issues will appear here with next steps.",
+                            zhHant: "TraceFence 正在透過本機的 Codex、Claude、Cursor 等 provider 讀取 5 小時、週/月額度與重置時間。首次讀取可能需要幾秒；如果缺少登入、API Key 或完整磁碟存取權限，結果會在這裡給出處理建議。",
+                            ja: "TraceFence は Codex、Claude、Cursor などのローカル provider から 5 時間、週/月クォータとリセット時刻を読み取っています。初回読み取りには数秒かかる場合があります。ログイン、API キー、フルディスクアクセスが不足している場合は、ここに対処方法が表示されます。",
+                            ko: "TraceFence는 Codex, Claude, Cursor 같은 로컬 provider에서 5시간, 주간/월간 할당량과 재설정 시간을 읽고 있습니다. 첫 읽기에는 몇 초가 걸릴 수 있으며 로그인, API Key, 전체 디스크 접근 권한 문제가 있으면 여기에서 처리 방법을 안내합니다.",
+                            mt: "TraceFence is reading 5-hour, weekly/monthly quota windows and reset times from local providers such as Codex, Claude, and Cursor. The first read can take a few seconds; missing login, API key, or Full Disk Access issues will appear here with next steps."))
                         .font(Theme.Font.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
-            if !quotaService.isRefreshing {
+            if quotaService.quotaPluginNeedsInstallation {
+                Button {
+                    TraceFencePluginPresentationCenter.shared.openStore()
+                    openMainConsole()
+                } label: {
+                    Label(
+                        localizer.t("前往插件商城安装", en: "Install from Plugin Store", zhHant: "前往外掛商城安裝", ja: "プラグインストアからインストール", ko: "플러그인 스토어에서 설치", mt: "Install from Plugin Store"),
+                        systemImage: "shippingbox.fill"
+                    )
+                    .font(Theme.Font.captionMedium)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            } else if !quotaService.isRefreshing {
                 Button {
                     quotaService.refresh()
                 } label: {
@@ -1469,6 +1494,13 @@ struct MenuBarMonitor: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(quotaService.refreshCooldownRemaining() > 0)
+            }
+
+            if let message = quotaService.quotaPluginErrorMessage, !message.isEmpty {
+                Label(localizedQuotaText(message), systemImage: "exclamationmark.triangle.fill")
+                    .font(Theme.Font.caption)
+                    .foregroundStyle(Theme.Colors.warning)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
