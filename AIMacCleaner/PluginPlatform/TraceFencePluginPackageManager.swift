@@ -92,11 +92,20 @@ final class TraceFencePluginPackageManager: ObservableObject {
             }
             loadedRecords[plugin.id] = record
             if record.activeVersion.compare(plugin.version, options: .numeric) == .orderedAscending {
-                states[plugin.id] = .updateAvailable(
-                    installedVersion: record.activeVersion,
-                    targetVersion: plugin.version,
-                    enabled: record.enabled
-                )
+                // Keep the concrete validation/install error visible until the
+                // user retries. Replacing it with a generic update badge on
+                // every catalog refresh makes a rejected package look as if it
+                // installed successfully and then immediately became stale.
+                if case let .failed(_, installedVersion) = states[plugin.id],
+                   installedVersion == record.activeVersion {
+                    continue
+                } else {
+                    states[plugin.id] = .updateAvailable(
+                        installedVersion: record.activeVersion,
+                        targetVersion: plugin.version,
+                        enabled: record.enabled
+                    )
+                }
             } else {
                 states[plugin.id] = .installed(
                     version: record.activeVersion,

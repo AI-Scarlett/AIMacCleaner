@@ -48,7 +48,7 @@
       "summary": "統一診斷公網與本地 IP、歸屬地、網路品質、連通性及 DNS/WebRTC 洩漏"
     }
   },
-  "version": "1.0.18",
+  "version": "1.0.19",
   "minHostVersion": "1.1.6",
   "pluginKitVersion": 4,
   "bundleRelativePath": "IPOverview.bundle",

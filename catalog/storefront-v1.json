@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-08-16T12:39:47Z",
+  "expiresAt": "2027-08-17T09:54:34Z",
   "offers": [
     {
       "active": true,
@@ -1307,7 +1307,7 @@
         },
         "en": {
           "displayName": "Disk Cleanup",
-          "summary": "AI Disk Advisor and Mac Cleanup in one plugin: analyze Agent storage, file activity, caches, developer artifacts, and installers with one safe cleanup pipeline"
+          "summary": "Local disk analysis and safe cleanup with instant result restore and recovery-aware classification for caches, dependencies, builds, Agent storage, and user files"
         },
         "es": {
           "displayName": "Limpieza de disco",
@@ -1335,11 +1335,11 @@
         },
         "zh-Hans": {
           "displayName": "磁盘清理",
-          "summary": "整合 AI 磁盘顾问与 Mac 清理：分析 Agent 存储、文件活跃度、缓存、开发产物和安装包，并通过统一安全流程清理"
+          "summary": "本地磁盘分析与安全清理：恢复上次结果，按恢复成本分级缓存、依赖、构建产物、Agent 存储和用户文件"
         },
         "zh-Hant": {
           "displayName": "磁碟清理",
-          "summary": "整合 AI 磁碟顧問與 Mac 清理：分析 Agent 儲存、檔案活動、快取、開發產物和安裝包，並透過統一安全流程清理"
+          "summary": "本機磁碟分析與安全清理：還原上次結果，並依復原成本分類快取、依賴、建置產物、Agent 儲存與使用者檔案"
         }
       },
       "minimumHostVersion": "1.2.1",
@@ -1348,10 +1348,10 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.disk-clean",
         "entryPoint": "DiskClean.bundle",
-        "sha256": "0367258b9e1cfd19f4787f3608d981aa381789a9ae4d2f69b0beb85e0eb6e6d2",
-        "sizeBytes": 2282547,
+        "sha256": "320df88fe019a4263da2a704e9e2866f7d7aa88c74e178fbc89e19ec6ae855a5",
+        "sizeBytes": 2358959,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-disk-clean-v2.1.0/disk-clean-2.1.0.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-disk-clean-v3.0.0/disk-clean-3.0.0.mactoolsplugin.zip"
       },
       "permissions": [],
       "placements": {
@@ -1365,10 +1365,10 @@
         "workspaceDefault": "workspace"
       },
       "standaloneOfferID": null,
-      "summary": "AI Disk Advisor and Mac Cleanup in one plugin: analyze Agent storage, file activity, caches, developer artifacts, and installers with one safe cleanup pipeline",
+      "summary": "Local disk analysis and safe cleanup with instant result restore and recovery-aware classification for caches, dependencies, builds, Agent storage, and user files",
       "systemImage": "internaldrive.fill",
       "trialHours": null,
-      "version": "2.1.0"
+      "version": "3.0.0"
     },
     {
       "capabilities": [
@@ -2333,10 +2333,10 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.ip-overview",
         "entryPoint": "IPOverview.bundle",
-        "sha256": "c53a12686b182148da15a27e8638897937a6fdbe5026682668ec95c3ce665843",
-        "sizeBytes": 1126210,
+        "sha256": "2db02f8fec6e010097735d6383b69405ddde6c0bb9c42b214b92d12060f31ba9",
+        "sizeBytes": 1101948,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-ip-overview-v1.0.18/ip-overview-1.0.18.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-ip-overview-v1.0.19/ip-overview-1.0.19.mactoolsplugin.zip"
       },
       "permissions": [],
       "placements": {
@@ -2353,7 +2353,7 @@
       "summary": "Diagnose public and local IPs, location, connectivity, network quality, and DNS/WebRTC leaks.",
       "systemImage": "chart.xyaxis.line",
       "trialHours": null,
-      "version": "1.0.18"
+      "version": "1.0.19"
     },
     {
       "capabilities": [
@@ -4164,7 +4164,7 @@
       "version": "1.0.9"
     }
   ],
-  "publishedAt": "2026-08-16T12:39:47Z",
-  "revision": 13,
+  "publishedAt": "2026-08-17T09:54:34Z",
+  "revision": 14,
   "schemaVersion": 1
 }

@@ -499,13 +499,25 @@ struct TraceFencePluginStoreView: View {
             .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .ghost, minHeight: 30))
         } else {
             switch state {
-            case .notInstalled, .failed:
+            case .notInstalled:
                 Button {
                     Task { await packageManager.install(plugin: plugin) }
                 } label: {
                     Label(localizer.t("安装", en: "Install"), systemImage: "arrow.down.circle.fill")
                 }
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .secondary, minHeight: 30))
+            case let .failed(_, installedVersion):
+                Button {
+                    Task { await packageManager.install(plugin: plugin) }
+                } label: {
+                    Label(
+                        installedVersion == nil
+                            ? localizer.t("重试安装", en: "Retry Install")
+                            : localizer.t("重试更新", en: "Retry Update"),
+                        systemImage: "arrow.clockwise.circle.fill"
+                    )
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .secondary, minHeight: 30))
             case .downloading, .installing:
                 ProgressView().controlSize(.small)
             case .installed:
@@ -703,8 +715,15 @@ struct TraceFencePluginStoreView: View {
 
     private var updatePlugins: [TraceFencePluginDescriptor] {
         downloadablePlugins.filter {
-            if case .updateAvailable = packageManager.state(for: $0) { return true }
-            return false
+            switch packageManager.state(for: $0) {
+            case .updateAvailable:
+                return true
+            case let .failed(_, installedVersion):
+                guard let installedVersion else { return false }
+                return installedVersion.compare($0.version, options: .numeric) == .orderedAscending
+            default:
+                return false
+            }
         }
     }
 
@@ -909,13 +928,25 @@ private struct TraceFencePluginDetailView: View {
                 .foregroundStyle(Theme.Colors.accent)
         } else {
             switch state {
-            case .notInstalled, .failed:
+            case .notInstalled:
                 Button {
                     Task { await packageManager.install(plugin: plugin) }
                 } label: {
                     Label(localizer.t("安装", en: "Install"), systemImage: "arrow.down.circle.fill")
                 }
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
+            case let .failed(_, installedVersion):
+                Button {
+                    Task { await packageManager.install(plugin: plugin) }
+                } label: {
+                    Label(
+                        installedVersion == nil
+                            ? localizer.t("重试安装", en: "Retry Install")
+                            : localizer.t("重试更新", en: "Retry Update"),
+                        systemImage: "arrow.clockwise.circle.fill"
+                    )
+                }
+                .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .primary, minHeight: 34))
             case .downloading, .installing:
                 ProgressView().controlSize(.small)
             case .installed:
