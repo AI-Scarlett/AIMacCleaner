@@ -213,7 +213,7 @@ final class DiskCleanPurgeScannerTests: XCTestCase {
         let candidate = try await scanSingleCandidate(runner: runner)
 
         XCTAssertEqual(candidate.gitState, .clean(repositoryPath: path("root/repo")))
-        XCTAssertTrue(candidate.isSelectedByDefault)
+        XCTAssertFalse(candidate.isSelectedByDefault, "node_modules needs a network reinstall")
         XCTAssertEqual(runner.invocations.count, 2)
         XCTAssertEqual(
             runner.invocations[0],
@@ -276,8 +276,41 @@ final class DiskCleanPurgeScannerTests: XCTestCase {
         let candidate = try await scanSingleCandidate(runner: runner)
 
         XCTAssertEqual(candidate.gitState, .notInRepository)
-        XCTAssertTrue(candidate.isSelectedByDefault)
+        XCTAssertFalse(candidate.isSelectedByDefault, "node_modules stays manual outside git too")
         XCTAssertTrue(runner.invocations.isEmpty)
+    }
+
+    func testRecoveryAndSevenDayRulesKeepOnlyOldRegenerableArtifactsSelected() {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let old = now.addingTimeInterval(-8 * 24 * 60 * 60)
+        let recent = now.addingTimeInterval(-2 * 24 * 60 * 60)
+
+        func item(kind: DiskCleanPurgeKind, modifiedAt: Date) -> DiskCleanPurgeDiscoveredItem {
+            DiskCleanPurgeDiscoveredItem(
+                path: "/code/app/\(kind.directoryName)",
+                kind: kind,
+                projectMarker: kind.projectMarkers.first,
+                projectPath: "/code/app",
+                repositoryPath: "/code/app",
+                modifiedAt: modifiedAt
+            )
+        }
+
+        XCTAssertTrue(DiskCleanPurgeCandidate(
+            item: item(kind: .rustTarget, modifiedAt: old),
+            gitState: .clean(repositoryPath: "/code/app"),
+            now: now
+        ).isSelectedByDefault)
+        XCTAssertFalse(DiskCleanPurgeCandidate(
+            item: item(kind: .rustTarget, modifiedAt: recent),
+            gitState: .clean(repositoryPath: "/code/app"),
+            now: now
+        ).isSelectedByDefault)
+        XCTAssertFalse(DiskCleanPurgeCandidate(
+            item: item(kind: .nodeModules, modifiedAt: old),
+            gitState: .clean(repositoryPath: "/code/app"),
+            now: now
+        ).isSelectedByDefault)
     }
 
     /// A repo often has dozens of `node_modules`; inspecting each multiplies the 2s timeout.

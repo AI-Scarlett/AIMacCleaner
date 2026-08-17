@@ -39,6 +39,19 @@ final class DiskCleanAdvisorModelTests: XCTestCase {
             "Agent history may contribute aggregate statistics but must never become a user-file cleanup row"
         )
         XCTAssertLessThanOrEqual(model.files.count, 2_000)
+
+        let restored = DiskCleanAdvisorModel(
+            cacheDirectory: cache,
+            homeDirectory: root,
+            isSandboxed: false
+        )
+        let restoreDeadline = Date().addingTimeInterval(3)
+        while !restored.hasResult, Date() < restoreDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(restored.hasResult)
+        XCTAssertTrue(restored.isRestoredFromCache)
+        XCTAssertEqual(restored.files.map(\.path), model.files.map(\.path))
     }
 
     private func makeTemporaryDirectory() throws -> String {

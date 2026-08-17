@@ -145,6 +145,17 @@ struct DiskCleanSafetyPolicy: Sendable {
             return "staging in progress"
         }
 
+        if let reason = AgentDataProtection.cleanupProtectionReason(
+            path: path,
+            homeDirectory: homeDirectory
+        ) {
+            return reason
+        }
+
+        if lower.contains("com.apple.e5rt.e5bundlecache") {
+            return "Apple intelligence runtime bundle state is protected"
+        }
+
         if Self.hasPathFragment(lower, "/library/keychains")
             || Self.hasPathFragment(lower, "/.ssh")
             || Self.hasPathFragment(lower, "/.gnupg")

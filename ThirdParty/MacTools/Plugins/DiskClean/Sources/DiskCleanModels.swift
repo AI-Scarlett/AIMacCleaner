@@ -236,6 +236,9 @@ enum DiskCleanCandidateNote: Equatable, Sendable {
     case mayNotBeInstaller
     /// Downloaded less than 7 days ago; may not be installed yet.
     case recentlyDownloaded(modifiedAt: Date)
+    /// Build/dependency output changed less than 7 days ago. It remains selectable after review,
+    /// but is never swept into a default or category bulk selection.
+    case recentlyChanged(modifiedAt: Date)
 }
 
 /// Candidate attributes known only at expansion time.
@@ -248,6 +251,8 @@ enum DiskCleanCandidateNote: Equatable, Sendable {
 struct DiskCleanCandidateFacts: Equatable, Sendable {
     /// nil = inherit target risk.
     var risk: DiskCleanRisk?
+    /// nil = inherit the target's recovery class.
+    var recoveryClass: DiskCleanRecoveryClass? = nil
     var notes: [DiskCleanCandidateNote] = []
 
     static let inherited = DiskCleanCandidateFacts()
@@ -276,6 +281,9 @@ struct DiskCleanCandidate: Identifiable, Equatable, Sendable {
     /// Default-selection policy looks only here. Rule candidates take target risk; P2 candidates
     /// may be overridden by the expansion source (see `DiskCleanCandidateFacts`).
     let risk: DiskCleanRisk
+    /// Whether the item is locally reproducible, needs another download, or is original data.
+    /// Only locally regenerable items participate in default/category bulk selection.
+    let recoveryClass: DiskCleanRecoveryClass
     let safety: DiskCleanSafetyStatus
     /// Display notes. Not part of cleanability.
     let notes: [DiskCleanCandidateNote]
@@ -294,6 +302,7 @@ struct DiskCleanCandidate: Identifiable, Equatable, Sendable {
         logicalPath: String? = nil,
         logicalPaths: [String]? = nil,
         risk: DiskCleanRisk,
+        recoveryClass: DiskCleanRecoveryClass = .regenerable,
         safety: DiskCleanSafetyStatus,
         notes: [DiskCleanCandidateNote] = [],
         sizeResult: DiskCleanSizeResult? = nil
@@ -311,6 +320,7 @@ struct DiskCleanCandidate: Identifiable, Equatable, Sendable {
             self.logicalPaths = [path]
         }
         self.risk = risk
+        self.recoveryClass = recoveryClass
         self.safety = safety
         self.notes = notes
         self.sizeResult = sizeResult
@@ -368,6 +378,7 @@ struct DiskCleanCandidate: Identifiable, Equatable, Sendable {
             path: path,
             logicalPaths: logicalPaths,
             risk: risk,
+            recoveryClass: recoveryClass,
             safety: safety,
             notes: notes,
             sizeResult: sizeResult

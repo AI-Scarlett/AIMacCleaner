@@ -53,7 +53,7 @@ final class DiskCleanSafetyPolicyTests: XCTestCase {
 
     /// Physical expansion rewrites `~/.cache/...` to `/Volumes/...`. Lexical whitelist rules must
     /// still match when the logical alias is also checked.
-    func testWhitelistMatchesLogicalAliasWhenPhysicalPathDiverges() {
+    func testProtectedModelPathMatchesLogicalAliasWhenPhysicalPathDiverges() {
         let whitelist = DiskCleanWhitelistStore(
             homeDirectory: home,
             includeDefaults: false,
@@ -64,13 +64,13 @@ final class DiskCleanSafetyPolicyTests: XCTestCase {
         let logical = "\(home)/.cache/huggingface/models"
 
         XCTAssertEqual(policy.safetyStatus(for: physical), .allowed, "physical alone must not match")
-        guard case let .whitelisted(rule) = policy.safetyStatus(
+        guard case let .protected(reason) = policy.safetyStatus(
             for: physical,
             alsoChecking: [logical]
         ) else {
-            return XCTFail("expected whitelist hit via logical alias")
+            return XCTFail("expected model-data protection via logical alias")
         }
-        XCTAssertEqual(rule, "\(home)/.cache/huggingface/*")
+        XCTAssertEqual(reason, "downloaded AI model data is protected")
     }
 
     func testProtectsSensitiveDataPathsPortedFromMole() {
@@ -84,6 +84,28 @@ final class DiskCleanSafetyPolicyTests: XCTestCase {
         assertProtected(policy.safetyStatus(for: "\(home)/Library/Application Support/1Password/Data/vault.sqlite"))
         assertProtected(policy.safetyStatus(for: "\(home)/Library/Application Support/com.nssurge.surge-mac/profiles.conf"))
         assertProtected(policy.safetyStatus(for: "\(home)/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/config.yaml"))
+    }
+
+    func testProtectsAgentHistoryModelsAndAppleRuntimeButAllowsRebuildableVersionCache() {
+        let policy = DiskCleanSafetyPolicy(homeDirectory: home)
+
+        for path in [
+            "\(home)/.codex/sessions/2026/session.jsonl",
+            "\(home)/.codex/media_objects/sha256/image.png",
+            "\(home)/.claude/projects/project/session.jsonl",
+            "\(home)/.grok/sessions/session.jsonl",
+            "\(home)/.ollama/models/blobs/sha256-model",
+            "\(home)/.cache/huggingface/hub/model.bin",
+            "\(home)/Library/Caches/com.apple.e5rt.e5bundlecache/state.bin"
+        ] {
+            assertProtected(policy.safetyStatus(for: path), path)
+        }
+
+        XCTAssertEqual(
+            policy.safetyStatus(for: "\(home)/.codex/versions/old-helper"),
+            .allowed,
+            "narrow rebuildable version caches should not be hidden behind a blanket Agent-root ban"
+        )
     }
 
     /// Staged objects may only be touched by reconciliation (design §7.6). Wide globs and ancestor expansion

@@ -56,6 +56,21 @@ final class DiskCleanSelectionModelTests: XCTestCase {
         XCTAssertFalse(model.isSelected(makeCandidate(id: "high", risk: .high)))
     }
 
+    func testDownloadBackedAndOriginalDataStayManualEvenAtLowRisk() {
+        let model = DiskCleanSelectionModel()
+
+        XCTAssertFalse(model.isSelected(makeCandidate(
+            id: "dependency",
+            risk: .low,
+            recoveryClass: .downloadRequired
+        )))
+        XCTAssertFalse(model.isSelected(makeCandidate(
+            id: "original",
+            risk: .low,
+            recoveryClass: .originalData
+        )))
+    }
+
     /// Dynamic-rule product targets always have risk >= medium (design §5.5), so default policy excludes them
     /// without the selection model re-detecting "is this a dynamic rule".
     func testDynamicRuleProductsAreNotSelectedByDefault() {
@@ -210,6 +225,7 @@ final class DiskCleanSelectionModelTests: XCTestCase {
         id: String,
         category: DiskCleanCategoryID = .appCaches,
         risk: DiskCleanRisk = .low,
+        recoveryClass: DiskCleanRecoveryClass = .regenerable,
         bytes: Int64 = 1_024,
         safety: DiskCleanSafetyStatus = .allowed,
         completeness: DiskCleanScanCompleteness = .complete,
@@ -231,6 +247,7 @@ final class DiskCleanSelectionModelTests: XCTestCase {
             category: category,
             path: "/cache/\(id)",
             risk: risk,
+            recoveryClass: recoveryClass,
             safety: safety,
             sizeResult: sizeResult
         )

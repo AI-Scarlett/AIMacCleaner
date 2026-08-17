@@ -21,11 +21,15 @@ final class DiskCleanAdvisorModel: ObservableObject {
     @Published private(set) var inventorySummary: DiskFileInventorySummary?
     @Published private(set) var files: [DiskFileRecord] = []
     @Published private(set) var errorMessage: String?
+    @Published private(set) var lastAnalyzedAt: Date?
+    @Published private(set) var isRestoredFromCache = false
 
     private let homeDirectory: String
     private let cacheDirectory: URL
+    private let snapshotStore: DiskCleanAdvisorSnapshotStore
     private let isSandboxed: Bool
     private var scanTask: Task<Void, Never>?
+    private var snapshotLoadTask: Task<Void, Never>?
     private var scanGeneration = UUID()
 
     init(
@@ -36,15 +40,23 @@ final class DiskCleanAdvisorModel: ObservableObject {
         self.homeDirectory = URL(fileURLWithPath: homeDirectory, isDirectory: true)
             .standardizedFileURL.path
         self.cacheDirectory = cacheDirectory ?? Self.fallbackCacheDirectory
+        self.snapshotStore = DiskCleanAdvisorSnapshotStore(
+            fileURL: self.cacheDirectory.appendingPathComponent(
+                "advisor-visible-snapshot-v1.json",
+                isDirectory: false
+            )
+        )
         self.isSandboxed = isSandboxed
         try? FileManager.default.createDirectory(
             at: self.cacheDirectory,
             withIntermediateDirectories: true
         )
+        restoreVisibleSnapshot()
     }
 
     deinit {
         scanTask?.cancel()
+        snapshotLoadTask?.cancel()
     }
 
     var isScanning: Bool {
@@ -58,7 +70,9 @@ final class DiskCleanAdvisorModel: ObservableObject {
     func scan() {
         guard !isScanning else { return }
 
+        snapshotLoadTask?.cancel()
         errorMessage = nil
+        isRestoredFromCache = false
         stage = .agentAndBuildStorage
         let generation = UUID()
         scanGeneration = generation
@@ -73,6 +87,7 @@ final class DiskCleanAdvisorModel: ObservableObject {
             "file-inventory-v1.json",
             isDirectory: false
         )
+        let snapshotStore = snapshotStore
 
         scanTask = Task { [weak self] in
             let storageResult = await Task.detached(priority: .utility) {
@@ -110,6 +125,22 @@ final class DiskCleanAdvisorModel: ObservableObject {
             guard self.scanGeneration == generation, !Task.isCancelled else { return }
             self.files = inventoryResult.files
             self.inventorySummary = inventoryResult.summary
+
+            let visibleSnapshot = DiskCleanAdvisorSnapshot(
+                storageSummary: storageResult.summary,
+                storageCleanupItems: storageResult.cleanupItems,
+                inventorySummary: inventoryResult.summary,
+                files: inventoryResult.files
+            )
+            _ = await Task.detached(priority: .utility) {
+                snapshotStore.save(visibleSnapshot)
+            }.value
+
+            guard self.scanGeneration == generation, !Task.isCancelled else { return }
+            self.lastAnalyzedAt = max(
+                storageResult.summary.completedAt,
+                inventoryResult.summary.completedAt
+            )
             self.stage = .completed
             self.scanTask = nil
         }
@@ -117,6 +148,33 @@ final class DiskCleanAdvisorModel: ObservableObject {
 
     func clearError() {
         errorMessage = nil
+    }
+
+    private func restoreVisibleSnapshot() {
+        let store = snapshotStore
+        snapshotLoadTask = Task { [weak self] in
+            let snapshot = await Task.detached(priority: .utility) {
+                store.load()
+            }.value
+            guard let self,
+                  !Task.isCancelled,
+                  self.stage == .idle,
+                  !self.hasResult,
+                  let snapshot else {
+                return
+            }
+            self.storageSummary = snapshot.storageSummary
+            self.storageCleanupItems = snapshot.storageCleanupItems
+            self.inventorySummary = snapshot.inventorySummary
+            self.files = snapshot.files
+            self.lastAnalyzedAt = max(
+                snapshot.storageSummary.completedAt,
+                snapshot.inventorySummary.completedAt
+            )
+            self.isRestoredFromCache = true
+            self.stage = .completed
+            self.snapshotLoadTask = nil
+        }
     }
 
     private static var fallbackCacheDirectory: URL {

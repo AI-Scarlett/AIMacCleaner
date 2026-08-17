@@ -103,7 +103,7 @@ private struct DiskCleanCategoryCard: View {
         HStack(alignment: .top, spacing: PluginSettingsTheme.Spacing.rowContentControl) {
             DiskCleanTriStateCheckbox(
                 state: state,
-                // "Select all" = select every low-risk item in this category; if anything is already selected, one click clears all.
+                // "Select all" = every low-risk, locally regenerable item; if anything is already selected, one click clears all.
                 // Tri-state checkboxes must never feel like a no-op click, so both directions always produce a change.
                 onToggle: { onToggleCategory(group.category, !state.isChecked) },
                 help: checkboxHelp
@@ -177,7 +177,7 @@ private struct DiskCleanCategoryCard: View {
     private var checkboxHelp: String {
         state.isChecked
             ? localization.string("detail.category.deselectAll", defaultValue: "取消选择本类全部项目")
-            : localization.string("detail.category.selectLowRisk", defaultValue: "选中本类所有低风险项目")
+            : localization.string("detail.category.selectLowRisk", defaultValue: "选中本类所有可再生低风险项目")
     }
 }
 
@@ -270,6 +270,8 @@ struct DiskCleanBadge: Identifiable, Equatable, Sendable {
             badges.append(contentsOf: self.badges(for: outcome, localization: localization))
         }
 
+        badges.append(recoveryBadge(for: candidate.recoveryClass, localization: localization))
+
         // Candidate-local facts (P2 repo status, installer age) come before safety status:
         // they explain "why this item was not selected by default"—the first question users ask when something is unchecked.
         badges += candidate.notes.compactMap { badge(for: $0, localization: localization) }
@@ -359,6 +361,32 @@ struct DiskCleanBadge: Identifiable, Equatable, Sendable {
         return badges
     }
 
+    private static func recoveryBadge(
+        for recoveryClass: DiskCleanRecoveryClass,
+        localization: PluginLocalization
+    ) -> DiskCleanBadge {
+        switch recoveryClass {
+        case .regenerable:
+            return DiskCleanBadge(
+                id: "recovery.regenerable",
+                text: localization.string("badge.recovery.regenerable", defaultValue: "可本地再生"),
+                tone: .neutral
+            )
+        case .downloadRequired:
+            return DiskCleanBadge(
+                id: "recovery.downloadRequired",
+                text: localization.string("badge.recovery.downloadRequired", defaultValue: "需重新下载"),
+                tone: .warning
+            )
+        case .originalData:
+            return DiskCleanBadge(
+                id: "recovery.originalData",
+                text: localization.string("badge.recovery.originalData", defaultValue: "原始数据"),
+                tone: .warning
+            )
+        }
+    }
+
     /// Candidate annotation badges (design §10 P2 badge system).
     ///
     /// "Owning project" is not a badge: it is **locating information**, not a warning; packing it into the capsule row would drown the real
@@ -389,6 +417,16 @@ struct DiskCleanBadge: Identifiable, Equatable, Sendable {
                     DiskCleanFormat.timestamp(modifiedAt)
                 ),
                 tone: .neutral
+            )
+        case let .recentlyChanged(modifiedAt):
+            return DiskCleanBadge(
+                id: "recentlyChanged",
+                text: localization.format(
+                    "badge.recentlyChanged",
+                    defaultValue: "7 天内仍在使用：%@",
+                    DiskCleanFormat.timestamp(modifiedAt)
+                ),
+                tone: .warning
             )
         case .developerProject:
             return nil

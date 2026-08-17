@@ -108,7 +108,8 @@ struct DiskCleanDeveloperArtifactExpansion: DiskCleanExternalExpanding {
         return expansion
     }
 
-    /// Dirty repo (including check failure) → keep the target's medium risk, not selected by default; everything else drops to low and is selected by default.
+    /// Dirty/recent repo output keeps medium risk. Stable clean output drops to low, while the
+    /// independent recovery class still keeps download-backed dependencies out of bulk selection.
     static func facts(for candidate: DiskCleanPurgeCandidate) -> DiskCleanCandidateFacts {
         var notes: [DiskCleanCandidateNote] = [
             .developerProject(path: candidate.projectPath, marker: candidate.projectMarker)
@@ -116,8 +117,12 @@ struct DiskCleanDeveloperArtifactExpansion: DiskCleanExternalExpanding {
         if case let .dirty(repositoryPath, reason) = candidate.gitState {
             notes.append(.repositoryHasChanges(repositoryPath: repositoryPath, reason: reason))
         }
+        if candidate.isRecentlyModified, let modifiedAt = candidate.item.modifiedAt {
+            notes.append(.recentlyChanged(modifiedAt: modifiedAt))
+        }
         return DiskCleanCandidateFacts(
-            risk: candidate.isSelectedByDefault ? .low : nil,
+            risk: candidate.gitState.isDirty || candidate.isRecentlyModified ? nil : .low,
+            recoveryClass: candidate.kind.recoveryClass,
             notes: notes
         )
     }
@@ -204,7 +209,8 @@ struct DiskCleanInstallerExpansion: DiskCleanExternalExpanding {
         return expansion
     }
 
-    /// `.zip` and "downloaded within 7 days" keep the target's medium risk; everything else drops to low and is selected by default.
+    /// `.zip` and "downloaded within 7 days" keep the target's medium risk. Stale installers may
+    /// drop to low, but remain manual because every installer target is original user data.
     static func facts(for candidate: DiskCleanInstallerCandidate) -> DiskCleanCandidateFacts {
         var notes: [DiskCleanCandidateNote] = []
         switch candidate.note {
@@ -217,6 +223,7 @@ struct DiskCleanInstallerExpansion: DiskCleanExternalExpanding {
         }
         return DiskCleanCandidateFacts(
             risk: candidate.isSelectedByDefault ? .low : nil,
+            recoveryClass: .originalData,
             notes: notes
         )
     }

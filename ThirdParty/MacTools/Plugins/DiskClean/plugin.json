@@ -1,7 +1,7 @@
 {
   "id": "disk-clean",
   "displayName": "磁盘清理",
-  "summary": "整合 AI 磁盘顾问与 Mac 清理：分析 Agent 存储、文件活跃度、缓存、开发产物和安装包，并通过统一安全流程清理",
+  "summary": "本地磁盘分析与安全清理：恢复上次结果，按恢复成本分级缓存、依赖、构建产物、Agent 存储和用户文件",
   "localizedMetadata": {
     "ar": {
       "displayName": "تنظيف القرص",
@@ -13,7 +13,7 @@
     },
     "en": {
       "displayName": "Disk Cleanup",
-      "summary": "AI Disk Advisor and Mac Cleanup in one plugin: analyze Agent storage, file activity, caches, developer artifacts, and installers with one safe cleanup pipeline"
+      "summary": "Local disk analysis and safe cleanup with instant result restore and recovery-aware classification for caches, dependencies, builds, Agent storage, and user files"
     },
     "es": {
       "displayName": "Limpieza de disco",
@@ -41,14 +41,14 @@
     },
     "zh-Hans": {
       "displayName": "磁盘清理",
-      "summary": "整合 AI 磁盘顾问与 Mac 清理：分析 Agent 存储、文件活跃度、缓存、开发产物和安装包，并通过统一安全流程清理"
+      "summary": "本地磁盘分析与安全清理：恢复上次结果，按恢复成本分级缓存、依赖、构建产物、Agent 存储和用户文件"
     },
     "zh-Hant": {
       "displayName": "磁碟清理",
-      "summary": "整合 AI 磁碟顧問與 Mac 清理：分析 Agent 儲存、檔案活動、快取、開發產物和安裝包，並透過統一安全流程清理"
+      "summary": "本機磁碟分析與安全清理：還原上次結果，並依復原成本分類快取、依賴、建置產物、Agent 儲存與使用者檔案"
     }
   },
-  "version": "2.1.0",
+  "version": "3.0.0",
   "minHostVersion": "1.1.6",
   "pluginKitVersion": 4,
   "bundleRelativePath": "DiskClean.bundle",

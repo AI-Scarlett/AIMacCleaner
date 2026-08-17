@@ -206,6 +206,21 @@ enum DiskCleanCategoryID: String, CaseIterable, Identifiable, Hashable, Sendable
 
 // MARK: - Target-level rules
 
+/// How an item can be recovered after cleanup.
+///
+/// This is deliberately independent from `DiskCleanRisk`: risk answers "how carefully should
+/// deletion be reviewed", while recovery class answers "what does getting it back cost". A
+/// dependency directory can be structurally safe to delete yet still require a long network
+/// download, so it must never ride the same one-click path as a locally regenerated cache.
+enum DiskCleanRecoveryClass: String, Equatable, Hashable, Sendable {
+    /// Recreated locally by the owning app or build system.
+    case regenerable
+    /// Requires downloading dependencies, packages, or model data again.
+    case downloadRequired
+    /// User-owned or otherwise non-reproducible data. Always review item by item.
+    case originalData
+}
+
 /// Cleanup targets in rules v2 (design §5.2).
 ///
 /// v1 carried risk at "rule" granularity; v2 pushes it down to targets so one v1 rule can
@@ -235,6 +250,9 @@ struct DiskCleanRuleTarget: Identifiable, Sendable {
     let category: DiskCleanCategoryID
     /// Target-level risk. Default-selection policy looks only here (only `.low` is selected by default).
     let risk: DiskCleanRisk
+    /// Recovery cost is a separate default-selection gate. Existing cache rules default to
+    /// `.regenerable`; dependency/model/user-file targets opt into stricter classes.
+    let recoveryClass: DiskCleanRecoveryClass
     let kind: Kind
     /// Normalized absolute reserved roots (may use a `~` prefix; expand via `expandedReservedRootPaths` before use).
     ///
@@ -258,6 +276,7 @@ struct DiskCleanRuleTarget: Identifiable, Sendable {
         legacyRuleID: String,
         category: DiskCleanCategoryID,
         risk: DiskCleanRisk,
+        recoveryClass: DiskCleanRecoveryClass = .regenerable,
         kind: Kind,
         reservedRootPaths: [String],
         requiresFullDiskAccess: Bool = false,
@@ -268,6 +287,7 @@ struct DiskCleanRuleTarget: Identifiable, Sendable {
         self.legacyRuleID = legacyRuleID
         self.category = category
         self.risk = risk
+        self.recoveryClass = recoveryClass
         self.kind = kind
         self.reservedRootPaths = reservedRootPaths
         self.requiresFullDiskAccess = requiresFullDiskAccess

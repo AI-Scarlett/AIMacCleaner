@@ -472,6 +472,7 @@ struct DiskCleanFileInventoryView: View {
             header
             if let summary = model.inventorySummary {
                 inventoryMetrics(summary)
+                inventorySpaceMap(summary)
                 filters
                 fileList
                 if !cleanupController.snapshot.scope.userFilePaths.isEmpty {
@@ -525,6 +526,24 @@ struct DiskCleanFileInventoryView: View {
                 .font(PluginSettingsTheme.Typography.pageDescription)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+                if let lastAnalyzedAt = model.lastAnalyzedAt {
+                    Label(
+                        model.isRestoredFromCache
+                            ? localization.format(
+                                "advisor.cache.restored",
+                                defaultValue: "已载入上次本地分析 · %@",
+                                DiskCleanFormat.timestamp(lastAnalyzedAt)
+                            )
+                            : localization.format(
+                                "advisor.cache.updated",
+                                defaultValue: "本地分析已更新 · %@",
+                                DiskCleanFormat.timestamp(lastAnalyzedAt)
+                            ),
+                        systemImage: model.isRestoredFromCache ? "clock.arrow.circlepath" : "checkmark.circle"
+                    )
+                    .font(PluginSettingsTheme.Typography.statusBadge)
+                    .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             Button(action: model.scan) {
@@ -588,6 +607,85 @@ struct DiskCleanFileInventoryView: View {
         .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
         .padding(PluginSettingsTheme.Spacing.cardContent)
         .pluginSettingsCardBackground(.standard)
+    }
+
+    /// Bounded category space map based on the same aggregate counters as the inventory cards.
+    /// It never triggers another filesystem walk; selecting a row only filters the retained list.
+    private func inventorySpaceMap(_ summary: DiskFileInventorySummary) -> some View {
+        let breakdown = summary.categoryBreakdown
+            .filter { $0.totalBytes > 0 }
+            .sorted { lhs, rhs in
+                lhs.totalBytes == rhs.totalBytes
+                    ? lhs.category.rawValue < rhs.category.rawValue
+                    : lhs.totalBytes > rhs.totalBytes
+            }
+        let largest = max(breakdown.map(\.totalBytes).max() ?? 1, 1)
+
+        return VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.sectionHeaderContent) {
+            HStack {
+                DiskCleanSectionHeader(
+                    title: localization.string("inventory.spaceMap.title", defaultValue: "文件类型空间图"),
+                    symbolName: "square.3.layers.3d"
+                )
+                Spacer()
+                Text(localization.string(
+                    "inventory.spaceMap.hint",
+                    defaultValue: "点击类型可筛选；数据来自本地元数据扫描"
+                ))
+                .font(PluginSettingsTheme.Typography.statusBadge)
+                .foregroundStyle(.secondary)
+            }
+
+            LazyVGrid(
+                columns: [GridItem(.flexible()), GridItem(.flexible())],
+                spacing: PluginSettingsTheme.Spacing.controlCluster
+            ) {
+                ForEach(breakdown, id: \.category) { item in
+                    Button {
+                        category = item.category.rawValue
+                    } label: {
+                        VStack(alignment: .leading, spacing: 7) {
+                            HStack(spacing: 6) {
+                                Image(systemName: categoryIcon(item.category))
+                                Text(categoryTitle(item.category))
+                                    .font(PluginSettingsTheme.Typography.rowTitle)
+                                Spacer()
+                                Text(DiskCleanFormat.bytes(item.totalBytes))
+                                    .font(PluginSettingsTheme.Typography.monospacedValue)
+                            }
+                            GeometryReader { proxy in
+                                Capsule()
+                                    .fill(Color(nsColor: .quaternaryLabelColor).opacity(0.35))
+                                    .overlay(alignment: .leading) {
+                                        Capsule()
+                                            .fill(categoryTint(item.category))
+                                            .frame(
+                                                width: max(
+                                                    4,
+                                                    proxy.size.width * CGFloat(item.totalBytes) / CGFloat(largest)
+                                                )
+                                            )
+                                    }
+                            }
+                            .frame(height: 7)
+                            Text(localization.format(
+                                "inventory.spaceMap.files",
+                                defaultValue: "%d 个文件",
+                                item.fileCount
+                            ))
+                            .font(PluginSettingsTheme.Typography.statusBadge)
+                            .foregroundStyle(.secondary)
+                        }
+                        .padding(PluginSettingsTheme.Spacing.cardContent)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .pluginSettingsCardBackground(
+                        category == item.category.rawValue ? .recessed : .standard
+                    )
+                }
+            }
+        }
     }
 
     private var filters: some View {

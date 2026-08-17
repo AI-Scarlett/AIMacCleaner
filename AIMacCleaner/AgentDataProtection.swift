@@ -34,4 +34,53 @@ enum AgentDataProtection {
             relative == root || relative.hasPrefix(root + "/")
         }
     }
+
+    /// Permanent cleanup guard shared by scan and execution revalidation.
+    ///
+    /// The inventory intentionally hides whole Agent roots, but cleanup rules may still target a
+    /// narrow, known-rebuildable child such as `~/.codex/versions`. This guard therefore protects
+    /// irreplaceable subtrees and credentials rather than blanket-blocking every Agent directory.
+    static func cleanupProtectionReason(
+        path rawPath: String,
+        homeDirectory rawHome: String
+    ) -> String? {
+        let path = URL(fileURLWithPath: rawPath).standardizedFileURL.path
+        let home = URL(fileURLWithPath: rawHome, isDirectory: true).standardizedFileURL.path
+        guard path != home, path.hasPrefix(home + "/") else { return nil }
+
+        let relative = String(path.dropFirst(home.count + 1)).lowercased()
+        let components = relative.split(separator: "/").map(String.init)
+
+        if relative == ".ollama/models" || relative.hasPrefix(".ollama/models/")
+            || relative == ".cache/huggingface" || relative.hasPrefix(".cache/huggingface/") {
+            return "downloaded AI model data is protected"
+        }
+
+        if applicationSupportRoots.map({ $0.lowercased() }).contains(where: { root in
+            relative == root || relative.hasPrefix(root + "/")
+        }) {
+            return "active Agent workspace state is protected"
+        }
+
+        guard let agentRoot = components.first, hiddenRootNames.contains(agentRoot) else {
+            return nil
+        }
+
+        let protectedSubtreeNames: Set<String> = [
+            "sessions", "archived_sessions", "projects", "memories", "plans", "skills",
+            "media_objects", "worktrees", "file-history", "session-env"
+        ]
+        if components.dropFirst().contains(where: protectedSubtreeNames.contains) {
+            return "Agent conversations, media, and workspace state are protected"
+        }
+
+        let protectedRootFiles: Set<String> = [
+            "auth.json", "credentials.json", "history.jsonl", "config.toml", "settings.json"
+        ]
+        if components.count == 2, protectedRootFiles.contains(components[1]) {
+            return "Agent credentials, history, and configuration are protected"
+        }
+
+        return nil
+    }
 }

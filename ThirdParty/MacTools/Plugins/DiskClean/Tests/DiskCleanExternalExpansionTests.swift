@@ -18,7 +18,8 @@ final class DiskCleanExternalExpansionTests: XCTestCase {
             for: candidate(gitState: .clean(repositoryPath: "/code/app"))
         )
 
-        XCTAssertEqual(facts.risk, .low, "artifacts from a clean repo should be selected by default")
+        XCTAssertEqual(facts.risk, .low, "stable artifacts from a clean repo may use low risk")
+        XCTAssertEqual(facts.recoveryClass, .downloadRequired)
         XCTAssertEqual(
             facts.notes,
             [.developerProject(path: "/code/app", marker: "package.json")]
@@ -297,7 +298,8 @@ final class DiskCleanExternalExpansionTests: XCTestCase {
                 kind: .nodeModules,
                 projectMarker: "package.json",
                 projectPath: "/code/app",
-                repositoryPath: gitState.repositoryPath
+                repositoryPath: gitState.repositoryPath,
+                modifiedAt: Date(timeIntervalSince1970: 1_000)
             ),
             gitState: gitState
         )

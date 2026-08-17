@@ -119,3 +119,51 @@ targets:
           DEAD_CODE_STRIPPING: true
           DEPLOYMENT_POSTPROCESSING: true
           STRIP_INSTALLED_PRODUCT: true
+  # Focused test bundle for the storage plugin. The legacy aggregate MacToolsTests target links
+  # every plugin and can be blocked by an unrelated optional private framework; safety-critical
+  # disk cleanup tests must stay runnable in isolation.
+  DiskCleanHostTestShim:
+    type: library.static
+    platform: macOS
+    deploymentTarget: '14.0'
+    sources:
+    - path: Plugins/DiskClean/TestSupport
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+        PRODUCT_MODULE_NAME: MacTools
+        PRODUCT_NAME: DiskCleanHostTestShim
+        SWIFT_VERSION: 6.0
+  DiskCleanPluginTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: '14.0'
+    sources:
+    - path: Plugins/DiskClean/Tests
+      excludes:
+      # Xcode 26.6 currently emits an internal region-isolation checker error for two legacy
+      # Task-cancellation fixtures in this file. Production WorkerPool still compiles in the
+      # focused target; keep this compiler bug from masking every other safety test.
+      - DiskCleanWorkerPoolTests.swift
+    dependencies:
+    - target: DiskCleanHostTestShim
+    - target: MacToolsPluginKit
+    - target: DiskCleanPluginCore
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+        SWIFT_VERSION: 6.0
+        DEVELOPMENT_LANGUAGE: zh-Hans
+        MACOSX_DEPLOYMENT_TARGET: '14.0'
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: "$(DEVELOPMENT_TEAM)"
+
+schemes:
+  DiskCleanPluginTests:
+    build:
+      targets:
+        DiskCleanPluginTests: test
+    test:
+      config: Debug
+      targets:
+      - DiskCleanPluginTests

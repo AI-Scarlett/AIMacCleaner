@@ -54,7 +54,7 @@ final class DiskCleanBadgeTests: XCTestCase {
             localization: localization
         )
 
-        XCTAssertEqual(badges.map(\.id), ["repositoryHasChanges", "inUse"])
+        XCTAssertEqual(badges.map(\.id), ["recovery.regenerable", "repositoryHasChanges", "inUse"])
     }
 
     // MARK: - Coexistence with existing badges
@@ -66,7 +66,7 @@ final class DiskCleanBadgeTests: XCTestCase {
             localization: localization
         )
 
-        XCTAssertTrue(badges.isEmpty)
+        XCTAssertEqual(badges.map(\.id), ["recovery.regenerable"])
     }
 
     func testSizingBadgeStillWinsWhenSizeIsUnknown() {
@@ -76,7 +76,7 @@ final class DiskCleanBadgeTests: XCTestCase {
             localization: localization
         )
 
-        XCTAssertEqual(badges.map(\.id), ["mayNotBeInstaller", "sizing"])
+        XCTAssertEqual(badges.map(\.id), ["recovery.regenerable", "mayNotBeInstaller", "sizing"])
     }
 
     // MARK: - Helpers
@@ -87,6 +87,7 @@ final class DiskCleanBadgeTests: XCTestCase {
             outcome: nil,
             localization: localization
         )
+        .filter { !$0.id.hasPrefix("recovery.") }
         .map(\.text)
     }
 

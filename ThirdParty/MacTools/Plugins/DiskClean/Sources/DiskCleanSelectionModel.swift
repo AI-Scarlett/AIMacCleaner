@@ -81,10 +81,10 @@ struct DiskCleanSelectionProjection: Equatable, Sendable {
 /// - **Unselectable means toggle is rejected**, not merely UI-disabled: locked / whitelisted /
 ///   protected / non-complete / unsized / mount-containing candidates make `setCandidate`
 ///   return false with no record kept.
-/// - **Default selected = low risk and selectable**. medium/high and dynamic-rule products
-///   (target risk always >= medium) are never selected by default.
-/// - **"Select all" = select every low-risk item in the category**; medium/high are never
-///   pulled in by select-all (UI copy matches this).
+/// - **Default selected = low risk, locally regenerable, and selectable**. Items that need a
+///   download or contain original data stay review-only even when deletion itself is safe.
+/// - **"Select all" = select every low-risk, locally regenerable item in the category**;
+///   medium/high/download/original items are never pulled in by select-all.
 struct DiskCleanSelectionModel: Equatable, Sendable {
     /// Category-level explicit operation.
     ///
@@ -117,9 +117,11 @@ struct DiskCleanSelectionModel: Equatable, Sendable {
         candidate.isCleanable
     }
 
-    /// Default policy: low risk and selectable. Dynamic-rule products always have target risk >= medium, so they land on the unselected side automatically.
+    /// Default policy: low risk, locally regenerable, and selectable.
     static func isSelectedByDefault(_ candidate: DiskCleanCandidate) -> Bool {
-        isSelectable(candidate) && candidate.risk == .low
+        isSelectable(candidate)
+            && candidate.risk == .low
+            && candidate.recoveryClass == .regenerable
     }
 
     func isSelected(_ candidate: DiskCleanCandidate) -> Bool {
@@ -130,7 +132,7 @@ struct DiskCleanSelectionModel: Equatable, Sendable {
         if categoryOperations[candidate.category] == .deselectAll {
             return false
         }
-        return candidate.risk == .low
+        return Self.isSelectedByDefault(candidate)
     }
 
     // MARK: - Commands

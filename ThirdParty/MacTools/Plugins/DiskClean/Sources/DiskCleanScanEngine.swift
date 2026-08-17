@@ -515,6 +515,7 @@ struct DiskCleanScanEngine: DiskCleanScanning {
             logicalPaths: owned.logicalPaths,
             // When the expansion source supplies no override, use target risk (rule candidates always take this path).
             risk: owned.facts.risk ?? target.risk,
+            recoveryClass: owned.facts.recoveryClass ?? target.recoveryClass,
             safety: safety,
             notes: owned.facts.notes,
             sizeResult: nil

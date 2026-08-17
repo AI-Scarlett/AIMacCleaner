@@ -16,6 +16,32 @@ enum DiskCleanPurgeKind: String, CaseIterable, Equatable, Sendable {
     case buildOutput
     case distOutput
     case pythonCache
+    case swiftBuild
+    case nextBuild
+    case nuxtBuild
+    case frameworkOutput
+    case turboCache
+    case parcelCache
+    case svelteBuild
+    case astroBuild
+    case coverageOutput
+    case pytestCache
+    case mypyCache
+    case ruffCache
+    case toxEnvironment
+    case noxEnvironment
+    case pythonEnvironment
+    case pythonDotEnvironment
+    case cocoapods
+    case composerVendor
+    case gradleCache
+    case terragruntCache
+    case androidNativeBuild
+    case dartTool
+    case zigCache
+    case zigOutput
+    case angularCache
+    case expoCache
 
     /// Directory name. Classification looks only at this name, not the rest of the path.
     var directoryName: String {
@@ -30,6 +56,58 @@ enum DiskCleanPurgeKind: String, CaseIterable, Equatable, Sendable {
             return "dist"
         case .pythonCache:
             return "__pycache__"
+        case .swiftBuild:
+            return ".build"
+        case .nextBuild:
+            return ".next"
+        case .nuxtBuild:
+            return ".nuxt"
+        case .frameworkOutput:
+            return ".output"
+        case .turboCache:
+            return ".turbo"
+        case .parcelCache:
+            return ".parcel-cache"
+        case .svelteBuild:
+            return ".svelte-kit"
+        case .astroBuild:
+            return ".astro"
+        case .coverageOutput:
+            return "coverage"
+        case .pytestCache:
+            return ".pytest_cache"
+        case .mypyCache:
+            return ".mypy_cache"
+        case .ruffCache:
+            return ".ruff_cache"
+        case .toxEnvironment:
+            return ".tox"
+        case .noxEnvironment:
+            return ".nox"
+        case .pythonEnvironment:
+            return "venv"
+        case .pythonDotEnvironment:
+            return ".venv"
+        case .cocoapods:
+            return "Pods"
+        case .composerVendor:
+            return "vendor"
+        case .gradleCache:
+            return ".gradle"
+        case .terragruntCache:
+            return ".terragrunt-cache"
+        case .androidNativeBuild:
+            return ".cxx"
+        case .dartTool:
+            return ".dart_tool"
+        case .zigCache:
+            return ".zig-cache"
+        case .zigOutput:
+            return "zig-out"
+        case .angularCache:
+            return ".angular"
+        case .expoCache:
+            return ".expo"
         }
     }
 
@@ -44,6 +122,31 @@ enum DiskCleanPurgeKind: String, CaseIterable, Equatable, Sendable {
             return ["package.json", "setup.py", "pyproject.toml"]
         case .pythonCache:
             return []
+        case .swiftBuild:
+            return ["Package.swift"]
+        case .nextBuild, .nuxtBuild, .frameworkOutput, .turboCache, .parcelCache,
+             .svelteBuild, .astroBuild, .coverageOutput, .angularCache, .expoCache:
+            return ["package.json"]
+        case .pytestCache, .mypyCache, .ruffCache:
+            return []
+        case .toxEnvironment:
+            return ["tox.ini", "pyproject.toml", "setup.py"]
+        case .noxEnvironment:
+            return ["noxfile.py", "pyproject.toml"]
+        case .pythonEnvironment, .pythonDotEnvironment:
+            return ["pyproject.toml", "requirements.txt", "Pipfile", "setup.py"]
+        case .cocoapods:
+            return ["Podfile"]
+        case .composerVendor:
+            return ["composer.json"]
+        case .gradleCache, .androidNativeBuild:
+            return ["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"]
+        case .terragruntCache:
+            return ["terragrunt.hcl"]
+        case .dartTool:
+            return ["pubspec.yaml"]
+        case .zigCache, .zigOutput:
+            return ["build.zig"]
         }
     }
 
@@ -59,6 +162,72 @@ enum DiskCleanPurgeKind: String, CaseIterable, Equatable, Sendable {
             return "打包输出"
         case .pythonCache:
             return "Python 字节码缓存"
+        case .swiftBuild:
+            return "SwiftPM 编译产物"
+        case .nextBuild:
+            return "Next.js 构建缓存"
+        case .nuxtBuild:
+            return "Nuxt 构建缓存"
+        case .frameworkOutput:
+            return "框架构建输出"
+        case .turboCache:
+            return "Turborepo 缓存"
+        case .parcelCache:
+            return "Parcel 缓存"
+        case .svelteBuild:
+            return "SvelteKit 构建缓存"
+        case .astroBuild:
+            return "Astro 构建缓存"
+        case .coverageOutput:
+            return "测试覆盖率产物"
+        case .pytestCache:
+            return "Pytest 缓存"
+        case .mypyCache:
+            return "Mypy 缓存"
+        case .ruffCache:
+            return "Ruff 缓存"
+        case .toxEnvironment:
+            return "Tox 测试环境"
+        case .noxEnvironment:
+            return "Nox 测试环境"
+        case .pythonEnvironment, .pythonDotEnvironment:
+            return "Python 虚拟环境"
+        case .cocoapods:
+            return "CocoaPods 依赖"
+        case .composerVendor:
+            return "Composer 依赖"
+        case .gradleCache:
+            return "Gradle 项目缓存"
+        case .terragruntCache:
+            return "Terragrunt 缓存"
+        case .androidNativeBuild:
+            return "Android C/C++ 构建产物"
+        case .dartTool:
+            return "Dart 工具缓存"
+        case .zigCache:
+            return "Zig 编译缓存"
+        case .zigOutput:
+            return "Zig 构建输出"
+        case .angularCache:
+            return "Angular 缓存"
+        case .expoCache:
+            return "Expo 缓存"
+        }
+    }
+
+    /// Dependency trees and environments cannot be rebuilt offline, so they remain manual even
+    /// for a clean repository. Everything else is recreated locally from source/configuration.
+    var recoveryClass: DiskCleanRecoveryClass {
+        switch self {
+        case .nodeModules, .pythonEnvironment, .pythonDotEnvironment, .cocoapods,
+             .composerVendor, .gradleCache, .terragruntCache:
+            return .downloadRequired
+        case .rustTarget, .buildOutput, .distOutput, .pythonCache, .swiftBuild,
+             .nextBuild, .nuxtBuild, .frameworkOutput, .turboCache, .parcelCache,
+             .svelteBuild, .astroBuild, .coverageOutput, .pytestCache, .mypyCache,
+             .ruffCache, .toxEnvironment, .noxEnvironment, .androidNativeBuild,
+             .dartTool, .zigCache, .zigOutput, .angularCache, .expoCache:
+            return .regenerable
         }
     }
 
@@ -129,6 +298,25 @@ struct DiskCleanPurgeDiscoveredItem: Equatable, Sendable {
     /// Nearest `.git` ancestor (including the scan root itself; never past the root boundary).
     /// nil = not in a repository.
     let repositoryPath: String?
+    /// Root directory mtime captured with `fstatat(AT_SYMLINK_NOFOLLOW)` during discovery.
+    /// nil is fail-closed later (not selected by default).
+    let modifiedAt: Date?
+
+    init(
+        path: String,
+        kind: DiskCleanPurgeKind,
+        projectMarker: String?,
+        projectPath: String,
+        repositoryPath: String?,
+        modifiedAt: Date? = nil
+    ) {
+        self.path = path
+        self.kind = kind
+        self.projectMarker = projectMarker
+        self.projectPath = projectPath
+        self.repositoryPath = repositoryPath
+        self.modifiedAt = modifiedAt
+    }
 }
 
 /// Traversal status of a single scan root.
@@ -149,8 +337,26 @@ struct DiskCleanPurgeDiscoveryReport: Equatable, Sendable {
 
 /// Full candidate description with git state. Stage two mints a unified-pipeline `DiskCleanCandidate` from this.
 struct DiskCleanPurgeCandidate: Identifiable, Equatable, Sendable {
+    static let recentProtectionInterval: TimeInterval = 7 * 24 * 60 * 60
+
     let item: DiskCleanPurgeDiscoveredItem
     let gitState: DiskCleanPurgeGitState
+    let isRecentlyModified: Bool
+
+    init(
+        item: DiskCleanPurgeDiscoveredItem,
+        gitState: DiskCleanPurgeGitState,
+        now: Date = Date()
+    ) {
+        self.item = item
+        self.gitState = gitState
+        guard let modifiedAt = item.modifiedAt else {
+            self.isRecentlyModified = true
+            return
+        }
+        let age = max(now.timeIntervalSince(modifiedAt), 0)
+        self.isRecentlyModified = age < Self.recentProtectionInterval
+    }
 
     var id: String { item.path }
     var path: String { item.path }
@@ -158,8 +364,13 @@ struct DiskCleanPurgeCandidate: Identifiable, Equatable, Sendable {
     var projectMarker: String? { item.projectMarker }
     var projectPath: String { item.projectPath }
 
-    /// Default-selection policy: not selected when the repo is dirty (including inspection failure); otherwise selected.
-    var isSelectedByDefault: Bool { !gitState.isDirty }
+    /// Default-selection policy: clean repository and locally regenerable. Download-backed
+    /// dependency trees remain visible but never enter one-click cleanup.
+    var isSelectedByDefault: Bool {
+        !gitState.isDirty
+            && !isRecentlyModified
+            && kind.recoveryClass == .regenerable
+    }
 }
 
 struct DiskCleanPurgeRootReport: Equatable, Sendable {
@@ -316,7 +527,11 @@ struct DiskCleanPurgeDiscovery: Sendable {
                             kind: kind,
                             projectMarker: match.markerName,
                             projectPath: path,
-                            repositoryPath: repositoryPath
+                            repositoryPath: repositoryPath,
+                            modifiedAt: Self.modificationDate(
+                                name: name,
+                                directoryFileDescriptor: source.directoryFileDescriptor
+                            )
                         )
                     )
                     continue  // prune on hit
@@ -407,6 +622,17 @@ struct DiskCleanPurgeDiscovery: Sendable {
         var status = stat()
         guard fstatat(directoryFileDescriptor, name, &status, AT_SYMLINK_NOFOLLOW) == 0 else { return false }
         return DiskCleanRootIdentity.FileType(mode: status.st_mode) != .directory
+    }
+
+    private static func modificationDate(
+        name: String,
+        directoryFileDescriptor: Int32
+    ) -> Date? {
+        var status = stat()
+        guard fstatat(directoryFileDescriptor, name, &status, AT_SYMLINK_NOFOLLOW) == 0 else {
+            return nil
+        }
+        return DiskCleanRootIdentity.date(from: status.st_mtimespec)
     }
 
     /// `.git` may be a directory (normal repo) or a file (worktree / submodule gitdir pointer); both count.

@@ -1623,6 +1623,7 @@ struct DiskCleanRuleCatalogV2: Sendable {
             legacyRuleID: kind.targetID,
             category: .developerArtifacts,
             risk: .medium,
+            recoveryClass: kind.recoveryClass,
             kind: .external,
             reservedRootPaths: []
         )
@@ -1639,6 +1640,7 @@ struct DiskCleanRuleCatalogV2: Sendable {
             legacyRuleID: kind.targetID,
             category: .installers,
             risk: .medium,
+            recoveryClass: .originalData,
             kind: .external,
             reservedRootPaths: [DiskCleanInstallerScanner.defaultDownloadsPath]
         )
@@ -1655,6 +1657,7 @@ struct DiskCleanRuleCatalogV2: Sendable {
             legacyRuleID: DiskCleanUserFileExpansion.targetID,
             category: .userFiles,
             risk: .high,
+            recoveryClass: .originalData,
             kind: .external,
             reservedRootPaths: []
         )
@@ -1668,6 +1671,7 @@ struct DiskCleanRuleCatalogV2: Sendable {
             legacyRuleID: DiskCleanAdvisorFindingExpansion.historicalBuildTargetID,
             category: .advisorFindings,
             risk: .high,
+            recoveryClass: .regenerable,
             kind: .external,
             reservedRootPaths: []
         ),
@@ -1676,6 +1680,7 @@ struct DiskCleanRuleCatalogV2: Sendable {
             legacyRuleID: DiskCleanAdvisorFindingExpansion.installerArtifactTargetID,
             category: .advisorFindings,
             risk: .high,
+            recoveryClass: .originalData,
             kind: .external,
             reservedRootPaths: []
         )
