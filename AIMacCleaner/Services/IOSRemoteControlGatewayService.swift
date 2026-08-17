@@ -45,6 +45,11 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     private var listenerRetryTask: Task<Void, Never>?
     private var listenerRetryAttempt = 0
 
+    private var allowsPairingKeychainAccess: Bool {
+        !ProcessInfo.processInfo.arguments.contains("--tracefence-ui-preview") &&
+            Bundle.main.bundleIdentifier != "com.tracefence.uipreview"
+    }
+
     private init() {
         UserDefaults.standard.register(defaults: [Self.keepMacAwakeKey: true])
         UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "traceFenceIOSRemoteGatewayLastServiceInit")
@@ -3296,6 +3301,7 @@ final class IOSRemoteControlGatewayService: ObservableObject {
     }
 
     private func loadPairingToken() -> String? {
+        guard allowsPairingKeychainAccess else { return nil }
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Self.pairingTokenKeychainService,
@@ -3315,6 +3321,7 @@ final class IOSRemoteControlGatewayService: ObservableObject {
 
     @discardableResult
     private func storePairingToken(_ token: String) -> Bool {
+        guard allowsPairingKeychainAccess else { return false }
         guard let data = token.data(using: .utf8), !data.isEmpty else { return false }
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,

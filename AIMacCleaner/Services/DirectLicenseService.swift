@@ -579,6 +579,10 @@ enum TraceFenceEntitlementPolicy {
     }
 
     static func canUsePlugin(_ pluginID: String) -> Bool {
+        if ProcessInfo.processInfo.arguments.contains("--tracefence-ui-preview") ||
+            Bundle.main.bundleIdentifier == "com.tracefence.uipreview" {
+            return true
+        }
         guard TraceFenceDistributionPolicy.currentChannel.isDirect else {
             return canUseProFeatures
         }
@@ -665,6 +669,15 @@ final class DirectLicenseService: ObservableObject {
     private let snapshotSigningKeyAccount = "snapshot_signing_key"
     private let decoder = JSONDecoder()
     private let dateCodec = ISO8601DateFormatter()
+
+    /// UI preview builds are intentionally unsigned and use a different bundle
+    /// identity. They must never touch the production license Keychain items,
+    /// otherwise macOS repeatedly asks the user to re-authorize access while we
+    /// are only validating layout and appearance.
+    private var allowsLicenseKeychainAccess: Bool {
+        !ProcessInfo.processInfo.arguments.contains("--tracefence-ui-preview") &&
+            Bundle.main.bundleIdentifier != "com.tracefence.uipreview"
+    }
 
     private init() {
         snapshot = .empty
@@ -1054,6 +1067,7 @@ final class DirectLicenseService: ObservableObject {
 
     @discardableResult
     private func saveSecretData(_ data: Data, account: String) -> Bool {
+        guard allowsLicenseKeychainAccess else { return false }
         deleteSecret(account: account)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -1071,6 +1085,7 @@ final class DirectLicenseService: ObservableObject {
     }
 
     private func readSecretData(account: String) -> Data? {
+        guard allowsLicenseKeychainAccess else { return nil }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -1087,6 +1102,7 @@ final class DirectLicenseService: ObservableObject {
     }
 
     private func deleteSecret(account: String) {
+        guard allowsLicenseKeychainAccess else { return }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,

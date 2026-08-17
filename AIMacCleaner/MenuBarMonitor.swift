@@ -34,6 +34,7 @@ struct MenuBarMonitor: View {
     @AppStorage(TraceFencePluginDisplayPreferences.pinnedPluginIDsKey)
     private var pinnedPluginIDsJSON = TraceFencePluginDisplayPreferences.defaultPinnedPluginIDsJSON
     @AppStorage("networkMode") private var networkMode = "internet"
+    @AppStorage("appearanceMode") private var appearanceMode = "system"
     @State private var alertThreshold: Double = 10.0
     @State private var monitoringEnabled: Bool = true
     @State private var operationMonitorEnabled: Bool = false
@@ -110,6 +111,7 @@ struct MenuBarMonitor: View {
             }
         }
         .frame(width: 520, height: 640)
+        .preferredColorScheme(preferredAppearanceColorScheme)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -128,6 +130,14 @@ struct MenuBarMonitor: View {
         }
         .onDisappear {
             cancelDeferredMonitorStart()
+        }
+    }
+
+    private var preferredAppearanceColorScheme: ColorScheme? {
+        switch appearanceMode {
+        case "light": return .light
+        case "dark": return .dark
+        default: return nil
         }
     }
 

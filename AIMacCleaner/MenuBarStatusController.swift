@@ -104,13 +104,33 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
     private func autoOpenPopoverForUITestIfNeeded() {
         let launchArguments = ProcessInfo.processInfo.arguments
         let shouldRunMainConsoleSelfTest = launchArguments.contains("--tracefence-menu-console-self-test")
+        let shouldKeepPanelOnlyForUITest = launchArguments.contains("--tracefence-menu-ui-preview")
         guard !didAutoOpenPopoverForUITest,
-              launchArguments.contains("--tracefence-open-menu-bar") || shouldRunMainConsoleSelfTest else { return }
+              launchArguments.contains("--tracefence-open-menu-bar") ||
+                shouldRunMainConsoleSelfTest ||
+                shouldKeepPanelOnlyForUITest else { return }
         didAutoOpenPopoverForUITest = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
             guard let self else { return }
             self.showPopover()
 #if DEBUG
+            if shouldKeepPanelOnlyForUITest {
+                NSApp.setActivationPolicy(.accessory)
+                let hideMainWindows = {
+                    for window in NSApp.windows where !window.isFloatingPanel && window.title == "TraceFence" {
+                        window.orderOut(nil)
+                    }
+                }
+                hideMainWindows()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+                    hideMainWindows()
+                    if !NSApp.windows.contains(where: {
+                        ($0.isFloatingPanel || $0.title == "TraceFence Menu Preview") && $0.isVisible
+                    }) {
+                        self?.showPopover()
+                    }
+                }
+            }
             if shouldRunMainConsoleSelfTest {
                 self.runMainConsoleSelfTest()
             }
@@ -436,6 +456,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
         closePopover()
 
         let panelSize = NSSize(width: 520, height: 640)
+        let isMenuUIPreview = ProcessInfo.processInfo.arguments.contains("--tracefence-menu-ui-preview")
         let hostingView = MenuBarFirstMouseHostingView(
             rootView: MenuBarMonitor(
                 service: service,
@@ -456,10 +477,13 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
 
         let panel = MenuBarPopoverPanel(
             contentRect: NSRect(origin: .zero, size: panelSize),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: isMenuUIPreview ? [.titled, .closable] : [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
+        if isMenuUIPreview {
+            panel.title = "TraceFence Menu Preview"
+        }
         panel.delegate = self
         panel.contentView = hostingView
         panel.backgroundColor = .clear
@@ -467,15 +491,23 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
         panel.hasShadow = true
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
-        panel.isFloatingPanel = true
+        panel.isFloatingPanel = !isMenuUIPreview
         panel.becomesKeyOnlyIfNeeded = false
-        panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
-        panel.setFrameOrigin(panelOrigin(for: button, panelSize: panelSize))
+        panel.level = isMenuUIPreview ? .normal : .statusBar
+        panel.collectionBehavior = isMenuUIPreview
+            ? [.fullScreenAuxiliary]
+            : [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        if isMenuUIPreview {
+            panel.center()
+        } else {
+            panel.setFrameOrigin(panelOrigin(for: button, panelSize: panelSize))
+        }
 
         self.popoverPanel = panel
         panel.makeKeyAndOrderFront(nil)
-        installDismissMonitors(anchor: button)
+        if !isMenuUIPreview {
+            installDismissMonitors(anchor: button)
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             quotaService.start()
             captureService.start()

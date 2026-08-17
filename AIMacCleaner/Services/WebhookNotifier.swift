@@ -85,6 +85,11 @@ actor WebhookNotifier {
     private let sessionDelegate: WebhookSessionDelegate
     private var session: URLSession
 
+    private var allowsKeychainAccess: Bool {
+        !ProcessInfo.processInfo.arguments.contains("--tracefence-ui-preview") &&
+            Bundle.main.bundleIdentifier != "com.tracefence.uipreview"
+    }
+
     init() {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 10
@@ -260,6 +265,7 @@ actor WebhookNotifier {
     }
 
     private func loadSecret() -> String? {
+        guard allowsKeychainAccess else { return nil }
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: keychainService,
@@ -277,6 +283,7 @@ actor WebhookNotifier {
 
     @discardableResult
     private func storeSecret(_ secret: String) -> Bool {
+        guard allowsKeychainAccess else { return false }
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: keychainService,
@@ -293,6 +300,7 @@ actor WebhookNotifier {
     }
 
     private func deleteSecret() {
+        guard allowsKeychainAccess else { return }
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: keychainService,

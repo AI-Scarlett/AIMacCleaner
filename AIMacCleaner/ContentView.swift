@@ -944,7 +944,10 @@ struct ContentView: View {
             AppManagerTab(filterType: .other)
                 .environmentObject(localizer)
         case .operations:
-            pluginContent("tracefence.agent-guard") {
+            pluginContent(
+                "tracefence.agent-guard",
+                featureTitle: localizer.agentMonitorTitle
+            ) {
                 OperationLogTab(monitor: service.operationMonitor)
                     .environmentObject(localizer)
             }
@@ -1007,12 +1010,14 @@ struct ContentView: View {
     @ViewBuilder
     private func pluginContent<Content: View>(
         _ pluginID: String,
+        featureTitle: String? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
         if TraceFenceDistributionPolicy.currentChannel.isDirect,
            !TraceFenceEntitlementPolicy.canUsePlugin(pluginID) {
             TraceFencePluginAccessGateView(
                 pluginID: pluginID,
+                featureTitle: featureTitle,
                 onOpenStore: { openSettings(.marketplace) }
             )
             .environmentObject(localizer)
@@ -1027,6 +1032,7 @@ private struct TraceFencePluginAccessGateView: View {
     @EnvironmentObject private var localizer: Localizer
     @EnvironmentObject private var pluginEntitlementService: TraceFencePluginEntitlementService
     let pluginID: String
+    let featureTitle: String?
     let onOpenStore: () -> Void
 
     private var plugin: TraceFencePluginDescriptor? {
@@ -1043,7 +1049,7 @@ private struct TraceFencePluginAccessGateView: View {
                 .background(Theme.Colors.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 24))
 
             VStack(spacing: Theme.Spacing.sm) {
-                Text(plugin?.name ?? localizer.t("插件", en: "Plugin"))
+                Text(featureTitle ?? plugin?.name ?? localizer.t("插件", en: "Plugin"))
                     .font(Theme.Font.title2Bold)
                     .foregroundStyle(Theme.Colors.textPrimary)
                 Text(localizer.t(

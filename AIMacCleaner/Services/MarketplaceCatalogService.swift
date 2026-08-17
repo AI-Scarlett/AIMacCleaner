@@ -1447,6 +1447,11 @@ final class TraceFencePluginEntitlementService: ObservableObject {
         return decoder
     }()
 
+    private var allowsEntitlementKeychainAccess: Bool {
+        !ProcessInfo.processInfo.arguments.contains("--tracefence-ui-preview") &&
+            Bundle.main.bundleIdentifier != "com.tracefence.uipreview"
+    }
+
     private init() {
         if let data = UserDefaults.standard.data(forKey: snapshotKey),
            let values = try? JSONDecoder().decode([String: TraceFencePluginGrantSnapshot].self, from: data) {
@@ -1698,6 +1703,7 @@ final class TraceFencePluginEntitlementService: ObservableObject {
     private func trialAccount(_ pluginID: String) -> String { "\(pluginID).trial_started_at" }
 
     private func saveSecret(_ value: String, account: String) {
+        guard allowsEntitlementKeychainAccess else { return }
         deleteSecret(account: account)
         guard let data = value.data(using: .utf8) else { return }
         let query: [String: Any] = [
@@ -1711,6 +1717,7 @@ final class TraceFencePluginEntitlementService: ObservableObject {
     }
 
     private func readSecret(account: String) -> String? {
+        guard allowsEntitlementKeychainAccess else { return nil }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -1727,6 +1734,7 @@ final class TraceFencePluginEntitlementService: ObservableObject {
     }
 
     private func deleteSecret(account: String) {
+        guard allowsEntitlementKeychainAccess else { return }
         SecItemDelete([
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
