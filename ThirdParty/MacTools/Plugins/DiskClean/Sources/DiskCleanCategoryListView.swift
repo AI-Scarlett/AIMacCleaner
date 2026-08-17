@@ -96,7 +96,7 @@ private struct DiskCleanCategoryCard: View {
                 candidateRows
             }
         }
-        .pluginSettingsCardBackground(.standard)
+        .diskCleanSurface(.elevated)
     }
 
     private var header: some View {
@@ -110,8 +110,11 @@ private struct DiskCleanCategoryCard: View {
             )
             .disabled(!isInteractionEnabled || !state.isSelectable)
 
-            Image(systemName: group.category.symbolName)
-                .pluginSettingsRowIconStyle()
+            DiskCleanIconBadge(
+                symbolName: group.category.symbolName,
+                tint: categoryTint,
+                size: 36
+            )
 
             VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.rowTitleDescription) {
                 Text(group.category.title(localization: localization))
@@ -178,6 +181,23 @@ private struct DiskCleanCategoryCard: View {
         state.isChecked
             ? localization.string("detail.category.deselectAll", defaultValue: "取消选择本类全部项目")
             : localization.string("detail.category.selectLowRisk", defaultValue: "选中本类所有可再生低风险项目")
+    }
+
+    private var categoryTint: Color {
+        switch group.category {
+        case .developer, .systemCaches, .virtualization, .developerArtifacts:
+            return .orange
+        case .installers:
+            return .green
+        case .userFiles, .advisorFindings:
+            return .red
+        case .aiTools:
+            return DiskCleanVisual.accent
+        case .logs:
+            return .indigo
+        case .userEssentials, .appCaches, .browsers, .cloudOffice, .communication:
+            return .blue
+        }
     }
 }
 

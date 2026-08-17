@@ -123,27 +123,78 @@ struct DiskCleanDetailView: View {
     }
 
     private var workspacePicker: some View {
-        Picker("", selection: $workspace) {
-            Label(
-                localization.string("workspace.advisor", defaultValue: "AI 磁盘顾问"),
-                systemImage: "sparkles"
+        HStack(spacing: 6) {
+            workspaceButton(
+                .advisor,
+                title: localization.string("workspace.advisor", defaultValue: "智能盘点"),
+                subtitle: localization.string("workspace.advisor.subtitle", defaultValue: "发现空间机会"),
+                symbol: "sparkles"
             )
-            .tag(Workspace.advisor)
-            Label(
-                localization.string("workspace.cleanup", defaultValue: "Mac 清理"),
-                systemImage: "trash"
+            workspaceButton(
+                .cleanup,
+                title: localization.string("workspace.cleanup", defaultValue: "安全清理"),
+                subtitle: localization.string("workspace.cleanup.subtitle", defaultValue: "复核后再执行"),
+                symbol: "shield.checkered"
             )
-            .tag(Workspace.cleanup)
-            Label(
-                localization.string("workspace.files", defaultValue: "文件分析"),
-                systemImage: "doc.badge.magnifyingglass"
+            workspaceButton(
+                .files,
+                title: localization.string("workspace.files", defaultValue: "文件分析"),
+                subtitle: localization.string("workspace.files.subtitle", defaultValue: "按格式与时间筛选"),
+                symbol: "doc.badge.magnifyingglass"
             )
-            .tag(Workspace.files)
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(maxWidth: 560)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(5)
+        .diskCleanSurface(.recessed)
+    }
+
+    private func workspaceButton(
+        _ destination: Workspace,
+        title: String,
+        subtitle: String,
+        symbol: String
+    ) -> some View {
+        let isSelected = workspace == destination
+        return Button {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                workspace = destination
+            }
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: symbol)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isSelected ? Color.white : DiskCleanVisual.accent)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        isSelected ? DiskCleanVisual.accent : DiskCleanVisual.accent.opacity(0.10),
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    )
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                isSelected ? Color(nsColor: .controlBackgroundColor) : .clear,
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isSelected ? DiskCleanVisual.accent.opacity(0.22) : .clear, lineWidth: 1)
+            }
+            .shadow(color: isSelected ? Color.black.opacity(0.06) : .clear, radius: 7, y: 3)
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -169,6 +220,7 @@ struct DiskCleanDetailView: View {
 
     private var cleanupWorkspace: some View {
         VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.section) {
+            cleanupHero
             fullDiskAccessCard
             limitationsBanner
             errorBanner
@@ -180,6 +232,72 @@ struct DiskCleanDetailView: View {
             settingsSection
             scanLogSection
         }
+    }
+
+    private var cleanupHero: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                DiskCleanIconBadge(symbolName: "shield.lefthalf.filled", size: 42)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(localization.string("cleanup.hero.title", defaultValue: "安全清理工作台"))
+                        .font(.title3.weight(.semibold))
+                    Text(localization.string(
+                        "cleanup.hero.subtitle",
+                        defaultValue: "先扫描、再复核、最后清理。所有项目都经过路径保护、内容校验与恢复策略检查。"
+                    ))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(snapshot.scanResult == nil
+                        ? localization.string("cleanup.hero.pending", defaultValue: "等待扫描")
+                        : DiskCleanFormat.bytes(snapshot.selection.selectedEstimatedBytes))
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                    Text(snapshot.scanResult == nil
+                        ? localization.string("cleanup.hero.pending.detail", defaultValue: "选择范围后开始")
+                        : localization.string("cleanup.hero.selected", defaultValue: "当前已选"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 0) {
+                workflowStep(number: "1", title: localization.string("cleanup.step.scan", defaultValue: "扫描"), detail: localization.string("cleanup.step.scan.detail", defaultValue: "建立候选清单"))
+                workflowConnector
+                workflowStep(number: "2", title: localization.string("cleanup.step.review", defaultValue: "复核"), detail: localization.string("cleanup.step.review.detail", defaultValue: "按风险逐项选择"))
+                workflowConnector
+                workflowStep(number: "3", title: localization.string("cleanup.step.clean", defaultValue: "清理"), detail: localization.string("cleanup.step.clean.detail", defaultValue: "废纸篓或永久删除"))
+            }
+        }
+        .padding(18)
+        .diskCleanSurface(.accented)
+    }
+
+    private func workflowStep(number: String, title: String, detail: String) -> some View {
+        HStack(spacing: 8) {
+            Text(number)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 23, height: 23)
+                .background(DiskCleanVisual.accent, in: Circle())
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.caption.weight(.semibold))
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var workflowConnector: some View {
+        Rectangle()
+            .fill(DiskCleanVisual.accent.opacity(0.22))
+            .frame(width: 22, height: 1)
+            .padding(.horizontal, 6)
     }
 
     // MARK: - Banners
@@ -279,7 +397,7 @@ struct DiskCleanDetailView: View {
                 )
             }
             .pluginSettingsListRowPadding(interactive: true)
-            .pluginSettingsCardBackground(.standard)
+            .diskCleanSurface(.elevated)
         }
     }
 
@@ -348,7 +466,7 @@ struct DiskCleanDetailView: View {
                     }
                     summaryRow(executionResult)
                 }
-                .pluginSettingsCardBackground(.standard)
+                .diskCleanSurface(.elevated)
             }
         }
     }
@@ -479,7 +597,7 @@ struct DiskCleanDetailView: View {
                     .pluginSettingsListRowPadding(interactive: true)
                 }
             }
-            .pluginSettingsCardBackground(.standard)
+            .diskCleanSurface(.elevated)
         }
     }
 
@@ -571,7 +689,7 @@ struct DiskCleanDetailView: View {
                 .padding(PluginSettingsTheme.Spacing.rowVertical)
             }
             .frame(minHeight: 118, maxHeight: 160)
-            .pluginSettingsCardBackground(.recessed)
+            .diskCleanSurface(.recessed)
             .onChange(of: snapshot.scanLogEntries.last?.id) {
                 guard let id = snapshot.scanLogEntries.last?.id else { return }
                 proxy.scrollTo(id, anchor: .bottom)

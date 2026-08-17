@@ -1,6 +1,90 @@
 import SwiftUI
 import MacToolsPluginKit
 
+// MARK: - Disk Cleanup visual language
+
+/// A small, plugin-local visual system. Disk Cleanup presents denser information than
+/// most settings pages, so relying on the host's generic cards made every block look
+/// equally important. These surfaces keep the host's adaptive materials while adding
+/// a consistent storage-oriented accent, border hierarchy, and depth.
+enum DiskCleanVisual {
+    static let accent = Color(red: 0.10, green: 0.55, blue: 0.50)
+    static let accentBlue = Color(red: 0.18, green: 0.43, blue: 0.88)
+    static let heroStart = Color(red: 0.055, green: 0.19, blue: 0.25)
+    static let heroEnd = Color(red: 0.07, green: 0.43, blue: 0.41)
+    static let border = Color.primary.opacity(0.09)
+    static let subtleFill = Color.primary.opacity(0.035)
+}
+
+enum DiskCleanSurfaceStyle {
+    case elevated
+    case recessed
+    case accented
+}
+
+private struct DiskCleanSurfaceModifier: ViewModifier {
+    let style: DiskCleanSurfaceStyle
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        content
+            .background {
+                switch style {
+                case .elevated:
+                    shape.fill(.ultraThinMaterial)
+                case .recessed:
+                    shape.fill(DiskCleanVisual.subtleFill)
+                case .accented:
+                    shape.fill(
+                        LinearGradient(
+                            colors: [
+                                DiskCleanVisual.accent.opacity(0.13),
+                                DiskCleanVisual.accentBlue.opacity(0.05)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                }
+            }
+            .overlay {
+                shape.stroke(
+                    style == .accented
+                        ? DiskCleanVisual.accent.opacity(0.28)
+                        : DiskCleanVisual.border,
+                    lineWidth: 1
+                )
+            }
+            .shadow(
+                color: style == .elevated ? Color.black.opacity(0.055) : .clear,
+                radius: 12,
+                x: 0,
+                y: 5
+            )
+            .clipShape(shape)
+    }
+}
+
+extension View {
+    func diskCleanSurface(_ style: DiskCleanSurfaceStyle = .elevated) -> some View {
+        modifier(DiskCleanSurfaceModifier(style: style))
+    }
+}
+
+struct DiskCleanIconBadge: View {
+    let symbolName: String
+    var tint: Color = DiskCleanVisual.accent
+    var size: CGFloat = 38
+
+    var body: some View {
+        Image(systemName: symbolName)
+            .font(.system(size: size * 0.42, weight: .semibold))
+            .foregroundStyle(tint)
+            .frame(width: size, height: size)
+            .background(tint.opacity(0.11), in: RoundedRectangle(cornerRadius: size * 0.30, style: .continuous))
+    }
+}
+
 // MARK: - Section guidance states
 
 /// What a section should say when there are "no candidates to show" (design §10).
@@ -78,7 +162,7 @@ struct DiskCleanBanner<Trailing: View>: View {
             trailing()
         }
         .pluginSettingsListRowPadding()
-        .pluginSettingsCardBackground(.standard)
+        .diskCleanSurface(.elevated)
     }
 }
 
@@ -112,7 +196,7 @@ struct DiskCleanEmptyState<Action: View>: View {
             .padding(.vertical, PluginSettingsTheme.Spacing.pagePadding)
             Spacer()
         }
-        .pluginSettingsCardBackground(.standard)
+        .diskCleanSurface(.elevated)
     }
 }
 
@@ -127,9 +211,15 @@ struct DiskCleanSectionHeader: View {
     let symbolName: String
 
     var body: some View {
-        Label(title, systemImage: symbolName)
-            .font(PluginSettingsTheme.Typography.sectionTitle)
-            .foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+            Image(systemName: symbolName)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DiskCleanVisual.accent)
+                .frame(width: 24, height: 24)
+                .background(DiskCleanVisual.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 7))
+            Text(title)
+                .font(PluginSettingsTheme.Typography.sectionTitle)
+        }
     }
 }
 
@@ -142,6 +232,24 @@ struct DiskCleanActionBar: View {
     let onCancel: () -> Void
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            actionRow
+            VStack(alignment: .leading, spacing: 10) {
+                actionButtons
+                selectionSummary
+            }
+        }
+    }
+
+    private var actionRow: some View {
+        HStack(spacing: PluginSettingsTheme.Spacing.controlCluster) {
+            actionButtons
+            Spacer(minLength: 12)
+            selectionSummary
+        }
+    }
+
+    private var actionButtons: some View {
         HStack(spacing: PluginSettingsTheme.Spacing.controlCluster) {
             Button(action: onScan) {
                 Label(
@@ -182,14 +290,14 @@ struct DiskCleanActionBar: View {
                     .controlSize(.small)
                     .scaleEffect(0.8)
             }
-
-            Spacer(minLength: 0)
-
-            Text(DiskCleanFormat.selectionSummary(snapshot, localization: localization))
-                .font(PluginSettingsTheme.Typography.rowDescription)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
         }
+    }
+
+    private var selectionSummary: some View {
+        Text(DiskCleanFormat.selectionSummary(snapshot, localization: localization))
+            .font(PluginSettingsTheme.Typography.rowDescription)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
     }
 }
 
@@ -228,7 +336,7 @@ struct DiskCleanCleanupSectionView<Configuration: View>: View {
                 )
             }
             .pluginSettingsListRowPadding(interactive: true)
-            .pluginSettingsCardBackground(.standard)
+            .diskCleanSurface(.accented)
 
             if let errorMessage = snapshot.errorMessage {
                 DiskCleanBanner(

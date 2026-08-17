@@ -59,40 +59,107 @@ struct DiskCleanAdvisorOverviewView: View {
     }
 
     private var hero: some View {
-        HStack(alignment: .top, spacing: PluginSettingsTheme.Spacing.rowContentControl) {
-            Image(systemName: "sparkles.rectangle.stack.fill")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 42, height: 42)
-                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+        ZStack(alignment: .bottomTrailing) {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [DiskCleanVisual.heroStart, DiskCleanVisual.heroEnd],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
 
-            VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.rowTitleDescription) {
-                Text(localization.string("advisor.title", defaultValue: "AI 磁盘顾问"))
-                    .font(PluginSettingsTheme.Typography.pageTitle)
-                Text(localization.string(
-                    "advisor.subtitle",
-                    defaultValue: "本机分析 Agent 存储、重复媒体、历史构建和文件活跃度；不会读取或上传对话正文。"
-                ))
-                .font(PluginSettingsTheme.Typography.pageDescription)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Image(systemName: "internaldrive")
+                .font(.system(size: 112, weight: .ultraLight))
+                .foregroundStyle(.white.opacity(0.07))
+                .offset(x: 16, y: 22)
 
-                if model.isScanning {
-                    HStack(spacing: PluginSettingsTheme.Spacing.controlCluster) {
-                        ProgressView().controlSize(.small)
-                        Text(stageText)
-                            .font(PluginSettingsTheme.Typography.rowDescription)
-                            .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "sparkles.rectangle.stack.fill")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 42, height: 42)
+                        .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(localization.string("advisor.title", defaultValue: "AI 磁盘顾问"))
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.white)
+                        Text(localization.string(
+                            "advisor.subtitle",
+                            defaultValue: "只在本机分析 Agent、构建和文件元数据，不读取或上传对话正文。"
+                        ))
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.72))
+                        .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(.top, 4)
+
+                    Spacer(minLength: 12)
+                    heroScanButton
+                }
+
+                HStack(alignment: .bottom, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(localization.string("advisor.hero.agentStorage", defaultValue: "本机 Agent 存储"))
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.68))
+                        Text(model.storageSummary.map { DiskCleanFormat.bytes($0.agentSessionBytes) }
+                            ?? localization.string("advisor.hero.pending", defaultValue: "等待分析"))
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                    }
+
+                    if let summary = model.storageSummary {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(localization.string("advisor.hero.reviewable", defaultValue: "构建与安装包待复核"))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.white.opacity(0.68))
+                            Text(DiskCleanFormat.bytes(summary.historicalBuildBytes + summary.installerArtifactBytes))
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white)
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+
+                    if model.isScanning {
+                        HStack(spacing: 7) {
+                            ProgressView().controlSize(.small).tint(.white)
+                            Text(stageText)
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.76))
+                                .lineLimit(2)
+                        }
+                        .frame(maxWidth: 210, alignment: .trailing)
+                    }
                 }
             }
-
-            Spacer(minLength: PluginSettingsTheme.Spacing.rowContentControl)
-            scanButton
+            .padding(20)
         }
-        .pluginSettingsListRowPadding()
-        .pluginSettingsCardBackground(.standard)
+        .frame(minHeight: 178)
+        .shadow(color: DiskCleanVisual.heroEnd.opacity(0.20), radius: 18, y: 8)
+    }
+
+    private var heroScanButton: some View {
+        Button(action: model.scan) {
+            Label(
+                model.hasResult
+                    ? localization.string("advisor.action.rescan", defaultValue: "重新分析")
+                    : localization.string("advisor.action.scan", defaultValue: "开始分析"),
+                systemImage: "magnifyingglass"
+            )
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(DiskCleanVisual.heroStart)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            .background(.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(model.isScanning)
+        .opacity(model.isScanning ? 0.55 : 1)
     }
 
     private var scanButton: some View {
@@ -129,7 +196,7 @@ struct DiskCleanAdvisorOverviewView: View {
 
     private func metricGrid(_ summary: StorageOptimizationSummary) -> some View {
         LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4),
+            columns: [GridItem(.adaptive(minimum: 132, maximum: 220), spacing: 10)],
             spacing: 10
         ) {
             advisorMetric(
@@ -186,11 +253,14 @@ struct DiskCleanAdvisorOverviewView: View {
         value: String,
         detail: String
     ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Label(title, systemImage: icon)
-                .font(PluginSettingsTheme.Typography.statusBadge)
-                .foregroundStyle(tint)
-                .lineLimit(1)
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                DiskCleanIconBadge(symbolName: icon, tint: tint, size: 30)
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             Text(value)
                 .font(.system(size: 20, weight: .bold, design: .rounded))
                 .lineLimit(1)
@@ -200,14 +270,15 @@ struct DiskCleanAdvisorOverviewView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
         }
-        .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
-        .padding(PluginSettingsTheme.Spacing.cardContent)
-        .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxWidth: .infinity, minHeight: 102, alignment: .topLeading)
+        .padding(14)
+        .diskCleanSurface(.elevated)
     }
 
     @ViewBuilder
     private func agentBreakdown(_ summary: StorageOptimizationSummary) -> some View {
         if !summary.agentBreakdown.isEmpty {
+            let largest = max(summary.agentBreakdown.map(\.sessionBytes).max() ?? 1, 1)
             VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.sectionHeaderContent) {
                 DiskCleanSectionHeader(
                     title: localization.string("advisor.agents.title", defaultValue: "Agent 存储明细"),
@@ -215,25 +286,46 @@ struct DiskCleanAdvisorOverviewView: View {
                 )
                 VStack(spacing: 0) {
                     ForEach(Array(summary.agentBreakdown.prefix(12)), id: \.agentName) { agent in
-                        HStack(spacing: PluginSettingsTheme.Spacing.rowContentControl) {
-                            Circle().fill(Color.blue).frame(width: 7, height: 7)
-                            Text(agent.agentName)
-                                .font(PluginSettingsTheme.Typography.rowTitle)
-                            Spacer()
-                            Text(DiskCleanFormat.bytes(agent.sessionBytes))
-                                .font(PluginSettingsTheme.Typography.monospacedValue)
-                            if agent.duplicateMediaBytes > 0 {
-                                Text(localization.format(
-                                    "advisor.agents.duplicate",
-                                    defaultValue: "重复 %@",
-                                    DiskCleanFormat.bytes(agent.duplicateMediaBytes)
-                                ))
-                                .font(PluginSettingsTheme.Typography.statusBadge)
-                                .foregroundStyle(.purple)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(Color.purple.opacity(0.1), in: Capsule())
+                        VStack(alignment: .leading, spacing: 7) {
+                            HStack(spacing: 8) {
+                                Text(agent.agentName)
+                                    .font(PluginSettingsTheme.Typography.rowTitle)
+                                Spacer()
+                                if agent.duplicateMediaBytes > 0 {
+                                    Text(localization.format(
+                                        "advisor.agents.duplicate",
+                                        defaultValue: "重复 %@",
+                                        DiskCleanFormat.bytes(agent.duplicateMediaBytes)
+                                    ))
+                                    .font(PluginSettingsTheme.Typography.statusBadge)
+                                    .foregroundStyle(.purple)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 3)
+                                    .background(Color.purple.opacity(0.1), in: Capsule())
+                                }
+                                Text(DiskCleanFormat.bytes(agent.sessionBytes))
+                                    .font(PluginSettingsTheme.Typography.monospacedValue)
                             }
+
+                            GeometryReader { proxy in
+                                Capsule()
+                                    .fill(Color.primary.opacity(0.06))
+                                    .overlay(alignment: .leading) {
+                                        LinearGradient(
+                                            colors: [DiskCleanVisual.accentBlue, DiskCleanVisual.accent],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                        .clipShape(Capsule())
+                                        .frame(
+                                            width: max(
+                                                6,
+                                                proxy.size.width * CGFloat(agent.sessionBytes) / CGFloat(largest)
+                                            )
+                                        )
+                                    }
+                            }
+                            .frame(height: 6)
                         }
                         .pluginSettingsListRowPadding()
                         if agent.agentName != summary.agentBreakdown.prefix(12).last?.agentName {
@@ -241,7 +333,7 @@ struct DiskCleanAdvisorOverviewView: View {
                         }
                     }
                 }
-                .pluginSettingsCardBackground(.standard)
+                .diskCleanSurface(.elevated)
             }
         }
     }
@@ -281,7 +373,7 @@ struct DiskCleanAdvisorOverviewView: View {
                 .controlSize(.small)
             }
             .pluginSettingsListRowPadding()
-            .pluginSettingsCardBackground(.standard)
+            .diskCleanSurface(.accented)
 
             HStack(spacing: PluginSettingsTheme.Spacing.controlCluster) {
                 Image(systemName: "bolt.horizontal.circle")
@@ -356,7 +448,7 @@ struct DiskCleanAdvisorOverviewView: View {
                     }
                 }
             }
-            .pluginSettingsCardBackground(.standard)
+            .diskCleanSurface(.elevated)
 
             if visibleFindingLimit < model.storageCleanupItems.count {
                 Button {
@@ -516,9 +608,10 @@ struct DiskCleanFileInventoryView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: PluginSettingsTheme.Spacing.rowContentControl) {
+            DiskCleanIconBadge(symbolName: "doc.text.magnifyingglass", size: 42)
             VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.rowTitleDescription) {
                 Text(localization.string("inventory.title", defaultValue: "文件分析"))
-                    .font(PluginSettingsTheme.Typography.pageTitle)
+                    .font(.title3.weight(.semibold))
                 Text(localization.string(
                     "inventory.subtitle",
                     defaultValue: "只读取文件元数据，按格式、大小、最后打开/访问/修改时间分类；选中后仍需单独安全检查。"
@@ -558,21 +651,26 @@ struct DiskCleanFileInventoryView: View {
             .controlSize(.small)
             .disabled(model.isScanning)
         }
+        .padding(18)
+        .diskCleanSurface(.accented)
     }
 
     private func inventoryMetrics(_ summary: DiskFileInventorySummary) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 10) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 132, maximum: 220), spacing: 10)], spacing: 10) {
             inventoryMetric(
+                icon: "doc.on.doc",
                 title: localization.string("inventory.metric.files", defaultValue: "可分析文件"),
                 value: "\(summary.eligibleFileCount)",
                 detail: DiskCleanFormat.bytes(summary.eligibleBytes)
             )
             inventoryMetric(
+                icon: "list.bullet.rectangle",
                 title: localization.string("inventory.metric.rows", defaultValue: "已保留明细"),
                 value: "\(summary.returnedFileCount)",
                 detail: DiskCleanFormat.bytes(summary.returnedBytes)
             )
             inventoryMetric(
+                icon: "bolt.horizontal.circle",
                 title: localization.string("inventory.metric.cache", defaultValue: "缓存命中"),
                 value: "\(summary.cacheHitCount)",
                 detail: localization.format(
@@ -582,6 +680,7 @@ struct DiskCleanFileInventoryView: View {
                 )
             )
             inventoryMetric(
+                icon: "timer",
                 title: localization.string("inventory.metric.duration", defaultValue: "扫描耗时"),
                 value: String(format: "%.1fs", summary.scanDuration),
                 detail: summary.wasTruncated
@@ -591,11 +690,16 @@ struct DiskCleanFileInventoryView: View {
         }
     }
 
-    private func inventoryMetric(title: String, value: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(PluginSettingsTheme.Typography.statusBadge)
-                .foregroundStyle(.secondary)
+    private func inventoryMetric(icon: String, title: String, value: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
+                Image(systemName: icon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(DiskCleanVisual.accent)
+                Text(title)
+                    .font(PluginSettingsTheme.Typography.statusBadge)
+                    .foregroundStyle(.secondary)
+            }
             Text(value)
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .lineLimit(1)
@@ -604,9 +708,9 @@ struct DiskCleanFileInventoryView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-        .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
-        .padding(PluginSettingsTheme.Spacing.cardContent)
-        .pluginSettingsCardBackground(.standard)
+        .frame(maxWidth: .infinity, minHeight: 76, alignment: .topLeading)
+        .padding(14)
+        .diskCleanSurface(.elevated)
     }
 
     /// Bounded category space map based on the same aggregate counters as the inventory cards.
@@ -680,9 +784,7 @@ struct DiskCleanFileInventoryView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .pluginSettingsCardBackground(
-                        category == item.category.rawValue ? .recessed : .standard
-                    )
+                    .diskCleanSurface(category == item.category.rawValue ? .accented : .elevated)
                 }
             }
         }
@@ -694,78 +796,124 @@ struct DiskCleanFileInventoryView: View {
                 title: localization.string("inventory.filters.title", defaultValue: "筛选与选择"),
                 symbolName: "line.3.horizontal.decrease.circle"
             )
-            HStack(spacing: PluginSettingsTheme.Spacing.controlCluster) {
-                TextField(
-                    localization.string("inventory.search", defaultValue: "搜索名称、格式或路径"),
-                    text: $searchText
-                )
-                .textFieldStyle(.roundedBorder)
-                .frame(minWidth: 180, maxWidth: 320)
-
-                Picker("", selection: $category) {
-                    Text(localization.string("inventory.category.all", defaultValue: "全部格式")).tag("all")
-                    ForEach(DiskFileCategory.allCases, id: \.rawValue) { value in
-                        Text(categoryTitle(value)).tag(value.rawValue)
+            VStack(alignment: .leading, spacing: 10) {
+                filterControls
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: PluginSettingsTheme.Spacing.controlCluster) {
+                        filterSelectionSummary
+                        Spacer(minLength: 8)
+                        selectionActions
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        filterSelectionSummary
+                        selectionActions
                     }
                 }
-                .labelsHidden()
-                .frame(width: 130)
-
-                Picker("", selection: $age) {
-                    Text(localization.string("inventory.age.all", defaultValue: "全部时间")).tag("all")
-                    Text(localization.string("inventory.age.7", defaultValue: "7 天未使用")).tag("days7")
-                    Text(localization.string("inventory.age.30", defaultValue: "30 天未使用")).tag("days30")
-                    Text(localization.string("inventory.age.90", defaultValue: "90 天未使用")).tag("days90")
-                    Text(localization.string("inventory.age.unknown", defaultValue: "时间未知")).tag("unknown")
-                }
-                .labelsHidden()
-                .frame(width: 130)
-
-                Picker("", selection: $sort) {
-                    Text(localization.string("inventory.sort.size", defaultValue: "按大小")).tag("size")
-                    Text(localization.string("inventory.sort.activity", defaultValue: "按闲置时间")).tag("activity")
-                    Text(localization.string("inventory.sort.name", defaultValue: "按名称")).tag("name")
-                }
-                .labelsHidden()
-                .frame(width: 110)
-
-                Spacer(minLength: 0)
-
-                Button {
-                    let paths = visibleFiles.prefix(DiskCleanUserFileExpansion.maximumSelectionCount).map(\.path)
-                    selectedPaths = Set(paths)
-                } label: {
-                    Text(localization.string("inventory.action.selectVisible", defaultValue: "选择当前结果"))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(visibleFiles.isEmpty)
-
-                Button {
-                    selectedPaths.removeAll()
-                } label: {
-                    Text(localization.string("inventory.action.clear", defaultValue: "清空"))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(selectedPaths.isEmpty)
-
-                Button(action: prepareCleanup) {
-                    Label(
-                        localization.format(
-                            "inventory.action.prepare",
-                            defaultValue: "安全检查 %d 项",
-                            selectedPaths.count
-                        ),
-                        systemImage: "shield.checkered"
-                    )
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .disabled(selectedPaths.isEmpty || cleanupController.snapshot.isBusy)
             }
             .pluginSettingsListRowPadding(interactive: true)
-            .pluginSettingsCardBackground(.standard)
+            .diskCleanSurface(.elevated)
+        }
+    }
+
+    private var filterSelectionSummary: some View {
+        Text(localization.format(
+            "inventory.filters.summary",
+            defaultValue: "当前 %d 项 · 已选 %d 项 / %@",
+            filteredFiles.count,
+            selectedPaths.count,
+            DiskCleanFormat.bytes(selectedBytes)
+        ))
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+
+    private var filterControls: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: PluginSettingsTheme.Spacing.controlCluster) {
+                searchField
+                filterPickers
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                searchField
+                filterPickers
+            }
+        }
+    }
+
+    private var searchField: some View {
+        TextField(
+            localization.string("inventory.search", defaultValue: "搜索名称、格式或路径"),
+            text: $searchText
+        )
+        .textFieldStyle(.roundedBorder)
+        .frame(minWidth: 160, maxWidth: .infinity)
+    }
+
+    private var filterPickers: some View {
+        HStack(spacing: PluginSettingsTheme.Spacing.controlCluster) {
+            Picker("", selection: $category) {
+                Text(localization.string("inventory.category.all", defaultValue: "全部格式")).tag("all")
+                ForEach(DiskFileCategory.allCases, id: \.rawValue) { value in
+                    Text(categoryTitle(value)).tag(value.rawValue)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 112)
+
+            Picker("", selection: $age) {
+                Text(localization.string("inventory.age.all", defaultValue: "全部时间")).tag("all")
+                Text(localization.string("inventory.age.7", defaultValue: "7 天未使用")).tag("days7")
+                Text(localization.string("inventory.age.30", defaultValue: "30 天未使用")).tag("days30")
+                Text(localization.string("inventory.age.90", defaultValue: "90 天未使用")).tag("days90")
+                Text(localization.string("inventory.age.unknown", defaultValue: "时间未知")).tag("unknown")
+            }
+            .labelsHidden()
+            .frame(width: 118)
+
+            Picker("", selection: $sort) {
+                Text(localization.string("inventory.sort.size", defaultValue: "按大小")).tag("size")
+                Text(localization.string("inventory.sort.activity", defaultValue: "按闲置时间")).tag("activity")
+                Text(localization.string("inventory.sort.name", defaultValue: "按名称")).tag("name")
+            }
+            .labelsHidden()
+            .frame(width: 104)
+        }
+    }
+
+    private var selectionActions: some View {
+        HStack(spacing: PluginSettingsTheme.Spacing.controlCluster) {
+            Button {
+                let paths = visibleFiles.prefix(DiskCleanUserFileExpansion.maximumSelectionCount).map(\.path)
+                selectedPaths = Set(paths)
+            } label: {
+                Text(localization.string("inventory.action.selectVisible", defaultValue: "选择当前结果"))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(visibleFiles.isEmpty)
+
+            Button {
+                selectedPaths.removeAll()
+            } label: {
+                Text(localization.string("inventory.action.clear", defaultValue: "清空"))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(selectedPaths.isEmpty)
+
+            Button(action: prepareCleanup) {
+                Label(
+                    localization.format(
+                        "inventory.action.prepare",
+                        defaultValue: "安全检查 %d 项",
+                        selectedPaths.count
+                    ),
+                    systemImage: "shield.checkered"
+                )
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(selectedPaths.isEmpty || cleanupController.snapshot.isBusy)
         }
     }
 
@@ -805,7 +953,7 @@ struct DiskCleanFileInventoryView: View {
                         }
                     }
                 }
-                .pluginSettingsCardBackground(.standard)
+                .diskCleanSurface(.elevated)
 
                 if visibleLimit < filteredFiles.count {
                     Button {
