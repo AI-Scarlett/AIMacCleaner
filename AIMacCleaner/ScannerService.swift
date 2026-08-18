@@ -2893,12 +2893,19 @@ class ScannerService: ObservableObject {
 
         operationMonitor.curationMessage = localizer?.callingAIAnalysis ?? "Calling AI for analysis..."
 
-        let recentSnaps = snapshots.filter { snap in
-            if let first = events.first?.timestamp, let last = events.last?.timestamp {
-                let range = first.timeIntervalSince1970 ... last.timeIntervalSince1970 + 60
-                return range.contains(snap.timestamp.timeIntervalSince1970)
+        // Operation records are stored newest-first, and imports may re-sort them.
+        // Building `first...last + 60` therefore traps whenever the first event is
+        // more than a minute newer than the last one. Compare against explicit
+        // chronological bounds instead of constructing a checked ClosedRange.
+        let recentSnaps: [ProcessSnapshot]
+        if let earliestEvent = events.map(\.timestamp).min(),
+           let latestEvent = events.map(\.timestamp).max() {
+            let snapshotCutoff = latestEvent.addingTimeInterval(60)
+            recentSnaps = snapshots.filter { snapshot in
+                snapshot.timestamp >= earliestEvent && snapshot.timestamp <= snapshotCutoff
             }
-            return false
+        } else {
+            recentSnaps = []
         }
 
         let selfDirs = operationMonitor.agentSelfDirs

@@ -96,7 +96,9 @@ class OperationMonitor: ObservableObject {
     private(set) var agentSelfDirs: Set<String> = []
     private var selfDirDiscoveryTime: Date = .distantPast
     @Published var processSnapshots: [ProcessSnapshot] = []
-    private var lastCurationRecordIndex: Int = 0
+    // Records are kept newest-first and may be re-sorted or trimmed at any time,
+    // so an array index is not a stable incremental-curation cursor.
+    private var lastCurationRecordFingerprints: Set<String> = []
     private var observedCommandPids: Set<pid_t> = []
 
     let agentKeywords: [(String, [String])] = [
@@ -397,10 +399,18 @@ class OperationMonitor: ObservableObject {
         print("[AIMacCleaner] AI learned new agent: \(displayName) keywords: \(keywords) dirs: \(dirs)")
     }
 
+    @MainActor
     func getRawDataForCuration() -> (events: [OperationRecord], snapshots: [ProcessSnapshot]) {
-        let startIndex = lastCurationRecordIndex
-        lastCurationRecordIndex = records.count
-        return (Array(records[startIndex..<records.count]), processSnapshots)
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        let currentRecords = records
+        let currentFingerprints = currentRecords.map(recordFingerprint)
+        let newRecords = zip(currentRecords, currentFingerprints).compactMap { record, fingerprint in
+            lastCurationRecordFingerprints.contains(fingerprint) ? nil : record
+        }
+        lastCurationRecordFingerprints = Set(currentFingerprints)
+        return (newRecords, processSnapshots)
     }
 
     func saveCuratedRecords(_ newRecords: [CuratedRecord]) {
@@ -1740,17 +1750,21 @@ class OperationMonitor: ObservableObject {
         return Array(retained.prefix(maxStoredRecords))
     }
 
-    private func rebuildRecordFingerprints() {
-        stateLock.lock()
-        defer { stateLock.unlock() }
+    /// The caller must hold `stateLock`.
+    private func rebuildRecordFingerprintsLocked() {
         recordFingerprints = Set(records.map { recordFingerprint($0) })
+    }
+
+    /// The caller must hold `stateLock`.
+    private func pruneRecordsToRetentionLocked() {
+        records = recordsWithinRetention(records)
+        rebuildRecordFingerprintsLocked()
     }
 
     private func pruneRecordsToRetention() {
         stateLock.lock()
         defer { stateLock.unlock() }
-        records = recordsWithinRetention(records)
-        rebuildRecordFingerprints()
+        pruneRecordsToRetentionLocked()
     }
 
     func addRecord(_ record: OperationRecord) {
@@ -1804,7 +1818,7 @@ class OperationMonitor: ObservableObject {
             return
         }
         records.insert(contentsOf: batch.reversed(), at: 0)
-        pruneRecordsToRetention()
+        pruneRecordsToRetentionLocked()
         stateLock.unlock()
         scheduleRecordsSave()
     }
@@ -1817,8 +1831,9 @@ class OperationMonitor: ObservableObject {
         stateLock.lock()
         pendingRecords.removeAll()
         recordFingerprints.removeAll()
-        stateLock.unlock()
+        lastCurationRecordFingerprints.removeAll()
         records.removeAll()
+        stateLock.unlock()
         saveRecords()
     }
 
@@ -1837,7 +1852,7 @@ class OperationMonitor: ObservableObject {
             return
         }
         records = recordsWithinRetention(normalized)
-        rebuildRecordFingerprints()
+        rebuildRecordFingerprintsLocked()
         stateLock.unlock()
         saveRecords()
     }
@@ -1849,7 +1864,7 @@ class OperationMonitor: ObservableObject {
         records.removeAll(where: shouldRemove)
         let removedCount = previousCount - records.count
         if removedCount > 0 {
-            rebuildRecordFingerprints()
+            rebuildRecordFingerprintsLocked()
         }
         stateLock.unlock()
         if removedCount > 0 {
@@ -1862,7 +1877,7 @@ class OperationMonitor: ObservableObject {
         guard !historicalRecords.isEmpty else { return }
         stateLock.lock()
         if recordFingerprints.isEmpty, !records.isEmpty {
-            rebuildRecordFingerprints()
+            rebuildRecordFingerprintsLocked()
         }
         let recordIndexByID = Dictionary(uniqueKeysWithValues: records.enumerated().map { ($0.element.id, $0.offset) })
         var additions: [OperationRecord] = []
@@ -1895,7 +1910,7 @@ class OperationMonitor: ObservableObject {
         }
         records.append(contentsOf: additions)
         records = recordsWithinRetention(records)
-        rebuildRecordFingerprints()
+        rebuildRecordFingerprintsLocked()
         stateLock.unlock()
         scheduleRecordsSave(delay: 1.0)
     }
@@ -1906,7 +1921,7 @@ class OperationMonitor: ObservableObject {
         let cleaned = decoded.filter { !shouldSkipPath($0.targetPath) && !isLowConfidenceFallback($0) }
         stateLock.lock()
         records = recordsWithinRetention(cleaned)
-        rebuildRecordFingerprints()
+        rebuildRecordFingerprintsLocked()
         stateLock.unlock()
         if records.count != decoded.count {
             saveRecords()
