@@ -270,18 +270,19 @@ final class ProviderQuotaService: ObservableObject {
         incoming: [ProviderQuotaSnapshot],
         attemptedAt: Date
     ) -> [ProviderQuotaSnapshot] {
+        let coalescedIncoming = coalescedQuotaSnapshots(incoming)
         let previousCandidates = previous.filter(\.canSeedQuotaContinuity)
         var previousByKey: [ProviderQuotaContinuityKey: ProviderQuotaSnapshot] = [:]
         for snapshot in previousCandidates {
             previousByKey[snapshot.continuityKey] = snapshot
         }
 
-        let engineFailure = incoming.first(where: { $0.isProviderEngineNotice && $0.errorMessage != nil })
+        let engineFailure = coalescedIncoming.first(where: { $0.isProviderEngineNotice && $0.errorMessage != nil })
         var failedProviders: [String: String] = [:]
         var representedKeys = Set<ProviderQuotaContinuityKey>()
         var reconciled: [ProviderQuotaSnapshot] = []
 
-        for snapshot in incoming {
+        for snapshot in coalescedIncoming {
             if snapshot.isSetupNotice || snapshot.isProviderEngineNotice {
                 // Notices remain diagnostics only and never participate in
                 // quota identity matching or last-known-good selection.
@@ -458,6 +459,7 @@ final class ProviderQuotaService: ObservableObject {
             resetCredits: ProviderQuotaResetCredits? = nil,
             error: String? = nil,
             setup: Bool = false,
+            source: String = "auto",
             succeeded: Bool
         ) -> ProviderQuotaSnapshot {
             ProviderQuotaSnapshot(
@@ -469,7 +471,7 @@ final class ProviderQuotaService: ObservableObject {
                 windows: windows,
                 resetCredits: resetCredits,
                 updatedAt: successfulAt,
-                source: setup ? "setup" : "auto",
+                source: setup ? "setup" : source,
                 errorMessage: error,
                 setupHint: nil,
                 isSetupNotice: setup,
@@ -525,6 +527,47 @@ final class ProviderQuotaService: ObservableObject {
                "a successful account refresh should replace stale continuity data")
         expect(recoveredResult[0].lastSuccessfulAt == attemptedAt,
                "fresh recovery should publish the latest successful refresh time")
+
+        let duplicateAccount = snapshot(
+            id: "codex-a-oauth-supplement",
+            account: "A@Example.com",
+            windows: [weekly],
+            resetCredits: resetCredits,
+            source: "oauth",
+            succeeded: true
+        )
+        let duplicateResult = reconcileQuotaSnapshots(
+            previous: [],
+            incoming: [accountA, duplicateAccount],
+            attemptedAt: attemptedAt
+        )
+        expect(duplicateResult.count == 1,
+               "the same Codex account returned by two sources must render as one card")
+
+        let anonymousSuccess = snapshot(
+            id: "codex-anonymous-oauth",
+            account: "oauth",
+            windows: [weekly],
+            source: "oauth",
+            succeeded: true
+        )
+        let namedAndAnonymousResult = reconcileQuotaSnapshots(
+            previous: [],
+            incoming: [anonymousSuccess, accountA],
+            attemptedAt: attemptedAt
+        )
+        expect(namedAndAnonymousResult.count == 1,
+               "an anonymous Codex base read must merge into the sole identified account")
+        expect(namedAndAnonymousResult.first?.accountLabel == "a@example.com",
+               "Codex deduplication must preserve the identified account label")
+
+        let realMultiAccountResult = reconcileQuotaSnapshots(
+            previous: [],
+            incoming: [accountA, accountB, anonymousSuccess],
+            attemptedAt: attemptedAt
+        )
+        expect(realMultiAccountResult.count == 2,
+               "Codex deduplication must preserve distinct identified accounts")
 
         let setupNotice = snapshot(
             id: "provider-setup-notice",
@@ -809,6 +852,60 @@ private struct ProviderQuotaContinuityKey: Hashable {
     let account: String?
 }
 
+/// Collapses duplicate Codex presentation records without collapsing distinct
+/// identified accounts. CodexBar can return the active account once through
+/// its ordinary OAuth read and again through the all-accounts supplement; the
+/// ordinary record is sometimes anonymous even though both payloads describe
+/// the same account.
+private func coalescedQuotaSnapshots(
+    _ snapshots: [ProviderQuotaSnapshot]
+) -> [ProviderQuotaSnapshot] {
+    var result: [ProviderQuotaSnapshot] = []
+    var namedCodexIndexes: [String: Int] = [:]
+    var anonymousCodexIndex: Int?
+
+    for snapshot in snapshots {
+        guard snapshot.continuityKey.provider == "codex",
+              !snapshot.isSetupNotice,
+              !snapshot.isProviderEngineNotice else {
+            result.append(snapshot)
+            continue
+        }
+
+        if let account = snapshot.continuityKey.account {
+            if let existingIndex = namedCodexIndexes[account] {
+                result[existingIndex] = result[existingIndex].mergingDuplicateQuota(snapshot)
+            } else {
+                namedCodexIndexes[account] = result.count
+                result.append(snapshot)
+            }
+        } else if let existingIndex = anonymousCodexIndex {
+            result[existingIndex] = result[existingIndex].mergingDuplicateQuota(snapshot)
+        } else {
+            anonymousCodexIndex = result.count
+            result.append(snapshot)
+        }
+    }
+
+    guard let anonymousCodexIndex else { return result }
+    let namedIndexes = Array(namedCodexIndexes.values)
+    if namedIndexes.count == 1, let namedIndex = namedIndexes.first {
+        result[namedIndex] = result[namedIndex]
+            .mergingDuplicateQuota(result[anonymousCodexIndex])
+    }
+
+    // Once the all-accounts read returned at least one identified account, the
+    // anonymous base record is not a separately actionable account. With one
+    // identified account its data was merged above; with several accounts its
+    // ownership is ambiguous, so retaining it would create a false extra card.
+    if !namedIndexes.isEmpty {
+        return result.enumerated().compactMap { index, snapshot in
+            index == anonymousCodexIndex ? nil : snapshot
+        }
+    }
+    return result
+}
+
 private extension ProviderQuotaSnapshot {
     var quotaReadinessRank: Int {
         if hasReadableQuotaData { return 0 }
@@ -843,6 +940,51 @@ private extension ProviderQuotaSnapshot {
         refreshErrorMessage
             ?? errorMessage
             ?? "The latest quota refresh did not return a trustworthy snapshot."
+    }
+
+    func mergingDuplicateQuota(_ candidate: ProviderQuotaSnapshot) -> ProviderQuotaSnapshot {
+        let identity = continuityKey.account != nil ? self : candidate
+        let newer = candidate.updatedAt >= updatedAt ? candidate : self
+        let older = candidate.updatedAt >= updatedAt ? self : candidate
+        var mergedWindows = newer.windows
+        for window in older.windows where !mergedWindows.contains(where: { $0.id == window.id }) {
+            mergedWindows.append(window)
+        }
+
+        let mergedResetCredits: ProviderQuotaResetCredits?
+        switch (resetCredits, candidate.resetCredits) {
+        case let (lhs?, rhs?):
+            mergedResetCredits = rhs.updatedAt >= lhs.updatedAt ? rhs : lhs
+        case let (lhs?, nil):
+            mergedResetCredits = lhs
+        case let (nil, rhs?):
+            mergedResetCredits = rhs
+        case (nil, nil):
+            mergedResetCredits = nil
+        }
+
+        let succeeded = quotaReadSucceeded || candidate.quotaReadSucceeded
+        let mergedLastSuccessfulAt = [lastSuccessfulAt, candidate.lastSuccessfulAt]
+            .compactMap { $0 }
+            .max()
+        return ProviderQuotaSnapshot(
+            id: identity.id,
+            providerName: identity.providerName,
+            planName: newer.planName ?? older.planName,
+            accountLabel: identity.accountLabel,
+            credits: newer.credits ?? older.credits,
+            windows: mergedWindows,
+            resetCredits: mergedResetCredits,
+            updatedAt: max(updatedAt, candidate.updatedAt),
+            source: identity.source,
+            errorMessage: succeeded ? nil : newer.errorMessage ?? older.errorMessage,
+            setupHint: newer.setupHint ?? older.setupHint,
+            isSetupNotice: false,
+            isStale: isStale && candidate.isStale,
+            lastSuccessfulAt: mergedLastSuccessfulAt,
+            refreshErrorMessage: succeeded ? nil : newer.refreshErrorMessage ?? older.refreshErrorMessage,
+            quotaReadSucceeded: succeeded
+        )
     }
 
     func markedFresh(at date: Date) -> ProviderQuotaSnapshot {
@@ -1144,6 +1286,7 @@ private struct CodexBarQuotaProvider {
                 logger.info("Claude Desktop quota fallback unavailable: \(reason, privacy: .public)")
             }
         }
+        snapshots = coalescedQuotaSnapshots(snapshots)
         let codexSnapshots = snapshots.filter { $0.providerName.caseInsensitiveCompare("Codex") == .orderedSame }
         let sparkWindowCount = codexSnapshots.reduce(into: 0) { count, snapshot in
             count += snapshot.windows.filter(isCodexSparkWindow).count
