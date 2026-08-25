@@ -48,7 +48,7 @@
       "summary": "在 TraceFence 固定選單列介面中讀取 Codex、Claude、Grok 等 Provider 的額度與重設時間"
     }
   },
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minHostVersion": "1.2.12",
   "pluginKitVersion": 4,
   "bundleRelativePath": "QuotaMonitor.bundle",

@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-08-17T09:54:34Z",
+  "expiresAt": "2027-08-25T12:03:22Z",
   "offers": [
     {
       "active": true,
@@ -1178,10 +1178,10 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.quota-monitor",
         "entryPoint": "QuotaMonitor.bundle",
-        "sha256": "fab560b9716f6c8b5d60eb7cd3ef7facf53ede2c4f0a970fce456ab499090caf",
-        "sizeBytes": 15404274,
+        "sha256": "e6729ba94be54c244a9795200a28bb288af49df8bfe21271f1581811fad82d2a",
+        "sizeBytes": 15435746,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-quota-monitor-v1.0.0/quota-monitor-1.0.0.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-quota-monitor-v1.0.1/quota-monitor-1.0.1.mactoolsplugin.zip"
       },
       "permissions": [],
       "placements": {
@@ -1198,7 +1198,7 @@
       "summary": "Read quota windows and reset times for Codex, Claude, Grok, and other providers in TraceFence's fixed menu-bar interface.",
       "systemImage": "waveform.path.ecg.rectangle",
       "trialHours": null,
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "capabilities": [
@@ -4164,7 +4164,7 @@
       "version": "1.0.9"
     }
   ],
-  "publishedAt": "2026-08-17T09:54:34Z",
-  "revision": 14,
+  "publishedAt": "2026-08-25T12:03:22Z",
+  "revision": 15,
   "schemaVersion": 1
 }
