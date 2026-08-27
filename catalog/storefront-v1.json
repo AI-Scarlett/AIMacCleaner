@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-08-27T08:30:40Z",
+  "expiresAt": "2027-08-27T14:19:35Z",
   "offers": [
     {
       "active": true,
@@ -1360,7 +1360,7 @@
         },
         "en": {
           "displayName": "Disk Cleanup",
-          "summary": "Local disk analysis and safe cleanup with instant result restore and recovery-aware classification for caches, dependencies, builds, Agent storage, and user files"
+          "summary": "Local disk analysis and safe cleanup with System Data breakdown and recovery-aware classification for caches, dependencies, builds, Agent storage, and user files"
         },
         "es": {
           "displayName": "Limpieza de disco",
@@ -1388,11 +1388,11 @@
         },
         "zh-Hans": {
           "displayName": "磁盘清理",
-          "summary": "本地磁盘分析与安全清理：恢复上次结果，按恢复成本分级缓存、依赖、构建产物、Agent 存储和用户文件"
+          "summary": "本地磁盘分析与安全清理：拆分系统数据来源，按恢复成本分级缓存、依赖、构建产物、Agent 存储和用户文件"
         },
         "zh-Hant": {
           "displayName": "磁碟清理",
-          "summary": "本機磁碟分析與安全清理：還原上次結果，並依復原成本分類快取、依賴、建置產物、Agent 儲存與使用者檔案"
+          "summary": "本機磁碟分析與安全清理：拆分系統資料來源，並依復原成本分類快取、依賴、建置產物、Agent 儲存與使用者檔案"
         }
       },
       "minimumHostVersion": "1.2.1",
@@ -1401,10 +1401,10 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.disk-clean",
         "entryPoint": "DiskClean.bundle",
-        "sha256": "ae28a3097d8801adb094dc176cabf73b3aee46be4fef5fbb5668d9d2319e5fca",
-        "sizeBytes": 2508960,
+        "sha256": "2e5a736755397bd07e5a4e0695d677da4486b238127825f0e17a40bd9e8dcbb9",
+        "sizeBytes": 2569067,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-disk-clean-v3.2.0/disk-clean-3.2.0.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-disk-clean-v3.3.0/disk-clean-3.3.0.mactoolsplugin.zip"
       },
       "permissions": [],
       "placements": {
@@ -1418,10 +1418,10 @@
         "workspaceDefault": "workspace"
       },
       "standaloneOfferID": null,
-      "summary": "Local disk analysis and safe cleanup with instant result restore and recovery-aware classification for caches, dependencies, builds, Agent storage, and user files",
+      "summary": "Local disk analysis and safe cleanup with System Data breakdown and recovery-aware classification for caches, dependencies, builds, Agent storage, and user files",
       "systemImage": "internaldrive.fill",
       "trialHours": null,
-      "version": "3.2.0"
+      "version": "3.3.0"
     },
     {
       "capabilities": [
@@ -4217,7 +4217,7 @@
       "version": "1.0.9"
     }
   ],
-  "publishedAt": "2026-08-27T08:30:40Z",
-  "revision": 17,
+  "publishedAt": "2026-08-27T14:19:35Z",
+  "revision": 18,
   "schemaVersion": 1
 }
