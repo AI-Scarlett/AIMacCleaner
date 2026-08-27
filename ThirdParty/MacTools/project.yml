@@ -157,6 +157,25 @@ targets:
         MACOSX_DEPLOYMENT_TARGET: '14.0'
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: "$(DEVELOPMENT_TEAM)"
+  # Network traffic uses libpcap and must remain testable without linking every optional
+  # plugin/private framework in the legacy aggregate MacToolsTests target.
+  NetworkTrafficPluginTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: '14.0'
+    sources:
+    - path: Plugins/NetworkTraffic/Tests
+    dependencies:
+    - target: MacToolsPluginKit
+    - target: NetworkTrafficPluginCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tracefence.mactools.plugins.network-traffic.tests
+        GENERATE_INFOPLIST_FILE: true
+        SWIFT_VERSION: 6.0
+        DEVELOPMENT_LANGUAGE: zh-Hans
+        MACOSX_DEPLOYMENT_TARGET: '14.0'
+        OTHER_LDFLAGS: "$(inherited) -lpcap"
 
 schemes:
   DiskCleanPluginTests:
@@ -167,3 +186,11 @@ schemes:
       config: Debug
       targets:
       - DiskCleanPluginTests
+  NetworkTrafficPluginTests:
+    build:
+      targets:
+        NetworkTrafficPluginTests: test
+    test:
+      config: Debug
+      targets:
+      - NetworkTrafficPluginTests

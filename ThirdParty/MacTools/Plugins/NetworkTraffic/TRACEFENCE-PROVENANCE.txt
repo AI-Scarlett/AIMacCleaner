@@ -1,0 +1,9 @@
+TraceFence plugin: network-traffic 0.1.0
+Implementation: independent Swift + macOS libpcap bridge
+Capability reference: https://github.com/GyulyVGC/sniffnet
+Reference commit: c8c68b503eda5e919e1f715cf7048c0cd2eabddf
+Copied upstream code/assets/binaries: none
+External commands: /usr/bin/nettop with a fixed argv array
+External network services: none
+Privilege changes: none
+Raw capture: explicit, system BPF permission required, fail-closed

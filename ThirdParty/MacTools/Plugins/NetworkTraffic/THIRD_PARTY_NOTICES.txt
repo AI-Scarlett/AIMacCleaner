@@ -1,0 +1,14 @@
+Network Traffic 0.1.0
+
+Product inspiration and capability reference:
+  Sniffnet by Giuliano Bellini and contributors
+  https://github.com/GyulyVGC/sniffnet
+  Source identity reviewed: c8c68b503eda5e919e1f715cf7048c0cd2eabddf
+  Upstream licenses: Apache-2.0 OR MIT
+
+This plugin is an independent Swift/libpcap implementation for the TraceFence
+MacToolsPluginKit host. It does not contain or bundle Sniffnet source code,
+assets, binaries, MaxMind databases, or the iced user interface.
+
+System dependency:
+  libpcap, provided by macOS.

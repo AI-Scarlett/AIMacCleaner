@@ -1,0 +1,41 @@
+{
+  "sourceLanguage": "zh-Hans",
+  "strings": {
+    "metadata.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Network Traffic" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "网络流量监控" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "網路流量監控" } }
+      }
+    },
+    "metadata.description": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Monitor live traffic by interface, process, connection, and protocol." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "按网卡、进程、连接和协议查看实时网络流量" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "按網卡、程序、連線和協定查看即時網路流量" } }
+      }
+    },
+    "panel.open": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "打开" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "開啟" } }
+      }
+    },
+    "panel.ready": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Safe socket monitoring and PCAP analysis" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "安全连接监控与 PCAP 分析" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "安全連線監控與 PCAP 分析" } }
+      }
+    },
+    "panel.importing": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Analyzing PCAP…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在分析 PCAP…" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "正在分析 PCAP…" } }
+      }
+    }
+  },
+  "version": "1.0"
+}

@@ -1,0 +1,35 @@
+{
+  "id": "network-traffic",
+  "displayName": "网络流量监控",
+  "summary": "按网卡、进程、连接和协议实时查看网络流量，并分析或导出 PCAP",
+  "localizedMetadata": {
+    "en": {
+      "displayName": "Network Traffic",
+      "summary": "Monitor traffic by interface, process, connection, and protocol, with PCAP analysis and export."
+    },
+    "zh-Hans": {
+      "displayName": "网络流量监控",
+      "summary": "按网卡、进程、连接和协议实时查看网络流量，并分析或导出 PCAP"
+    },
+    "zh-Hant": {
+      "displayName": "網路流量監控",
+      "summary": "按網卡、程序、連線和協定即時查看網路流量，並分析或匯出 PCAP"
+    }
+  },
+  "version": "0.1.0",
+  "minHostVersion": "1.2.6",
+  "pluginKitVersion": 4,
+  "bundleRelativePath": "NetworkTraffic.bundle",
+  "factoryClass": "NetworkTrafficPlugin.NetworkTrafficPluginFactory",
+  "build": {
+    "project": "../../MacTools.xcodeproj",
+    "scheme": "NetworkTrafficPlugin"
+  },
+  "capabilities": {
+    "primaryPanel": true,
+    "componentPanel": false,
+    "settings": "workspace"
+  },
+  "permissions": [],
+  "category": "monitoring"
+}
