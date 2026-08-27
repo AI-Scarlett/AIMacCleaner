@@ -1,6 +1,7 @@
 import XCTest
 @testable import MacTools
 @testable import DiskCleanPlugin
+import MacToolsPluginKit
 
 final class DiskCleanModelsTests: XCTestCase {
     func testExternalTargetsHaveNoPanelChoice() {
@@ -66,6 +67,63 @@ final class DiskCleanModelsTests: XCTestCase {
         )
 
         XCTAssertTrue(groups.isEmpty)
+    }
+
+    func testCategoryGroupKeepsCleanableTotalWhenNothingIsSelected() throws {
+        let candidate = makeCandidate(sizeResult: .testComplete(bytes: 168_200_000))
+        let selection = DiskCleanSelectionProjection(
+            selectedIDs: [],
+            selectableIDs: [candidate.id],
+            selectedEstimatedBytes: 0,
+            categoryStates: [.appCaches: .noneSelected]
+        )
+
+        let group = try XCTUnwrap(DiskCleanCategoryGroup.groups(
+            candidates: [candidate],
+            selection: selection
+        ).first)
+
+        XCTAssertEqual(group.selectableCount, 1)
+        XCTAssertEqual(group.selectedCount, 0)
+        XCTAssertEqual(group.cleanableEstimatedBytes, 168_200_000)
+        XCTAssertEqual(group.selectedEstimatedBytes, 0)
+    }
+
+    func testSelectionSummarySeparatesCleanableAndSelectedBytes() {
+        let candidate = makeCandidate(sizeResult: .testComplete(bytes: 168_200_000))
+        let result = DiskCleanScanResult(
+            scope: .installers,
+            candidates: [candidate],
+            scannedAt: Date(timeIntervalSince1970: 0)
+        )
+        let selection = DiskCleanSelectionProjection(
+            selectedIDs: [],
+            selectableIDs: [candidate.id],
+            selectedEstimatedBytes: 0,
+            categoryStates: [.appCaches: .noneSelected]
+        )
+        let snapshot = DiskCleanControllerSnapshot(
+            phase: .scanned,
+            scope: .installers,
+            scanResult: result,
+            executionResult: nil,
+            isResultStale: false,
+            errorMessage: nil,
+            selection: selection
+        )
+
+        let summary = DiskCleanFormat.selectionSummary(
+            snapshot,
+            localization: PluginLocalization(bundle: .main)
+        )
+
+        XCTAssertTrue(summary.contains(DiskCleanFormat.bytes(168_200_000)))
+        XCTAssertTrue(summary.contains("0 B"))
+        XCTAssertFalse(summary.contains("Zero KB"))
+    }
+
+    func testZeroBytesUsesStableNumericLabel() {
+        XCTAssertEqual(DiskCleanFormat.bytes(0), "0 B")
     }
 
     // MARK: - Scan result projection

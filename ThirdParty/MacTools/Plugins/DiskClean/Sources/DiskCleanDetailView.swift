@@ -743,6 +743,7 @@ enum DiskCleanFormat {
     static let byteColumnWidth: CGFloat = 92
 
     static func bytes(_ value: Int64) -> String {
+        guard value > 0 else { return "0 B" }
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: value)
@@ -814,8 +815,9 @@ enum DiskCleanFormat {
         }
         return localization.format(
             "detail.selection.summary",
-            defaultValue: "可清理 %d 项 · 已选 %d 项 · 约 %@",
+            defaultValue: "可清理 %d 项 · 约 %@ · 已选 %d 项（%@）",
             result.cleanableCandidates.count,
+            bytes(result.cleanableSizeBytes),
             snapshot.selection.selectedCount,
             bytes(snapshot.selection.selectedEstimatedBytes)
         )

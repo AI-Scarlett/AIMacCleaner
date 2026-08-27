@@ -9250,67 +9250,67 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "可清理 %d 项 · 已选 %d 项 · 约 %@"
+            "value": "可清理 %d 项 · 约 %@ · 已选 %d 项（%@）"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%d cleanable · %d selected · about %@"
+            "value": "%d cleanable · about %@ · %d selected (%@)"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "可清理 %d 項 · 已選 %d 項 · 約 %@"
+            "value": "可清理 %d 項 · 約 %@ · 已選 %d 項（%@）"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "クリーン可 %d · 選択 %d · 約 %@"
+            "value": "クリーン可 %d · 約 %@ · 選択 %d（%@）"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "정리 가능 %d개 · 선택 %d개 · 약 %@"
+            "value": "정리 가능 %d개 · 약 %@ · 선택 %d개 (%@)"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "%d bereinigbar · %d ausgewählt · ca. %@"
+            "value": "%d bereinigbar · ca. %@ · %d ausgewählt (%@)"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "%d limpiables · %d seleccionados · aprox. %@"
+            "value": "%d limpiables · aprox. %@ · %d seleccionados (%@)"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%d nettoyables · %d sélectionnés · env. %@"
+            "value": "%d nettoyables · env. %@ · %d sélectionnés (%@)"
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "%d limpáveis · %d selecionados · cerca de %@"
+            "value": "%d limpáveis · cerca de %@ · %d selecionados (%@)"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Можно очистить %d · выбрано %d · ок. %@"
+            "value": "Можно очистить %d · ок. %@ · выбрано %d (%@)"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "قابل للتنظيف %d · محدد %d · حوالي %@"
+            "value": "قابل للتنظيف %d · حوالي %@ · محدد %d (%@)"
           }
         }
       }

@@ -1,4 +1,4 @@
-Disk Cleanup 3.3.1
+Disk Cleanup 3.3.2
 
 Product inspiration and algorithm reference:
   OpenDisk by 137137137

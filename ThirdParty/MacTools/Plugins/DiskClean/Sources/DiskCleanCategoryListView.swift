@@ -9,6 +9,10 @@ struct DiskCleanCategoryGroup: Identifiable, Equatable, Sendable {
     let candidates: [DiskCleanCandidate]
     let selectableCount: Int
     let selectedCount: Int
+    /// Total reclaimable bytes for every selectable candidate in this category.
+    /// This is deliberately independent of checkbox state: the category header describes
+    /// what the scan found, while `selectedEstimatedBytes` describes the pending action.
+    let cleanableEstimatedBytes: Int64
     let selectedEstimatedBytes: Int64
 
     var id: String { category.rawValue }
@@ -31,12 +35,14 @@ struct DiskCleanCategoryGroup: Identifiable, Equatable, Sendable {
         let candidatesByCategory = Dictionary(grouping: visibleCandidates, by: \.category)
         return DiskCleanCategoryID.displayOrder.compactMap { category in
             guard let items = candidatesByCategory[category], !items.isEmpty else { return nil }
+            let selectable = items.filter { selection.isSelectable($0.id) }
             let selected = items.filter { selection.isSelected($0.id) }
             return DiskCleanCategoryGroup(
                 category: category,
                 candidates: items,
-                selectableCount: items.filter { selection.isSelectable($0.id) }.count,
+                selectableCount: selectable.count,
                 selectedCount: selected.count,
+                cleanableEstimatedBytes: selectable.reduce(0) { $0 + max($1.estimatedBytes, 0) },
                 selectedEstimatedBytes: selected.reduce(0) { $0 + max($1.estimatedBytes, 0) }
             )
         }
@@ -140,7 +146,7 @@ private struct DiskCleanCategoryCard: View {
 
             Spacer(minLength: PluginSettingsTheme.Spacing.rowContentControl)
 
-            Text(DiskCleanFormat.approximateBytes(group.selectedEstimatedBytes, localization: localization))
+            Text(DiskCleanFormat.approximateBytes(group.cleanableEstimatedBytes, localization: localization))
                 .font(PluginSettingsTheme.Typography.monospacedValue)
                 .frame(width: DiskCleanFormat.byteColumnWidth, alignment: .trailing)
 
