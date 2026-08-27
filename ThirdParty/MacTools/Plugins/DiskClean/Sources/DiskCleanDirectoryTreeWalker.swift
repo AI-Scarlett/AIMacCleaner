@@ -12,9 +12,30 @@ struct DiskCleanResolvedEntry: Equatable, Sendable {
     let fileType: DiskCleanRootIdentity.FileType
     let devid: UInt64
     let fileID: UInt64
+    /// True for a mounted volume or automount trigger. Such directories are visible stubs but
+    /// must never be descended into, even when APFS reports the same device id.
+    let isMountPoint: Bool
     let linkCount: UInt32
-    /// Logical size (equivalent to `st_size`). For symlinks, the length of the link target string.
+    /// Physical allocated size. For symlinks this may be zero because their data is inline.
     let dataLength: Int64
+
+    init(
+        nameBytes: [CChar],
+        fileType: DiskCleanRootIdentity.FileType,
+        devid: UInt64,
+        fileID: UInt64,
+        isMountPoint: Bool = false,
+        linkCount: UInt32,
+        dataLength: Int64
+    ) {
+        self.nameBytes = nameBytes
+        self.fileType = fileType
+        self.devid = devid
+        self.fileID = fileID
+        self.isMountPoint = isMountPoint
+        self.linkCount = linkCount
+        self.dataLength = dataLength
+    }
 }
 
 enum DiskCleanWalkEntry: Equatable, Sendable {
@@ -172,6 +193,10 @@ struct DiskCleanDirectoryTreeWalker: Sendable {
                     }
 
                     guard resolved.fileType != .directory else {
+                        if resolved.isMountPoint {
+                            accumulator.add(.crossedMountPoint)
+                            continue
+                        }
                         frame.pendingChildDirectories.append(resolved.nameBytes)
                         continue
                     }

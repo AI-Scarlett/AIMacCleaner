@@ -55,7 +55,9 @@ struct DiskCleanScanEngineConfiguration: Sendable {
     /// Global deadline. After it, remaining candidates are marked timed out immediately and sizing is not submitted.
     var globalTimeout: TimeInterval = 300
     /// Concurrency cap for the sizing phase. Matches WorkerPool resident thread count; extra submissions only queue.
-    var maximumConcurrentSizing: Int = 3
+    // Five resident walkers keep APFS busy without creating a task/file-object per entry.
+    // Memory stays bounded by five fixed 256 KiB bulk buffers plus traversal stacks.
+    var maximumConcurrentSizing: Int = 5
     /// Cap on `volumeSkipped` reports collected during expansion. Under circuit break almost
     /// every candidate hits it; reporting all would bloat limitations into hundreds of rows;
     /// `walkerCircuitBroken` already expresses the same fact.

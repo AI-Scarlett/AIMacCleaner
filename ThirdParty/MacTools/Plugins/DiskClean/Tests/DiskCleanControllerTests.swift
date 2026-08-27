@@ -150,7 +150,7 @@ final class DiskCleanControllerTests: XCTestCase {
         XCTAssertEqual(controller.snapshot.subtitle, "结果已过期，请重新扫描")
     }
 
-    func testExpiryDeadlineUsesEarliestObservedAtAmongCleanableCandidates() async throws {
+    func testLongScanGetsFullReviewWindowAfterCompletion() async throws {
         let clock = TestDiskCleanClock(now: observedAt)
         let engine = ControlledDiskCleanScanEngine()
         let controller = makeController(engine: engine, clock: clock)
@@ -160,9 +160,9 @@ final class DiskCleanControllerTests: XCTestCase {
         engine.emit(
             .finished(
                 makeSummary(candidates: [
-                    makeSizedCandidate(id: "old", path: "/cache/old", observedAt: observedAt),
-                    makeSizedCandidate(id: "new", path: "/cache/new", observedAt: observedAt.addingTimeInterval(100))
-                ])
+                    makeSizedCandidate(id: "old", path: "/cache/old", observedAt: observedAt.addingTimeInterval(-600)),
+                    makeSizedCandidate(id: "new", path: "/cache/new", observedAt: observedAt.addingTimeInterval(-30))
+                ], startedAt: observedAt.addingTimeInterval(-700), finishedAt: observedAt)
             )
         )
         await waitUntil("scan finished") { controller.snapshot.phase == .scanned }
@@ -637,7 +637,9 @@ final class DiskCleanControllerTests: XCTestCase {
     private func makeSummary(
         candidates: [DiskCleanCandidate],
         limitations: [DiskCleanScanLimitation] = [],
-        scope: DiskCleanScanScope = .rules(choices: Set(DiskCleanChoice.allCases))
+        scope: DiskCleanScanScope = .rules(choices: Set(DiskCleanChoice.allCases)),
+        startedAt: Date? = nil,
+        finishedAt: Date? = nil
     ) -> DiskCleanScanSummary {
         DiskCleanScanSummary(
             artifact: DiskCleanScanArtifact(
@@ -645,8 +647,8 @@ final class DiskCleanControllerTests: XCTestCase {
                 candidates: candidates,
                 reservedRootPaths: [],
                 limitations: limitations,
-                startedAt: observedAt,
-                finishedAt: observedAt
+                startedAt: startedAt ?? observedAt,
+                finishedAt: finishedAt ?? observedAt
             )
         )
     }

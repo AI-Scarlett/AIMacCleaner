@@ -81,7 +81,7 @@ final class DiskCleanWorkerPool: @unchecked Sendable {
     private var isShutDown = false
 
     init(
-        maxThreadCount: Int = 3,
+        maxThreadCount: Int = 5,
         abandonBudget: Int = 3,
         timeoutQueue: DispatchQueue = DispatchQueue(label: "com.mactools.diskclean.sizing-timeout")
     ) {

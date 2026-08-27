@@ -41,6 +41,17 @@ final class DiskCleanTempDirectory {
         return String(decoding: bytes, as: UTF8.self)
     }
 
+    /// Physical blocks currently charged to this filesystem object.
+    func allocatedBytes(_ relativePath: String) -> Int64 {
+        Self.allocatedBytes(atPath: resolve(relativePath).path)
+    }
+
+    static func allocatedBytes(atPath path: String) -> Int64 {
+        var status = stat()
+        guard lstat(path, &status) == 0 else { return -1 }
+        return max(Int64(status.st_blocks) * 512, 0)
+    }
+
     // MARK: - Layout construction
 
     func resolve(_ relativePath: String) -> URL {
@@ -111,13 +122,16 @@ enum DiskCleanKnownTree {
     static let symlinkDestination = "../a.bin"
     static let deepDirectoryDepth = 40
 
-    /// Symlink logical size is the target string length.
-    static var symlinkBytes: Int { symlinkDestination.utf8.count }
-
     /// Hard links counted once: `original.bin` / `HardLinks/copy.bin` / `OtherDir/cross.bin`
     /// share the same (devid, fileID).
-    static var expectedBytes: Int64 {
-        Int64(plainFileBytes + nestedFileBytes + deepFileBytes + symlinkBytes + hardLinkedFileBytes)
+    static func expectedBytes(in temporary: DiskCleanTempDirectory, at relativeRoot: String = "Tree") -> Int64 {
+        [
+            "\(relativeRoot)/a.bin",
+            "\(relativeRoot)/Nested/b.bin",
+            deepFilePath(at: relativeRoot),
+            "\(relativeRoot)/Links/toA",
+            "\(relativeRoot)/HardLinks/original.bin"
+        ].reduce(Int64(0)) { $0 + temporary.allocatedBytes($1) }
     }
 
     /// a.bin / Nested/b.bin / deep deep.bin / Links/toA / hard-link group (count 1). Directories not counted.
@@ -151,6 +165,14 @@ enum DiskCleanKnownTree {
 
         return temporary.resolve(relativeRoot).path
     }
+
+    private static func deepFilePath(at relativeRoot: String) -> String {
+        var path = "\(relativeRoot)/Nested/deep"
+        for level in 0..<deepDirectoryDepth {
+            path += "/level-\(level)"
+        }
+        return "\(path)/deep.bin"
+    }
 }
 
 /// Shared behavior contract both walkers must satisfy (design §3.5: fallback walker reuses all §3.3 constraints).
@@ -169,8 +191,8 @@ enum DiskCleanWalkerContract {
         XCTAssertEqual(result.completeness, .complete, file: file, line: line)
         XCTAssertEqual(
             result.estimatedBytes,
-            DiskCleanKnownTree.expectedBytes,
-            "cross-directory hard links must count once; symlinks are measured as the link itself",
+            DiskCleanKnownTree.expectedBytes(in: temporary),
+            "cross-directory hard links must count once and physical allocation must match the filesystem",
             file: file,
             line: line
         )
@@ -194,8 +216,8 @@ enum DiskCleanWalkerContract {
         XCTAssertEqual(result.completeness, .complete, file: file, line: line)
         XCTAssertEqual(
             result.estimatedBytes,
-            Int64("../Outside".utf8.count),
-            "only the link length should count; never follow into the 100KB target directory",
+            temporary.allocatedBytes("Root/escape"),
+            "only the link allocation should count; never follow into the 100KB target directory",
             file: file,
             line: line
         )
@@ -221,7 +243,7 @@ enum DiskCleanWalkerContract {
             file: file,
             line: line
         )
-        XCTAssertEqual(result.estimatedBytes, 70, file: file, line: line)
+        XCTAssertEqual(result.estimatedBytes, temporary.allocatedBytes("Root/readable.bin"), file: file, line: line)
     }
 
     static func assertHandlesEmptyDirectory(
@@ -313,7 +335,7 @@ enum DiskCleanWalkerContract {
         let result = sizer.size(ofItemAt: temporary.resolve("installer.pkg").path, context: .test())
 
         XCTAssertEqual(result.completeness, .complete, file: file, line: line)
-        XCTAssertEqual(result.estimatedBytes, 3072, file: file, line: line)
+        XCTAssertEqual(result.estimatedBytes, temporary.allocatedBytes("installer.pkg"), file: file, line: line)
         XCTAssertEqual(result.fileCount, 1, file: file, line: line)
         XCTAssertEqual(result.rootIdentity?.fileType, .regularFile, file: file, line: line)
     }

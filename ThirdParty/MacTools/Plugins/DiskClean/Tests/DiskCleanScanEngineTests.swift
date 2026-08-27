@@ -401,7 +401,7 @@ final class DiskCleanScanEngineTests: XCTestCase {
 
     func testSizeCacheHitSkipsSizerAndPreservesObservedAt() async throws {
         let path = "/cache/item"
-        let identity = DiskCleanRootIdentity.test(devid: 7, fileID: 9)
+        let identity = DiskCleanRootIdentity.test(devid: 7, fileID: 9, fileType: .regularFile)
         let observedAt = Date(timeIntervalSince1970: 1_000)
         let cache = DiskCleanSizeCache()
         cache.store(
@@ -411,7 +411,7 @@ final class DiskCleanScanEngineTests: XCTestCase {
         )
         let sizer = FakeDiskCleanSizer()
         let fileSystem = FakeDiskCleanFileSystem()
-        fileSystem.setItems([.testDirectory(path)], forPattern: "/cache/*")
+        fileSystem.setItems([.testFile(path)], forPattern: "/cache/*")
         let readAt = observedAt.addingTimeInterval(10)
         let engine = makeEngine(
             fileSystem: fileSystem,
@@ -425,7 +425,7 @@ final class DiskCleanScanEngineTests: XCTestCase {
 
         let summary = try await finish(engine)
 
-        XCTAssertTrue(sizer.calledPaths.isEmpty, "cache hit must not re-walk the directory")
+        XCTAssertTrue(sizer.calledPaths.isEmpty, "a safe regular-file cache hit must not re-read the item")
         XCTAssertEqual(summary.artifact.candidates.first?.sizeResult?.estimatedBytes, 4_096)
         XCTAssertEqual(
             summary.artifact.candidates.first?.sizeResult?.observedAt,
@@ -436,13 +436,13 @@ final class DiskCleanScanEngineTests: XCTestCase {
 
     func testForceRefreshBypassesSizeCache() async throws {
         let path = "/cache/item"
-        let identity = DiskCleanRootIdentity.test()
+        let identity = DiskCleanRootIdentity.test(fileType: .regularFile)
         let cache = DiskCleanSizeCache()
         cache.store(path: path, result: .testComplete(bytes: 4_096, identity: identity), now: Date())
         let sizer = FakeDiskCleanSizer()
         sizer.setResult(.testComplete(bytes: 8_192, identity: identity), forPath: path)
         let fileSystem = FakeDiskCleanFileSystem()
-        fileSystem.setItems([.testDirectory(path)], forPattern: "/cache/*")
+        fileSystem.setItems([.testFile(path)], forPattern: "/cache/*")
         let engine = makeEngine(
             fileSystem: fileSystem,
             sizingExecutor: DirectDiskCleanSizingExecutor(),

@@ -38,10 +38,12 @@ struct DiskCleanRootIdentityProbe: DiskCleanRootIdentityProbing {
 /// - Key = path; **hit requires full root-identity triple equality `(devid, fileID, mtime)`**.
 ///   mtime alone is not enough: a directory replaced wholesale (delete/recreate or swap)
 ///   can keep mtime while fileID always changes.
+/// - Directory totals are deliberately not cached. A directory's own mtime changes only when
+///   its direct entries change; a deep descendant can grow by gigabytes while every ancestor's
+///   identity triple remains unchanged. Reusing that result is therefore incorrect without an
+///   FSEvents journal. Regular files and symlinks remain safe cache candidates.
 /// - **Cache only complete results**: reusing partial would permanently bake in a degradation.
-/// - TTL is 240s, strictly below the 300s stale gate — otherwise "stale → rescan → hit old
-///   cache → still stale" loops. `forceRefresh` bypassing the cache is the other half of that
-///   insurance (§4.3).
+/// - TTL is 240s. `forceRefresh` bypasses reads while still replacing safe entries.
 /// - Always propagate the cache entry's original `observedAt`; never refresh it to read time,
 ///   or the stale gate is bypassed.
 ///
@@ -84,6 +86,10 @@ final class DiskCleanSizeCache: Sendable {
         now: Date
     ) -> DiskCleanSizeResult? {
         state.withLock { state -> DiskCleanSizeResult? in
+            guard identity.fileType != .directory else {
+                Self.remove(path: path, from: &state)
+                return nil
+            }
             guard let entry = state.entries[path] else { return nil }
             guard now.timeIntervalSince(entry.storedAt) < timeToLive else {
                 Self.remove(path: path, from: &state)
@@ -99,6 +105,7 @@ final class DiskCleanSizeCache: Sendable {
 
     func store(path: String, result: DiskCleanSizeResult, now: Date) {
         guard result.completeness.isComplete, let identity = result.rootIdentity else { return }
+        guard identity.fileType != .directory else { return }
 
         state.withLock { state in
             if state.entries[path] == nil {

@@ -85,10 +85,11 @@ extension DiskCleanRootIdentity.FileType {
 }
 
 struct DiskCleanSizeResult: Equatable, Sendable {
-    /// Estimated logical size (`st_size` sum; hard links deduped by `(devid, fileID)`).
+    /// Estimated physically allocated size (`ATTR_FILE_ALLOCSIZE` / `st_blocks * 512`;
+    /// hard links deduped by `(devid, fileID)`).
     ///
-    /// Not the same as reclaimable space: APFS clones, sparse files, and hard links outside
-    /// the tree make them differ. UI always says "about X GB"; completion copy must not say "freed".
+    /// Still not identical to reclaimable space: APFS clones may share extents and hard links
+    /// outside the tree may keep blocks alive. UI says "about X GB" until deletion is confirmed.
     let estimatedBytes: Int64
     let fileCount: Int
     let completeness: DiskCleanScanCompleteness

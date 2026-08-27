@@ -11,31 +11,36 @@ final class DiskCleanSizeCacheTests: XCTestCase {
 
     func testHitRequiresFullIdentityTriple() {
         let cache = DiskCleanSizeCache()
-        let stored = DiskCleanRootIdentity.test(devid: 1, fileID: 2, mtime: Date(timeIntervalSince1970: 500))
+        let stored = DiskCleanRootIdentity.test(
+            devid: 1,
+            fileID: 2,
+            mtime: Date(timeIntervalSince1970: 500),
+            fileType: .regularFile
+        )
         cache.store(path: path, result: .testComplete(identity: stored), now: Date())
 
         XCTAssertNotNil(cache.result(forPath: path, identity: stored, now: Date()))
     }
 
-    /// Directory deleted and recreated with mtime preserved: mtime-only comparison would reuse the old result; fileID must participate.
-    func testDirectoryReplacedWithSameMtimeDoesNotHit() {
+    /// A directory's mtime does not cover deep descendants, so directory totals must never be reused.
+    func testDirectoryResultIsNeverCached() {
         let cache = DiskCleanSizeCache()
         let mtime = Date(timeIntervalSince1970: 500)
+        let directory = DiskCleanRootIdentity.test(devid: 1, fileID: 2, mtime: mtime)
         cache.store(
             path: path,
-            result: .testComplete(identity: .test(devid: 1, fileID: 2, mtime: mtime)),
+            result: .testComplete(identity: directory),
             now: Date()
         )
 
-        let replaced = DiskCleanRootIdentity.test(devid: 1, fileID: 99, mtime: mtime)
-
-        XCTAssertNil(cache.result(forPath: path, identity: replaced, now: Date()))
+        XCTAssertEqual(cache.count, 0)
+        XCTAssertNil(cache.result(forPath: path, identity: directory, now: Date()))
     }
 
     func testEntryExpiresAfterTimeToLive() {
         let cache = DiskCleanSizeCache(timeToLive: 240)
         let storedAt = Date(timeIntervalSince1970: 10_000)
-        let identity = DiskCleanRootIdentity.test()
+        let identity = DiskCleanRootIdentity.test(fileType: .regularFile)
         cache.store(path: path, result: .testComplete(identity: identity), now: storedAt)
 
         XCTAssertNotNil(
@@ -77,7 +82,7 @@ final class DiskCleanSizeCacheTests: XCTestCase {
     // MARK: - Decorator behavior
 
     func testCachingSizerReturnsCachedResultWithOriginalObservedAt() {
-        let identity = DiskCleanRootIdentity.test()
+        let identity = DiskCleanRootIdentity.test(fileType: .regularFile)
         let observedAt = Date(timeIntervalSince1970: 1_000)
         let cache = DiskCleanSizeCache()
         cache.store(
@@ -107,7 +112,7 @@ final class DiskCleanSizeCacheTests: XCTestCase {
     }
 
     func testCachingSizerForceRefreshBypassesReadButStillWrites() {
-        let identity = DiskCleanRootIdentity.test()
+        let identity = DiskCleanRootIdentity.test(fileType: .regularFile)
         let cache = DiskCleanSizeCache()
         cache.store(path: path, result: .testComplete(bytes: 1, identity: identity), now: Date())
         let base = FakeDiskCleanSizer()
@@ -133,7 +138,11 @@ final class DiskCleanSizeCacheTests: XCTestCase {
 
     func testCachingSizerFallsBackToBaseWhenIdentityProbeFails() {
         let cache = DiskCleanSizeCache()
-        cache.store(path: path, result: .testComplete(bytes: 1, identity: .test()), now: Date())
+        cache.store(
+            path: path,
+            result: .testComplete(bytes: 1, identity: .test(fileType: .regularFile)),
+            now: Date()
+        )
         let base = FakeDiskCleanSizer()
         base.setResult(.testPartial(reasons: [.walkError]), forPath: path)
         let sizer = DiskCleanCachingSizer(
@@ -151,7 +160,7 @@ final class DiskCleanSizeCacheTests: XCTestCase {
 
     /// getattrlistbulk-style pure walkError should retry through SlowWalker (or any injected fallback).
     func testCachingSizerFallsBackOnPureWalkError() {
-        let identity = DiskCleanRootIdentity.test()
+        let identity = DiskCleanRootIdentity.test(fileType: .regularFile)
         let cache = DiskCleanSizeCache()
         let base = FakeDiskCleanSizer()
         base.setResult(.testPartial(reasons: [.walkError]), forPath: path)

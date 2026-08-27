@@ -51,6 +51,7 @@ final class DiskCleanBulkAttributeParserTests: XCTestCase {
                 devid: 7,
                 objectType: UInt32(VDIR.rawValue),
                 fileID: 99,
+                mountStatus: 0,
                 linkCount: nil,
                 dataLength: nil
             )
@@ -60,8 +61,29 @@ final class DiskCleanBulkAttributeParserTests: XCTestCase {
 
         XCTAssertEqual(entry.displayName, "Nested")
         XCTAssertEqual(entry.fileType, .directory)
+        XCTAssertEqual(entry.isMountPoint, false)
         XCTAssertNil(entry.linkCount)
         XCTAssertNil(entry.dataLength)
+        XCTAssertTrue(entry.isFullyResolved)
+    }
+
+    func testDirectoryMountStatusIsPreserved() throws {
+        let buffer = EntryEncoder.encode([
+            EntryEncoder.Entry(
+                name: "Snapshot",
+                devid: 7,
+                objectType: UInt32(VDIR.rawValue),
+                fileID: 100,
+                mountStatus: UInt32(DIR_MNTSTATUS_MNTPOINT),
+                linkCount: nil,
+                dataLength: nil
+            )
+        ])
+
+        let entry = try XCTUnwrap(parse(buffer, entryCount: 1).entries.first)
+
+        XCTAssertEqual(entry.fileType, .directory)
+        XCTAssertEqual(entry.isMountPoint, true)
         XCTAssertTrue(entry.isFullyResolved)
     }
 
@@ -281,7 +303,7 @@ final class DiskCleanBulkAttributeParserTests: XCTestCase {
 
         let payload = try XCTUnwrap(byName["payload.bin"])
         XCTAssertEqual(payload.fileType, .regularFile)
-        XCTAssertEqual(payload.dataLength, 10)
+        XCTAssertEqual(payload.dataLength, allocatedSize(of: temporaryDirectory.resolve("payload.bin").path))
         XCTAssertEqual(payload.linkCount, 2, "payload.bin and hard.bin are hard links of each other")
         XCTAssertTrue(payload.isFullyResolved)
 
@@ -291,12 +313,13 @@ final class DiskCleanBulkAttributeParserTests: XCTestCase {
 
         let directory = try XCTUnwrap(byName["subdir"])
         XCTAssertEqual(directory.fileType, .directory)
+        XCTAssertEqual(directory.isMountPoint, false)
         XCTAssertNil(directory.dataLength, "kernel does not return ATTR_FILE_* for directories")
         XCTAssertTrue(directory.isFullyResolved)
 
         let link = try XCTUnwrap(byName["link"])
         XCTAssertEqual(link.fileType, .symlink)
-        XCTAssertEqual(link.dataLength, Int64("payload.bin".utf8.count), "symlink logical size is the target string length")
+        XCTAssertEqual(link.dataLength, allocatedSize(of: temporaryDirectory.resolve("link").path))
     }
 
     // MARK: - Helpers
@@ -307,6 +330,12 @@ final class DiskCleanBulkAttributeParserTests: XCTestCase {
         }
     }
 
+    private func allocatedSize(of path: String) -> Int64 {
+        var status = stat()
+        XCTAssertEqual(lstat(path, &status), 0)
+        return max(Int64(status.st_blocks) * 512, 0)
+    }
+
     /// Encode entries in the observed kernel layout: 4-byte length + 20-byte RETURNED_ATTRS + fixed section
     /// (attributes in ascending bit order, packed without alignment padding) + variable section (NAME only).
     private enum EntryEncoder {
@@ -315,6 +344,7 @@ final class DiskCleanBulkAttributeParserTests: XCTestCase {
             var devid: UInt32?
             var objectType: UInt32?
             var fileID: UInt64?
+            var mountStatus: UInt32?
             var linkCount: UInt32?
             var dataLength: Int64?
             /// Simulated bytes for "requested but returned bit is 0 yet still occupies space", inserted at end of fixed section.
@@ -335,6 +365,7 @@ final class DiskCleanBulkAttributeParserTests: XCTestCase {
             if entry.devid != nil { fixedSize += 4 }
             if entry.objectType != nil { fixedSize += 4 }
             if entry.fileID != nil { fixedSize += 8 }
+            if entry.mountStatus != nil { fixedSize += 4 }
             if entry.linkCount != nil { fixedSize += 4 }
             if entry.dataLength != nil { fixedSize += 8 }
             fixedSize += entry.reservedPaddingBytes
@@ -351,14 +382,16 @@ final class DiskCleanBulkAttributeParserTests: XCTestCase {
             if entry.devid != nil { commonReturned |= UInt32(ATTR_CMN_DEVID) }
             if entry.objectType != nil { commonReturned |= UInt32(ATTR_CMN_OBJTYPE) }
             if entry.fileID != nil { commonReturned |= UInt32(ATTR_CMN_FILEID) }
+            var directoryReturned: UInt32 = 0
+            if entry.mountStatus != nil { directoryReturned |= UInt32(ATTR_DIR_MOUNTSTATUS) }
             var fileReturned: UInt32 = 0
             if entry.linkCount != nil { fileReturned |= UInt32(ATTR_FILE_LINKCOUNT) }
-            if entry.dataLength != nil { fileReturned |= UInt32(ATTR_FILE_DATALENGTH) }
+            if entry.dataLength != nil { fileReturned |= UInt32(ATTR_FILE_ALLOCSIZE) }
 
             // attribute_set_t order: common / vol / dir / file / fork
             append(commonReturned, to: &bytes)
             append(UInt32(0), to: &bytes)
-            append(UInt32(0), to: &bytes)
+            append(directoryReturned, to: &bytes)
             append(fileReturned, to: &bytes)
             append(UInt32(0), to: &bytes)
 
@@ -370,6 +403,7 @@ final class DiskCleanBulkAttributeParserTests: XCTestCase {
             if let devid = entry.devid { append(devid, to: &bytes) }
             if let objectType = entry.objectType { append(objectType, to: &bytes) }
             if let fileID = entry.fileID { append(fileID, to: &bytes) }
+            if let mountStatus = entry.mountStatus { append(mountStatus, to: &bytes) }
             if let linkCount = entry.linkCount { append(linkCount, to: &bytes) }
             if let dataLength = entry.dataLength { append(dataLength, to: &bytes) }
             bytes.append(contentsOf: [UInt8](repeating: 0, count: entry.reservedPaddingBytes))

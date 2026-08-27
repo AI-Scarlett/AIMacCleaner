@@ -28,7 +28,7 @@ final class DiskCleanPlanTests: XCTestCase {
         XCTAssertEqual(plan.totalEstimatedBytes, 350)
         XCTAssertEqual(plan.itemCount, 2)
         XCTAssertEqual(plan.mode, .permanent)
-        XCTAssertEqual(plan.minObservedAt, DiskCleanPlanFactory.observedAt)
+        XCTAssertEqual(plan.scanFinishedAt, DiskCleanPlanFactory.observedAt)
         XCTAssertEqual(
             plan.expiryDeadline,
             DiskCleanPlanFactory.observedAt.addingTimeInterval(DiskCleanScanFreshness.window)
@@ -53,13 +53,29 @@ final class DiskCleanPlanTests: XCTestCase {
         XCTAssertEqual(plan.items[0].name, "a")
     }
 
-    func testMinObservedAtUsesEarliestSelectedItem() throws {
+    func testExpiryUsesArtifactFinishTimeRatherThanEarliestSelectedItem() throws {
         let older = candidate(path: "/cache/old", observedAt: now.addingTimeInterval(-100))
         let newer = candidate(path: "/cache/new", observedAt: now)
+        let finishedAt = now.addingTimeInterval(20)
 
-        let plan = try makePlan(candidates: [older, newer], selectedIDs: [older.id, newer.id])
+        let plan = try DiskCleanPlanner.makePlan(
+            artifact: DiskCleanPlanFactory.artifact(
+                candidates: [older, newer],
+                startedAt: now.addingTimeInterval(-200),
+                finishedAt: finishedAt
+            ),
+            selectedIDs: [older.id, newer.id],
+            mode: .permanent,
+            now: finishedAt,
+            catalog: DiskCleanPlanFactory.catalog()
+        )
 
-        XCTAssertEqual(plan.minObservedAt, now.addingTimeInterval(-100), "expiry gate uses the earliest observation time")
+        XCTAssertEqual(plan.scanFinishedAt, finishedAt)
+        XCTAssertEqual(
+            plan.expiryDeadline,
+            finishedAt.addingTimeInterval(DiskCleanScanFreshness.window),
+            "the review window starts only after the complete artifact exists"
+        )
     }
 
     // MARK: - Rejection matrix

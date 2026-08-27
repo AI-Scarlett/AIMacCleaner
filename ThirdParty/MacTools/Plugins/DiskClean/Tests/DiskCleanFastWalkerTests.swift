@@ -69,7 +69,7 @@ final class DiskCleanFastWalkerTests: XCTestCase {
         let result = walker.size(ofItemAt: temporaryDirectory.resolve("Root").path, context: .test())
 
         XCTAssertEqual(result.completeness, .complete)
-        XCTAssertEqual(result.estimatedBytes, 512)
+        XCTAssertEqual(result.estimatedBytes, temporaryDirectory.allocatedBytes("Root/original.bin"))
         XCTAssertEqual(result.fileCount, 1)
     }
 
@@ -80,7 +80,10 @@ final class DiskCleanFastWalkerTests: XCTestCase {
 
         let result = walker.size(ofItemAt: temporaryDirectory.resolve("Root").path, context: .test())
 
-        XCTAssertEqual(result.estimatedBytes, 512)
+        XCTAssertEqual(
+            result.estimatedBytes,
+            temporaryDirectory.allocatedBytes("Root/one.bin") + temporaryDirectory.allocatedBytes("Root/two.bin")
+        )
         XCTAssertEqual(result.fileCount, 2)
     }
 
@@ -95,7 +98,10 @@ final class DiskCleanFastWalkerTests: XCTestCase {
 
         XCTAssertEqual(result.completeness, .complete)
         XCTAssertEqual(result.fileCount, fileCount)
-        XCTAssertEqual(result.estimatedBytes, Int64(fileCount * 10))
+        let expectedBytes = (0..<fileCount).reduce(Int64(0)) { total, index in
+            total + temporaryDirectory.allocatedBytes("Bulk/file-\(index).bin")
+        }
+        XCTAssertEqual(result.estimatedBytes, expectedBytes)
     }
 
     /// Tiny buffer forces few entries per batch; verify batch boundaries neither drop nor double-count.
@@ -106,7 +112,7 @@ final class DiskCleanFastWalkerTests: XCTestCase {
         let result = walker.size(ofItemAt: temporaryDirectory.resolve("alias").path, context: .test())
 
         XCTAssertEqual(result.completeness, .complete)
-        XCTAssertEqual(result.estimatedBytes, Int64("target.bin".utf8.count))
+        XCTAssertEqual(result.estimatedBytes, temporaryDirectory.allocatedBytes("alias"))
         XCTAssertEqual(result.rootIdentity?.fileType, .symlink)
     }
 

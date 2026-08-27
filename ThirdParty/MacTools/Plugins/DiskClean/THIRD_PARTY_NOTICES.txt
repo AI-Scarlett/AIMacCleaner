@@ -1,0 +1,11 @@
+Disk Cleanup 3.2.0
+
+Product inspiration and algorithm reference:
+  OpenDisk by 137137137
+  https://github.com/137137137/OpenDisk
+  Source identity reviewed: 16765d0a13cdb38ab1c2db1391ef3d9e2b9af30e
+  Upstream license: MIT
+
+This plugin is an independent Swift implementation for the TraceFence
+MacToolsPluginKit host. It does not contain or bundle OpenDisk source code,
+assets, binaries, or user interface.

@@ -399,11 +399,16 @@ struct DiskCleanCandidate: Identifiable, Equatable, Sendable {
 /// protection**—execution's real defenses are identity verification and the freeze primitive (§7).
 /// No doc, comment, or user copy may claim this gate "prevents deleting unreviewed content".
 enum DiskCleanScanFreshness {
-    /// Expiry window. Cache TTL must be strictly smaller (see `DiskCleanSizeCache.timeToLive`).
+    /// Review window after the complete artifact has been published.
+    ///
+    /// Starting this clock from the first candidate observation makes any scan that itself
+    /// takes longer than the window expire the instant it finishes. The executor already
+    /// performs fd-anchored identity revalidation immediately before removal, so the review
+    /// timeout is correctly based on artifact completion rather than traversal duration.
     static let window: TimeInterval = 300
 
-    static func deadline(minObservedAt: Date) -> Date {
-        minObservedAt.addingTimeInterval(window)
+    static func deadline(scanFinishedAt: Date) -> Date {
+        scanFinishedAt.addingTimeInterval(window)
     }
 }
 
@@ -503,12 +508,12 @@ struct DiskCleanScanResult: Equatable, Sendable {
         !limitations.isEmpty
     }
 
-    /// Expiry deadline: earliest observation among cleanable candidates + 300s. No cleanable
-    /// candidates means no expiry needed.
+    /// Expiry deadline: completed artifact time + review window. No cleanable candidates
+    /// means no expiry task is needed.
     var expiryDeadline: Date? {
-        cleanableCandidates
-            .compactMap(\.observedAt)
-            .min()
-            .map(DiskCleanScanFreshness.deadline(minObservedAt:))
+        guard !cleanableCandidates.isEmpty else { return nil }
+        return DiskCleanScanFreshness.deadline(
+            scanFinishedAt: artifact?.finishedAt ?? scannedAt
+        )
     }
 }

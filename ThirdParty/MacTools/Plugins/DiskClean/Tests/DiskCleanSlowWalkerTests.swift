@@ -28,7 +28,7 @@ final class DiskCleanSlowWalkerTests: XCTestCase {
 
         XCTAssertEqual(result.completeness, .complete)
         XCTAssertEqual(result.fileCount, 1, "\".\" and \"..\" must not be counted")
-        XCTAssertEqual(result.estimatedBytes, 64)
+        XCTAssertEqual(result.estimatedBytes, temporaryDirectory.allocatedBytes("Root/only.bin"))
     }
 
     func testCountsHardLinkedFileOnce() throws {
@@ -37,7 +37,7 @@ final class DiskCleanSlowWalkerTests: XCTestCase {
 
         let result = walker.size(ofItemAt: temporaryDirectory.resolve("Root").path, context: .test())
 
-        XCTAssertEqual(result.estimatedBytes, 512)
+        XCTAssertEqual(result.estimatedBytes, temporaryDirectory.allocatedBytes("Root/original.bin"))
         XCTAssertEqual(result.fileCount, 1)
     }
 
@@ -48,7 +48,7 @@ final class DiskCleanSlowWalkerTests: XCTestCase {
         let result = DiskCleanSlowWalker(batchSize: 1).size(ofItemAt: root, context: .test())
 
         XCTAssertEqual(result.completeness, .complete)
-        XCTAssertEqual(result.estimatedBytes, DiskCleanKnownTree.expectedBytes)
+        XCTAssertEqual(result.estimatedBytes, DiskCleanKnownTree.expectedBytes(in: temporaryDirectory))
         XCTAssertEqual(result.fileCount, DiskCleanKnownTree.expectedFileCount)
     }
 

@@ -10,7 +10,10 @@ struct DiskCleanFastWalker: DiskCleanDirectorySizing {
 
     init(
         opener: DiskCleanRootOpener = DiskCleanRootOpener(),
-        bufferSize: Int = 64 * 1024
+        // OpenDisk benchmarks 128–256 KiB as the practical sweet spot for
+        // getattrlistbulk on APFS. A larger batch cuts syscall churn without
+        // retaining per-file objects after the batch is consumed.
+        bufferSize: Int = 256 * 1024
     ) {
         self.core = DiskCleanDirectoryTreeWalker(
             opener: opener,
@@ -112,6 +115,7 @@ final class DiskCleanBulkEntrySource: DiskCleanDirectoryEntrySource {
                     devid: devid,
                     fileID: fileID,
                     // Directories omit ATTR_FILE_*; their linkCount/dataLength do not participate in counting.
+                    isMountPoint: entry.isMountPoint ?? false,
                     linkCount: entry.linkCount ?? 1,
                     dataLength: entry.dataLength ?? 0
                 )
@@ -151,8 +155,10 @@ enum DiskCleanEntryStatFallback {
                 fileType: DiskCleanRootIdentity.FileType(mode: status.st_mode),
                 devid: UInt64(UInt32(bitPattern: status.st_dev)),
                 fileID: status.st_ino,
+                isMountPoint: false,
                 linkCount: UInt32(status.st_nlink),
-                dataLength: max(status.st_size, 0)
+                // Match `du`/Finder's on-disk usage rather than apparent length.
+                dataLength: max(Int64(status.st_blocks) * 512, 0)
             )
         )
     }

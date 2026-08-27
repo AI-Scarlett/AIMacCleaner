@@ -51,7 +51,7 @@ final class DiskCleanRootOpenerTests: XCTestCase {
         XCTAssertEqual(identity, expectedIdentity(of: file.path))
     }
 
-    /// Symlinks are measured as the **link itself** (size = target string length) and never followed.
+    /// Symlinks are measured as the **link itself** (physical allocation) and never followed.
     func testResolvesSymlinkAsLinkItself() throws {
         try temporaryDirectory.makeFile("target.bin", bytes: 9999)
         let link = try temporaryDirectory.makeSymlink("link", destination: "target.bin")
@@ -62,7 +62,7 @@ final class DiskCleanRootOpenerTests: XCTestCase {
             return XCTFail("symlink should resolve as the link itself, got \(outcome)")
         }
         XCTAssertEqual(identity.fileType, .symlink)
-        XCTAssertEqual(bytes, Int64("target.bin".utf8.count), "must not follow to the 9999-byte target")
+        XCTAssertEqual(bytes, DiskCleanTempDirectory.allocatedBytes(atPath: link.path), "must not follow to the target")
         XCTAssertEqual(identity, expectedIdentity(of: link.path))
     }
 
@@ -77,7 +77,7 @@ final class DiskCleanRootOpenerTests: XCTestCase {
             return XCTFail("directory symlink should resolve as the link itself, got \(outcome)")
         }
         XCTAssertEqual(identity.fileType, .symlink)
-        XCTAssertEqual(bytes, Int64("RealDir".utf8.count))
+        XCTAssertEqual(bytes, DiskCleanTempDirectory.allocatedBytes(atPath: link.path))
     }
 
     // MARK: - O_NOFOLLOW_ANY: reject symlinks at any path component

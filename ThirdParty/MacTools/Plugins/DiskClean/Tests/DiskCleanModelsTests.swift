@@ -87,7 +87,7 @@ final class DiskCleanModelsTests: XCTestCase {
         XCTAssertNil(result.expiryDeadline)
     }
 
-    func testExpiryDeadlineIsEarliestObservedAtPlusWindow() {
+    func testExpiryDeadlineUsesCompletedScanTime() {
         let base = Date(timeIntervalSince1970: 10_000)
         let result = DiskCleanScanResult(
             scope: .rules(choices: [.cache]),
@@ -99,10 +99,13 @@ final class DiskCleanModelsTests: XCTestCase {
                     sizeResult: .testComplete(observedAt: base.addingTimeInterval(60))
                 )
             ],
-            scannedAt: base
+            scannedAt: base.addingTimeInterval(120)
         )
 
-        XCTAssertEqual(result.expiryDeadline, base.addingTimeInterval(DiskCleanScanFreshness.window))
+        XCTAssertEqual(
+            result.expiryDeadline,
+            base.addingTimeInterval(120 + DiskCleanScanFreshness.window)
+        )
     }
 
     private func makeCandidate(

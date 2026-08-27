@@ -110,8 +110,9 @@ struct DiskCleanValidatedPlan: Equatable, Sendable {
     /// Frozen removal mode. Mode changes during confirming invalidate the whole plan rather than rewrite this value.
     let mode: DiskCleanRemovalMode
     let totalEstimatedBytes: Int64
-    /// Frozen earliest observation time. Execution preflight rechecks the expiry gate from this (§7.1 item 1).
-    let minObservedAt: Date
+    /// Frozen artifact completion time. Execution preflight rechecks the review-window gate
+    /// from this; per-item `observedAt` remains available for identity evidence.
+    let scanFinishedAt: Date
     /// Verification evidence: paths of all unplanned candidates + locked/protected/whitelist/partial paths.
     let exclusionPaths: [String]
     /// Verification evidence: reserved roots of skipped / failed targets (unscanned subtrees treated as present).
@@ -121,7 +122,7 @@ struct DiskCleanValidatedPlan: Equatable, Sendable {
     fileprivate init(
         items: [PlanItem],
         mode: DiskCleanRemovalMode,
-        minObservedAt: Date,
+        scanFinishedAt: Date,
         exclusionPaths: [String],
         reservedPrefixes: [String],
         mintedAt: Date
@@ -129,7 +130,7 @@ struct DiskCleanValidatedPlan: Equatable, Sendable {
         self.items = items
         self.mode = mode
         self.totalEstimatedBytes = items.reduce(0) { $0 + max($1.estimatedBytes, 0) }
-        self.minObservedAt = minObservedAt
+        self.scanFinishedAt = scanFinishedAt
         self.exclusionPaths = exclusionPaths
         self.reservedPrefixes = reservedPrefixes
         self.mintedAt = mintedAt
@@ -138,7 +139,7 @@ struct DiskCleanValidatedPlan: Equatable, Sendable {
     var itemCount: Int { items.count }
 
     var expiryDeadline: Date {
-        DiskCleanScanFreshness.deadline(minObservedAt: minObservedAt)
+        DiskCleanScanFreshness.deadline(scanFinishedAt: scanFinishedAt)
     }
 }
 
@@ -176,8 +177,6 @@ enum DiskCleanPlanner {
 
         var items: [DiskCleanValidatedPlan.PlanItem] = []
         items.reserveCapacity(selectedIDs.count)
-        var minObservedAt = Date.distantFuture
-
         // Preserve artifact candidate order for selected items so execution and display stay consistent and reproducible.
         for candidate in artifact.candidates where selectedIDs.contains(candidate.id) {
             guard candidate.isCleanable,
@@ -189,7 +188,6 @@ enum DiskCleanPlanner {
                 throw DiskCleanPlanError.unknownTarget(targetID: candidate.targetID)
             }
 
-            minObservedAt = min(minObservedAt, sizeResult.observedAt)
             items.append(
                 DiskCleanValidatedPlan.PlanItem(
                     candidateID: candidate.id,
@@ -217,7 +215,7 @@ enum DiskCleanPlanner {
         }
 
         // Expiry check (§6.1 item 4).
-        guard now < DiskCleanScanFreshness.deadline(minObservedAt: minObservedAt) else {
+        guard now < DiskCleanScanFreshness.deadline(scanFinishedAt: artifact.finishedAt) else {
             throw DiskCleanPlanError.resultExpired
         }
 
@@ -238,7 +236,7 @@ enum DiskCleanPlanner {
         return DiskCleanValidatedPlan(
             items: items,
             mode: mode,
-            minObservedAt: minObservedAt,
+            scanFinishedAt: artifact.finishedAt,
             exclusionPaths: exclusionPaths,
             reservedPrefixes: reservedPrefixes,
             mintedAt: now

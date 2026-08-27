@@ -55,7 +55,7 @@ struct DiskCleanRootOpener: Sendable {
         let identity = DiskCleanRootIdentity(stat: status)
         guard identity.fileType == .directory else {
             close(descriptor)
-            return .resolved(bytes: max(status.st_size, 0), identity: identity)
+            return .resolved(bytes: max(Int64(status.st_blocks) * 512, 0), identity: identity)
         }
         return .directory(fileDescriptor: descriptor, identity: identity)
     }
@@ -99,7 +99,7 @@ struct DiskCleanRootOpener: Sendable {
         guard identity.fileType == .symlink else {
             return .failed(reason: .walkError)
         }
-        return .resolved(bytes: max(status.st_size, 0), identity: identity)
+        return .resolved(bytes: max(Int64(status.st_blocks) * 512, 0), identity: identity)
     }
 
     private func isLocalVolume(fileDescriptor: Int32) -> Bool {

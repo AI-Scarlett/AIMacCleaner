@@ -65,15 +65,17 @@ enum DiskCleanPlanFactory {
 
     static func artifact(
         candidates: [DiskCleanCandidate],
-        reservedRootPaths: [String] = []
+        reservedRootPaths: [String] = [],
+        startedAt: Date = observedAt,
+        finishedAt: Date = observedAt
     ) -> DiskCleanScanArtifact {
         DiskCleanScanArtifact(
             scope: .rules(choices: Set(DiskCleanChoice.allCases)),
             candidates: candidates,
             reservedRootPaths: reservedRootPaths,
             limitations: [],
-            startedAt: observedAt,
-            finishedAt: observedAt
+            startedAt: startedAt,
+            finishedAt: finishedAt
         )
     }
 

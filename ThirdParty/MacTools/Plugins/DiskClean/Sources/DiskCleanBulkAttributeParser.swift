@@ -13,7 +13,12 @@ struct DiskCleanBulkAttributeEntry: Equatable, Sendable {
     var fileType: DiskCleanRootIdentity.FileType?
     var devid: UInt64?
     var fileID: UInt64?
+    /// `ATTR_DIR_MOUNTSTATUS != 0`. nil for non-directories or when the volume omitted the attribute.
+    var isMountPoint: Bool?
     var linkCount: UInt32?
+    /// Physical bytes allocated on disk (`ATTR_FILE_ALLOCSIZE`), despite the legacy property name.
+    /// Keeping the name avoids format churn in the parser fixtures while the public sizing model
+    /// now reports allocated rather than apparent bytes.
     var dataLength: Int64?
     /// true = fixed-section end does not match `ATTR_CMN_NAME`'s `attr_dataoffset`.
     ///
@@ -27,13 +32,15 @@ struct DiskCleanBulkAttributeEntry: Equatable, Sendable {
         return String(decoding: bytes, as: UTF8.self)
     }
 
-    /// Whether required attributes are present. Directories omit `ATTR_FILE_*`, so missing linkCount/dataLength is allowed for them.
+    /// Whether required attributes are present. Directories omit `ATTR_FILE_*`; mount status is
+    /// requested separately so the walker can stop at APFS snapshot/volume boundaries even when
+    /// `st_dev` is shared.
     var isFullyResolved: Bool {
         guard !hasLayoutMismatch, nameBytes != nil, let fileType, devid != nil, fileID != nil else {
             return false
         }
         if fileType == .directory {
-            return true
+            return isMountPoint != nil
         }
         return linkCount != nil && dataLength != nil
     }
@@ -66,10 +73,14 @@ enum DiskCleanBulkAttributeParser {
         | attrgroup_t(ATTR_CMN_FILEID)
 
     static let requestedFileAttributes: attrgroup_t =
-        attrgroup_t(ATTR_FILE_LINKCOUNT) | attrgroup_t(ATTR_FILE_DATALENGTH)
+        attrgroup_t(ATTR_FILE_LINKCOUNT) | attrgroup_t(ATTR_FILE_ALLOCSIZE)
+
+    static let requestedDirectoryAttributes: attrgroup_t =
+        attrgroup_t(ATTR_DIR_MOUNTSTATUS)
 
     /// Indexes of the kernel-returned attribute bitmaps in `attribute_set_t`: common/vol/dir/file/fork.
     private static let commonGroupIndex = 0
+    private static let directoryGroupIndex = 2
     private static let fileGroupIndex = 3
     private static let returnedAttributesSize = 20
 
@@ -77,6 +88,7 @@ enum DiskCleanBulkAttributeParser {
         var list = attrlist()
         list.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
         list.commonattr = requestedCommonAttributes
+        list.dirattr = requestedDirectoryAttributes
         list.fileattr = requestedFileAttributes
         return list
     }
@@ -130,6 +142,10 @@ enum DiskCleanBulkAttributeParser {
             fromByteOffset: 4 + fileGroupIndex * 4,
             as: attrgroup_t.self
         )
+        let directoryReturned = buffer.loadUnaligned(
+            fromByteOffset: 4 + directoryGroupIndex * 4,
+            as: attrgroup_t.self
+        )
 
         var reader = Reader(buffer: buffer, offset: 4 + returnedAttributesSize)
         var expectedNameDataOffset: Int?
@@ -169,6 +185,14 @@ enum DiskCleanBulkAttributeParser {
             entry.fileID = value
         }
 
+        if directoryReturned & attrgroup_t(ATTR_DIR_MOUNTSTATUS) != 0 {
+            guard let value = reader.readUInt32() else {
+                entry.hasLayoutMismatch = true
+                return entry
+            }
+            entry.isMountPoint = value != 0
+        }
+
         if fileReturned & attrgroup_t(ATTR_FILE_LINKCOUNT) != 0 {
             guard let value = reader.readUInt32() else {
                 entry.hasLayoutMismatch = true
@@ -177,7 +201,7 @@ enum DiskCleanBulkAttributeParser {
             entry.linkCount = value
         }
 
-        if fileReturned & attrgroup_t(ATTR_FILE_DATALENGTH) != 0 {
+        if fileReturned & attrgroup_t(ATTR_FILE_ALLOCSIZE) != 0 {
             guard let value = reader.readInt64() else {
                 entry.hasLayoutMismatch = true
                 return entry
@@ -192,6 +216,7 @@ enum DiskCleanBulkAttributeParser {
             entry.fileType = nil
             entry.devid = nil
             entry.fileID = nil
+            entry.isMountPoint = nil
             entry.linkCount = nil
             entry.dataLength = nil
         }
