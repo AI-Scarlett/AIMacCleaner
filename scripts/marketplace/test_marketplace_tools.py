@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "marketplace"))
 
 from catalog_policy import CatalogPolicyError, load_json, validate_catalog  # noqa: E402
-from import_mactools_packages import placements, presentation  # noqa: E402
+from import_mactools_packages import merge_imported_plugins, placements, presentation  # noqa: E402
 
 
 class CatalogPolicyTests(unittest.TestCase):
@@ -153,7 +153,7 @@ class CatalogPolicyTests(unittest.TestCase):
         plugins = self.document["plugins"]
         self.assertTrue(all("placements" in plugin for plugin in plugins))
         self.assertEqual(sum(plugin["placements"]["overview"] for plugin in plugins), 6)
-        self.assertEqual(sum(plugin["placements"]["pluginTab"] for plugin in plugins), 47)
+        self.assertEqual(sum(plugin["placements"]["pluginTab"] for plugin in plugins), 48)
         self.assertEqual(sum(plugin["placements"]["menuBarPluginTab"] for plugin in plugins), 28)
 
     def test_overview_placement_requires_plugin_tab(self) -> None:
@@ -234,6 +234,27 @@ class CatalogPolicyTests(unittest.TestCase):
             "pluginTab": True,
             "menuBarPluginTab": False,
         })
+
+    def test_incremental_import_preserves_unselected_package_plugins(self) -> None:
+        existing = [
+            {"id": "tracefence.agent-guard", "version": "1"},
+            {"id": "tracefence.tools.quota-monitor", "version": "1.0.1"},
+            {"id": "tracefence.tools.network-traffic", "version": "0.0.1"},
+        ]
+        imported = [
+            {"id": "tracefence.tools.network-traffic", "version": "0.1.0"},
+        ]
+
+        merged = merge_imported_plugins(existing, imported)
+
+        self.assertEqual(
+            [(plugin["id"], plugin["version"]) for plugin in merged],
+            [
+                ("tracefence.agent-guard", "1"),
+                ("tracefence.tools.quota-monitor", "1.0.1"),
+                ("tracefence.tools.network-traffic", "0.1.0"),
+            ],
+        )
 
 
 if __name__ == "__main__":

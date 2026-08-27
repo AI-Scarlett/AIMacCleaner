@@ -29,14 +29,30 @@ def main() -> int:
     parser.add_argument("--catalog", type=Path, required=True)
     parser.add_argument("--source-assets", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--plugin",
+        action="append",
+        default=[],
+        help="Prepare only this raw or catalog plugin ID. Repeat for multiple plugins.",
+    )
     args = parser.parse_args()
 
     catalog = json.loads(args.catalog.read_text(encoding="utf-8"))
+    requested_ids = {
+        value if value.startswith(PLUGIN_PREFIX) else f"{PLUGIN_PREFIX}{value}"
+        for group in args.plugin
+        for value in (item.strip() for item in group.split(","))
+        if value
+    }
     release_plan: list[dict[str, object]] = []
+    available_ids: set[str] = set()
     for plugin in catalog.get("plugins", []):
         if plugin.get("delivery") != "package":
             continue
         plugin_id = str(plugin.get("id") or "")
+        available_ids.add(plugin_id)
+        if requested_ids and plugin_id not in requested_ids:
+            continue
         if not plugin_id.startswith(PLUGIN_PREFIX):
             raise SystemExit(f"unexpected package plugin ID: {plugin_id}")
         raw_id = plugin_id.removeprefix(PLUGIN_PREFIX)
@@ -70,7 +86,10 @@ def main() -> int:
             "sizeBytes": actual_size,
         })
 
-    expected_packages = sum(
+    missing_ids = requested_ids - available_ids
+    if missing_ids:
+        raise SystemExit(f"requested plugins are absent from the catalog: {sorted(missing_ids)}")
+    expected_packages = len(requested_ids) if requested_ids else sum(
         plugin.get("delivery") == "package" for plugin in catalog.get("plugins", [])
     )
     if not release_plan or len(release_plan) != expected_packages:

@@ -178,10 +178,28 @@ def main() -> int:
     parser.add_argument("--catalog", type=Path, required=True)
     parser.add_argument("--assets", type=Path, required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--plugin",
+        action="append",
+        default=[],
+        help="Verify only this raw or catalog plugin ID. Repeat for multiple plugins.",
+    )
     args = parser.parse_args()
 
     catalog = json.loads(args.catalog.read_text(encoding="utf-8"))
     plugins = [plugin for plugin in catalog.get("plugins", []) if plugin.get("delivery") == "package"]
+    requested_ids = {
+        value if value.startswith(PLUGIN_PREFIX) else f"{PLUGIN_PREFIX}{value}"
+        for group in args.plugin
+        for value in (item.strip() for item in group.split(","))
+        if value
+    }
+    if requested_ids:
+        available_ids = {str(plugin.get("id") or "") for plugin in plugins}
+        missing_ids = requested_ids - available_ids
+        if missing_ids:
+            raise SystemExit(f"requested plugins are absent from the catalog: {sorted(missing_ids)}")
+        plugins = [plugin for plugin in plugins if plugin.get("id") in requested_ids]
     if not plugins:
         raise SystemExit("catalog has no independently delivered plugins")
 

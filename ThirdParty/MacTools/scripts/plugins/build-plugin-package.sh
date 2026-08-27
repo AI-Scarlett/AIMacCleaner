@@ -59,7 +59,7 @@ ditto "$SOURCE" "$DEST"
 if [[ "$ZIP" == "1" ]]; then
     ZIP_PATH="$DEST.zip"
     rm -f "$ZIP_PATH"
-    ditto -c -k --sequesterRsrc --keepParent "$DEST" "$ZIP_PATH"
+    COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent "$DEST" "$ZIP_PATH"
     echo "$ZIP_PATH"
 else
     echo "$DEST"

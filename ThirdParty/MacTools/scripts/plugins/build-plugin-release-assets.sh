@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
     cat <<'USAGE'
 Usage:
-  build-plugin-release-assets.sh --base-url URL --catalog-output dist/catalog.json --sign-identity "Developer ID Application: ..." [--plugin ID]...
+  build-plugin-release-assets.sh --base-url URL --catalog-output dist/catalog.json --sign-identity "Developer ID Application: ..." --bundle-identifier-prefix com.example.plugin [--plugin ID]...
 
 Builds selected plugin packages, signs their bundles, zips them as release assets,
 generates a release catalog for those assets, and optionally writes a signed catalog.
@@ -22,6 +22,7 @@ CATALOG_OUTPUT=""
 SIGNED_CATALOG_OUTPUT=""
 CATALOG_PRIVATE_KEY_BASE64="${PLUGIN_CATALOG_PRIVATE_KEY_BASE64:-}"
 SIGN_IDENTITY="${PLUGIN_CODE_SIGN_IDENTITY:-}"
+BUNDLE_IDENTIFIER_PREFIX="${BUNDLE_IDENTIFIER_PREFIX:-}"
 CONFIGURATION="Release"
 DESTINATION=""
 XCODEBUILD_COMMAND="${XCODEBUILD:-}"
@@ -65,6 +66,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --sign-identity)
             SIGN_IDENTITY="${2:-}"
+            shift 2
+            ;;
+        --bundle-identifier-prefix)
+            BUNDLE_IDENTIFIER_PREFIX="${2:-}"
             shift 2
             ;;
         --configuration)
@@ -117,6 +122,11 @@ if [[ -z "$SIGN_IDENTITY" ]]; then
     echo "--sign-identity or PLUGIN_CODE_SIGN_IDENTITY is required for plugin release assets." >&2
     exit 1
 fi
+if [[ -z "$BUNDLE_IDENTIFIER_PREFIX" ]]; then
+    echo "--bundle-identifier-prefix or BUNDLE_IDENTIFIER_PREFIX is required for plugin release assets." >&2
+    exit 1
+fi
+export BUNDLE_IDENTIFIER_PREFIX
 
 if [[ -n "$SIGNED_CATALOG_OUTPUT" && -z "$CATALOG_PRIVATE_KEY_BASE64" ]]; then
     echo "--catalog-private-key-base64 or PLUGIN_CATALOG_PRIVATE_KEY_BASE64 is required when signing the catalog." >&2

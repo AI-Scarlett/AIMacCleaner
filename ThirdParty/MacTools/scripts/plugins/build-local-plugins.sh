@@ -288,7 +288,7 @@ build_bundle_if_needed() {
 
     # TraceFence mirror builds all plugins from one pinned source revision.
     # Reuse DerivedData so PluginKit is compiled once and disk usage remains
-    # bounded while the 45 schemes are processed sequentially.
+    # bounded while the selected schemes are processed sequentially.
     local derived_data
     derived_data="$DERIVED_DATA_DIR/Shared"
     mkdir -p "$derived_data"
@@ -299,6 +299,9 @@ build_bundle_if_needed() {
         -configuration "$CONFIGURATION"
         -derivedDataPath "$derived_data"
     )
+    if [[ -n "${BUNDLE_IDENTIFIER_PREFIX:-}" ]]; then
+        build_args+=(BUNDLE_IDENTIFIER_PREFIX="$BUNDLE_IDENTIFIER_PREFIX")
+    fi
     if [[ -n "$DESTINATION" ]]; then
         build_args+=(-destination "$DESTINATION")
     fi
@@ -356,11 +359,19 @@ package_source_dir() {
     mkdir -p "$package_path/$(dirname "$bundle_relative_path")"
     copy_manifest_for_configuration "$manifest" "$package_path/plugin.json"
     ditto "$bundle_path" "$package_path/$bundle_relative_path"
-    for metadata_name in LICENSE TRACEFENCE-PROVENANCE.txt; do
+    for metadata_name in TRACEFENCE-PROVENANCE.txt THIRD_PARTY_NOTICES.txt SECURITY.md DECISIONS.md; do
         if [[ -f "$root/$metadata_name" ]]; then
             ditto "$root/$metadata_name" "$package_path/$metadata_name"
         fi
     done
+    if [[ -f "$root/LICENSE" ]]; then
+        ditto "$root/LICENSE" "$package_path/LICENSE"
+    elif [[ -f "$REPO_ROOT/LICENSE" ]]; then
+        ditto "$REPO_ROOT/LICENSE" "$package_path/LICENSE"
+    else
+        echo "Missing distributable license for plugin: $plugin_id" >&2
+        return 1
+    fi
 
     if [[ -n "$SIGN_IDENTITY" ]]; then
         "$REPO_ROOT/scripts/plugins/sign-plugin-package.sh" \

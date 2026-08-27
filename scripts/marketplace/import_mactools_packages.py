@@ -199,6 +199,18 @@ def permissions(manifest: dict[str, Any]) -> list[str]:
     return sorted(set(values))
 
 
+def merge_imported_plugins(
+    existing: list[dict[str, Any]],
+    imported: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    imported_ids = [str(plugin.get("id") or "") for plugin in imported]
+    if any(not value for value in imported_ids) or len(set(imported_ids)) != len(imported_ids):
+        raise ValueError("imported plugins contain missing or duplicate IDs")
+    replacing = set(imported_ids)
+    retained = [plugin for plugin in existing if plugin.get("id") not in replacing]
+    return retained + imported
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Import a pinned, TraceFence-signed MacTools package batch into the private storefront source."
@@ -208,6 +220,11 @@ def main() -> int:
     parser.add_argument("--assets-dir", type=Path, required=True)
     parser.add_argument("--team-id", default="UQ87N2WZ76")
     parser.add_argument("--minimum-host-version", default="1.2.1")
+    parser.add_argument(
+        "--expected-count",
+        type=int,
+        help="Fail unless the incoming catalog contains exactly this many packages.",
+    )
     parser.add_argument("--revision", type=int)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -215,8 +232,15 @@ def main() -> int:
     storefront = load_json(args.catalog_source)
     upstream_catalog = load_json(args.mactools_catalog)
     entries = upstream_catalog.get("plugins")
-    if not isinstance(entries, list) or len(entries) != 45:
-        raise SystemExit(f"expected 45 mirrored plugins, found {len(entries) if isinstance(entries, list) else 0}")
+    if not isinstance(entries, list) or not entries:
+        raise SystemExit("incoming MacTools catalog has no plugins")
+    if args.expected_count is not None and len(entries) != args.expected_count:
+        raise SystemExit(
+            f"expected {args.expected_count} mirrored plugins, found {len(entries)}"
+        )
+    incoming_ids = [str(entry.get("id") or "") for entry in entries]
+    if len(set(incoming_ids)) != len(incoming_ids) or any(not value for value in incoming_ids):
+        raise SystemExit("incoming MacTools catalog contains missing or duplicate plugin IDs")
 
     imported: list[dict[str, Any]] = []
     for entry in sorted(entries, key=lambda value: value["id"]):
@@ -272,11 +296,10 @@ def main() -> int:
             },
         })
 
-    bundled_plugins = [
-        plugin for plugin in storefront["plugins"]
-        if not str(plugin.get("id") or "").startswith(PLUGIN_PREFIX)
-    ]
-    for plugin in bundled_plugins:
+    merged_plugins = merge_imported_plugins(storefront["plugins"], imported)
+    for plugin in merged_plugins:
+        if str(plugin.get("id") or "").startswith(PLUGIN_PREFIX):
+            continue
         plugin.setdefault("minimumSystemVersion", "13.0")
         plugin.setdefault("pluginKitVersion", 0)
         plugin.setdefault("permissions", [])
@@ -285,7 +308,7 @@ def main() -> int:
             "pluginTab": False,
             "menuBarPluginTab": False,
         })
-    storefront["plugins"] = bundled_plugins + imported
+    storefront["plugins"] = merged_plugins
     storefront["revision"] = args.revision or int(storefront["revision"]) + 1
     now = datetime.now(timezone.utc).replace(microsecond=0)
     storefront["publishedAt"] = now.isoformat().replace("+00:00", "Z")
@@ -295,7 +318,7 @@ def main() -> int:
     args.output.write_bytes(canonical_bytes(storefront))
     print(
         f"MACTOOLS_IMPORT_OK plugins={len(imported)} revision={storefront['revision']} "
-        "release_mode=per-plugin"
+        "release_mode=incremental-per-plugin"
     )
     return 0
 
