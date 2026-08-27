@@ -12,7 +12,9 @@ final class CodexMediaCleanupController: ObservableObject {
     private let localization: PluginLocalization
     private let scanEngine: CodexMediaScanEngine
     private let repairEngine: CodexMediaRepairEngine
+    private let backupStore: CodexMediaBackupStore
     private var task: Task<Void, Never>?
+    private var backupTask: Task<Void, Never>?
 
     init(
         codexHome: URL = FileManager.default.homeDirectoryForCurrentUser
@@ -20,20 +22,118 @@ final class CodexMediaCleanupController: ObservableObject {
         supportDirectory: URL,
         localization: PluginLocalization,
         scanEngine: CodexMediaScanEngine = CodexMediaScanEngine(),
-        repairEngine: CodexMediaRepairEngine? = nil
+        repairEngine: CodexMediaRepairEngine? = nil,
+        backupStore: CodexMediaBackupStore = CodexMediaBackupStore()
     ) {
         self.codexHome = codexHome
         self.supportDirectory = supportDirectory
         self.localization = localization
         self.scanEngine = scanEngine
         self.repairEngine = repairEngine ?? Self.bundledRepairEngine()
+        self.backupStore = backupStore
         self.snapshot = CodexMediaCleanupSnapshot()
+        Task { @MainActor [weak self] in self?.refreshBackups() }
     }
 
-    var canScan: Bool { !snapshot.isBusy }
+    var canScan: Bool { !snapshot.isBusy && !snapshot.isManagingBackups }
     var canCleanup: Bool { canRun(.cleanup) }
     var canRepair: Bool { canRun(.repair) }
     var canCleanupAndRepair: Bool { canRun(.cleanupAndRepair) }
+    var canManageBackups: Bool { !snapshot.isBusy && !snapshot.isManagingBackups }
+
+    func refreshBackups() {
+        guard canManageBackups else { return }
+        backupTask?.cancel()
+        snapshot.isScanningBackups = true
+        snapshot.errorMessage = nil
+        publish()
+
+        let configuration = configuration
+        let store = backupStore
+        backupTask = Task { [weak self] in
+            let worker = Task.detached(priority: .utility) {
+                try store.scan(configuration: configuration)
+            }
+            do {
+                let batches = try await withTaskCancellationHandler {
+                    try await worker.value
+                } onCancel: {
+                    worker.cancel()
+                }
+                guard !Task.isCancelled, let self else { return }
+                self.snapshot.backupBatches = batches
+                self.snapshot.isScanningBackups = false
+                self.publish()
+            } catch {
+                guard let self else { return }
+                self.snapshot.isScanningBackups = false
+                self.snapshot.errorMessage = error.localizedDescription
+                self.appendLog(.error, error.localizedDescription)
+                self.publish()
+            }
+        }
+    }
+
+    func deleteBackups(ids: Set<CodexMediaBackupBatch.ID>) {
+        guard canManageBackups else { return }
+        let batches = snapshot.backupBatches.filter { ids.contains($0.id) }
+        guard !batches.isEmpty else { return }
+
+        backupTask?.cancel()
+        snapshot.isDeletingBackups = true
+        snapshot.lastBackupCleanupResult = nil
+        snapshot.errorMessage = nil
+        appendLog(.warning, localization.format(
+            "log.backupDeletionStartedFormat",
+            defaultValue: "开始永久删除 %lld 个手动选择的回滚备份批次（约 %@）。",
+            Int64(batches.count),
+            Self.bytes(batches.reduce(0) { $0 + $1.allocatedBytes })
+        ))
+        publish()
+
+        let configuration = configuration
+        let store = backupStore
+        backupTask = Task { [weak self] in
+            let worker = Task.detached(priority: .utility) {
+                let result = try store.remove(batches, configuration: configuration)
+                let remaining = try store.scan(configuration: configuration)
+                return (result, remaining)
+            }
+            do {
+                let (result, remaining) = try await withTaskCancellationHandler {
+                    try await worker.value
+                } onCancel: {
+                    worker.cancel()
+                }
+                guard let self else { return }
+                self.snapshot.backupBatches = remaining
+                self.snapshot.isDeletingBackups = false
+                self.snapshot.lastBackupCleanupResult = result
+                self.appendLog(.success, self.localization.format(
+                    "log.backupDeletionCompletedFormat",
+                    defaultValue: "已永久删除 %lld 个回滚备份批次、%lld 个文件（约 %@）；APFS 即时报告释放 %@。",
+                    Int64(result.removedBatchCount),
+                    Int64(result.removedFileCount),
+                    Self.bytes(result.removedAllocatedBytes),
+                    Self.bytes(result.immediatelyReclaimedBytes)
+                ))
+                self.publish()
+            } catch {
+                guard let self else { return }
+                self.snapshot.isDeletingBackups = false
+                let remaining = try? await Task.detached(priority: .utility) {
+                    try store.scan(configuration: configuration)
+                }.value
+                if let remaining {
+                    self.snapshot.backupBatches = remaining
+                }
+                let message = self.localizedDescription(for: error)
+                self.snapshot.errorMessage = message
+                self.appendLog(.error, message)
+                self.publish()
+            }
+        }
+    }
 
     func setIncludeArchivedSessions(_ value: Bool) {
         guard !snapshot.isBusy, snapshot.includeArchivedSessions != value else { return }
@@ -191,6 +291,7 @@ final class CodexMediaCleanupController: ObservableObject {
                     "必须完全重新启动 Codex，再打开一个包含图片的历史对话，确认图片可见并能继续发送消息。"
                 ))
                 self.publish()
+                self.refreshBackups()
             } catch {
                 guard let self else { return }
                 self.snapshot.phase = .scanned
@@ -268,8 +369,17 @@ final class CodexMediaCleanupController: ObservableObject {
         publish()
     }
 
+    func cancelBackupManagement() {
+        backupTask?.cancel()
+        backupTask = nil
+        snapshot.isScanningBackups = false
+        snapshot.isDeletingBackups = false
+        publish()
+    }
+
     private func canRun(_ operation: CodexMediaOperation) -> Bool {
-        guard !snapshot.isBusy, let report = snapshot.scanReport else { return false }
+        guard !snapshot.isBusy, !snapshot.isManagingBackups,
+              let report = snapshot.scanReport else { return false }
         return switch operation {
         case .cleanup: report.needsCleanup
         case .repair: report.needsRepair
@@ -293,6 +403,9 @@ final class CodexMediaCleanupController: ObservableObject {
     private func localizedDescription(for error: Error) -> String {
         if let cleanupError = error as? CodexMediaCleanupError {
             return cleanupError.message(using: localization)
+        }
+        if let backupError = error as? CodexMediaBackupStoreError {
+            return backupError.message(using: localization)
         }
         return error.localizedDescription
     }

@@ -97,6 +97,238 @@ struct CodexMediaRepairReport: Equatable, Codable, Sendable {
     var reclaimedBytes: Int64 { files.reduce(0) { $0 + $1.reclaimedBytes } }
 }
 
+enum CodexMediaBackupReportStatus: String, Equatable, Sendable {
+    case completed
+    case interrupted
+    case unavailable
+}
+
+/// One rollback batch created by a cleanup or repair run.
+///
+/// Backup management is intentionally batch-based. A user can remove a whole rollback point,
+/// but never individual JSONL files that could leave the batch internally inconsistent.
+struct CodexMediaBackupBatch: Identifiable, Equatable, Sendable {
+    let id: String
+    let path: String
+    let createdAt: Date
+    let allocatedBytes: Int64
+    let fileCount: Int
+    let reportStatus: CodexMediaBackupReportStatus
+    let reportPath: String?
+    let resourceIdentifier: String?
+}
+
+struct CodexMediaBackupCleanupResult: Equatable, Sendable {
+    let removedBatchCount: Int
+    let removedFileCount: Int
+    let removedAllocatedBytes: Int64
+    /// APFS may update free capacity asynchronously. This value is a best-effort immediate
+    /// observation, while `removedAllocatedBytes` remains the stable amount selected by the user.
+    let immediatelyReclaimedBytes: Int64
+}
+
+enum CodexMediaBackupStoreError: LocalizedError, Equatable {
+    case invalidBatch(String)
+    case batchChanged(String)
+
+    var errorDescription: String? {
+        switch self {
+        case let .invalidBatch(id):
+            "拒绝删除不属于 Codex 媒体整理插件的备份批次：\(id)"
+        case let .batchChanged(id):
+            "备份批次已发生变化，请刷新后重新选择：\(id)"
+        }
+    }
+
+#if !TRACEFENCE_CODEX_MEDIA_WORKER
+    func message(using localization: PluginLocalization) -> String {
+        switch self {
+        case let .invalidBatch(id):
+            localization.format(
+                "error.backup.invalidBatch",
+                defaultValue: "拒绝删除不属于 Codex 媒体整理插件的备份批次：%@",
+                id
+            )
+        case let .batchChanged(id):
+            localization.format(
+                "error.backup.batchChanged",
+                defaultValue: "备份批次已发生变化，请刷新后重新选择：%@",
+                id
+            )
+        }
+    }
+#endif
+}
+
+/// Enumerates and permanently removes only direct children of this plugin's `Backups` folder.
+/// Symlinks are never followed, which keeps deletion inside the plugin-owned support directory.
+struct CodexMediaBackupStore: Sendable {
+    func scan(configuration: CodexMediaCleanupConfiguration) throws -> [CodexMediaBackupBatch] {
+        let fileManager = FileManager.default
+        let backupRoot = configuration.backupRoot.standardizedFileURL
+        guard fileManager.fileExists(atPath: backupRoot.path) else { return [] }
+
+        let keys: Set<URLResourceKey> = [
+            .isDirectoryKey,
+            .isSymbolicLinkKey,
+            .creationDateKey,
+            .contentModificationDateKey,
+            .fileResourceIdentifierKey
+        ]
+        let children = try fileManager.contentsOfDirectory(
+            at: backupRoot,
+            includingPropertiesForKeys: Array(keys),
+            options: []
+        )
+
+        return try children.compactMap { child in
+            let values = try child.resourceValues(forKeys: keys)
+            guard values.isDirectory == true, values.isSymbolicLink != true else { return nil }
+            let report = reportMetadata(runID: child.lastPathComponent, configuration: configuration)
+            let allocation = try allocatedSize(of: child)
+            return CodexMediaBackupBatch(
+                id: child.lastPathComponent,
+                path: child.path,
+                createdAt: values.creationDate ?? values.contentModificationDate ?? .distantPast,
+                allocatedBytes: allocation.bytes,
+                fileCount: allocation.files,
+                reportStatus: report.status,
+                reportPath: report.path,
+                resourceIdentifier: values.fileResourceIdentifier.map { String(describing: $0) }
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
+            return lhs.id > rhs.id
+        }
+    }
+
+    func remove(
+        _ batches: [CodexMediaBackupBatch],
+        configuration: CodexMediaCleanupConfiguration
+    ) throws -> CodexMediaBackupCleanupResult {
+        guard !batches.isEmpty else {
+            return .init(
+                removedBatchCount: 0,
+                removedFileCount: 0,
+                removedAllocatedBytes: 0,
+                immediatelyReclaimedBytes: 0
+            )
+        }
+
+        let fileManager = FileManager.default
+        let backupRoot = configuration.backupRoot.standardizedFileURL.resolvingSymlinksInPath()
+        let capacityBefore = availableCapacity(at: backupRoot)
+        var removedFiles = 0
+        var removedBytes: Int64 = 0
+
+        for batch in batches {
+            guard Self.isValidRunID(batch.id) else {
+                throw CodexMediaBackupStoreError.invalidBatch(batch.id)
+            }
+            let candidate = configuration.backupRoot
+                .appendingPathComponent(batch.id, isDirectory: true)
+                .standardizedFileURL
+            let parent = candidate.deletingLastPathComponent().resolvingSymlinksInPath()
+            guard parent == backupRoot else {
+                throw CodexMediaBackupStoreError.invalidBatch(batch.id)
+            }
+
+            let values = try candidate.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isSymbolicLinkKey,
+                .fileResourceIdentifierKey
+            ])
+            guard values.isDirectory == true, values.isSymbolicLink != true else {
+                throw CodexMediaBackupStoreError.invalidBatch(batch.id)
+            }
+            let currentIdentifier = values.fileResourceIdentifier.map { String(describing: $0) }
+            if let expected = batch.resourceIdentifier, currentIdentifier != expected {
+                throw CodexMediaBackupStoreError.batchChanged(batch.id)
+            }
+
+            try fileManager.removeItem(at: candidate)
+            removedFiles += batch.fileCount
+            removedBytes += max(batch.allocatedBytes, 0)
+        }
+
+        let capacityAfter = availableCapacity(at: backupRoot)
+        let immediate = max((capacityAfter ?? 0) - (capacityBefore ?? 0), 0)
+        return .init(
+            removedBatchCount: batches.count,
+            removedFileCount: removedFiles,
+            removedAllocatedBytes: removedBytes,
+            immediatelyReclaimedBytes: immediate
+        )
+    }
+
+    private func allocatedSize(of root: URL) throws -> (bytes: Int64, files: Int) {
+        let keys: Set<URLResourceKey> = [
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+            .fileAllocatedSizeKey,
+            .totalFileAllocatedSizeKey,
+            .fileSizeKey
+        ]
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: Array(keys),
+            options: [],
+            errorHandler: { _, _ in true }
+        ) else { return (0, 0) }
+
+        var bytes: Int64 = 0
+        var files = 0
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: keys)
+            if values.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard values.isRegularFile == true else { continue }
+            let allocated = values.totalFileAllocatedSize
+                ?? values.fileAllocatedSize
+                ?? values.fileSize
+                ?? 0
+            bytes += Int64(max(allocated, 0))
+            files += 1
+        }
+        return (bytes, files)
+    }
+
+    private func reportMetadata(
+        runID: String,
+        configuration: CodexMediaCleanupConfiguration
+    ) -> (status: CodexMediaBackupReportStatus, path: String?) {
+        let reportRoot = configuration.reportRoot.appendingPathComponent(runID, isDirectory: true)
+        guard let reports = try? FileManager.default.contentsOfDirectory(
+            at: reportRoot,
+            includingPropertiesForKeys: nil,
+            options: []
+        ) else { return (.unavailable, nil) }
+
+        if let completed = reports.first(where: { $0.lastPathComponent.hasSuffix("-report.json") }) {
+            return (.completed, completed.path)
+        }
+        if let progress = reports.first(where: { $0.lastPathComponent.hasSuffix("-progress.json") }) {
+            return (.interrupted, progress.path)
+        }
+        return (.unavailable, nil)
+    }
+
+    private func availableCapacity(at url: URL) -> Int64? {
+        try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+            .volumeAvailableCapacityForImportantUsage
+    }
+
+    private static func isValidRunID(_ value: String) -> Bool {
+        guard !value.isEmpty, value != ".", value != ".." else { return false }
+        return value.unicodeScalars.allSatisfy {
+            CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_" || $0 == "."
+        }
+    }
+}
+
 struct CodexMediaWorkerResponse: Codable, Sendable {
     let result: CodexMediaRepairReport.FileResult?
     let error: String?
@@ -117,6 +349,16 @@ struct CodexMediaCleanupSnapshot: Equatable, Sendable {
     var requiresRestartValidation = false
     var codexRestarted = false
     var historyConversationValidated = false
+    var backupBatches: [CodexMediaBackupBatch] = []
+    var isScanningBackups = false
+    var isDeletingBackups = false
+    var lastBackupCleanupResult: CodexMediaBackupCleanupResult?
+
+    var backupAllocatedBytes: Int64 {
+        backupBatches.reduce(0) { $0 + max($1.allocatedBytes, 0) }
+    }
+
+    var isManagingBackups: Bool { isScanningBackups || isDeletingBackups }
 
     var isBusy: Bool {
         switch phase {

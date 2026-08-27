@@ -103,6 +103,7 @@ final class CodexMediaCleanupPlugin: MacToolsPlugin, PluginPrimaryPanel,
 
     func deactivate(reason: PluginDeactivationReason) {
         controller.cancelCurrentOperation()
+        controller.cancelBackupManagement()
     }
 
     func refresh() {}

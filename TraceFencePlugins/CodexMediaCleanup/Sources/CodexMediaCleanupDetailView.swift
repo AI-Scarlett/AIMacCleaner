@@ -6,6 +6,8 @@ struct CodexMediaCleanupDetailView: View {
     @ObservedObject var controller: CodexMediaCleanupController
     let localization: PluginLocalization
     @State private var pendingOperation: CodexMediaOperation?
+    @State private var selectedBackupIDs: Set<CodexMediaBackupBatch.ID> = []
+    @State private var isConfirmingBackupDeletion = false
 
     private var snapshot: CodexMediaCleanupSnapshot { controller.snapshot }
 
@@ -19,6 +21,7 @@ struct CodexMediaCleanupDetailView: View {
             if snapshot.isBusy { progressCard }
             if let report = snapshot.scanReport { scanSummary(report) }
             if let report = snapshot.repairReport { operationSummary(report) }
+            backupManagement
             if snapshot.requiresRestartValidation { restartValidation }
             operationLog
             if let error = snapshot.errorMessage { errorCard(error) }
@@ -43,6 +46,26 @@ struct CodexMediaCleanupDetailView: View {
                 "confirm.message",
                 "请先暂停所有 Codex 任务并完全退出客户端。TraceFence 不会强制结束进程；它会等待 Codex 和文件句柄全部关闭，逐文件建立并校验备份，再原子替换。完成后必须重新启动 Codex 并验证历史对话。"
             ))
+        }
+        .confirmationDialog(
+            backupDeletionTitle,
+            isPresented: $isConfirmingBackupDeletion,
+            titleVisibility: .visible
+        ) {
+            Button(t("backup.delete.confirm", "永久删除所选备份"), role: .destructive) {
+                let selected = selectedBackupIDs
+                selectedBackupIDs.removeAll()
+                controller.deleteBackups(ids: selected)
+            }
+            Button(t("action.cancel", "取消"), role: .cancel) {}
+        } message: {
+            Text(t(
+                "backup.delete.warning",
+                "删除后将无法用这些批次恢复修复前的 Codex 会话。当前会话和媒体对象不会被删除；此操作不可撤销。"
+            ))
+        }
+        .onChange(of: snapshot.backupBatches.map(\.id)) { _, validIDs in
+            selectedBackupIDs.formIntersection(Set(validIDs))
         }
     }
 
@@ -368,6 +391,185 @@ struct CodexMediaCleanupDetailView: View {
         .background(.green.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
     }
 
+    private var backupManagement: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Label(t("backup.title", "修复备份"), systemImage: "archivebox.fill")
+                    .font(.headline)
+                Text(localization.format(
+                    "backup.totalFormat",
+                    defaultValue: "%lld 批 · 约 %@",
+                    Int64(snapshot.backupBatches.count),
+                    Self.bytes(snapshot.backupAllocatedBytes)
+                ))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    if selectedBackupIDs.count == snapshot.backupBatches.count {
+                        selectedBackupIDs.removeAll()
+                    } else {
+                        selectedBackupIDs = Set(snapshot.backupBatches.map(\.id))
+                    }
+                } label: {
+                    Text(selectedBackupIDs.count == snapshot.backupBatches.count && !snapshot.backupBatches.isEmpty
+                        ? t("backup.deselectAll", "取消全选")
+                        : t("backup.selectAll", "全选"))
+                }
+                .disabled(!controller.canManageBackups || snapshot.backupBatches.isEmpty)
+
+                Button {
+                    controller.refreshBackups()
+                } label: {
+                    Label(t("backup.refresh", "刷新"), systemImage: "arrow.clockwise")
+                }
+                .disabled(!controller.canManageBackups)
+
+                Button(role: .destructive) {
+                    isConfirmingBackupDeletion = true
+                } label: {
+                    Label(
+                        localization.format(
+                            "backup.deleteSelectedFormat",
+                            defaultValue: "永久删除 %lld 批",
+                            Int64(selectedBackupIDs.count)
+                        ),
+                        systemImage: "trash"
+                    )
+                }
+                .disabled(!controller.canManageBackups || selectedBackupIDs.isEmpty)
+            }
+
+            Text(t(
+                "backup.description",
+                "每次清理或修复前创建的完整回滚点。确认历史对话正常后，可手动永久删除旧批次释放空间；默认不会自动选择或删除。"
+            ))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            if snapshot.isScanningBackups || snapshot.isDeletingBackups {
+                HStack(spacing: 9) {
+                    ProgressView().controlSize(.small)
+                    Text(snapshot.isDeletingBackups
+                        ? t("backup.deleting", "正在校验并永久删除所选备份…")
+                        : t("backup.scanning", "正在统计备份的物理占用…"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else if snapshot.backupBatches.isEmpty {
+                Label(t("backup.empty", "没有可管理的修复备份"), systemImage: "checkmark.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(snapshot.backupBatches) { batch in
+                        backupRow(batch)
+                        if batch.id != snapshot.backupBatches.last?.id { Divider() }
+                    }
+                }
+                .background(.background.opacity(0.52), in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.secondary.opacity(0.12)))
+            }
+
+            if let result = snapshot.lastBackupCleanupResult {
+                Label(
+                    localization.format(
+                        "backup.resultFormat",
+                        defaultValue: "已删除 %lld 批、%lld 个文件（约 %@）；APFS 即时增加 %@ 可用空间。",
+                        Int64(result.removedBatchCount),
+                        Int64(result.removedFileCount),
+                        Self.bytes(result.removedAllocatedBytes),
+                        Self.bytes(result.immediatelyReclaimedBytes)
+                    ),
+                    systemImage: "checkmark.circle.fill"
+                )
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            }
+        }
+        .padding(14)
+        .background(.orange.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(.orange.opacity(0.14)))
+    }
+
+    private func backupRow(_ batch: CodexMediaBackupBatch) -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            Toggle("", isOn: Binding(
+                get: { selectedBackupIDs.contains(batch.id) },
+                set: { selected in
+                    if selected { selectedBackupIDs.insert(batch.id) }
+                    else { selectedBackupIDs.remove(batch.id) }
+                }
+            ))
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+                .disabled(!controller.canManageBackups)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 7) {
+                    Text(batch.id).font(.callout.weight(.semibold)).textSelection(.enabled)
+                    Text(backupStatusText(batch.reportStatus))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(backupStatusColor(batch.reportStatus))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(backupStatusColor(batch.reportStatus).opacity(0.1), in: Capsule())
+                }
+                Text(localization.format(
+                    "backup.rowDetailFormat",
+                    defaultValue: "%@ · %lld 个文件 · %@",
+                    Self.bytes(batch.allocatedBytes),
+                    Int64(batch.fileCount),
+                    Self.date(batch.createdAt)
+                ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button(t("backup.show", "查看")) {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: batch.path)])
+            }
+            if let reportPath = batch.reportPath {
+                Button(t("backup.showReport", "报告")) {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: reportPath)])
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    private var selectedBackupBytes: Int64 {
+        snapshot.backupBatches
+            .filter { selectedBackupIDs.contains($0.id) }
+            .reduce(0) { $0 + max($1.allocatedBytes, 0) }
+    }
+
+    private var backupDeletionTitle: String {
+        localization.format(
+            "backup.delete.titleFormat",
+            defaultValue: "永久删除 %lld 个备份批次（约 %@）？",
+            Int64(selectedBackupIDs.count),
+            Self.bytes(selectedBackupBytes)
+        )
+    }
+
+    private func backupStatusText(_ status: CodexMediaBackupReportStatus) -> String {
+        switch status {
+        case .completed: t("backup.status.completed", "报告完整")
+        case .interrupted: t("backup.status.interrupted", "操作中断")
+        case .unavailable: t("backup.status.unavailable", "无报告")
+        }
+    }
+
+    private func backupStatusColor(_ status: CodexMediaBackupReportStatus) -> Color {
+        switch status {
+        case .completed: .green
+        case .interrupted: .orange
+        case .unavailable: .secondary
+        }
+    }
+
     private var restartValidation: some View {
         VStack(alignment: .leading, spacing: 11) {
             Label(t("validation.title", "必须完成：重启与历史对话验证"), systemImage: "arrow.clockwise.circle.fill")
@@ -573,6 +775,13 @@ struct CodexMediaCleanupDetailView: View {
     private static func time(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: date)
+    }
+
+    private static func date(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
         return formatter.string(from: date)
     }
 

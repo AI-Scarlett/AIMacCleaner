@@ -200,6 +200,97 @@ final class CodexMediaCleanupEngineTests: XCTestCase {
         }
     }
 
+    func testBackupStoreListsCompletedInterruptedAndUnreportedBatches() throws {
+        let backupRoot = support.appendingPathComponent("Backups", isDirectory: true)
+        let reportRoot = support.appendingPathComponent("Reports", isDirectory: true)
+        let completed = backupRoot.appendingPathComponent("run-completed/sessions/a.jsonl")
+        let interrupted = backupRoot.appendingPathComponent("run-interrupted/sessions/b.jsonl")
+        let unavailable = backupRoot.appendingPathComponent("run-unreported/sessions/c.jsonl")
+        for file in [completed, interrupted, unavailable] {
+            try FileManager.default.createDirectory(
+                at: file.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try Data(repeating: 0x41, count: 8_192).write(to: file)
+        }
+        let completedReport = reportRoot.appendingPathComponent("run-completed/repair-report.json")
+        let progressReport = reportRoot.appendingPathComponent("run-interrupted/repair-progress.json")
+        for file in [completedReport, progressReport] {
+            try FileManager.default.createDirectory(
+                at: file.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try Data("{}".utf8).write(to: file)
+        }
+
+        let batches = try CodexMediaBackupStore().scan(configuration: configuration)
+        let byID = Dictionary(uniqueKeysWithValues: batches.map { ($0.id, $0) })
+
+        XCTAssertEqual(byID["run-completed"]?.reportStatus, .completed)
+        XCTAssertEqual(byID["run-interrupted"]?.reportStatus, .interrupted)
+        XCTAssertEqual(byID["run-unreported"]?.reportStatus, .unavailable)
+        XCTAssertEqual(byID["run-completed"]?.fileCount, 1)
+        XCTAssertGreaterThan(byID["run-completed"]?.allocatedBytes ?? 0, 0)
+    }
+
+    func testBackupStorePermanentlyRemovesOnlySelectedDirectBatch() throws {
+        let currentSession = codexHome.appendingPathComponent("sessions/current.jsonl")
+        try FileManager.default.createDirectory(
+            at: currentSession.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("current".utf8).write(to: currentSession)
+
+        let first = support.appendingPathComponent("Backups/run-a/sessions/a.jsonl")
+        let second = support.appendingPathComponent("Backups/run-b/sessions/b.jsonl")
+        for file in [first, second] {
+            try FileManager.default.createDirectory(
+                at: file.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try Data(repeating: 0x42, count: 4_096).write(to: file)
+        }
+
+        let store = CodexMediaBackupStore()
+        let batches = try store.scan(configuration: configuration)
+        let selected = try XCTUnwrap(batches.first(where: { $0.id == "run-a" }))
+        let result = try store.remove([selected], configuration: configuration)
+
+        XCTAssertEqual(result.removedBatchCount, 1)
+        XCTAssertEqual(result.removedFileCount, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: second.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: currentSession.path))
+    }
+
+    func testBackupStoreRejectsTraversalAndIgnoresSymlinkBatches() throws {
+        let backupRoot = support.appendingPathComponent("Backups", isDirectory: true)
+        try FileManager.default.createDirectory(at: backupRoot, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: backupRoot.appendingPathComponent("linked-sessions"),
+            withDestinationURL: codexHome
+        )
+
+        XCTAssertTrue(try CodexMediaBackupStore().scan(configuration: configuration).isEmpty)
+
+        let malicious = CodexMediaBackupBatch(
+            id: "../sessions",
+            path: codexHome.path,
+            createdAt: Date(),
+            allocatedBytes: 1,
+            fileCount: 1,
+            reportStatus: .unavailable,
+            reportPath: nil,
+            resourceIdentifier: nil
+        )
+        XCTAssertThrowsError(
+            try CodexMediaBackupStore().remove([malicious], configuration: configuration)
+        ) { error in
+            XCTAssertEqual(error as? CodexMediaBackupStoreError, .invalidBatch("../sessions"))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: codexHome.path))
+    }
+
     func testIsolatedWorkerRepairsFixtureWithoutMutatingHostProcess() async throws {
         let fixture = try makeMixedSession(named: "isolated-worker")
         let configuration = CodexMediaCleanupConfiguration(
@@ -296,6 +387,14 @@ final class CodexMediaCleanupEngineTests: XCTestCase {
         return try XCTUnwrap(
             FileManager.default.isExecutableFile(atPath: helper.path) ? helper : nil,
             "isolated worker is missing from the built plugin bundle"
+        )
+    }
+
+    private var configuration: CodexMediaCleanupConfiguration {
+        CodexMediaCleanupConfiguration(
+            codexHome: codexHome,
+            supportDirectory: support,
+            includeArchivedSessions: true
         )
     }
 

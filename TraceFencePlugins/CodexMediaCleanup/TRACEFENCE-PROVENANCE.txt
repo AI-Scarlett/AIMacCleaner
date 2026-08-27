@@ -1,5 +1,5 @@
 TraceFence first-party plugin distribution
-Plugin: codex-media-cleanup 1.0.0
+Plugin: codex-media-cleanup 1.1.0
 Source owner: TraceFence
 Source location: private TraceFence application repository
 Runtime distribution: AI-Scarlett/TraceFence immutable per-plugin release
