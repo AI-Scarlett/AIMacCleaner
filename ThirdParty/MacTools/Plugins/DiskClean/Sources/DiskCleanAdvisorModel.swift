@@ -62,7 +62,7 @@ final class DiskCleanAdvisorModel: ObservableObject {
     }
 
     var isScanning: Bool {
-        stage == .agentAndBuildStorage || stage == .fileInventory
+        stage == .agentAndBuildStorage || stage == .systemData || stage == .fileInventory
     }
 
     var hasResult: Bool {

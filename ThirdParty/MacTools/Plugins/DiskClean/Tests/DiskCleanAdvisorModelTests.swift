@@ -30,6 +30,7 @@ final class DiskCleanAdvisorModelTests: XCTestCase {
 
         XCTAssertEqual(model.stage, .completed)
         XCTAssertNotNil(model.storageSummary)
+        XCTAssertEqual(model.systemDataSummary?.buckets.count, 7)
         XCTAssertNotNil(model.inventorySummary)
         XCTAssertTrue(model.files.contains {
             $0.path == userFile.standardizedFileURL.path
