@@ -183,7 +183,7 @@ final class DiskCleanExecutorTests: XCTestCase {
         XCTAssertEqual(result.mode, .trash)
         XCTAssertEqual(
             result.itemResults.first?.outcome,
-            .trashed(reclaimedBytes: 0, stagedName: ".mactools-staged-x")
+            .trashed(reclaimedBytes: 1, stagedName: ".mactools-staged-x")
         )
     }
 
@@ -237,7 +237,7 @@ final class DiskCleanExecutorTests: XCTestCase {
     private func makePlan(
         paths: [String],
         mode: DiskCleanRemovalMode = .permanent,
-        bytes: Int64 = 0,
+        bytes: Int64 = 1,
         lockedByBundleIDs: [String] = [],
         skipWhenProcessIsRunning: [String] = []
     ) throws -> DiskCleanValidatedPlan {

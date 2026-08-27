@@ -1,6 +1,230 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "advisor.stage.systemData": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": { "stringUnit": { "state": "translated", "value": "جارٍ تحليل مصادر بيانات النظام (للقراءة فقط)…" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Systemdatenquellen werden analysiert (nur Lesen)…" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Breaking down System Data sources (read-only)…" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Analizando los orígenes de Datos del sistema (solo lectura)…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Analyse des sources des données système (lecture seule)…" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "システムデータの内訳を解析中（読み取り専用）…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "시스템 데이터 출처 분석 중(읽기 전용)…" } },
+        "pt": { "stringUnit": { "state": "translated", "value": "A analisar as origens dos Dados do Sistema (só leitura)…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Анализ источников системных данных (только чтение)…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在拆分系统数据来源（只读分析）…" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "正在拆分系統資料來源（唯讀分析）…" } }
+      }
+    },
+    "advisor.systemData.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": { "stringUnit": { "state": "translated", "value": "تحليل مصادر بيانات النظام" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Analyse der Systemdatenquellen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "System Data source analysis" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Análisis de orígenes de Datos del sistema" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Analyse des sources des données système" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "システムデータの内訳" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "시스템 데이터 출처 분석" } },
+        "pt": { "stringUnit": { "state": "translated", "value": "Análise das origens dos Dados do Sistema" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Источники системных данных" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "系统数据来源分析" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "系統資料來源分析" } }
+      }
+    },
+    "advisor.systemData.caches": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": { "stringUnit": { "state": "translated", "value": "ذاكرة التخزين المؤقت للمستخدم والتطبيقات" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Benutzer- und App-Caches" } },
+        "en": { "stringUnit": { "state": "translated", "value": "User and app caches" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Cachés de usuario y apps" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Caches utilisateur et apps" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ユーザーとアプリのキャッシュ" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "사용자 및 앱 캐시" } },
+        "pt": { "stringUnit": { "state": "translated", "value": "Caches do utilizador e das apps" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Кэши пользователя и приложений" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "用户与应用缓存" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "使用者與 App 快取" } }
+      }
+    },
+    "advisor.systemData.temporary": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": { "stringUnit": { "state": "translated", "value": "مجلد المستخدم المؤقت" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Temporärer Benutzerordner" } },
+        "en": { "stringUnit": { "state": "translated", "value": "User temporary directory" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Directorio temporal del usuario" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Dossier temporaire utilisateur" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ユーザー一時フォルダ" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "사용자 임시 디렉터리" } },
+        "pt": { "stringUnit": { "state": "translated", "value": "Diretório temporário do utilizador" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Временный каталог пользователя" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "用户临时目录" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "使用者暫存目錄" } }
+      }
+    },
+    "advisor.systemData.developer": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": { "stringUnit": { "state": "translated", "value": "بيانات المطور والمحاكي" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Entwickler- und Simulatordaten" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Developer and simulator data" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Datos de desarrollo y simuladores" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Données de développement et simulateurs" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "開発・シミュレータデータ" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "개발자 및 시뮬레이터 데이터" } },
+        "pt": { "stringUnit": { "state": "translated", "value": "Dados de desenvolvimento e simuladores" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Данные разработчика и симуляторов" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "开发者与模拟器数据" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "開發者與模擬器資料" } }
+      }
+    },
+    "advisor.systemData.applicationSupport": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": { "stringUnit": { "state": "translated", "value": "بيانات دعم التطبيقات" } },
+        "de": { "stringUnit": { "state": "translated", "value": "App-Supportdaten" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Application Support data" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Datos de soporte de aplicaciones" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Données de support des apps" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Application Support データ" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Application Support 데이터" } },
+        "pt": { "stringUnit": { "state": "translated", "value": "Dados de suporte das aplicações" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Данные поддержки приложений" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "应用支持数据" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "App 支援資料" } }
+      }
+    },
+    "advisor.systemData.containers": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": { "stringUnit": { "state": "translated", "value": "بيانات حاويات التطبيقات" } },
+        "de": { "stringUnit": { "state": "translated", "value": "App-Containerdaten" } },
+        "en": { "stringUnit": { "state": "translated", "value": "App container data" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Datos de contenedores de apps" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Données des conteneurs d’apps" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "アプリコンテナデータ" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "앱 컨테이너 데이터" } },
+        "pt": { "stringUnit": { "state": "translated", "value": "Dados dos contentores das apps" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Данные контейнеров приложений" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "应用容器数据" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "App 容器資料" } }
+      }
+    },
+    "advisor.systemData.diagnostics": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": { "stringUnit": { "state": "translated", "value": "بيانات تشخيص النظام" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Systemdiagnosedaten" } },
+        "en": { "stringUnit": { "state": "translated", "value": "System diagnostics" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Diagnósticos del sistema" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Diagnostics système" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "システム診断データ" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "시스템 진단 데이터" } },
+        "pt": { "stringUnit": { "state": "translated", "value": "Diagnósticos do sistema" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Системная диагностика" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "系统诊断数据" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "系統診斷資料" } }
+      }
+    },
+    "advisor.systemData.virtualMemory": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": { "stringUnit": { "state": "translated", "value": "الذاكرة الافتراضية / Swap" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Virtueller Speicher / Swap" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Virtual memory / Swap" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Memoria virtual / Swap" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mémoire virtuelle / Swap" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "仮想メモリ / Swap" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "가상 메모리 / Swap" } },
+        "pt": { "stringUnit": { "state": "translated", "value": "Memória virtual / Swap" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Виртуальная память / Swap" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "虚拟内存 / Swap" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "虛擬記憶體 / Swap" } }
+      }
+    },
+    "advisor.systemData.cleanable": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": { "stringUnit": { "state": "translated", "value": "يمكن إدخاله في التنظيف الآمن" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Für sichere Bereinigung geeignet" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Eligible for safe cleanup" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Apto para limpieza segura" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Éligible au nettoyage sécurisé" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "安全なクリーンアップ対象" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "안전 정리 가능" } },
+        "pt": { "stringUnit": { "state": "translated", "value": "Elegível para limpeza segura" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Можно безопасно очистить" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "可进入安全清理" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "可進入安全清理" } }
+      }
+    },
+    "advisor.systemData.review": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": { "stringUnit": { "state": "translated", "value": "يتطلب مراجعة لكل عنصر" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Einzeln prüfen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Item-by-item review required" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Requiere revisión individual" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vérification élément par élément" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "項目ごとの確認が必要" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "항목별 검토 필요" } },
+        "pt": { "stringUnit": { "state": "translated", "value": "Requer revisão item a item" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Нужна проверка каждого элемента" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "需逐项复核" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "需逐項複核" } }
+      }
+    },
+    "advisor.systemData.managed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": { "stringUnit": { "state": "translated", "value": "يديره macOS، لا يُحذف مباشرة" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Von macOS verwaltet, nicht direkt löschen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Managed by macOS; do not delete directly" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Gestionado por macOS; no eliminar directamente" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Géré par macOS ; ne pas supprimer directement" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "macOS 管理（直接削除しない）" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "macOS 관리 항목(직접 삭제 안 함)" } },
+        "pt": { "stringUnit": { "state": "translated", "value": "Gerido pelo macOS; não eliminar diretamente" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Управляется macOS; не удалять напрямую" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "macOS 管理，不直接删除" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "macOS 管理，不直接刪除" } }
+      }
+    },
+    "advisor.systemData.note": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": { "stringUnit": { "state": "translated", "value": "تم قياس %@ للقراءة فقط؛ قد تتضمن «بيانات النظام» في macOS مساحة APFS قابلة للتطهير وبيانات محمية، لذا لا يمكن اعتبار إجمالي الإعدادات مساحة قابلة للحذف.%@" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Schreibgeschützt gemessen: %@. „Systemdaten“ kann löschbaren APFS-Speicher und geschützte Daten enthalten; die Gesamtsumme in den Einstellungen ist daher nicht direkt löschbar.%@" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Read-only measurement: %@. macOS System Data can also include APFS purgeable space and protected data, so the Storage Settings total is not directly deletable.%@" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Medición de solo lectura: %@. Datos del sistema también puede incluir espacio APFS purgable y datos protegidos; el total de Ajustes no se puede eliminar directamente.%@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mesure en lecture seule : %@. Les données système peuvent inclure de l’espace APFS purgeable et des données protégées ; le total des Réglages n’est donc pas directement supprimable.%@" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "読み取り専用で %@ を測定しました。macOS の「システムデータ」には APFS の消去可能領域や保護データも含まれるため、設定の合計値をそのまま削除することはできません。%@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "읽기 전용으로 %@를 측정했습니다. macOS 시스템 데이터에는 APFS 제거 가능 공간과 보호된 데이터가 포함될 수 있으므로 설정의 합계는 직접 삭제할 수 없습니다.%@" } },
+        "pt": { "stringUnit": { "state": "translated", "value": "Medição só de leitura: %@. Os Dados do Sistema podem incluir espaço APFS purgável e dados protegidos; o total das Definições não pode ser eliminado diretamente.%@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Только для чтения измерено: %@. Системные данные macOS могут включать очищаемое пространство APFS и защищённые данные, поэтому итог из Настроек нельзя удалить напрямую.%@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "本次只读测得 %@；macOS 的“系统数据”还可能包含 APFS 可清除空间和受保护数据，不能把系统设置中的总数直接当作可删除空间。%@" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "本次唯讀測得 %@；macOS 的「系統資料」還可能包含 APFS 可清除空間和受保護資料，不能把系統設定中的總數直接當作可刪除空間。%@" } }
+      }
+    },
+    "advisor.systemData.truncated": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": { "stringUnit": { "state": "translated", "value": " بلغ الفحص حد الوقت/العناصر؛ المعروض هو الجزء الذي تم قياسه." } },
+        "de": { "stringUnit": { "state": "translated", "value": " Das Zeit-/Eintragslimit wurde erreicht; angezeigt wird der gemessene Teil." } },
+        "en": { "stringUnit": { "state": "translated", "value": " The scan reached its time/entry limit; values show the measured portion." } },
+        "es": { "stringUnit": { "state": "translated", "value": " El análisis alcanzó el límite de tiempo/entradas; se muestra la parte medida." } },
+        "fr": { "stringUnit": { "state": "translated", "value": " La limite de temps/éléments a été atteinte ; seule la partie mesurée est affichée." } },
+        "ja": { "stringUnit": { "state": "translated", "value": " 時間/項目上限に達したため、測定済み部分のみ表示しています。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": " 시간/항목 제한에 도달하여 측정된 부분만 표시합니다." } },
+        "pt": { "stringUnit": { "state": "translated", "value": " A análise atingiu o limite de tempo/itens; é apresentada a parte medida." } },
+        "ru": { "stringUnit": { "state": "translated", "value": " Достигнут лимит времени/элементов; показана измеренная часть." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": " 扫描达到时间/条目上限，结果为已测部分。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": " 掃描達到時間/項目上限，結果為已測部分。" } }
+      }
+    },
     "advisor.cache.restored": {
       "extractionState": "manual",
       "localizations": {

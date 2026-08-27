@@ -51,6 +51,13 @@ struct DiskCleanRootIdentity: Equatable, Sendable {
     let fileID: UInt64
     let mtime: Date
     let fileType: FileType
+    /// Logical length of the root object at observation time. This is identity evidence only;
+    /// user-facing reclaim estimates use physically allocated bytes instead.
+    ///
+    /// Keeping both values is important: `st_size` and `st_blocks * 512` are intentionally
+    /// different for sparse/compressed files. Comparing the physical estimate with `st_size`
+    /// would reject an unchanged installer on every cleanup attempt.
+    let logicalBytes: Int64
 
     /// Build identity from `stat`.
     init(stat value: stat) {
@@ -58,13 +65,21 @@ struct DiskCleanRootIdentity: Equatable, Sendable {
         self.fileID = value.st_ino
         self.mtime = Self.date(from: value.st_mtimespec)
         self.fileType = FileType(mode: value.st_mode)
+        self.logicalBytes = max(value.st_size, 0)
     }
 
-    init(devid: UInt64, fileID: UInt64, mtime: Date, fileType: FileType) {
+    init(
+        devid: UInt64,
+        fileID: UInt64,
+        mtime: Date,
+        fileType: FileType,
+        logicalBytes: Int64 = 0
+    ) {
         self.devid = devid
         self.fileID = fileID
         self.mtime = mtime
         self.fileType = fileType
+        self.logicalBytes = max(logicalBytes, 0)
     }
 
     /// Time conversion lives in one place: cache hits require exact mtime equality, so both sides must use the same conversion.

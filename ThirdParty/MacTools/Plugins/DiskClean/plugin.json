@@ -1,7 +1,7 @@
 {
   "id": "disk-clean",
   "displayName": "磁盘清理",
-  "summary": "本地磁盘分析与安全清理：恢复上次结果，按恢复成本分级缓存、依赖、构建产物、Agent 存储和用户文件",
+  "summary": "本地磁盘分析与安全清理：拆分系统数据来源，按恢复成本复核缓存、依赖、构建产物、Agent 存储和用户文件",
   "localizedMetadata": {
     "ar": {
       "displayName": "تنظيف القرص",
@@ -13,7 +13,7 @@
     },
     "en": {
       "displayName": "Disk Cleanup",
-      "summary": "Local disk analysis and safe cleanup with instant result restore and recovery-aware classification for caches, dependencies, builds, Agent storage, and user files"
+      "summary": "Local disk analysis and safe cleanup with System Data breakdown and recovery-aware classification for caches, dependencies, builds, Agent storage, and user files"
     },
     "es": {
       "displayName": "Limpieza de disco",
@@ -41,14 +41,14 @@
     },
     "zh-Hans": {
       "displayName": "磁盘清理",
-      "summary": "本地磁盘分析与安全清理：恢复上次结果，按恢复成本分级缓存、依赖、构建产物、Agent 存储和用户文件"
+      "summary": "本地磁盘分析与安全清理：拆分系统数据来源，按恢复成本分级缓存、依赖、构建产物、Agent 存储和用户文件"
     },
     "zh-Hant": {
       "displayName": "磁碟清理",
-      "summary": "本機磁碟分析與安全清理：還原上次結果，並依復原成本分類快取、依賴、建置產物、Agent 儲存與使用者檔案"
+      "summary": "本機磁碟分析與安全清理：拆分系統資料來源，並依復原成本分類快取、依賴、建置產物、Agent 儲存與使用者檔案"
     }
   },
-  "version": "3.2.0",
+  "version": "3.3.0",
   "minHostVersion": "1.1.6",
   "pluginKitVersion": 4,
   "bundleRelativePath": "DiskClean.bundle",

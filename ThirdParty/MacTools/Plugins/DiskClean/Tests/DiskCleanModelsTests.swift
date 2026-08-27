@@ -55,6 +55,19 @@ final class DiskCleanModelsTests: XCTestCase {
         XCTAssertTrue(makeCandidate(sizeResult: .testComplete()).isCleanable)
     }
 
+    func testCompleteZeroAllocationCandidateIsNotCleanable() {
+        XCTAssertFalse(makeCandidate(sizeResult: .testComplete(bytes: 0)).isCleanable)
+    }
+
+    func testCompleteZeroAllocationCandidateIsHiddenFromCleanupReview() {
+        let groups = DiskCleanCategoryGroup.groups(
+            candidates: [makeCandidate(sizeResult: .testComplete(bytes: 0))],
+            selection: .empty
+        )
+
+        XCTAssertTrue(groups.isEmpty)
+    }
+
     // MARK: - Scan result projection
 
     func testScanResultTotalsOnlyCleanableCandidates() {

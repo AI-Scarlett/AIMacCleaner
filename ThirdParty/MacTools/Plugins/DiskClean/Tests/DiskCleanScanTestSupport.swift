@@ -12,9 +12,16 @@ extension DiskCleanRootIdentity {
         devid: UInt64 = 1,
         fileID: UInt64 = 2,
         mtime: Date = Date(timeIntervalSince1970: 1_000),
-        fileType: DiskCleanRootIdentity.FileType = .directory
+        fileType: DiskCleanRootIdentity.FileType = .directory,
+        logicalBytes: Int64 = 0
     ) -> DiskCleanRootIdentity {
-        DiskCleanRootIdentity(devid: devid, fileID: fileID, mtime: mtime, fileType: fileType)
+        DiskCleanRootIdentity(
+            devid: devid,
+            fileID: fileID,
+            mtime: mtime,
+            fileType: fileType,
+            logicalBytes: logicalBytes
+        )
     }
 }
 

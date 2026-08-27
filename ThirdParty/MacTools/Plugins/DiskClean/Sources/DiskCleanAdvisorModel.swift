@@ -4,6 +4,7 @@ import Foundation
 enum DiskCleanAdvisorStage: Equatable, Sendable {
     case idle
     case agentAndBuildStorage
+    case systemData
     case fileInventory
     case completed
 }
@@ -18,6 +19,7 @@ final class DiskCleanAdvisorModel: ObservableObject {
     @Published private(set) var stage: DiskCleanAdvisorStage = .idle
     @Published private(set) var storageSummary: StorageOptimizationSummary?
     @Published private(set) var storageCleanupItems: [StorageCleanupItem] = []
+    @Published private(set) var systemDataSummary: SystemDataStorageSummary?
     @Published private(set) var inventorySummary: DiskFileInventorySummary?
     @Published private(set) var files: [DiskFileRecord] = []
     @Published private(set) var errorMessage: String?
@@ -105,6 +107,16 @@ final class DiskCleanAdvisorModel: ObservableObject {
             guard let self, self.scanGeneration == generation, !Task.isCancelled else { return }
             self.storageSummary = storageResult.summary
             self.storageCleanupItems = storageResult.cleanupItems
+            self.stage = .systemData
+
+            let systemDataResult = await Task.detached(priority: .utility) {
+                autoreleasepool {
+                    SystemDataStorageInspectionCore.scan(homeDirectory: homeDirectory)
+                }
+            }.value
+
+            guard self.scanGeneration == generation, !Task.isCancelled else { return }
+            self.systemDataSummary = systemDataResult
             self.stage = .fileInventory
 
             let inventoryResult = await Task.detached(priority: .utility) {

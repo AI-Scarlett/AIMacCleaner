@@ -1,4 +1,4 @@
-TraceFence plugin: disk-clean 3.2.0
+TraceFence plugin: disk-clean 3.3.0
 Implementation: independent Swift implementation for MacToolsPluginKit
 Capability and algorithm reference: https://github.com/137137137/OpenDisk
 Reference commit: 16765d0a13cdb38ab1c2db1391ef3d9e2b9af30e

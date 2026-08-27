@@ -42,7 +42,7 @@ enum DiskCleanPlanFactory {
     static func candidate(
         path: String,
         identity: DiskCleanRootIdentity? = nil,
-        bytes: Int64 = 0,
+        bytes: Int64 = 1,
         observedAt: Date = DiskCleanPlanFactory.observedAt,
         safety: DiskCleanSafetyStatus = .allowed,
         sizeResult: DiskCleanSizeResult? = nil

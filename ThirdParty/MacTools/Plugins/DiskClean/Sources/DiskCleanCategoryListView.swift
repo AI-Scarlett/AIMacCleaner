@@ -18,7 +18,17 @@ struct DiskCleanCategoryGroup: Identifiable, Equatable, Sendable {
         candidates: [DiskCleanCandidate],
         selection: DiskCleanSelectionProjection
     ) -> [DiskCleanCategoryGroup] {
-        let candidatesByCategory = Dictionary(grouping: candidates, by: \.category)
+        // Complete, allowed zero-allocation entries cannot reclaim measurable disk space. Keep
+        // them in the scan artifact/audit, but do not flood the review list with "0 KB" rows.
+        let visibleCandidates = candidates.filter { candidate in
+            guard candidate.safety.isCleanable,
+                  let result = candidate.sizeResult,
+                  result.completeness.isComplete else {
+                return true
+            }
+            return result.estimatedBytes > 0
+        }
+        let candidatesByCategory = Dictionary(grouping: visibleCandidates, by: \.category)
         return DiskCleanCategoryID.displayOrder.compactMap { category in
             guard let items = candidatesByCategory[category], !items.isEmpty else { return nil }
             let selected = items.filter { selection.isSelected($0.id) }

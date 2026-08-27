@@ -72,8 +72,8 @@ struct DiskCleanRealStagedEntryDeviceResolver: DiskCleanStagedEntryDeviceResolvi
 /// Order is not interchangeable; each step closes a window:
 /// 1. Open parent with `O_NOFOLLOW_ANY` + `fstatfs` local-volume check—any path component replaced
 ///    by a symlink fails here.
-/// 2. `fstatat(AT_SYMLINK_NOFOLLOW)` rechecks `(devid, fileID, fileType, mtime)` (regular files also
-///    compare size)—objects replaced after the scan are stopped here; never mis-delete.
+/// 2. `fstatat(AT_SYMLINK_NOFOLLOW)` rechecks `(devid, fileID, fileType, mtime, logical size)`—
+///    objects replaced after the scan are stopped here; never mis-delete.
 /// 3. Journal is written and **fsync succeeds** before rename—the reverse would leave "unlogged
 ///    staged objects" that SafetyPolicy protects from scans while nobody knows their original name,
 ///    so user data effectively vanishes.
@@ -203,13 +203,9 @@ struct DiskCleanRemovalPrimitive: DiskCleanPlanItemRemoving {
             return code == ENOENT ? .mismatch : .failure(reason: Self.describe(code, doing: "复核对象身份"))
         }
 
-        // (devid, fileID, fileType) exact match + mtime compare. Replacement by a same-named new
-        // directory or symlink shows up here as a fileID or fileType difference.
+        // Exact identity match includes logical size. Reclaim estimates are physical allocation,
+        // so they must never be compared with `st_size` here.
         guard DiskCleanRootIdentity(stat: status) == item.rootIdentity else {
-            return .mismatch
-        }
-        // Regular files also compare size: when content is rewritten but mtime is preserved, size is the second evidence.
-        if item.rootIdentity.fileType == .regularFile, status.st_size != item.estimatedBytes {
             return .mismatch
         }
         return .match

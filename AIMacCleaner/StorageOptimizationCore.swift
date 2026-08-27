@@ -54,6 +54,206 @@ struct StorageOptimizationScanResult: Sendable {
     let cleanupItems: [StorageCleanupItem]
 }
 
+enum SystemDataStorageKind: String, Codable, Sendable {
+    case caches
+    case temporary
+    case developer
+    case applicationSupport
+    case appContainers
+    case systemDiagnostics
+    case virtualMemory
+}
+
+enum SystemDataStorageDisposition: String, Codable, Sendable {
+    /// Regenerable data already covered by the cleanup safety pipeline.
+    case cleanable
+    /// Large user/application data: show it, but require item-level review elsewhere.
+    case reviewRequired
+    /// macOS-owned data such as swap or diagnostic databases; never delete directly.
+    case systemManaged
+}
+
+struct SystemDataStorageBucket: Hashable, Codable, Sendable {
+    let kind: SystemDataStorageKind
+    let path: String
+    let allocatedBytes: Int64
+    let visitedEntryCount: Int
+    let unreadableEntryCount: Int
+    let disposition: SystemDataStorageDisposition
+    let wasTruncated: Bool
+}
+
+struct SystemDataStorageSummary: Hashable, Codable, Sendable {
+    let buckets: [SystemDataStorageBucket]
+    let measuredBytes: Int64
+    let visitedEntryCount: Int
+    let unreadableEntryCount: Int
+    let wasTruncated: Bool
+    let scanDuration: TimeInterval
+    let completedAt: Date
+}
+
+/// Bounded, read-only explanation of the major locations macOS may group under "System Data".
+///
+/// The Storage Settings number is not a deletable directory and can include APFS/purgeable and
+/// system-managed data. This scanner therefore reports physical allocation by source and labels
+/// what may enter the normal cleanup pipeline. It retains no path list and never deletes.
+enum SystemDataStorageInspectionCore {
+    private static let maximumVisitedEntries = 180_000
+    private static let maximumVisitedEntriesPerRoot = 25_000
+    private static let maximumScanDuration: TimeInterval = 12
+    private static let maximumScanDurationPerRoot: TimeInterval = 1.5
+
+    private struct RootDefinition {
+        let kind: SystemDataStorageKind
+        let url: URL
+        let disposition: SystemDataStorageDisposition
+    }
+
+    static func scan(homeDirectory: String, now: Date = Date()) -> SystemDataStorageSummary {
+        let startedAt = Date()
+        let deadline = startedAt.addingTimeInterval(maximumScanDuration)
+        let roots = definitions(homeDirectory: homeDirectory)
+        var buckets: [SystemDataStorageBucket] = []
+        var totalVisited = 0
+        var totalUnreadable = 0
+        var didTruncate = false
+
+        for root in roots {
+            guard totalVisited < maximumVisitedEntries else {
+                didTruncate = true
+                break
+            }
+            let rootDeadline = min(
+                deadline,
+                Date().addingTimeInterval(maximumScanDurationPerRoot)
+            )
+            let result = allocatedSize(
+                of: root.url,
+                remainingEntries: min(
+                    maximumVisitedEntriesPerRoot,
+                    maximumVisitedEntries - totalVisited
+                ),
+                deadline: rootDeadline
+            )
+            totalVisited += result.visited
+            totalUnreadable += result.unreadable
+            didTruncate = didTruncate || result.truncated
+            buckets.append(SystemDataStorageBucket(
+                kind: root.kind,
+                path: root.url.path,
+                allocatedBytes: result.bytes,
+                visitedEntryCount: result.visited,
+                unreadableEntryCount: result.unreadable,
+                disposition: root.disposition,
+                wasTruncated: result.truncated
+            ))
+        }
+
+        let completedAt = Date()
+        return SystemDataStorageSummary(
+            buckets: buckets,
+            measuredBytes: buckets.reduce(Int64(0)) { $0 + max($1.allocatedBytes, 0) },
+            visitedEntryCount: totalVisited,
+            unreadableEntryCount: totalUnreadable,
+            wasTruncated: didTruncate,
+            scanDuration: completedAt.timeIntervalSince(startedAt),
+            completedAt: completedAt
+        )
+    }
+
+    private static func definitions(homeDirectory: String) -> [RootDefinition] {
+        let home = URL(fileURLWithPath: homeDirectory, isDirectory: true).standardizedFileURL
+        let library = home.appendingPathComponent("Library", isDirectory: true)
+        let temporary = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .resolvingSymlinksInPath()
+        let perUserTemporaryRoot = temporary.deletingLastPathComponent()
+
+        return [
+            RootDefinition(
+                kind: .caches,
+                url: library.appendingPathComponent("Caches", isDirectory: true),
+                disposition: .cleanable
+            ),
+            RootDefinition(
+                kind: .temporary,
+                url: perUserTemporaryRoot,
+                disposition: .reviewRequired
+            ),
+            RootDefinition(
+                kind: .developer,
+                url: library.appendingPathComponent("Developer", isDirectory: true),
+                disposition: .reviewRequired
+            ),
+            RootDefinition(
+                kind: .applicationSupport,
+                url: library.appendingPathComponent("Application Support", isDirectory: true),
+                disposition: .reviewRequired
+            ),
+            RootDefinition(
+                kind: .appContainers,
+                url: library.appendingPathComponent("Containers", isDirectory: true),
+                disposition: .reviewRequired
+            ),
+            RootDefinition(
+                kind: .systemDiagnostics,
+                url: URL(fileURLWithPath: "/private/var/db/diagnostics", isDirectory: true),
+                disposition: .systemManaged
+            ),
+            RootDefinition(
+                kind: .virtualMemory,
+                url: URL(fileURLWithPath: "/private/var/vm", isDirectory: true),
+                disposition: .systemManaged
+            )
+        ]
+    }
+
+    private static func allocatedSize(
+        of root: URL,
+        remainingEntries: Int,
+        deadline: Date
+    ) -> (bytes: Int64, visited: Int, unreadable: Int, truncated: Bool) {
+        let keys: [URLResourceKey] = [
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+            .fileAllocatedSizeKey
+        ]
+        guard FileManager.default.fileExists(atPath: root.path) else {
+            return (0, 0, 0, false)
+        }
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: keys,
+            options: []
+        ) else {
+            return (0, 0, 1, false)
+        }
+
+        var bytes: Int64 = 0
+        var visited = 0
+        var unreadable = 0
+        var truncated = false
+
+        for case let url as URL in enumerator {
+            if visited >= remainingEntries || Date() >= deadline || Task.isCancelled {
+                truncated = true
+                break
+            }
+            visited += 1
+            autoreleasepool {
+                do {
+                    let values = try url.resourceValues(forKeys: Set(keys))
+                    guard values.isSymbolicLink != true, values.isRegularFile == true else { return }
+                    bytes += Int64(max(values.fileAllocatedSize ?? 0, 0))
+                } catch {
+                    unreadable += 1
+                }
+            }
+        }
+        return (max(bytes, 0), visited, unreadable, truncated)
+    }
+}
+
 /// A local-only scanner for Agent session payloads and historical build output.
 ///
 /// Agent files are never rewritten or returned as deletion candidates. The cache

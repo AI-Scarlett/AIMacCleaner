@@ -18,6 +18,9 @@ struct DiskCleanAdvisorOverviewView: View {
 
             if let summary = model.storageSummary {
                 metricGrid(summary)
+                if let systemDataSummary = model.systemDataSummary {
+                    systemDataBreakdown(systemDataSummary)
+                }
                 agentBreakdown(summary)
                 cleanupFindings(summary)
                 if !cleanupController.snapshot.scope.advisorFindings.isEmpty {
@@ -186,11 +189,107 @@ struct DiskCleanAdvisorOverviewView: View {
                 "advisor.stage.storage",
                 defaultValue: "正在增量分析 Agent 会话、重复媒体与构建历史…"
             )
+        case .systemData:
+            return localization.string(
+                "advisor.stage.systemData",
+                defaultValue: "正在拆分系统数据来源（只读分析）…"
+            )
         case .fileInventory:
             return localization.string(
                 "advisor.stage.inventory",
                 defaultValue: "Agent 与构建分析完成，正在建立文件分类索引…"
             )
+        }
+    }
+
+    private func systemDataBreakdown(_ summary: SystemDataStorageSummary) -> some View {
+        VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.sectionHeaderContent) {
+            DiskCleanSectionHeader(
+                title: localization.string("advisor.systemData.title", defaultValue: "系统数据来源分析"),
+                symbolName: "internaldrive.fill"
+            )
+
+            VStack(spacing: 0) {
+                ForEach(summary.buckets, id: \.kind) { bucket in
+                    HStack(spacing: PluginSettingsTheme.Spacing.rowContentControl) {
+                        DiskCleanIconBadge(
+                            symbolName: systemDataSymbol(bucket.kind),
+                            tint: systemDataTint(bucket.disposition),
+                            size: 34
+                        )
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(systemDataTitle(bucket.kind))
+                                .font(PluginSettingsTheme.Typography.rowTitle)
+                            Text(systemDataDisposition(bucket.disposition))
+                                .font(PluginSettingsTheme.Typography.statusBadge)
+                                .foregroundStyle(systemDataTint(bucket.disposition))
+                        }
+                        Spacer()
+                        Text(DiskCleanFormat.bytes(bucket.allocatedBytes))
+                            .font(PluginSettingsTheme.Typography.monospacedValue)
+                            .frame(width: DiskCleanFormat.byteColumnWidth, alignment: .trailing)
+                    }
+                    .pluginSettingsListRowPadding()
+                    if bucket.kind != summary.buckets.last?.kind {
+                        PluginSettingsListDivider()
+                    }
+                }
+            }
+            .diskCleanSurface(.elevated)
+
+            Text(localization.format(
+                "advisor.systemData.note",
+                defaultValue: "本次只读测得 %@；macOS 的“系统数据”还可能包含 APFS 可清除空间和受保护数据，不能把系统设置中的总数直接当作可删除空间。%@",
+                DiskCleanFormat.bytes(summary.measuredBytes),
+                summary.wasTruncated
+                    ? localization.string("advisor.systemData.truncated", defaultValue: " 扫描达到时间/条目上限，结果为已测部分。")
+                    : ""
+            ))
+            .font(PluginSettingsTheme.Typography.rowDescription)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private func systemDataTitle(_ kind: SystemDataStorageKind) -> String {
+        switch kind {
+        case .caches: return localization.string("advisor.systemData.caches", defaultValue: "用户与应用缓存")
+        case .temporary: return localization.string("advisor.systemData.temporary", defaultValue: "用户临时目录")
+        case .developer: return localization.string("advisor.systemData.developer", defaultValue: "开发者与模拟器数据")
+        case .applicationSupport: return localization.string("advisor.systemData.applicationSupport", defaultValue: "应用支持数据")
+        case .appContainers: return localization.string("advisor.systemData.containers", defaultValue: "应用容器数据")
+        case .systemDiagnostics: return localization.string("advisor.systemData.diagnostics", defaultValue: "系统诊断数据")
+        case .virtualMemory: return localization.string("advisor.systemData.virtualMemory", defaultValue: "虚拟内存 / Swap")
+        }
+    }
+
+    private func systemDataDisposition(_ disposition: SystemDataStorageDisposition) -> String {
+        switch disposition {
+        case .cleanable:
+            return localization.string("advisor.systemData.cleanable", defaultValue: "可进入安全清理")
+        case .reviewRequired:
+            return localization.string("advisor.systemData.review", defaultValue: "需逐项复核")
+        case .systemManaged:
+            return localization.string("advisor.systemData.managed", defaultValue: "macOS 管理，不直接删除")
+        }
+    }
+
+    private func systemDataSymbol(_ kind: SystemDataStorageKind) -> String {
+        switch kind {
+        case .caches: return "shippingbox.fill"
+        case .temporary: return "clock.arrow.circlepath"
+        case .developer: return "hammer.fill"
+        case .applicationSupport: return "app.badge.fill"
+        case .appContainers: return "square.stack.3d.up.fill"
+        case .systemDiagnostics: return "waveform.path.ecg"
+        case .virtualMemory: return "memorychip.fill"
+        }
+    }
+
+    private func systemDataTint(_ disposition: SystemDataStorageDisposition) -> Color {
+        switch disposition {
+        case .cleanable: return .green
+        case .reviewRequired: return .orange
+        case .systemManaged: return .secondary
         }
     }
 

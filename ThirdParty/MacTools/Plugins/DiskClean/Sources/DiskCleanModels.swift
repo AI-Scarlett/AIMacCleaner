@@ -348,7 +348,7 @@ struct DiskCleanCandidate: Identifiable, Equatable, Sendable {
         (path as NSString).lastPathComponent
     }
 
-    /// Estimated logical size. 0 when unsized; UI should show "calculating" from
+    /// Estimated physically allocated size. 0 when unsized; UI should show "calculating" from
     /// `sizeResult == nil`, not "0 bytes".
     var estimatedBytes: Int64 {
         max(sizeResult?.estimatedBytes ?? 0, 0)
@@ -357,11 +357,15 @@ struct DiskCleanCandidate: Identifiable, Equatable, Sendable {
     /// Whether the candidate is cleanable.
     ///
     /// Design §3.1's core invariant lives here: safety allows **and** size is known **and**
-    /// completeness is complete. `crossedMountPoint` needs no separate check—it always appears in
-    /// the `partial` reason set and is already blocked by `isComplete`.
+    /// completeness is complete **and** there is measurable allocated data to reclaim.
+    /// `crossedMountPoint` needs no separate check—it always appears in the `partial` reason set
+    /// and is already blocked by `isComplete`. Zero-benefit entries stay in the audit artifact but
+    /// are never selectable, so item counts cannot imply reclaimed space when none is expected.
     var isCleanable: Bool {
         guard safety.isCleanable, let sizeResult else { return false }
-        return sizeResult.completeness.isComplete && sizeResult.rootIdentity != nil
+        return sizeResult.completeness.isComplete
+            && sizeResult.rootIdentity != nil
+            && sizeResult.estimatedBytes > 0
     }
 
     /// Observation time. The expiry gate (§4.4) takes the minimum across selected items.

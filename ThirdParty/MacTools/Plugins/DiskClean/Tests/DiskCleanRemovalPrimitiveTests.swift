@@ -154,15 +154,21 @@ final class DiskCleanRemovalPrimitiveTests: XCTestCase {
         assertPathExists(temporary.resolve("Cache/added-later.bin").path)
     }
 
-    /// Regular-file size mismatches the plan → refuse (second evidence when mtime is preserved).
-    func testRegularFileWithDifferentSizeIsRefused() throws {
+    /// Regular-file logical size is identity evidence even though reclaim estimates are physical bytes.
+    func testRegularFileWithDifferentLogicalSizeIsRefused() throws {
         try temporary.makeFile("log.txt", bytes: 100)
         let target = temporary.resolve("log.txt").path
-        // Size mismatches while other identity fields match — only size comparison can catch this.
+        let currentIdentity = try XCTUnwrap(DiskCleanPlanFactory.currentIdentity(ofItemAt: target))
         let candidate = DiskCleanPlanFactory.candidate(
             path: target,
-            identity: try XCTUnwrap(DiskCleanPlanFactory.currentIdentity(ofItemAt: target)),
-            bytes: 999
+            identity: DiskCleanRootIdentity(
+                devid: currentIdentity.devid,
+                fileID: currentIdentity.fileID,
+                mtime: currentIdentity.mtime,
+                fileType: currentIdentity.fileType,
+                logicalBytes: currentIdentity.logicalBytes + 1
+            ),
+            bytes: 4_096
         )
         let plan = try DiskCleanPlanner.makePlan(
             artifact: DiskCleanPlanFactory.artifact(candidates: [candidate]),
@@ -176,6 +182,30 @@ final class DiskCleanRemovalPrimitiveTests: XCTestCase {
 
         XCTAssertEqual(disposition, .changedSinceScan)
         assertPathExists(target)
+    }
+
+    /// Physical allocation and logical length commonly differ for DMG/APK/sparse files. An
+    /// unchanged file must still pass identity verification and be removed.
+    func testRegularFilePhysicalEstimateDifferentFromLogicalSizeIsAccepted() throws {
+        try temporary.makeFile("installer.dmg", bytes: 100)
+        let target = temporary.resolve("installer.dmg").path
+        let candidate = DiskCleanPlanFactory.candidate(
+            path: target,
+            identity: try XCTUnwrap(DiskCleanPlanFactory.currentIdentity(ofItemAt: target)),
+            bytes: 4_096
+        )
+        let plan = try DiskCleanPlanner.makePlan(
+            artifact: DiskCleanPlanFactory.artifact(candidates: [candidate]),
+            selectedIDs: [candidate.id],
+            mode: .permanent,
+            now: DiskCleanPlanFactory.observedAt,
+            catalog: DiskCleanPlanFactory.catalog()
+        )
+
+        let disposition = makePrimitive().remove(plan.items[0], mode: .permanent)
+
+        XCTAssertEqual(disposition, .removed)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target))
     }
 
     // MARK: - Freeze semantics
