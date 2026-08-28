@@ -1,7 +1,7 @@
 {
   "algorithm": "ed25519",
-  "contentSHA256": "4b2df56c814e54e01f8bfae71dd816453ec3234798b2b9dcae0c29cd87c225fa",
-  "keyID": "catalog-2026-01",
+  "contentSHA256": "e9b1df4a59168186db88f4f670b9b8e313bc861654d62d5586cfe678d3ac38ee",
+  "keyID": "marketplace-catalog-2026-01",
   "schemaVersion": 1,
-  "signature": "uHoEzpMLB+7miTgilA+jRUNJM7znouN44FDg6wf06Gw2qIl73nblDUCMkU2SaW9i/HlEmxTxbnAwRL0+EeVGDA=="
+  "signature": "Hutqs1Ny8zQtTHQDSCaTSz710vUMLCu8Cn2CVGi4Twmkacf5hHgSpqVRNTW6rDTAAPsboNqNlPOeYQmZ2rptBQ=="
 }
