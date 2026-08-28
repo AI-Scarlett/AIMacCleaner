@@ -199,6 +199,11 @@ struct DiskCleanAdvisorOverviewView: View {
                 "advisor.stage.inventory",
                 defaultValue: "Agent 与构建分析完成，正在建立文件分类索引…"
             )
+        case .duplicateFiles:
+            return localization.string(
+                "advisor.stage.duplicates",
+                defaultValue: "正在用内容指纹核对重复文件…"
+            )
         }
     }
 
@@ -645,6 +650,14 @@ struct DiskCleanAdvisorOverviewView: View {
     }
 }
 
+private enum DiskCleanFileInventoryMode: String, CaseIterable, Identifiable {
+    case all
+    case large
+    case duplicates
+
+    var id: String { rawValue }
+}
+
 struct DiskCleanFileInventoryView: View {
     @ObservedObject var model: DiskCleanAdvisorModel
     @ObservedObject var cleanupController: DiskCleanController
@@ -656,17 +669,27 @@ struct DiskCleanFileInventoryView: View {
     @State private var sort = "size"
     @State private var selectedPaths: Set<String> = []
     @State private var visibleLimit = 200
+    @State private var visibleDuplicateLimit = 50
     @State private var previewFile: DiskFileRecord?
+    @State private var mode = DiskCleanFileInventoryMode.all
+    @State private var largeFileThreshold: Int64 = 100 * 1_024 * 1_024
 
     var body: some View {
         VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.section) {
             header
             if let summary = model.inventorySummary {
                 inventoryMetrics(summary)
-                inventorySpaceMap(summary)
+                modePicker
+                if mode == .all {
+                    inventorySpaceMap(summary)
+                }
                 filters
-                fileList
-                if !cleanupController.snapshot.scope.userFilePaths.isEmpty {
+                if mode == .duplicates {
+                    duplicateList
+                } else {
+                    fileList
+                }
+                if mode == .all, !cleanupController.snapshot.scope.userFilePaths.isEmpty {
                     DiskCleanCleanupSectionView(
                         controller: cleanupController,
                         title: localization.string(
@@ -703,6 +726,30 @@ struct DiskCleanFileInventoryView: View {
             selectedPaths.formIntersection(Set(model.files.map(\.path)))
             visibleLimit = 200
         }
+        .onChange(of: mode) {
+            selectedPaths.removeAll()
+            visibleLimit = 200
+            visibleDuplicateLimit = 50
+        }
+    }
+
+    private var modePicker: some View {
+        Picker("", selection: $mode) {
+            Label(
+                localization.string("inventory.mode.all", defaultValue: "全部文件"),
+                systemImage: "doc.on.doc"
+            ).tag(DiskCleanFileInventoryMode.all)
+            Label(
+                localization.string("inventory.mode.large", defaultValue: "大文件"),
+                systemImage: "externaldrive.fill.badge.exclamationmark"
+            ).tag(DiskCleanFileInventoryMode.large)
+            Label(
+                localization.string("inventory.mode.duplicates", defaultValue: "重复文件"),
+                systemImage: "square.on.square"
+            ).tag(DiskCleanFileInventoryMode.duplicates)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
     }
 
     private var header: some View {
@@ -892,7 +939,9 @@ struct DiskCleanFileInventoryView: View {
     private var filters: some View {
         VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.sectionHeaderContent) {
             DiskCleanSectionHeader(
-                title: localization.string("inventory.filters.title", defaultValue: "筛选与选择"),
+                title: mode == .all
+                    ? localization.string("inventory.filters.title", defaultValue: "筛选与选择")
+                    : localization.string("inventory.filters.review", defaultValue: "筛选与查看"),
                 symbolName: "line.3.horizontal.decrease.circle"
             )
             VStack(alignment: .leading, spacing: 10) {
@@ -901,11 +950,11 @@ struct DiskCleanFileInventoryView: View {
                     HStack(spacing: PluginSettingsTheme.Spacing.controlCluster) {
                         filterSelectionSummary
                         Spacer(minLength: 8)
-                        selectionActions
+                        if mode == .all { selectionActions }
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         filterSelectionSummary
-                        selectionActions
+                        if mode == .all { selectionActions }
                     }
                 }
             }
@@ -915,13 +964,26 @@ struct DiskCleanFileInventoryView: View {
     }
 
     private var filterSelectionSummary: some View {
-        Text(localization.format(
-            "inventory.filters.summary",
-            defaultValue: "当前 %d 项 · 已选 %d 项 / %@",
-            filteredFiles.count,
-            selectedPaths.count,
-            DiskCleanFormat.bytes(selectedBytes)
-        ))
+        Text(mode == .duplicates
+            ? localization.format(
+                "inventory.duplicates.summary",
+                defaultValue: "%d 组重复文件 · 可手动释放约 %@",
+                filteredDuplicateGroups.count,
+                DiskCleanFormat.bytes(filteredDuplicateReclaimableBytes)
+            )
+            : mode == .large
+                ? localization.format(
+                    "inventory.large.summary",
+                    defaultValue: "%d 个大文件 · 仅查看，不会在此删除",
+                    filteredFiles.count
+                )
+                : localization.format(
+                    "inventory.filters.summary",
+                    defaultValue: "当前 %d 项 · 已选 %d 项 / %@",
+                    filteredFiles.count,
+                    selectedPaths.count,
+                    DiskCleanFormat.bytes(selectedBytes)
+                ))
         .font(.caption)
         .foregroundStyle(.secondary)
     }
@@ -976,6 +1038,16 @@ struct DiskCleanFileInventoryView: View {
             }
             .labelsHidden()
             .frame(width: 104)
+
+            if mode == .large {
+                Picker("", selection: $largeFileThreshold) {
+                    Text("≥ 100 MB").tag(Int64(100 * 1_024 * 1_024))
+                    Text("≥ 500 MB").tag(Int64(500 * 1_024 * 1_024))
+                    Text("≥ 1 GB").tag(Int64(1 * 1_024 * 1_024 * 1_024))
+                }
+                .labelsHidden()
+                .frame(width: 104)
+            }
         }
     }
 
@@ -1028,14 +1100,26 @@ struct DiskCleanFileInventoryView: View {
                     symbolName: "doc.on.doc"
                 )
                 Spacer()
-                Text(localization.format(
-                    "inventory.results.selected",
-                    defaultValue: "已选 %d 项 · %@",
-                    selectedPaths.count,
-                    DiskCleanFormat.bytes(selectedBytes)
-                ))
-                .font(PluginSettingsTheme.Typography.rowDescription)
-                .foregroundStyle(.secondary)
+                if mode == .all {
+                    Text(localization.format(
+                        "inventory.results.selected",
+                        defaultValue: "已选 %d 项 · %@",
+                        selectedPaths.count,
+                        DiskCleanFormat.bytes(selectedBytes)
+                    ))
+                    .font(PluginSettingsTheme.Typography.rowDescription)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Label(
+                        localization.string(
+                            "inventory.manualOnly",
+                            defaultValue: "预览或在 Finder 中显示后手动处理"
+                        ),
+                        systemImage: "hand.point.up.left"
+                    )
+                    .font(PluginSettingsTheme.Typography.rowDescription)
+                    .foregroundStyle(.secondary)
+                }
             }
 
             if visibleFiles.isEmpty {
@@ -1046,7 +1130,7 @@ struct DiskCleanFileInventoryView: View {
             } else {
                 LazyVStack(spacing: 0) {
                     ForEach(visibleFiles) { file in
-                        fileRow(file)
+                        fileRow(file, allowsSelection: mode == .all)
                         if file.id != visibleFiles.last?.id {
                             PluginSettingsListDivider()
                         }
@@ -1071,26 +1155,29 @@ struct DiskCleanFileInventoryView: View {
         }
     }
 
-    private func fileRow(_ file: DiskFileRecord) -> some View {
+    @ViewBuilder
+    private func fileRow(_ file: DiskFileRecord, allowsSelection: Bool) -> some View {
         let marker = file.activityMarker()
-        return HStack(alignment: .top, spacing: PluginSettingsTheme.Spacing.rowContentControl) {
-            Toggle(
-                "",
-                isOn: Binding(
-                    get: { selectedPaths.contains(file.path) },
-                    set: { selected in
-                        if selected {
-                            if selectedPaths.count < DiskCleanUserFileExpansion.maximumSelectionCount {
-                                selectedPaths.insert(file.path)
+        HStack(alignment: .top, spacing: PluginSettingsTheme.Spacing.rowContentControl) {
+            if allowsSelection {
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { selectedPaths.contains(file.path) },
+                        set: { selected in
+                            if selected {
+                                if selectedPaths.count < DiskCleanUserFileExpansion.maximumSelectionCount {
+                                    selectedPaths.insert(file.path)
+                                }
+                            } else {
+                                selectedPaths.remove(file.path)
                             }
-                        } else {
-                            selectedPaths.remove(file.path)
                         }
-                    }
+                    )
                 )
-            )
-            .toggleStyle(.checkbox)
-            .labelsHidden()
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+            }
 
             Image(systemName: categoryIcon(file.category))
                 .foregroundStyle(categoryTint(file.category))
@@ -1139,8 +1226,100 @@ struct DiskCleanFileInventoryView: View {
         .pluginSettingsListRowPadding(interactive: true)
     }
 
+    private var duplicateList: some View {
+        VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.sectionHeaderContent) {
+            HStack {
+                DiskCleanSectionHeader(
+                    title: localization.string("inventory.duplicates.title", defaultValue: "内容完全相同的文件"),
+                    symbolName: "square.on.square"
+                )
+                Spacer()
+                if let summary = model.duplicateSummary {
+                    Text(localization.format(
+                        "inventory.duplicates.detail",
+                        defaultValue: "%d 组 · %d 个文件 · 可手动释放约 %@",
+                        summary.duplicateGroupCount,
+                        summary.duplicateFileCount,
+                        DiskCleanFormat.bytes(summary.reclaimableBytes)
+                    ))
+                    .font(PluginSettingsTheme.Typography.rowDescription)
+                    .foregroundStyle(.secondary)
+                }
+            }
+
+            if let summary = model.duplicateSummary, summary.wasTruncated {
+                DiskCleanBanner(
+                    symbolName: "exclamationmark.triangle.fill",
+                    tint: .orange,
+                    title: localization.string("inventory.duplicates.bounded.title", defaultValue: "重复文件扫描已按性能上限结束"),
+                    lines: [localization.string(
+                        "inventory.duplicates.bounded.detail",
+                        defaultValue: "当前结果仍可查看；重新扫描会继续复用本地哈希缓存。"
+                    )]
+                )
+            }
+
+            let groups = Array(filteredDuplicateGroups.prefix(visibleDuplicateLimit))
+            if groups.isEmpty {
+                DiskCleanEmptyState(
+                    symbolName: "checkmark.seal",
+                    text: localization.string(
+                        "inventory.duplicates.empty",
+                        defaultValue: "在本次文件范围内没有发现内容完全相同的大文件。"
+                    )
+                )
+            } else {
+                ForEach(groups) { group in
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack {
+                            Label(
+                                localization.format(
+                                    "inventory.duplicates.group",
+                                    defaultValue: "%d 个副本 · 每个 %@",
+                                    group.files.count,
+                                    DiskCleanFormat.bytes(group.logicalSize)
+                                ),
+                                systemImage: "doc.on.doc.fill"
+                            )
+                            .font(PluginSettingsTheme.Typography.rowTitle)
+                            Spacer()
+                            Text(localization.format(
+                                "inventory.duplicates.reclaimable",
+                                defaultValue: "可手动释放约 %@",
+                                DiskCleanFormat.bytes(group.reclaimableBytes)
+                            ))
+                            .font(PluginSettingsTheme.Typography.statusBadge)
+                            .foregroundStyle(DiskCleanVisual.accent)
+                        }
+                        .pluginSettingsListRowPadding(interactive: false)
+                        PluginSettingsListDivider()
+                        ForEach(group.files) { file in
+                            fileRow(file, allowsSelection: false)
+                            if file.id != group.files.last?.id { PluginSettingsListDivider() }
+                        }
+                    }
+                    .diskCleanSurface(.elevated)
+                }
+                if visibleDuplicateLimit < filteredDuplicateGroups.count {
+                    Button {
+                        visibleDuplicateLimit = min(visibleDuplicateLimit + 50, filteredDuplicateGroups.count)
+                    } label: {
+                        Label(
+                            localization.string("inventory.duplicates.more", defaultValue: "再显示 50 组"),
+                            systemImage: "chevron.down.circle"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+
     private var filteredFiles: [DiskFileRecord] {
         var values = model.files.filter { file in
+            if mode == .large, file.size < largeFileThreshold { return false }
             if category != "all", file.category.rawValue != category { return false }
             if !includesAge(file.activityMarker()) { return false }
             if !searchText.isEmpty {
@@ -1164,6 +1343,29 @@ struct DiskCleanFileInventoryView: View {
             values.sort { $0.size == $1.size ? $0.path < $1.path : $0.size > $1.size }
         }
         return values
+    }
+
+    private var filteredDuplicateGroups: [DiskDuplicateFileGroup] {
+        guard mode == .duplicates else { return [] }
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+        return model.duplicateGroups.filter { group in
+            if category != "all", !group.files.contains(where: { $0.category.rawValue == category }) {
+                return false
+            }
+            if age != "all", !group.files.contains(where: { includesAge($0.activityMarker()) }) {
+                return false
+            }
+            guard !query.isEmpty else { return true }
+            return group.files.contains { file in
+                file.name.localizedLowercase.contains(query)
+                    || file.path.localizedLowercase.contains(query)
+                    || file.fileExtension.localizedLowercase.contains(query)
+            }
+        }
+    }
+
+    private var filteredDuplicateReclaimableBytes: Int64 {
+        filteredDuplicateGroups.reduce(Int64(0)) { $0 + $1.reclaimableBytes }
     }
 
     private func includesAge(_ marker: DiskFileActivityMarker) -> Bool {

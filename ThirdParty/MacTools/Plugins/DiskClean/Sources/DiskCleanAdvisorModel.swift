@@ -6,6 +6,7 @@ enum DiskCleanAdvisorStage: Equatable, Sendable {
     case agentAndBuildStorage
     case systemData
     case fileInventory
+    case duplicateFiles
     case completed
 }
 
@@ -22,6 +23,8 @@ final class DiskCleanAdvisorModel: ObservableObject {
     @Published private(set) var systemDataSummary: SystemDataStorageSummary?
     @Published private(set) var inventorySummary: DiskFileInventorySummary?
     @Published private(set) var files: [DiskFileRecord] = []
+    @Published private(set) var duplicateSummary: DiskDuplicateFileSummary?
+    @Published private(set) var duplicateGroups: [DiskDuplicateFileGroup] = []
     @Published private(set) var errorMessage: String?
     @Published private(set) var lastAnalyzedAt: Date?
     @Published private(set) var isRestoredFromCache = false
@@ -66,6 +69,7 @@ final class DiskCleanAdvisorModel: ObservableObject {
 
     var isScanning: Bool {
         stage == .agentAndBuildStorage || stage == .systemData || stage == .fileInventory
+            || stage == .duplicateFiles
     }
 
     var hasResult: Bool {
@@ -90,6 +94,10 @@ final class DiskCleanAdvisorModel: ObservableObject {
         )
         let inventoryCacheURL = cacheDirectory.appendingPathComponent(
             "file-inventory-v1.json",
+            isDirectory: false
+        )
+        let duplicateCacheURL = cacheDirectory.appendingPathComponent(
+            "duplicate-hashes-v1.json",
             isDirectory: false
         )
         let snapshotStore = snapshotStore
@@ -137,13 +145,30 @@ final class DiskCleanAdvisorModel: ObservableObject {
             guard self.scanGeneration == generation, !Task.isCancelled else { return }
             self.files = inventoryResult.files
             self.inventorySummary = inventoryResult.summary
+            self.stage = .duplicateFiles
+
+            let duplicateResult = await Task.detached(priority: .utility) {
+                autoreleasepool {
+                    DiskCleanDuplicateScanner.scan(
+                        candidates: inventoryResult.duplicateCandidates,
+                        cacheURL: duplicateCacheURL,
+                        candidateWasTruncated: inventoryResult.duplicateCandidateWasTruncated
+                    )
+                }
+            }.value
+
+            guard self.scanGeneration == generation, !Task.isCancelled else { return }
+            self.duplicateGroups = duplicateResult.groups
+            self.duplicateSummary = duplicateResult.summary
 
             let visibleSnapshot = DiskCleanAdvisorSnapshot(
                 storageSummary: storageResult.summary,
                 storageCleanupItems: storageResult.cleanupItems,
                 systemDataSummary: systemDataResult,
                 inventorySummary: inventoryResult.summary,
-                files: inventoryResult.files
+                files: inventoryResult.files,
+                duplicateSummary: duplicateResult.summary,
+                duplicateGroups: duplicateResult.groups
             )
             _ = await Task.detached(priority: .utility) {
                 snapshotStore.save(visibleSnapshot)
@@ -152,7 +177,7 @@ final class DiskCleanAdvisorModel: ObservableObject {
             guard self.scanGeneration == generation, !Task.isCancelled else { return }
             self.lastAnalyzedAt = max(
                 max(storageResult.summary.completedAt, systemDataResult.completedAt),
-                inventoryResult.summary.completedAt
+                max(inventoryResult.summary.completedAt, duplicateResult.summary.completedAt)
             )
             self.stage = .completed
             self.scanTask = nil
@@ -181,9 +206,11 @@ final class DiskCleanAdvisorModel: ObservableObject {
             self.systemDataSummary = snapshot.systemDataSummary
             self.inventorySummary = snapshot.inventorySummary
             self.files = snapshot.files
+            self.duplicateSummary = snapshot.duplicateSummary
+            self.duplicateGroups = snapshot.duplicateGroups
             self.lastAnalyzedAt = max(
                 max(snapshot.storageSummary.completedAt, snapshot.systemDataSummary.completedAt),
-                snapshot.inventorySummary.completedAt
+                max(snapshot.inventorySummary.completedAt, snapshot.duplicateSummary.completedAt)
             )
             self.isRestoredFromCache = true
             self.stage = .completed

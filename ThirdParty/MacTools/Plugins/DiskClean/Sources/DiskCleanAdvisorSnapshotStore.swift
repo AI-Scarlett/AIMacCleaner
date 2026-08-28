@@ -5,7 +5,7 @@ import Foundation
 /// analysis; this file restores the last visible result immediately. It contains metadata only,
 /// never conversation text or media bytes.
 struct DiskCleanAdvisorSnapshot: Codable, Sendable {
-    static let currentVersion = 2
+    static let currentVersion = 3
 
     let version: Int
     let savedAt: Date
@@ -14,6 +14,8 @@ struct DiskCleanAdvisorSnapshot: Codable, Sendable {
     let systemDataSummary: SystemDataStorageSummary
     let inventorySummary: DiskFileInventorySummary
     let files: [DiskFileRecord]
+    let duplicateSummary: DiskDuplicateFileSummary
+    let duplicateGroups: [DiskDuplicateFileGroup]
 
     init(
         savedAt: Date = Date(),
@@ -21,7 +23,9 @@ struct DiskCleanAdvisorSnapshot: Codable, Sendable {
         storageCleanupItems: [StorageCleanupItem],
         systemDataSummary: SystemDataStorageSummary,
         inventorySummary: DiskFileInventorySummary,
-        files: [DiskFileRecord]
+        files: [DiskFileRecord],
+        duplicateSummary: DiskDuplicateFileSummary,
+        duplicateGroups: [DiskDuplicateFileGroup]
     ) {
         self.version = Self.currentVersion
         self.savedAt = savedAt
@@ -30,6 +34,15 @@ struct DiskCleanAdvisorSnapshot: Codable, Sendable {
         self.systemDataSummary = systemDataSummary
         self.inventorySummary = inventorySummary
         self.files = Array(files.prefix(2_000))
+        self.duplicateSummary = duplicateSummary
+        self.duplicateGroups = Array(duplicateGroups.prefix(500)).map { group in
+            DiskDuplicateFileGroup(
+                id: group.id,
+                logicalSize: group.logicalSize,
+                reclaimableBytes: group.reclaimableBytes,
+                files: Array(group.files.prefix(100))
+            )
+        }
     }
 }
 
@@ -50,6 +63,8 @@ struct DiskCleanAdvisorSnapshotStore: Sendable {
               snapshot.version == DiskCleanAdvisorSnapshot.currentVersion,
               snapshot.storageCleanupItems.count <= 800,
               snapshot.files.count <= 2_000,
+              snapshot.duplicateGroups.count <= 500,
+              snapshot.duplicateGroups.allSatisfy({ $0.files.count <= 100 }),
               now.timeIntervalSince(snapshot.savedAt) >= 0,
               now.timeIntervalSince(snapshot.savedAt) <= Self.maximumAge else {
             return nil

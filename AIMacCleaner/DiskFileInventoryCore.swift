@@ -76,6 +76,36 @@ struct DiskFileInventorySummary: Hashable, Codable, Sendable {
 struct DiskFileInventoryScanResult: Sendable {
     let files: [DiskFileRecord]
     let summary: DiskFileInventorySummary
+    /// Files whose logical size occurs more than once in the same scan. The
+    /// inventory walk collects these candidates so duplicate detection does
+    /// not perform a second home-directory traversal.
+    let duplicateCandidates: [DiskFileRecord]
+    let duplicateCandidateWasTruncated: Bool
+}
+
+struct DiskDuplicateFileGroup: Identifiable, Hashable, Codable, Sendable {
+    let id: String
+    let logicalSize: Int64
+    let reclaimableBytes: Int64
+    let files: [DiskFileRecord]
+}
+
+struct DiskDuplicateFileSummary: Hashable, Codable, Sendable {
+    let candidateFileCount: Int
+    let hashedFileCount: Int
+    let duplicateFileCount: Int
+    let duplicateGroupCount: Int
+    let duplicateBytes: Int64
+    let reclaimableBytes: Int64
+    let unreadableFileCount: Int
+    let wasTruncated: Bool
+    let scanDuration: TimeInterval
+    let completedAt: Date
+}
+
+struct DiskDuplicateFileScanResult: Sendable {
+    let groups: [DiskDuplicateFileGroup]
+    let summary: DiskDuplicateFileSummary
 }
 
 /// Bounded, metadata-only inventory for user files.
@@ -94,6 +124,8 @@ enum DiskFileInventoryCore {
     private static let maxCachedFiles = 16_000
     private static let maximumCacheBytes = 16 * 1_024 * 1_024
     private static let maximumScanDuration: TimeInterval = 30
+    private static let minimumDuplicateFileSize: Int64 = 1 * 1_024 * 1_024
+    private static let maximumDuplicateCandidateFiles = 20_000
     private static let spotlightRefreshInterval: TimeInterval = 24 * 60 * 60
     private static let cacheTouchInterval: TimeInterval = 24 * 60 * 60
 
@@ -239,6 +271,9 @@ enum DiskFileInventoryCore {
         var hitVisitLimit = false
         var hitTimeLimit = false
         var cacheChanged = false
+        var duplicateCandidatesBySize: [Int64: [InventoryCandidate]] = [:]
+        var duplicateCandidateCount = 0
+        var duplicateCandidateWasTruncated = false
 
         rootLoop: for root in roots {
             guard let enumerator = FileManager.default.enumerator(
@@ -309,6 +344,27 @@ enum DiskFileInventoryCore {
                         modifiedDate: values.contentModificationDate,
                         accessedDate: values.contentAccessDate
                     ))
+                    if logicalSize >= minimumDuplicateFileSize {
+                        if duplicateCandidateCount < maximumDuplicateCandidateFiles {
+                            duplicateCandidatesBySize[logicalSize, default: []].append(
+                                InventoryCandidate(
+                                    url: url,
+                                    path: path,
+                                    name: url.lastPathComponent,
+                                    fileExtension: ext,
+                                    category: category,
+                                    logicalSize: logicalSize,
+                                    allocatedSize: allocatedSize,
+                                    creationDate: values.creationDate,
+                                    modifiedDate: values.contentModificationDate,
+                                    accessedDate: values.contentAccessDate
+                                )
+                            )
+                            duplicateCandidateCount += 1
+                        } else {
+                            duplicateCandidateWasTruncated = true
+                        }
+                    }
                     var stats = categoryStats[category] ?? MutableCategoryStats()
                     stats.count += 1
                     stats.bytes += allocatedSize
@@ -380,6 +436,15 @@ enum DiskFileInventoryCore {
             return $0.category.rawValue < $1.category.rawValue
         }
 
+        let duplicateCandidates = duplicateCandidatesBySize.values
+            .filter { $0.count > 1 }
+            .flatMap { $0 }
+            .sorted {
+                if $0.logicalSize != $1.logicalSize { return $0.logicalSize > $1.logicalSize }
+                return $0.path.localizedStandardCompare($1.path) == .orderedAscending
+            }
+            .map { $0.record(lastOpenedDate: nil) }
+
         return DiskFileInventoryScanResult(
             files: returned,
             summary: DiskFileInventorySummary(
@@ -396,7 +461,9 @@ enum DiskFileInventoryCore {
                 scanDuration: completedAt.timeIntervalSince(startedAt),
                 completedAt: completedAt,
                 categoryBreakdown: breakdown
-            )
+            ),
+            duplicateCandidates: duplicateCandidates,
+            duplicateCandidateWasTruncated: duplicateCandidateWasTruncated || hitVisitLimit || hitTimeLimit
         )
     }
 
