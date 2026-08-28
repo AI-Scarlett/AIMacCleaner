@@ -29,6 +29,7 @@ final class DiskCleanAdvisorModel: ObservableObject {
     private let homeDirectory: String
     private let cacheDirectory: URL
     private let snapshotStore: DiskCleanAdvisorSnapshotStore
+    private let systemDataInspector: any DiskCleanSystemDataInspecting
     private let isSandboxed: Bool
     private var scanTask: Task<Void, Never>?
     private var snapshotLoadTask: Task<Void, Never>?
@@ -37,7 +38,8 @@ final class DiskCleanAdvisorModel: ObservableObject {
     init(
         cacheDirectory: URL?,
         homeDirectory: String = NSHomeDirectory(),
-        isSandboxed: Bool = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+        isSandboxed: Bool = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil,
+        systemDataInspector: any DiskCleanSystemDataInspecting = DiskCleanSystemDataInspector()
     ) {
         self.homeDirectory = URL(fileURLWithPath: homeDirectory, isDirectory: true)
             .standardizedFileURL.path
@@ -48,6 +50,7 @@ final class DiskCleanAdvisorModel: ObservableObject {
                 isDirectory: false
             )
         )
+        self.systemDataInspector = systemDataInspector
         self.isSandboxed = isSandboxed
         try? FileManager.default.createDirectory(
             at: self.cacheDirectory,
@@ -90,6 +93,7 @@ final class DiskCleanAdvisorModel: ObservableObject {
             isDirectory: false
         )
         let snapshotStore = snapshotStore
+        let systemDataInspector = systemDataInspector
 
         scanTask = Task { [weak self] in
             let storageResult = await Task.detached(priority: .utility) {
@@ -109,11 +113,7 @@ final class DiskCleanAdvisorModel: ObservableObject {
             self.storageCleanupItems = storageResult.cleanupItems
             self.stage = .systemData
 
-            let systemDataResult = await Task.detached(priority: .utility) {
-                autoreleasepool {
-                    SystemDataStorageInspectionCore.scan(homeDirectory: homeDirectory)
-                }
-            }.value
+            let systemDataResult = await systemDataInspector.scan(homeDirectory: homeDirectory)
 
             guard self.scanGeneration == generation, !Task.isCancelled else { return }
             self.systemDataSummary = systemDataResult
@@ -141,6 +141,7 @@ final class DiskCleanAdvisorModel: ObservableObject {
             let visibleSnapshot = DiskCleanAdvisorSnapshot(
                 storageSummary: storageResult.summary,
                 storageCleanupItems: storageResult.cleanupItems,
+                systemDataSummary: systemDataResult,
                 inventorySummary: inventoryResult.summary,
                 files: inventoryResult.files
             )
@@ -150,7 +151,7 @@ final class DiskCleanAdvisorModel: ObservableObject {
 
             guard self.scanGeneration == generation, !Task.isCancelled else { return }
             self.lastAnalyzedAt = max(
-                storageResult.summary.completedAt,
+                max(storageResult.summary.completedAt, systemDataResult.completedAt),
                 inventoryResult.summary.completedAt
             )
             self.stage = .completed
@@ -177,10 +178,11 @@ final class DiskCleanAdvisorModel: ObservableObject {
             }
             self.storageSummary = snapshot.storageSummary
             self.storageCleanupItems = snapshot.storageCleanupItems
+            self.systemDataSummary = snapshot.systemDataSummary
             self.inventorySummary = snapshot.inventorySummary
             self.files = snapshot.files
             self.lastAnalyzedAt = max(
-                snapshot.storageSummary.completedAt,
+                max(snapshot.storageSummary.completedAt, snapshot.systemDataSummary.completedAt),
                 snapshot.inventorySummary.completedAt
             )
             self.isRestoredFromCache = true

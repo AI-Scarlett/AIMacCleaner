@@ -48,7 +48,7 @@
       "summary": "本機磁碟分析與安全清理：拆分系統資料來源，並依復原成本分類快取、依賴、建置產物、Agent 儲存與使用者檔案"
     }
   },
-  "version": "3.3.2",
+  "version": "3.4.0",
   "minHostVersion": "1.1.6",
   "pluginKitVersion": 4,
   "bundleRelativePath": "DiskClean.bundle",

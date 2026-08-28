@@ -242,7 +242,7 @@ struct DiskCleanAdvisorOverviewView: View {
                 defaultValue: "本次只读测得 %@；macOS 的“系统数据”还可能包含 APFS 可清除空间和受保护数据，不能把系统设置中的总数直接当作可删除空间。%@",
                 DiskCleanFormat.bytes(summary.measuredBytes),
                 summary.wasTruncated
-                    ? localization.string("advisor.systemData.truncated", defaultValue: " 扫描达到时间/条目上限，结果为已测部分。")
+                    ? localization.string("advisor.systemData.truncated", defaultValue: " 部分路径因时限、权限或卷边界未完整测量；当前显示已测部分。")
                     : ""
             ))
             .font(PluginSettingsTheme.Typography.rowDescription)

@@ -212,17 +212,17 @@
     "advisor.systemData.truncated": {
       "extractionState": "manual",
       "localizations": {
-        "ar": { "stringUnit": { "state": "translated", "value": " بلغ الفحص حد الوقت/العناصر؛ المعروض هو الجزء الذي تم قياسه." } },
-        "de": { "stringUnit": { "state": "translated", "value": " Das Zeit-/Eintragslimit wurde erreicht; angezeigt wird der gemessene Teil." } },
-        "en": { "stringUnit": { "state": "translated", "value": " The scan reached its time/entry limit; values show the measured portion." } },
-        "es": { "stringUnit": { "state": "translated", "value": " El análisis alcanzó el límite de tiempo/entradas; se muestra la parte medida." } },
-        "fr": { "stringUnit": { "state": "translated", "value": " La limite de temps/éléments a été atteinte ; seule la partie mesurée est affichée." } },
-        "ja": { "stringUnit": { "state": "translated", "value": " 時間/項目上限に達したため、測定済み部分のみ表示しています。" } },
-        "ko": { "stringUnit": { "state": "translated", "value": " 시간/항목 제한에 도달하여 측정된 부분만 표시합니다." } },
-        "pt": { "stringUnit": { "state": "translated", "value": " A análise atingiu o limite de tempo/itens; é apresentada a parte medida." } },
-        "ru": { "stringUnit": { "state": "translated", "value": " Достигнут лимит времени/элементов; показана измеренная часть." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": " 扫描达到时间/条目上限，结果为已测部分。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": " 掃描達到時間/項目上限，結果為已測部分。" } }
+        "ar": { "stringUnit": { "state": "translated", "value": " لم تكتمل بعض المسارات بسبب حدود الوقت أو الأذونات أو وحدات التخزين؛ المعروض هو الجزء الذي تم قياسه." } },
+        "de": { "stringUnit": { "state": "translated", "value": " Einige Pfade wurden wegen Zeit-, Berechtigungs- oder Volume-Grenzen nicht vollständig gemessen; angezeigt wird der gemessene Teil." } },
+        "en": { "stringUnit": { "state": "translated", "value": " Some paths could not be fully measured because of time, permission, or volume boundaries; values show the measured portion." } },
+        "es": { "stringUnit": { "state": "translated", "value": " Algunas rutas no se midieron por completo debido a límites de tiempo, permisos o volúmenes; se muestra la parte medida." } },
+        "fr": { "stringUnit": { "state": "translated", "value": " Certains chemins n’ont pas pu être entièrement mesurés en raison de limites de temps, d’autorisations ou de volumes ; seule la partie mesurée est affichée." } },
+        "ja": { "stringUnit": { "state": "translated", "value": " 時間、権限、またはボリューム境界により一部のパスを完全に測定できなかったため、測定済み部分のみ表示しています。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": " 시간, 권한 또는 볼륨 경계로 인해 일부 경로를 완전히 측정하지 못해 측정된 부분만 표시합니다." } },
+        "pt": { "stringUnit": { "state": "translated", "value": " Alguns caminhos não puderam ser medidos por completo devido a limites de tempo, permissões ou volumes; é apresentada a parte medida." } },
+        "ru": { "stringUnit": { "state": "translated", "value": " Некоторые пути измерены не полностью из-за ограничений времени, разрешений или границ тома; показана измеренная часть." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": " 部分路径因时限、权限或卷边界未完整测量；当前显示已测部分。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": " 部分路徑因時限、權限或卷宗邊界未完整測量；目前顯示已測部分。" } }
       }
     },
     "advisor.cache.restored": {

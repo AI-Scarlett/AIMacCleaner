@@ -380,6 +380,19 @@ struct DiskCleanRuleCatalogV2: Sendable {
             ]
         ),
         DiskCleanRuleTarget(
+            id: "cache.ai-assistants.codex-runtimes",
+            legacyRuleID: "cache.ai-assistants",
+            category: .aiTools,
+            risk: .medium,
+            recoveryClass: .downloadRequired,
+            kind: .path(globs: [
+                "~/.cache/codex-runtimes/*"
+            ]),
+            reservedRootPaths: [
+                "~/.cache/codex-runtimes"
+            ]
+        ),
+        DiskCleanRuleTarget(
             id: "cache.creative-tools",
             legacyRuleID: "cache.creative-tools",
             category: .appCaches,
@@ -943,6 +956,21 @@ struct DiskCleanRuleCatalogV2: Sendable {
                 "~/.expo/schema-cache",
                 "~/.expo/template-cache",
                 "~/.expo/versions-cache"
+            ]
+        ),
+        DiskCleanRuleTarget(
+            id: "developer.browser-automation-caches",
+            legacyRuleID: "developer.mobile-caches",
+            category: .developer,
+            risk: .medium,
+            recoveryClass: .downloadRequired,
+            kind: .path(globs: [
+                "~/.cache/ms-playwright/*",
+                "~/Library/Caches/ms-playwright/*"
+            ]),
+            reservedRootPaths: [
+                "~/.cache/ms-playwright",
+                "~/Library/Caches/ms-playwright"
             ]
         ),
         DiskCleanRuleTarget(

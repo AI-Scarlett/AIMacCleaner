@@ -212,6 +212,21 @@ final class DiskCleanRuleCatalogV2Tests: XCTestCase {
         assertTarget("browser.service-worker", category: .browsers, risk: .medium)
     }
 
+    func testLargeDownloadedToolCachesRequireManualReview() throws {
+        let codexRuntimes = try XCTUnwrap(catalog.target(id: "cache.ai-assistants.codex-runtimes"))
+        XCTAssertEqual(codexRuntimes.risk, .medium)
+        XCTAssertEqual(codexRuntimes.recoveryClass, .downloadRequired)
+        XCTAssertEqual(codexRuntimes.pathGlobs, ["~/.cache/codex-runtimes/*"])
+
+        let browserAutomation = try XCTUnwrap(catalog.target(id: "developer.browser-automation-caches"))
+        XCTAssertEqual(browserAutomation.risk, .medium)
+        XCTAssertEqual(browserAutomation.recoveryClass, .downloadRequired)
+        XCTAssertEqual(
+            browserAutomation.pathGlobs,
+            ["~/.cache/ms-playwright/*", "~/Library/Caches/ms-playwright/*"]
+        )
+    }
+
     func testServiceWorkerTargetsAreAllMediumRisk() {
         let serviceWorkerTargets = catalog.targets.filter { $0.id.contains("service-worker") }
         XCTAssertEqual(serviceWorkerTargets.count, 6)

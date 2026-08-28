@@ -5,12 +5,13 @@ import Foundation
 /// analysis; this file restores the last visible result immediately. It contains metadata only,
 /// never conversation text or media bytes.
 struct DiskCleanAdvisorSnapshot: Codable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     let version: Int
     let savedAt: Date
     let storageSummary: StorageOptimizationSummary
     let storageCleanupItems: [StorageCleanupItem]
+    let systemDataSummary: SystemDataStorageSummary
     let inventorySummary: DiskFileInventorySummary
     let files: [DiskFileRecord]
 
@@ -18,6 +19,7 @@ struct DiskCleanAdvisorSnapshot: Codable, Sendable {
         savedAt: Date = Date(),
         storageSummary: StorageOptimizationSummary,
         storageCleanupItems: [StorageCleanupItem],
+        systemDataSummary: SystemDataStorageSummary,
         inventorySummary: DiskFileInventorySummary,
         files: [DiskFileRecord]
     ) {
@@ -25,6 +27,7 @@ struct DiskCleanAdvisorSnapshot: Codable, Sendable {
         self.savedAt = savedAt
         self.storageSummary = storageSummary
         self.storageCleanupItems = Array(storageCleanupItems.prefix(800))
+        self.systemDataSummary = systemDataSummary
         self.inventorySummary = inventorySummary
         self.files = Array(files.prefix(2_000))
     }

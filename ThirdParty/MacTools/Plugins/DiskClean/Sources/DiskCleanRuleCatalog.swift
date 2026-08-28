@@ -199,7 +199,8 @@ struct DiskCleanRuleCatalog: Equatable, Sendable {
                 "~/Library/Application Support/Codex/Code Cache/*",
                 "~/Library/Application Support/Codex/GPUCache/*",
                 "~/Library/Application Support/Codex/DawnGraphiteCache/*",
-                "~/Library/Application Support/Codex/DawnWebGPUCache/*"
+                "~/Library/Application Support/Codex/DawnWebGPUCache/*",
+                "~/.cache/codex-runtimes/*"
             ]
         ),
         rule(
@@ -515,7 +516,9 @@ struct DiskCleanRuleCatalog: Equatable, Sendable {
                 "~/.expo/native-modules-cache/*",
                 "~/.expo/schema-cache/*",
                 "~/.expo/template-cache/*",
-                "~/.expo/versions-cache/*"
+                "~/.expo/versions-cache/*",
+                "~/.cache/ms-playwright/*",
+                "~/Library/Caches/ms-playwright/*"
             ]
         ),
         rule(

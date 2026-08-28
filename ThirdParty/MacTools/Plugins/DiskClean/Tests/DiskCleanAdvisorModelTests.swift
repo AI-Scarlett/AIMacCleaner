@@ -19,7 +19,8 @@ final class DiskCleanAdvisorModelTests: XCTestCase {
         let model = DiskCleanAdvisorModel(
             cacheDirectory: cache,
             homeDirectory: root,
-            isSandboxed: false
+            isSandboxed: false,
+            systemDataInspector: FakeDiskCleanSystemDataInspector()
         )
         model.scan()
 
@@ -44,7 +45,8 @@ final class DiskCleanAdvisorModelTests: XCTestCase {
         let restored = DiskCleanAdvisorModel(
             cacheDirectory: cache,
             homeDirectory: root,
-            isSandboxed: false
+            isSandboxed: false,
+            systemDataInspector: FakeDiskCleanSystemDataInspector()
         )
         let restoreDeadline = Date().addingTimeInterval(3)
         while !restored.hasResult, Date() < restoreDeadline {
@@ -52,6 +54,7 @@ final class DiskCleanAdvisorModelTests: XCTestCase {
         }
         XCTAssertTrue(restored.hasResult)
         XCTAssertTrue(restored.isRestoredFromCache)
+        XCTAssertEqual(restored.systemDataSummary, model.systemDataSummary)
         XCTAssertEqual(restored.files.map(\.path), model.files.map(\.path))
     }
 
@@ -61,5 +64,39 @@ final class DiskCleanAdvisorModelTests: XCTestCase {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         return DiskCleanPhysicalPath.realpath(of: url.path) ?? url.path
+    }
+}
+
+private struct FakeDiskCleanSystemDataInspector: DiskCleanSystemDataInspecting {
+    func scan(homeDirectory: String) async -> SystemDataStorageSummary {
+        let now = Date()
+        let kinds: [(SystemDataStorageKind, SystemDataStorageDisposition)] = [
+            (.caches, .cleanable),
+            (.temporary, .reviewRequired),
+            (.developer, .reviewRequired),
+            (.applicationSupport, .reviewRequired),
+            (.appContainers, .reviewRequired),
+            (.systemDiagnostics, .systemManaged),
+            (.virtualMemory, .systemManaged)
+        ]
+        return SystemDataStorageSummary(
+            buckets: kinds.map {
+                SystemDataStorageBucket(
+                    kind: $0.0,
+                    path: homeDirectory,
+                    allocatedBytes: 0,
+                    visitedEntryCount: 0,
+                    unreadableEntryCount: 0,
+                    disposition: $0.1,
+                    wasTruncated: false
+                )
+            },
+            measuredBytes: 0,
+            visitedEntryCount: 0,
+            unreadableEntryCount: 0,
+            wasTruncated: false,
+            scanDuration: 0,
+            completedAt: now
+        )
     }
 }
