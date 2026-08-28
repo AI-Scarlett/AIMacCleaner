@@ -2,6 +2,16 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.2.17] - 2026-08-29
+
+### Added
+- 官网版在带 Touch Bar 的 MacBook Pro 上新增额度条，可显示当前 Provider 的名称、两个关键额度窗口及手动刷新入口。
+- 根据前台 Agent 应用和 TraceFence 活跃会话自动切换 Codex、Claude、Grok、DeepSeek Harness 等 Provider；也可点击名称手动切换。
+
+### Improved
+- Touch Bar 只复用额度监控插件的现有缓存，不重复读取登录凭据，也不启动第二轮额度扫描。
+- 持久在线能力使用官网版独立编译条件，上架版二进制不包含对应的系统级 Touch Bar 调用；关闭开关后立即恢复系统原有 Touch Bar。
+
 ## [1.2.16] - 2026-08-28
 
 ### Fixed

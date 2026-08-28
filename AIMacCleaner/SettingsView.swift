@@ -47,6 +47,9 @@ struct SettingsView: View {
     @AppStorage(MenuBarStatusPreferences.quotaDisplayModeKey) private var menuBarQuotaDisplayMode = MenuBarQuotaDisplayMode.remaining.rawValue
     @AppStorage(MenuBarStatusPreferences.primaryMetricKey) private var menuBarPrimaryMetric = MenuBarPrimaryMetric.tightest.rawValue
     @AppStorage(MenuBarStatusPreferences.showResetCountdownKey) private var menuBarShowResetCountdown = true
+    @AppStorage(TouchBarQuotaPreferences.enabledKey) private var touchBarQuotaEnabled = false
+    @AppStorage(TouchBarQuotaPreferences.persistentKey) private var touchBarQuotaPersistent = true
+    @AppStorage(TouchBarQuotaPreferences.autoSwitchKey) private var touchBarQuotaAutoSwitch = true
     @AppStorage("colorPalette") private var colorPalette = AppColorPalette.porcelain.rawValue
     @AppStorage(IOSRemoteControlGatewayService.enabledKey) private var iOSRemoteGatewayEnabled = false
     @AppStorage(IOSRemoteControlGatewayService.portKey) private var iOSRemoteGatewayPort = 17895
@@ -535,6 +538,60 @@ struct SettingsView: View {
                             Toggle(localizer.t("重置倒计时", en: "Reset countdown", zhHant: "重置倒數", ja: "リセットまで", ko: "초기화 카운트다운", mt: "Reset countdown"), isOn: $menuBarShowResetCountdown)
                                 .toggleStyle(.checkbox)
                         }
+                    }
+                }
+
+                if TraceFenceDistributionPolicy.currentChannel.isDirect,
+                   TouchBarQuotaController.isTouchBarCapableMac {
+                    Divider()
+                        .padding(.vertical, 2)
+
+                    HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                        Image(systemName: "rectangle.on.rectangle.angled")
+                            .foregroundStyle(touchBarQuotaEnabled ? Theme.Colors.accent : Theme.Colors.textTertiary)
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(localizer.t(
+                                "Touch Bar 额度",
+                                en: "Touch Bar Quota",
+                                zhHant: "Touch Bar 額度",
+                                ja: "Touch Bar クォータ",
+                                ko: "Touch Bar 할당량",
+                                mt: "Touch Bar Quota"
+                            ))
+                                .font(Theme.Font.captionMedium)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Text(localizer.t(
+                                "跟随当前活跃 Agent 显示已缓存的剩余额度，不会额外读取登录凭据。",
+                                en: "Show cached remaining quota for the active Agent without reading login credentials again.",
+                                zhHant: "跟隨目前活躍 Agent 顯示已快取的剩餘額度，不會額外讀取登入憑證。",
+                                ja: "アクティブな Agent のキャッシュ済み残量を表示し、認証情報を再読込しません。",
+                                ko: "활성 Agent의 캐시된 잔여 할당량을 표시하며 로그인 자격 증명을 다시 읽지 않습니다.",
+                                mt: "Show cached remaining quota for the active Agent."
+                            ))
+                                .font(Theme.Font.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $touchBarQuotaEnabled)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                    }
+
+                    if touchBarQuotaEnabled {
+                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                            Toggle(localizer.t("自动跟随活跃 Agent", en: "Follow active Agent automatically"), isOn: $touchBarQuotaAutoSwitch)
+                            Toggle(localizer.t("切换到其他应用后仍保持显示", en: "Keep visible in other apps"), isOn: $touchBarQuotaPersistent)
+                            Text(localizer.t(
+                                "持久在线仅用于官网版；若未来 macOS 不再支持，将自动回退到菜单栏额度。",
+                                en: "Persistent display is website-build only. If a future macOS version removes support, menu-bar quota remains available."
+                            ))
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        }
+                        .toggleStyle(.checkbox)
+                        .padding(.leading, 32)
                     }
                 }
             }

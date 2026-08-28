@@ -20,6 +20,7 @@ struct AIMacCleanerApp: App {
     @StateObject private var captureShelfService = CaptureShelfService.shared
     @StateObject private var artifactSidecarController = ArtifactSidecarController.shared
     @StateObject private var menuBarController = MenuBarStatusController()
+    @StateObject private var touchBarQuotaController = TouchBarQuotaController()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @AppStorage("monitorEnabled") private var monitorEnabled = false
     @AppStorage("operationMonitorEnabled") private var operationMonitorEnabled = false
@@ -35,6 +36,19 @@ struct AIMacCleanerApp: App {
             let failures = ProviderQuotaService.debugQuotaSelfTestFailures()
             let payload: [String: Any] = [
                 "succeeded": failures.isEmpty,
+                "failures": failures
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data("\n".utf8))
+            }
+            Darwin.exit(failures.isEmpty ? 0 : 2)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--tracefence-touchbar-self-test") {
+            let failures = TouchBarQuotaController.debugSelfTestFailures()
+            let payload: [String: Any] = [
+                "succeeded": failures.isEmpty,
+                "touchBarCapableMac": TouchBarQuotaController.isTouchBarCapableMac,
                 "failures": failures
             ]
             if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
@@ -328,6 +342,12 @@ struct AIMacCleanerApp: App {
                         captureService: captureShelfService,
                         localizer: localizer,
                         isEnabled: menuBarMonitorEnabled
+                    )
+                    touchBarQuotaController.configure(
+                        quotaService: providerQuotaService,
+                        overviewStore: overviewStore,
+                        appDelegate: appDelegate,
+                        localizer: localizer
                     )
                     appDelegate.setupGlobalShortcutsIfNeeded()
                 }
