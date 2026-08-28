@@ -13,17 +13,17 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.15")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.16")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
-    f"TraceFence {VERSION} repairs independent plugin updates and extends disk analysis.\n\n"
-    "- Separates first installation from atomic plugin updates and keeps pending updates visible until restart.\n"
-    "- Adds a clear Restart & Apply action after an independently downloaded plugin update.\n"
-    "- Adds read-only Large Files and content-verified Duplicate Files views with Finder access.\n"
-    "- Streams hashes in bounded chunks and reuses a local cache to avoid whole-file memory loads.\n"
+    f"TraceFence {VERSION} keeps website subscriptions stable across app updates.\n\n"
+    "- Isolates Debug and UI-preview license storage from production Keychain credentials.\n"
+    "- Loads the signed marketplace catalog before validating an existing website subscription.\n"
+    "- Preserves cached authorization during transient Keychain or catalog failures.\n"
+    "- Accepts the canonical signing key identifier used by the live GitHub marketplace catalog.\n"
 )
 
 

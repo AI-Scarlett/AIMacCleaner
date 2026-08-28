@@ -862,8 +862,15 @@ enum TraceFenceMarketplaceCatalogRuntime {
     }
 
     private enum TrustStore {
+        private static let marketplace2026PublicKey = Data(
+            base64Encoded: "To2lPOjn2E2wdrWQvs9NGdKAEHfsBA2J3o1DAUjXcJc="
+        )!
+
         static let publicKeys: [String: Data] = [
-            "catalog-2026-01": Data(base64Encoded: "To2lPOjn2E2wdrWQvs9NGdKAEHfsBA2J3o1DAUjXcJc=")!
+            // Keep the original identifier for already-downloaded catalogs and
+            // accept the canonical identifier used by current GitHub releases.
+            "catalog-2026-01": marketplace2026PublicKey,
+            "marketplace-catalog-2026-01": marketplace2026PublicKey
         ]
     }
 
@@ -1242,15 +1249,26 @@ final class TraceFenceMarketplaceCatalogService: ObservableObject {
     @Published private(set) var catalog = TraceFenceMarketplaceCatalogRuntime.activeCatalog
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastReport: TraceFenceMarketplaceRefreshReport?
+    private var refreshTask: Task<TraceFenceMarketplaceRefreshReport, Never>?
 
     private init() {}
 
     func refresh(force: Bool = false) async {
-        guard !isRefreshing else { return }
+        if let refreshTask {
+            let report = await refreshTask.value
+            catalog = TraceFenceMarketplaceCatalogRuntime.activeCatalog
+            lastReport = report
+            return
+        }
         isRefreshing = true
-        let report = await TraceFenceMarketplaceCatalogUpdateService.shared.refreshIfNeeded(force: force)
+        let task = Task {
+            await TraceFenceMarketplaceCatalogUpdateService.shared.refreshIfNeeded(force: force)
+        }
+        refreshTask = task
+        let report = await task.value
         catalog = TraceFenceMarketplaceCatalogRuntime.activeCatalog
         lastReport = report
+        refreshTask = nil
         isRefreshing = false
     }
 }

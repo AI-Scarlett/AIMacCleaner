@@ -574,6 +574,10 @@ enum TraceFenceEntitlementPolicy {
             await AppStoreSubscriptionService.shared.refresh()
         } else {
             DirectLicenseService.shared.refreshTrialState()
+            // The signed marketplace catalog carries the accepted subscription
+            // product set. Finish loading it before deciding whether a stored
+            // website license belongs to this build.
+            await TraceFenceMarketplaceCatalogService.shared.refresh()
             await DirectLicenseService.shared.validateCurrentLicense()
         }
     }
@@ -661,7 +665,8 @@ final class DirectLicenseService: ObservableObject {
     private let snapshotKey = "traceFenceLicenseSnapshot"
     private let snapshotSignatureKey = "traceFenceLicenseSnapshotSignature"
     private let trialStartedKey = "traceFenceTrialStartedAt"
-    private let serviceName = "TraceFence.DirectLicense"
+    private let serviceName: String
+    private let licenseDefaults: UserDefaults
     private let licenseAccount = "license_key"
     private let instanceAccount = "instance_id"
     private let businessAccount = "business_id"
@@ -669,6 +674,18 @@ final class DirectLicenseService: ObservableObject {
     private let snapshotSigningKeyAccount = "snapshot_signing_key"
     private let decoder = JSONDecoder()
     private let dateCodec = ISO8601DateFormatter()
+
+    private enum SecretReadResult {
+        case value(Data)
+        case missing
+        case unavailable(OSStatus)
+    }
+
+    private enum SecretStringReadResult {
+        case value(String)
+        case missing
+        case unavailable(OSStatus)
+    }
 
     /// UI preview builds are intentionally unsigned and use a different bundle
     /// identity. They must never touch the production license Keychain items,
@@ -680,11 +697,20 @@ final class DirectLicenseService: ObservableObject {
     }
 
     private init() {
+#if DEBUG
+        // Debug and UI-preview binaries may use the same bundle identifier as a
+        // production build. Keep both Keychain and defaults storage isolated so
+        // a test-environment product check can never invalidate a live license.
+        serviceName = "TraceFence.DirectLicense.Debug"
+        licenseDefaults = UserDefaults(suiteName: "com.tracefence.app.debug-license")!
+#else
+        serviceName = "TraceFence.DirectLicense"
+        licenseDefaults = .standard
+#endif
         snapshot = .empty
         trialSnapshot = .empty
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         snapshot = loadVerifiedSnapshot()
-        persistSnapshot()
         trialSnapshot = loadOrStartTrial()
     }
 
@@ -752,20 +778,58 @@ final class DirectLicenseService: ObservableObject {
 
     func validateCurrentLicense() async {
         guard TraceFenceDistributionPolicy.currentChannel.isDirect else { return }
-        guard let licenseKey = readSecret(account: licenseAccount) else {
+        let previousSnapshot = snapshot
+        let licenseKey: String
+        switch readSecretStringResult(account: licenseAccount) {
+        case .value(let value):
+            licenseKey = value
+        case .missing:
             snapshot = .empty
             licenseSyncedThisRun = false
             persistSnapshot()
             return
+        case .unavailable:
+            preserveCachedLicenseAfterCredentialReadFailure(previousSnapshot)
+            return
         }
 
-        let previousSnapshot = snapshot
-        guard let businessID = readSecret(account: businessAccount),
+        let businessResult = readSecretStringResult(account: businessAccount)
+        let productResult = readSecretStringResult(account: productAccount)
+        if case .unavailable = businessResult {
+            preserveCachedLicenseAfterCredentialReadFailure(previousSnapshot)
+            return
+        }
+        if case .unavailable = productResult {
+            preserveCachedLicenseAfterCredentialReadFailure(previousSnapshot)
+            return
+        }
+        guard case .value(let businessID) = businessResult,
               TraceFenceDistributionPolicy.isSupportedDodoBusinessID(businessID),
-              let productID = readSecret(account: productAccount),
-              TraceFenceDistributionPolicy.isSupportedDodoProductID(productID) else {
+              case .value(let productID) = productResult else {
             snapshot.status = .inactive
             snapshot.message = "The stored license does not match this TraceFence Dodo Payments business and product configuration. Activate it again with a supported TraceFence Standard key."
+            licenseSyncedThisRun = false
+            persistSnapshot()
+            return
+        }
+        if !TraceFenceDistributionPolicy.isSupportedDodoProductID(productID) {
+            let canUseVerifiedCache = !TraceFenceMarketplaceCatalogRuntime.isUsingVerifiedRemoteCatalog &&
+                previousSnapshot.status == .licensed &&
+                previousSnapshot.businessID == businessID &&
+                previousSnapshot.productID == productID &&
+                previousSnapshot.lastValidatedAt.map {
+                    Date().timeIntervalSince($0) <= offlineGraceDuration
+                } == true
+            guard !canUseVerifiedCache else {
+                snapshot = previousSnapshot
+                snapshot.status = .licensed
+                snapshot.message = "The signed marketplace catalog is temporarily unavailable. Cached authorization remains active during the 72-hour offline grace period."
+                licenseSyncedThisRun = false
+                persistSnapshot()
+                return
+            }
+            snapshot.status = .inactive
+            snapshot.message = "The stored license does not match this TraceFence Dodo Payments product configuration. Activate it again with a supported TraceFence Standard key."
             licenseSyncedThisRun = false
             persistSnapshot()
             return
@@ -915,6 +979,21 @@ final class DirectLicenseService: ObservableObject {
         persistSnapshot()
     }
 
+    private func preserveCachedLicenseAfterCredentialReadFailure(_ previousSnapshot: DirectLicenseSnapshot) {
+        snapshot = previousSnapshot
+        licenseSyncedThisRun = false
+        let isWithinGracePeriod = previousSnapshot.status == .licensed &&
+            previousSnapshot.lastValidatedAt.map { Date().timeIntervalSince($0) <= offlineGraceDuration } == true
+        if isWithinGracePeriod {
+            snapshot.status = .licensed
+            snapshot.message = "The macOS Keychain is temporarily unavailable. Cached authorization remains active during the 72-hour offline grace period."
+        } else {
+            snapshot.status = .error
+            snapshot.message = "The macOS Keychain is temporarily unavailable. Unlock the Mac and try again."
+        }
+        persistSnapshot()
+    }
+
     private func activationFailureMessage(for error: Error) -> String {
         if let directError = error as? DirectLicenseError {
             switch directError {
@@ -958,33 +1037,34 @@ final class DirectLicenseService: ObservableObject {
     }
 
     private func loadOrStartTrial() -> DirectTrialSnapshot {
-        if let rawStartedAt = UserDefaults.standard.string(forKey: trialStartedKey),
+        if let rawStartedAt = licenseDefaults.string(forKey: trialStartedKey),
            let startedAt = dateCodec.date(from: rawStartedAt) {
             return DirectTrialSnapshot(startedAt: startedAt, expiresAt: startedAt.addingTimeInterval(trialDuration))
         }
 
         let startedAt = Date()
-        UserDefaults.standard.set(dateCodec.string(from: startedAt), forKey: trialStartedKey)
+        licenseDefaults.set(dateCodec.string(from: startedAt), forKey: trialStartedKey)
         return DirectTrialSnapshot(startedAt: startedAt, expiresAt: startedAt.addingTimeInterval(trialDuration))
     }
 
     private func persistSnapshot() {
         guard let data = try? JSONEncoder().encode(snapshot),
               let signingKey = snapshotSigningKey() else {
-            UserDefaults.standard.removeObject(forKey: snapshotKey)
-            UserDefaults.standard.removeObject(forKey: snapshotSignatureKey)
+            // Keychain access can be temporarily unavailable while macOS is
+            // unlocking or migrating an app. Do not destroy a previously valid
+            // cache merely because it cannot be signed during that moment.
             return
         }
         let signature = Data(HMAC<SHA256>.authenticationCode(
             for: data,
             using: SymmetricKey(data: signingKey)
         ))
-        UserDefaults.standard.set(data, forKey: snapshotKey)
-        UserDefaults.standard.set(signature, forKey: snapshotSignatureKey)
+        licenseDefaults.set(data, forKey: snapshotKey)
+        licenseDefaults.set(signature, forKey: snapshotSignatureKey)
     }
 
     private func loadVerifiedSnapshot() -> DirectLicenseSnapshot {
-        let defaults = UserDefaults.standard
+        let defaults = licenseDefaults
         guard let data = defaults.data(forKey: snapshotKey),
               let decoded = try? JSONDecoder().decode(DirectLicenseSnapshot.self, from: data) else {
             defaults.removeObject(forKey: snapshotKey)
@@ -994,8 +1074,8 @@ final class DirectLicenseService: ObservableObject {
 
         if let storedSignature = defaults.data(forKey: snapshotSignatureKey) {
             guard let signingKey = readSecretData(account: snapshotSigningKeyAccount) else {
-                defaults.removeObject(forKey: snapshotKey)
-                defaults.removeObject(forKey: snapshotSignatureKey)
+                // Fail closed for this process, but retain the signed cache so a
+                // later launch can recover after transient Keychain failures.
                 return .empty
             }
             let expectedSignature = Data(HMAC<SHA256>.authenticationCode(
@@ -1084,8 +1164,27 @@ final class DirectLicenseService: ObservableObject {
         return String(data: data, encoding: .utf8)
     }
 
+    private func readSecretStringResult(account: String) -> SecretStringReadResult {
+        switch readSecretDataResult(account: account) {
+        case .value(let data):
+            guard let value = String(data: data, encoding: .utf8) else {
+                return .unavailable(errSecDecode)
+            }
+            return .value(value)
+        case .missing:
+            return .missing
+        case .unavailable(let status):
+            return .unavailable(status)
+        }
+    }
+
     private func readSecretData(account: String) -> Data? {
-        guard allowsLicenseKeychainAccess else { return nil }
+        guard case .value(let data) = readSecretDataResult(account: account) else { return nil }
+        return data
+    }
+
+    private func readSecretDataResult(account: String) -> SecretReadResult {
+        guard allowsLicenseKeychainAccess else { return .unavailable(errSecInteractionNotAllowed) }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -1094,11 +1193,14 @@ final class DirectLicenseService: ObservableObject {
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data else {
-            return nil
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound {
+            return .missing
         }
-        return data
+        guard status == errSecSuccess, let data = item as? Data else {
+            return .unavailable(status)
+        }
+        return .value(data)
     }
 
     private func deleteSecret(account: String) {

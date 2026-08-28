@@ -37,7 +37,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--signature", type=Path, required=True)
     parser.add_argument("--private-key", type=Path, required=True)
-    parser.add_argument("--key-id", default="catalog-2026-01")
+    parser.add_argument("--key-id", default="marketplace-catalog-2026-01")
     args = parser.parse_args()
 
     mode = args.private_key.stat().st_mode & 0o777

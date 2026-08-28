@@ -2,6 +2,14 @@
 
 All notable changes to AIMacCleaner will be documented in this file.
 
+## [1.2.16] - 2026-08-28
+
+### Fixed
+- Debug 与界面预览构建改用独立的 Keychain 服务和偏好存储，不再因测试环境商品 ID 校验而改写官网正式版订阅。
+- 官网版启动时先完成签名插件目录加载，再校验已有 Dodo 授权；并发刷新会等待同一任务，不再出现目录尚未就绪就误判订阅的竞态。
+- macOS Keychain 或签名目录暂时不可用时，在 72 小时离线宽限期内保留已验证授权，不再破坏可恢复的授权快照。
+- 兼容 GitHub 正式目录使用的 `marketplace-catalog-2026-01` 签名 key ID，修复目录长期回退到内置版本的问题。
+
 ## [1.2.15] - 2026-08-28
 
 ### Fixed

@@ -210,7 +210,6 @@ struct AIMacCleanerApp: App {
         }
         Task { @MainActor in
             guard TraceFenceDistributionPolicy.currentChannel.isDirect else { return }
-            await TraceFenceMarketplaceCatalogService.shared.refresh()
             let pricingReport = await AgentUsagePricingCatalogUpdateService.shared.refreshIfNeeded()
             if pricingReport.catalogChanged {
                 AgentUsageInsightsService.shared.applyPricingCatalogUpdate()
