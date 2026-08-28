@@ -1274,6 +1274,15 @@ struct SettingsView: View {
                         Text(localizer.t("正在安装 v\(targetVersion)…", en: "Installing v\(targetVersion)…"))
                             .font(Theme.Font.caption)
                             .foregroundStyle(Theme.Colors.textSecondary)
+                    case let .updating(installedVersion, targetVersion):
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(localizer.t(
+                            "正在更新 v\(installedVersion) → v\(targetVersion)…",
+                            en: "Updating v\(installedVersion) → v\(targetVersion)…"
+                        ))
+                        .font(Theme.Font.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                     case let .installed(version, enabled, restartRequired):
                         Button {
                             openPluginFromSettings(plugin.id)
@@ -1297,7 +1306,10 @@ struct SettingsView: View {
                         }
                     case let .updateAvailable(installedVersion, targetVersion, _):
                         Button {
-                            Task { await pluginPackageService.install(plugin: plugin) }
+                            Task {
+                                await pluginPackageService.update(plugin: plugin)
+                                pluginRuntimeService.synchronizeWithInstalledPlugins()
+                            }
                         } label: {
                             Label(
                                 localizer.t("更新 \(installedVersion) → \(targetVersion)", en: "Update \(installedVersion) → \(targetVersion)"),
@@ -1305,7 +1317,26 @@ struct SettingsView: View {
                             )
                         }
                         .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .secondary, minHeight: 32))
-                    case .notInstalled, .failed:
+                    case let .failed(_, installedVersion):
+                        Button {
+                            Task {
+                                if installedVersion == nil {
+                                    await pluginPackageService.install(plugin: plugin)
+                                } else {
+                                    await pluginPackageService.update(plugin: plugin)
+                                    pluginRuntimeService.synchronizeWithInstalledPlugins()
+                                }
+                            }
+                        } label: {
+                            Label(
+                                installedVersion == nil
+                                    ? localizer.t("重试安装", en: "Retry Install")
+                                    : localizer.t("重试更新", en: "Retry Update"),
+                                systemImage: "arrow.clockwise.circle.fill"
+                            )
+                        }
+                        .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .secondary, minHeight: 32))
+                    case .notInstalled:
                         Button {
                             Task { await pluginPackageService.install(plugin: plugin) }
                         } label: {

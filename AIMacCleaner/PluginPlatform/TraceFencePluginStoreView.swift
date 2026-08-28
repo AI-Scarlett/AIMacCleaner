@@ -1,4 +1,32 @@
+import AppKit
 import SwiftUI
+
+private enum TraceFencePluginHostRelauncher {
+    @MainActor
+    static func relaunch() {
+        let helper = Process()
+        helper.executableURL = URL(fileURLWithPath: "/bin/sh")
+        helper.arguments = [
+            "-c",
+            "while /bin/kill -0 \"$1\" 2>/dev/null; do /bin/sleep 0.1; done; /usr/bin/open -n \"$2\"",
+            "tracefence-plugin-relaunch",
+            String(ProcessInfo.processInfo.processIdentifier),
+            Bundle.main.bundleURL.path
+        ]
+        helper.standardOutput = FileHandle.nullDevice
+        helper.standardError = FileHandle.nullDevice
+        do {
+            try helper.run()
+            if let appDelegate = NSApp.delegate as? AppDelegate {
+                appDelegate.requestFullQuit()
+            } else {
+                NSApp.terminate(nil)
+            }
+        } catch {
+            NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+        }
+    }
+}
 
 private enum TraceFencePluginDeliveryFilter: String, CaseIterable, Identifiable {
     case all
@@ -216,9 +244,9 @@ struct TraceFencePluginStoreView: View {
                 ))
                 .foregroundStyle(Theme.Colors.textSecondary)
                 Spacer()
-                if !updatePlugins.isEmpty {
+                if !updateSectionPlugins.isEmpty {
                     Label(
-                        localizer.t("\(updatePlugins.count) 个更新", en: "\(updatePlugins.count) updates"),
+                        localizer.t("\(updateSectionPlugins.count) 项待处理", en: "\(updateSectionPlugins.count) pending"),
                         systemImage: "arrow.down.circle.fill"
                     )
                     .foregroundStyle(Theme.Colors.accent)
@@ -241,9 +269,9 @@ struct TraceFencePluginStoreView: View {
                 .tag(TraceFencePluginPlatformSection.discover)
             Label(localizer.t("资料库", en: "Library"), systemImage: "square.stack.3d.up.fill")
                 .tag(TraceFencePluginPlatformSection.library)
-            Text(updatePlugins.isEmpty
+            Text(updateSectionPlugins.isEmpty
                 ? localizer.t("更新", en: "Updates")
-                : localizer.t("更新（\(updatePlugins.count)）", en: "Updates (\(updatePlugins.count))"))
+                : localizer.t("更新（\(updateSectionPlugins.count)）", en: "Updates (\(updateSectionPlugins.count))"))
                 .tag(TraceFencePluginPlatformSection.updates)
         }
         .pickerStyle(.segmented)
@@ -304,9 +332,7 @@ struct TraceFencePluginStoreView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(updatePlugins.isEmpty
-                        ? localizer.t("所有插件都是最新版本", en: "All plugins are up to date")
-                        : localizer.t("有 \(updatePlugins.count) 个独立插件更新", en: "\(updatePlugins.count) independent plugin updates"))
+                    Text(updateStatusTitle)
                         .font(Theme.Font.bodyMedium)
                     Text(localizer.t(
                         "更新插件不会改变 TraceFence 的版本。安装前仍会验证签名、版本和 SHA-256。",
@@ -320,7 +346,8 @@ struct TraceFencePluginStoreView: View {
                     Button {
                         Task {
                             for plugin in updatePlugins {
-                                await packageManager.install(plugin: plugin)
+                                await packageManager.update(plugin: plugin)
+                                runtimeHost.synchronizeWithInstalledPlugins()
                             }
                         }
                     } label: {
@@ -331,14 +358,14 @@ struct TraceFencePluginStoreView: View {
             }
             .cardStyle()
 
-            if updatePlugins.isEmpty {
+            if updateSectionPlugins.isEmpty {
                 emptyState(
                     icon: "checkmark.circle.fill",
                     title: localizer.t("无需更新", en: "No updates available"),
                     detail: localizer.t("TraceFence 会按插件自己的版本检查更新。", en: "TraceFence checks updates against each plugin's own version.")
                 )
             } else {
-                ForEach(updatePlugins) { plugin in
+                ForEach(updateSectionPlugins) { plugin in
                     libraryRow(plugin)
                 }
             }
@@ -508,7 +535,14 @@ struct TraceFencePluginStoreView: View {
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .secondary, minHeight: 30))
             case let .failed(_, installedVersion):
                 Button {
-                    Task { await packageManager.install(plugin: plugin) }
+                    Task {
+                        if installedVersion == nil {
+                            await packageManager.install(plugin: plugin)
+                        } else {
+                            await packageManager.update(plugin: plugin)
+                            runtimeHost.synchronizeWithInstalledPlugins()
+                        }
+                    }
                 } label: {
                     Label(
                         installedVersion == nil
@@ -518,18 +552,30 @@ struct TraceFencePluginStoreView: View {
                     )
                 }
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .secondary, minHeight: 30))
-            case .downloading, .installing:
+            case .downloading, .installing, .updating:
                 ProgressView().controlSize(.small)
-            case .installed:
-                Button {
-                    openPlugin(plugin.id)
-                } label: {
-                    Label(localizer.t("在主界面打开", en: "Open in Workspace"), systemImage: "arrow.up.forward.app.fill")
+            case let .installed(_, _, restartRequired):
+                if restartRequired {
+                    Button {
+                        TraceFencePluginHostRelauncher.relaunch()
+                    } label: {
+                        Label(localizer.t("重启并应用", en: "Restart & Apply"), systemImage: "arrow.clockwise.circle.fill")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .primary, minHeight: 30))
+                } else {
+                    Button {
+                        openPlugin(plugin.id)
+                    } label: {
+                        Label(localizer.t("在主界面打开", en: "Open in Workspace"), systemImage: "arrow.up.forward.app.fill")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 30))
                 }
-                .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 30))
             case let .updateAvailable(_, targetVersion, _):
                 Button {
-                    Task { await packageManager.install(plugin: plugin) }
+                    Task {
+                        await packageManager.update(plugin: plugin)
+                        runtimeHost.synchronizeWithInstalledPlugins()
+                    }
                 } label: {
                     Text(localizer.t("更新到 \(targetVersion)", en: "Update to \(targetVersion)"))
                 }
@@ -561,6 +607,12 @@ struct TraceFencePluginStoreView: View {
             color = Theme.Colors.info
         case .installing:
             text = localizer.t("正在安装", en: "Installing")
+            color = Theme.Colors.info
+        case let .updating(installedVersion, targetVersion):
+            text = localizer.t(
+                "正在更新 v\(installedVersion) → v\(targetVersion)",
+                en: "Updating v\(installedVersion) → v\(targetVersion)"
+            )
             color = Theme.Colors.info
         case .notInstalled:
             text = plugin.delivery == .builtIn
@@ -718,6 +770,11 @@ struct TraceFencePluginStoreView: View {
             switch packageManager.state(for: $0) {
             case .updateAvailable:
                 return true
+            case .downloading, .updating:
+                guard let installedVersion = packageManager.record(pluginID: $0.id)?.activeVersion else {
+                    return false
+                }
+                return installedVersion.compare($0.version, options: .numeric) == .orderedAscending
             case let .failed(_, installedVersion):
                 guard let installedVersion else { return false }
                 return installedVersion.compare($0.version, options: .numeric) == .orderedAscending
@@ -725,6 +782,42 @@ struct TraceFencePluginStoreView: View {
                 return false
             }
         }
+    }
+
+    private var pendingRestartPlugins: [TraceFencePluginDescriptor] {
+        downloadablePlugins.filter {
+            if case let .installed(_, _, restartRequired) = packageManager.state(for: $0) {
+                return restartRequired
+            }
+            return false
+        }
+    }
+
+    private var updateStatusTitle: String {
+        if updateSectionPlugins.isEmpty {
+            return localizer.t("所有插件都是最新版本", en: "All plugins are up to date")
+        }
+        if !updatePlugins.isEmpty, !pendingRestartPlugins.isEmpty {
+            return localizer.t(
+                "\(updatePlugins.count) 个可更新 · \(pendingRestartPlugins.count) 个等待重启应用",
+                en: "\(updatePlugins.count) updates · \(pendingRestartPlugins.count) await restart"
+            )
+        }
+        if !updatePlugins.isEmpty {
+            return localizer.t(
+                "有 \(updatePlugins.count) 个独立插件更新",
+                en: "\(updatePlugins.count) independent plugin updates"
+            )
+        }
+        return localizer.t(
+            "更新已下载；\(pendingRestartPlugins.count) 个插件等待重启应用",
+            en: "Updates downloaded; \(pendingRestartPlugins.count) plugins await restart"
+        )
+    }
+
+    private var updateSectionPlugins: [TraceFencePluginDescriptor] {
+        let ids = Set(updatePlugins.map(\.id)).union(pendingRestartPlugins.map(\.id))
+        return downloadablePlugins.filter { ids.contains($0.id) }
     }
 
     private func hasAccess(_ plugin: TraceFencePluginDescriptor) -> Bool {
@@ -937,7 +1030,14 @@ private struct TraceFencePluginDetailView: View {
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
             case let .failed(_, installedVersion):
                 Button {
-                    Task { await packageManager.install(plugin: plugin) }
+                    Task {
+                        if installedVersion == nil {
+                            await packageManager.install(plugin: plugin)
+                        } else {
+                            await packageManager.update(plugin: plugin)
+                            runtimeHost.synchronizeWithInstalledPlugins()
+                        }
+                    }
                 } label: {
                     Label(
                         installedVersion == nil
@@ -947,16 +1047,28 @@ private struct TraceFencePluginDetailView: View {
                     )
                 }
                 .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .primary, minHeight: 34))
-            case .downloading, .installing:
+            case .downloading, .installing, .updating:
                 ProgressView().controlSize(.small)
-            case .installed:
-                Button(action: openRuntime) {
-                    Label(localizer.t("在主界面打开", en: "Open in Workspace"), systemImage: "arrow.up.forward.app.fill")
+            case let .installed(_, _, restartRequired):
+                if restartRequired {
+                    Button {
+                        TraceFencePluginHostRelauncher.relaunch()
+                    } label: {
+                        Label(localizer.t("重启并应用", en: "Restart & Apply"), systemImage: "arrow.clockwise.circle.fill")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.warning, variant: .primary, minHeight: 34))
+                } else {
+                    Button(action: openRuntime) {
+                        Label(localizer.t("在主界面打开", en: "Open in Workspace"), systemImage: "arrow.up.forward.app.fill")
+                    }
+                    .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
                 }
-                .buttonStyle(BrandButtonStyle(color: Theme.Colors.accent, variant: .primary, minHeight: 34))
             case let .updateAvailable(_, targetVersion, _):
                 Button {
-                    Task { await packageManager.install(plugin: plugin) }
+                    Task {
+                        await packageManager.update(plugin: plugin)
+                        runtimeHost.synchronizeWithInstalledPlugins()
+                    }
                 } label: {
                     Label(localizer.t("更新到 \(targetVersion)", en: "Update to \(targetVersion)"), systemImage: "arrow.down.circle.fill")
                 }
@@ -1138,6 +1250,10 @@ private struct TraceFencePluginDetailView: View {
         case .notInstalled: return localizer.t("最新版本 v\(plugin.version)，尚未安装", en: "Latest v\(plugin.version), not installed")
         case let .downloading(version): return localizer.t("正在下载并校验 v\(version)", en: "Downloading and verifying v\(version)")
         case let .installing(version): return localizer.t("正在原子安装 v\(version)", en: "Atomically installing v\(version)")
+        case let .updating(installed, target): return localizer.t(
+            "正在原子更新 v\(installed) → v\(target)",
+            en: "Atomically updating v\(installed) → v\(target)"
+        )
         case let .installed(version, _, restartRequired): return restartRequired
             ? localizer.t("v\(version) 已安装，重启后完全生效", en: "v\(version) installed; restart required")
             : localizer.t("v\(version) 已安装并可用", en: "v\(version) installed and ready")

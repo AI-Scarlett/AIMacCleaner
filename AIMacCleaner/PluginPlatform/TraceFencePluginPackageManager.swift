@@ -91,6 +91,13 @@ final class TraceFencePluginPackageManager: ObservableObject {
                 continue
             }
             loadedRecords[plugin.id] = record
+            // A catalog refresh can arrive while an update task is downloading
+            // or atomically replacing a package. Preserve that in-flight state
+            // so the Updates tab cannot start a second operation for the same
+            // plugin before the first task completes.
+            if isBusy(states[plugin.id]) {
+                continue
+            }
             if record.activeVersion.compare(plugin.version, options: .numeric) == .orderedAscending {
                 // Keep the concrete validation/install error visible until the
                 // user retries. Replacing it with a generic update badge on
@@ -130,6 +137,25 @@ final class TraceFencePluginPackageManager: ObservableObject {
     }
 
     func install(plugin: TraceFencePluginDescriptor) async {
+        await installOrUpdate(plugin: plugin, operation: .install)
+    }
+
+    /// Updates an existing plugin without conflating the operation with first
+    /// installation. The active record remains available as a rollback target
+    /// until the new package has downloaded, validated and installed atomically.
+    func update(plugin: TraceFencePluginDescriptor) async {
+        await installOrUpdate(plugin: plugin, operation: .update)
+    }
+
+    private enum PackageOperation: Equatable {
+        case install
+        case update
+    }
+
+    private func installOrUpdate(
+        plugin: TraceFencePluginDescriptor,
+        operation: PackageOperation
+    ) async {
         guard TraceFenceDistributionPolicy.currentChannel.isDirect,
               plugin.delivery == .package,
               plugin.package != nil else {
@@ -162,10 +188,53 @@ final class TraceFencePluginPackageManager: ObservableObject {
         guard !isBusy(states[plugin.id]) else { return }
 
         let previousRecord = records[plugin.id]
+        switch operation {
+        case .install:
+            if let previousRecord {
+                states[plugin.id] = previousRecord.activeVersion.compare(
+                    plugin.version,
+                    options: .numeric
+                ) == .orderedAscending
+                    ? .updateAvailable(
+                        installedVersion: previousRecord.activeVersion,
+                        targetVersion: plugin.version,
+                        enabled: previousRecord.enabled
+                    )
+                    : .installed(
+                        version: previousRecord.activeVersion,
+                        enabled: previousRecord.enabled,
+                        restartRequired: previousRecord.restartRequired
+                    )
+                return
+            }
+        case .update:
+            guard let previousRecord else {
+                states[plugin.id] = .failed(
+                    message: "Install this plugin before updating it.",
+                    installedVersion: nil
+                )
+                return
+            }
+            guard previousRecord.activeVersion.compare(plugin.version, options: .numeric) == .orderedAscending else {
+                states[plugin.id] = .installed(
+                    version: previousRecord.activeVersion,
+                    enabled: previousRecord.enabled,
+                    restartRequired: previousRecord.restartRequired
+                )
+                return
+            }
+        }
         states[plugin.id] = .downloading(targetVersion: plugin.version)
         do {
             let validated = try await worker.downloadAndValidate(plugin: plugin)
-            states[plugin.id] = .installing(targetVersion: plugin.version)
+            if let previousRecord, operation == .update {
+                states[plugin.id] = .updating(
+                    installedVersion: previousRecord.activeVersion,
+                    targetVersion: plugin.version
+                )
+            } else {
+                states[plugin.id] = .installing(targetVersion: plugin.version)
+            }
             let record = try await worker.install(
                 validated,
                 plugin: plugin,
@@ -188,7 +257,9 @@ final class TraceFencePluginPackageManager: ObservableObject {
 #if DEBUG
     func installLocalPackageForTesting(plugin: TraceFencePluginDescriptor, archiveURL: URL) async {
         let previousRecord = records[plugin.id]
-        states[plugin.id] = .installing(targetVersion: plugin.version)
+        states[plugin.id] = previousRecord.map {
+            .updating(installedVersion: $0.activeVersion, targetVersion: plugin.version)
+        } ?? .installing(targetVersion: plugin.version)
         do {
             let validated = try await worker.validateLocalArchive(archiveURL, plugin: plugin)
             let record = try await worker.install(
@@ -298,7 +369,7 @@ final class TraceFencePluginPackageManager: ObservableObject {
 
     private func isBusy(_ state: TraceFencePluginInstallationState?) -> Bool {
         switch state {
-        case .downloading, .installing: true
+        case .downloading, .installing, .updating: true
         default: false
         }
     }

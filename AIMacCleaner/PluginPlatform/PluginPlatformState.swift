@@ -6,6 +6,7 @@ enum TraceFencePluginInstallationState: Equatable {
     case notInstalled
     case downloading(targetVersion: String)
     case installing(targetVersion: String)
+    case updating(installedVersion: String, targetVersion: String)
     case installed(version: String, enabled: Bool, restartRequired: Bool)
     case updateAvailable(installedVersion: String, targetVersion: String, enabled: Bool)
     case failed(message: String, installedVersion: String?)
@@ -18,6 +19,8 @@ enum TraceFencePluginInstallationState: Equatable {
             return version
         case let .failed(_, version):
             return version
+        case let .updating(installedVersion, _):
+            return installedVersion
         case .notInstalled, .downloading, .installing:
             return nil
         }

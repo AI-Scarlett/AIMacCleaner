@@ -13,18 +13,17 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.14")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.15")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
-    f"TraceFence {VERSION} repairs the installed-plugin workspace for real-world sidebar widths.\n\n"
-    "- Prevents plugin versions, pricing badges, and update states from wrapping into vertical text.\n"
-    "- Reduces every plugin row to one clear overflow action while keeping pin state visible.\n"
-    "- Moves enable/disable, Main Tab, menu-bar, reveal, update, and complete-uninstall actions into one consistent menu.\n"
-    "- Moves protection, version, iOS pairing, appearance, and language controls into the unified window toolbar, leaving only Settings and Collapse in the sidebar footer.\n"
-    "- Uses responsive spacing and card surfaces in both light and dark themes.\n"
+    f"TraceFence {VERSION} repairs independent plugin updates and extends disk analysis.\n\n"
+    "- Separates first installation from atomic plugin updates and keeps pending updates visible until restart.\n"
+    "- Adds a clear Restart & Apply action after an independently downloaded plugin update.\n"
+    "- Adds read-only Large Files and content-verified Duplicate Files views with Finder access.\n"
+    "- Streams hashes in bounded chunks and reuses a local cache to avoid whole-file memory loads.\n"
 )
 
 

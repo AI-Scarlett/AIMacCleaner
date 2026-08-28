@@ -704,7 +704,7 @@ struct TraceFencePluginRuntimeView: View {
                 }
                 .buttonStyle(.borderless)
                 .help(localizer.t("直接更新此插件到 v\(targetVersion)", en: "Update this plugin directly to v\(targetVersion)"))
-            case .downloading, .installing:
+            case .downloading, .installing, .updating:
                 ProgressView()
                     .controlSize(.small)
                     .help(localizer.t("正在更新插件", en: "Updating plugin"))
@@ -767,7 +767,7 @@ struct TraceFencePluginRuntimeView: View {
             await catalogService.refresh(force: true)
             packageManager.refresh(catalog: catalogService.catalog)
             guard let plugin = catalogService.catalog.plugin(id: pluginID) else { return }
-            await packageManager.install(plugin: plugin)
+            await packageManager.update(plugin: plugin)
             runtimeHost.synchronizeWithInstalledPlugins()
         }
     }
@@ -1403,7 +1403,7 @@ struct TraceFencePluginWorkspaceView: View {
                 if case let .updateAvailable(_, targetVersion, _) = packageManager.state(for: plugin) {
                     Button {
                         Task { @MainActor in
-                            await packageManager.install(plugin: plugin)
+                            await packageManager.update(plugin: plugin)
                             runtimeHost.synchronizeWithInstalledPlugins()
                         }
                     } label: {
