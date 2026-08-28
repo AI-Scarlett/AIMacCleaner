@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-08-28T08:16:57Z",
+  "expiresAt": "2027-08-28T08:35:44Z",
   "offers": [
     {
       "active": true,
@@ -1395,7 +1395,7 @@
           "summary": "本機磁碟分析與安全清理：拆分系統資料、識別大型檔案與內容重複檔案，並依復原成本檢視快取、建置與 Agent 儲存"
         }
       },
-      "minimumHostVersion": "1.2.1",
+      "minimumHostVersion": "1.2.15",
       "minimumSystemVersion": "14.0",
       "name": "Disk Cleanup",
       "package": {
@@ -4217,7 +4217,7 @@
       "version": "1.0.9"
     }
   ],
-  "publishedAt": "2026-08-28T08:16:57Z",
-  "revision": 23,
+  "publishedAt": "2026-08-28T08:35:44Z",
+  "revision": 24,
   "schemaVersion": 1
 }
