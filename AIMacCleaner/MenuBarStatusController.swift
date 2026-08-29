@@ -685,6 +685,7 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
 @MainActor
 final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDelegate {
     private enum ItemID {
+        static let strip = NSTouchBarItem.Identifier("com.tracefence.touchbar.quota.strip")
         static let provider = NSTouchBarItem.Identifier("com.tracefence.touchbar.provider")
         static let primary = NSTouchBarItem.Identifier("com.tracefence.touchbar.primary")
         static let secondary = NSTouchBarItem.Identifier("com.tracefence.touchbar.secondary")
@@ -713,6 +714,9 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
     private var heartbeatTimer: Timer?
     private var refreshWorkItem: DispatchWorkItem?
     private var touchBar: NSTouchBar?
+    private var stripItem: NSCustomTouchBarItem?
+    private var stripButton: NSButton?
+    private var systemTrayRegistered = false
     private weak var attachedWindow: NSWindow?
     private var providerButton: NSButton?
     private var primaryButton: NSButton?
@@ -762,11 +766,14 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
             self.workspaceObserver = nil
         }
         dismissPersistentTouchBar()
+        unregisterSystemTrayItem()
         if attachedWindow?.touchBar === touchBar {
             attachedWindow?.touchBar = nil
         }
         attachedWindow = nil
         touchBar = nil
+        stripItem = nil
+        stripButton = nil
         providerButton = nil
         primaryButton = nil
         secondaryButton = nil
@@ -840,6 +847,7 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
     private func applyPreferences() {
         guard isEnabled else {
             dismissPersistentTouchBar()
+            unregisterSystemTrayItem()
             if attachedWindow?.touchBar === touchBar {
                 attachedWindow?.touchBar = nil
             }
@@ -849,9 +857,10 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
         attachToMainWindow()
         refreshDisplay()
         if shouldPersist {
-            presentPersistentTouchBarIfAvailable()
+            registerSystemTrayItemIfAvailable()
         } else {
             dismissPersistentTouchBar()
+            unregisterSystemTrayItem()
         }
     }
 
@@ -873,6 +882,43 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
             ItemID.provider, ItemID.primary, ItemID.secondary, ItemID.refresh
         ]
         touchBar = bar
+    }
+
+    /// Install a compact, always-visible Control Strip item. A registered item
+    /// is required on current TouchBarServer builds; presenting a modal bar
+    /// without one may be accepted by the service but never reach the panel.
+    private func registerSystemTrayItemIfAvailable() {
+#if TRACEFENCE_DIRECT_TOUCH_BAR
+        guard shouldPersist else { return }
+        if !systemTrayRegistered {
+            let item = NSCustomTouchBarItem(identifier: ItemID.strip)
+            let button = NSButton(title: "TF —", target: self, action: #selector(openTouchBarDetails))
+            button.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+            button.bezelStyle = .texturedRounded
+            button.contentTintColor = .white
+            button.setAccessibilityLabel(localized("TraceFence 剩余额度", en: "TraceFence remaining quota"))
+            button.translatesAutoresizingMaskIntoConstraints = true
+            button.frame = NSRect(x: 0, y: 0, width: 88, height: 30)
+            item.view = button
+
+            guard Self.addSystemTrayItem(item) else { return }
+            stripItem = item
+            stripButton = button
+            systemTrayRegistered = true
+        }
+        Self.setControlStripPresence(true, identifier: ItemID.strip)
+#endif
+    }
+
+    private func unregisterSystemTrayItem() {
+#if TRACEFENCE_DIRECT_TOUCH_BAR
+        guard systemTrayRegistered, let registeredItem = stripItem else { return }
+        Self.setControlStripPresence(false, identifier: ItemID.strip)
+        Self.removeSystemTrayItem(registeredItem)
+#endif
+        systemTrayRegistered = false
+        stripItem = nil
+        stripButton = nil
     }
 
     private func attachToMainWindow() {
@@ -951,7 +997,8 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
                 : localized("暂无额度", en: "No quota")
             secondaryButton?.title = localized("打开 TraceFence", en: "Open TraceFence")
             refreshButton?.isEnabled = quotaService?.isQuotaPluginInstalled == true
-            if shouldPersist { presentPersistentTouchBarIfAvailable() }
+            updateStripButton(title: quotaService?.isRefreshing == true ? "TF …" : "TF —")
+            if shouldPersist { registerSystemTrayItemIfAvailable() }
             return
         }
 
@@ -968,7 +1015,21 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
             ? format(windows[1], displayMode: displayMode)
             : resetTitle(for: windows.first)
         refreshButton?.isEnabled = quotaService?.isRefreshing != true
-        if shouldPersist { presentPersistentTouchBarIfAvailable() }
+        let tightest = snapshot.windows
+            .filter(\.isAllowanceWindow)
+            .min { $0.remainingPercent < $1.remainingPercent }
+        let percent = tightest.map {
+            displayMode == .remaining ? $0.remainingPercent : $0.usedPercent
+        }
+        let provider = Self.providerAbbreviation(snapshot.providerName)
+        updateStripButton(title: percent.map { "\(provider) \(Int($0.rounded()))%" } ?? "\(provider) —")
+        if shouldPersist { registerSystemTrayItemIfAvailable() }
+    }
+
+    private func updateStripButton(title: String) {
+        registerSystemTrayItemIfAvailable()
+        stripButton?.title = title
+        stripButton?.toolTip = localized("点击查看并切换 Agent 额度", en: "View and switch Agent quotas")
     }
 
     private var displayMode: MenuBarQuotaDisplayMode {
@@ -1142,6 +1203,19 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
             .first ?? ""
     }
 
+    private static func providerAbbreviation(_ name: String) -> String {
+        switch providerKey(for: name) {
+        case "codex": return "C"
+        case "claude": return "Cl"
+        case "grok": return "G"
+        case "deepseek": return "DSH"
+        case "gemini": return "Ge"
+        case "cursor": return "Cu"
+        case "minimax": return "MM"
+        default: return String(name.prefix(2))
+        }
+    }
+
     static func debugSelfTestFailures() -> [String] {
         var failures: [String] = []
         if providerKey(for: "com.openai.codex") != "codex" { failures.append("Codex bundle alias failed") }
@@ -1169,20 +1243,22 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
         localizer?.t(zh, en: en, zhHant: zh, ja: en, ko: en, mt: en) ?? en
     }
 
-    private func presentPersistentTouchBarIfAvailable() {
+    @objc private func openTouchBarDetails() {
 #if TRACEFENCE_DIRECT_TOUCH_BAR
-        guard shouldPersist, !systemModalPresented, let touchBar else { return }
-        systemModalPresented = Self.presentSystemModalTouchBar(touchBar)
+        guard shouldPersist, let touchBar else { return }
+        systemModalPresented = Self.presentSystemModalTouchBar(
+            touchBar,
+            systemTrayItemIdentifier: ItemID.strip
+        )
+        Self.setControlStripPresence(true, identifier: ItemID.strip)
 #endif
     }
 
 #if TRACEFENCE_DIRECT_TOUCH_BAR
-    /// Present the wide system-modal surface without tying it to a Control
-    /// Strip item. Passing an identifier that has not first been registered as
-    /// a system-tray item makes TouchBarServer allocate a zero-width root view
-    /// on current macOS releases. The placement SPI with a nil tray identifier
-    /// is the stable path used by standalone Touch Bar HUDs.
-    private static func presentSystemModalTouchBar(_ touchBar: NSTouchBar) -> Bool {
+    private static func presentSystemModalTouchBar(
+        _ touchBar: NSTouchBar,
+        systemTrayItemIdentifier identifier: NSTouchBarItem.Identifier
+    ) -> Bool {
         configureSystemModalCloseBox()
         let selector = NSSelectorFromString("presentSystemModalTouchBar:placement:systemTrayItemIdentifier:")
         guard let method = class_getClassMethod(NSTouchBar.self, selector) else { return false }
@@ -1194,8 +1270,38 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
             NSString?
         ) -> Void
         let present = unsafeBitCast(method_getImplementation(method), to: PresentFunction.self)
-        present(NSTouchBar.self, selector, touchBar, 0, nil)
+        present(NSTouchBar.self, selector, touchBar, 1, identifier.rawValue as NSString)
         return true
+    }
+
+    private static func addSystemTrayItem(_ item: NSTouchBarItem) -> Bool {
+        let selector = NSSelectorFromString("addSystemTrayItem:")
+        guard let method = class_getClassMethod(NSTouchBarItem.self, selector) else { return false }
+        typealias Function = @convention(c) (AnyClass, Selector, NSTouchBarItem) -> Void
+        let function = unsafeBitCast(method_getImplementation(method), to: Function.self)
+        function(NSTouchBarItem.self, selector, item)
+        return true
+    }
+
+    private static func removeSystemTrayItem(_ item: NSTouchBarItem) {
+        let selector = NSSelectorFromString("removeSystemTrayItem:")
+        guard let method = class_getClassMethod(NSTouchBarItem.self, selector) else { return }
+        typealias Function = @convention(c) (AnyClass, Selector, NSTouchBarItem) -> Void
+        let function = unsafeBitCast(method_getImplementation(method), to: Function.self)
+        function(NSTouchBarItem.self, selector, item)
+    }
+
+    private static func setControlStripPresence(
+        _ present: Bool,
+        identifier: NSTouchBarItem.Identifier
+    ) {
+        let framework = "/System/Library/PrivateFrameworks/DFRFoundation.framework/DFRFoundation"
+        guard let handle = dlopen(framework, RTLD_LAZY | RTLD_LOCAL) else { return }
+        defer { dlclose(handle) }
+        guard let symbol = dlsym(handle, "DFRElementSetControlStripPresenceForIdentifier") else { return }
+        typealias SetPresence = @convention(c) (NSString, Int8) -> Void
+        let setPresence = unsafeBitCast(symbol, to: SetPresence.self)
+        setPresence(identifier.rawValue as NSString, present ? 1 : 0)
     }
 
     /// The default system-modal close button is injected outside our bar. On
