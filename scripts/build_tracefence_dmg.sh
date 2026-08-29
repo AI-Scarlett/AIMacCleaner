@@ -97,7 +97,6 @@ xcodebuild \
   ENABLE_DEBUG_DYLIB=NO \
   MARKETING_VERSION="$VERSION" \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-  SWIFT_ACTIVE_COMPILATION_CONDITIONS="TRACEFENCE_DIRECT_TOUCH_BAR" \
   SWIFT_COMPILATION_MODE="$SWIFT_COMPILATION_MODE"
 
 BUILT_APP="$BUILD_ROOT/Build/Products/${CONFIGURATION}/${APP_NAME}.app"
@@ -115,22 +114,6 @@ BUILT_MUSIC_PURPOSE="$(/usr/libexec/PlistBuddy -c 'Print :NSAppleMusicUsageDescr
 [ "$BUILT_NUMBER" = "$BUILD_NUMBER" ] || { echo "Wrong built build number: $BUILT_NUMBER" >&2; exit 1; }
 [ "$BUILT_CHANNEL" = "direct" ] || { echo "Wrong built distribution channel: $BUILT_CHANNEL" >&2; exit 1; }
 [ -n "$BUILT_MUSIC_PURPOSE" ] || { echo "Missing Apple Music purpose string" >&2; exit 1; }
-
-WEBSITE_BINARY="$BUILT_APP/Contents/MacOS/$APP_NAME"
-for selector in \
-  'addSystemTrayItem:' \
-  'removeSystemTrayItem:' \
-  'presentSystemModalTouchBar:placement:systemTrayItemIdentifier:' \
-  'dismissSystemModalTouchBar:'; do
-  grep -Fq "$selector" < <(strings "$WEBSITE_BINARY") || {
-    echo "Website build is missing Touch Bar selector: $selector" >&2
-    exit 1
-  }
-done
-grep -Fq 'DFRElementSetControlStripPresenceForIdentifier' < <(strings "$WEBSITE_BINARY") || {
-  echo "Website build is missing Touch Bar Control Strip presence support" >&2
-  exit 1
-}
 
 # The direct-distribution app gets quota provider readers exclusively from the
 # independently signed quota-monitor plugin. Xcode still copies the helper for

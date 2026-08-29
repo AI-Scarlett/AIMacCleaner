@@ -727,6 +727,12 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
     private var systemModalPresented = false
 
     static var isTouchBarCapableMac: Bool {
+        // Custom NSTouchBar content repeatedly corrupts the XR drawable on
+        // macOS 26 (SLSHMDGetDrawable error 1000), including via public AppKit.
+        // Keep the hardware's system controls intact and use menu-bar quota.
+        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 26 else {
+            return false
+        }
         let models: Set<String> = [
             "MacBookPro13,2", "MacBookPro13,3",
             "MacBookPro14,2", "MacBookPro14,3",
@@ -785,11 +791,10 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
     }
 
     private var shouldPersist: Bool {
-        let defaults = UserDefaults.standard
-        let persistent = defaults.object(forKey: TouchBarQuotaPreferences.persistentKey) == nil
-            ? true
-            : defaults.bool(forKey: TouchBarQuotaPreferences.persistentKey)
-        return isEnabled && persistent
+        // Public AppKit only exposes an application's Touch Bar while that app
+        // is frontmost. The private global Control Strip path corrupts the XR
+        // drawable on macOS 26.5, so never enter it in production.
+        false
     }
 
     private var shouldAutoSwitch: Bool {

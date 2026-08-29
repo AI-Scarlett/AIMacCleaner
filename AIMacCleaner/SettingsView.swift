@@ -48,7 +48,6 @@ struct SettingsView: View {
     @AppStorage(MenuBarStatusPreferences.primaryMetricKey) private var menuBarPrimaryMetric = MenuBarPrimaryMetric.tightest.rawValue
     @AppStorage(MenuBarStatusPreferences.showResetCountdownKey) private var menuBarShowResetCountdown = true
     @AppStorage(TouchBarQuotaPreferences.enabledKey) private var touchBarQuotaEnabled = false
-    @AppStorage(TouchBarQuotaPreferences.persistentKey) private var touchBarQuotaPersistent = true
     @AppStorage(TouchBarQuotaPreferences.autoSwitchKey) private var touchBarQuotaAutoSwitch = true
     @AppStorage("colorPalette") private var colorPalette = AppColorPalette.porcelain.rawValue
     @AppStorage(IOSRemoteControlGatewayService.enabledKey) private var iOSRemoteGatewayEnabled = false
@@ -562,9 +561,9 @@ struct SettingsView: View {
                                 .font(Theme.Font.captionMedium)
                                 .foregroundStyle(Theme.Colors.textPrimary)
                             Text(localizer.t(
-                                "跟随当前活跃 Agent 显示已缓存的剩余额度，不会额外读取登录凭据。",
-                                en: "Show cached remaining quota for the active Agent without reading login credentials again.",
-                                zhHant: "跟隨目前活躍 Agent 顯示已快取的剩餘額度，不會額外讀取登入憑證。",
+                                "TraceFence 位于前台时显示当前 Agent 的已缓存剩余额度，不会额外读取登录凭据。",
+                                en: "Show cached remaining quota for the active Agent while TraceFence is frontmost, without reading login credentials again.",
+                                zhHant: "TraceFence 位於前台時顯示目前 Agent 的已快取剩餘額度，不會額外讀取登入憑證。",
                                 ja: "アクティブな Agent のキャッシュ済み残量を表示し、認証情報を再読込しません。",
                                 ko: "활성 Agent의 캐시된 잔여 할당량을 표시하며 로그인 자격 증명을 다시 읽지 않습니다.",
                                 mt: "Show cached remaining quota for the active Agent."
@@ -583,10 +582,9 @@ struct SettingsView: View {
                     if touchBarQuotaEnabled {
                         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                             Toggle(localizer.t("自动跟随活跃 Agent", en: "Follow active Agent automatically"), isOn: $touchBarQuotaAutoSwitch)
-                            Toggle(localizer.t("切换到其他应用后仍保持显示", en: "Keep visible in other apps"), isOn: $touchBarQuotaPersistent)
                             Text(localizer.t(
-                                "持久在线仅用于官网版；若未来 macOS 不再支持，将自动回退到菜单栏额度。",
-                                en: "Persistent display is website-build only. If a future macOS version removes support, menu-bar quota remains available."
+                                "macOS 26.5 不再安全支持第三方跨应用常驻 Touch Bar；切换到其他应用后请使用菜单栏额度。",
+                                en: "macOS 26.5 no longer safely supports third-party persistent Touch Bar items. Use the menu-bar quota in other apps."
                             ))
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         }
