@@ -710,7 +710,7 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
     private weak var appDelegate: AppDelegate?
     private weak var localizer: Localizer?
     private var cancellables: Set<AnyCancellable> = []
-    private var workspaceObserver: NSObjectProtocol?
+    private var workspaceObservers: [NSObjectProtocol] = []
     private var heartbeatTimer: Timer?
     private var refreshWorkItem: DispatchWorkItem?
     private var touchBar: NSTouchBar?
@@ -761,10 +761,9 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
         refreshWorkItem = nil
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
-        if let workspaceObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)
-            self.workspaceObserver = nil
-        }
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceObservers.forEach { workspaceCenter.removeObserver($0) }
+        workspaceObservers.removeAll()
         dismissPersistentTouchBar()
         unregisterSystemTrayItem()
         if attachedWindow?.touchBar === touchBar {
@@ -817,7 +816,8 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
             }
             .store(in: &cancellables)
 
-        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceObservers.append(workspaceCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
             queue: .main
@@ -828,6 +828,34 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
                 }
                 self?.refreshDisplay()
             }
+        })
+
+        workspaceObservers.append(workspaceCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  application.bundleIdentifier == "com.apple.controlstrip" else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                self?.reinstallSystemTrayItemAfterSystemRestart()
+            }
+        })
+
+        for name in [
+            NSWorkspace.didWakeNotification,
+            NSWorkspace.screensDidWakeNotification,
+            NSWorkspace.sessionDidBecomeActiveNotification
+        ] {
+            workspaceObservers.append(workspaceCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    self?.reinstallSystemTrayItemAfterSystemRestart()
+                }
+            })
         }
 
         let timer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
@@ -857,7 +885,7 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
         attachToMainWindow()
         refreshDisplay()
         if shouldPersist {
-            registerSystemTrayItemIfAvailable()
+            presentPersistentTouchBarIfAvailable()
         } else {
             dismissPersistentTouchBar()
             unregisterSystemTrayItem()
@@ -919,6 +947,25 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
         systemTrayRegistered = false
         stripItem = nil
         stripButton = nil
+    }
+
+    private func reinstallSystemTrayItemAfterSystemRestart() {
+#if TRACEFENCE_DIRECT_TOUCH_BAR
+        guard isEnabled, shouldPersist else { return }
+        // TouchBarServer/ControlStrip no longer owns the previous modal surface,
+        // even though our process still has the Swift object and old state.
+        systemModalPresented = false
+        if let registeredItem = stripItem {
+            Self.setControlStripPresence(false, identifier: ItemID.strip)
+            Self.removeSystemTrayItem(registeredItem)
+        }
+        systemTrayRegistered = false
+        stripItem = nil
+        stripButton = nil
+        registerSystemTrayItemIfAvailable()
+        refreshDisplay()
+        presentPersistentTouchBarIfAvailable()
+#endif
     }
 
     private func attachToMainWindow() {
@@ -998,7 +1045,7 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
             secondaryButton?.title = localized("打开 TraceFence", en: "Open TraceFence")
             refreshButton?.isEnabled = quotaService?.isQuotaPluginInstalled == true
             updateStripButton(title: quotaService?.isRefreshing == true ? "TF …" : "TF —")
-            if shouldPersist { registerSystemTrayItemIfAvailable() }
+            if shouldPersist { presentPersistentTouchBarIfAvailable() }
             return
         }
 
@@ -1023,7 +1070,7 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
         }
         let provider = Self.providerAbbreviation(snapshot.providerName)
         updateStripButton(title: percent.map { "\(provider) \(Int($0.rounded()))%" } ?? "\(provider) —")
-        if shouldPersist { registerSystemTrayItemIfAvailable() }
+        if shouldPersist { presentPersistentTouchBarIfAvailable() }
     }
 
     private func updateStripButton(title: String) {
@@ -1251,6 +1298,25 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
             systemTrayItemIdentifier: ItemID.strip
         )
         Self.setControlStripPresence(true, identifier: ItemID.strip)
+#endif
+    }
+
+    /// The preference explicitly promises a quota surface that remains visible
+    /// outside TraceFence. Register the compact tray item first (required by
+    /// current TouchBarServer builds), then present the full quota bar once the
+    /// registration has propagated to ControlStrip.
+    private func presentPersistentTouchBarIfAvailable() {
+#if TRACEFENCE_DIRECT_TOUCH_BAR
+        guard shouldPersist else { return }
+        registerSystemTrayItemIfAvailable()
+        guard systemTrayRegistered, !systemModalPresented else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self,
+                  self.shouldPersist,
+                  self.systemTrayRegistered,
+                  !self.systemModalPresented else { return }
+            self.openTouchBarDetails()
+        }
 #endif
     }
 

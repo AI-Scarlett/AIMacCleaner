@@ -2,13 +2,17 @@ import AppKit
 import SwiftUI
 
 private enum TraceFencePluginHostRelauncher {
+    @MainActor private static var relaunchInProgress = false
+
     @MainActor
     static func relaunch() {
+        guard !relaunchInProgress else { return }
+        relaunchInProgress = true
         let helper = Process()
         helper.executableURL = URL(fileURLWithPath: "/bin/sh")
         helper.arguments = [
             "-c",
-            "while /bin/kill -0 \"$1\" 2>/dev/null; do /bin/sleep 0.1; done; /usr/bin/open -n \"$2\"",
+            "while /bin/kill -0 \"$1\" 2>/dev/null; do /bin/sleep 0.1; done; /usr/bin/open \"$2\"",
             "tracefence-plugin-relaunch",
             String(ProcessInfo.processInfo.processIdentifier),
             Bundle.main.bundleURL.path
@@ -23,6 +27,7 @@ private enum TraceFencePluginHostRelauncher {
                 NSApp.terminate(nil)
             }
         } catch {
+            relaunchInProgress = false
             NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
         }
     }
