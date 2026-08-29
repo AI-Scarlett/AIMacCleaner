@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Darwin
+import ObjectiveC.runtime
 import SwiftUI
 
 /// A menu-bar panel must be able to become key even though it deliberately
@@ -1171,17 +1172,47 @@ final class TouchBarQuotaController: NSObject, ObservableObject, NSTouchBarDeleg
     private func presentPersistentTouchBarIfAvailable() {
 #if TRACEFENCE_DIRECT_TOUCH_BAR
         guard shouldPersist, !systemModalPresented, let touchBar else { return }
-        let selector = NSSelectorFromString("presentSystemModalTouchBar:systemTrayItemIdentifier:")
-        let touchBarClass: AnyObject = NSTouchBar.self
-        guard touchBarClass.responds(to: selector) else { return }
-        _ = touchBarClass.perform(
-            selector,
-            with: touchBar,
-            with: NSString(string: "com.tracefence.touchbar.quota")
-        )
-        systemModalPresented = true
+        systemModalPresented = Self.presentSystemModalTouchBar(touchBar)
 #endif
     }
+
+#if TRACEFENCE_DIRECT_TOUCH_BAR
+    /// Present the wide system-modal surface without tying it to a Control
+    /// Strip item. Passing an identifier that has not first been registered as
+    /// a system-tray item makes TouchBarServer allocate a zero-width root view
+    /// on current macOS releases. The placement SPI with a nil tray identifier
+    /// is the stable path used by standalone Touch Bar HUDs.
+    private static func presentSystemModalTouchBar(_ touchBar: NSTouchBar) -> Bool {
+        configureSystemModalCloseBox()
+        let selector = NSSelectorFromString("presentSystemModalTouchBar:placement:systemTrayItemIdentifier:")
+        guard let method = class_getClassMethod(NSTouchBar.self, selector) else { return false }
+        typealias PresentFunction = @convention(c) (
+            AnyClass,
+            Selector,
+            NSTouchBar,
+            Int64,
+            NSString?
+        ) -> Void
+        let present = unsafeBitCast(method_getImplementation(method), to: PresentFunction.self)
+        present(NSTouchBar.self, selector, touchBar, 0, nil)
+        return true
+    }
+
+    /// The default system-modal close button is injected outside our bar. On
+    /// macOS 26 it can be laid out before the DFR root view receives its real
+    /// width, leaving the whole surface at zero width. Disabling that injected
+    /// button matches the standalone-HUD presentation contract; TraceFence's
+    /// own preference switch remains the explicit way to dismiss the surface.
+    private static func configureSystemModalCloseBox() {
+        let framework = "/System/Library/PrivateFrameworks/DFRFoundation.framework/DFRFoundation"
+        guard let handle = dlopen(framework, RTLD_LAZY | RTLD_LOCAL) else { return }
+        defer { dlclose(handle) }
+        guard let symbol = dlsym(handle, "DFRSystemModalShowsCloseBoxWhenFrontMost") else { return }
+        typealias ConfigureCloseBox = @convention(c) (Int8) -> Void
+        let configure = unsafeBitCast(symbol, to: ConfigureCloseBox.self)
+        configure(0)
+    }
+#endif
 
     private func dismissPersistentTouchBar() {
 #if TRACEFENCE_DIRECT_TOUCH_BAR

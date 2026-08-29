@@ -118,7 +118,7 @@ BUILT_MUSIC_PURPOSE="$(/usr/libexec/PlistBuddy -c 'Print :NSAppleMusicUsageDescr
 
 WEBSITE_BINARY="$BUILT_APP/Contents/MacOS/$APP_NAME"
 for selector in \
-  'presentSystemModalTouchBar:systemTrayItemIdentifier:' \
+  'presentSystemModalTouchBar:placement:systemTrayItemIdentifier:' \
   'dismissSystemModalTouchBar:'; do
   grep -Fq "$selector" < <(strings "$WEBSITE_BINARY") || {
     echo "Website build is missing Touch Bar selector: $selector" >&2
