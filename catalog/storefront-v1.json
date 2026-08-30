@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-08-28T08:35:44Z",
+  "expiresAt": "2027-08-30T16:51:47Z",
   "offers": [
     {
       "active": true,
@@ -4215,9 +4215,70 @@
       "systemImage": "sparkles",
       "trialHours": null,
       "version": "1.0.9"
+    },
+    {
+      "capabilities": [
+        "tools.primary-panel",
+        "tools.settings.workspace"
+      ],
+      "category": "Monitoring",
+      "delivery": "package",
+      "featured": true,
+      "id": "tracefence.tools.agent-profile",
+      "includedInAllAccess": true,
+      "isFree": true,
+      "localizedMetadata": {
+        "en": {
+          "displayName": "Agent Profile",
+          "summary": "Manage agent locale, timezone, proxy egress, and privacy diagnostics while keeping local profile state separate from provider account eligibility"
+        },
+        "ja": {
+          "displayName": "Agent プロファイル",
+          "summary": "Agent の言語、タイムゾーン、プロキシ出口、プライバシー診断を管理し、ローカル設定と Provider アカウント資格を区別します"
+        },
+        "ko": {
+          "displayName": "Agent 프로필",
+          "summary": "Agent 언어, 시간대, 프록시 출구 및 개인정보 진단을 관리하고 로컬 프로필과 Provider 계정 자격을 구분합니다"
+        },
+        "zh-Hans": {
+          "displayName": "Agent 画像",
+          "summary": "独立管理 Agent 的语言、时区、代理出口与隐私泄漏诊断，并明确区分本地画像和 Provider 账号资格"
+        },
+        "zh-Hant": {
+          "displayName": "Agent 畫像",
+          "summary": "獨立管理 Agent 的語言、時區、代理出口與私隱洩漏診斷，並明確區分本機畫像和 Provider 帳號資格"
+        }
+      },
+      "minimumHostVersion": "1.2.12",
+      "minimumSystemVersion": "14.0",
+      "name": "Agent Profile",
+      "package": {
+        "bundleIdentifier": "com.tracefence.plugin.agent-profile",
+        "entryPoint": "AgentProfile.bundle",
+        "sha256": "9d25345c3810788e2758ceac3f5123d45544da498d1728468852e20b06717188",
+        "sizeBytes": 417240,
+        "teamIdentifier": "UQ87N2WZ76",
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-agent-profile-v1.0.0/agent-profile-1.0.0.mactoolsplugin.zip"
+      },
+      "permissions": [],
+      "placements": {
+        "menuBarPluginTab": false,
+        "overview": false,
+        "pluginTab": true
+      },
+      "pluginKitVersion": 4,
+      "presentation": {
+        "menuBar": null,
+        "workspaceDefault": "workspace"
+      },
+      "standaloneOfferID": null,
+      "summary": "Manage agent locale, timezone, proxy egress, and privacy diagnostics while keeping local profile state separate from provider account eligibility",
+      "systemImage": "globe.badge.chevron.backward",
+      "trialHours": null,
+      "version": "1.0.0"
     }
   ],
-  "publishedAt": "2026-08-28T08:35:44Z",
-  "revision": 24,
+  "publishedAt": "2026-08-30T16:51:47Z",
+  "revision": 25,
   "schemaVersion": 1
 }

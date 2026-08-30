@@ -159,6 +159,52 @@ targets:
           - "$(SRCROOT)/../AIMacCleaner/Resources/codexbar"
         outputFiles:
           - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Helpers/codexbar"
+  AgentProfilePluginCore:
+    type: library.static
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: AgentProfile/Sources
+    dependencies:
+      - target: MacToolsPluginKit
+    settings:
+      base:
+        PRODUCT_MODULE_NAME: AgentProfilePlugin
+        PRODUCT_NAME: AgentProfilePluginCore
+        PRODUCT_BUNDLE_IDENTIFIER: com.tracefence.plugin.agent-profile.core
+        GENERATE_INFOPLIST_FILE: true
+  AgentProfilePlugin:
+    type: bundle
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: AgentProfile/Bundle
+      - path: AgentProfile/Resources
+    dependencies:
+      - target: MacToolsPluginKit
+        embed: false
+      - target: AgentProfilePluginCore
+        link: true
+    settings:
+      base:
+        PRODUCT_NAME: AgentProfile
+        PRODUCT_MODULE_NAME: AgentProfilePluginBundle
+        PRODUCT_BUNDLE_IDENTIFIER: com.tracefence.plugin.agent-profile
+        GENERATE_INFOPLIST_FILE: true
+        WRAPPER_EXTENSION: bundle
+  AgentProfilePluginTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: AgentProfile/Tests
+    dependencies:
+      - target: AgentProfilePluginCore
+      - target: MacToolsPluginKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tracefence.plugin.agent-profile.tests
+        GENERATE_INFOPLIST_FILE: true
 schemes:
   CodexMediaCleanupPlugin:
     build:
@@ -178,6 +224,20 @@ schemes:
     build:
       targets:
         QuotaMonitorPlugin: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  AgentProfilePlugin:
+    build:
+      targets:
+        AgentProfilePlugin: all
+        AgentProfilePluginTests: [test]
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - AgentProfilePluginTests
     run:
       config: Debug
     archive:

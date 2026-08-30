@@ -153,7 +153,7 @@ class CatalogPolicyTests(unittest.TestCase):
         plugins = self.document["plugins"]
         self.assertTrue(all("placements" in plugin for plugin in plugins))
         self.assertEqual(sum(plugin["placements"]["overview"] for plugin in plugins), 6)
-        self.assertEqual(sum(plugin["placements"]["pluginTab"] for plugin in plugins), 48)
+        self.assertEqual(sum(plugin["placements"]["pluginTab"] for plugin in plugins), 49)
         self.assertEqual(sum(plugin["placements"]["menuBarPluginTab"] for plugin in plugins), 28)
 
     def test_overview_placement_requires_plugin_tab(self) -> None:
