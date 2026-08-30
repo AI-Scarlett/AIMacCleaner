@@ -8,6 +8,7 @@ struct AgentGeoMirrorSettingsView: View {
     @AppStorage("agentGeoMirrorProfileName") private var profileName = "default"
     @AppStorage("agentGeoMirrorProxyURL") private var proxyURL = "http://127.0.0.1:7890"
     @AppStorage("agentGeoMirrorNoProxy") private var noProxy = "localhost,127.0.0.1,::1"
+    @AppStorage("agentGeoMirrorRouteTrafficThroughProxy") private var routeTrafficThroughProxy = false
     @AppStorage("agentGeoMirrorCountryCode") private var countryCode = "US"
     @AppStorage("agentGeoMirrorRegion") private var region = "California"
     @AppStorage("agentGeoMirrorCity") private var city = "San Francisco"
@@ -41,6 +42,7 @@ struct AgentGeoMirrorSettingsView: View {
             enabled: enabled,
             proxyURL: trimmed(proxyURL, fallback: "http://127.0.0.1:7890"),
             noProxy: noProxy,
+            routeTrafficThroughProxy: routeTrafficThroughProxy,
             countryCode: trimmed(countryCode, fallback: "US").uppercased(),
             region: region.trimmingCharacters(in: .whitespacesAndNewlines),
             city: city.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -363,6 +365,25 @@ struct AgentGeoMirrorSettingsView: View {
             stackedField(title: localizer.t("Profile 名称", en: "Profile Name"), text: $profileName, placeholder: "default")
             stackedField(title: localizer.t("代理 URL", en: "Proxy URL"), text: $proxyURL, placeholder: "http://127.0.0.1:7890")
             stackedField(title: "NO_PROXY", text: $noProxy, placeholder: "localhost,127.0.0.1,::1")
+            compactToggle(
+                title: localizer.t("通过该代理路由 Agent 流量", en: "Route Agent traffic through this proxy"),
+                icon: "shield.lefthalf.filled",
+                isOn: $routeTrafficThroughProxy
+            )
+
+            infoBanner(
+                icon: routeTrafficThroughProxy ? "exclamationmark.shield.fill" : "info.circle.fill",
+                text: routeTrafficThroughProxy
+                    ? localizer.t(
+                        "启用后，TraceFence 启动器会注入代理变量；Antigravity 还会禁用 QUIC 和非代理 WebRTC。检测到 Google 出口与直连相同时会拒绝显示成功。",
+                        en: "When enabled, TraceFence launchers inject proxy variables. Antigravity also disables QUIC and non-proxied WebRTC. A Google egress match with the direct connection is treated as a failure."
+                    )
+                    : localizer.t(
+                        "当前只用代理检测画像，不会隐藏 Agent 的真实出口 IP。",
+                        en: "The proxy currently detects profile metadata only; it does not hide the Agent's real egress IP."
+                    ),
+                color: routeTrafficThroughProxy ? Theme.Colors.warning : Theme.Colors.info
+            )
 
             Button {
                 refreshFromProxy()
@@ -405,7 +426,7 @@ struct AgentGeoMirrorSettingsView: View {
             miniHeader(
                 icon: "slider.horizontal.3",
                 title: localizer.t("覆盖范围", en: "Coverage"),
-                subtitle: localizer.t("Agent 启动器只注入语言、时区和本地探测覆盖；代理 URL 仅用于刷新画像，避免登录请求被不可用代理打断。", en: "Agent launchers inject language, timezone, and local-probe overrides only. The proxy URL is used for profile detection, so login requests are not broken by a stale proxy.")
+                subtitle: localizer.t("语言、时区、定位与可选的 Agent 流量代理分开控制。", en: "Control language, timezone, location, and optional Agent traffic routing independently.")
             )
 
             compactToggle(title: localizer.t("浏览器扩展", en: "Browser extension"), icon: "safari", isOn: $browserExtensionEnabled)

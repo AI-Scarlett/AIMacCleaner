@@ -40,7 +40,12 @@ enum AgentIntegrationCatalog {
         case "opencode", "opencodego":
             return commandExists("opencode") || pathExists("~/.config/opencode")
         case "gemini":
-            return commandExists("gemini") || pathExists("~/.gemini")
+            return commandExists("gemini")
+        case "antigravity":
+            return appExists("Antigravity")
+                || appExists("Google Antigravity")
+                || pathExists("~/.gemini/antigravity")
+                || pathExists("~/.gemini/antigravity-ide")
         case "amp":
             return commandExists("amp") || pathExists("~/.config/amp")
         case "qwen":

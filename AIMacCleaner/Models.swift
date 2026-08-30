@@ -170,7 +170,15 @@ struct DesktopAgentLaunchTarget: Identifiable {
         DesktopAgentLaunchTarget(id: "chatgpt", displayName: "ChatGPT", appName: "ChatGPT", launcherFileName: "Launch ChatGPT.command", icon: "sparkles"),
         DesktopAgentLaunchTarget(id: "warp", displayName: "Warp", appName: "Warp", launcherFileName: "Launch Warp.command", icon: "terminal"),
         DesktopAgentLaunchTarget(id: "zed", displayName: "Zed", appName: "Zed", launcherFileName: "Launch Zed.command", icon: "chevron.left.forwardslash.chevron.right"),
-        DesktopAgentLaunchTarget(id: "antigravity", displayName: "Google Antigravity", appName: "Google Antigravity", launcherFileName: "Launch Google Antigravity.command", icon: "sparkles"),
+        DesktopAgentLaunchTarget(
+            id: "antigravity",
+            displayName: "Google Antigravity",
+            appName: "Antigravity",
+            appNames: ["Antigravity", "Google Antigravity"],
+            executableName: "Antigravity",
+            launcherFileName: "Launch Google Antigravity.command",
+            icon: "sparkles"
+        ),
         DesktopAgentLaunchTarget(id: "trae", displayName: "Trae", appName: "Trae", appNames: ["Trae", "Trae CN"], launcherFileName: "Launch Trae.command", icon: "terminal")
     ]
 }
@@ -298,7 +306,7 @@ enum AgentIntegrationCatalog {
         case "opencode", "opencodego":
             return commandExists("opencode") || pathExists("~/.config/opencode")
         case "gemini":
-            return commandExists("gemini") || pathExists("~/.gemini")
+            return commandExists("gemini")
         case "amp":
             return commandExists("amp") || pathExists("~/.config/amp")
         case "warp":

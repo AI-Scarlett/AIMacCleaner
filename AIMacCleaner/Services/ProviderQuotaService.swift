@@ -420,6 +420,14 @@ final class ProviderQuotaService: ObservableObject {
             !ProviderQuotaFetchPolicy.autoDiscoveredProviderIDs(directDistribution: true).contains("cursor"),
             "direct builds must not auto-discover browser-backed providers"
         )
+        expect(
+            ProviderQuotaFetchPolicy.autoDiscoveredProviderIDs(directDistribution: true).contains("claude"),
+            "direct builds must auto-discover the installed Claude CLI instead of relying only on browser cookies"
+        )
+        expect(
+            ProviderQuotaFetchPolicy.autoDiscoveredProviderIDs(directDistribution: true).contains("antigravity"),
+            "direct builds must auto-discover Google Antigravity quota windows"
+        )
         let protectedEnvironment = ProviderQuotaFetchPolicy.backgroundProcessEnvironment(
             [
                 "CODEXBAR_ALLOW_BROWSER_COOKIE_IMPORT": "1",
@@ -2057,12 +2065,21 @@ private struct CodexBarQuotaProvider {
             usage.secondary.map { ("secondary", "Long-term window", $0) },
             usage.tertiary.map { ("tertiary", "Additional window", $0) }
         ].compactMap { $0 }
+        let namedExtraWindows = (usage.extraRateWindows ?? []).filter(\.usageKnown)
+        // Antigravity exposes primary/secondary compatibility windows as well
+        // as richer named Gemini and Claude/GPT windows. Rendering both makes
+        // the same allowance appear twice and hides which model family it
+        // belongs to, so prefer the named protocol surface when it is present.
+        let prefersNamedAntigravityWindows = provider.caseInsensitiveCompare("antigravity") == .orderedSame
+            && !namedExtraWindows.isEmpty
 
         var windows: [ProviderQuotaWindow] = []
         var authoritative = true
         var diagnostic: String?
 
-        if provider.caseInsensitiveCompare("codex") == .orderedSame {
+        if prefersNamedAntigravityWindows {
+            authoritative = true
+        } else if provider.caseInsensitiveCompare("codex") == .orderedSame {
             let classification = CodexOfficialWindowNormalizer.normalize(
                 windowMinutes: officialCandidates.map { $0.payload.windowMinutes },
                 hasWindowFields: usage.hasOfficialWindowFields,
@@ -2111,7 +2128,7 @@ private struct CodexBarQuotaProvider {
         // Named extra windows are a separate protocol surface. Keep their
         // existing behavior (including Codex Spark) independent from official
         // Codex primary/secondary/tertiary topology validation.
-        for extra in usage.extraRateWindows ?? [] where extra.usageKnown {
+        for extra in namedExtraWindows {
             windows.append(makeWindow(id: extra.id, title: extra.title, payload: extra.window))
         }
         return ProviderQuotaWindowBuildResult(
@@ -2212,6 +2229,7 @@ private struct CodexBarQuotaProvider {
             "claude": "Claude",
             "cursor": "Cursor",
             "gemini": "Gemini",
+            "antigravity": "Gemini / Antigravity",
             "grok": "Grok",
             "perplexity": "Perplexity",
             "openrouter": "OpenRouter",
@@ -3107,13 +3125,16 @@ private enum ProviderQuotaFetchPolicy {
 
     static func autoDiscoveredProviderIDs(directDistribution: Bool) -> [String] {
         if directDistribution {
-            // These providers use their own local CLI/config data. Claude is
-            // read by ClaudeDesktopQuotaReader and browser-backed providers must
-            // be explicitly enabled before the helper is allowed to query them.
-            return ["grok", "gemini", "openrouter", "qwen", "amp", "opencode", "goose", "aider"]
+            // These providers use their own local CLI/app/config data. Keep
+            // browser-only providers opt-in, but do not hide Claude CLI or the
+            // first-party Antigravity app quota source.
+            return [
+                "claude", "antigravity", "grok", "gemini", "openrouter",
+                "qwen", "amp", "opencode", "goose", "aider"
+            ]
         }
         return [
-            "codex", "claude", "cursor", "grok", "gemini", "openrouter",
+            "codex", "claude", "cursor", "antigravity", "grok", "gemini", "openrouter",
             "qwen", "amp", "opencode", "goose", "aider"
         ]
     }

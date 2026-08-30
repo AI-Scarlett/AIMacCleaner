@@ -1708,6 +1708,31 @@ struct MenuBarMonitor: View {
                 mt: "Claude \(scopedName) weekly quota"
             )
         }
+        let normalizedTitle = window.title.lowercased()
+        if normalizedTitle.contains("gemini") {
+            switch window.kind {
+            case .fiveHour:
+                return localizer.t("Gemini 5 小时额度", en: "Gemini 5-hour quota", zhHant: "Gemini 5 小時額度", ja: "Gemini 5時間クォータ", ko: "Gemini 5시간 할당량", mt: "Gemini 5-hour quota")
+            case .weekly:
+                return localizer.t("Gemini 每周额度", en: "Gemini weekly quota", zhHant: "Gemini 每週額度", ja: "Gemini 週間クォータ", ko: "Gemini 주간 할당량", mt: "Gemini weekly quota")
+            case .monthly:
+                return localizer.t("Gemini 每月额度", en: "Gemini monthly quota", zhHant: "Gemini 每月額度", ja: "Gemini 月間クォータ", ko: "Gemini 월간 할당량", mt: "Gemini monthly quota")
+            case .extra:
+                return localizedQuotaText(window.title)
+            }
+        }
+        if normalizedTitle.contains("claude/gpt") || normalizedTitle.contains("claude / gpt") {
+            switch window.kind {
+            case .fiveHour:
+                return localizer.t("Claude/GPT 5 小时额度", en: "Claude/GPT 5-hour quota", zhHant: "Claude/GPT 5 小時額度", ja: "Claude/GPT 5時間クォータ", ko: "Claude/GPT 5시간 할당량", mt: "Claude/GPT 5-hour quota")
+            case .weekly:
+                return localizer.t("Claude/GPT 每周额度", en: "Claude/GPT weekly quota", zhHant: "Claude/GPT 每週額度", ja: "Claude/GPT 週間クォータ", ko: "Claude/GPT 주간 할당량", mt: "Claude/GPT weekly quota")
+            case .monthly:
+                return localizer.t("Claude/GPT 每月额度", en: "Claude/GPT monthly quota", zhHant: "Claude/GPT 每月額度", ja: "Claude/GPT 月間クォータ", ko: "Claude/GPT 월간 할당量", mt: "Claude/GPT monthly quota")
+            case .extra:
+                return localizedQuotaText(window.title)
+            }
+        }
         if isCodexSparkQuotaWindow(window) {
             switch window.kind {
             case .fiveHour:

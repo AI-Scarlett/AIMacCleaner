@@ -6,6 +6,7 @@ struct AgentGeoMirrorProfile: Codable {
     var enabled: Bool
     var proxyURL: String
     var noProxy: String
+    var routeTrafficThroughProxy: Bool
     var countryCode: String
     var region: String
     var city: String
@@ -30,6 +31,7 @@ struct AgentGeoMirrorProfile: Codable {
         enabled: false,
         proxyURL: "http://127.0.0.1:7890",
         noProxy: "localhost,127.0.0.1,::1",
+        routeTrafficThroughProxy: false,
         countryCode: "US",
         region: "California",
         city: "San Francisco",
@@ -121,6 +123,7 @@ private struct AgentGeoMirrorPortableProfile: Codable {
     struct Proxy: Codable {
         let url: String
         let noProxy: String
+        let routesAgentTraffic: Bool
     }
 
     let schema: String
@@ -144,6 +147,7 @@ private struct AgentGeoMirrorPortableProfile: Codable {
 enum AgentGeoMirrorServiceError: LocalizedError {
     case directOnly
     case invalidProxyURL
+    case proxyEgressMatchesDirect
     case refreshFailed
 
     var errorDescription: String? {
@@ -152,6 +156,8 @@ enum AgentGeoMirrorServiceError: LocalizedError {
             return "Agent Geo Mirror is only available in the direct TraceFence build."
         case .invalidProxyURL:
             return "Proxy URL must include a host and port, for example http://127.0.0.1:7890."
+        case .proxyEgressMatchesDirect:
+            return "The configured proxy exposes the same public IP to Google as a direct connection. Change the proxy route or Clash mode before enabling Agent traffic routing."
         case .refreshFailed:
             return "Unable to detect the proxy exit profile from the configured proxy."
         }
@@ -190,6 +196,10 @@ final class AgentGeoMirrorService {
             enabled: effectiveEnabled,
             proxyURL: defaults.string(forKey: "agentGeoMirrorProxyURL") ?? fallback.proxyURL,
             noProxy: defaults.string(forKey: "agentGeoMirrorNoProxy") ?? fallback.noProxy,
+            routeTrafficThroughProxy: defaultsBool(
+                "agentGeoMirrorRouteTrafficThroughProxy",
+                fallback: fallback.routeTrafficThroughProxy
+            ),
             countryCode: defaults.string(forKey: "agentGeoMirrorCountryCode") ?? fallback.countryCode,
             region: defaults.string(forKey: "agentGeoMirrorRegion") ?? fallback.region,
             city: defaults.string(forKey: "agentGeoMirrorCity") ?? fallback.city,
@@ -324,6 +334,8 @@ final class AgentGeoMirrorService {
             throw AgentGeoMirrorServiceError.invalidProxyURL
         }
 
+        try await verifyGoogleEgressIsProxied(proxySession: session)
+
         let endpoints = [
             URL(string: "https://ipapi.co/json/")!,
             URL(string: "https://ipwho.is/")!
@@ -378,6 +390,36 @@ final class AgentGeoMirrorService {
         }
 
         return URLSession(configuration: configuration)
+    }
+
+    private func verifyGoogleEgressIsProxied(proxySession: URLSession) async throws {
+        guard let checkURL = URL(string: "https://domains.google.com/checkip") else { return }
+        let directConfiguration = URLSessionConfiguration.ephemeral
+        directConfiguration.timeoutIntervalForRequest = 8
+        directConfiguration.timeoutIntervalForResource = 10
+        let directSession = URLSession(configuration: directConfiguration)
+
+        async let directValue = publicIPText(from: checkURL, session: directSession)
+        async let proxiedValue = publicIPText(from: checkURL, session: proxySession)
+        let (directIP, proxiedIP) = try await (directValue, proxiedValue)
+        guard !directIP.isEmpty, !proxiedIP.isEmpty else {
+            throw AgentGeoMirrorServiceError.refreshFailed
+        }
+        guard directIP != proxiedIP else {
+            throw AgentGeoMirrorServiceError.proxyEgressMatchesDirect
+        }
+    }
+
+    private func publicIPText(from url: URL, session: URLSession) async throws -> String {
+        let (data, response) = try await session.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode),
+              let value = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            throw AgentGeoMirrorServiceError.refreshFailed
+        }
+        return value
     }
 
     private func decodeIPAPI(_ data: Data) throws -> AgentGeoMirrorDetectedProfile? {
@@ -491,7 +533,8 @@ final class AgentGeoMirrorService {
             ),
             proxy: AgentGeoMirrorPortableProfile.Proxy(
                 url: redactedProxyURL(profile.proxyURL),
-                noProxy: noProxy
+                noProxy: noProxy,
+                routesAgentTraffic: profile.routeTrafficThroughProxy
             ),
             environment: [
                 "TRACEFENCE": profile.enabled ? "1" : "0",
@@ -537,6 +580,7 @@ final class AgentGeoMirrorService {
         - Location: \(profile.latitude), \(profile.longitude) (+/- \(profile.accuracyMeters)m)
         - Proxy: \(redactedProxyURL(profile.proxyURL))
         - NO_PROXY: \(normalizedNoProxy(profile.noProxy))
+        - Route Agent traffic: \(profile.routeTrafficThroughProxy ? "enabled" : "disabled")
 
         ## How agents should use this
 
@@ -612,7 +656,6 @@ final class AgentGeoMirrorService {
           exit 64
         fi
         PROFILE_DIR=\(shellQuote(rootURL.path))
-        export TRACEFENCE_SKIP_PROXY=1
         source "$PROFILE_DIR/agent-env.sh"
         exec "$@"
         """
@@ -769,7 +812,6 @@ final class AgentGeoMirrorService {
         set -e
         PROFILE_DIR=\(shellQuote(rootURL.path))
         ORIGINAL_GROK=\(shellQuote(originalPath))
-        export TRACEFENCE_SKIP_PROXY=1
         if [[ -f "$PROFILE_DIR/agent-env.sh" ]]; then
           source "$PROFILE_DIR/agent-env.sh"
         fi
@@ -790,7 +832,6 @@ final class AgentGeoMirrorService {
         #!/bin/zsh
         set -e
         PROFILE_DIR=\(shellQuote(rootURL.path))
-        export TRACEFENCE_SKIP_PROXY=1
         source "$PROFILE_DIR/agent-env.sh"
         WRAPPER_DIR="${TRACEFENCE_GEO_BIN_DIR:-$PROFILE_DIR/bin}"
         path_parts=("${(@s/:/)PATH}")
@@ -815,7 +856,6 @@ final class AgentGeoMirrorService {
         #!/bin/zsh
         set -e
         PROFILE_DIR=\(shellQuote(rootURL.path))
-        export TRACEFENCE_SKIP_PROXY=1
         source "$PROFILE_DIR/agent-env.sh"
         clear
         echo "TraceFence Agent Environment Profile is active."
@@ -831,7 +871,6 @@ final class AgentGeoMirrorService {
         #!/bin/zsh
         set -e
         PROFILE_DIR=\(shellQuote(rootURL.path))
-        export TRACEFENCE_SKIP_PROXY=1
         source "$PROFILE_DIR/agent-env.sh"
         cd "$HOME"
         clear
@@ -850,7 +889,8 @@ final class AgentGeoMirrorService {
             let script = desktopLauncherScript(
                 rootURL: rootURL,
                 appNames: app.appNames,
-                executable: app.executableName
+                executable: app.executableName,
+                usesChromiumProxyArguments: app.id == "antigravity"
             )
             try writeExecutable(script, to: launchersURL.appendingPathComponent(app.launcherFileName))
         }
@@ -1061,6 +1101,11 @@ final class AgentGeoMirrorService {
         let profileContextPath = rootURL.appendingPathComponent("agent-profile.md").path
         let rawProfilePath = rootURL.appendingPathComponent("profile.json").path
         let noProxy = normalizedNoProxy(profile.noProxy)
+        let chromiumBypassList = noProxy
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ";")
         var lines = [
             "#!/bin/zsh",
             "# Generated by TraceFence Agent Geo Mirror. Edit from TraceFence settings instead of hand editing this file.",
@@ -1101,6 +1146,22 @@ final class AgentGeoMirrorService {
             lines.append("export ENV=\"$TRACEFENCE_GEO_SHELL_DIR/sh_env\"")
             lines.append("export TRACEFENCE_PROFILE_PROXY_URL=\(shellQuote(profile.proxyURL.trimmingCharacters(in: .whitespacesAndNewlines)))")
             lines.append("export TRACEFENCE_PROFILE_NO_PROXY=\(shellQuote(noProxy.trimmingCharacters(in: .whitespacesAndNewlines)))")
+            lines.append("export TRACEFENCE_CHROMIUM_PROXY_BYPASS_LIST=\(shellQuote(chromiumBypassList))")
+            lines.append("export TRACEFENCE_ROUTE_TRAFFIC_THROUGH_PROXY=\(shellQuote(profile.routeTrafficThroughProxy ? "1" : "0"))")
+            if profile.routeTrafficThroughProxy {
+                lines.append("if [[ \"${TRACEFENCE_SKIP_PROXY:-0}\" != \"1\" ]]; then")
+                lines.append("  export HTTP_PROXY=\"$TRACEFENCE_PROFILE_PROXY_URL\"")
+                lines.append("  export HTTPS_PROXY=\"$TRACEFENCE_PROFILE_PROXY_URL\"")
+                lines.append("  export ALL_PROXY=\"$TRACEFENCE_PROFILE_PROXY_URL\"")
+                lines.append("  export http_proxy=\"$HTTP_PROXY\"")
+                lines.append("  export https_proxy=\"$HTTPS_PROXY\"")
+                lines.append("  export all_proxy=\"$ALL_PROXY\"")
+                lines.append("  export NO_PROXY=\"$TRACEFENCE_PROFILE_NO_PROXY\"")
+                lines.append("  export no_proxy=\"$NO_PROXY\"")
+                lines.append("fi")
+            } else {
+                lines.append("unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy NO_PROXY no_proxy")
+            }
             if profile.timezoneOverrideEnabled {
                 lines.append("export TZ=\(shellQuote(profile.timezoneIdentifier))")
             }
@@ -1127,17 +1188,32 @@ final class AgentGeoMirrorService {
         return lines.joined(separator: "\n") + "\n"
     }
 
-    private func desktopLauncherScript(rootURL: URL, appNames: [String], executable: String) -> String {
+    private func desktopLauncherScript(
+        rootURL: URL,
+        appNames: [String],
+        executable: String,
+        usesChromiumProxyArguments: Bool
+    ) -> String {
         let appNameLines = appNames.map { "  \(shellQuote($0))" }.joined(separator: "\n")
         let fallbackAppName = appNames.first ?? ""
+        let chromiumProxySetup = usesChromiumProxyArguments ? """
+        if [[ "${TRACEFENCE_ROUTE_TRAFFIC_THROUGH_PROXY:-0}" == "1" ]]; then
+          APP_NETWORK_ARGS=(
+            --proxy-server="$TRACEFENCE_PROFILE_PROXY_URL"
+            --proxy-bypass-list="$TRACEFENCE_CHROMIUM_PROXY_BYPASS_LIST"
+            --disable-quic
+            --force-webrtc-ip-handling-policy=disable_non_proxied_udp
+          )
+        fi
+        """ : ""
         return """
         #!/bin/zsh
         set -e
         PROFILE_DIR=\(shellQuote(rootURL.path))
-        export TRACEFENCE_SKIP_PROXY=1
         source "$PROFILE_DIR/agent-env.sh"
-        unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy NO_PROXY no_proxy
         APP_LOCALE_ARGS=()
+        APP_NETWORK_ARGS=()
+        \(chromiumProxySetup)
         if [[ "${TRACEFENCE_GEO_PROFILE_ENABLED:-0}" == "1" && -n "${TRACEFENCE_LOCALE_UNDERSCORE:-}" ]]; then
           APP_LOCALE_ARGS=(-AppleLocale "$TRACEFENCE_LOCALE_UNDERSCORE" -AppleLanguages "($TRACEFENCE_LANGUAGES)")
         fi
@@ -1154,16 +1230,16 @@ final class AgentGeoMirrorService {
           )
           for candidate in "${CANDIDATES[@]}"; do
             if [[ -x "$candidate" ]]; then
-              exec "$candidate" "${APP_LOCALE_ARGS[@]}" "$@"
+              exec "$candidate" "${APP_LOCALE_ARGS[@]}" "${APP_NETWORK_ARGS[@]}" "$@"
             fi
           done
           if [[ -d "/Applications/$app_name.app" || -d "$HOME/Applications/$app_name.app" ]]; then
-            exec open -na "$app_name" --args "${APP_LOCALE_ARGS[@]}" "$@"
+            exec open -na "$app_name" --args "${APP_LOCALE_ARGS[@]}" "${APP_NETWORK_ARGS[@]}" "$@"
           fi
         done
         echo "TraceFence: \(fallbackAppName).app was not found in /Applications or ~/Applications." >&2
         echo "TraceFence: falling back to macOS open; some environment variables may not be inherited by the app." >&2
-        exec open -na \(shellQuote(fallbackAppName)) --args "${APP_LOCALE_ARGS[@]}" "$@"
+        exec open -na \(shellQuote(fallbackAppName)) --args "${APP_LOCALE_ARGS[@]}" "${APP_NETWORK_ARGS[@]}" "$@"
         """
     }
 
@@ -1183,13 +1259,22 @@ final class AgentGeoMirrorService {
         if [[ -n "${TRACEFENCE_ACCEPT_LANGUAGE:-}" ]]; then
           BROWSER_LANG_ARGS+=("--accept-lang=$TRACEFENCE_ACCEPT_LANGUAGE")
         fi
+        BROWSER_PROXY_ARGS=()
+        if [[ "${TRACEFENCE_ROUTE_TRAFFIC_THROUGH_PROXY:-0}" == "1" ]]; then
+          BROWSER_PROXY_ARGS=(
+            --proxy-server="$TRACEFENCE_PROFILE_PROXY_URL"
+            --proxy-bypass-list="$TRACEFENCE_CHROMIUM_PROXY_BYPASS_LIST"
+            --disable-quic
+            --force-webrtc-ip-handling-policy=disable_non_proxied_udp
+          )
+        fi
         CANDIDATES=(
           "/Applications/\(browserAppName).app/Contents/MacOS/\(executable)"
           "$HOME/Applications/\(browserAppName).app/Contents/MacOS/\(executable)"
         )
         for candidate in "${CANDIDATES[@]}"; do
           if [[ -x "$candidate" ]]; then
-            exec "$candidate" --user-data-dir="$USER_DATA_DIR" --load-extension="$EXTENSION_DIR" "${BROWSER_LANG_ARGS[@]}" "$@"
+            exec "$candidate" --user-data-dir="$USER_DATA_DIR" --load-extension="$EXTENSION_DIR" "${BROWSER_LANG_ARGS[@]}" "${BROWSER_PROXY_ARGS[@]}" "$@"
           fi
         done
         echo "TraceFence: \(browserAppName).app was not found in /Applications or ~/Applications." >&2
@@ -1534,7 +1619,7 @@ final class AgentGeoMirrorService {
 
         New agents that support profile discovery can read `TRACEFENCE_PROFILE_URL`, `TRACEFENCE_PROFILE_CONTEXT_URL`, `TRACEFENCE_PROFILE_PATH`, or `TRACEFENCE_PROFILE_CONTEXT_PATH` from the environment instead of needing a TraceFence-specific wrapper.
 
-        For desktop apps, launch them through the generated `.command` files so the app process inherits the language, timezone, and local-probe profile. Desktop and CLI launchers intentionally avoid forcing `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` into the agent process because stale proxy variables can break login and reconnect flows. The configured proxy is still recorded as `TRACEFENCE_PROFILE_PROXY_URL` for agent-aware integrations.
+        For desktop apps, launch them through the generated `.command` files so the app process inherits the language, timezone, local-probe profile, and—when explicitly enabled—the configured proxy. Antigravity and generated Chromium launchers also disable QUIC and non-proxied WebRTC UDP while traffic routing is enabled.
 
         For Chromium browsers, use the generated Chrome, Edge, Brave, Arc, or Vivaldi launcher, or load the `BrowserExtension` folder from the browser extension page with Developer Mode enabled.
 
@@ -1551,6 +1636,7 @@ final class AgentGeoMirrorService {
 
         - Name: \(profile.name)
         - Proxy: \(profile.proxyURL)
+        - Route Agent traffic: \(profile.routeTrafficThroughProxy ? "enabled" : "disabled")
         - Country: \(profile.countryCode.uppercased())
         - City: \(profile.city)
         - Timezone: \(profile.timezoneIdentifier)
