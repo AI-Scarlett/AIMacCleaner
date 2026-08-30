@@ -1724,11 +1724,11 @@ struct MenuBarMonitor: View {
         if normalizedTitle.contains("claude/gpt") || normalizedTitle.contains("claude / gpt") {
             switch window.kind {
             case .fiveHour:
-                return localizer.t("Claude/GPT 5 小时额度", en: "Claude/GPT 5-hour quota", zhHant: "Claude/GPT 5 小時額度", ja: "Claude/GPT 5時間クォータ", ko: "Claude/GPT 5시간 할당량", mt: "Claude/GPT 5-hour quota")
+                return localizer.t("Claude / GPT-OSS（Antigravity）5 小时额度", en: "Antigravity Claude / GPT-OSS 5-hour quota", zhHant: "Claude / GPT-OSS（Antigravity）5 小時額度", ja: "Antigravity Claude / GPT-OSS 5時間クォータ", ko: "Antigravity Claude / GPT-OSS 5시간 할당량", mt: "Antigravity Claude / GPT-OSS 5-hour quota")
             case .weekly:
-                return localizer.t("Claude/GPT 每周额度", en: "Claude/GPT weekly quota", zhHant: "Claude/GPT 每週額度", ja: "Claude/GPT 週間クォータ", ko: "Claude/GPT 주간 할당량", mt: "Claude/GPT weekly quota")
+                return localizer.t("Claude / GPT-OSS（Antigravity）每周额度", en: "Antigravity Claude / GPT-OSS weekly quota", zhHant: "Claude / GPT-OSS（Antigravity）每週額度", ja: "Antigravity Claude / GPT-OSS 週間クォータ", ko: "Antigravity Claude / GPT-OSS 주간 할당량", mt: "Antigravity Claude / GPT-OSS weekly quota")
             case .monthly:
-                return localizer.t("Claude/GPT 每月额度", en: "Claude/GPT monthly quota", zhHant: "Claude/GPT 每月額度", ja: "Claude/GPT 月間クォータ", ko: "Claude/GPT 월간 할당量", mt: "Claude/GPT monthly quota")
+                return localizer.t("Claude / GPT-OSS（Antigravity）每月额度", en: "Antigravity Claude / GPT-OSS monthly quota", zhHant: "Claude / GPT-OSS（Antigravity）每月額度", ja: "Antigravity Claude / GPT-OSS 月間クォータ", ko: "Antigravity Claude / GPT-OSS 월간 할당량", mt: "Antigravity Claude / GPT-OSS monthly quota")
             case .extra:
                 return localizedQuotaText(window.title)
             }

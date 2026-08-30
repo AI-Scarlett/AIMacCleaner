@@ -847,11 +847,10 @@ private func installClaudeHooks(adapterPath: String, hookSocketPath: String) thr
         }
         var commandHook: [String: Any] = ["type": "command", "command": command]
         if let timeout { commandHook["timeout"] = timeout }
-        if matcher {
-            entries.append(["matcher": "*", "hooks": [commandHook]])
-        } else {
-            entries.append(["command": command])
-        }
+        // Claude Code 2.1 requires every event entry to be a hook group whose
+        // `hooks` member is an array. The legacy flat `{ "command": ... }`
+        // form makes the entire settings file invalid before `/usage` starts.
+        entries.append(["matcher": matcher ? "*" : "", "hooks": [commandHook]])
         hooks[event] = entries
     }
     var mergedHooks = preservedHooks

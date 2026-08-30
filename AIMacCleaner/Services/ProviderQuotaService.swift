@@ -2229,7 +2229,7 @@ private struct CodexBarQuotaProvider {
             "claude": "Claude",
             "cursor": "Cursor",
             "gemini": "Gemini",
-            "antigravity": "Gemini / Antigravity",
+            "antigravity": "Google Antigravity",
             "grok": "Grok",
             "perplexity": "Perplexity",
             "openrouter": "OpenRouter",
@@ -2331,10 +2331,12 @@ private struct ClaudeDesktopQuotaReader {
     private struct Organization: Decodable {
         let uuid: String?
         let id: String?
+        let capabilities: [String]?
 
         private enum CodingKeys: String, CodingKey {
             case uuid
             case id
+            case capabilities
         }
 
         init(from decoder: Decoder) throws {
@@ -2347,12 +2349,22 @@ private struct ClaudeDesktopQuotaReader {
             } else {
                 id = nil
             }
+            capabilities = try? container.decodeIfPresent([String].self, forKey: .capabilities)
         }
 
         var identifier: String? {
             let candidate = uuid ?? id
             guard let candidate, !candidate.isEmpty else { return nil }
             return candidate
+        }
+
+        var hasChatCapability: Bool {
+            Set((capabilities ?? []).map { $0.lowercased() }).contains("chat")
+        }
+
+        var isAPIOnly: Bool {
+            let normalized = Set((capabilities ?? []).map { $0.lowercased() })
+            return !normalized.isEmpty && normalized == ["api"]
         }
     }
 
@@ -2454,24 +2466,18 @@ private struct ClaudeDesktopQuotaReader {
     func fetchSnapshot() -> ReadResult {
         do {
             let cookies = try readCookies()
-            guard cookies["sessionKey"]?.hasPrefix("sk-ant-") == true else {
+            guard let sessionKey = cookies["sessionKey"], sessionKey.hasPrefix("sk-ant-") else {
                 throw ReaderError.sessionCookieUnavailable
             }
-            guard let userAgent = claudeDesktopUserAgent() else {
-                throw ReaderError.desktopUserAgentUnavailable
-            }
-            let cookieHeader = Self.allowedCookieNames
-                .sorted()
-                .compactMap { name -> String? in
-                    guard let value = cookies[name], !value.isEmpty else { return nil }
-                    return "\(name)=\(value)"
-                }
-                .joined(separator: "; ")
+            // The current Claude web API needs only the account session key.
+            // Forwarding stale Cloudflare/routing cookies from the desktop
+            // cookie jar can turn an otherwise valid API response into a 200
+            // challenge document that decodes as an empty quota payload.
+            let cookieHeader = "sessionKey=\(sessionKey)"
 
             let organizationsData = try requestJSON(
                 URL(string: "https://claude.ai/api/organizations")!,
-                cookieHeader: cookieHeader,
-                userAgent: userAgent
+                cookieHeader: cookieHeader
             )
             guard let organizations = try? JSONDecoder().decode([Organization].self, from: organizationsData),
                   !organizations.isEmpty else {
@@ -2479,48 +2485,106 @@ private struct ClaudeDesktopQuotaReader {
             }
 
             let activeCookie = cookies["lastActiveOrg"]?.removingPercentEncoding ?? ""
-            let organization = organizations.first(where: { organization in
+            let activeOrganization = organizations.first(where: { organization in
                 guard let identifier = organization.identifier else { return false }
                 return activeCookie.contains(identifier)
-            }) ?? organizations[0]
-            guard let organizationID = organization.identifier,
-                  let encodedID = organizationID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-                  let usageURL = URL(string: "https://claude.ai/api/organizations/\(encodedID)/usage") else {
-                throw ReaderError.activeOrganizationUnavailable
+            })
+            let preferredOrganizations = organizations.filter(\.hasChatCapability)
+                + organizations.filter { !$0.hasChatCapability && !$0.isAPIOnly }
+                + [activeOrganization].compactMap(\.self)
+                + organizations
+            var seenOrganizationIDs = Set<String>()
+            let orderedOrganizations = preferredOrganizations.filter { organization in
+                guard let identifier = organization.identifier else { return false }
+                return seenOrganizationIDs.insert(identifier).inserted
             }
+#if DEBUG
+            let organizationKinds = orderedOrganizations.map { organization in
+                organization.hasChatCapability ? "chat" : (organization.isAPIOnly ? "api" : "other")
+            }.joined(separator: ",")
+            fputs("TraceFence Claude organization candidates: \(organizationKinds)\n", stderr)
+#endif
 
-            let usageData = try requestJSON(
-                usageURL,
-                cookieHeader: cookieHeader,
-                userAgent: userAgent
-            )
-            guard let usage = try? JSONDecoder().decode(UsageResponse.self, from: usageData) else {
-                throw ReaderError.usageUnavailable
+            for organization in orderedOrganizations.prefix(8) {
+                guard let organizationID = organization.identifier,
+                      let encodedID = organizationID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+                      let usageURL = URL(string: "https://claude.ai/api/organizations/\(encodedID)/usage") else {
+                    continue
+                }
+                let usageData: Data
+                do {
+                    usageData = try requestJSON(usageURL, cookieHeader: cookieHeader)
+                } catch {
+                    continue
+                }
+                guard let usage = try? JSONDecoder().decode(UsageResponse.self, from: usageData) else {
+                    continue
+                }
+                var windows = Self.makeWindows(from: usage)
+                if windows.isEmpty,
+                   let idleSessionWindow = Self.makeIdleSessionWindow(
+                       from: usageData,
+                       isChatOrganization: organization.hasChatCapability
+                   ) {
+                    windows = [idleSessionWindow]
+                }
+                guard !windows.isEmpty else {
+#if DEBUG
+                    Self.logEmptyUsagePayloadSchema(usageData)
+#endif
+                    continue
+                }
+
+                return .snapshot(ProviderQuotaSnapshot(
+                    id: "claude-desktop-current",
+                    providerName: "Claude",
+                    planName: nil,
+                    accountLabel: "Claude Desktop",
+                    credits: nil,
+                    windows: windows,
+                    resetCredits: nil,
+                    updatedAt: Date(),
+                    source: "claude-desktop",
+                    errorMessage: nil,
+                    setupHint: nil,
+                    isSetupNotice: false,
+                    quotaReadSucceeded: true
+                ))
             }
-            let windows = Self.makeWindows(from: usage)
-            guard !windows.isEmpty else { throw ReaderError.usageUnavailable }
-
-            return .snapshot(ProviderQuotaSnapshot(
-                id: "claude-desktop-current",
-                providerName: "Claude",
-                planName: nil,
-                accountLabel: "Claude Desktop",
-                credits: nil,
-                windows: windows,
-                resetCredits: nil,
-                updatedAt: Date(),
-                source: "claude-desktop",
-                errorMessage: nil,
-                setupHint: nil,
-                isSetupNotice: false,
-                quotaReadSucceeded: true
-            ))
+            throw ReaderError.usageUnavailable
         } catch let error as ReaderError {
             return .unavailable(error.diagnosticCode)
         } catch {
             return .unavailable("unexpected-error")
         }
     }
+
+#if DEBUG
+    private static func logEmptyUsagePayloadSchema(_ usageData: Data) {
+        guard let object = (try? JSONSerialization.jsonObject(with: usageData)) as? [String: Any] else {
+            fputs("TraceFence Claude usage payload keys: non-object\n", stderr)
+            return
+        }
+        let keys = object.keys.sorted().joined(separator: ",")
+        let schema = object.keys.sorted()
+            .map { key -> String in
+                guard let value = object[key] else { return "\(key)=missing" }
+                if value is NSNull { return "\(key)=null" }
+                if let dictionary = value as? [String: Any] {
+                    let fields = dictionary.map { "\($0.key):\(type(of: $0.value))" }.sorted().joined(separator: "|")
+                    return "\(key)={\(fields)}"
+                }
+                if let array = value as? [[String: Any]] {
+                    let fields = array.first?.map { "\($0.key):\(type(of: $0.value))" }.sorted().joined(separator: "|") ?? ""
+                    return "\(key)=[\(array.count):\(fields)]"
+                }
+                return "\(key)=\(type(of: value))"
+            }
+            .joined(separator: ";")
+        fputs("TraceFence Claude usage payload keys: \(keys)\n", stderr)
+        fputs("TraceFence Claude usage payload schema: \(schema)\n", stderr)
+    }
+#endif
 
     static func debugSelfTestFailures() -> [String] {
         let organizationFixture = Data("[{\"uuid\":\"org-test\",\"id\":123}]".utf8)
@@ -2567,6 +2631,13 @@ private struct ClaudeDesktopQuotaReader {
             $0.id == "claude-weekly-fable" && $0.usedPercent == 17 && $0.resetsAt != nil
         }) {
             failures.append("Claude Desktop model-scoped weekly quota was not preserved")
+        }
+        let idleFixture = Data("{\"five_hour\":null,\"seven_day\":null}".utf8)
+        if makeIdleSessionWindow(from: idleFixture, isChatOrganization: true)?.usedPercent != 0 {
+            failures.append("Claude Desktop idle subscription window was not treated as fully available")
+        }
+        if makeIdleSessionWindow(from: idleFixture, isChatOrganization: false) != nil {
+            failures.append("Claude Desktop API-only organizations must not synthesize subscription quota")
         }
         if let fable = windows.first(where: { $0.id == "claude-weekly-fable" }) {
             if !fable.isAllowanceWindow || !fable.isScopedWeeklyAllowanceWindow {
@@ -2746,8 +2817,7 @@ private struct ClaudeDesktopQuotaReader {
 
     private func requestJSON(
         _ url: URL,
-        cookieHeader: String,
-        userAgent: String
+        cookieHeader: String
     ) throws -> Data {
         guard url.scheme == "https", url.host == "claude.ai" else {
             throw ReaderError.usageUnavailable
@@ -2769,9 +2839,6 @@ private struct ClaudeDesktopQuotaReader {
         request.httpShouldHandleCookies = false
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("https://claude.ai", forHTTPHeaderField: "Origin")
-        request.setValue("https://claude.ai/", forHTTPHeaderField: "Referer")
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
 
         let semaphore = DispatchSemaphore(value: 0)
@@ -2980,6 +3047,26 @@ private struct ClaudeDesktopQuotaReader {
             }
         }
         return windows
+    }
+
+    private static func makeIdleSessionWindow(
+        from usageData: Data,
+        isChatOrganization: Bool
+    ) -> ProviderQuotaWindow? {
+        guard isChatOrganization,
+              let object = (try? JSONSerialization.jsonObject(with: usageData)) as? [String: Any],
+              object.keys.contains("five_hour"),
+              object["five_hour"] is NSNull else {
+            return nil
+        }
+        return ProviderQuotaWindow(
+            id: "primary",
+            kind: .fiveHour,
+            title: "5-hour quota",
+            usedPercent: 0,
+            resetsAt: nil,
+            windowMinutes: 300
+        )
     }
 
     private static func parseDate(_ value: String?) -> Date? {

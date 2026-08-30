@@ -3,8 +3,8 @@ import Network
 import Darwin
 
 private let protocolVersion = 1
-private let coreVersion = "1.6.9"
-private let coreBuild = 1609
+private let coreVersion = "1.6.10"
+private let coreBuild = 1610
 private let maxCachedCodexSessions = 120
 private let maxScannedRolloutFiles = 100
 private let maxCoreRequestBytes = 512 * 1024

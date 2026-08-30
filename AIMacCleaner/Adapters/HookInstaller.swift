@@ -167,13 +167,18 @@ actor HookInstaller {
     func injectJSONHooks(at configPath: URL, events: [HookEventDescriptor], hookCommand: String) throws {
         var config = try readJSON(at: configPath)
         var (hooks, preservedHooks) = partitionHooks(in: config)
+        let forceNestedCommandHooks = requiresNestedCommandHooks(configPath)
 
         for event in events {
             var entries = hooks[event.name] ?? []
             entries.removeAll { entry in
                 entryContainsAgentGuardCommand(entry)
             }
-            entries.append(jsonHookEntry(for: event, hookCommand: hookCommand))
+            entries.append(jsonHookEntry(
+                for: event,
+                hookCommand: hookCommand,
+                forceNested: forceNestedCommandHooks
+            ))
             hooks[event.name] = entries
         }
 
@@ -291,11 +296,11 @@ actor HookInstaller {
         return merged.isEmpty ? nil : merged
     }
 
-    private func jsonHookEntry(for event: HookEventDescriptor, hookCommand: String) -> [String: Any] {
-        guard let matcher = event.matcher else {
-            return ["command": hookCommand]
-        }
-
+    private func jsonHookEntry(
+        for event: HookEventDescriptor,
+        hookCommand: String,
+        forceNested: Bool
+    ) -> [String: Any] {
         var commandHook: [String: Any] = [
             "type": "command",
             "command": hookCommand,
@@ -303,8 +308,11 @@ actor HookInstaller {
         if let timeout = event.timeout {
             commandHook["timeout"] = Int(timeout)
         }
+        guard forceNested || event.matcher != nil else {
+            return commandHook
+        }
         return [
-            "matcher": matcher,
+            "matcher": event.matcher ?? "",
             "hooks": [commandHook],
         ]
     }
