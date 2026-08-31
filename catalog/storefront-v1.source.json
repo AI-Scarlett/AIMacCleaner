@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-08-30T16:51:47Z",
+  "expiresAt": "2027-08-31T00:47:09Z",
   "offers": [
     {
       "active": true,
@@ -4230,23 +4230,23 @@
       "localizedMetadata": {
         "en": {
           "displayName": "Agent Profile",
-          "summary": "Manage agent locale, timezone, proxy egress, and privacy diagnostics while keeping local profile state separate from provider account eligibility"
+          "summary": "Create one locale, timezone, location, proxy, launcher, and privacy profile for Codex, Claude, Grok, Gemini, Antigravity, DSH, and other agents"
         },
         "ja": {
           "displayName": "Agent プロファイル",
-          "summary": "Agent の言語、タイムゾーン、プロキシ出口、プライバシー診断を管理し、ローカル設定と Provider アカウント資格を区別します"
+          "summary": "Codex、Claude、Grok、Gemini、Antigravity、DSH などの言語、タイムゾーン、位置、プロキシ、ランチャーを統合管理します"
         },
         "ko": {
           "displayName": "Agent 프로필",
-          "summary": "Agent 언어, 시간대, 프록시 출구 및 개인정보 진단을 관리하고 로컬 프로필과 Provider 계정 자격을 구분합니다"
+          "summary": "Codex, Claude, Grok, Gemini, Antigravity, DSH 등의 언어, 시간대, 위치, 프록시 및 실행기를 통합 관리합니다"
         },
         "zh-Hans": {
           "displayName": "Agent 画像",
-          "summary": "独立管理 Agent 的语言、时区、代理出口与隐私泄漏诊断，并明确区分本地画像和 Provider 账号资格"
+          "summary": "统一管理 Codex、Claude、Grok、Gemini、Antigravity、DSH 等 Agent 的语言、时区、位置、代理、启动器与隐私诊断"
         },
         "zh-Hant": {
           "displayName": "Agent 畫像",
-          "summary": "獨立管理 Agent 的語言、時區、代理出口與私隱洩漏診斷，並明確區分本機畫像和 Provider 帳號資格"
+          "summary": "統一管理 Codex、Claude、Grok、Gemini、Antigravity、DSH 等 Agent 的語言、時區、位置、代理、啟動器與私隱診斷"
         }
       },
       "minimumHostVersion": "1.2.12",
@@ -4255,18 +4255,18 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.agent-profile",
         "entryPoint": "AgentProfile.bundle",
-        "sha256": "9d25345c3810788e2758ceac3f5123d45544da498d1728468852e20b06717188",
-        "sizeBytes": 417240,
+        "sha256": "d6e88cb35fb1d7aeafbf952fd90734113849a9bfedd614eaf75cb3af3a44e411",
+        "sizeBytes": 545020,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-agent-profile-v1.0.0/agent-profile-1.0.0.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-agent-profile-v1.1.1/agent-profile-1.1.1.mactoolsplugin.zip"
       },
       "permissions": [],
       "pluginKitVersion": 4,
       "standaloneOfferID": null,
-      "summary": "Manage agent locale, timezone, proxy egress, and privacy diagnostics while keeping local profile state separate from provider account eligibility",
+      "summary": "Create one locale, timezone, location, proxy, launcher, and privacy profile for Codex, Claude, Grok, Gemini, Antigravity, DSH, and other agents",
       "systemImage": "globe.badge.chevron.backward",
       "trialHours": null,
-      "version": "1.0.0",
+      "version": "1.1.1",
       "presentation": {
         "workspaceDefault": "workspace",
         "menuBar": null
@@ -4278,7 +4278,7 @@
       }
     }
   ],
-  "publishedAt": "2026-08-30T16:51:47Z",
-  "revision": 25,
+  "publishedAt": "2026-08-31T00:47:09Z",
+  "revision": 30,
   "schemaVersion": 1
 }

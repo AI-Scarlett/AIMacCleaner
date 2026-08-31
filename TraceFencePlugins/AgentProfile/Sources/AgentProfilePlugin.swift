@@ -64,7 +64,7 @@ final class AgentProfilePlugin: MacToolsPlugin, PluginPrimaryPanel,
             order: 42,
             defaultDescription: localization.string(
                 "metadata.description",
-                defaultValue: "管理 Agent 的语言、时区和代理出口，并区分网络画像与 Provider 账号资格。"
+                defaultValue: "统一管理 Codex、Claude、Grok、Gemini、Antigravity、DSH 等 Agent 的语言、时区、位置、代理出口与隐私诊断。"
             )
         )
     }
@@ -82,9 +82,7 @@ final class AgentProfilePlugin: MacToolsPlugin, PluginPrimaryPanel,
             isEnabled: true,
             isVisible: true,
             detail: isExpanded ? panelDetail : nil,
-            errorMessage: controller.diagnostic.status == .sameAsDirect
-                ? localization.string("panel.sameEgressError", defaultValue: "代理出口与直连相同，不能标记为已保护。")
-                : nil
+            errorMessage: nil
         )
     }
 
@@ -150,8 +148,12 @@ final class AgentProfilePlugin: MacToolsPlugin, PluginPrimaryPanel,
         case .proxyUnavailable:
             return localization.string("panel.proxyUnavailable", defaultValue: "代理出口不可用")
         case .sameAsDirect:
-            return localization.string("panel.sameEgress", defaultValue: "代理与直连出口相同")
+            return localization.string("panel.sameEgress", defaultValue: "默认路径与显式代理出口相同；未确认 TUN")
         case .routed:
+            if controller.diagnostic.localTunnelDetected == true,
+               controller.diagnostic.directGoogleIP == controller.diagnostic.proxyGoogleIP {
+                return localization.string("panel.tunRouted", defaultValue: "TUN 已接管默认路径 · 未发现物理直连差异")
+            }
             return localization.string("panel.routed", defaultValue: "代理出口已切换 · 账号资格未推断")
         }
     }

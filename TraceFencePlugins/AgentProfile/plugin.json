@@ -1,19 +1,19 @@
 {
   "id": "agent-profile",
   "displayName": "Agent 画像",
-  "summary": "独立管理 Agent 的语言、时区、代理出口与隐私泄漏诊断，并明确区分本地画像和 Provider 账号资格",
+  "summary": "为 Codex、Claude、Grok、Gemini、Antigravity、DSH 等 Agent 统一生成语言、时区、位置、代理与隐私诊断画像",
   "localizedMetadata": {
     "en": {
       "displayName": "Agent Profile",
-      "summary": "Manage agent locale, timezone, proxy egress, and privacy diagnostics while keeping local profile state separate from provider account eligibility"
+      "summary": "Generate one locale, timezone, location, proxy, and privacy profile for Codex, Claude, Grok, Gemini, Antigravity, DSH, and other agents"
     },
     "zh-Hans": {
       "displayName": "Agent 画像",
-      "summary": "独立管理 Agent 的语言、时区、代理出口与隐私泄漏诊断，并明确区分本地画像和 Provider 账号资格"
+      "summary": "为 Codex、Claude、Grok、Gemini、Antigravity、DSH 等 Agent 统一生成语言、时区、位置、代理与隐私诊断画像"
     },
     "zh-Hant": {
       "displayName": "Agent 畫像",
-      "summary": "獨立管理 Agent 的語言、時區、代理出口與隱私洩漏診斷，並明確區分本機畫像和 Provider 帳號資格"
+      "summary": "為 Codex、Claude、Grok、Gemini、Antigravity、DSH 等 Agent 統一生成語言、時區、位置、代理與隱私診斷畫像"
     },
     "ja": {
       "displayName": "Agent プロファイル",
@@ -24,7 +24,7 @@
       "summary": "Agent 언어, 시간대, 프록시 출구 및 개인정보 진단을 관리하고 로컬 프로필과 Provider 계정 자격을 구분합니다"
     }
   },
-  "version": "1.0.0",
+  "version": "1.1.1",
   "minHostVersion": "1.2.12",
   "pluginKitVersion": 4,
   "bundleRelativePath": "AgentProfile.bundle",

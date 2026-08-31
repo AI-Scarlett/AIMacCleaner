@@ -10,16 +10,17 @@ struct AgentProfileSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.section) {
-            eligibilityNotice
             statusGrid
             profileControls
             identityControls
+            coverageControls
             launcherSection
+            providerDiagnosticsNotice
         }
         .frame(maxWidth: 980, alignment: .topLeading)
     }
 
-    private var eligibilityNotice: some View {
+    private var providerDiagnosticsNotice: some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: "person.crop.circle.badge.exclamationmark")
                 .font(.title2.weight(.semibold))
@@ -28,23 +29,19 @@ struct AgentProfileSettingsView: View {
                 .background(theme.interaction.subtleTint(theme.status.warning))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 5) {
-                Text(localization.string("eligibility.title", defaultValue: "Antigravity 账号资格由 Google 服务端决定"))
+                Text(localization.string("providerDiagnostics.title", defaultValue: "Provider 专项诊断"))
                     .font(PluginSettingsTheme.Typography.emphasizedRowTitle)
                     .foregroundStyle(theme.text.primary)
                 Text(localization.string(
-                    "eligibility.body",
-                    defaultValue: "Agent 画像只能校验本机进程的语言、时区和网络出口。即使代理 IP 已切换，也不能证明 Google 账号、年龄、方案或关联地区具备资格。"
+                    "providerDiagnostics.body",
+                    defaultValue: "通用 Agent 画像负责进程环境和网络出口；Codex、Claude、Google Antigravity 等账号资格由各 Provider 服务端决定。网络出口变化不能替代账号资格判断。"
                 ))
                 .font(PluginSettingsTheme.Typography.rowDescription)
                 .foregroundStyle(theme.text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 12) {
-                    Button(localization.string("eligibility.docs", defaultValue: "查看 Google 官方可用地区")) {
+                    Button(localization.string("providerDiagnostics.googleDocs", defaultValue: "Antigravity 官方可用地区")) {
                         controller.openOfficialAvailability()
-                    }
-                    .buttonStyle(.link)
-                    Button(localization.string("eligibility.apiKey", defaultValue: "CLI 使用 Gemini API Key")) {
-                        controller.openOfficialCLIAuthentication()
                     }
                     .buttonStyle(.link)
                 }
@@ -57,10 +54,10 @@ struct AgentProfileSettingsView: View {
 
     private var statusGrid: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle(localization.string("status.title", defaultValue: "三层状态"), icon: "checklist")
+            sectionTitle(localization.string("status.title", defaultValue: "网络画像状态"), icon: "checklist")
             HStack(alignment: .top, spacing: 12) {
                 statusCard(
-                    title: localization.string("status.direct", defaultValue: "直连 Google 出口"),
+                    title: localization.string("status.direct", defaultValue: "默认路径公网出口"),
                     value: controller.diagnostic.directGoogleIP ?? localization.string("status.unknown", defaultValue: "未检测"),
                     icon: "network",
                     color: theme.status.informational
@@ -73,7 +70,7 @@ struct AgentProfileSettingsView: View {
                 )
                 statusCard(
                     title: localization.string("status.account", defaultValue: "Provider 账号资格"),
-                    value: localization.string("status.providerControlled", defaultValue: "由 Google 判定"),
+                    value: localization.string("status.providerControlled", defaultValue: "不从本机出口推断"),
                     icon: "person.badge.key",
                     color: theme.status.warning
                 )
@@ -125,7 +122,7 @@ struct AgentProfileSettingsView: View {
                 divider
                 settingRow(
                     title: localization.string("profile.route", defaultValue: "通过代理路由 Agent 流量"),
-                    description: localization.string("profile.route.detail", defaultValue: "同时为 Antigravity 禁用 QUIC 和非代理 WebRTC UDP。")
+                    description: localization.string("profile.route.detail", defaultValue: "向所有通用 Agent 启动器注入代理；对 Chromium/Antigravity 额外禁用 QUIC 和非代理 WebRTC UDP。")
                 ) {
                     Toggle("", isOn: binding(\.routeTrafficThroughProxy))
                         .labelsHidden()
@@ -164,6 +161,69 @@ struct AgentProfileSettingsView: View {
                 fieldRow(title: localization.string("identity.languages", defaultValue: "语言列表"), placeholder: "en-US,en", text: binding(\.languages))
                 divider
                 fieldRow(title: "Accept-Language", placeholder: "en-US,en;q=0.9", text: binding(\.acceptLanguage))
+                divider
+                numberFieldRow(title: localization.string("identity.latitude", defaultValue: "纬度"), value: binding(\.latitude), format: "%.4f")
+                divider
+                numberFieldRow(title: localization.string("identity.longitude", defaultValue: "经度"), value: binding(\.longitude), format: "%.4f")
+                divider
+                numberFieldRow(title: localization.string("identity.accuracy", defaultValue: "定位精度（米）"), value: binding(\.accuracyMeters), format: "%.0f")
+            }
+            .pluginSettingsCardBackground()
+        }
+    }
+
+    private var coverageControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle(localization.string("coverage.title", defaultValue: "覆盖范围与通用接入"), icon: "square.stack.3d.up")
+            VStack(spacing: 0) {
+                settingRow(
+                    title: localization.string("coverage.cli", defaultValue: "CLI wrappers"),
+                    description: localization.string("coverage.cli.detail", defaultValue: "为 Codex、Claude、Grok、Gemini、DSH 等命令生成通用启动包装。")
+                ) {
+                    Toggle("", isOn: binding(\.cliWrappersEnabled)).labelsHidden()
+                }
+                divider
+                settingRow(
+                    title: localization.string("coverage.desktop", defaultValue: "桌面 Agent 启动器"),
+                    description: localization.string("coverage.desktop.detail", defaultValue: "为已安装的 Codex、Claude、Cursor、Antigravity 等桌面应用生成启动器。")
+                ) {
+                    Toggle("", isOn: binding(\.desktopLaunchersEnabled)).labelsHidden()
+                }
+                divider
+                settingRow(
+                    title: localization.string("coverage.browser", defaultValue: "浏览器画像扩展"),
+                    description: localization.string("coverage.browser.detail", defaultValue: "生成 Chromium 扩展，覆盖页面可见的语言、时区、粗略位置与 Accept-Language。")
+                ) {
+                    Toggle("", isOn: binding(\.browserExtensionEnabled)).labelsHidden()
+                }
+                divider
+                settingRow(
+                    title: localization.string("coverage.location", defaultValue: "粗略位置"),
+                    description: localization.string("coverage.location.detail", defaultValue: "向支持该画像的浏览器页面和 Agent 提供配置中的坐标。")
+                ) {
+                    Toggle("", isOn: binding(\.locationOverrideEnabled)).labelsHidden()
+                }
+                divider
+                settingRow(
+                    title: localization.string("coverage.timezone", defaultValue: "时区"),
+                    description: localization.string("coverage.timezone.detail", defaultValue: "为新进程注入 TZ，并在浏览器画像中覆盖 Intl 时区。")
+                ) {
+                    Toggle("", isOn: binding(\.timezoneOverrideEnabled)).labelsHidden()
+                }
+                divider
+                settingRow(
+                    title: localization.string("coverage.language", defaultValue: "语言与 Locale"),
+                    description: localization.string("coverage.language.detail", defaultValue: "为新进程和浏览器页面提供 Locale 与语言列表。")
+                ) {
+                    Toggle("", isOn: binding(\.languageOverrideEnabled)).labelsHidden()
+                }
+                divider
+                settingRow(
+                    title: "Accept-Language",
+                    description: localization.string("coverage.acceptLanguage.detail", defaultValue: "为受控浏览器请求设置 Accept-Language。")
+                ) {
+                    Toggle("", isOn: binding(\.acceptLanguageOverrideEnabled)).labelsHidden()
+                }
             }
             .pluginSettingsCardBackground()
         }
@@ -171,28 +231,58 @@ struct AgentProfileSettingsView: View {
 
     private var launcherSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionTitle(localization.string("launcher.title", defaultValue: "生成与启动"), icon: "paperplane")
+            sectionTitle(localization.string("launcher.title", defaultValue: "通用 Agent 接入"), icon: "paperplane")
             HStack(spacing: 10) {
                 Button {
                     controller.generateAssets()
                 } label: {
-                    Label(localization.string("action.generate", defaultValue: "生成独立画像"), systemImage: "wand.and.stars")
+                    Label(localization.string("action.generate", defaultValue: "生成全部画像组件"), systemImage: "wand.and.stars")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(controller.isGenerating)
 
-                Button(localization.string("action.launchApp", defaultValue: "启动 Antigravity")) {
-                    controller.launchAntigravity()
+                Button(localization.string("action.shell", defaultValue: "打开画像 CLI Shell")) {
+                    controller.launchProfileShell()
                 }
                 .buttonStyle(.bordered)
 
-                Button(localization.string("action.launchCLI", defaultValue: "启动 Antigravity CLI")) {
-                    controller.launchAntigravityCLI()
+                Menu(localization.string("action.agents", defaultValue: "启动 Agent")) {
+                    if !controller.installedDesktopIntegrations.isEmpty {
+                        Section(localization.string("integrations.desktop", defaultValue: "桌面端")) {
+                            ForEach(controller.installedDesktopIntegrations) { integration in
+                                Button(integration.displayName) { controller.launchDesktop(integration) }
+                            }
+                        }
+                    }
+                    if !controller.installedCLIIntegrations.isEmpty {
+                        Section("CLI") {
+                            ForEach(controller.installedCLIIntegrations) { integration in
+                                Button(integration.displayName) { controller.launchCLI(integration) }
+                            }
+                        }
+                    }
                 }
                 .buttonStyle(.bordered)
 
                 Button(localization.string("action.folder", defaultValue: "打开生成目录")) {
                     controller.openGeneratedFolder()
+                }
+                .buttonStyle(.bordered)
+            }
+
+            HStack(spacing: 10) {
+                Button(localization.string("action.context", defaultValue: "打开通用画像说明")) {
+                    controller.openProfileContext()
+                }
+                .buttonStyle(.bordered)
+
+                Button(localization.string("action.copyProfilePath", defaultValue: "复制画像文件路径")) {
+                    controller.copyProfilePath()
+                }
+                .buttonStyle(.bordered)
+
+                Button(localization.string("action.browserExtension", defaultValue: "显示浏览器扩展")) {
+                    controller.openBrowserExtensionFolder()
                 }
                 .buttonStyle(.bordered)
             }
@@ -213,12 +303,11 @@ struct AgentProfileSettingsView: View {
     }
 
     private var installationSummary: String {
-        switch controller.antigravityInstallationSummary {
-        case "app+cli": localization.string("install.both", defaultValue: "已检测到 Antigravity App 与 CLI")
-        case "app": localization.string("install.app", defaultValue: "已检测到 Antigravity App；未检测到 CLI")
-        case "cli": localization.string("install.cli", defaultValue: "已检测到 Antigravity CLI；未检测到 App")
-        default: localization.string("install.missing", defaultValue: "未检测到 Antigravity App 或 CLI")
-        }
+        String(
+            format: localization.string("install.summary", defaultValue: "已检测到 %d 个桌面 Agent、%d 个 CLI Agent"),
+            controller.installedDesktopIntegrations.count,
+            controller.installedCLIIntegrations.count
+        )
     }
 
     private var proxyStatusText: String {
@@ -227,7 +316,7 @@ struct AgentProfileSettingsView: View {
         case .proxyDisabled: localization.string("panel.proxyDisabled", defaultValue: "未启用代理路由")
         case .proxyInvalid: localization.string("panel.proxyInvalid", defaultValue: "代理地址无效")
         case .proxyUnavailable: localization.string("panel.proxyUnavailable", defaultValue: "代理出口不可用")
-        case .sameAsDirect: localization.string("panel.sameEgress", defaultValue: "与直连相同")
+        case .sameAsDirect: localization.string("panel.sameEgress", defaultValue: "与显式代理出口相同；未检测到 TUN")
         case .routed: localization.string("panel.routed.short", defaultValue: "出口已切换")
         }
     }
@@ -235,7 +324,8 @@ struct AgentProfileSettingsView: View {
     private var proxyStatusColor: Color {
         switch controller.diagnostic.status {
         case .routed: theme.status.success
-        case .sameAsDirect, .proxyInvalid, .proxyUnavailable: theme.status.critical
+        case .proxyInvalid, .proxyUnavailable: theme.status.critical
+        case .sameAsDirect: theme.status.warning
         case .notTested, .proxyDisabled: theme.status.warning
         }
     }
@@ -300,6 +390,24 @@ struct AgentProfileSettingsView: View {
         .padding(.vertical, PluginSettingsTheme.Spacing.rowVertical)
     }
 
+    private func numberFieldRow(title: String, value: Binding<Double>, format: String) -> some View {
+        HStack(spacing: 16) {
+            Text(title)
+                .font(PluginSettingsTheme.Typography.rowTitle)
+                .foregroundStyle(theme.text.primary)
+                .frame(width: 150, alignment: .leading)
+            TextField(title, value: value, format: .number)
+                .textFieldStyle(.roundedBorder)
+                .font(PluginSettingsTheme.Typography.monospacedValue)
+            Text(String(format: format, value.wrappedValue))
+                .font(PluginSettingsTheme.Typography.monospacedValue)
+                .foregroundStyle(theme.text.tertiary)
+                .frame(width: 78, alignment: .trailing)
+        }
+        .padding(.horizontal, PluginSettingsTheme.Spacing.rowHorizontal)
+        .padding(.vertical, PluginSettingsTheme.Spacing.rowVertical)
+    }
+
     private var divider: some View {
         PluginSettingsListDivider()
     }
@@ -314,6 +422,7 @@ struct AgentProfileSettingsView: View {
     private func localizedStatus(_ raw: String) -> String {
         if raw == "generated" { return localization.string("status.generated", defaultValue: "画像已生成") }
         if raw == "copied" { return localization.string("status.copied", defaultValue: "报告已复制") }
+        if raw == "profile-path-copied" { return localization.string("status.profilePathCopied", defaultValue: "画像路径已复制") }
         if raw.hasPrefix("generation-failed") { return localization.string("status.generateFailed", defaultValue: "生成失败") }
         return raw
     }
