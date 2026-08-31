@@ -736,9 +736,11 @@ final class AgentProfileController: ObservableObject {
         if value.enabled && value.cliWrappersEnabled {
             lines.append("export PATH=\"$TRACEFENCE_PROFILE_BIN:$PATH\"")
         }
-        if value.enabled && value.timezoneOverrideEnabled {
-            lines.append("export TZ=\(shellQuote(value.timezoneIdentifier))")
-        }
+        // Never inject `TZ` into a CLI or desktop application's environment.
+        // Session timelines, logs, and timestamps must retain the macOS system
+        // timezone. `timezoneOverrideEnabled` is intentionally consumed only by
+        // the optional browser extension, where it controls page-visible Intl
+        // data without changing a native application's clock.
         if value.enabled && value.languageOverrideEnabled {
             lines.append("export LANG=\(shellQuote(localeUnderscore + ".UTF-8"))")
             lines.append("export LC_ALL=\(shellQuote(localeUnderscore + ".UTF-8"))")
@@ -857,7 +859,7 @@ final class AgentProfileController: ObservableObject {
         source "$PROFILE_DIR/agent-env.sh"
         clear
         echo "TraceFence Agent Profile is active."
-        echo "Launching \(integration.displayName) with the configured locale, timezone, location metadata, and proxy policy."
+        echo "Launching \(integration.displayName) with the configured locale, location metadata, and proxy policy. Native app time continues to use macOS system settings."
         echo ""
         exec "$PROFILE_DIR/bin/tf-\(integration.commandName)" "$@"
         """

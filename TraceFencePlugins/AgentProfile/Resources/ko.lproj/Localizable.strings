@@ -74,7 +74,7 @@
 "coverage.location" = "대략적 위치";
 "coverage.location.detail" = "프로필을 지원하는 브라우저 페이지와 Agent에 설정된 좌표를 제공합니다.";
 "coverage.timezone" = "시간대";
-"coverage.timezone.detail" = "새 프로세스에 TZ를 주입하고 브라우저 프로필의 Intl 시간대를 덮어씁니다.";
+"coverage.timezone.detail" = "선택적 브라우저 프로필에서 페이지에 보이는 Intl 시간대만 재정의합니다. 네이티브 앱과 CLI는 항상 macOS 시스템 시간대를 사용합니다.";
 "coverage.language" = "언어와 Locale";
 "coverage.language.detail" = "새 프로세스와 브라우저 페이지에 Locale 및 언어 목록을 제공합니다.";
 "coverage.acceptLanguage.detail" = "제어되는 브라우저 요청에 Accept-Language를 설정합니다.";

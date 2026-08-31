@@ -74,7 +74,7 @@
 "coverage.location" = "概略位置";
 "coverage.location.detail" = "対応するブラウザーページと Agent に設定済み座標を提供します。";
 "coverage.timezone" = "タイムゾーン";
-"coverage.timezone.detail" = "新規プロセスに TZ を注入し、ブラウザープロファイルの Intl タイムゾーンを上書きします。";
+"coverage.timezone.detail" = "任意のブラウザープロファイルでページ表示用の Intl タイムゾーンのみを上書きします。ネイティブアプリと CLI は常に macOS のシステムタイムゾーンを使用します。";
 "coverage.language" = "言語と Locale";
 "coverage.language.detail" = "新規プロセスとブラウザーページに Locale と言語一覧を提供します。";
 "coverage.acceptLanguage.detail" = "管理対象のブラウザーリクエストに Accept-Language を設定します。";

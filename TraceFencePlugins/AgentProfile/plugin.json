@@ -24,7 +24,7 @@
       "summary": "Agent 언어, 시간대, 프록시 출구 및 개인정보 진단을 관리하고 로컬 프로필과 Provider 계정 자격을 구분합니다"
     }
   },
-  "version": "1.1.2",
+  "version": "1.1.3",
   "minHostVersion": "1.2.12",
   "pluginKitVersion": 4,
   "bundleRelativePath": "AgentProfile.bundle",

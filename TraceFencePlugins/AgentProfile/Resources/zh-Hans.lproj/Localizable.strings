@@ -74,7 +74,7 @@
 "coverage.location" = "粗略位置";
 "coverage.location.detail" = "向支持该画像的浏览器页面和 Agent 提供配置中的坐标。";
 "coverage.timezone" = "时区";
-"coverage.timezone.detail" = "为新进程注入 TZ，并在浏览器画像中覆盖 Intl 时区。";
+"coverage.timezone.detail" = "仅在可选的浏览器画像中覆盖页面可见的 Intl 时区；原生应用和 CLI 始终使用 macOS 系统时区。";
 "coverage.language" = "语言与 Locale";
 "coverage.language.detail" = "为新进程和浏览器页面提供 Locale 与语言列表。";
 "coverage.acceptLanguage.detail" = "为受控浏览器请求设置 Accept-Language。";

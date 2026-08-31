@@ -74,7 +74,7 @@
 "coverage.location" = "Coarse location";
 "coverage.location.detail" = "Provide configured coordinates to browser pages and Agents that consume the profile.";
 "coverage.timezone" = "Timezone";
-"coverage.timezone.detail" = "Inject TZ into new processes and override the browser profile's Intl timezone.";
+"coverage.timezone.detail" = "Override page-visible Intl timezone only in the optional browser profile. Native apps and CLIs always use the macOS system timezone.";
 "coverage.language" = "Language and locale";
 "coverage.language.detail" = "Provide locale and language values to new processes and browser pages.";
 "coverage.acceptLanguage.detail" = "Set Accept-Language for controlled browser requests.";

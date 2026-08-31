@@ -74,7 +74,7 @@
 "coverage.location" = "粗略位置";
 "coverage.location.detail" = "向支援該畫像的瀏覽器頁面和 Agent 提供設定座標。";
 "coverage.timezone" = "時區";
-"coverage.timezone.detail" = "為新程序注入 TZ，並覆蓋瀏覽器畫像的 Intl 時區。";
+"coverage.timezone.detail" = "僅在可選的瀏覽器畫像中覆蓋頁面可見的 Intl 時區；原生 App 與 CLI 一律使用 macOS 系統時區。";
 "coverage.language" = "語言與 Locale";
 "coverage.language.detail" = "為新程序和瀏覽器頁面提供 Locale 與語言列表。";
 "coverage.acceptLanguage.detail" = "為受控瀏覽器請求設定 Accept-Language。";
