@@ -123,6 +123,26 @@ enum AgentProfileEgressStatus: String, Codable, Sendable {
     case routed
 }
 
+enum AgentProfileAntigravityRouteStatus: String, Codable, Sendable {
+    case notInstalled
+    case officialPath
+    case proxySuppressedByLauncher
+    case endpointOverridden
+    case unreadableLauncher
+}
+
+struct AgentProfileAntigravityRouteSnapshot: Codable, Equatable, Sendable {
+    var status: AgentProfileAntigravityRouteStatus
+    var commandPath: String?
+    var details: String
+
+    static let empty = AgentProfileAntigravityRouteSnapshot(
+        status: .notInstalled,
+        commandPath: nil,
+        details: "Antigravity CLI was not found."
+    )
+}
+
 struct AgentProfileDiagnosticSnapshot: Codable, Equatable, Sendable {
     var checkedAt: Date
     var status: AgentProfileEgressStatus
@@ -134,6 +154,7 @@ struct AgentProfileDiagnosticSnapshot: Codable, Equatable, Sendable {
     var detectedTimezone: String?
     var details: String?
     var localTunnelDetected: Bool? = nil
+    var antigravityRoute: AgentProfileAntigravityRouteSnapshot? = nil
 
     static let empty = AgentProfileDiagnosticSnapshot(
         checkedAt: .distantPast,
@@ -145,7 +166,8 @@ struct AgentProfileDiagnosticSnapshot: Codable, Equatable, Sendable {
         detectedCity: nil,
         detectedTimezone: nil,
         details: nil,
-        localTunnelDetected: nil
+        localTunnelDetected: nil,
+        antigravityRoute: nil
     )
 }
 

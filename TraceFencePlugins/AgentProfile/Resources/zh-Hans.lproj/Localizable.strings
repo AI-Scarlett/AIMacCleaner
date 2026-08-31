@@ -54,6 +54,13 @@
 "providerDiagnostics.title" = "Provider 专项诊断";
 "providerDiagnostics.body" = "通用 Agent 画像负责进程环境和网络出口；Codex、Claude、Google Antigravity 等账号资格由各 Provider 服务端决定。网络出口变化不能替代账号资格判断。";
 "providerDiagnostics.googleDocs" = "Antigravity 官方可用地区";
+"antigravityRoute.title" = "Antigravity CLI 启动路径";
+"antigravityRoute.refresh" = "重新核对";
+"antigravityRoute.notInstalled" = "未检测到 Antigravity CLI";
+"antigravityRoute.official" = "画像代理会传递给 CLI";
+"antigravityRoute.proxySuppressed" = "启动器清除了画像代理";
+"antigravityRoute.endpointOverridden" = "启动器覆盖了 Cloud Code 端点";
+"antigravityRoute.unreadable" = "无法核对 CLI 启动器";
 "identity.latitude" = "纬度";
 "identity.longitude" = "经度";
 "identity.accuracy" = "定位精度（米）";

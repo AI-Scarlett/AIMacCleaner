@@ -102,6 +102,52 @@ struct AgentProfileSettingsView: View {
                     .buttonStyle(.bordered)
                 }
             }
+            antigravityRouteNotice
+        }
+    }
+
+    private var antigravityRouteNotice: some View {
+        let route = controller.antigravityRoute
+        let isWarning = route.status == .endpointOverridden || route.status == .proxySuppressedByLauncher
+        let tint = isWarning ? theme.status.warning : theme.status.informational
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: isWarning ? "exclamationmark.triangle.fill" : "point.topleft.down.to.point.bottomright.curvepath")
+                .foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(localization.string("antigravityRoute.title", defaultValue: "Antigravity CLI 启动路径"))
+                    .font(PluginSettingsTheme.Typography.rowTitle)
+                    .foregroundStyle(theme.text.primary)
+                Text(antigravityRouteTitle(route.status))
+                    .font(PluginSettingsTheme.Typography.secondaryLabel)
+                    .foregroundStyle(tint)
+                Text(route.details)
+                    .font(PluginSettingsTheme.Typography.rowDescription)
+                    .foregroundStyle(theme.text.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Button(localization.string("antigravityRoute.refresh", defaultValue: "重新核对")) {
+                controller.refreshAntigravityRoute()
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(PluginSettingsTheme.Spacing.cardContent)
+        .background(theme.interaction.subtleTint(tint))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func antigravityRouteTitle(_ status: AgentProfileAntigravityRouteStatus) -> String {
+        switch status {
+        case .notInstalled:
+            localization.string("antigravityRoute.notInstalled", defaultValue: "未检测到 Antigravity CLI")
+        case .officialPath:
+            localization.string("antigravityRoute.official", defaultValue: "画像代理会传递给 CLI")
+        case .proxySuppressedByLauncher:
+            localization.string("antigravityRoute.proxySuppressed", defaultValue: "启动器清除了画像代理")
+        case .endpointOverridden:
+            localization.string("antigravityRoute.endpointOverridden", defaultValue: "启动器覆盖了 Cloud Code 端点")
+        case .unreadableLauncher:
+            localization.string("antigravityRoute.unreadable", defaultValue: "无法核对 CLI 启动器")
         }
     }
 

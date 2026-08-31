@@ -150,4 +150,26 @@ final class AgentProfilePolicyTests: XCTestCase {
         }
     }
 
+    func testAntigravityRouteInspectorDetectsEndpointOverrideAndProxySuppression() {
+        let value = AgentProfileAntigravityRouteInspector.classify(
+            commandPath: "/tmp/agy",
+            launcherText: """
+            #!/bin/bash
+            export CLOUD_CODE_URL=\"http://127.0.0.1:25819\"
+            unset HTTP_PROXY HTTPS_PROXY ALL_PROXY
+            exec agy.real \"$@\"
+            """
+        )
+        XCTAssertEqual(value.status, .endpointOverridden)
+        XCTAssertTrue(value.details.contains("clears proxy"))
+    }
+
+    func testAntigravityRouteInspectorAcceptsStandardEntrypoint() {
+        let value = AgentProfileAntigravityRouteInspector.classify(
+            commandPath: "/tmp/agy",
+            launcherText: "#!/bin/bash\nexec /usr/local/bin/agy.real \"$@\"\n"
+        )
+        XCTAssertEqual(value.status, .officialPath)
+    }
+
 }

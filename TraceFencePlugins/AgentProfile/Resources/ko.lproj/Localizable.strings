@@ -54,6 +54,13 @@
 "providerDiagnostics.title" = "Provider별 진단";
 "providerDiagnostics.body" = "범용 Agent Profile은 프로세스 환경과 네트워크 출구를 관리합니다. Codex, Claude, Google Antigravity 등의 계정 자격은 각 Provider 서버에서 결정되며 출구 변경은 자격 판정이 아닙니다.";
 "providerDiagnostics.googleDocs" = "Antigravity 제공 지역";
+"antigravityRoute.title" = "Antigravity CLI 시작 경로";
+"antigravityRoute.refresh" = "다시 확인";
+"antigravityRoute.notInstalled" = "Antigravity CLI를 찾을 수 없습니다";
+"antigravityRoute.official" = "프로필 프록시가 CLI에 전달됩니다";
+"antigravityRoute.proxySuppressed" = "시작기가 프로필 프록시를 지웁니다";
+"antigravityRoute.endpointOverridden" = "시작기가 Cloud Code 엔드포인트를 재정의합니다";
+"antigravityRoute.unreadable" = "CLI 시작기를 검사할 수 없습니다";
 "identity.latitude" = "위도";
 "identity.longitude" = "경도";
 "identity.accuracy" = "위치 정확도(m)";

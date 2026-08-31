@@ -54,6 +54,13 @@
 "providerDiagnostics.title" = "Provider 別診断";
 "providerDiagnostics.body" = "汎用 Agent Profile はプロセス環境とネットワーク出口を管理します。Codex、Claude、Google Antigravity などのアカウント資格は各 Provider のサーバー側で決定され、出口の変化は資格判定ではありません。";
 "providerDiagnostics.googleDocs" = "Antigravity の提供地域";
+"antigravityRoute.title" = "Antigravity CLI の起動経路";
+"antigravityRoute.refresh" = "再確認";
+"antigravityRoute.notInstalled" = "Antigravity CLI が見つかりません";
+"antigravityRoute.official" = "プロファイルのプロキシが CLI に渡されます";
+"antigravityRoute.proxySuppressed" = "ランチャーがプロファイルのプロキシを消去します";
+"antigravityRoute.endpointOverridden" = "ランチャーが Cloud Code のエンドポイントを上書きします";
+"antigravityRoute.unreadable" = "CLI ランチャーを検査できません";
 "identity.latitude" = "緯度";
 "identity.longitude" = "経度";
 "identity.accuracy" = "位置精度（m）";

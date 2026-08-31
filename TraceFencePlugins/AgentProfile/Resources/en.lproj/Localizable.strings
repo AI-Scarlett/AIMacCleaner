@@ -54,6 +54,13 @@
 "providerDiagnostics.title" = "Provider-specific Diagnostics";
 "providerDiagnostics.body" = "The universal Agent Profile manages process environment and network egress. Account eligibility for Codex, Claude, Google Antigravity, and other providers remains server-side; an egress change is not an eligibility result.";
 "providerDiagnostics.googleDocs" = "Antigravity availability";
+"antigravityRoute.title" = "Antigravity CLI launch path";
+"antigravityRoute.refresh" = "Recheck";
+"antigravityRoute.notInstalled" = "Antigravity CLI was not found";
+"antigravityRoute.official" = "The profile proxy will be passed to the CLI";
+"antigravityRoute.proxySuppressed" = "The launcher clears the profile proxy";
+"antigravityRoute.endpointOverridden" = "The launcher overrides the Cloud Code endpoint";
+"antigravityRoute.unreadable" = "The CLI launcher could not be inspected";
 "identity.latitude" = "Latitude";
 "identity.longitude" = "Longitude";
 "identity.accuracy" = "Location accuracy (m)";

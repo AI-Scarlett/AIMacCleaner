@@ -54,6 +54,13 @@
 "providerDiagnostics.title" = "Provider 專項診斷";
 "providerDiagnostics.body" = "通用 Agent 畫像負責程序環境和網路出口；Codex、Claude、Google Antigravity 等帳號資格由各 Provider 服務端決定。網路出口變化不能替代帳號資格判斷。";
 "providerDiagnostics.googleDocs" = "Antigravity 官方可用地區";
+"antigravityRoute.title" = "Antigravity CLI 啟動路徑";
+"antigravityRoute.refresh" = "重新核對";
+"antigravityRoute.notInstalled" = "未偵測到 Antigravity CLI";
+"antigravityRoute.official" = "畫像代理會傳遞給 CLI";
+"antigravityRoute.proxySuppressed" = "啟動器清除了畫像代理";
+"antigravityRoute.endpointOverridden" = "啟動器覆蓋了 Cloud Code 端點";
+"antigravityRoute.unreadable" = "無法核對 CLI 啟動器";
 "identity.latitude" = "緯度";
 "identity.longitude" = "經度";
 "identity.accuracy" = "定位精度（米）";
