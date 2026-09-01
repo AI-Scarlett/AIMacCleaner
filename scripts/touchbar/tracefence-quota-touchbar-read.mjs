@@ -44,22 +44,15 @@ function labelForKind(kind) {
   }
 }
 
+function shortLabelForKind(kind) {
+  const label = labelForKind(kind);
+  return label === "额度" ? "" : label;
+}
+
 function remainingColor(percent) {
   if (percent <= 15) return "190,63,70,255";
   if (percent <= 35) return "182,104,35,255";
   return "35,92,150,255";
-}
-
-function resetText(value) {
-  if (!value) return "";
-  const resetAt = new Date(value);
-  if (Number.isNaN(resetAt.getTime())) return "";
-  const remaining = Math.max(0, resetAt.getTime() - Date.now());
-  const hours = Math.floor(remaining / 3_600_000);
-  const minutes = Math.floor((remaining % 3_600_000) / 60_000);
-  if (hours >= 24) return `${Math.ceil(hours / 24)}天`;
-  if (hours > 0) return `${hours}h${String(minutes).padStart(2, "0")}`;
-  return `${Math.max(1, minutes)}m`;
 }
 
 function render() {
@@ -74,12 +67,23 @@ function render() {
   }
 
   const providers = Array.isArray(state.providers) ? state.providers : [];
-  const ranked = providers
-    .flatMap((provider) => (Array.isArray(provider.windows) ? provider.windows : []).map((window) => ({ provider, window })))
-    .filter(({ window }) => Number.isFinite(Number(window.remainingPercent)))
-    .sort((left, right) => Number(left.window.remainingPercent) - Number(right.window.remainingPercent));
+  const agents = providers
+    .map((provider) => {
+      const windows = (Array.isArray(provider.windows) ? provider.windows : [])
+        .filter((window) => Number.isFinite(Number(window.remainingPercent)))
+        .sort((left, right) => Number(left.remainingPercent) - Number(right.remainingPercent));
+      const window = windows[0];
+      if (!window) return null;
+      return {
+        provider,
+        window,
+        remaining: Math.max(0, Math.min(100, Math.round(Number(window.remainingPercent)))),
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.provider.name.localeCompare(right.provider.name));
 
-  if (ranked.length === 0) {
+  if (agents.length === 0) {
     return {
       text: state.isRefreshing ? "正在读取额度…" : "暂无额度数据",
       background_color: "71,76,87,255",
@@ -88,15 +92,17 @@ function render() {
     };
   }
 
-  const { provider, window } = ranked[0];
-  const remaining = Math.max(0, Math.min(100, Math.round(Number(window.remainingPercent))));
-  const reset = resetText(window.resetsAt);
-  const freshness = provider.freshness === "stale" ? " ~" : "";
+  const lowestRemaining = Math.min(...agents.map((agent) => agent.remaining));
+  const text = agents.map(({ provider, window, remaining }) => {
+    const kind = shortLabelForKind(window.kind);
+    const freshness = provider.freshness === "stale" ? " ~" : "";
+    return `${provider.name}${kind ? ` ${kind}` : ""} ${remaining}%${freshness}`;
+  }).join(" · ");
   return {
-    text: `${provider.name} ${labelForKind(window.kind)} ${remaining}%${reset ? ` · ${reset}` : ""}${freshness}`,
-    background_color: remainingColor(remaining),
+    text,
+    background_color: remainingColor(lowestRemaining),
     font_color: "255,255,255,255",
-    font_size: 13,
+    font_size: agents.length >= 4 ? 12 : 13,
   };
 }
 
