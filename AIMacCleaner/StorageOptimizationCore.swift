@@ -649,11 +649,16 @@ enum StorageOptimizationCore {
         let definitions: [(String, String)] = [
             ("Codex", ".codex/sessions"),
             ("Codex", ".codex/archived_sessions"),
+            ("MiniMax", ".minimax/sessions"),
+            ("MiniMax", ".minimax/agents"),
+            ("DeepSeek Harness", ".dsh/sessions"),
+            ("DeepSeek Harness", "deepseek-harness/sessions"),
             ("Claude", ".claude/projects"),
             ("Grok", ".grok/sessions"),
             ("Grok", ".grok/projects"),
             ("Gemini", ".gemini/tmp"),
             ("Gemini", ".gemini/history"),
+            ("Antigravity", ".gemini/antigravity-cli/brain"),
             ("Cursor", ".cursor/projects")
         ]
         var roots = definitions.map {
@@ -664,8 +669,16 @@ enum StorageOptimizationCore {
             url: support.appendingPathComponent("Cursor/User/workspaceStorage", isDirectory: true)
         ))
         roots.append(AgentRoot(
+            agentName: "Cursor",
+            url: support.appendingPathComponent("Cursor/snapshots", isDirectory: true)
+        ))
+        roots.append(AgentRoot(
             agentName: "Trae",
             url: support.appendingPathComponent("Trae/User/workspaceStorage", isDirectory: true)
+        ))
+        roots.append(AgentRoot(
+            agentName: "Trae",
+            url: support.appendingPathComponent("Trae CN/User/workspaceStorage", isDirectory: true)
         ))
         roots.append(AgentRoot(
             agentName: "CodeBuddy",

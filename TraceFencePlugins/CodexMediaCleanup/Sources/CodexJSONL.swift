@@ -113,6 +113,48 @@ enum CodexJSONL {
         }
         return nil
     }
+
+    struct SessionMetaValidator {
+        static func extractThreadID(from url: URL) -> String {
+            let filename = url.deletingPathExtension().lastPathComponent
+            let components = filename.components(separatedBy: "-")
+            if components.count >= 5 {
+                let candidate = components.suffix(5).joined(separator: "-")
+                if candidate.count == 36 {
+                    return candidate
+                }
+            }
+            return UUID().uuidString.lowercased()
+        }
+
+        static func synthesizeSessionMeta(for url: URL, timestamp: Date = Date()) -> [String: Any] {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let ts = formatter.string(from: timestamp)
+            let threadID = extractThreadID(from: url)
+            return [
+                "type": "session_meta",
+                "timestamp": ts,
+                "ordinal": 0,
+                "payload": [
+                    "id": threadID,
+                    "timestamp": ts,
+                    "cwd": NSHomeDirectory(),
+                    "originator": "cli",
+                    "cli_version": "0.151.0",
+                    "forked_from_id": NSNull(),
+                    "model_provider": "openai",
+                    "dynamic_tools": [],
+                    "selected_capability_roots": [],
+                    "memory_mode": "none",
+                    "history_mode": "paginated",
+                    "history_base": NSNull(),
+                    "subagent_history_start_ordinal": NSNull(),
+                    "multi_agent_version": NSNull()
+                ] as [String: Any]
+            ]
+        }
+    }
 }
 
 enum CodexSessionDiscovery {
@@ -136,3 +178,4 @@ enum CodexSessionDiscovery {
         return files.sorted { $0.path < $1.path }
     }
 }
+

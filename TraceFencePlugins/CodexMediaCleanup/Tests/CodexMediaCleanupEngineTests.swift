@@ -473,7 +473,21 @@ final class CodexMediaCleanupEngineTests: XCTestCase {
         let content = history?.first?["content"] as? [[String: Any]]
         return content?.first?["image_url"] as? String
     }
+
+    func testSessionMetaValidatorSynthesizesValidHeaderAndExtractsThreadID() throws {
+        let sampleURL = URL(fileURLWithPath: "/tmp/rollout-2026-09-01T06-00-51-01a059d6-e7e3-7292-aa4e-075a9fb1f2ea.jsonl")
+        let extractedID = CodexJSONL.SessionMetaValidator.extractThreadID(from: sampleURL)
+        XCTAssertEqual(extractedID, "01a059d6-e7e3-7292-aa4e-075a9fb1f2ea")
+
+        let meta = CodexJSONL.SessionMetaValidator.synthesizeSessionMeta(for: sampleURL)
+        XCTAssertEqual(meta["type"] as? String, "session_meta")
+        XCTAssertEqual(meta["ordinal"] as? Int, 0)
+        let payload = try XCTUnwrap(meta["payload"] as? [String: Any])
+        XCTAssertEqual(payload["id"] as? String, "01a059d6-e7e3-7292-aa4e-075a9fb1f2ea")
+        XCTAssertEqual(payload["history_mode"] as? String, "paginated")
+    }
 }
+
 
 private struct AlwaysStoppedProcessMonitor: CodexProcessMonitoring {
     func isCodexRunning() -> Bool { false }

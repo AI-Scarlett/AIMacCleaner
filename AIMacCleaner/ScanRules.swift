@@ -168,4 +168,45 @@ let SCAN_RULES: [ScanRule] = [
     ScanRule(id: "cache_android", name: "Android SDK 缓存", category: "开发", app: "Android Studio", risk: "safe", riskDesc: "Android SDK 临时缓存，删除后不影响 SDK 本身。", paths: [
         "~/Library/Android/sdk/.temp",
     ]),
+    ScanRule(id: "cache_xcode_derived_data", name: "Xcode 项目编译缓存 (DerivedData)", category: "开发", app: "Xcode", risk: "safe", riskDesc: "Xcode 中间构建产物与模块索引缓存，删除后不影响工程源码，下次构建时自动重新生成。", paths: [
+        "~/Library/Developer/Xcode/DerivedData",
+        "~/Library/Caches/com.apple.dt.Xcode",
+    ]),
+    ScanRule(id: "cache_xcode_simulators", name: "Xcode 模拟器运行时与设备数据", category: "开发", app: "Xcode 模拟器", risk: "safe", riskDesc: "模拟器设备运行日志、临时镜像缓存与实例数据，清理后不影响真机调试。", paths: [
+        "~/Library/Developer/CoreSimulator/Caches",
+        "~/Library/Developer/CoreSimulator/Devices",
+    ]),
+    ScanRule(id: "cache_playwright_browsers", name: "Playwright 测试浏览器核心", category: "开发", app: "Playwright", risk: "safe", riskDesc: "自动化网页测试下载的无头浏览器 Chromium/WebKit 二进制包，删除后运行测试时会自动按需下载。", paths: [
+        "~/Library/Caches/ms-playwright",
+    ]),
+    ScanRule(id: "cache_cursor_snapshots", name: "Cursor 代码历史快照与缓存", category: "AI Agent", app: "Cursor", risk: "safe", riskDesc: "Cursor 编辑器自动保存的本地工作区历史快照与代码缓存，清理可释放大量空间。", paths: [
+        "~/Library/Application Support/Cursor/snapshots",
+        "~/Library/Application Support/Cursor/CachedData",
+        "~/Library/Application Support/Cursor/Cache",
+        "~/Library/Application Support/Cursor/GPUCache",
+    ]),
+    ScanRule(id: "cache_codex_runtimes", name: "Codex 离线运行时与中间媒体", category: "AI Agent", app: "Codex", risk: "safe", riskDesc: "Codex 离线运行时包、临时生成的图像媒体与终端快照，不影响核心会话索引。", paths: [
+        "~/.cache/codex-runtimes",
+        "~/.codex/generated_images",
+        "~/.codex/shell_snapshots",
+    ]),
+    ScanRule(id: "cache_codex_archived", name: "Codex 归档历史会话", category: "AI Agent", app: "Codex", risk: "caution", riskDesc: "已归档的旧会话文件。清理前建议在 Codex 媒体整理插件中执行安全防损坏校验。", paths: [
+        "~/.codex/archived_sessions",
+    ]),
+    ScanRule(id: "cache_minimax_sessions", name: "MiniMax Agent 历史会话与缓存", category: "AI Agent", app: "MiniMax", risk: "safe", riskDesc: "MiniMax 客户端历史会话日志与 Agent 运行时缓存，清理后不影响正常调用。", paths: [
+        "~/.minimax/sessions",
+        "~/.minimax/agents",
+    ]),
+    ScanRule(id: "cache_grok_sessions", name: "Grok 运行日志与会话缓存", category: "AI Agent", app: "Grok", risk: "safe", riskDesc: "Grok 客户端会话运行日志与数据缓存。", paths: [
+        "~/.grok/sessions",
+    ]),
+    ScanRule(id: "cache_deepseek_harness", name: "DeepSeek Harness 构建缓存", category: "AI Agent", app: "DeepSeek Harness", risk: "safe", riskDesc: "DeepSeek Harness 插件与工程构建依赖缓存，清理后可重新生成。", paths: [
+        "~/deepseek-harness/deepseek-harness/node_modules/.cache",
+        "~/deepseek-harness/node_modules/.cache",
+    ]),
+    ScanRule(id: "cache_wechat_devtools", name: "微信开发者工具编译缓存", category: "开发", app: "微信开发者工具", risk: "safe", riskDesc: "小程序编译临时数据与网页缓存，删除后重新打开工程会自动编译。", paths: [
+        "~/Library/Application Support/微信开发者工具/User Data/Default/Cache",
+        "~/Library/Application Support/微信开发者工具/Default/Cache",
+    ]),
 ]
+
