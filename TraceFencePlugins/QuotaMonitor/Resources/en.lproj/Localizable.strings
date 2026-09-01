@@ -9,7 +9,8 @@
 "panel.previousAgent" = "Show previous agent";
 "panel.nextAgent" = "Show next agent";
 "panel.followActiveAgent" = "Follow active agent";
-"touchbar.section" = "BetterTouchTool (optional)";
-"touchbar.action.enable" = "Enable BetterTouchTool Touch Bar (optional; automation permission required)";
-"touchbar.action.update" = "Update Touch Bar quota display";
-"touchbar.action.disable" = "Remove Touch Bar quota controls";
+"touchbar.section" = "Touch Bar";
+"touchbar.action.show" = "Show Touch Bar quota monitor";
+"touchbar.action.hide" = "Hide Touch Bar quota monitor";
+"touchbar.legacySection" = "Legacy migration";
+"touchbar.action.cleanLegacy" = "Remove this plugin's legacy BetterTouchTool controls";

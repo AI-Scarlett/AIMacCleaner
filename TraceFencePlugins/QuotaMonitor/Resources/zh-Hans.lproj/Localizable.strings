@@ -9,7 +9,8 @@
 "panel.previousAgent" = "查看上一个 Agent";
 "panel.nextAgent" = "查看下一个 Agent";
 "panel.followActiveAgent" = "恢复跟随当前 Agent";
-"touchbar.section" = "BetterTouchTool（可选）";
-"touchbar.action.enable" = "启用 BetterTouchTool Touch Bar（可选，需要允许控制）";
-"touchbar.action.update" = "更新 Touch Bar 额度显示";
-"touchbar.action.disable" = "移除 Touch Bar 额度控件";
+"touchbar.section" = "Touch Bar";
+"touchbar.action.show" = "显示 Touch Bar 额度监控";
+"touchbar.action.hide" = "隐藏 Touch Bar 额度显示";
+"touchbar.legacySection" = "旧版迁移";
+"touchbar.action.cleanLegacy" = "清理本插件创建的旧版 BetterTouchTool 控件";

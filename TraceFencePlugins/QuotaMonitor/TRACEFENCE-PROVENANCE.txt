@@ -1,5 +1,5 @@
 TraceFence first-party plugin distribution
-Plugin: quota-monitor 1.0.6
+Plugin: quota-monitor 1.0.9
 Source owner: TraceFence
 Source location: private TraceFence application repository
 Runtime distribution: AI-Scarlett/TraceFence immutable per-plugin release

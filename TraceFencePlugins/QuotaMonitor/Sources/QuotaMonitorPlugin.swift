@@ -1,7 +1,9 @@
 import AppKit
 import Combine
+import Darwin
 import Foundation
 import MacToolsPluginKit
+import ObjectiveC.runtime
 import SwiftUI
 
 public final class QuotaMonitorPluginFactory: NSObject, MacToolsPluginBundleFactory {
@@ -21,11 +23,7 @@ private struct QuotaMonitorPluginProvider: PluginProvider {
             withExtension: nil,
             subdirectory: "Helpers"
         )
-        return [QuotaMonitorPlugin(
-            engineURL: engineURL,
-            localization: localization,
-            touchBarExporter: TouchBarQuotaSnapshotExporter()
-        )]
+        return [QuotaMonitorPlugin(engineURL: engineURL, localization: localization)]
     }
 }
 
@@ -37,8 +35,8 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
         static let previousProvider = "quota-monitor-previous-provider"
         static let nextProvider = "quota-monitor-next-provider"
         static let automaticProvider = "quota-monitor-automatic-provider"
-        static let enableTouchBar = "quota-monitor-enable-touch-bar"
-        static let disableTouchBar = "quota-monitor-disable-touch-bar"
+        static let toggleTouchBar = "quota-monitor-toggle-touch-bar"
+        static let cleanLegacyTouchBar = "quota-monitor-clean-legacy-touch-bar"
     }
 
     private(set) var metadata: PluginMetadata
@@ -53,23 +51,16 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
 
     private let service: ProviderQuotaService
     private let localization: PluginLocalization
-    private let touchBarExporter: TouchBarQuotaSnapshotExporter
     private let touchBarController = QuotaTouchBarController()
     private var serviceChangeCancellable: AnyCancellable?
     private var isExpanded = false
-    private var isActive = false
 
-    fileprivate init(
-        engineURL: URL?,
-        localization: PluginLocalization,
-        touchBarExporter: TouchBarQuotaSnapshotExporter
-    ) {
+    fileprivate init(engineURL: URL?, localization: PluginLocalization) {
         self.service = ProviderQuotaService(
             providerEngineURL: engineURL,
             requiresExplicitProviderEngine: true
         )
         self.localization = localization
-        self.touchBarExporter = touchBarExporter
         self.metadata = Self.makeMetadata(localization: localization)
         touchBarController.onStateChange = { [weak self] in
             self?.onStateChange?()
@@ -77,7 +68,6 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
         serviceChangeCancellable = service.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async {
                 self?.touchBarController.receive(snapshots: self?.service.snapshots ?? [])
-                self?.exportTouchBarSnapshot()
                 self?.onStateChange?()
             }
         }
@@ -92,7 +82,7 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
             order: 30,
             defaultDescription: localization.string(
                 "metadata.description",
-                defaultValue: "读取 Codex、Claude、Grok 等 Provider 的额度与重置时间；菜单栏界面由 TraceFence 保持不变。"
+                defaultValue: "读取 Codex、Claude、Grok 等 Provider 的额度与重置时间。Touch Bar 由此插件独立显示。"
             )
         )
     }
@@ -177,11 +167,28 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
                 actionTitle: localization.string("panel.followActiveAgent", defaultValue: "恢复跟随当前 Agent"),
                 actionIconSystemName: "scope",
                 isEnabled: touchBarController.hasQuotaProviders
+            ),
+            PluginPanelControl(
+                id: ControlID.toggleTouchBar,
+                kind: .actionRow,
+                options: [],
+                selectedOptionID: nil,
+                dateValue: nil,
+                minimumDate: nil,
+                displayedComponents: nil,
+                datePickerStyle: nil,
+                sectionTitle: localization.string("touchbar.section", defaultValue: "Touch Bar"),
+                actionTitle: touchBarController.isVisible
+                    ? localization.string("touchbar.action.hide", defaultValue: "隐藏 Touch Bar 额度显示")
+                    : localization.string("touchbar.action.show", defaultValue: "显示 Touch Bar 额度监控"),
+                actionIconSystemName: touchBarController.isVisible ? "xmark.rectangle" : "touchbar",
+                isEnabled: !touchBarController.isUpdating
             )
         ]
-        if touchBarController.isProvisioned {
+
+        if touchBarController.hasLegacyBetterTouchToolWidgets {
             controls.append(PluginPanelControl(
-                id: ControlID.enableTouchBar,
+                id: ControlID.cleanLegacyTouchBar,
                 kind: .actionRow,
                 options: [],
                 selectedOptionID: nil,
@@ -189,52 +196,15 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
                 minimumDate: nil,
                 displayedComponents: nil,
                 datePickerStyle: nil,
-                sectionTitle: localization.string("touchbar.section", defaultValue: "BetterTouchTool（可选）"),
+                sectionTitle: localization.string("touchbar.legacySection", defaultValue: "旧版迁移"),
                 actionTitle: localization.string(
-                    "touchbar.action.update",
-                    defaultValue: "更新 Touch Bar 额度显示"
-                ),
-                actionIconSystemName: "rectangle.on.rectangle",
-                isEnabled: !touchBarController.isUpdating
-            ))
-            controls.append(PluginPanelControl(
-                id: ControlID.disableTouchBar,
-                kind: .actionRow,
-                options: [],
-                selectedOptionID: nil,
-                dateValue: nil,
-                minimumDate: nil,
-                displayedComponents: nil,
-                datePickerStyle: nil,
-                sectionTitle: nil,
-                actionTitle: localization.string(
-                    "touchbar.action.disable",
-                    defaultValue: "移除 Touch Bar 额度控件"
+                    "touchbar.action.cleanLegacy",
+                    defaultValue: "清理本插件创建的旧版 BetterTouchTool 控件"
                 ),
                 actionIconSystemName: "trash",
                 isEnabled: !touchBarController.isUpdating
             ))
-        } else {
-            controls.append(PluginPanelControl(
-                id: ControlID.enableTouchBar,
-                kind: .actionRow,
-                options: [],
-                selectedOptionID: nil,
-                dateValue: nil,
-                minimumDate: nil,
-                displayedComponents: nil,
-                datePickerStyle: nil,
-                sectionTitle: localization.string("touchbar.section", defaultValue: "BetterTouchTool（可选）"),
-                actionTitle: localization.string(
-                    "touchbar.action.enable",
-                    defaultValue: "启用 BetterTouchTool Touch Bar（可选，需要允许控制）"
-                ),
-                actionIconSystemName: "touchbar",
-                isEnabled: !touchBarController.isUpdating
-            ))
         }
-
-        let detail = isExpanded ? PluginPanelDetail(controls: controls) : nil
 
         return PluginPanelState(
             subtitle: subtitle,
@@ -242,22 +212,18 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
             isExpanded: isExpanded,
             isEnabled: true,
             isVisible: true,
-            detail: detail,
+            detail: isExpanded ? PluginPanelDetail(controls: controls) : nil,
             errorMessage: touchBarController.errorMessage
         )
     }
 
     func activate(context: PluginRuntimeContext) {
-        isActive = true
         touchBarController.activate(snapshots: service.snapshots)
-        exportTouchBarSnapshot()
     }
 
     func deactivate(reason: PluginDeactivationReason) {
-        isActive = false
         service.stop()
-        touchBarController.deactivate(removeWidgets: reason == .disabled || reason == .uninstalling)
-        touchBarExporter.removeSnapshot()
+        touchBarController.deactivate(disablePreference: reason == .disabled || reason == .uninstalling)
     }
 
     func refresh() {
@@ -277,12 +243,10 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
             touchBarController.selectNextProvider()
         case let .invokeAction(controlID) where controlID == ControlID.automaticProvider:
             touchBarController.resumeAutomaticSelection()
-        case let .invokeAction(controlID) where controlID == ControlID.enableTouchBar:
-            touchBarController.enable(snapshots: service.snapshots)
-            onStateChange?()
-        case let .invokeAction(controlID) where controlID == ControlID.disableTouchBar:
-            touchBarController.disable()
-            onStateChange?()
+        case let .invokeAction(controlID) where controlID == ControlID.toggleTouchBar:
+            touchBarController.toggleVisibility()
+        case let .invokeAction(controlID) where controlID == ControlID.cleanLegacyTouchBar:
+            touchBarController.removeLegacyBetterTouchToolWidgets()
         case .invokeAction, .setSwitch, .setSelection, .setNavigationSelection,
              .clearNavigationSelection, .setDate, .setSlider:
             break
@@ -297,134 +261,10 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
     var quotaMonitoringLastRefreshDate: Date? { service.lastRefreshDate }
     var quotaMonitoringLastRefreshRequestedDate: Date? { service.lastRefreshRequestedDate }
 
-    func startQuotaMonitoring() {
-        service.start()
-    }
-
-    func stopQuotaMonitoring() {
-        service.stop()
-    }
-
-    func refreshQuotaMonitoring(force: Bool) {
-        service.refresh(force: force)
-    }
-
-    func quotaMonitoringRefreshCooldownRemaining() -> TimeInterval {
-        service.refreshCooldownRemaining()
-    }
-
-    private func exportTouchBarSnapshot() {
-        guard isActive else { return }
-        touchBarExporter.writeSnapshot(
-            snapshots: service.snapshots,
-            isRefreshing: service.isRefreshing,
-            lastRefreshDate: service.lastRefreshDate
-        )
-    }
-}
-
-/// Exposes only display-safe quota data for a local BetterTouchTool widget.
-/// The file deliberately excludes account labels, plans, credits, credential
-/// sources, diagnostic strings, tokens, cookies and provider identifiers.
-private struct TouchBarQuotaSnapshotExporter {
-    private static let directoryURL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/TraceFence/TouchBar", isDirectory: true)
-    private static let snapshotURL = directoryURL.appendingPathComponent("quota-status.json", isDirectory: false)
-
-    private struct Snapshot: Encodable {
-        let schemaVersion = 1
-        let updatedAt: Date
-        let isRefreshing: Bool
-        let lastRefreshAt: Date?
-        let providers: [Provider]
-    }
-
-    private struct Provider: Encodable {
-        let name: String
-        let freshness: String
-        let windows: [Window]
-    }
-
-    private struct Window: Encodable {
-        let kind: String
-        let remainingPercent: Int
-        let resetsAt: Date?
-    }
-
-    func writeSnapshot(
-        snapshots: [ProviderQuotaSnapshot],
-        isRefreshing: Bool,
-        lastRefreshDate: Date?
-    ) {
-        let providers = snapshots.compactMap { snapshot -> Provider? in
-            guard !snapshot.isSetupNotice else { return nil }
-            let windows = snapshot.windows.map { window in
-                Window(
-                    kind: window.kind.rawValue,
-                    remainingPercent: Int(window.remainingPercent.rounded()),
-                    resetsAt: window.resetsAt
-                )
-            }
-            guard !windows.isEmpty else { return nil }
-            return Provider(
-                name: sanitizedProviderName(snapshot.providerName),
-                freshness: snapshot.freshness.rawValue,
-                windows: windows
-            )
-        }
-        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-
-        let payload = Snapshot(
-            updatedAt: Date(),
-            isRefreshing: isRefreshing,
-            lastRefreshAt: lastRefreshDate,
-            providers: providers
-        )
-        do {
-            let fileManager = FileManager.default
-            try fileManager.createDirectory(
-                at: Self.directoryURL,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
-            try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: Self.directoryURL.path)
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            try encoder.encode(payload).write(to: Self.snapshotURL, options: .atomic)
-            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.snapshotURL.path)
-        } catch {
-            // The BTT surface is strictly optional; quota monitoring continues
-            // normally if a local display export cannot be written.
-        }
-    }
-
-    func removeSnapshot() {
-        try? FileManager.default.removeItem(at: Self.snapshotURL)
-    }
-
-    private func sanitizedProviderName(_ value: String) -> String {
-        let normalized = value.lowercased()
-        if normalized.contains("codex") { return "Codex" }
-        if normalized.contains("claude") { return "Claude" }
-        if normalized.contains("grok") { return "Grok" }
-        if normalized.contains("cursor") { return "Cursor" }
-        if normalized.contains("gemini") { return "Gemini" }
-        if normalized.contains("deepseek") { return "DeepSeek" }
-        if normalized.contains("antigravity") { return "Antigravity" }
-        return "Provider"
-    }
-}
-
-/// Owns the small local interaction channel used by the BTT buttons. The file
-/// can contain only one of three fixed command words; it is never used to pass
-/// quota data, account names, credentials, paths selected by the user, or shell
-/// input back into TraceFence.
-private enum QuotaTouchBarStorage {
-    static let directoryURL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/TraceFence/TouchBar", isDirectory: true)
-    static let commandURL = directoryURL.appendingPathComponent("quota-touch-bar-command", isDirectory: false)
-    static let bridgeStateURL = directoryURL.appendingPathComponent("quota-touch-bar-btt-state.json", isDirectory: false)
+    func startQuotaMonitoring() { service.start() }
+    func stopQuotaMonitoring() { service.stop() }
+    func refreshQuotaMonitoring(force: Bool) { service.refresh(force: force) }
+    func quotaMonitoringRefreshCooldownRemaining() -> TimeInterval { service.refreshCooldownRemaining() }
 }
 
 @MainActor
@@ -434,29 +274,35 @@ private final class QuotaTouchBarController {
         case manual(String)
     }
 
-    private enum Command: String {
-        case previous
-        case next
-        case automatic
+    private enum Preference {
+        static let visibleKey = "com.tracefence.plugin.quota-monitor.native-touch-bar.visible"
     }
 
-    private let bridge = BetterTouchToolQuotaBridge()
+    private let renderer = NativeQuotaTouchBarRenderer()
     private var snapshots: [ProviderQuotaSnapshot] = []
     private var selection: Selection = .automatic
     private var selectedProviderID: String?
     private var activationObserver: NSObjectProtocol?
-    private var commandTimer: Timer?
     private var isActive = false
 
     private(set) var isUpdating = false
     private(set) var errorMessage: String?
     var onStateChange: (() -> Void)?
 
-    var isProvisioned: Bool { bridge.isProvisioned }
+    var isVisible: Bool {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: Preference.visibleKey) == nil {
+            defaults.set(true, forKey: Preference.visibleKey)
+            return true
+        }
+        return defaults.bool(forKey: Preference.visibleKey)
+    }
+
     var hasQuotaProviders: Bool { !QuotaTouchBarDisplay.items(from: snapshots).isEmpty }
+    var hasLegacyBetterTouchToolWidgets: Bool { LegacyBetterTouchToolWidgetCleanup.hasOwnedWidgetState }
     var panelSummary: String? {
         guard hasQuotaProviders else { return nil }
-        return displayState().title
+        return displayState().summary
     }
 
     func activate(snapshots: [ProviderQuotaSnapshot]) {
@@ -466,11 +312,13 @@ private final class QuotaTouchBarController {
         refreshDisplay()
     }
 
-    func deactivate(removeWidgets: Bool) {
+    func deactivate(disablePreference: Bool) {
         isActive = false
         stopObserving()
-        guard removeWidgets else { return }
-        disable()
+        renderer.hide()
+        if disablePreference {
+            setVisible(false)
+        }
     }
 
     func receive(snapshots: [ProviderQuotaSnapshot]) {
@@ -479,91 +327,9 @@ private final class QuotaTouchBarController {
         refreshDisplay()
     }
 
-    func enable(snapshots: [ProviderQuotaSnapshot]) {
-        self.snapshots = snapshots
-        beginUpdate()
-        defer { finishUpdate() }
-        do {
-            try bridge.provision()
-            errorMessage = nil
-            startObserving()
-            refreshDisplay()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func disable() {
-        beginUpdate()
-        defer { finishUpdate() }
-        do {
-            try bridge.removeOwnedWidgets()
-            selection = .automatic
-            selectedProviderID = nil
-            errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func beginUpdate() {
-        isUpdating = true
-        errorMessage = nil
-        onStateChange?()
-    }
-
-    private func finishUpdate() {
-        isUpdating = false
-        onStateChange?()
-    }
-
-    private func startObserving() {
-        guard activationObserver == nil else { return }
-        try? bridge.prepareCommandChannel()
-        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshDisplay()
-            }
-        }
-        commandTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.consumeCommandIfNeeded()
-            }
-        }
-    }
-
-    private func stopObserving() {
-        if let activationObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
-        }
-        activationObserver = nil
-        commandTimer?.invalidate()
-        commandTimer = nil
-        try? FileManager.default.removeItem(at: QuotaTouchBarStorage.commandURL)
-    }
-
-    private func consumeCommandIfNeeded() {
-        guard let data = try? Data(contentsOf: QuotaTouchBarStorage.commandURL),
-              data.count <= 16,
-              let raw = String(data: data, encoding: .utf8),
-              let command = Command(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines))
-        else {
-            return
-        }
-        try? FileManager.default.removeItem(at: QuotaTouchBarStorage.commandURL)
-
-        switch command {
-        case .previous:
-            selectPreviousProvider()
-        case .next:
-            selectNextProvider()
-        case .automatic:
-            resumeAutomaticSelection()
-        }
+    func toggleVisibility() {
+        setVisible(!isVisible)
+        refreshDisplay()
     }
 
     func selectPreviousProvider() {
@@ -581,6 +347,51 @@ private final class QuotaTouchBarController {
         refreshDisplay()
     }
 
+    func removeLegacyBetterTouchToolWidgets() {
+        beginUpdate()
+        defer { finishUpdate() }
+        do {
+            try LegacyBetterTouchToolWidgetCleanup.removeOwnedWidgets()
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func setVisible(_ visible: Bool) {
+        UserDefaults.standard.set(visible, forKey: Preference.visibleKey)
+        if !visible { renderer.hide() }
+    }
+
+    private func beginUpdate() {
+        isUpdating = true
+        errorMessage = nil
+        onStateChange?()
+    }
+
+    private func finishUpdate() {
+        isUpdating = false
+        onStateChange?()
+    }
+
+    private func startObserving() {
+        guard activationObserver == nil else { return }
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshDisplay() }
+        }
+    }
+
+    private func stopObserving() {
+        if let activationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
+        }
+        activationObserver = nil
+    }
+
     private func cycleProvider(offset: Int) {
         let items = QuotaTouchBarDisplay.items(from: snapshots)
         guard !items.isEmpty else { return }
@@ -594,17 +405,24 @@ private final class QuotaTouchBarController {
 
     private func refreshDisplay() {
         let display = displayState()
-        guard bridge.isProvisioned else {
+        guard isActive, isVisible else {
+            if !isVisible { renderer.hide() }
             onStateChange?()
             return
         }
         do {
-            try bridge.updateDisplay(title: display.title, color: display.color)
+            try renderer.show(
+                display,
+                onPrevious: { [weak self] in self?.selectPreviousProvider() },
+                onNext: { [weak self] in self?.selectNextProvider() },
+                onAutomatic: { [weak self] in self?.resumeAutomaticSelection() },
+                onClose: { [weak self] in
+                    self?.setVisible(false)
+                    self?.onStateChange?()
+                }
+            )
             errorMessage = nil
         } catch {
-            // Never surface a raw Apple Event/BTT response: it may contain an
-            // unrelated BTT action definition. The actionable remediation is
-            // stable and contains no private data.
             errorMessage = error.localizedDescription
         }
         onStateChange?()
@@ -614,23 +432,23 @@ private final class QuotaTouchBarController {
         let items = QuotaTouchBarDisplay.items(from: snapshots)
         guard !items.isEmpty else {
             selectedProviderID = nil
-            return .unavailable(isRefreshing: false)
+            return .unavailable()
         }
 
-        let selected: QuotaTouchBarDisplay.Item?
+        let manuallySelected: QuotaTouchBarDisplay.Item?
         switch selection {
         case let .manual(id):
-            selected = items.first(where: { $0.id == id })
-            if selected == nil { selection = .automatic }
+            manuallySelected = items.first(where: { $0.id == id })
+            if manuallySelected == nil { selection = .automatic }
         case .automatic:
-            selected = nil
+            manuallySelected = nil
         }
 
         let resolved: QuotaTouchBarDisplay.Item
-        if let selected {
-            resolved = selected
-        } else if let foreground = items.first(where: { item in
-            item.providerKey == QuotaTouchBarDisplay.providerKey(for: frontmostApplicationText())
+        if let manuallySelected {
+            resolved = manuallySelected
+        } else if let foreground = items.first(where: {
+            $0.providerKey == QuotaTouchBarDisplay.providerKey(for: frontmostApplicationText())
         }) {
             resolved = foreground
         } else if let prior = selectedProviderID.flatMap({ id in items.first(where: { $0.id == id }) }) {
@@ -660,29 +478,47 @@ private enum QuotaTouchBarDisplay {
         let id: String
         let providerKey: String
         let providerName: String
+        let providerAbbreviation: String
         let fiveHourRemaining: Int?
         let weeklyRemaining: Int?
         let lowestRemaining: Int
     }
 
     struct State: Equatable {
-        let title: String
-        let color: String
+        let providerName: String
+        let providerAbbreviation: String
+        let fiveHourRemaining: Int?
+        let weeklyRemaining: Int?
+        let isAutomatic: Bool
+        let isUnavailable: Bool
 
-        static func unavailable(isRefreshing: Bool) -> State {
+        var summary: String {
+            guard !isUnavailable else { return "暂无额度数据" }
+            let fiveHour = fiveHourRemaining.map(String.init) ?? "—"
+            let weekly = weeklyRemaining.map(String.init) ?? "—"
+            let mode = isAutomatic ? "自动跟随" : "手动选择"
+            return "\(providerName) · 5h \(fiveHour)% · 周 \(weekly)% · \(mode)"
+        }
+
+        static func unavailable() -> State {
             State(
-                title: isRefreshing ? "正在读取额度…" : "暂无额度数据",
-                color: "71,76,87,255"
+                providerName: "额度",
+                providerAbbreviation: "—",
+                fiveHourRemaining: nil,
+                weeklyRemaining: nil,
+                isAutomatic: true,
+                isUnavailable: true
             )
         }
 
         static func quota(item: Item, isAutomatic: Bool) -> State {
-            let fiveHour = item.fiveHourRemaining.map(String.init) ?? "—"
-            let weekly = item.weeklyRemaining.map(String.init) ?? "—"
-            let mode = isAutomatic ? "自动" : "手动"
-            return State(
-                title: "\(item.providerName) · 5h \(fiveHour)% · 周 \(weekly)% · \(mode)",
-                color: QuotaTouchBarDisplay.color(for: item.lowestRemaining)
+            State(
+                providerName: item.providerName,
+                providerAbbreviation: item.providerAbbreviation,
+                fiveHourRemaining: item.fiveHourRemaining,
+                weeklyRemaining: item.weeklyRemaining,
+                isAutomatic: isAutomatic,
+                isUnavailable: false
             )
         }
     }
@@ -705,10 +541,12 @@ private enum QuotaTouchBarDisplay {
                 .map(\.remainingPercent)
                 .min()
             let lowest = allowanceWindows.map(\.remainingPercent).min() ?? 0
+            let key = providerKey(for: snapshot.providerName)
             return Item(
                 id: snapshot.id,
-                providerKey: providerKey(for: snapshot.providerName),
-                providerName: sanitizedProviderName(snapshot.providerName),
+                providerKey: key,
+                providerName: sanitizedProviderName(key),
+                providerAbbreviation: providerAbbreviation(key),
                 fiveHourRemaining: fiveHour.map { Int($0.rounded()) },
                 weeklyRemaining: weekly.map { Int($0.rounded()) },
                 lowestRemaining: Int(lowest.rounded())
@@ -737,208 +575,297 @@ private enum QuotaTouchBarDisplay {
             .first(where: { !$0.isEmpty }) ?? ""
     }
 
-    private static func sanitizedProviderName(_ value: String) -> String {
-        switch providerKey(for: value) {
-        case "codex": "Codex"
-        case "claude": "Claude"
-        case "grok": "Grok"
-        case "cursor": "Cursor"
-        case "gemini": "Gemini"
-        case "deepseek": "DeepSeek"
-        case "minimax": "MiniMax"
-        case "antigravity": "Antigravity"
-        default: "Provider"
+    static func meterColor(for remaining: Int?) -> NSColor {
+        guard let remaining else { return .systemGray }
+        switch remaining {
+        case ..<20: return NSColor(red: 0.93, green: 0.27, blue: 0.31, alpha: 1)
+        case ..<50: return NSColor(red: 0.96, green: 0.49, blue: 0.12, alpha: 1)
+        case ..<70: return NSColor(red: 0.98, green: 0.78, blue: 0.16, alpha: 1)
+        default: return NSColor(red: 0.24, green: 0.82, blue: 0.42, alpha: 1)
         }
     }
 
-    private static func color(for remaining: Int) -> String {
-        switch remaining {
-        case ..<20: "190,63,70,255"
-        case ..<50: "217,119,6,255"
-        case ..<70: "202,138,4,255"
-        default: "22,163,74,255"
+    private static func sanitizedProviderName(_ key: String) -> String {
+        switch key {
+        case "codex": return "Codex"
+        case "claude": return "Claude"
+        case "grok": return "Grok"
+        case "cursor": return "Cursor"
+        case "gemini": return "Gemini"
+        case "deepseek": return "DeepSeek"
+        case "minimax": return "MiniMax"
+        case "antigravity": return "Antigravity"
+        default: return "Provider"
+        }
+    }
+
+    private static func providerAbbreviation(_ key: String) -> String {
+        switch key {
+        case "codex": return "CX"
+        case "claude": return "CL"
+        case "grok": return "GR"
+        case "cursor": return "CU"
+        case "gemini": return "GE"
+        case "deepseek": return "DS"
+        case "minimax": return "MM"
+        case "antigravity": return "AG"
+        default: return "AI"
         }
     }
 }
 
-/// BetterTouchTool remains the renderer on macOS 26. This bridge uses only
-/// BTT's documented Apple Event API and records only the UUIDs of the three
-/// controls it created. It never reads, edits, or exports unrelated BTT rules.
-private final class BetterTouchToolQuotaBridge {
-    private struct State: Codable {
-        let schemaVersion: Int
-        var previousUUID: String?
-        var displayUUID: String?
-        var nextUUID: String?
-
-        var isComplete: Bool {
-            previousUUID != nil && displayUUID != nil && nextUUID != nil
-        }
-
-        init(
-            schemaVersion: Int = 1,
-            previousUUID: String? = nil,
-            displayUUID: String? = nil,
-            nextUUID: String? = nil
-        ) {
-            self.schemaVersion = schemaVersion
-            self.previousUUID = previousUUID
-            self.displayUUID = displayUUID
-            self.nextUUID = nextUUID
-        }
+/// A plugin-owned renderer. It deliberately uses no BTT configuration, helper,
+/// Apple Event, or TraceFence menu-bar controller. The plugin is dynamically
+/// loaded into the running app, which is the only process relationship needed
+/// for a Control Strip item to stay available while another Agent is frontmost.
+@MainActor
+private final class NativeQuotaTouchBarRenderer {
+    private enum ItemID {
+        static let strip = NSTouchBarItem.Identifier("com.tracefence.plugin.quota-monitor.control-strip")
     }
 
-    private enum BridgeError: LocalizedError {
-        case betterTouchToolNotInstalled
-        case automationUnavailable
-        case invalidResponse
+    private enum RendererError: LocalizedError {
+        case unavailable
 
         var errorDescription: String? {
             switch self {
-            case .betterTouchToolNotInstalled:
-                "未检测到 BetterTouchTool；请安装并启动它后重试。"
-            case .automationUnavailable:
-                "TraceFence 无法控制 BetterTouchTool。请在系统设置中允许自动化后重试。"
-            case .invalidResponse:
-                "BetterTouchTool 未确认创建额度控件；请重试。"
+            case .unavailable:
+                return "此 Mac 未提供可用的原生 Touch Bar Control Strip。"
             }
         }
     }
 
-    private var state: State?
+    private var item: NSCustomTouchBarItem?
+    private var view: QuotaControlStripView?
+    private var isRegistered = false
 
-    init() {
-        state = Self.loadState()
+    func show(
+        _ state: QuotaTouchBarDisplay.State,
+        onPrevious: @escaping () -> Void,
+        onNext: @escaping () -> Void,
+        onAutomatic: @escaping () -> Void,
+        onClose: @escaping () -> Void
+    ) throws {
+        if !isRegistered { try register() }
+        view?.update(
+            state: state,
+            onPrevious: onPrevious,
+            onNext: onNext,
+            onAutomatic: onAutomatic,
+            onClose: onClose
+        )
+        Self.setControlStripPresence(true, identifier: ItemID.strip)
     }
 
-    var isProvisioned: Bool { state?.isComplete == true }
+    func hide() {
+        guard isRegistered, let item else { return }
+        Self.setControlStripPresence(false, identifier: ItemID.strip)
+        Self.removeSystemTrayItem(item)
+        isRegistered = false
+        self.item = nil
+        view = nil
+    }
 
-    func provision() throws {
+    private func register() throws {
+        let item = NSCustomTouchBarItem(identifier: ItemID.strip)
+        let surface = QuotaControlStripView(frame: NSRect(x: 0, y: 0, width: 360, height: 30))
+        item.view = surface
+        guard Self.addSystemTrayItem(item) else { throw RendererError.unavailable }
+        self.item = item
+        view = surface
+        isRegistered = true
+    }
+
+    private static func addSystemTrayItem(_ item: NSTouchBarItem) -> Bool {
+        let selector = NSSelectorFromString("addSystemTrayItem:")
+        guard let method = class_getClassMethod(NSTouchBarItem.self, selector) else { return false }
+        typealias Function = @convention(c) (AnyClass, Selector, NSTouchBarItem) -> Void
+        let function = unsafeBitCast(method_getImplementation(method), to: Function.self)
+        function(NSTouchBarItem.self, selector, item)
+        return true
+    }
+
+    private static func removeSystemTrayItem(_ item: NSTouchBarItem) {
+        let selector = NSSelectorFromString("removeSystemTrayItem:")
+        guard let method = class_getClassMethod(NSTouchBarItem.self, selector) else { return }
+        typealias Function = @convention(c) (AnyClass, Selector, NSTouchBarItem) -> Void
+        let function = unsafeBitCast(method_getImplementation(method), to: Function.self)
+        function(NSTouchBarItem.self, selector, item)
+    }
+
+    private static func setControlStripPresence(
+        _ present: Bool,
+        identifier: NSTouchBarItem.Identifier
+    ) {
+        let framework = "/System/Library/PrivateFrameworks/DFRFoundation.framework/DFRFoundation"
+        guard let handle = dlopen(framework, RTLD_LAZY | RTLD_LOCAL) else { return }
+        defer { dlclose(handle) }
+        guard let symbol = dlsym(handle, "DFRElementSetControlStripPresenceForIdentifier") else { return }
+        typealias SetPresence = @convention(c) (NSString, Int8) -> Void
+        let setPresence = unsafeBitCast(symbol, to: SetPresence.self)
+        setPresence(identifier.rawValue as NSString, present ? 1 : 0)
+    }
+}
+
+@MainActor
+private final class QuotaControlStripView: NSControl {
+    private enum HitZone {
+        case previous
+        case next
+        case automatic
+        case close
+        case none
+    }
+
+    private var state = QuotaTouchBarDisplay.State.unavailable()
+    private var onPrevious: (() -> Void)?
+    private var onNext: (() -> Void)?
+    private var onAutomatic: (() -> Void)?
+    private var onClose: (() -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        setAccessibilityRole(.button)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func update(
+        state: QuotaTouchBarDisplay.State,
+        onPrevious: @escaping () -> Void,
+        onNext: @escaping () -> Void,
+        onAutomatic: @escaping () -> Void,
+        onClose: @escaping () -> Void
+    ) {
+        self.state = state
+        self.onPrevious = onPrevious
+        self.onNext = onNext
+        self.onAutomatic = onAutomatic
+        self.onClose = onClose
+        toolTip = "\(state.summary)。‹/› 切换，↺ 恢复自动跟随，× 关闭。"
+        setAccessibilityLabel(toolTip ?? state.summary)
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor(calibratedWhite: 0.10, alpha: 1).setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 2), xRadius: 7, yRadius: 7).fill()
+
+        drawText("‹", in: NSRect(x: 3, y: 5, width: 22, height: 20), color: .white, size: 17)
+        drawText(state.providerAbbreviation, in: NSRect(x: 26, y: 7, width: 32, height: 18), color: .white, size: 11, weight: .bold)
+        drawText("›", in: NSRect(x: 59, y: 5, width: 22, height: 20), color: .white, size: 17)
+        drawText("↺", in: NSRect(x: 83, y: 6, width: 26, height: 18), color: state.isAutomatic ? .systemBlue : .secondaryLabelColor, size: 13)
+
+        drawGauge(label: "5h", remaining: state.fiveHourRemaining, originX: 112)
+        drawGauge(label: "周", remaining: state.weeklyRemaining, originX: 220)
+
+        let closeColor: NSColor = .secondaryLabelColor
+        drawText("×", in: NSRect(x: 334, y: 5, width: 21, height: 20), color: closeColor, size: 16)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        switch hitZone(for: convert(event.locationInWindow, from: nil)) {
+        case .previous: onPrevious?()
+        case .next: onNext?()
+        case .automatic: onAutomatic?()
+        case .close: onClose?()
+        case .none: break
+        }
+    }
+
+    private func hitZone(for point: NSPoint) -> HitZone {
+        if point.x < 26 { return .previous }
+        if point.x < 82 { return .next }
+        if point.x < 110 { return .automatic }
+        if point.x > 330 { return .close }
+        return .none
+    }
+
+    private func drawGauge(label: String, remaining: Int?, originX: CGFloat) {
+        drawText(label, in: NSRect(x: originX, y: 8, width: 20, height: 16), color: .secondaryLabelColor, size: 10)
+        let track = NSRect(x: originX + 21, y: 11, width: 49, height: 8)
+        NSColor(calibratedWhite: 0.25, alpha: 1).setFill()
+        NSBezierPath(roundedRect: track, xRadius: 4, yRadius: 4).fill()
+        if let remaining {
+            let ratio = min(1, max(0, CGFloat(remaining) / 100))
+            let fill = NSRect(x: track.minX, y: track.minY, width: max(4, track.width * ratio), height: track.height)
+            QuotaTouchBarDisplay.meterColor(for: remaining).setFill()
+            NSBezierPath(roundedRect: fill, xRadius: 4, yRadius: 4).fill()
+        }
+        let value = remaining.map { "\($0)%" } ?? "—"
+        drawText(value, in: NSRect(x: originX + 74, y: 8, width: 33, height: 16), color: .white, size: 10, weight: .medium)
+    }
+
+    private func drawText(
+        _ text: String,
+        in rect: NSRect,
+        color: NSColor,
+        size: CGFloat,
+        weight: NSFont.Weight = .regular
+    ) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byClipping
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight),
+            .foregroundColor: color,
+            .paragraphStyle: paragraph
+        ]
+        (text as NSString).draw(in: rect, withAttributes: attributes)
+    }
+}
+
+/// A one-time migration hook for controls created by plugin versions up to
+/// 1.0.8. It knows only UUIDs that this plugin persisted itself, validates the
+/// UUID syntax before acting, and never reads or alters any other BTT rule.
+private enum LegacyBetterTouchToolWidgetCleanup {
+    private struct State: Decodable {
+        let schemaVersion: Int
+        let previousUUID: String?
+        let displayUUID: String?
+        let nextUUID: String?
+
+        var ownedUUIDs: [String] {
+            [previousUUID, displayUUID, nextUUID].compactMap { value in
+                guard let value, UUID(uuidString: value) != nil else { return nil }
+                return value
+            }
+        }
+    }
+
+    private enum CleanupError: LocalizedError {
+        case automationUnavailable
+
+        var errorDescription: String? {
+            switch self {
+            case .automationUnavailable:
+                return "无法清理旧版 BetterTouchTool 控件。请启动 BetterTouchTool，并在系统设置中允许 TraceFence 自动化后重试。"
+            }
+        }
+    }
+
+    private static let stateURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/TraceFence/TouchBar/quota-touch-bar-btt-state.json")
+
+    static var hasOwnedWidgetState: Bool { !(loadState()?.ownedUUIDs.isEmpty ?? true) }
+
+    static func removeOwnedWidgets() throws {
+        guard let state = loadState(), !state.ownedUUIDs.isEmpty else { return }
         guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.hegenberg.BetterTouchTool") != nil else {
-            throw BridgeError.betterTouchToolNotInstalled
+            try? FileManager.default.removeItem(at: stateURL)
+            return
         }
-        try prepareCommandChannel()
-        var updated = state ?? State()
-        if updated.previousUUID == nil {
-            updated.previousUUID = try addTrigger(
-                name: "TraceFence Quota · Previous",
-                title: "‹",
-                command: "previous",
-                width: 30,
-                order: 1000
-            )
-            try save(updated)
+        for uuid in state.ownedUUIDs {
+            guard runDelete(uuid: uuid) else { throw CleanupError.automationUnavailable }
         }
-        if updated.displayUUID == nil {
-            updated.displayUUID = try addTrigger(
-                name: "TraceFence Quota · Display",
-                title: "额度读取中…",
-                command: "automatic",
-                width: 255,
-                order: 1001
-            )
-            try save(updated)
-        }
-        if updated.nextUUID == nil {
-            updated.nextUUID = try addTrigger(
-                name: "TraceFence Quota · Next",
-                title: "›",
-                command: "next",
-                width: 30,
-                order: 1002
-            )
-            try save(updated)
-        }
-        state = updated
-    }
-
-    func updateDisplay(title: String, color: String) throws {
-        guard let uuid = state?.displayUUID else { return }
-        let update: [String: Any] = [
-            "BTTTouchBarButtonName": title,
-            "BTTTouchBarButtonColor": color,
-            "BTTTouchBarButtonFontSize": 12
-        ]
-        try updateTrigger(uuid: uuid, json: try jsonString(update))
-    }
-
-    func removeOwnedWidgets() throws {
-        guard let state else { return }
-        for uuid in [state.previousUUID, state.displayUUID, state.nextUUID].compactMap({ $0 }) {
-            try deleteTrigger(uuid: uuid)
-        }
-        try FileManager.default.removeItem(at: QuotaTouchBarStorage.bridgeStateURL)
-        self.state = nil
-    }
-
-    func prepareCommandChannel() throws {
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(
-            at: QuotaTouchBarStorage.directoryURL,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        try fileManager.setAttributes(
-            [.posixPermissions: 0o700],
-            ofItemAtPath: QuotaTouchBarStorage.directoryURL.path
-        )
-        try? fileManager.removeItem(at: QuotaTouchBarStorage.commandURL)
-    }
-
-    private func addTrigger(
-        name: String,
-        title: String,
-        command: String,
-        width: Int,
-        order: Int
-    ) throws -> String {
-        let trigger: [String: Any] = [
-            "BTTTriggerType": 629,
-            "BTTTriggerTypeDescription": "Touch Bar button",
-            "BTTTriggerClass": "BTTTriggerTypeTouchBar",
-            "BTTTriggerName": name,
-            "BTTPredefinedActionType": -1,
-            "BTTPredefinedActionName": "No Action",
-            "BTTEnabled": 1,
-            "BTTEnabled2": 1,
-            "BTTOrder": order,
-            "BTTActionsToExecute": [[
-                "BTTPredefinedActionType": 137,
-                "BTTPredefinedActionName": "Terminal Command (Background)",
-                "BTTTerminalCommand": commandWriterScript(for: command)
-            ]],
-            "BTTTriggerConfig": [
-                "BTTTouchBarButtonName": title,
-                "BTTTouchBarButtonWidth": width,
-                "BTTTouchBarButtonFontSize": 12,
-                "BTTTouchBarButtonTextAlignment": 0,
-                "BTTTouchBarFreeSpaceAfterButton": 0,
-                "BTTTouchBarFreeSpaceBeforeButton": 0,
-                "BTTTouchBarButtonColor": "35,92,150,255"
-            ]
-        ]
-        let response = try runAppleScript(Self.addTriggerScript, arguments: [try jsonString(trigger)])
-        let uuid = response.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard UUID(uuidString: uuid) != nil else { throw BridgeError.invalidResponse }
-        return uuid
-    }
-
-    private func updateTrigger(uuid: String, json: String) throws {
-        _ = try runAppleScript(Self.updateTriggerScript, arguments: [uuid, json])
-    }
-
-    private func deleteTrigger(uuid: String) throws {
-        _ = try runAppleScript(Self.deleteTriggerScript, arguments: [uuid])
-    }
-
-    private func commandWriterScript(for command: String) -> String {
-        // `command` is an internal enum case, not user-controlled input. The
-        // single-quoted path is likewise fixed by this plugin.
-        "umask 077; /usr/bin/printf '%s' '\(command)' > '\(QuotaTouchBarStorage.commandURL.path)'"
+        try? FileManager.default.removeItem(at: stateURL)
     }
 
     private static func loadState() -> State? {
-        guard let data = try? Data(contentsOf: QuotaTouchBarStorage.bridgeStateURL),
+        guard let data = try? Data(contentsOf: stateURL),
               let state = try? JSONDecoder().decode(State.self, from: data),
               state.schemaVersion == 1
         else {
@@ -947,64 +874,20 @@ private final class BetterTouchToolQuotaBridge {
         return state
     }
 
-    private func save(_ state: State) throws {
-        try prepareCommandChannel()
-        let data = try JSONEncoder().encode(state)
-        try data.write(to: QuotaTouchBarStorage.bridgeStateURL, options: .atomic)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: QuotaTouchBarStorage.bridgeStateURL.path
-        )
-        self.state = state
-    }
-
-    private func jsonString(_ value: [String: Any]) throws -> String {
-        let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
-        guard let string = String(data: data, encoding: .utf8) else { throw BridgeError.invalidResponse }
-        return string
-    }
-
-    private func runAppleScript(_ source: String, arguments: [String]) throws -> String {
+    private static func runDelete(uuid: String) -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", source, "--"] + arguments
-        let output = Pipe()
-        let errors = Pipe()
-        process.standardOutput = output
-        process.standardError = errors
+        process.arguments = [
+            "-l", "AppleScript",
+            "-e", "on run argv\n tell application id \\\"com.hegenberg.BetterTouchTool\\\" to delete_trigger (item 1 of argv)\nend run",
+            uuid
+        ]
         do {
             try process.run()
             process.waitUntilExit()
+            return process.terminationStatus == 0
         } catch {
-            throw BridgeError.automationUnavailable
+            return false
         }
-        guard process.terminationStatus == 0 else {
-            throw BridgeError.automationUnavailable
-        }
-        return String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
     }
-
-    private static let addTriggerScript = """
-    on run argv
-        tell application id "com.hegenberg.BetterTouchTool"
-            return add_new_trigger (item 1 of argv)
-        end tell
-    end run
-    """
-
-    private static let updateTriggerScript = """
-    on run argv
-        tell application id "com.hegenberg.BetterTouchTool"
-            return update_trigger (item 1 of argv) json (item 2 of argv)
-        end tell
-    end run
-    """
-
-    private static let deleteTriggerScript = """
-    on run argv
-        tell application id "com.hegenberg.BetterTouchTool"
-            return delete_trigger (item 1 of argv)
-        end tell
-    end run
-    """
 }
