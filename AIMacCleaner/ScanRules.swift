@@ -168,8 +168,7 @@ let SCAN_RULES: [ScanRule] = [
     ScanRule(id: "cache_android", name: "Android SDK 缓存", category: "开发", app: "Android Studio", risk: "safe", riskDesc: "Android SDK 临时缓存，删除后不影响 SDK 本身。", paths: [
         "~/Library/Android/sdk/.temp",
     ]),
-    ScanRule(id: "cache_xcode_derived_data", name: "Xcode 项目编译缓存 (DerivedData)", category: "开发", app: "Xcode", risk: "safe", riskDesc: "Xcode 中间构建产物与模块索引缓存，删除后不影响工程源码，下次构建时自动重新生成。", paths: [
-        "~/Library/Developer/Xcode/DerivedData",
+    ScanRule(id: "cache_xcode_ui", name: "Xcode 界面缓存", category: "开发", app: "Xcode", risk: "safe", riskDesc: "Xcode 的界面与临时缓存，删除后会自动重新生成；项目编译产物必须按项目单独确认。", paths: [
         "~/Library/Caches/com.apple.dt.Xcode",
     ]),
     ScanRule(id: "cache_xcode_simulators", name: "Xcode 模拟器运行时与设备数据", category: "开发", app: "Xcode 模拟器", risk: "caution", riskDesc: "包含模拟器中已安装应用、登录状态和测试数据；清理会重置模拟器，请确认不再需要这些数据。", paths: [
@@ -190,15 +189,9 @@ let SCAN_RULES: [ScanRule] = [
         "~/.codex/generated_images",
         "~/.codex/shell_snapshots",
     ]),
-    ScanRule(id: "cache_codex_archived", name: "Codex 归档历史会话", category: "AI Agent", app: "Codex", risk: "caution", riskDesc: "已归档的旧会话文件。清理前建议在 Codex 媒体整理插件中执行安全防损坏校验。", paths: [
-        "~/.codex/archived_sessions",
-    ]),
     ScanRule(id: "cache_minimax_sessions", name: "MiniMax Agent 历史会话与缓存", category: "AI Agent", app: "MiniMax", risk: "caution", riskDesc: "包含历史会话和 Agent 运行记录；清理前请确认不需要本地回溯或恢复。", paths: [
         "~/.minimax/sessions",
         "~/.minimax/agents",
-    ]),
-    ScanRule(id: "cache_grok_sessions", name: "Grok 运行日志与会话缓存", category: "AI Agent", app: "Grok", risk: "caution", riskDesc: "可能包含本地会话记录和调试信息；请确认不需要保留后再清理。", paths: [
-        "~/.grok/sessions",
     ]),
     ScanRule(id: "cache_deepseek_harness", name: "DeepSeek Harness 构建缓存", category: "AI Agent", app: "DeepSeek Harness", risk: "safe", riskDesc: "DeepSeek Harness 插件与工程构建依赖缓存，清理后可重新生成。", paths: [
         "~/deepseek-harness/deepseek-harness/node_modules/.cache",
