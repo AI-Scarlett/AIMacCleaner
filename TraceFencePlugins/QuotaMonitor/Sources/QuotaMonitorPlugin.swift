@@ -309,6 +309,10 @@ private final class QuotaTouchBarController {
         isActive = true
         self.snapshots = snapshots
         startObserving()
+        // A pre-1.0.9 widget is a visible remnant of this plugin, so make one
+        // best-effort cleanup attempt during the migration. Failure stays
+        // non-fatal and leaves the explicit panel action available.
+        LegacyBetterTouchToolWidgetCleanup.removeOwnedWidgetsIfPossible()
         refreshDisplay()
     }
 
@@ -615,13 +619,17 @@ private enum QuotaTouchBarDisplay {
 }
 
 /// A plugin-owned renderer. It deliberately uses no BTT configuration, helper,
-/// Apple Event, or TraceFence menu-bar controller. The plugin is dynamically
-/// loaded into the running app, which is the only process relationship needed
-/// for a Control Strip item to stay available while another Agent is frontmost.
+/// Apple Event, Control Strip presence, or TraceFence menu-bar controller.
+/// Its system-modal bar begins in the leading main Touch Bar area, matching the
+/// useful placement of the former BTT widget without occupying Control Strip.
 @MainActor
-private final class NativeQuotaTouchBarRenderer {
+private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
     private enum ItemID {
-        static let strip = NSTouchBarItem.Identifier("com.tracefence.plugin.quota-monitor.control-strip")
+        static let content = NSTouchBarItem.Identifier("com.tracefence.plugin.quota-monitor.leading-content")
+        // TouchBarServer requires a registered tray identifier to accept a
+        // persistent system-modal bar on some macOS versions. This anchor is
+        // deliberately never made present in Control Strip.
+        static let modalAnchor = NSTouchBarItem.Identifier("com.tracefence.plugin.quota-monitor.modal-anchor")
     }
 
     private enum RendererError: LocalizedError {
@@ -630,14 +638,17 @@ private final class NativeQuotaTouchBarRenderer {
         var errorDescription: String? {
             switch self {
             case .unavailable:
-                return "此 Mac 未提供可用的原生 Touch Bar Control Strip。"
+                return "此 Mac 未提供可用的原生 Touch Bar 主显示区。"
             }
         }
     }
 
-    private var item: NSCustomTouchBarItem?
+    private var touchBar: NSTouchBar?
+    private var contentItem: NSCustomTouchBarItem?
+    private var modalAnchorItem: NSCustomTouchBarItem?
     private var view: QuotaControlStripView?
-    private var isRegistered = false
+    private var isModalAnchorRegistered = false
+    private var isPresented = false
 
     func show(
         _ state: QuotaTouchBarDisplay.State,
@@ -646,7 +657,7 @@ private final class NativeQuotaTouchBarRenderer {
         onAutomatic: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) throws {
-        if !isRegistered { try register() }
+        if touchBar == nil { try register() }
         view?.update(
             state: state,
             onPrevious: onPrevious,
@@ -654,26 +665,69 @@ private final class NativeQuotaTouchBarRenderer {
             onAutomatic: onAutomatic,
             onClose: onClose
         )
-        Self.setControlStripPresence(true, identifier: ItemID.strip)
+        guard let touchBar else { throw RendererError.unavailable }
+        if !isPresented {
+            guard Self.presentSystemModalTouchBar(
+                touchBar,
+                systemTrayItemIdentifier: ItemID.modalAnchor
+            ) else {
+                throw RendererError.unavailable
+            }
+            isPresented = true
+        }
     }
 
     func hide() {
-        guard isRegistered, let item else { return }
-        Self.setControlStripPresence(false, identifier: ItemID.strip)
-        Self.removeSystemTrayItem(item)
-        isRegistered = false
-        self.item = nil
+        if isPresented, let touchBar {
+            Self.dismissSystemModalTouchBar(touchBar)
+        }
+        if isModalAnchorRegistered, let modalAnchorItem {
+            Self.removeSystemTrayItem(modalAnchorItem)
+        }
+        isPresented = false
+        isModalAnchorRegistered = false
+        touchBar = nil
+        contentItem = nil
+        modalAnchorItem = nil
         view = nil
     }
 
     private func register() throws {
-        let item = NSCustomTouchBarItem(identifier: ItemID.strip)
+        let bar = NSTouchBar()
+        bar.delegate = self
+        bar.customizationIdentifier = NSTouchBar.CustomizationIdentifier(
+            "com.tracefence.plugin.quota-monitor.leading"
+        )
+        // The content item is intentionally first. Flexible space then keeps
+        // the quota fuel gauges in the left/main region instead of the right
+        // keyboard / Control Strip region.
+        bar.defaultItemIdentifiers = [ItemID.content, .flexibleSpace]
+        bar.customizationAllowedItemIdentifiers = [ItemID.content]
+
+        let item = NSCustomTouchBarItem(identifier: ItemID.content)
         let surface = QuotaControlStripView(frame: NSRect(x: 0, y: 0, width: 360, height: 30))
         item.view = surface
-        guard Self.addSystemTrayItem(item) else { throw RendererError.unavailable }
-        self.item = item
+
+        // The anchor satisfies the system-modal presentation contract but is
+        // never passed to DFR's Control Strip presence API. It therefore does
+        // not create a visible button in the right-hand keyboard controls.
+        let anchor = NSCustomTouchBarItem(identifier: ItemID.modalAnchor)
+        anchor.view = NSView(frame: NSRect(x: 0, y: 0, width: 1, height: 30))
+        guard Self.addSystemTrayItem(anchor) else { throw RendererError.unavailable }
+
+        touchBar = bar
+        contentItem = item
+        modalAnchorItem = anchor
         view = surface
-        isRegistered = true
+        isModalAnchorRegistered = true
+    }
+
+    func touchBar(
+        _ touchBar: NSTouchBar,
+        makeItemForIdentifier identifier: NSTouchBarItem.Identifier
+    ) -> NSTouchBarItem? {
+        guard identifier == ItemID.content else { return nil }
+        return contentItem
     }
 
     private static func addSystemTrayItem(_ item: NSTouchBarItem) -> Bool {
@@ -693,17 +747,44 @@ private final class NativeQuotaTouchBarRenderer {
         function(NSTouchBarItem.self, selector, item)
     }
 
-    private static func setControlStripPresence(
-        _ present: Bool,
-        identifier: NSTouchBarItem.Identifier
-    ) {
+    private static func presentSystemModalTouchBar(
+        _ touchBar: NSTouchBar,
+        systemTrayItemIdentifier identifier: NSTouchBarItem.Identifier
+    ) -> Bool {
+        configureSystemModalCloseBox()
+        let selector = NSSelectorFromString("presentSystemModalTouchBar:placement:systemTrayItemIdentifier:")
+        guard let method = class_getClassMethod(NSTouchBar.self, selector) else { return false }
+        typealias PresentFunction = @convention(c) (
+            AnyClass,
+            Selector,
+            NSTouchBar,
+            Int64,
+            NSString?
+        ) -> Void
+        let present = unsafeBitCast(method_getImplementation(method), to: PresentFunction.self)
+        // `1` is the leading system-modal placement used by the former working
+        // implementation. The content order above keeps our item on the left.
+        present(NSTouchBar.self, selector, touchBar, 1, identifier.rawValue as NSString)
+        return true
+    }
+
+    private static func dismissSystemModalTouchBar(_ touchBar: NSTouchBar) {
+        let selector = NSSelectorFromString("dismissSystemModalTouchBar:")
+        let touchBarClass: AnyObject = NSTouchBar.self
+        guard touchBarClass.responds(to: selector) else { return }
+        _ = touchBarClass.perform(selector, with: touchBar)
+    }
+
+    private static func configureSystemModalCloseBox() {
         let framework = "/System/Library/PrivateFrameworks/DFRFoundation.framework/DFRFoundation"
         guard let handle = dlopen(framework, RTLD_LAZY | RTLD_LOCAL) else { return }
         defer { dlclose(handle) }
-        guard let symbol = dlsym(handle, "DFRElementSetControlStripPresenceForIdentifier") else { return }
-        typealias SetPresence = @convention(c) (NSString, Int8) -> Void
-        let setPresence = unsafeBitCast(symbol, to: SetPresence.self)
-        setPresence(identifier.rawValue as NSString, present ? 1 : 0)
+        guard let symbol = dlsym(handle, "DFRSystemModalShowsCloseBoxWhenFrontMost") else { return }
+        typealias ConfigureCloseBox = @convention(c) (Int8) -> Void
+        let configure = unsafeBitCast(symbol, to: ConfigureCloseBox.self)
+        // The plugin owns the visible × control. Suppressing the system one
+        // avoids the macOS 26 zero-width layout failure.
+        configure(0)
     }
 }
 
@@ -862,6 +943,10 @@ private enum LegacyBetterTouchToolWidgetCleanup {
             guard runDelete(uuid: uuid) else { throw CleanupError.automationUnavailable }
         }
         try? FileManager.default.removeItem(at: stateURL)
+    }
+
+    static func removeOwnedWidgetsIfPossible() {
+        try? removeOwnedWidgets()
     }
 
     private static func loadState() -> State? {
