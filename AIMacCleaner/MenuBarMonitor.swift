@@ -63,7 +63,6 @@ struct MenuBarMonitor: View {
     @ObservedObject var quotaService: ProviderQuotaService
     @ObservedObject var usageInsightsService: AgentUsageInsightsService
     @ObservedObject var captureService: CaptureShelfService
-    @ObservedObject var quotaSelection: MenuBarQuotaSelectionController
     let openMainConsole: () -> Void
     @ObservedObject private var artifactShelfService = ArtifactShelfService.shared
     @ObservedObject private var artifactSidecarController = ArtifactSidecarController.shared
@@ -595,13 +594,10 @@ struct MenuBarMonitor: View {
 
                 if quotaService.snapshots.isEmpty {
                     quotaEmptyStateCard
-                } else if let selectedSnapshot = quotaSelection.selectedSnapshot {
-                    quotaAgentSwitcher(selectedSnapshot)
-                    quotaProviderCard(selectedSnapshot)
-                } else if let setupSnapshot = quotaService.snapshots.first {
-                    quotaProviderCard(setupSnapshot)
                 } else {
-                    quotaEmptyStateCard
+                    ForEach(quotaService.snapshots) { snapshot in
+                        quotaProviderCard(snapshot)
+                    }
                 }
             }
             .padding(.horizontal, Theme.Spacing.lg)
@@ -610,10 +606,6 @@ struct MenuBarMonitor: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             quotaService.start()
-            quotaSelection.sync(snapshots: quotaService.snapshots)
-        }
-        .onReceive(quotaService.$snapshots) { snapshots in
-            quotaSelection.sync(snapshots: snapshots)
         }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
             quotaRefreshClock = now
@@ -1599,111 +1591,14 @@ struct MenuBarMonitor: View {
         )
     }
 
-    private func quotaAgentSwitcher(_ snapshot: ProviderQuotaSnapshot) -> some View {
-        let color = quotaColor(for: snapshot)
-        let position = quotaSelection.position
-
-        return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            HStack(spacing: Theme.Spacing.sm) {
-                Circle()
-                    .fill(color)
-                    .frame(width: 9, height: 9)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(localizer.t("当前 Agent：\(MenuBarQuotaPresentation.displayName(for: snapshot))", en: "Current Agent: \(MenuBarQuotaPresentation.displayName(for: snapshot))"))
-                        .font(Theme.Font.captionMedium)
-                        .foregroundStyle(Theme.Colors.textPrimary)
-                    Text(quotaSelection.isAutomaticSelection
-                         ? localizer.t("自动跟随正在使用的 Agent", en: "Following the active Agent")
-                         : localizer.t("手动查看；可恢复自动跟随", en: "Manual view; automatic follow is available"))
-                        .font(Theme.Font.caption)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                }
-
-                Spacer()
-
-                if let position {
-                    Text("\(position.current) / \(position.total)")
-                        .font(Theme.Font.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                }
-            }
-
-            HStack(spacing: Theme.Spacing.xs) {
-                Button {
-                    quotaSelection.selectPrevious()
-                } label: {
-                    Label(localizer.t("上一个", en: "Previous"), systemImage: "chevron.left")
-                        .font(Theme.Font.captionMedium)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled((position?.total ?? 0) < 2)
-
-                Button {
-                    quotaSelection.selectNext()
-                } label: {
-                    Label(localizer.t("下一个", en: "Next"), systemImage: "chevron.right")
-                        .font(Theme.Font.captionMedium)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled((position?.total ?? 0) < 2)
-
-                Spacer()
-
-                if !quotaSelection.isAutomaticSelection {
-                    Button {
-                        quotaSelection.resumeAutomaticSelection()
-                    } label: {
-                        Label(localizer.t("恢复自动", en: "Follow Active"), systemImage: "scope")
-                            .font(Theme.Font.captionMedium)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
-            }
-
-            HStack(spacing: Theme.Spacing.sm) {
-                Text(localizer.t("剩余额度颜色", en: "Remaining quota colors"))
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(Theme.Colors.textTertiary)
-                quotaColorLegendItem(.critical, text: "<20%")
-                quotaColorLegendItem(.low, text: "20–49%")
-                quotaColorLegendItem(.moderate, text: "50–69%")
-                quotaColorLegendItem(.healthy, text: "70%+")
-            }
-        }
-        .padding(Theme.Spacing.sm)
-        .background(color.opacity(0.06))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .stroke(color.opacity(0.35), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-    }
-
-    private func quotaColorLegendItem(_ band: MenuBarQuotaColorBand, text: String) -> some View {
-        HStack(spacing: 3) {
-            Circle()
-                .fill(band.color)
-                .frame(width: 6, height: 6)
-            Text(text)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(Theme.Colors.textSecondary)
-        }
-    }
-
     private func quotaProviderCard(_ snapshot: ProviderQuotaSnapshot) -> some View {
-        let color = quotaColor(for: snapshot)
-        return VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             HStack(spacing: Theme.Spacing.sm) {
                 Image(systemName: snapshot.isSetupNotice ? "slider.horizontal.3" : "terminal.fill")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(snapshot.isSetupNotice ? Theme.Colors.warning : .white)
                     .frame(width: 30, height: 30)
-                    .background(snapshot.isSetupNotice ? Theme.Colors.warning.opacity(0.12) : color)
+                    .background(snapshot.isSetupNotice ? Theme.Colors.warning.opacity(0.12) : Theme.Colors.accent)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -1813,10 +1708,6 @@ struct MenuBarMonitor: View {
             }
         }
         .cardStyle(padding: Theme.Spacing.md)
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .stroke(color.opacity(0.55), lineWidth: 1.25)
-        )
     }
 
     private func sourceLabel(_ source: String) -> String {
@@ -2318,11 +2209,9 @@ struct MenuBarMonitor: View {
     }
 
     private func quotaColor(_ remaining: Double) -> Color {
-        MenuBarQuotaColorBand.band(for: remaining).color
-    }
-
-    private func quotaColor(for snapshot: ProviderQuotaSnapshot) -> Color {
-        MenuBarQuotaPresentation.colorBand(for: snapshot)?.color ?? Theme.Colors.textSecondary
+        if remaining <= 15 { return Theme.Colors.danger }
+        if remaining <= 35 { return Theme.Colors.warning }
+        return Theme.Colors.success
     }
 
     private func resetText(_ date: Date?) -> String {

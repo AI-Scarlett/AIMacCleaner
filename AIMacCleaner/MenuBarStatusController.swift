@@ -55,375 +55,6 @@ enum TouchBarQuotaPreferences {
     static let autoSwitchKey = "traceFence.touchBar.autoSwitch"
 }
 
-/// The four colors always describe *remaining* quota. Keeping this mapping in
-/// one host-level type prevents the menu bar title, the popover card, and a
-/// later touch-surface implementation from disagreeing about the same value.
-enum MenuBarQuotaColorBand: String, CaseIterable, Equatable {
-    case critical
-    case low
-    case moderate
-    case healthy
-
-    static func band(for remainingPercent: Double) -> MenuBarQuotaColorBand {
-        switch max(0, min(100, remainingPercent)) {
-        case ..<20: return .critical
-        case ..<50: return .low
-        case ..<70: return .moderate
-        default: return .healthy
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .critical: return Theme.Colors.danger
-        case .low: return .orange
-        case .moderate: return .yellow
-        case .healthy: return Theme.Colors.success
-        }
-    }
-
-    var statusItemColor: NSColor {
-        switch self {
-        case .critical: return .systemRed
-        case .low: return .systemOrange
-        case .moderate: return .systemYellow
-        case .healthy: return .systemGreen
-        }
-    }
-}
-
-/// Pure quota-presentation rules shared by the menu-bar label and its popover.
-/// A snapshot, rather than a flattened quota window, is the selection unit so
-/// a user always sees one Agent at a time.
-enum MenuBarQuotaPresentation {
-    static func displayableSnapshots(from snapshots: [ProviderQuotaSnapshot]) -> [ProviderQuotaSnapshot] {
-        snapshots
-            .filter { snapshot in
-                !snapshot.isSetupNotice && (
-                    !snapshot.windows.isEmpty
-                        || snapshot.resetCredits != nil
-                        || snapshot.credits != nil
-                        || snapshot.errorMessage != nil
-                )
-            }
-            .sorted { lhs, rhs in
-                let nameOrder = lhs.providerName.localizedCaseInsensitiveCompare(rhs.providerName)
-                if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
-                return lhs.id < rhs.id
-            }
-    }
-
-    static func providerKey(for text: String) -> String {
-        let normalized = text.lowercased()
-        if normalized.contains("codex") || normalized.contains("openai") { return "codex" }
-        if normalized.contains("claude") || normalized.contains("anthropic") { return "claude" }
-        if normalized.contains("grok") || normalized.contains("xai") { return "grok" }
-        if normalized.contains("deepseek") || normalized.contains("dsh") { return "deepseek" }
-        if normalized.contains("gemini") || normalized.contains("google") { return "gemini" }
-        if normalized.contains("cursor") { return "cursor" }
-        if normalized.contains("minimax") { return "minimax" }
-        if normalized.contains("antigravity") { return "antigravity" }
-        return normalized
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .first(where: { !$0.isEmpty }) ?? ""
-    }
-
-    static func preferredSnapshotID(
-        in snapshots: [ProviderQuotaSnapshot],
-        frontmostApplicationText: String,
-        fallbackID: String?
-    ) -> String? {
-        let foregroundKey = providerKey(for: frontmostApplicationText)
-        if !foregroundKey.isEmpty,
-           let foreground = snapshots.first(where: { providerKey(for: $0.providerName) == foregroundKey }) {
-            return foreground.id
-        }
-        if let fallbackID, snapshots.contains(where: { $0.id == fallbackID }) {
-            return fallbackID
-        }
-        return snapshots.first?.id
-    }
-
-    static func cycledSnapshotID(
-        in snapshots: [ProviderQuotaSnapshot],
-        currentID: String?,
-        offset: Int
-    ) -> String? {
-        guard !snapshots.isEmpty else { return nil }
-        let currentIndex = currentID.flatMap { id in
-            snapshots.firstIndex(where: { $0.id == id })
-        } ?? 0
-        let index = (currentIndex + offset % snapshots.count + snapshots.count) % snapshots.count
-        return snapshots[index].id
-    }
-
-    static func colorBand(for snapshot: ProviderQuotaSnapshot) -> MenuBarQuotaColorBand? {
-        let allowanceWindows = snapshot.windows.filter(\.isAllowanceWindow)
-        let relevantWindows = allowanceWindows.isEmpty ? snapshot.windows : allowanceWindows
-        return relevantWindows.map(\.remainingPercent).min().map { remaining in
-            MenuBarQuotaColorBand.band(for: remaining)
-        }
-    }
-
-    /// The compact menu-bar gauge has room for two rails. Prefer the two
-    /// windows people naturally treat as separate tanks: the fast 5-hour
-    /// allowance and the weekly allowance. When a provider exposes a different
-    /// shape, retain its tightest two windows instead of inventing a value.
-    static func gaugeWindows(for snapshot: ProviderQuotaSnapshot) -> [ProviderQuotaWindow] {
-        let allowanceWindows = snapshot.windows.filter(\.isAllowanceWindow)
-        let windows = allowanceWindows.isEmpty ? snapshot.windows : allowanceWindows
-        var result: [ProviderQuotaWindow] = []
-
-        if let fiveHour = windows
-            .filter({ $0.kind == .fiveHour })
-            .min(by: { $0.remainingPercent < $1.remainingPercent }) {
-            result.append(fiveHour)
-        }
-
-        if let weekly = windows
-            .filter({ $0.kind == .weekly || $0.isScopedWeeklyAllowanceWindow })
-            .min(by: { $0.remainingPercent < $1.remainingPercent }) {
-            result.append(weekly)
-        }
-
-        if result.isEmpty {
-            result = Array(windows.sorted { $0.remainingPercent < $1.remainingPercent }.prefix(2))
-        }
-        return Array(result.prefix(2))
-    }
-
-    static func displayName(for snapshot: ProviderQuotaSnapshot) -> String {
-        switch providerKey(for: snapshot.providerName) {
-        case "codex": return "Codex"
-        case "claude": return "Claude"
-        case "grok": return "Grok"
-        case "cursor": return "Cursor"
-        case "gemini": return "Gemini"
-        case "deepseek": return "DeepSeek"
-        case "minimax": return "MiniMax"
-        case "antigravity": return "Antigravity"
-        default: return snapshot.providerName
-        }
-    }
-
-#if DEBUG
-    static func debugSelfTestFailures() -> [String] {
-        var failures: [String] = []
-        let expectedBands: [(Double, MenuBarQuotaColorBand)] = [
-            (0, .critical), (19.99, .critical),
-            (20, .low), (49.99, .low),
-            (50, .moderate), (69.99, .moderate),
-            (70, .healthy), (100, .healthy)
-        ]
-        for (value, expected) in expectedBands where MenuBarQuotaColorBand.band(for: value) != expected {
-            failures.append("quota color threshold failed at \(value)%")
-        }
-
-        let now = Date()
-        let codex = ProviderQuotaSnapshot(
-            id: "codex", providerName: "Codex", planName: nil, accountLabel: nil, credits: nil,
-            windows: [], resetCredits: nil, updatedAt: now, source: "test", errorMessage: "test",
-            setupHint: nil, isSetupNotice: false
-        )
-        let claude = ProviderQuotaSnapshot(
-            id: "claude", providerName: "Claude", planName: nil, accountLabel: nil, credits: nil,
-            windows: [], resetCredits: nil, updatedAt: now, source: "test", errorMessage: "test",
-            setupHint: nil, isSetupNotice: false
-        )
-        let snapshots = [claude, codex]
-        if preferredSnapshotID(
-            in: snapshots,
-            frontmostApplicationText: "com.openai.codex Codex",
-            fallbackID: "claude"
-        ) != "codex" {
-            failures.append("frontmost Codex did not select the Codex snapshot")
-        }
-        if cycledSnapshotID(in: snapshots, currentID: "claude", offset: -1) != "codex" {
-            failures.append("previous Agent did not wrap around")
-        }
-        if cycledSnapshotID(in: snapshots, currentID: "codex", offset: 1) != "claude" {
-            failures.append("next Agent did not wrap around")
-        }
-
-        let weeklyWindow = ProviderQuotaWindow(
-            id: "weekly", kind: .weekly, title: "Weekly", usedPercent: 25,
-            resetsAt: nil, windowMinutes: 10_080
-        )
-        let fiveHourWindow = ProviderQuotaWindow(
-            id: "five-hour", kind: .fiveHour, title: "5 hour", usedPercent: 61,
-            resetsAt: nil, windowMinutes: 300
-        )
-        let dualGaugeSnapshot = ProviderQuotaSnapshot(
-            id: "codex-dual", providerName: "Codex", planName: nil, accountLabel: nil, credits: nil,
-            windows: [weeklyWindow, fiveHourWindow], resetCredits: nil, updatedAt: now,
-            source: "test", errorMessage: nil, setupHint: nil, isSetupNotice: false
-        )
-        let gaugeWindows = gaugeWindows(for: dualGaugeSnapshot)
-        if gaugeWindows.count != 2 || gaugeWindows[0].kind != .fiveHour || gaugeWindows[1].kind != .weekly {
-            failures.append("menu-bar gauge did not prioritize five-hour then weekly quota")
-        }
-        return failures
-    }
-#endif
-}
-
-/// A non-template image so the system status item can show quota as a tiny,
-/// glanceable pair of fuel gauges. The upper rail is the 5-hour window and the
-/// lower rail is the weekly window when both values are available.
-private enum MenuBarQuotaGaugeImage {
-    static func image(for windows: [ProviderQuotaWindow]) -> NSImage {
-        let visibleWindows = Array(windows.prefix(2))
-        let hasTwoRails = visibleWindows.count > 1
-        let image = NSImage(size: NSSize(width: 23, height: 14))
-        image.lockFocus()
-
-        if hasTwoRails {
-            drawRail(for: visibleWindows[0], originY: 8.5, height: 4.0)
-            drawRail(for: visibleWindows[1], originY: 1.5, height: 4.0)
-        } else if let window = visibleWindows.first {
-            drawRail(for: window, originY: 4.0, height: 6.0)
-        }
-
-        image.unlockFocus()
-        image.isTemplate = false
-        return image
-    }
-
-    private static func drawRail(for window: ProviderQuotaWindow, originY: CGFloat, height: CGFloat) {
-        let bodyRect = NSRect(x: 0.5, y: originY, width: 18.0, height: height)
-        let tipRect = NSRect(x: 19.4, y: originY + height * 0.28, width: 2.1, height: height * 0.44)
-        let color = MenuBarQuotaColorBand.band(for: window.remainingPercent).statusItemColor
-
-        NSColor.secondaryLabelColor.withAlphaComponent(0.28).setFill()
-        NSBezierPath(roundedRect: bodyRect, xRadius: height / 2, yRadius: height / 2).fill()
-        NSBezierPath(roundedRect: tipRect, xRadius: 0.8, yRadius: 0.8).fill()
-
-        let percent = max(0, min(100, window.remainingPercent)) / 100
-        guard percent > 0 else { return }
-        let fillWidth = max(height * 0.52, bodyRect.width * percent)
-        let fillRect = NSRect(x: bodyRect.minX, y: bodyRect.minY, width: fillWidth, height: bodyRect.height)
-        color.setFill()
-        NSBezierPath(roundedRect: fillRect, xRadius: height / 2, yRadius: height / 2).fill()
-    }
-}
-
-/// Shared selection state for the real menu-bar status item and popover. It is
-/// deliberately independent from the Quota Monitor plugin's optional BTT path.
-@MainActor
-final class MenuBarQuotaSelectionController: ObservableObject {
-    enum Selection: Equatable {
-        case automatic
-        case manual(String)
-    }
-
-    static let shared = MenuBarQuotaSelectionController()
-
-    @Published private(set) var selection: Selection = .automatic
-    @Published private(set) var selectedSnapshotID: String?
-
-    private var snapshots: [ProviderQuotaSnapshot] = []
-    private var activationObserver: NSObjectProtocol?
-
-    var selectedSnapshot: ProviderQuotaSnapshot? {
-        selectedSnapshotID.flatMap { id in snapshots.first(where: { $0.id == id }) }
-    }
-
-    var isAutomaticSelection: Bool {
-        if case .automatic = selection { return true }
-        return false
-    }
-
-    var position: (current: Int, total: Int)? {
-        guard let selectedSnapshotID,
-              let index = snapshots.firstIndex(where: { $0.id == selectedSnapshotID }) else { return nil }
-        return (index + 1, snapshots.count)
-    }
-
-    private init() {
-        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.resolveSelection()
-            }
-        }
-    }
-
-    func sync(snapshots source: [ProviderQuotaSnapshot]) {
-        snapshots = MenuBarQuotaPresentation.displayableSnapshots(from: source)
-        resolveSelection()
-    }
-
-    func selectPrevious() {
-        select(offset: -1)
-    }
-
-    func selectNext() {
-        select(offset: 1)
-    }
-
-    func resumeAutomaticSelection() {
-        if !isAutomaticSelection {
-            selection = .automatic
-        }
-        resolveSelection()
-    }
-
-    private func select(offset: Int) {
-        guard let id = MenuBarQuotaPresentation.cycledSnapshotID(
-            in: snapshots,
-            currentID: selectedSnapshotID,
-            offset: offset
-        ) else { return }
-        if selection != .manual(id) {
-            selection = .manual(id)
-        }
-        setSelectedSnapshotID(id)
-    }
-
-    private func resolveSelection() {
-        guard !snapshots.isEmpty else {
-            if case .manual = selection { selection = .automatic }
-            setSelectedSnapshotID(nil)
-            return
-        }
-
-        let resolvedID: String?
-        switch selection {
-        case let .manual(id) where snapshots.contains(where: { $0.id == id }):
-            resolvedID = id
-        case .manual:
-            selection = .automatic
-            resolvedID = MenuBarQuotaPresentation.preferredSnapshotID(
-                in: snapshots,
-                frontmostApplicationText: frontmostApplicationText(),
-                fallbackID: selectedSnapshotID
-            )
-        case .automatic:
-            resolvedID = MenuBarQuotaPresentation.preferredSnapshotID(
-                in: snapshots,
-                frontmostApplicationText: frontmostApplicationText(),
-                fallbackID: selectedSnapshotID
-            )
-        }
-        setSelectedSnapshotID(resolvedID)
-    }
-
-    private func setSelectedSnapshotID(_ id: String?) {
-        guard selectedSnapshotID != id else { return }
-        selectedSnapshotID = id
-    }
-
-    private func frontmostApplicationText() -> String {
-        let app = NSWorkspace.shared.frontmostApplication
-        return [app?.localizedName, app?.bundleIdentifier]
-            .compactMap { $0 }
-            .joined(separator: " ")
-    }
-}
-
 @MainActor
 final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegate {
     private weak var appDelegate: AppDelegate?
@@ -432,7 +63,6 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
     private weak var usageInsightsService: AgentUsageInsightsService?
     private weak var captureService: CaptureShelfService?
     private weak var localizer: Localizer?
-    private let quotaSelection = MenuBarQuotaSelectionController.shared
     private var statusItem: NSStatusItem?
     private var popoverPanel: NSPanel?
     private var cancellables: Set<AnyCancellable> = []
@@ -462,7 +92,6 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
         self.usageInsightsService = usageInsightsService
         self.captureService = captureService
         self.localizer = localizer
-        quotaSelection.sync(snapshots: quotaService.snapshots)
         bindPublishersIfNeeded()
         setEnabled(isEnabled)
     }
@@ -556,20 +185,6 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
         guard cancellables.isEmpty else { return }
 
         quotaService?.objectWillChange
-            .sink { [weak self] _ in
-                Task { @MainActor in
-                    self?.scheduleButtonLabelRefresh()
-                }
-            }
-            .store(in: &cancellables)
-
-        quotaService?.$snapshots
-            .sink { [weak self] snapshots in
-                self?.quotaSelection.sync(snapshots: snapshots)
-            }
-            .store(in: &cancellables)
-
-        quotaSelection.objectWillChange
             .sink { [weak self] _ in
                 Task { @MainActor in
                     self?.scheduleButtonLabelRefresh()
@@ -693,32 +308,11 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
         guard let button = statusItem?.button else { return }
 
         let title = currentStatusTitle().map { " \($0)" } ?? ""
-        let selectedSnapshot = quotaSelection.selectedSnapshot
-        let titleColor: NSColor
-        if let snapshot = selectedSnapshot,
-           let band = MenuBarQuotaPresentation.colorBand(for: snapshot) {
-            titleColor = band.statusItemColor
-        } else {
-            titleColor = .labelColor
-        }
-        if let snapshot = selectedSnapshot {
-            let windows = MenuBarQuotaPresentation.gaugeWindows(for: snapshot)
-            button.image = windows.isEmpty
-                ? MenuBarShieldEyeTemplateImage.shared.copy() as? NSImage
-                : MenuBarQuotaGaugeImage.image(for: windows)
-            button.image?.isTemplate = windows.isEmpty
-            button.toolTip = quotaToolTip(for: snapshot, windows: windows)
-        } else {
-            button.image = MenuBarShieldEyeTemplateImage.shared.copy() as? NSImage
-            button.image?.isTemplate = true
-            button.toolTip = "TraceFence"
-        }
-        button.imagePosition = .imageLeft
         button.attributedTitle = NSAttributedString(
             string: title,
             attributes: [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold),
-                .foregroundColor: titleColor
+                .foregroundColor: NSColor.labelColor
             ]
         )
     }
@@ -744,19 +338,16 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
             .flatMap(MenuBarQuotaDisplayMode.init(rawValue:)) ?? .remaining
         let primaryMetric = defaults.string(forKey: MenuBarStatusPreferences.primaryMetricKey)
             .flatMap(MenuBarPrimaryMetric.init(rawValue:)) ?? .tightest
-        quotaSelection.sync(snapshots: quotaService?.snapshots ?? [])
-        guard let selectedSnapshot = quotaSelection.selectedSnapshot else {
-            if let disk = service?.diskInfo {
-                return String(format: "%.0f%%", 100.0 - disk.usedPct)
-            }
-            return nil
-        }
-        let windows = selectedSnapshot.windows.filter(\.isAllowanceWindow)
-        let staleSuffix = selectedSnapshot.isStale && !windows.isEmpty ? " ~" : ""
-        let providerName = MenuBarQuotaPresentation.displayName(for: selectedSnapshot)
+        let windows = quotaService?.snapshots
+            .filter { !$0.isSetupNotice }
+            .flatMap(\.windows)
+            .filter(\.isAllowanceWindow) ?? []
+        let staleSuffix = quotaService?.snapshots.contains(where: {
+            $0.isStale && $0.windows.contains(where: { $0.isAllowanceWindow })
+        }) == true ? " ~" : ""
 
         if style == .detailed {
-            var parts: [String] = [providerName]
+            var parts: [String] = []
             if let fiveHour = tightestWindow(kind: .fiveHour, in: windows) {
                 parts.append(formatQuota(fiveHour, displayMode: displayMode))
             }
@@ -778,11 +369,14 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
                let reset = windows.compactMap(\.resetsAt).filter({ $0 > Date() }).min() {
                 parts.append(Self.compactCountdown(to: reset))
             }
-            return parts.joined(separator: " · ") + staleSuffix
+            if !parts.isEmpty { return parts.joined(separator: " · ") + staleSuffix }
         } else if let value = compactMetric(primaryMetric, windows: windows, displayMode: displayMode) {
-            return "\(providerName) \(value)\(staleSuffix)"
+            return value + staleSuffix
         }
-        return providerName + staleSuffix
+        if let disk = service?.diskInfo {
+            return String(format: "%.0f%%", 100.0 - disk.usedPct)
+        }
+        return nil
     }
 
     private func compactMetric(
@@ -887,7 +481,6 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
                 quotaService: quotaService,
                 usageInsightsService: usageInsightsService,
                 captureService: captureService,
-                quotaSelection: quotaSelection,
                 openMainConsole: { [weak self] in
                     self?.openMainWindow(reason: "menu-bar-popover")
                 }
