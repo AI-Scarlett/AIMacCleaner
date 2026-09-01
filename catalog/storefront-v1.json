@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-08-31T00:47:09Z",
+  "expiresAt": "2027-09-01T13:34:11Z",
   "offers": [
     {
       "active": true,
@@ -1190,7 +1190,7 @@
         },
         "en": {
           "displayName": "Quota Monitor",
-          "summary": "Read quota windows and reset times for Codex, Claude, Grok, and other providers in TraceFence's fixed menu-bar interface"
+          "summary": "Automatically follow the active Agent for five-hour and weekly quotas, with manual switching; BetterTouchTool is optional"
         },
         "es": {
           "displayName": "Monitor de cuota",
@@ -1218,7 +1218,7 @@
         },
         "zh-Hans": {
           "displayName": "额度监控",
-          "summary": "在 TraceFence 固定菜单栏界面中读取 Codex、Claude、Grok 等 Provider 的额度与重置时间"
+          "summary": "自动跟随当前 Agent 显示 5 小时和周额度，并可手动切换；BetterTouchTool 仅为可选增强"
         },
         "zh-Hant": {
           "displayName": "額度監控",
@@ -1231,10 +1231,10 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.quota-monitor",
         "entryPoint": "QuotaMonitor.bundle",
-        "sha256": "e6729ba94be54c244a9795200a28bb288af49df8bfe21271f1581811fad82d2a",
-        "sizeBytes": 15435746,
+        "sha256": "8dbcc5bf21eb4da61881d2e573b7384dface643130ff1b822b804e443fb01109",
+        "sizeBytes": 15519679,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-quota-monitor-v1.0.1/quota-monitor-1.0.1.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-quota-monitor-v1.0.6/quota-monitor-1.0.6.mactoolsplugin.zip"
       },
       "permissions": [],
       "placements": {
@@ -1248,10 +1248,10 @@
         "workspaceDefault": "quick_control"
       },
       "standaloneOfferID": null,
-      "summary": "Read quota windows and reset times for Codex, Claude, Grok, and other providers in TraceFence's fixed menu-bar interface.",
+      "summary": "Automatically follow the active Agent for five-hour and weekly quotas, with manual switching; BetterTouchTool is optional.",
       "systemImage": "waveform.path.ecg.rectangle",
       "trialHours": null,
-      "version": "1.0.1"
+      "version": "1.0.6"
     },
     {
       "capabilities": [
@@ -4278,7 +4278,7 @@
       "version": "1.1.1"
     }
   ],
-  "publishedAt": "2026-08-31T00:47:09Z",
-  "revision": 30,
+  "publishedAt": "2026-09-01T13:34:11Z",
+  "revision": 31,
   "schemaVersion": 1
 }
