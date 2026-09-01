@@ -753,9 +753,10 @@ private enum QuotaTouchBarDisplay {
 
     private static func color(for remaining: Int) -> String {
         switch remaining {
-        case ...15: "190,63,70,255"
-        case ...35: "182,104,35,255"
-        default: "35,92,150,255"
+        case ..<20: "190,63,70,255"
+        case ..<50: "217,119,6,255"
+        case ..<70: "202,138,4,255"
+        default: "22,163,74,255"
         }
     }
 }

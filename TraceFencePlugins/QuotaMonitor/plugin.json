@@ -1,7 +1,7 @@
 {
   "id": "quota-monitor",
   "displayName": "额度监控",
-  "summary": "自动跟随当前 Agent 显示 5 小时和周额度，并可手动切换；BetterTouchTool Touch Bar 仅为可选增强",
+  "summary": "当前 Agent 的 5 小时和周额度显示为双轨油量条，可手动切换；余量按红橙黄绿分级，BetterTouchTool 仅为可选增强",
   "localizedMetadata": {
     "ar": {
       "displayName": "مراقبة الحصة",
@@ -13,7 +13,7 @@
     },
     "en": {
       "displayName": "Quota Monitor",
-      "summary": "Automatically follow the active Agent for five-hour and weekly quotas, with manual switching; BetterTouchTool Touch Bar is optional"
+      "summary": "Show one active Agent's five-hour and weekly quotas as dual fuel gauges with manual switching and red-orange-yellow-green remaining-quota colors; BetterTouchTool is optional"
     },
     "es": {
       "displayName": "Monitor de cuota",
@@ -41,15 +41,15 @@
     },
     "zh-Hans": {
       "displayName": "额度监控",
-      "summary": "自动跟随当前 Agent 显示 5 小时和周额度，并可手动切换；BetterTouchTool Touch Bar 仅为可选增强"
+      "summary": "当前 Agent 的 5 小时和周额度显示为双轨油量条，可手动切换；余量按红橙黄绿分级，BetterTouchTool 仅为可选增强"
     },
     "zh-Hant": {
       "displayName": "額度監控",
       "summary": "在 TraceFence 固定選單列介面中讀取 Codex、Claude、Grok 等 Provider 的額度與重設時間"
     }
   },
-  "version": "1.0.6",
-  "minHostVersion": "1.2.12",
+  "version": "1.0.8",
+  "minHostVersion": "1.2.18",
   "pluginKitVersion": 4,
   "bundleRelativePath": "QuotaMonitor.bundle",
   "factoryClass": "QuotaMonitorPlugin.QuotaMonitorPluginFactory",

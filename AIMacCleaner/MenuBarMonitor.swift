@@ -17,6 +17,47 @@ private struct MenuBarBackdrop: View {
     }
 }
 
+/// A battery-like quota rail: the filled section is the usable quota left,
+/// while the dark remainder is already consumed. Quarter markers make an
+/// approaching low-quota state readable without having to parse the number.
+private struct QuotaFuelGauge: View {
+    let remainingPercent: Double
+    let color: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            let normalized = max(0, min(100, remainingPercent)) / 100
+            let filledWidth = normalized > 0 ? max(3, proxy.size.width * normalized) : 0
+
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: proxy.size.height / 2, style: .continuous)
+                    .fill(Theme.Colors.textTertiary.opacity(0.14))
+
+                if filledWidth > 0 {
+                    RoundedRectangle(cornerRadius: proxy.size.height / 2, style: .continuous)
+                        .fill(color)
+                        .frame(width: filledWidth)
+                }
+
+                ForEach(1..<4, id: \.self) { marker in
+                    Rectangle()
+                        .fill(Theme.Colors.background.opacity(0.52))
+                        .frame(width: 1, height: max(3, proxy.size.height - 3))
+                        .position(
+                            x: proxy.size.width * CGFloat(marker) / 4,
+                            y: proxy.size.height / 2
+                        )
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: proxy.size.height / 2, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: proxy.size.height / 2, style: .continuous)
+                    .stroke(color.opacity(0.34), lineWidth: 0.75)
+            }
+        }
+    }
+}
+
 struct MenuBarMonitor: View {
     @ObservedObject var service: ScannerService
     @ObservedObject var quotaService: ProviderQuotaService
@@ -1656,7 +1697,7 @@ struct MenuBarMonitor: View {
 
     private func quotaProviderCard(_ snapshot: ProviderQuotaSnapshot) -> some View {
         let color = quotaColor(for: snapshot)
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+        return VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             HStack(spacing: Theme.Spacing.sm) {
                 Image(systemName: snapshot.isSetupNotice ? "slider.horizontal.3" : "terminal.fill")
                     .font(.system(size: 14, weight: .semibold))
@@ -2137,16 +2178,13 @@ struct MenuBarMonitor: View {
                     .foregroundStyle(quotaColor(window.remainingPercent))
             }
 
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Theme.Colors.textTertiary.opacity(0.14))
-                    Capsule()
-                        .fill(quotaColor(window.remainingPercent))
-                        .frame(width: max(8, proxy.size.width * window.remainingPercent / 100))
-                }
-            }
-            .frame(height: 8)
+            QuotaFuelGauge(
+                remainingPercent: window.remainingPercent,
+                color: quotaColor(window.remainingPercent)
+            )
+            .frame(height: 10)
+            .accessibilityLabel(quotaWindowTitle(window))
+            .accessibilityValue("\(Int(window.remainingPercent.rounded()))%")
         }
         .padding(Theme.Spacing.sm)
         .background(Theme.Colors.background.opacity(0.65))

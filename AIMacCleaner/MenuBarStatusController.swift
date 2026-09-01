@@ -165,6 +165,33 @@ enum MenuBarQuotaPresentation {
         }
     }
 
+    /// The compact menu-bar gauge has room for two rails. Prefer the two
+    /// windows people naturally treat as separate tanks: the fast 5-hour
+    /// allowance and the weekly allowance. When a provider exposes a different
+    /// shape, retain its tightest two windows instead of inventing a value.
+    static func gaugeWindows(for snapshot: ProviderQuotaSnapshot) -> [ProviderQuotaWindow] {
+        let allowanceWindows = snapshot.windows.filter(\.isAllowanceWindow)
+        let windows = allowanceWindows.isEmpty ? snapshot.windows : allowanceWindows
+        var result: [ProviderQuotaWindow] = []
+
+        if let fiveHour = windows
+            .filter({ $0.kind == .fiveHour })
+            .min(by: { $0.remainingPercent < $1.remainingPercent }) {
+            result.append(fiveHour)
+        }
+
+        if let weekly = windows
+            .filter({ $0.kind == .weekly || $0.isScopedWeeklyAllowanceWindow })
+            .min(by: { $0.remainingPercent < $1.remainingPercent }) {
+            result.append(weekly)
+        }
+
+        if result.isEmpty {
+            result = Array(windows.sorted { $0.remainingPercent < $1.remainingPercent }.prefix(2))
+        }
+        return Array(result.prefix(2))
+    }
+
     static func displayName(for snapshot: ProviderQuotaSnapshot) -> String {
         switch providerKey(for: snapshot.providerName) {
         case "codex": return "Codex"
@@ -217,9 +244,67 @@ enum MenuBarQuotaPresentation {
         if cycledSnapshotID(in: snapshots, currentID: "codex", offset: 1) != "claude" {
             failures.append("next Agent did not wrap around")
         }
+
+        let weeklyWindow = ProviderQuotaWindow(
+            id: "weekly", kind: .weekly, title: "Weekly", usedPercent: 25,
+            resetsAt: nil, windowMinutes: 10_080
+        )
+        let fiveHourWindow = ProviderQuotaWindow(
+            id: "five-hour", kind: .fiveHour, title: "5 hour", usedPercent: 61,
+            resetsAt: nil, windowMinutes: 300
+        )
+        let dualGaugeSnapshot = ProviderQuotaSnapshot(
+            id: "codex-dual", providerName: "Codex", planName: nil, accountLabel: nil, credits: nil,
+            windows: [weeklyWindow, fiveHourWindow], resetCredits: nil, updatedAt: now,
+            source: "test", errorMessage: nil, setupHint: nil, isSetupNotice: false
+        )
+        let gaugeWindows = gaugeWindows(for: dualGaugeSnapshot)
+        if gaugeWindows.count != 2 || gaugeWindows[0].kind != .fiveHour || gaugeWindows[1].kind != .weekly {
+            failures.append("menu-bar gauge did not prioritize five-hour then weekly quota")
+        }
         return failures
     }
 #endif
+}
+
+/// A non-template image so the system status item can show quota as a tiny,
+/// glanceable pair of fuel gauges. The upper rail is the 5-hour window and the
+/// lower rail is the weekly window when both values are available.
+private enum MenuBarQuotaGaugeImage {
+    static func image(for windows: [ProviderQuotaWindow]) -> NSImage {
+        let visibleWindows = Array(windows.prefix(2))
+        let hasTwoRails = visibleWindows.count > 1
+        let image = NSImage(size: NSSize(width: 23, height: 14))
+        image.lockFocus()
+
+        if hasTwoRails {
+            drawRail(for: visibleWindows[0], originY: 8.5, height: 4.0)
+            drawRail(for: visibleWindows[1], originY: 1.5, height: 4.0)
+        } else if let window = visibleWindows.first {
+            drawRail(for: window, originY: 4.0, height: 6.0)
+        }
+
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
+    }
+
+    private static func drawRail(for window: ProviderQuotaWindow, originY: CGFloat, height: CGFloat) {
+        let bodyRect = NSRect(x: 0.5, y: originY, width: 18.0, height: height)
+        let tipRect = NSRect(x: 19.4, y: originY + height * 0.28, width: 2.1, height: height * 0.44)
+        let color = MenuBarQuotaColorBand.band(for: window.remainingPercent).statusItemColor
+
+        NSColor.secondaryLabelColor.withAlphaComponent(0.28).setFill()
+        NSBezierPath(roundedRect: bodyRect, xRadius: height / 2, yRadius: height / 2).fill()
+        NSBezierPath(roundedRect: tipRect, xRadius: 0.8, yRadius: 0.8).fill()
+
+        let percent = max(0, min(100, window.remainingPercent)) / 100
+        guard percent > 0 else { return }
+        let fillWidth = max(height * 0.52, bodyRect.width * percent)
+        let fillRect = NSRect(x: bodyRect.minX, y: bodyRect.minY, width: fillWidth, height: bodyRect.height)
+        color.setFill()
+        NSBezierPath(roundedRect: fillRect, xRadius: height / 2, yRadius: height / 2).fill()
+    }
 }
 
 /// Shared selection state for the real menu-bar status item and popover. It is
@@ -608,13 +693,27 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
         guard let button = statusItem?.button else { return }
 
         let title = currentStatusTitle().map { " \($0)" } ?? ""
+        let selectedSnapshot = quotaSelection.selectedSnapshot
         let titleColor: NSColor
-        if let snapshot = quotaSelection.selectedSnapshot,
+        if let snapshot = selectedSnapshot,
            let band = MenuBarQuotaPresentation.colorBand(for: snapshot) {
             titleColor = band.statusItemColor
         } else {
             titleColor = .labelColor
         }
+        if let snapshot = selectedSnapshot {
+            let windows = MenuBarQuotaPresentation.gaugeWindows(for: snapshot)
+            button.image = windows.isEmpty
+                ? MenuBarShieldEyeTemplateImage.shared.copy() as? NSImage
+                : MenuBarQuotaGaugeImage.image(for: windows)
+            button.image?.isTemplate = windows.isEmpty
+            button.toolTip = quotaToolTip(for: snapshot, windows: windows)
+        } else {
+            button.image = MenuBarShieldEyeTemplateImage.shared.copy() as? NSImage
+            button.image?.isTemplate = true
+            button.toolTip = "TraceFence"
+        }
+        button.imagePosition = .imageLeft
         button.attributedTitle = NSAttributedString(
             string: title,
             attributes: [
@@ -622,6 +721,17 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
                 .foregroundColor: titleColor
             ]
         )
+    }
+
+    private func quotaToolTip(for snapshot: ProviderQuotaSnapshot, windows: [ProviderQuotaWindow]) -> String {
+        let provider = MenuBarQuotaPresentation.displayName(for: snapshot)
+        let values = windows.map { window in
+            "\(window.shortTitle) \(Int(window.remainingPercent.rounded()))%"
+        }
+        guard !values.isEmpty else { return provider }
+        return provider
+            + " · " + values.joined(separator: " · ")
+            + "\n" + localized("颜色和长度都表示剩余额度", en: "Color and length both show quota remaining")
     }
 
     private func currentStatusTitle() -> String? {
