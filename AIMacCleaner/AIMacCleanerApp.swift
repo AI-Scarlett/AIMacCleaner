@@ -44,18 +44,6 @@ struct AIMacCleanerApp: App {
             }
             Darwin.exit(failures.isEmpty ? 0 : 2)
         }
-        if ProcessInfo.processInfo.arguments.contains("--tracefence-menu-bar-self-test") {
-            let failures = MenuBarQuotaPresentation.debugSelfTestFailures()
-            let payload: [String: Any] = [
-                "succeeded": failures.isEmpty,
-                "failures": failures
-            ]
-            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
-                FileHandle.standardOutput.write(data)
-                FileHandle.standardOutput.write(Data("\n".utf8))
-            }
-            Darwin.exit(failures.isEmpty ? 0 : 2)
-        }
         if ProcessInfo.processInfo.arguments.contains("--tracefence-touchbar-self-test") {
             let failures = TouchBarQuotaController.debugSelfTestFailures()
             let payload: [String: Any] = [

@@ -317,17 +317,6 @@ final class MenuBarStatusController: NSObject, ObservableObject, NSWindowDelegat
         )
     }
 
-    private func quotaToolTip(for snapshot: ProviderQuotaSnapshot, windows: [ProviderQuotaWindow]) -> String {
-        let provider = MenuBarQuotaPresentation.displayName(for: snapshot)
-        let values = windows.map { window in
-            "\(window.shortTitle) \(Int(window.remainingPercent.rounded()))%"
-        }
-        guard !values.isEmpty else { return provider }
-        return provider
-            + " · " + values.joined(separator: " · ")
-            + "\n" + localized("颜色和长度都表示剩余额度", en: "Color and length both show quota remaining")
-    }
-
     private func currentStatusTitle() -> String? {
         let defaults = UserDefaults.standard
         let style = defaults.string(forKey: MenuBarStatusPreferences.styleKey)
