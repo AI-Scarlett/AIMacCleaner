@@ -42,6 +42,8 @@
 	<string>TraceFence uses access to your Downloads folder only when you choose to scan or monitor it. For example, it can identify downloaded app installers, AI agent logs, cache archives, and temporary files so you can review them before cleanup or include them in local token and agent activity statistics.</string>
 	<key>NSAppleMusicUsageDescription</key>
 	<string>TraceFence accesses local files in your Apple Music library only when you explicitly choose the Music folder for a local scan. For example, it reads file names, sizes, and modification dates to identify cleanup candidates. Your library contents stay on your Mac and are not uploaded.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>When you explicitly enable the optional BetterTouchTool Touch Bar integration, TraceFence updates only its own quota controls in BetterTouchTool. TraceFence does not read or change your other BetterTouchTool rules.</string>
 	<key>TraceFenceCheckoutReturnURL</key>
 	<string>$(TRACEFENCE_CHECKOUT_RETURN_URL)</string>
 	<key>TraceFenceDistributionChannel</key>

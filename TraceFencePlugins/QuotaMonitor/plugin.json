@@ -1,7 +1,7 @@
 {
   "id": "quota-monitor",
   "displayName": "额度监控",
-  "summary": "在 TraceFence 固定菜单栏界面中读取 Codex、Claude、Grok 等 Provider 的额度与重置时间",
+  "summary": "自动跟随当前 Agent 显示 5 小时和周额度，并可手动切换；BetterTouchTool Touch Bar 仅为可选增强",
   "localizedMetadata": {
     "ar": {
       "displayName": "مراقبة الحصة",
@@ -13,7 +13,7 @@
     },
     "en": {
       "displayName": "Quota Monitor",
-      "summary": "Read quota windows and reset times for Codex, Claude, Grok, and other providers in TraceFence's fixed menu-bar interface"
+      "summary": "Automatically follow the active Agent for five-hour and weekly quotas, with manual switching; BetterTouchTool Touch Bar is optional"
     },
     "es": {
       "displayName": "Monitor de cuota",
@@ -41,14 +41,14 @@
     },
     "zh-Hans": {
       "displayName": "额度监控",
-      "summary": "在 TraceFence 固定菜单栏界面中读取 Codex、Claude、Grok 等 Provider 的额度与重置时间"
+      "summary": "自动跟随当前 Agent 显示 5 小时和周额度，并可手动切换；BetterTouchTool Touch Bar 仅为可选增强"
     },
     "zh-Hant": {
       "displayName": "額度監控",
       "summary": "在 TraceFence 固定選單列介面中讀取 Codex、Claude、Grok 等 Provider 的額度與重設時間"
     }
   },
-  "version": "1.0.5",
+  "version": "1.0.6",
   "minHostVersion": "1.2.12",
   "pluginKitVersion": 4,
   "bundleRelativePath": "QuotaMonitor.bundle",

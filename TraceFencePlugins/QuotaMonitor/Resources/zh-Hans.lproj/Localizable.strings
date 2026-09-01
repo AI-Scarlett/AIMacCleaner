@@ -1,7 +1,15 @@
 "metadata.title" = "额度监控";
-"metadata.description" = "读取 Codex、Claude、Grok 等 Provider 的额度与重置时间；菜单栏界面由 TraceFence 保持不变。";
+"metadata.description" = "自动跟随当前 Agent 显示 5 小时和周额度；可手动切换，并可随时恢复自动跟随。";
 "panel.refreshing" = "正在读取 Provider 额度…";
 "panel.waiting" = "等待首次额度读取";
 "panel.providersFormat" = "%lld 个 Provider 已更新";
 "action.refreshing" = "刷新中…";
 "action.refresh" = "刷新额度";
+"panel.agentSection" = "当前显示";
+"panel.previousAgent" = "查看上一个 Agent";
+"panel.nextAgent" = "查看下一个 Agent";
+"panel.followActiveAgent" = "恢复跟随当前 Agent";
+"touchbar.section" = "BetterTouchTool（可选）";
+"touchbar.action.enable" = "启用 BetterTouchTool Touch Bar（可选，需要允许控制）";
+"touchbar.action.update" = "更新 Touch Bar 额度显示";
+"touchbar.action.disable" = "移除 Touch Bar 额度控件";

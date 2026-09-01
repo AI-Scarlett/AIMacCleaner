@@ -1,7 +1,15 @@
 "metadata.title" = "Quota Monitor";
-"metadata.description" = "Reads quota windows and reset times for Codex, Claude, Grok, and other providers while TraceFence keeps the menu-bar interface unchanged.";
+"metadata.description" = "Follows the active Agent for five-hour and weekly quota, with manual switching and a return to automatic follow.";
 "panel.refreshing" = "Reading provider quotas…";
 "panel.waiting" = "Waiting for the first quota read";
 "panel.providersFormat" = "%lld providers updated";
 "action.refreshing" = "Refreshing…";
 "action.refresh" = "Refresh quotas";
+"panel.agentSection" = "Displayed agent";
+"panel.previousAgent" = "Show previous agent";
+"panel.nextAgent" = "Show next agent";
+"panel.followActiveAgent" = "Follow active agent";
+"touchbar.section" = "BetterTouchTool (optional)";
+"touchbar.action.enable" = "Enable BetterTouchTool Touch Bar (optional; automation permission required)";
+"touchbar.action.update" = "Update Touch Bar quota display";
+"touchbar.action.disable" = "Remove Touch Bar quota controls";
