@@ -1218,7 +1218,7 @@
         },
         "zh-Hans": {
           "displayName": "额度监控",
-          "summary": "自动跟随当前 Agent 显示 5 小时和周额度，并可手动切换；BetterTouchTool 仅为可选增强"
+          "summary": "系统 Touch Bar 常驻额度入口；自动跟随当前 Agent 显示 5 小时和周额度，并可手动切换"
         },
         "zh-Hant": {
           "displayName": "額度監控",

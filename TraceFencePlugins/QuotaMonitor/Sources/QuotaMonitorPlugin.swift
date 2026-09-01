@@ -319,7 +319,7 @@ private final class QuotaTouchBarController {
     func deactivate(disablePreference: Bool) {
         isActive = false
         stopObserving()
-        renderer.hide()
+        renderer.tearDown()
         if disablePreference {
             setVisible(false)
         }
@@ -420,6 +420,7 @@ private final class QuotaTouchBarController {
                 onPrevious: { [weak self] in self?.selectPreviousProvider() },
                 onNext: { [weak self] in self?.selectNextProvider() },
                 onAutomatic: { [weak self] in self?.resumeAutomaticSelection() },
+                onControlStripToggle: { [weak self] in self?.toggleVisibility() },
                 onClose: { [weak self] in
                     self?.setVisible(false)
                     self?.onStateChange?()
@@ -591,7 +592,7 @@ private enum QuotaTouchBarDisplay {
 
     private static func sanitizedProviderName(_ key: String) -> String {
         switch key {
-        case "codex": return "Codex"
+        case "codex": return "GPT"
         case "claude": return "Claude"
         case "grok": return "Grok"
         case "cursor": return "Cursor"
@@ -605,31 +606,28 @@ private enum QuotaTouchBarDisplay {
 
     private static func providerAbbreviation(_ key: String) -> String {
         switch key {
-        case "codex": return "CX"
-        case "claude": return "CL"
-        case "grok": return "GR"
-        case "cursor": return "CU"
-        case "gemini": return "GE"
-        case "deepseek": return "DS"
-        case "minimax": return "MM"
-        case "antigravity": return "AG"
+        case "codex": return "GPT"
+        case "claude": return "Claude"
+        case "grok": return "Grok"
+        case "cursor": return "Cursor"
+        case "gemini": return "Gemini"
+        case "deepseek": return "DeepSeek"
+        case "minimax": return "MiniMax"
+        case "antigravity": return "Antigravity"
         default: return "AI"
         }
     }
 }
 
-/// A plugin-owned renderer. It deliberately uses no BTT configuration, helper,
-/// Apple Event, Control Strip presence, or TraceFence menu-bar controller.
-/// Its system-modal bar begins in the leading main Touch Bar area, matching the
-/// useful placement of the former BTT widget without occupying Control Strip.
+/// A plugin-owned renderer. It uses no BTT configuration, Apple Event, or
+/// TraceFence menu-bar controller. The persistent Control Strip button is the
+/// entry point; the full dashboard is a system-modal Touch Bar shown only
+/// while the user wants to inspect it.
 @MainActor
 private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
     private enum ItemID {
         static let content = NSTouchBarItem.Identifier("com.tracefence.plugin.quota-monitor.leading-content")
-        // TouchBarServer requires a registered tray identifier to accept a
-        // persistent system-modal bar on some macOS versions. This anchor is
-        // deliberately never made present in Control Strip.
-        static let modalAnchor = NSTouchBarItem.Identifier("com.tracefence.plugin.quota-monitor.modal-anchor")
+        static let controlStrip = NSTouchBarItem.Identifier("com.tracefence.plugin.quota-monitor.control-strip")
     }
 
     private enum RendererError: LocalizedError {
@@ -645,9 +643,11 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
 
     private var touchBar: NSTouchBar?
     private var contentItem: NSCustomTouchBarItem?
-    private var modalAnchorItem: NSCustomTouchBarItem?
+    private var controlStripItem: NSCustomTouchBarItem?
+    private var controlStripButton: NSButton?
     private var view: QuotaControlStripView?
-    private var isModalAnchorRegistered = false
+    private var onControlStripToggle: (() -> Void)?
+    private var isControlStripRegistered = false
     private var isPresented = false
 
     func show(
@@ -655,9 +655,12 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
         onPrevious: @escaping () -> Void,
         onNext: @escaping () -> Void,
         onAutomatic: @escaping () -> Void,
+        onControlStripToggle: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) throws {
         if touchBar == nil { try register() }
+        self.onControlStripToggle = onControlStripToggle
+        updateControlStripButton(with: state)
         view?.update(
             state: state,
             onPrevious: onPrevious,
@@ -669,7 +672,7 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
         if !isPresented {
             guard Self.presentSystemModalTouchBar(
                 touchBar,
-                systemTrayItemIdentifier: ItemID.modalAnchor
+                systemTrayItemIdentifier: ItemID.controlStrip
             ) else {
                 throw RendererError.unavailable
             }
@@ -681,15 +684,22 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
         if isPresented, let touchBar {
             Self.dismissSystemModalTouchBar(touchBar)
         }
-        if isModalAnchorRegistered, let modalAnchorItem {
-            Self.removeSystemTrayItem(modalAnchorItem)
-        }
         isPresented = false
-        isModalAnchorRegistered = false
+    }
+
+    func tearDown() {
+        hide()
+        if isControlStripRegistered, let controlStripItem {
+            Self.setControlStripPresence(for: ItemID.controlStrip, present: false)
+            Self.removeSystemTrayItem(controlStripItem)
+        }
+        isControlStripRegistered = false
         touchBar = nil
         contentItem = nil
-        modalAnchorItem = nil
+        controlStripItem = nil
+        controlStripButton = nil
         view = nil
+        onControlStripToggle = nil
     }
 
     private func register() throws {
@@ -698,28 +708,45 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
         bar.customizationIdentifier = NSTouchBar.CustomizationIdentifier(
             "com.tracefence.plugin.quota-monitor.leading"
         )
-        // The content item is intentionally first. Flexible space then keeps
-        // the quota fuel gauges in the left/main region instead of the right
-        // keyboard / Control Strip region.
-        bar.defaultItemIdentifiers = [ItemID.content, .flexibleSpace]
+        // This is a full dashboard, not a small card followed by empty space.
+        // System-modal presentation temporarily replaces the active app's
+        // main Touch Bar; the separate Control Strip button remains available.
+        bar.defaultItemIdentifiers = [ItemID.content]
         bar.customizationAllowedItemIdentifiers = [ItemID.content]
 
         let item = NSCustomTouchBarItem(identifier: ItemID.content)
-        let surface = QuotaControlStripView(frame: NSRect(x: 0, y: 0, width: 360, height: 30))
+        let surface = QuotaControlStripView(frame: NSRect(x: 0, y: 0, width: 1_000, height: 30))
         item.view = surface
 
-        // The anchor satisfies the system-modal presentation contract but is
-        // never passed to DFR's Control Strip presence API. It therefore does
-        // not create a visible button in the right-hand keyboard controls.
-        let anchor = NSCustomTouchBarItem(identifier: ItemID.modalAnchor)
-        anchor.view = NSView(frame: NSRect(x: 0, y: 0, width: 1, height: 30))
-        guard Self.addSystemTrayItem(anchor) else { throw RendererError.unavailable }
+        let button = NSButton(
+            image: NSImage(
+                systemSymbolName: "gauge.medium",
+                accessibilityDescription: "额度监控"
+            ) ?? NSImage(),
+            target: self,
+            action: #selector(controlStripPressed)
+        )
+        button.bezelStyle = .rounded
+        button.imagePosition = .imageOnly
+        button.focusRingType = .none
+        button.toolTip = "显示额度监控"
+        button.setAccessibilityLabel("显示额度监控")
+
+        let controlStripItem = NSCustomTouchBarItem(identifier: ItemID.controlStrip)
+        controlStripItem.view = button
+        guard Self.addSystemTrayItem(controlStripItem),
+              Self.setControlStripPresence(for: ItemID.controlStrip, present: true)
+        else {
+            Self.removeSystemTrayItem(controlStripItem)
+            throw RendererError.unavailable
+        }
 
         touchBar = bar
         contentItem = item
-        modalAnchorItem = anchor
+        self.controlStripItem = controlStripItem
+        controlStripButton = button
         view = surface
-        isModalAnchorRegistered = true
+        isControlStripRegistered = true
     }
 
     func touchBar(
@@ -745,6 +772,22 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
         typealias Function = @convention(c) (AnyClass, Selector, NSTouchBarItem) -> Void
         let function = unsafeBitCast(method_getImplementation(method), to: Function.self)
         function(NSTouchBarItem.self, selector, item)
+    }
+
+    private static func setControlStripPresence(
+        for identifier: NSTouchBarItem.Identifier,
+        present: Bool
+    ) -> Bool {
+        let framework = "/System/Library/PrivateFrameworks/DFRFoundation.framework/DFRFoundation"
+        guard let handle = dlopen(framework, RTLD_LAZY | RTLD_LOCAL) else { return false }
+        defer { dlclose(handle) }
+        guard let symbol = dlsym(handle, "DFRElementSetControlStripPresenceForIdentifier") else {
+            return false
+        }
+        typealias SetPresence = @convention(c) (NSString, Int8) -> Void
+        let setPresence = unsafeBitCast(symbol, to: SetPresence.self)
+        setPresence(identifier.rawValue as NSString, present ? 1 : 0)
+        return true
     }
 
     private static func presentSystemModalTouchBar(
@@ -786,28 +829,58 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
         // avoids the macOS 26 zero-width layout failure.
         configure(0)
     }
+
+    private func updateControlStripButton(with state: QuotaTouchBarDisplay.State) {
+        guard let controlStripButton else { return }
+        let lowest = [state.fiveHourRemaining, state.weeklyRemaining]
+            .compactMap { $0 }
+            .min()
+        controlStripButton.contentTintColor = QuotaTouchBarDisplay.meterColor(for: lowest)
+        let label: String
+        if state.isUnavailable {
+            label = "显示额度监控"
+        } else {
+            let fiveHour = state.fiveHourRemaining.map(String.init) ?? "—"
+            let weekly = state.weeklyRemaining.map(String.init) ?? "—"
+            label = "显示 " + state.providerName + " 额度：5 小时 " + fiveHour + "% ，周额度 " + weekly + "%"
+        }
+        controlStripButton.toolTip = label
+        controlStripButton.setAccessibilityLabel(label)
+    }
+
+    @objc private func controlStripPressed() {
+        onControlStripToggle?()
+    }
 }
 
 @MainActor
-private final class QuotaControlStripView: NSControl {
-    private enum HitZone {
-        case previous
-        case next
-        case automatic
-        case close
-        case none
-    }
-
+private final class QuotaControlStripView: NSView {
     private var state = QuotaTouchBarDisplay.State.unavailable()
     private var onPrevious: (() -> Void)?
     private var onNext: (() -> Void)?
     private var onAutomatic: (() -> Void)?
     private var onClose: (() -> Void)?
+    private let previousButton = NSButton(title: "‹", target: nil, action: nil)
+    private let nextButton = NSButton(title: "›", target: nil, action: nil)
+    private let automaticButton = NSButton(title: "自动", target: nil, action: nil)
+    private let closeButton = NSButton(title: "×", target: nil, action: nil)
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 1_000, height: 30)
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        setAccessibilityRole(.button)
+        setAccessibilityRole(.group)
+        configure(button: previousButton, action: #selector(previousPressed))
+        configure(button: nextButton, action: #selector(nextPressed))
+        configure(button: automaticButton, action: #selector(automaticPressed))
+        configure(button: closeButton, action: #selector(closePressed))
+        previousButton.toolTip = "上一个 Agent"
+        nextButton.toolTip = "下一个 Agent"
+        automaticButton.toolTip = "恢复自动跟随"
+        closeButton.toolTip = "关闭额度仪表盘并恢复默认 Touch Bar"
     }
 
     required init?(coder: NSCoder) {
@@ -826,58 +899,73 @@ private final class QuotaControlStripView: NSControl {
         self.onNext = onNext
         self.onAutomatic = onAutomatic
         self.onClose = onClose
-        toolTip = "\(state.summary)。‹/› 切换，↺ 恢复自动跟随，× 关闭。"
-        setAccessibilityLabel(toolTip ?? state.summary)
+        automaticButton.contentTintColor = state.isAutomatic ? .systemBlue : .secondaryLabelColor
+        automaticButton.font = NSFont.systemFont(ofSize: 11, weight: state.isAutomatic ? .semibold : .regular)
+        setAccessibilityLabel("\(state.summary)。‹/› 切换，自动恢复跟随，× 关闭。")
+        needsLayout = true
         needsDisplay = true
     }
 
+    override func layout() {
+        super.layout()
+        let width = max(bounds.width, intrinsicContentSize.width)
+        previousButton.frame = NSRect(x: 6, y: 2, width: 30, height: 26)
+        nextButton.frame = NSRect(x: 148, y: 2, width: 30, height: 26)
+        automaticButton.frame = NSRect(x: 184, y: 3, width: 62, height: 24)
+        closeButton.frame = NSRect(x: width - 38, y: 2, width: 32, height: 26)
+    }
+
     override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedWhite: 0.10, alpha: 1).setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 2), xRadius: 7, yRadius: 7).fill()
+        let dashboard = bounds.insetBy(dx: 2, dy: 2)
+        NSColor(calibratedWhite: 0.08, alpha: 1).setFill()
+        NSBezierPath(roundedRect: dashboard, xRadius: 7, yRadius: 7).fill()
 
-        drawText("‹", in: NSRect(x: 3, y: 5, width: 22, height: 20), color: .white, size: 17)
-        drawText(state.providerAbbreviation, in: NSRect(x: 26, y: 7, width: 32, height: 18), color: .white, size: 11, weight: .bold)
-        drawText("›", in: NSRect(x: 59, y: 5, width: 22, height: 20), color: .white, size: 17)
-        drawText("↺", in: NSRect(x: 83, y: 6, width: 26, height: 18), color: state.isAutomatic ? .systemBlue : .secondaryLabelColor, size: 13)
+        drawText(state.providerName, in: NSRect(x: 40, y: 7, width: 104, height: 18), color: .white, size: 13, weight: .bold)
+        drawText(state.isAutomatic ? "跟随中" : "手动", in: NSRect(x: 250, y: 8, width: 42, height: 16), color: state.isAutomatic ? .systemBlue : .secondaryLabelColor, size: 9, weight: .medium)
 
-        drawGauge(label: "5h", remaining: state.fiveHourRemaining, originX: 112)
-        drawGauge(label: "周", remaining: state.weeklyRemaining, originX: 220)
-
-        let closeColor: NSColor = .secondaryLabelColor
-        drawText("×", in: NSRect(x: 334, y: 5, width: 21, height: 20), color: closeColor, size: 16)
+        let availableWidth = max(420, bounds.width - 308)
+        let gaugeWidth = floor((availableWidth - 16) / 2)
+        drawGauge(label: "5 小时", remaining: state.fiveHourRemaining, rect: NSRect(x: 300, y: 3, width: gaugeWidth, height: 24))
+        drawGauge(label: "周额度", remaining: state.weeklyRemaining, rect: NSRect(x: 316 + gaugeWidth, y: 3, width: gaugeWidth, height: 24))
     }
 
-    override func mouseUp(with event: NSEvent) {
-        switch hitZone(for: convert(event.locationInWindow, from: nil)) {
-        case .previous: onPrevious?()
-        case .next: onNext?()
-        case .automatic: onAutomatic?()
-        case .close: onClose?()
-        case .none: break
-        }
+    private func configure(button: NSButton, action: Selector) {
+        button.target = self
+        button.action = action
+        button.isBordered = false
+        button.bezelStyle = .inline
+        button.focusRingType = .none
+        button.font = NSFont.systemFont(ofSize: 17, weight: .medium)
+        button.contentTintColor = .white
+        button.setButtonType(.momentaryPushIn)
+        addSubview(button)
     }
 
-    private func hitZone(for point: NSPoint) -> HitZone {
-        if point.x < 26 { return .previous }
-        if point.x < 82 { return .next }
-        if point.x < 110 { return .automatic }
-        if point.x > 330 { return .close }
-        return .none
-    }
+    @objc private func previousPressed() { onPrevious?() }
+    @objc private func nextPressed() { onNext?() }
+    @objc private func automaticPressed() { onAutomatic?() }
+    @objc private func closePressed() { onClose?() }
 
-    private func drawGauge(label: String, remaining: Int?, originX: CGFloat) {
-        drawText(label, in: NSRect(x: originX, y: 8, width: 20, height: 16), color: .secondaryLabelColor, size: 10)
-        let track = NSRect(x: originX + 21, y: 11, width: 49, height: 8)
-        NSColor(calibratedWhite: 0.25, alpha: 1).setFill()
-        NSBezierPath(roundedRect: track, xRadius: 4, yRadius: 4).fill()
+    private func drawGauge(label: String, remaining: Int?, rect: NSRect) {
+        let labelWidth: CGFloat = 46
+        let valueWidth: CGFloat = 42
+        let track = NSRect(
+            x: rect.minX + labelWidth + 8,
+            y: rect.minY + 8,
+            width: max(72, rect.width - labelWidth - valueWidth - 16),
+            height: 9
+        )
+        drawText(label, in: NSRect(x: rect.minX, y: rect.minY + 6, width: labelWidth, height: 15), color: .secondaryLabelColor, size: 10, weight: .medium)
+        NSColor(calibratedWhite: 0.26, alpha: 1).setFill()
+        NSBezierPath(roundedRect: track, xRadius: 4.5, yRadius: 4.5).fill()
         if let remaining {
             let ratio = min(1, max(0, CGFloat(remaining) / 100))
             let fill = NSRect(x: track.minX, y: track.minY, width: max(4, track.width * ratio), height: track.height)
             QuotaTouchBarDisplay.meterColor(for: remaining).setFill()
-            NSBezierPath(roundedRect: fill, xRadius: 4, yRadius: 4).fill()
+            NSBezierPath(roundedRect: fill, xRadius: 4.5, yRadius: 4.5).fill()
         }
         let value = remaining.map { "\($0)%" } ?? "—"
-        drawText(value, in: NSRect(x: originX + 74, y: 8, width: 33, height: 16), color: .white, size: 10, weight: .medium)
+        drawText(value, in: NSRect(x: track.maxX + 5, y: rect.minY + 6, width: valueWidth - 5, height: 15), color: .white, size: 11, weight: .semibold)
     }
 
     private func drawText(
