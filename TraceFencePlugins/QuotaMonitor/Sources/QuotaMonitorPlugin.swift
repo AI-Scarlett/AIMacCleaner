@@ -282,7 +282,8 @@ private final class QuotaTouchBarController {
     private var snapshots: [ProviderQuotaSnapshot] = []
     private var selection: Selection = .automatic
     private var selectedProviderID: String?
-    private var activationObserver: NSObjectProtocol?
+    private var selectedMetricIndexByProviderID: [String: Int] = [:]
+    private var workspaceObservers: [NSObjectProtocol] = []
     private var isActive = false
 
     private(set) var isUpdating = false
@@ -351,6 +352,13 @@ private final class QuotaTouchBarController {
         refreshDisplay()
     }
 
+    private func cycleMetric() {
+        let state = displayState()
+        guard !state.isUnavailable, state.metricCount > 1 else { return }
+        selectedMetricIndexByProviderID[state.providerID] = (state.selectedMetricIndex + 1) % state.metricCount
+        refreshDisplay()
+    }
+
     func removeLegacyBetterTouchToolWidgets() {
         beginUpdate()
         defer { finishUpdate() }
@@ -379,21 +387,49 @@ private final class QuotaTouchBarController {
     }
 
     private func startObserving() {
-        guard activationObserver == nil else { return }
-        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+        guard workspaceObservers.isEmpty else { return }
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers.append(center.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.refreshDisplay() }
+        })
+        // TouchBarServer / ControlStrip can be relaunched independently of the
+        // host. Reassert our plugin-owned entry without reopening the dashboard.
+        workspaceObservers.append(center.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.bundleIdentifier == "com.apple.controlstrip" else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                Task { @MainActor in self?.renderer.reassertControlStripPresence() }
+            }
+        })
+        for name in [
+            NSWorkspace.didWakeNotification,
+            NSWorkspace.screensDidWakeNotification,
+            NSWorkspace.sessionDidBecomeActiveNotification
+        ] {
+            workspaceObservers.append(center.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    Task { @MainActor in self?.renderer.reassertControlStripPresence() }
+                }
+            })
         }
     }
 
     private func stopObserving() {
-        if let activationObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
-        }
-        activationObserver = nil
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers.forEach { center.removeObserver($0) }
+        workspaceObservers.removeAll()
     }
 
     private func cycleProvider(offset: Int) {
@@ -409,18 +445,34 @@ private final class QuotaTouchBarController {
 
     private func refreshDisplay() {
         let display = displayState()
-        guard isActive, isVisible else {
-            if !isVisible { renderer.hide() }
+        guard isActive else { return }
+
+        // Register the Control Strip entry even while the dashboard is hidden.
+        // Otherwise a close followed by a host restart would leave no native way
+        // to open the quota display again.
+        do {
+            try renderer.prepareControlStrip(
+                display,
+                onControlStripToggle: { [weak self] in self?.toggleVisibility() }
+            )
+        } catch {
+            errorMessage = error.localizedDescription
             onStateChange?()
             return
         }
+
+        guard isVisible else {
+            renderer.hide()
+            onStateChange?()
+            return
+        }
+
         do {
             try renderer.show(
                 display,
-                onPrevious: { [weak self] in self?.selectPreviousProvider() },
-                onNext: { [weak self] in self?.selectNextProvider() },
+                onProviderCycle: { [weak self] in self?.selectNextProvider() },
+                onMetricCycle: { [weak self] in self?.cycleMetric() },
                 onAutomatic: { [weak self] in self?.resumeAutomaticSelection() },
-                onControlStripToggle: { [weak self] in self?.toggleVisibility() },
                 onClose: { [weak self] in
                     self?.setVisible(false)
                     self?.onStateChange?()
@@ -461,8 +513,12 @@ private final class QuotaTouchBarController {
         } else {
             resolved = items.min(by: { $0.lowestRemaining < $1.lowestRemaining }) ?? items[0]
         }
+
         selectedProviderID = resolved.id
-        return .quota(item: resolved, isAutomatic: isAutomaticSelection)
+        let savedIndex = selectedMetricIndexByProviderID[resolved.id] ?? 0
+        let metricIndex = min(max(0, savedIndex), max(0, resolved.metrics.count - 1))
+        selectedMetricIndexByProviderID[resolved.id] = metricIndex
+        return .quota(item: resolved, metricIndex: metricIndex, isAutomatic: isAutomaticSelection)
     }
 
     private var isAutomaticSelection: Bool {
@@ -479,49 +535,63 @@ private final class QuotaTouchBarController {
 }
 
 private enum QuotaTouchBarDisplay {
+    struct Metric: Equatable {
+        let id: String
+        let title: String
+        let remaining: Int
+    }
+
     struct Item: Equatable {
         let id: String
         let providerKey: String
         let providerName: String
-        let providerAbbreviation: String
-        let fiveHourRemaining: Int?
-        let weeklyRemaining: Int?
+        let metrics: [Metric]
         let lowestRemaining: Int
     }
 
     struct State: Equatable {
+        let providerID: String
         let providerName: String
-        let providerAbbreviation: String
-        let fiveHourRemaining: Int?
-        let weeklyRemaining: Int?
+        let metrics: [Metric]
+        let selectedMetricIndex: Int
         let isAutomatic: Bool
         let isUnavailable: Bool
 
+        var currentMetric: Metric? {
+            guard metrics.indices.contains(selectedMetricIndex) else { return nil }
+            return metrics[selectedMetricIndex]
+        }
+
+        var metricCount: Int { metrics.count }
+        var metricPageText: String { "\(selectedMetricIndex + 1)/\(max(1, metricCount))" }
+        var lowestRemaining: Int? { metrics.map(\.remaining).min() }
+
         var summary: String {
             guard !isUnavailable else { return "暂无额度数据" }
-            let fiveHour = fiveHourRemaining.map(String.init) ?? "—"
-            let weekly = weeklyRemaining.map(String.init) ?? "—"
-            let mode = isAutomatic ? "自动跟随" : "手动选择"
-            return "\(providerName) · 5h \(fiveHour)% · 周 \(weekly)% · \(mode)"
+            let mode = isAutomatic ? "自动跟随" : "手动锁定"
+            if let metric = currentMetric {
+                return "\(providerName) · \(metric.title) \(metric.remaining)% · \(metricPageText) · \(mode)"
+            }
+            return "\(providerName) · \(mode)"
         }
 
         static func unavailable() -> State {
             State(
+                providerID: "",
                 providerName: "额度",
-                providerAbbreviation: "—",
-                fiveHourRemaining: nil,
-                weeklyRemaining: nil,
+                metrics: [],
+                selectedMetricIndex: 0,
                 isAutomatic: true,
                 isUnavailable: true
             )
         }
 
-        static func quota(item: Item, isAutomatic: Bool) -> State {
+        static func quota(item: Item, metricIndex: Int, isAutomatic: Bool) -> State {
             State(
+                providerID: item.id,
                 providerName: item.providerName,
-                providerAbbreviation: item.providerAbbreviation,
-                fiveHourRemaining: item.fiveHourRemaining,
-                weeklyRemaining: item.weeklyRemaining,
+                metrics: item.metrics,
+                selectedMetricIndex: metricIndex,
                 isAutomatic: isAutomatic,
                 isUnavailable: false
             )
@@ -531,30 +601,15 @@ private enum QuotaTouchBarDisplay {
     static func items(from snapshots: [ProviderQuotaSnapshot]) -> [Item] {
         snapshots.compactMap { snapshot in
             guard !snapshot.isSetupNotice else { return nil }
-            let allowanceWindows = snapshot.windows.filter { window in
-                window.kind == .fiveHour
-                    || window.kind == .weekly
-                    || (window.kind == .extra && window.windowMinutes == 10_080)
-            }
-            guard !allowanceWindows.isEmpty else { return nil }
-            let fiveHour = allowanceWindows
-                .filter { $0.kind == .fiveHour }
-                .map(\.remainingPercent)
-                .min()
-            let weekly = allowanceWindows
-                .filter { $0.kind == .weekly || ($0.kind == .extra && $0.windowMinutes == 10_080) }
-                .map(\.remainingPercent)
-                .min()
-            let lowest = allowanceWindows.map(\.remainingPercent).min() ?? 0
+            let metrics = makeMetrics(from: snapshot.windows)
+            guard !metrics.isEmpty else { return nil }
             let key = providerKey(for: snapshot.providerName)
             return Item(
                 id: snapshot.id,
                 providerKey: key,
                 providerName: sanitizedProviderName(key),
-                providerAbbreviation: providerAbbreviation(key),
-                fiveHourRemaining: fiveHour.map { Int($0.rounded()) },
-                weeklyRemaining: weekly.map { Int($0.rounded()) },
-                lowestRemaining: Int(lowest.rounded())
+                metrics: metrics,
+                lowestRemaining: metrics.map(\.remaining).min() ?? 0
             )
         }
         .sorted { lhs, rhs in
@@ -590,6 +645,50 @@ private enum QuotaTouchBarDisplay {
         }
     }
 
+    private static func makeMetrics(from windows: [ProviderQuotaWindow]) -> [Metric] {
+        // Keep the Provider's real window name intact. If several windows share
+        // the same kind, the page counter differentiates them; adding “2/3” to
+        // labels corrupts names such as “周额度”.
+        windows
+            .map { window in
+                Metric(
+                    id: window.id,
+                    title: metricTitle(for: window),
+                    remaining: Int(window.remainingPercent.rounded())
+                )
+            }
+            .sorted { lhs, rhs in
+                let lhsOrder = metricSortOrder(title: lhs.title)
+                let rhsOrder = metricSortOrder(title: rhs.title)
+                if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+                if lhs.title != rhs.title { return lhs.title < rhs.title }
+                return lhs.id < rhs.id
+            }
+    }
+
+    private static func metricTitle(for window: ProviderQuotaWindow) -> String {
+        switch window.kind {
+        case .fiveHour:
+            return "5小时额度"
+        case .weekly:
+            return "周额度"
+        case .monthly:
+            return "月额度"
+        case .extra:
+            let title = window.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return title.isEmpty ? "额外额度" : title
+        }
+    }
+
+    private static func metricSortOrder(title: String) -> Int {
+        switch title {
+        case "5小时额度": return 0
+        case "周额度": return 1
+        case "月额度": return 2
+        default: return 3
+        }
+    }
+
     private static func sanitizedProviderName(_ key: String) -> String {
         switch key {
         case "codex": return "GPT"
@@ -601,20 +700,6 @@ private enum QuotaTouchBarDisplay {
         case "minimax": return "MiniMax"
         case "antigravity": return "Antigravity"
         default: return "Provider"
-        }
-    }
-
-    private static func providerAbbreviation(_ key: String) -> String {
-        switch key {
-        case "codex": return "GPT"
-        case "claude": return "Claude"
-        case "grok": return "Grok"
-        case "cursor": return "Cursor"
-        case "gemini": return "Gemini"
-        case "deepseek": return "DeepSeek"
-        case "minimax": return "MiniMax"
-        case "antigravity": return "Antigravity"
-        default: return "AI"
         }
     }
 }
@@ -650,21 +735,34 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
     private var isControlStripRegistered = false
     private var isPresented = false
 
-    func show(
+    func prepareControlStrip(
         _ state: QuotaTouchBarDisplay.State,
-        onPrevious: @escaping () -> Void,
-        onNext: @escaping () -> Void,
-        onAutomatic: @escaping () -> Void,
-        onControlStripToggle: @escaping () -> Void,
-        onClose: @escaping () -> Void
+        onControlStripToggle: @escaping () -> Void
     ) throws {
         if touchBar == nil { try register() }
         self.onControlStripToggle = onControlStripToggle
+        reassertControlStripPresence()
         updateControlStripButton(with: state)
+    }
+
+    /// Keep the launcher in the system Control Strip after the dashboard is
+    /// dismissed. This is a separate surface from the system-modal dashboard.
+    func reassertControlStripPresence() {
+        guard isControlStripRegistered else { return }
+        _ = Self.setControlStripPresence(for: ItemID.controlStrip, present: true)
+    }
+
+    func show(
+        _ state: QuotaTouchBarDisplay.State,
+        onProviderCycle: @escaping () -> Void,
+        onMetricCycle: @escaping () -> Void,
+        onAutomatic: @escaping () -> Void,
+        onClose: @escaping () -> Void
+    ) throws {
         view?.update(
             state: state,
-            onPrevious: onPrevious,
-            onNext: onNext,
+            onProviderCycle: onProviderCycle,
+            onMetricCycle: onMetricCycle,
             onAutomatic: onAutomatic,
             onClose: onClose
         )
@@ -690,7 +788,7 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
     func tearDown() {
         hide()
         if isControlStripRegistered, let controlStripItem {
-            Self.setControlStripPresence(for: ItemID.controlStrip, present: false)
+            _ = Self.setControlStripPresence(for: ItemID.controlStrip, present: false)
             Self.removeSystemTrayItem(controlStripItem)
         }
         isControlStripRegistered = false
@@ -708,31 +806,34 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
         bar.customizationIdentifier = NSTouchBar.CustomizationIdentifier(
             "com.tracefence.plugin.quota-monitor.leading"
         )
-        // This is a full dashboard, not a small card followed by empty space.
-        // System-modal presentation temporarily replaces the active app's
-        // main Touch Bar; the separate Control Strip button remains available.
         bar.defaultItemIdentifiers = [ItemID.content]
         bar.customizationAllowedItemIdentifiers = [ItemID.content]
 
         let item = NSCustomTouchBarItem(identifier: ItemID.content)
-        let surface = QuotaControlStripView(frame: NSRect(x: 0, y: 0, width: 1_000, height: 30))
+        // Reserve a compact leading region. The right-side system Control Strip
+        // stays macOS-owned instead of being painted over by this plugin.
+        let surface = QuotaControlStripView(frame: NSRect(x: 0, y: 0, width: 680, height: 30))
         item.view = surface
 
-        let button = NSButton(
-            image: NSImage(
-                systemSymbolName: "gauge.medium",
-                accessibilityDescription: "额度监控"
-            ) ?? NSImage(),
-            target: self,
-            action: #selector(controlStripPressed)
-        )
+        let image = NSImage(
+            systemSymbolName: "chart.bar.fill",
+            accessibilityDescription: "打开额度监控"
+        ) ?? NSImage()
+        image.isTemplate = true
+        let button = NSButton(image: image, target: self, action: #selector(controlStripPressed))
         button.bezelStyle = .rounded
         button.imagePosition = .imageOnly
         button.focusRingType = .none
-        button.toolTip = "显示额度监控"
-        button.setAccessibilityLabel("显示额度监控")
+        // A Control Strip item needs an explicit non-zero surface. An intrinsic
+        // NSButton-only view can be registered yet stay invisible after the
+        // system-modal dashboard has been dismissed.
+        button.translatesAutoresizingMaskIntoConstraints = true
+        button.frame = NSRect(x: 0, y: 0, width: 42, height: 30)
+        button.toolTip = "打开额度监控"
+        button.setAccessibilityLabel("打开额度监控")
 
         let controlStripItem = NSCustomTouchBarItem(identifier: ItemID.controlStrip)
+        controlStripItem.customizationLabel = "额度监控"
         controlStripItem.view = button
         guard Self.addSystemTrayItem(controlStripItem),
               Self.setControlStripPresence(for: ItemID.controlStrip, present: true)
@@ -805,8 +906,8 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
             NSString?
         ) -> Void
         let present = unsafeBitCast(method_getImplementation(method), to: PresentFunction.self)
-        // `1` is the leading system-modal placement used by the former working
-        // implementation. The content order above keeps our item on the left.
+        // `1` is the leading system-modal placement. Keeping our custom item
+        // narrow makes room for the native Control Strip at the right edge.
         present(NSTouchBar.self, selector, touchBar, 1, identifier.rawValue as NSString)
         return true
     }
@@ -832,17 +933,15 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
 
     private func updateControlStripButton(with state: QuotaTouchBarDisplay.State) {
         guard let controlStripButton else { return }
-        let lowest = [state.fiveHourRemaining, state.weeklyRemaining]
-            .compactMap { $0 }
-            .min()
-        controlStripButton.contentTintColor = QuotaTouchBarDisplay.meterColor(for: lowest)
+        controlStripButton.contentTintColor = QuotaTouchBarDisplay.meterColor(for: state.lowestRemaining)
         let label: String
         if state.isUnavailable {
-            label = "显示额度监控"
+            label = "打开额度监控"
         } else {
-            let fiveHour = state.fiveHourRemaining.map(String.init) ?? "—"
-            let weekly = state.weeklyRemaining.map(String.init) ?? "—"
-            label = "显示 " + state.providerName + " 额度：5 小时 " + fiveHour + "% ，周额度 " + weekly + "%"
+            let metrics = state.metrics
+                .map { "\($0.title) \($0.remaining)%" }
+                .joined(separator: "，")
+            label = "打开 \(state.providerName) 额度监控：\(metrics)"
         }
         controlStripButton.toolTip = label
         controlStripButton.setAccessibilityLabel(label)
@@ -856,31 +955,35 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
 @MainActor
 private final class QuotaControlStripView: NSView {
     private var state = QuotaTouchBarDisplay.State.unavailable()
-    private var onPrevious: (() -> Void)?
-    private var onNext: (() -> Void)?
+    private var onProviderCycle: (() -> Void)?
+    private var onMetricCycle: (() -> Void)?
     private var onAutomatic: (() -> Void)?
     private var onClose: (() -> Void)?
-    private let previousButton = NSButton(title: "‹", target: nil, action: nil)
-    private let nextButton = NSButton(title: "›", target: nil, action: nil)
-    private let automaticButton = NSButton(title: "自动", target: nil, action: nil)
-    private let closeButton = NSButton(title: "×", target: nil, action: nil)
+
+    // These are SF Symbols with direct semantics: cycle Agent, follow/lock
+    // selection, advance quota window, and close the dashboard. We deliberately
+    // do not substitute unofficial Provider logos for the actual product name.
+    private let providerCycleButton = NSButton(title: "", target: nil, action: nil)
+    private let modeButton = NSButton(title: "", target: nil, action: nil)
+    private let metricCycleButton = NSButton(title: "", target: nil, action: nil)
+    private let closeButton = NSButton(title: "", target: nil, action: nil)
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: 1_000, height: 30)
+        NSSize(width: 680, height: 30)
     }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         setAccessibilityRole(.group)
-        configure(button: previousButton, action: #selector(previousPressed))
-        configure(button: nextButton, action: #selector(nextPressed))
-        configure(button: automaticButton, action: #selector(automaticPressed))
-        configure(button: closeButton, action: #selector(closePressed))
-        previousButton.toolTip = "上一个 Agent"
-        nextButton.toolTip = "下一个 Agent"
-        automaticButton.toolTip = "恢复自动跟随"
-        closeButton.toolTip = "关闭额度仪表盘并恢复默认 Touch Bar"
+        configure(button: providerCycleButton, action: #selector(providerCyclePressed), fontSize: 13)
+        configure(button: modeButton, action: #selector(modePressed), fontSize: 11)
+        configure(button: metricCycleButton, action: #selector(metricCyclePressed), fontSize: 11)
+        configure(button: closeButton, action: #selector(closePressed), fontSize: 17)
+
+        providerCycleButton.toolTip = "切换到下一个 Agent，并锁定显示"
+        closeButton.toolTip = "关闭额度显示并恢复默认 Touch Bar；右侧 Control Strip 的柱状图按钮可重新打开"
+        closeButton.setAccessibilityLabel("关闭额度显示")
     }
 
     required init?(coder: NSCoder) {
@@ -889,83 +992,289 @@ private final class QuotaControlStripView: NSView {
 
     func update(
         state: QuotaTouchBarDisplay.State,
-        onPrevious: @escaping () -> Void,
-        onNext: @escaping () -> Void,
+        onProviderCycle: @escaping () -> Void,
+        onMetricCycle: @escaping () -> Void,
         onAutomatic: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) {
         self.state = state
-        self.onPrevious = onPrevious
-        self.onNext = onNext
+        self.onProviderCycle = onProviderCycle
+        self.onMetricCycle = onMetricCycle
         self.onAutomatic = onAutomatic
         self.onClose = onClose
-        automaticButton.contentTintColor = state.isAutomatic ? .systemBlue : .secondaryLabelColor
-        automaticButton.font = NSFont.systemFont(ofSize: 11, weight: state.isAutomatic ? .semibold : .regular)
-        setAccessibilityLabel("\(state.summary)。‹/› 切换，自动恢复跟随，× 关闭。")
+
+        let providerImage = NSImage(
+            systemSymbolName: "arrow.triangle.2.circlepath",
+            accessibilityDescription: "切换 Agent"
+        )
+        providerImage?.isTemplate = true
+        providerCycleButton.image = providerImage
+        providerCycleButton.imagePosition = .imageOnly
+        providerCycleButton.contentTintColor = .secondaryLabelColor
+        providerCycleButton.setAccessibilityLabel("切换 Agent；当前 \(state.providerName)")
+
+        let modeImage = NSImage(
+            systemSymbolName: state.isAutomatic ? "scope" : "pin.fill",
+            accessibilityDescription: state.isAutomatic ? "自动跟随" : "手动锁定"
+        )
+        modeImage?.isTemplate = true
+        modeButton.image = modeImage
+        modeButton.title = state.isAutomatic ? "自动跟随" : "手动锁定"
+        modeButton.imagePosition = .imageLeading
+        modeButton.contentTintColor = state.isAutomatic ? .secondaryLabelColor : .systemOrange
+        modeButton.isEnabled = !state.isAutomatic
+        modeButton.toolTip = state.isAutomatic
+            ? "正在自动跟随当前 Agent；点左侧循环图标可手动切换"
+            : "点此恢复自动跟随当前 Agent"
+        modeButton.setAccessibilityLabel(modeButton.toolTip ?? modeButton.title)
+
+        metricCycleButton.isHidden = state.metricCount <= 1
+        metricCycleButton.title = "\(state.metricPageText) ›"
+        metricCycleButton.toolTip = "切换下一条额度；到最后一条后循环回第一条"
+        metricCycleButton.setAccessibilityLabel(metricCycleButton.toolTip ?? "切换下一条额度")
+
+        let closeImage = NSImage(
+            systemSymbolName: "xmark",
+            accessibilityDescription: "关闭额度显示"
+        )
+        closeImage?.isTemplate = true
+        closeButton.image = closeImage
+        closeButton.title = ""
+        closeButton.imagePosition = .imageOnly
+        setAccessibilityLabel("\(state.summary)。左侧循环图标切换 Agent，\(state.metricCount > 1 ? "页码按钮循环切换额度，" : "")× 关闭后可从右侧 Control Strip 柱状图按钮重新打开。")
+
         needsLayout = true
         needsDisplay = true
     }
 
+    private var providerNameWidth: CGFloat {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        let measured = ceil((state.providerName as NSString).size(withAttributes: [.font: font]).width) + 4
+        return min(98, max(30, measured))
+    }
+
+    private var modeButtonX: CGFloat { 38 + providerNameWidth + 4 }
+    private var dividerX: CGFloat { modeButtonX + 84 + 6 }
+    private var metricX: CGFloat { dividerX + 10 }
+
     override func layout() {
         super.layout()
-        let width = max(bounds.width, intrinsicContentSize.width)
-        previousButton.frame = NSRect(x: 6, y: 2, width: 30, height: 26)
-        nextButton.frame = NSRect(x: 148, y: 2, width: 30, height: 26)
-        automaticButton.frame = NSRect(x: 184, y: 3, width: 62, height: 24)
-        closeButton.frame = NSRect(x: width - 38, y: 2, width: 32, height: 26)
+        let width = bounds.width
+        providerCycleButton.frame = NSRect(x: 4, y: 2, width: 30, height: 26)
+        // The mode sits immediately after the actual Provider name width, not
+        // after a fixed empty badge. GPT therefore does not get Claude-sized
+        // whitespace before “手动锁定”.
+        modeButton.frame = NSRect(x: modeButtonX, y: 3, width: 84, height: 24)
+        closeButton.frame = NSRect(x: width - 34, y: 2, width: 30, height: 26)
+        if state.metricCount > 1 {
+            metricCycleButton.frame = NSRect(x: width - 92, y: 3, width: 52, height: 24)
+        } else {
+            metricCycleButton.frame = .zero
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let dashboard = bounds.insetBy(dx: 2, dy: 2)
-        NSColor(calibratedWhite: 0.08, alpha: 1).setFill()
-        NSBezierPath(roundedRect: dashboard, xRadius: 7, yRadius: 7).fill()
+        super.draw(dirtyRect)
+        let width = bounds.width
+        let textColor = NSColor.labelColor
+        let secondary = NSColor.secondaryLabelColor
 
-        drawText(state.providerName, in: NSRect(x: 40, y: 7, width: 104, height: 18), color: .white, size: 13, weight: .bold)
-        drawText(state.isAutomatic ? "跟随中" : "手动", in: NSRect(x: 250, y: 8, width: 42, height: 16), color: state.isAutomatic ? .systemBlue : .secondaryLabelColor, size: 9, weight: .medium)
+        drawText(
+            state.providerName,
+            in: NSRect(x: 38, y: 7, width: providerNameWidth, height: 17),
+            color: textColor,
+            size: 12,
+            weight: .semibold,
+            alignment: .left
+        )
+        drawDivider(at: dividerX)
 
-        let availableWidth = max(420, bounds.width - 308)
-        let gaugeWidth = floor((availableWidth - 16) / 2)
-        drawGauge(label: "5 小时", remaining: state.fiveHourRemaining, rect: NSRect(x: 300, y: 3, width: gaugeWidth, height: 24))
-        drawGauge(label: "周额度", remaining: state.weeklyRemaining, rect: NSRect(x: 316 + gaugeWidth, y: 3, width: gaugeWidth, height: 24))
+        let metricRight = state.metricCount > 1 ? width - 100 : width - 42
+        if let metric = state.currentMetric {
+            drawGauge(
+                metric,
+                in: NSRect(x: metricX, y: 3, width: max(150, metricRight - metricX), height: 24),
+                secondary: secondary
+            )
+        } else {
+            drawText("暂无额度数据", in: NSRect(x: metricX, y: 7, width: 180, height: 16), color: secondary, size: 11)
+        }
     }
 
-    private func configure(button: NSButton, action: Selector) {
+    private func configure(button: NSButton, action: Selector, fontSize: CGFloat) {
         button.target = self
         button.action = action
         button.isBordered = false
         button.bezelStyle = .inline
         button.focusRingType = .none
-        button.font = NSFont.systemFont(ofSize: 17, weight: .medium)
-        button.contentTintColor = .white
+        button.font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
+        button.contentTintColor = .labelColor
         button.setButtonType(.momentaryPushIn)
         addSubview(button)
     }
 
-    @objc private func previousPressed() { onPrevious?() }
-    @objc private func nextPressed() { onNext?() }
-    @objc private func automaticPressed() { onAutomatic?() }
+    @objc private func providerCyclePressed() { onProviderCycle?() }
+    @objc private func modePressed() { onAutomatic?() }
+    @objc private func metricCyclePressed() { onMetricCycle?() }
     @objc private func closePressed() { onClose?() }
 
-    private func drawGauge(label: String, remaining: Int?, rect: NSRect) {
-        let labelWidth: CGFloat = 46
+    private func drawDivider(at x: CGFloat) {
+        NSColor.separatorColor.withAlphaComponent(0.48).setFill()
+        NSBezierPath(rect: NSRect(x: x, y: 7, width: 1, height: 16)).fill()
+    }
+
+    private func drawGauge(_ metric: QuotaTouchBarDisplay.Metric, in rect: NSRect, secondary: NSColor) {
         let valueWidth: CGFloat = 42
+        let labelWidth = metricTitleWidth(
+            for: metric.title,
+            availableMetricWidth: rect.width,
+            valueWidth: valueWidth
+        )
         let track = NSRect(
             x: rect.minX + labelWidth + 8,
-            y: rect.minY + 8,
-            width: max(72, rect.width - labelWidth - valueWidth - 16),
-            height: 9
+            y: rect.midY - 4,
+            width: max(70, rect.width - labelWidth - valueWidth - 16),
+            height: 8
         )
-        drawText(label, in: NSRect(x: rect.minX, y: rect.minY + 6, width: labelWidth, height: 15), color: .secondaryLabelColor, size: 10, weight: .medium)
-        NSColor(calibratedWhite: 0.26, alpha: 1).setFill()
-        NSBezierPath(roundedRect: track, xRadius: 4.5, yRadius: 4.5).fill()
-        if let remaining {
-            let ratio = min(1, max(0, CGFloat(remaining) / 100))
-            let fill = NSRect(x: track.minX, y: track.minY, width: max(4, track.width * ratio), height: track.height)
-            QuotaTouchBarDisplay.meterColor(for: remaining).setFill()
-            NSBezierPath(roundedRect: fill, xRadius: 4.5, yRadius: 4.5).fill()
+        // Window titles remain real names. Short titles use a larger single line;
+        // only titles that need it become smaller and wrap automatically.
+        drawMetricTitle(
+            metric.title,
+            in: NSRect(x: rect.minX, y: rect.minY, width: labelWidth, height: rect.height),
+            color: secondary
+        )
+        NSColor(calibratedWhite: 0.25, alpha: 1).setFill()
+        NSBezierPath(roundedRect: track, xRadius: 4, yRadius: 4).fill()
+        let ratio = min(1, max(0, CGFloat(metric.remaining) / 100))
+        if ratio > 0 {
+            let fill = NSRect(x: track.minX, y: track.minY, width: track.width * ratio, height: track.height)
+            QuotaTouchBarDisplay.meterColor(for: metric.remaining).setFill()
+            NSBezierPath(roundedRect: fill, xRadius: 4, yRadius: 4).fill()
         }
-        let value = remaining.map { "\($0)%" } ?? "—"
-        drawText(value, in: NSRect(x: track.maxX + 5, y: rect.minY + 6, width: valueWidth - 5, height: 15), color: .white, size: 11, weight: .semibold)
+        drawText(
+            "\(metric.remaining)%",
+            in: NSRect(x: track.maxX + 5, y: rect.minY + 6, width: valueWidth - 5, height: 15),
+            color: .labelColor,
+            size: 11,
+            weight: .semibold,
+            alignment: .right
+        )
+    }
+
+    private func metricTitleWidth(
+        for text: String,
+        availableMetricWidth: CGFloat,
+        valueWidth: CGFloat
+    ) -> CGFloat {
+        let minimumWidth: CGFloat = 78
+        // Preserve at least a 70pt meter. A longer Provider-supplied title can
+        // use more of the spacious left label area, but never consumes the bar.
+        let maximumWidth = max(
+            minimumWidth,
+            min(116, availableMetricWidth - valueWidth - 16 - 70)
+        )
+        let preferredFont = NSFont.systemFont(ofSize: 12, weight: .medium)
+        let preferredWidth = ceil((text as NSString).size(withAttributes: [.font: preferredFont]).width)
+        // Reserve enough room for up to two natural lines at the preferred size.
+        return min(maximumWidth, max(minimumWidth, ceil(preferredWidth / 2)))
+    }
+
+    private func drawMetricTitle(_ text: String, in rect: NSRect, color: NSColor) {
+        let preferredFont = NSFont.systemFont(ofSize: 12, weight: .medium)
+        let preferredWidth = ceil((text as NSString).size(withAttributes: [.font: preferredFont]).width)
+        let preferredLineHeight = lineHeight(for: preferredFont)
+
+        // The normal state is one 12pt line, vertically centered. No manual
+        // newline is introduced and no tail ellipsis is used for quota names.
+        if preferredWidth <= rect.width {
+            drawMetricTitle(
+                text,
+                font: preferredFont,
+                lineBreakMode: .byClipping,
+                in: centeredRect(width: rect.width, height: preferredLineHeight, within: rect),
+                color: color
+            )
+            return
+        }
+
+        // Only when the preferred title does not fit: reduce the type gradually
+        // and let AppKit wrap at natural character/word boundaries. The first
+        // size whose complete measured text fits wins, so it remains centered.
+        for pointSize: CGFloat in stride(from: 11, through: 8, by: -1) {
+            let font = NSFont.systemFont(ofSize: pointSize, weight: .medium)
+            let paragraph = titleParagraph(lineHeight: lineHeight(for: font), lineBreakMode: .byWordWrapping)
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: color,
+                .paragraphStyle: paragraph
+            ]
+            let title = NSAttributedString(string: text, attributes: attributes)
+            let measured = title.boundingRect(
+                with: NSSize(width: rect.width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            ).integral
+            guard measured.height <= rect.height else { continue }
+            title.draw(
+                with: centeredRect(width: rect.width, height: measured.height, within: rect),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            )
+            return
+        }
+
+        // An unusually long external title still wraps rather than receiving an
+        // invented suffix or an ellipsis. Its available Touch Bar area limits
+        // visible lines, while the actual name remains untouched.
+        let fallbackFont = NSFont.systemFont(ofSize: 8, weight: .medium)
+        drawMetricTitle(
+            text,
+            font: fallbackFont,
+            lineBreakMode: .byWordWrapping,
+            in: rect,
+            color: color,
+            lineHeight: lineHeight(for: fallbackFont)
+        )
+    }
+
+    private func drawMetricTitle(
+        _ text: String,
+        font: NSFont,
+        lineBreakMode: NSLineBreakMode,
+        in rect: NSRect,
+        color: NSColor,
+        lineHeight: CGFloat? = nil
+    ) {
+        let paragraph = titleParagraph(
+            lineHeight: lineHeight ?? self.lineHeight(for: font),
+            lineBreakMode: lineBreakMode
+        )
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color,
+            .paragraphStyle: paragraph
+        ]
+        (text as NSString).draw(
+            with: rect,
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attributes,
+            context: nil
+        )
+    }
+
+    private func titleParagraph(lineHeight: CGFloat, lineBreakMode: NSLineBreakMode) -> NSMutableParagraphStyle {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .left
+        paragraph.lineBreakMode = lineBreakMode
+        paragraph.minimumLineHeight = lineHeight
+        paragraph.maximumLineHeight = lineHeight
+        return paragraph
+    }
+
+    private func lineHeight(for font: NSFont) -> CGFloat {
+        ceil(font.ascender - font.descender + font.leading)
+    }
+
+    private func centeredRect(width: CGFloat, height: CGFloat, within rect: NSRect) -> NSRect {
+        NSRect(x: rect.minX, y: rect.midY - height / 2, width: width, height: height)
     }
 
     private func drawText(
@@ -973,11 +1282,12 @@ private final class QuotaControlStripView: NSView {
         in rect: NSRect,
         color: NSColor,
         size: CGFloat,
-        weight: NSFont.Weight = .regular
+        weight: NSFont.Weight = .regular,
+        alignment: NSTextAlignment = .center
     ) {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        paragraph.lineBreakMode = .byClipping
+        paragraph.alignment = alignment
+        paragraph.lineBreakMode = .byTruncatingTail
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight),
             .foregroundColor: color,
