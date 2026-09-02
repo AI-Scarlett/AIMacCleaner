@@ -5,3 +5,27 @@
 "panel.providersFormat" = "%lld fornecedores atualizados";
 "action.refreshing" = "A atualizar…";
 "action.refresh" = "Atualizar quotas";
+
+"touchbar.unavailable" = "Sem dados de quota";
+"touchbar.mode.automatic" = "Seguimento automático";
+"touchbar.mode.manual" = "Bloqueio manual";
+"touchbar.summary.metric" = "%@ · %@ %lld%% · %@ · %@";
+"touchbar.summary.provider" = "%@ · %@";
+"touchbar.metric.fiveHour" = "Quota de 5 horas";
+"touchbar.metric.weekly" = "Quota semanal";
+"touchbar.metric.monthly" = "Quota mensal";
+"touchbar.metric.extra" = "Quota adicional";
+"touchbar.controlStrip.open" = "Abrir monitor de quota de IA";
+"touchbar.controlStrip.label" = "Monitor de quota";
+"touchbar.controlStrip.openProviderFormat" = "Abrir monitor de quota de IA de %@: %@";
+"touchbar.providerCycle.tooltip" = "Mudar para o agente seguinte e bloquear a visualização";
+"touchbar.providerCycle.accessibility" = "Mudar de agente";
+"touchbar.providerCycle.accessibilityFormat" = "Mudar de agente; atual %@";
+"touchbar.mode.automatic.tooltip" = "Segue o agente ativo; use o ícone de ciclo para consultar outro agente";
+"touchbar.mode.manual.tooltip" = "Selecione para voltar a seguir o agente ativo";
+"touchbar.metricCycle.tooltip" = "Mostrar a janela de quota seguinte; volta à primeira após a última";
+"touchbar.metricCycle.accessibility" = "Mostrar a janela de quota seguinte";
+"touchbar.hide" = "Ocultar quotas";
+"touchbar.hide.tooltip" = "Ocultar quotas e restaurar a Touch Bar predefinida; reabra pelo ícone de IA";
+"touchbar.group.accessibilityFormat" = "%@. %@ %@ %@";
+"touchbar.error.unavailable" = "Este Mac não disponibiliza uma área principal nativa da Touch Bar.";

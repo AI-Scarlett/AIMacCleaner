@@ -14,3 +14,27 @@
 "touchbar.action.hide" = "Hide Touch Bar quota monitor";
 "touchbar.legacySection" = "Legacy migration";
 "touchbar.action.cleanLegacy" = "Remove this plugin's legacy BetterTouchTool controls";
+
+"touchbar.unavailable" = "No quota data";
+"touchbar.mode.automatic" = "Automatic follow";
+"touchbar.mode.manual" = "Manual lock";
+"touchbar.summary.metric" = "%@ · %@ %lld%% · %@ · %@";
+"touchbar.summary.provider" = "%@ · %@";
+"touchbar.metric.fiveHour" = "5-hour quota";
+"touchbar.metric.weekly" = "Weekly quota";
+"touchbar.metric.monthly" = "Monthly quota";
+"touchbar.metric.extra" = "Additional quota";
+"touchbar.controlStrip.open" = "Open AI quota monitor";
+"touchbar.controlStrip.label" = "Quota Monitor";
+"touchbar.controlStrip.openProviderFormat" = "Open %@ AI quota monitor: %@";
+"touchbar.providerCycle.tooltip" = "Cycle to the next Agent and lock its display";
+"touchbar.providerCycle.accessibility" = "Cycle Agent";
+"touchbar.providerCycle.accessibilityFormat" = "Cycle Agent; currently %@";
+"touchbar.mode.automatic.tooltip" = "Following the active Agent; use the cycle icon to inspect another Agent";
+"touchbar.mode.manual.tooltip" = "Select to resume following the active Agent";
+"touchbar.metricCycle.tooltip" = "Show next quota window; loops back after the last";
+"touchbar.metricCycle.accessibility" = "Show next quota window";
+"touchbar.hide" = "Hide quota display";
+"touchbar.hide.tooltip" = "Hide quota display and restore the default Touch Bar; reopen it from the AI icon";
+"touchbar.group.accessibilityFormat" = "%@. %@ %@ %@";
+"touchbar.error.unavailable" = "This Mac does not provide a native Touch Bar main area.";

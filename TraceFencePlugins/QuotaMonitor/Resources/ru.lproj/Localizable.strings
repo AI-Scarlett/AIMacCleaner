@@ -5,3 +5,27 @@
 "panel.providersFormat" = "Обновлено провайдеров: %lld";
 "action.refreshing" = "Обновление…";
 "action.refresh" = "Обновить квоты";
+
+"touchbar.unavailable" = "Нет данных о квоте";
+"touchbar.mode.automatic" = "Автоследование";
+"touchbar.mode.manual" = "Ручная фиксация";
+"touchbar.summary.metric" = "%@ · %@ %lld%% · %@ · %@";
+"touchbar.summary.provider" = "%@ · %@";
+"touchbar.metric.fiveHour" = "Квота на 5 часов";
+"touchbar.metric.weekly" = "Недельная квота";
+"touchbar.metric.monthly" = "Месячная квота";
+"touchbar.metric.extra" = "Дополнительная квота";
+"touchbar.controlStrip.open" = "Открыть монитор квот ИИ";
+"touchbar.controlStrip.label" = "Монитор квот";
+"touchbar.controlStrip.openProviderFormat" = "Открыть монитор квот ИИ %@: %@";
+"touchbar.providerCycle.tooltip" = "Перейти к следующему агенту и закрепить отображение";
+"touchbar.providerCycle.accessibility" = "Переключить агента";
+"touchbar.providerCycle.accessibilityFormat" = "Переключить агента; текущий %@";
+"touchbar.mode.automatic.tooltip" = "Следует за активным агентом; используйте значок цикла для просмотра другого агента";
+"touchbar.mode.manual.tooltip" = "Выберите, чтобы снова следовать за активным агентом";
+"touchbar.metricCycle.tooltip" = "Показать следующее окно квоты; после последнего возвращается к первому";
+"touchbar.metricCycle.accessibility" = "Показать следующее окно квоты";
+"touchbar.hide" = "Скрыть квоты";
+"touchbar.hide.tooltip" = "Скрыть квоты и восстановить стандартную Touch Bar; снова откройте значком ИИ";
+"touchbar.group.accessibilityFormat" = "%@. %@ %@ %@";
+"touchbar.error.unavailable" = "Этот Mac не предоставляет основную нативную область Touch Bar.";

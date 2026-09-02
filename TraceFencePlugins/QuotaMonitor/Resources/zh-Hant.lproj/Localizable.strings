@@ -5,3 +5,27 @@
 "panel.providersFormat" = "%lld 個 Provider 已更新";
 "action.refreshing" = "重新整理中…";
 "action.refresh" = "重新整理額度";
+
+"touchbar.unavailable" = "暫無額度資料";
+"touchbar.mode.automatic" = "自動跟隨";
+"touchbar.mode.manual" = "手動鎖定";
+"touchbar.summary.metric" = "%@ · %@ %lld%% · %@ · %@";
+"touchbar.summary.provider" = "%@ · %@";
+"touchbar.metric.fiveHour" = "5 小時額度";
+"touchbar.metric.weekly" = "週額度";
+"touchbar.metric.monthly" = "月額度";
+"touchbar.metric.extra" = "額外額度";
+"touchbar.controlStrip.open" = "開啟 AI 額度監控";
+"touchbar.controlStrip.label" = "額度監控";
+"touchbar.controlStrip.openProviderFormat" = "開啟 %@ AI 額度監控：%@";
+"touchbar.providerCycle.tooltip" = "切換到下一個 Agent，並鎖定顯示";
+"touchbar.providerCycle.accessibility" = "切換 Agent";
+"touchbar.providerCycle.accessibilityFormat" = "切換 Agent；目前 %@";
+"touchbar.mode.automatic.tooltip" = "正在自動跟隨目前 Agent；點循環圖示可查看其他 Agent";
+"touchbar.mode.manual.tooltip" = "點此恢復自動跟隨目前 Agent";
+"touchbar.metricCycle.tooltip" = "切換下一條額度；最後一條後會回到第一條";
+"touchbar.metricCycle.accessibility" = "切換下一條額度";
+"touchbar.hide" = "隱藏額度顯示";
+"touchbar.hide.tooltip" = "隱藏額度顯示並恢復預設 Touch Bar；點 AI 圖示可重新開啟";
+"touchbar.group.accessibilityFormat" = "%@。%@ %@ %@";
+"touchbar.error.unavailable" = "此 Mac 未提供可用的原生 Touch Bar 主顯示區。";

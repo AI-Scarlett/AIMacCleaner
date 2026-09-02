@@ -5,3 +5,27 @@
 "panel.providersFormat" = "Provider %lld개 업데이트됨";
 "action.refreshing" = "새로 고치는 중…";
 "action.refresh" = "할당량 새로 고침";
+
+"touchbar.unavailable" = "할당량 데이터 없음";
+"touchbar.mode.automatic" = "자동 추적";
+"touchbar.mode.manual" = "수동 고정";
+"touchbar.summary.metric" = "%@ · %@ %lld%% · %@ · %@";
+"touchbar.summary.provider" = "%@ · %@";
+"touchbar.metric.fiveHour" = "5시간 할당량";
+"touchbar.metric.weekly" = "주간 할당량";
+"touchbar.metric.monthly" = "월간 할당량";
+"touchbar.metric.extra" = "추가 할당량";
+"touchbar.controlStrip.open" = "AI 할당량 모니터 열기";
+"touchbar.controlStrip.label" = "할당량 모니터";
+"touchbar.controlStrip.openProviderFormat" = "%@ AI 할당량 모니터 열기: %@";
+"touchbar.providerCycle.tooltip" = "다음 에이전트로 전환하고 표시 고정";
+"touchbar.providerCycle.accessibility" = "에이전트 전환";
+"touchbar.providerCycle.accessibilityFormat" = "에이전트 전환; 현재 %@";
+"touchbar.mode.automatic.tooltip" = "활성 에이전트를 자동으로 추적합니다. 순환 아이콘으로 다른 에이전트를 확인하세요";
+"touchbar.mode.manual.tooltip" = "선택하면 활성 에이전트 자동 추적으로 돌아갑니다";
+"touchbar.metricCycle.tooltip" = "다음 할당량 창 표시; 마지막 뒤에는 처음으로 돌아감";
+"touchbar.metricCycle.accessibility" = "다음 할당량 창 표시";
+"touchbar.hide" = "할당량 표시 숨기기";
+"touchbar.hide.tooltip" = "할당량 표시를 숨기고 기본 Touch Bar를 복원합니다. AI 아이콘에서 다시 열 수 있습니다";
+"touchbar.group.accessibilityFormat" = "%@. %@ %@ %@";
+"touchbar.error.unavailable" = "이 Mac에서는 기본 Touch Bar 기본 영역을 사용할 수 없습니다.";

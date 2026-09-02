@@ -5,3 +5,27 @@
 "panel.providersFormat" = "%lld proveedores actualizados";
 "action.refreshing" = "Actualizando…";
 "action.refresh" = "Actualizar cuotas";
+
+"touchbar.unavailable" = "No hay datos de cuota";
+"touchbar.mode.automatic" = "Seguimiento automático";
+"touchbar.mode.manual" = "Bloqueo manual";
+"touchbar.summary.metric" = "%@ · %@ %lld%% · %@ · %@";
+"touchbar.summary.provider" = "%@ · %@";
+"touchbar.metric.fiveHour" = "Cuota de 5 horas";
+"touchbar.metric.weekly" = "Cuota semanal";
+"touchbar.metric.monthly" = "Cuota mensual";
+"touchbar.metric.extra" = "Cuota adicional";
+"touchbar.controlStrip.open" = "Abrir monitor de cuota de IA";
+"touchbar.controlStrip.label" = "Monitor de cuota";
+"touchbar.controlStrip.openProviderFormat" = "Abrir monitor de cuota de IA de %@: %@";
+"touchbar.providerCycle.tooltip" = "Cambiar al siguiente agente y bloquear su vista";
+"touchbar.providerCycle.accessibility" = "Cambiar agente";
+"touchbar.providerCycle.accessibilityFormat" = "Cambiar agente; actual %@";
+"touchbar.mode.automatic.tooltip" = "Sigue al agente activo; use el icono de ciclo para consultar otro agente";
+"touchbar.mode.manual.tooltip" = "Seleccione para volver a seguir al agente activo";
+"touchbar.metricCycle.tooltip" = "Mostrar la siguiente ventana de cuota; vuelve a la primera después de la última";
+"touchbar.metricCycle.accessibility" = "Mostrar la siguiente ventana de cuota";
+"touchbar.hide" = "Ocultar cuotas";
+"touchbar.hide.tooltip" = "Ocultar cuotas y restaurar la Touch Bar predeterminada; vuelva a abrir desde el icono de IA";
+"touchbar.group.accessibilityFormat" = "%@. %@ %@ %@";
+"touchbar.error.unavailable" = "Este Mac no ofrece un área principal nativa de Touch Bar.";

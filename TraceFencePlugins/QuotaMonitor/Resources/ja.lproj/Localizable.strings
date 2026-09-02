@@ -5,3 +5,27 @@
 "panel.providersFormat" = "%lld 件の Provider を更新";
 "action.refreshing" = "更新中…";
 "action.refresh" = "クォータを更新";
+
+"touchbar.unavailable" = "クォータデータがありません";
+"touchbar.mode.automatic" = "自動追従";
+"touchbar.mode.manual" = "手動固定";
+"touchbar.summary.metric" = "%@ · %@ %lld%% · %@ · %@";
+"touchbar.summary.provider" = "%@ · %@";
+"touchbar.metric.fiveHour" = "5時間クォータ";
+"touchbar.metric.weekly" = "週間クォータ";
+"touchbar.metric.monthly" = "月間クォータ";
+"touchbar.metric.extra" = "追加クォータ";
+"touchbar.controlStrip.open" = "AI クォータモニターを開く";
+"touchbar.controlStrip.label" = "クォータモニター";
+"touchbar.controlStrip.openProviderFormat" = "%@ の AI クォータモニターを開く：%@";
+"touchbar.providerCycle.tooltip" = "次のエージェントに切り替えて表示を固定";
+"touchbar.providerCycle.accessibility" = "エージェントを切り替え";
+"touchbar.providerCycle.accessibilityFormat" = "エージェントを切り替え：現在 %@";
+"touchbar.mode.automatic.tooltip" = "アクティブなエージェントを自動追従中です。循環アイコンで別のエージェントを確認できます";
+"touchbar.mode.manual.tooltip" = "選択するとアクティブなエージェントの自動追従に戻ります";
+"touchbar.metricCycle.tooltip" = "次のクォータ枠を表示。最後の後は最初に戻ります";
+"touchbar.metricCycle.accessibility" = "次のクォータ枠を表示";
+"touchbar.hide" = "クォータ表示を隠す";
+"touchbar.hide.tooltip" = "クォータ表示を隠して標準 Touch Bar に戻します。AI アイコンから再度開けます";
+"touchbar.group.accessibilityFormat" = "%@。%@ %@ %@";
+"touchbar.error.unavailable" = "この Mac ではネイティブの Touch Bar メイン領域を利用できません。";

@@ -5,3 +5,27 @@
 "panel.providersFormat" = "%lld Provider aktualisiert";
 "action.refreshing" = "Wird aktualisiert…";
 "action.refresh" = "Kontingente aktualisieren";
+
+"touchbar.unavailable" = "Keine Kontingentdaten";
+"touchbar.mode.automatic" = "Automatisch folgen";
+"touchbar.mode.manual" = "Manuell fixiert";
+"touchbar.summary.metric" = "%@ · %@ %lld%% · %@ · %@";
+"touchbar.summary.provider" = "%@ · %@";
+"touchbar.metric.fiveHour" = "5-Stunden-Kontingent";
+"touchbar.metric.weekly" = "Wochenkontingent";
+"touchbar.metric.monthly" = "Monatskontingent";
+"touchbar.metric.extra" = "Zusatzkontingent";
+"touchbar.controlStrip.open" = "KI-Kontingentmonitor öffnen";
+"touchbar.controlStrip.label" = "Kontingentmonitor";
+"touchbar.controlStrip.openProviderFormat" = "%@ KI-Kontingentmonitor öffnen: %@";
+"touchbar.providerCycle.tooltip" = "Zum nächsten Agenten wechseln und Anzeige sperren";
+"touchbar.providerCycle.accessibility" = "Agent wechseln";
+"touchbar.providerCycle.accessibilityFormat" = "Agent wechseln; aktuell %@";
+"touchbar.mode.automatic.tooltip" = "Folgt dem aktiven Agenten; mit dem Wechsel-Symbol einen anderen Agenten anzeigen";
+"touchbar.mode.manual.tooltip" = "Auswählen, um dem aktiven Agenten wieder zu folgen";
+"touchbar.metricCycle.tooltip" = "Nächstes Kontingentfenster anzeigen; nach dem letzten wieder zum ersten";
+"touchbar.metricCycle.accessibility" = "Nächstes Kontingentfenster anzeigen";
+"touchbar.hide" = "Kontingentanzeige ausblenden";
+"touchbar.hide.tooltip" = "Kontingentanzeige ausblenden und Standard-Touch-Bar wiederherstellen; über das KI-Symbol erneut öffnen";
+"touchbar.group.accessibilityFormat" = "%@. %@ %@ %@";
+"touchbar.error.unavailable" = "Dieser Mac stellt keinen nativen Touch-Bar-Hauptbereich bereit.";

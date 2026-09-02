@@ -5,3 +5,27 @@
 "panel.providersFormat" = "تم تحديث %lld من المزوّدين";
 "action.refreshing" = "جارٍ التحديث…";
 "action.refresh" = "تحديث الحصص";
+
+"touchbar.unavailable" = "لا توجد بيانات للحصة";
+"touchbar.mode.automatic" = "متابعة تلقائية";
+"touchbar.mode.manual" = "قفل يدوي";
+"touchbar.summary.metric" = "%@ · %@ %lld%% · %@ · %@";
+"touchbar.summary.provider" = "%@ · %@";
+"touchbar.metric.fiveHour" = "حصة 5 ساعات";
+"touchbar.metric.weekly" = "حصة أسبوعية";
+"touchbar.metric.monthly" = "حصة شهرية";
+"touchbar.metric.extra" = "حصة إضافية";
+"touchbar.controlStrip.open" = "فتح مراقب حصة الذكاء الاصطناعي";
+"touchbar.controlStrip.label" = "مراقب الحصة";
+"touchbar.controlStrip.openProviderFormat" = "فتح مراقب حصة الذكاء الاصطناعي لـ %@: %@";
+"touchbar.providerCycle.tooltip" = "الانتقال إلى الوكيل التالي وقفل عرضه";
+"touchbar.providerCycle.accessibility" = "تبديل الوكيل";
+"touchbar.providerCycle.accessibilityFormat" = "تبديل الوكيل؛ الحالي %@";
+"touchbar.mode.automatic.tooltip" = "يتابع الوكيل النشط؛ استخدم أيقونة التدوير لفحص وكيل آخر";
+"touchbar.mode.manual.tooltip" = "حدد لاستئناف متابعة الوكيل النشط";
+"touchbar.metricCycle.tooltip" = "عرض نافذة الحصة التالية؛ يعود إلى الأولى بعد الأخيرة";
+"touchbar.metricCycle.accessibility" = "عرض نافذة الحصة التالية";
+"touchbar.hide" = "إخفاء عرض الحصة";
+"touchbar.hide.tooltip" = "إخفاء عرض الحصة واستعادة Touch Bar الافتراضي؛ أعد فتحه من أيقونة الذكاء الاصطناعي";
+"touchbar.group.accessibilityFormat" = "%@. %@ %@ %@";
+"touchbar.error.unavailable" = "لا يوفر هذا الـ Mac منطقة Touch Bar رئيسية أصلية.";

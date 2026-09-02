@@ -14,3 +14,27 @@
 "touchbar.action.hide" = "隐藏 Touch Bar 额度显示";
 "touchbar.legacySection" = "旧版迁移";
 "touchbar.action.cleanLegacy" = "清理本插件创建的旧版 BetterTouchTool 控件";
+
+"touchbar.unavailable" = "暂无额度数据";
+"touchbar.mode.automatic" = "自动跟随";
+"touchbar.mode.manual" = "手动锁定";
+"touchbar.summary.metric" = "%@ · %@ %lld%% · %@ · %@";
+"touchbar.summary.provider" = "%@ · %@";
+"touchbar.metric.fiveHour" = "5小时额度";
+"touchbar.metric.weekly" = "周额度";
+"touchbar.metric.monthly" = "月额度";
+"touchbar.metric.extra" = "额外额度";
+"touchbar.controlStrip.open" = "打开 AI 额度监控";
+"touchbar.controlStrip.label" = "额度监控";
+"touchbar.controlStrip.openProviderFormat" = "打开 %@ AI 额度监控：%@";
+"touchbar.providerCycle.tooltip" = "切换到下一个 Agent，并锁定显示";
+"touchbar.providerCycle.accessibility" = "切换 Agent";
+"touchbar.providerCycle.accessibilityFormat" = "切换 Agent；当前 %@";
+"touchbar.mode.automatic.tooltip" = "正在自动跟随当前 Agent；点循环图标可查看其他 Agent";
+"touchbar.mode.manual.tooltip" = "点此恢复自动跟随当前 Agent";
+"touchbar.metricCycle.tooltip" = "切换下一条额度；到最后一条后循环回第一条";
+"touchbar.metricCycle.accessibility" = "切换下一条额度";
+"touchbar.hide" = "隐藏额度显示";
+"touchbar.hide.tooltip" = "隐藏额度显示并恢复默认 Touch Bar；点 AI 图标可重新打开";
+"touchbar.group.accessibilityFormat" = "%@。%@ %@ %@";
+"touchbar.error.unavailable" = "此 Mac 未提供可用的原生 Touch Bar 主显示区。";

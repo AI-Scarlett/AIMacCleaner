@@ -1,7 +1,7 @@
 {
   "id": "quota-monitor",
   "displayName": "额度监控",
-  "summary": "系统 Touch Bar Control Strip 常驻柱状图入口；展开后一次只显示当前 Agent 的一条扁平额度进度，可循环切换全部额度、切换 Agent、恢复自动跟随或关闭。",
+  "summary": "系统 Touch Bar Control Strip 常驻 AI 图标入口；展开后一次只显示当前 Agent 的一条扁平额度进度，可循环切换全部额度、切换 Agent、恢复自动跟随或隐藏。",
   "localizedMetadata": {
     "ar": {
       "displayName": "مراقبة الحصة",
@@ -13,7 +13,7 @@
     },
     "en": {
       "displayName": "Quota Monitor",
-      "summary": "Persistent system Touch Bar Control Strip bar-chart entry. It opens one flat quota progress item at a time for the active Agent, with cycling, Agent switching, automatic follow, and close controls."
+      "summary": "Persistent system Touch Bar Control Strip AI entry. It opens one flat quota progress item at a time for the active Agent, with cycling, Agent switching, automatic follow, and hide controls."
     },
     "es": {
       "displayName": "Monitor de cuota",
@@ -41,14 +41,14 @@
     },
     "zh-Hans": {
       "displayName": "额度监控",
-      "summary": "系统 Touch Bar Control Strip 常驻柱状图入口；展开后一次只显示当前 Agent 的一条扁平额度进度，可循环切换全部额度、切换 Agent、恢复自动跟随或关闭。"
+      "summary": "系统 Touch Bar Control Strip 常驻 AI 图标入口；展开后一次只显示当前 Agent 的一条扁平额度进度，可循环切换全部额度、切换 Agent、恢复自动跟随或隐藏。"
     },
     "zh-Hant": {
       "displayName": "額度監控",
       "summary": "在 TraceFence 固定選單列介面中讀取 Codex、Claude、Grok 等 Provider 的額度與重設時間"
     }
   },
-  "version": "1.0.12",
+  "version": "1.0.13",
   "minHostVersion": "1.2.12",
   "pluginKitVersion": 4,
   "bundleRelativePath": "QuotaMonitor.bundle",
