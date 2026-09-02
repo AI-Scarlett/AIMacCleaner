@@ -1089,17 +1089,14 @@ private final class QuotaControlStripView: NSView {
             state.providerName
         ))
 
-        let modeTitle = t(
-            state.isAutomatic ? "touchbar.mode.automatic" : "touchbar.mode.manual",
-            state.isAutomatic ? "Automatic follow" : "Manual lock"
-        )
+        let localizedModeTitle = modeTitle
         let modeImage = NSImage(
             systemSymbolName: state.isAutomatic ? "scope" : "pin.fill",
-            accessibilityDescription: modeTitle
+            accessibilityDescription: localizedModeTitle
         )
         modeImage?.isTemplate = true
         modeButton.image = modeImage
-        modeButton.title = modeTitle
+        modeButton.title = localizedModeTitle
         modeButton.imagePosition = .imageLeading
         modeButton.contentTintColor = state.isAutomatic ? .secondaryLabelColor : .systemOrange
         modeButton.isEnabled = !state.isAutomatic
@@ -1141,8 +1138,24 @@ private final class QuotaControlStripView: NSView {
         return min(98, max(30, measured))
     }
 
+    private var modeTitle: String {
+        t(
+            state.isAutomatic ? "touchbar.mode.automatic" : "touchbar.mode.manual",
+            state.isAutomatic ? "Automatic follow" : "Manual lock"
+        )
+    }
+
+    private var modeButtonWidth: CGFloat {
+        let font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        let textWidth = ceil((modeTitle as NSString).size(withAttributes: [.font: font]).width)
+        // Include the leading SF Symbol plus the image/title gap. This must use
+        // the localized title, not a Chinese-sized constant: “Automatic follow”
+        // and German/Arabic strings need more room than “自动跟随”.
+        return min(132, max(76, textWidth + 27))
+    }
+
     private var modeButtonX: CGFloat { 38 + providerNameWidth + 4 }
-    private var dividerX: CGFloat { modeButtonX + 84 + 6 }
+    private var dividerX: CGFloat { modeButtonX + modeButtonWidth + 6 }
     private var metricX: CGFloat { dividerX + 10 }
 
     override func layout() {
@@ -1152,7 +1165,7 @@ private final class QuotaControlStripView: NSView {
         // The mode sits immediately after the actual Provider name width, not
         // after a fixed empty badge. GPT therefore does not get Claude-sized
         // whitespace before “手动锁定”.
-        modeButton.frame = NSRect(x: modeButtonX, y: 3, width: 84, height: 24)
+        modeButton.frame = NSRect(x: modeButtonX, y: 3, width: modeButtonWidth, height: 24)
         hideButton.frame = NSRect(x: width - 27, y: 4, width: 22, height: 22)
         if state.metricCount > 1 {
             metricCycleButton.frame = NSRect(x: width - 92, y: 3, width: 52, height: 24)
