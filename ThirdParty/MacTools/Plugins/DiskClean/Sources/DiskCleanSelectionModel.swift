@@ -6,7 +6,7 @@ import Foundation
 ///
 /// `unavailable` and `noneSelected` must stay distinct: the former means "this category has
 /// nothing selectable" (checkbox disabled; clicking does nothing), the latter means "there
-/// are selectable items but none are selected" (one click selects all low-risk items).
+/// are selectable items but none are selected" (one click selects the reviewed visible items).
 /// Merging them makes users hammer a checkbox that never moves.
 ///
 /// There is no `none` case name: this type appears as dictionary values, and
@@ -77,22 +77,14 @@ struct DiskCleanSelectionProjection: Equatable, Sendable {
 /// an incrementally maintained selected set is easy to desync from candidate facts between
 /// those moments, while recomputation cannot desync.
 ///
-/// Three semantics (design §8.1):
-/// - **Unselectable means toggle is rejected**, not merely UI-disabled: locked / whitelisted /
-///   protected / non-complete / unsized / mount-containing candidates make `setCandidate`
-///   return false with no record kept.
-/// - **Default selected = low risk, locally regenerable, and selectable**. Items that need a
-///   download or contain original data stay review-only even when deletion itself is safe.
-/// - **"Select all" = select every low-risk, locally regenerable item in the category**;
-///   medium/high/download/original items are never pulled in by select-all.
+/// Default recommendations include only low-risk, locally regenerable candidates.
+/// Category selection is an explicit user command after the UI reviews non-default
+/// items; only the current candidates are selected, never later streaming arrivals.
 struct DiskCleanSelectionModel: Equatable, Sendable {
-    /// Category-level explicit operation.
-    ///
-    /// `selectAllLowRisk` affects **newly arrived** candidates exactly like "never operated"
-    /// (both fall through to default policy). We still record it to override a prior
-    /// `deselectAll` and to give "user explicitly acted on this category" a name in the model.
+    /// Category commands suppress the default policy until reset; explicit item
+    /// overrides capture the precise set accepted by the user.
     enum CategoryOperation: Equatable, Sendable {
-        case selectAllLowRisk
+        case selectAllVisible
         case deselectAll
     }
 
@@ -129,7 +121,7 @@ struct DiskCleanSelectionModel: Equatable, Sendable {
         if let override = candidateOverrides[candidate.id] {
             return override.isSelected
         }
-        if categoryOperations[candidate.category] == .deselectAll {
+        if categoryOperations[candidate.category] != nil {
             return false
         }
         return Self.isSelectedByDefault(candidate)
@@ -148,12 +140,21 @@ struct DiskCleanSelectionModel: Equatable, Sendable {
         return true
     }
 
-    /// Category-level select all (low risk only) / deselect all.
+    /// Category-level selection of the reviewed visible candidates / deselect all.
     ///
     /// Clears prior per-item overrides for the category: a category operation is coarser, and pressing it means reset this category's state.
-    mutating func setCategory(_ category: DiskCleanCategoryID, isSelected: Bool) {
-        categoryOperations[category] = isSelected ? .selectAllLowRisk : .deselectAll
+    mutating func setCategory(
+        _ category: DiskCleanCategoryID,
+        isSelected: Bool,
+        candidates: [DiskCleanCandidate] = []
+    ) {
+        categoryOperations[category] = isSelected ? .selectAllVisible : .deselectAll
         candidateOverrides = candidateOverrides.filter { $0.value.category != category }
+        // Explicit selection applies only to the items the user reviewed. A subsequently
+        // arriving item must not inherit consent from a category-level click.
+        for candidate in candidates where candidate.category == category && Self.isSelectable(candidate) {
+            candidateOverrides[candidate.id] = CandidateOverride(category: category, isSelected: isSelected)
+        }
     }
 
     /// Return to "user has done nothing". Must be called for each new scan: candidate IDs are

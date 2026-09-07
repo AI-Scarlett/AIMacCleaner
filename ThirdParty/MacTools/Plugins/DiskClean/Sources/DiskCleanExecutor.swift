@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 // MARK: - Execution interface
 
@@ -76,10 +77,19 @@ struct DiskCleanExecutionItemResult: Equatable, Sendable {
 struct DiskCleanExecutionResult: Equatable, Sendable {
     let itemResults: [DiskCleanExecutionItemResult]
     let mode: DiskCleanRemovalMode
+    let wasCancelled: Bool
+    let spaceMeasurement: DiskCleanSpaceMeasurement?
 
-    init(itemResults: [DiskCleanExecutionItemResult], mode: DiskCleanRemovalMode = .trash) {
+    init(
+        itemResults: [DiskCleanExecutionItemResult],
+        mode: DiskCleanRemovalMode = .trash,
+        wasCancelled: Bool = false,
+        spaceMeasurement: DiskCleanSpaceMeasurement? = nil
+    ) {
         self.itemResults = itemResults
         self.mode = mode
+        self.wasCancelled = wasCancelled
+        self.spaceMeasurement = spaceMeasurement
     }
 
     /// Disposed item count: permanent delete and move-to-Trash both count as success.
@@ -132,6 +142,41 @@ struct DiskCleanExecutionResult: Equatable, Sendable {
     }
 }
 
+/// Observed filesystem capacity, kept separate from estimated disposed file sizes.
+/// Other writers, APFS snapshots and deferred reclamation can affect this signed delta.
+struct DiskCleanSpaceMeasurement: Equatable, Sendable {
+    let availableBefore: Int64
+    let availableAfter: Int64
+    let volumeCount: Int
+
+    var availableChange: Int64 { availableAfter - availableBefore }
+
+    static func comparing(before: [String: Int64], after: [String: Int64]) -> Self? {
+        // Do not present a partial set of volumes as the measurement for the whole run.
+        guard !before.isEmpty, Set(before.keys) == Set(after.keys) else { return nil }
+        return Self(
+            availableBefore: before.values.reduce(0, +),
+            availableAfter: after.values.reduce(0, +),
+            volumeCount: before.count
+        )
+    }
+
+    static func availableBytesByVolume(paths: [String]) -> [String: Int64] {
+        var result: [String: Int64] = [:]
+        for path in paths {
+            var value = statfs()
+            guard statfs(path, &value) == 0 else { return [:] }
+            let mountPath = withUnsafeBytes(of: value.f_mntonname) {
+                String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self)
+            }
+            let (bytes, overflow) = Int64(value.f_bavail).multipliedReportingOverflow(by: Int64(value.f_bsize))
+            guard !overflow, bytes >= 0 else { return [:] }
+            result[mountPath] = bytes
+        }
+        return result
+    }
+}
+
 // MARK: - Executor
 
 /// Plan executor (design §7.1, §7.2).
@@ -145,6 +190,7 @@ struct DiskCleanExecutor: DiskCleanExecuting {
     private let runningAppLock: any DiskCleanRunningAppSnapshotting
     private let auditLog: DiskCleanAuditLog
     private let now: @Sendable () -> Date
+    private let readAvailableSpace: @Sendable ([String]) -> [String: Int64]
 
     init(
         storageDirectory: URL = DiskCleanStorageLocation.fallbackDirectory,
@@ -152,7 +198,8 @@ struct DiskCleanExecutor: DiskCleanExecuting {
         auditLog: DiskCleanAuditLog? = nil,
         safetyPolicy: DiskCleanSafetyPolicy = DiskCleanSafetyPolicy(),
         runningAppLock: any DiskCleanRunningAppSnapshotting = DiskCleanRunningAppLock(),
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        readAvailableSpace: @escaping @Sendable ([String]) -> [String: Int64] = DiskCleanSpaceMeasurement.availableBytesByVolume
     ) {
         let sharedJournal = journal ?? DiskCleanStagingJournal(directory: storageDirectory)
         self.init(
@@ -160,7 +207,8 @@ struct DiskCleanExecutor: DiskCleanExecuting {
             safetyPolicy: safetyPolicy,
             runningAppLock: runningAppLock,
             auditLog: auditLog ?? DiskCleanAuditLog(directory: storageDirectory),
-            now: now
+            now: now,
+            readAvailableSpace: readAvailableSpace
         )
     }
 
@@ -169,26 +217,30 @@ struct DiskCleanExecutor: DiskCleanExecuting {
         safetyPolicy: DiskCleanSafetyPolicy,
         runningAppLock: any DiskCleanRunningAppSnapshotting,
         auditLog: DiskCleanAuditLog,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        readAvailableSpace: @escaping @Sendable ([String]) -> [String: Int64] = DiskCleanSpaceMeasurement.availableBytesByVolume
     ) {
         self.primitive = primitive
         self.safetyPolicy = safetyPolicy
         self.runningAppLock = runningAppLock
         self.auditLog = auditLog
         self.now = now
+        self.readAvailableSpace = readAvailableSpace
     }
 
     func execute(plan: DiskCleanValidatedPlan) async throws -> DiskCleanExecutionResult {
         var snapshot = try await preflight(plan: plan)
+        let spaceBefore = readAvailableSpace(plan.items.map(\.path))
 
         var itemResults: [DiskCleanExecutionItemResult] = []
         itemResults.reserveCapacity(plan.items.count)
 
         for item in plan.items {
-            try Task.checkCancellation()
+            if Task.isCancelled { break }
 
             // Per-item lock recheck: refresh bundle IDs; keep process names from the preflight snapshot (trade-off noted on the protocol).
             snapshot = await runningAppLock.refreshingBundleIDs(in: snapshot)
+            if Task.isCancelled { break }
             if let processName = snapshot.lockingProcessName(
                 bundleIDs: item.lockedByBundleIDs,
                 processNames: item.skipWhenProcessIsRunning
@@ -216,7 +268,15 @@ struct DiskCleanExecutor: DiskCleanExecuting {
             )
         }
 
-        return DiskCleanExecutionResult(itemResults: itemResults, mode: plan.mode)
+        // Cancellation after a successful item must not throw away the already completed
+        // results. Finish the current atomic removal, stop before the next, then report both.
+        let spaceAfter = readAvailableSpace(Array(spaceBefore.keys))
+        return DiskCleanExecutionResult(
+            itemResults: itemResults,
+            mode: plan.mode,
+            wasCancelled: Task.isCancelled && itemResults.count < plan.items.count,
+            spaceMeasurement: DiskCleanSpaceMeasurement.comparing(before: spaceBefore, after: spaceAfter)
+        )
     }
 
     // MARK: - preflight（§7.1）

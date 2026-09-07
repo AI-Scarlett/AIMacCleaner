@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-09-07T05:21:09Z",
+  "expiresAt": "2027-09-07T08:59:31Z",
   "offers": [
     {
       "active": true,
@@ -1401,10 +1401,10 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.mactools.plugins.disk-clean",
         "entryPoint": "DiskClean.bundle",
-        "sha256": "61a6c010ac126f2ac778219cdbba74af8153c55e0de81f4ce22f21fcf1cb9157",
-        "sizeBytes": 3062700,
+        "sha256": "8e268a043d1580697fc33ec7fbb40fd00edb76e136709d584da42ddc2ce9842d",
+        "sizeBytes": 3112165,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-disk-clean-v3.5.1/disk-clean-3.5.1.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-disk-clean-v3.5.2/disk-clean-3.5.2.mactoolsplugin.zip"
       },
       "permissions": [],
       "placements": {
@@ -1421,7 +1421,7 @@
       "summary": "Local disk analysis and safe cleanup with System Data breakdown, large-file review, content-verified duplicates, and recovery-aware cleanup",
       "systemImage": "internaldrive.fill",
       "trialHours": null,
-      "version": "3.5.1"
+      "version": "3.5.2"
     },
     {
       "capabilities": [
@@ -4278,7 +4278,7 @@
       "version": "1.1.1"
     }
   ],
-  "publishedAt": "2026-09-07T05:21:09Z",
-  "revision": 34,
+  "publishedAt": "2026-09-07T08:59:31Z",
+  "revision": 35,
   "schemaVersion": 1
 }

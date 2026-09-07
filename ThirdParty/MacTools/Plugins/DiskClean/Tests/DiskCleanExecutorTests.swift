@@ -249,10 +249,40 @@ final class DiskCleanExecutorTests: XCTestCase {
         )
     }
 
+    func testCancellationKeepsCompletedItemReceiptAndStopsBeforeNextRemoval() async throws {
+        let paths = ["\(home)/Library/Caches/A", "\(home)/Library/Caches/B"]
+        let plan = try makePlan(paths: paths, bytes: 100)
+        let executor = makeExecutor(primitive: CancellingDiskCleanPrimitive())
+        let task = Task { try await executor.execute(plan: plan) }
+        let result = try await task.value
+        XCTAssertTrue(result.wasCancelled)
+        XCTAssertEqual(result.itemResults.map(\.path), [paths[0]])
+        XCTAssertEqual(result.removedCount, 1)
+        XCTAssertEqual(result.reclaimedBytes, 100)
+    }
+
+    func testFilesystemDeltaIsIndependentOfEstimatedRemovedBytes() async throws {
+        let plan = try makePlan(paths: ["\(home)/Library/Caches/A"], bytes: 100)
+        let samples = TestDiskSpaceSamples()
+        let executor = makeExecutor(readAvailableSpace: { samples.next($0) })
+        let result = try await executor.execute(plan: plan)
+        XCTAssertEqual(result.reclaimedBytes, 100)
+        XCTAssertEqual(result.spaceMeasurement?.availableChange, -50)
+        XCTAssertEqual(result.spaceMeasurement?.availableAfter, 950)
+        XCTAssertFalse(result.wasCancelled)
+    }
+
+    func testSpaceMeasurementDoesNotClaimAResultForMissingVolumes() {
+        XCTAssertNil(DiskCleanSpaceMeasurement.comparing(before: ["/": 100], after: [:]))
+        XCTAssertNil(DiskCleanSpaceMeasurement.comparing(before: [:], after: [:]))
+        XCTAssertEqual(DiskCleanSpaceMeasurement.comparing(before: ["/": 100], after: ["/": 100])?.availableChange, 0)
+    }
+
     private func makeExecutor(
         primitive: any DiskCleanPlanItemRemoving = FakeDiskCleanRemovalPrimitive(),
         runningAppLock: any DiskCleanRunningAppSnapshotting = ProgrammableDiskCleanRunningAppLock(),
-        now: Date = DiskCleanPlanFactory.observedAt
+        now: Date = DiskCleanPlanFactory.observedAt,
+        readAvailableSpace: @escaping @Sendable ([String]) -> [String: Int64] = { _ in [:] }
     ) -> DiskCleanExecutor {
         DiskCleanExecutor(
             primitive: primitive,
@@ -262,7 +292,8 @@ final class DiskCleanExecutorTests: XCTestCase {
             ),
             runningAppLock: runningAppLock,
             auditLog: auditLog,
-            now: { now }
+            now: { now },
+            readAvailableSpace: readAvailableSpace
         )
     }
 
@@ -296,5 +327,23 @@ final class DiskCleanExecutorTests: XCTestCase {
         } catch {
             XCTFail("expected safetyRejected, got: \(error)", file: file, line: line)
         }
+    }
+}
+
+private struct CancellingDiskCleanPrimitive: DiskCleanPlanItemRemoving {
+    func remove(_ item: DiskCleanValidatedPlan.PlanItem, mode: DiskCleanRemovalMode) -> DiskCleanRemovalDisposition {
+        withUnsafeCurrentTask { $0?.cancel() }
+        return .removed
+    }
+}
+
+private final class TestDiskSpaceSamples: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    func next(_ paths: [String]) -> [String: Int64] {
+        lock.lock()
+        defer { lock.unlock() }
+        count += 1
+        return ["/": count == 1 ? 1_000 : 950]
     }
 }

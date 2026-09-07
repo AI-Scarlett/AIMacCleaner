@@ -101,18 +101,43 @@ final class DiskCleanSelectionModelTests: XCTestCase {
 
     // MARK: - Category three-state
 
-    func testCategorySelectAllTakesLowRiskOnlyAndClearsPerItemOverrides() {
+    func testExplicitCategorySelectionIncludesReviewedMediumRiskAndClearsOverrides() {
         var model = DiskCleanSelectionModel()
         let low = makeCandidate(id: "low", risk: .low)
         let medium = makeCandidate(id: "medium", risk: .medium)
         model.setCandidate(low, isSelected: false)
         model.setCandidate(medium, isSelected: true)
 
-        model.setCategory(.appCaches, isSelected: true)
+        model.setCategory(.appCaches, isSelected: true, candidates: [low, medium])
 
         XCTAssertTrue(model.isSelected(low), "category select-all clears per-item deselects in that category")
-        XCTAssertFalse(model.isSelected(medium), "\"select all\" means all low-risk items; medium is not included")
-        XCTAssertEqual(model.explicitOperation(for: .appCaches), .selectAllLowRisk)
+        XCTAssertTrue(model.isSelected(medium), "an explicit reviewed selection is distinct from default recommendations")
+        XCTAssertEqual(model.explicitOperation(for: .appCaches), .selectAllVisible)
+    }
+
+    func testDeveloperCategoryWithOnlyManualItemsCanBeSelectedAndCleared() {
+        var model = DiskCleanSelectionModel()
+        let items = (0..<5).map {
+            makeCandidate(id: "project-\($0)", category: .developerArtifacts, risk: .medium,
+                          recoveryClass: $0.isMultiple(of: 2) ? .downloadRequired : .regenerable)
+        }
+        XCTAssertEqual(model.projection(for: items).selectedCount, 0)
+        model.setCategory(.developerArtifacts, isSelected: true, candidates: items)
+        XCTAssertEqual(model.projection(for: items).state(of: .developerArtifacts), .allSelected)
+        XCTAssertEqual(model.projection(for: items).selectedCount, 5)
+        model.setCategory(.developerArtifacts, isSelected: false)
+        XCTAssertEqual(model.projection(for: items).selectedCount, 0)
+    }
+
+    func testCategoryConsentDoesNotSelectLaterArrivalsOrProtectedItems() {
+        var model = DiskCleanSelectionModel()
+        let original = makeCandidate(id: "original", recoveryClass: .originalData)
+        let locked = makeCandidate(id: "locked", safety: .inUse(processName: "App"))
+        model.setCategory(.appCaches, isSelected: true, candidates: [original, locked])
+        XCTAssertTrue(model.isSelected(original))
+        XCTAssertFalse(model.isSelected(locked))
+        XCTAssertFalse(model.isSelected(makeCandidate(id: "new-low")))
+        XCTAssertFalse(model.isSelected(makeCandidate(id: "new-original", recoveryClass: .originalData)))
     }
 
     func testCategoryDeselectAllClearsEverythingInThatCategoryOnly() {

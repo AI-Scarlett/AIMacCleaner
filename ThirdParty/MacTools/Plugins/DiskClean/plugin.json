@@ -48,7 +48,7 @@
       "summary": "本機磁碟分析與安全清理：拆分系統資料、識別大型檔案與內容重複檔案，並依復原成本檢視快取、建置與 Agent 儲存"
     }
   },
-  "version": "3.5.1",
+  "version": "3.5.2",
   "minHostVersion": "1.1.6",
   "pluginKitVersion": 4,
   "bundleRelativePath": "DiskClean.bundle",

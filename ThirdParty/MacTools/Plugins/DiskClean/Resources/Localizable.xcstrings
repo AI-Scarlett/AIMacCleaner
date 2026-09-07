@@ -1,6 +1,380 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+  "detail.category.reviewHint": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "点击复选框可选择本类项目；需复核的内容会先列出供你确认。"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Click the checkbox to select this category. Items requiring review will be shown for confirmation."
+        }
+      }
+    }
+  },
+  "detail.category.selectVisible": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "选择本类可清理项目"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Select cleanable items in this category"
+        }
+      }
+    }
+  },
+  "detail.category.reviewTitle": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "复核 %@ 的 %d 项"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Review %@: %d items"
+        }
+      }
+    }
+  },
+  "detail.category.reviewMessage": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "这些内容未被默认选中。请核对路径和影响，确认后只会勾选项目；删除仍由清理按钮执行。"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "These items were not selected by default. Review their paths and consequences. Confirming only selects them; use the cleanup button to delete them."
+        }
+      }
+    }
+  },
+  "detail.category.confirmSelection": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "选择这 %d 项"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Select these %d items"
+        }
+      }
+    }
+  },
+  "detail.category.reviewRegenerable": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "可重新构建；可能近期仍在使用或所在仓库有未提交改动，请确认暂时不需要这些产物。"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Can be rebuilt. These outputs may be recently used or belong to a repository with uncommitted changes. Confirm that you do not need them now."
+        }
+      }
+    }
+  },
+  "detail.category.reviewDownload": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "删除后需要重新下载或安装依赖，离线时可能无法恢复使用。"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Dependencies must be downloaded or installed again after deletion. Recovery may not be possible offline."
+        }
+      }
+    }
+  },
+  "detail.category.reviewOriginal": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "包含原始文件，不能靠重新构建恢复。请确认已有备份或确实不再需要。"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Contains original files that cannot be rebuilt. Confirm that you have backups or no longer need them."
+        }
+      }
+    }
+  },
+  "detail.result.stopped": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "清理已停止，已完成的项目如下"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Cleanup stopped; completed items are shown below"
+        }
+      }
+    }
+  },
+  "detail.action.rescan": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "重新扫描"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Scan again"
+        }
+      }
+    }
+  },
+  "detail.result.trashSummary": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已移到废纸篓 %d 项 · 已跳过 %d 项 · 未完成 %d 项"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Moved %d items to Trash · Skipped %d · Unfinished %d"
+        }
+      }
+    }
+  },
+  "detail.result.deleteSummary": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已删除 %d 项 · 已跳过 %d 项 · 未完成 %d 项"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Deleted %d items · Skipped %d · Unfinished %d"
+        }
+      }
+    }
+  },
+  "detail.result.disposedEstimate": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已处理文件估算大小：%@"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Estimated size of processed files: %@"
+        }
+      }
+    }
+  },
+  "detail.result.availableBeforeAfter": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "磁盘可用：%@ → %@"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Available disk space: %@ → %@"
+        }
+      }
+    }
+  },
+  "detail.result.availableChange": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "本次观测变化：%@"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Observed change: %@"
+        }
+      }
+    }
+  },
+  "detail.result.spaceUnavailable": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "暂时无法读取磁盘可用空间；文件估算大小不代表实际释放量。"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Available disk space could not be read. Estimated file sizes do not represent actual reclaimed space."
+        }
+      }
+    }
+  },
+  "detail.result.trashSpaceNote": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "文件仍在废纸篓中，不会立即释放空间。本次没有清空废纸篓。"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Files remain in Trash and do not immediately free space. Trash was not emptied."
+        }
+      }
+    }
+  },
+  "detail.result.spaceNote": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "可用空间受其他程序写入、APFS 快照和延迟回收影响，可能与文件估算大小不同。"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Available space is affected by other programs, APFS snapshots and delayed reclamation. It may differ from estimated file sizes."
+        }
+      }
+    }
+  },
+  "detail.result.changedRetry": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "扫描后内容已变化，未删除。请重新扫描再选择。"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Content changed since scanning and was not deleted. Scan again before selecting it."
+        }
+      }
+    }
+  },
+  "detail.result.inUse": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%@ 正在使用，已跳过。关闭相关程序后重新扫描。"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "In use by %@ and skipped. Close the program and scan again."
+        }
+      }
+    }
+  },
+  "detail.result.whitelisted": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已按保护名单跳过：%@"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Skipped by the protection list: %@"
+        }
+      }
+    }
+  },
+  "detail.selection.completed": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "本轮已结束，请重新扫描确认剩余内容"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This run has finished. Scan again to check remaining items."
+        }
+      }
+    }
+  },
     "advisor.stage.duplicates": {
       "extractionState": "manual",
       "localizations": {

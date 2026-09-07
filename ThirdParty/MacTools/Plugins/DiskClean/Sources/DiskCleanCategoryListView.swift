@@ -103,6 +103,8 @@ private struct DiskCleanCategoryCard: View {
     let onToggleExpanded: () -> Void
     let onToggleCandidate: (DiskCleanCandidate.ID, Bool) -> Void
     let onToggleCategory: (DiskCleanCategoryID, Bool) -> Void
+    @State private var isReviewPresented = false
+    @State private var reviewedCandidates: [DiskCleanCandidate] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -113,15 +115,18 @@ private struct DiskCleanCategoryCard: View {
             }
         }
         .diskCleanSurface(.elevated)
+        .sheet(isPresented: $isReviewPresented) {
+            categoryReview
+        }
     }
 
     private var header: some View {
         HStack(alignment: .top, spacing: PluginSettingsTheme.Spacing.rowContentControl) {
             DiskCleanTriStateCheckbox(
                 state: state,
-                // "Select all" = every low-risk, locally regenerable item; if anything is already selected, one click clears all.
-                // Tri-state checkboxes must never feel like a no-op click, so both directions always produce a change.
-                onToggle: { onToggleCategory(group.category, !state.isChecked) },
+                // Non-default candidates are reviewed before an explicit category selection.
+                // A checked or mixed state clears the category.
+                onToggle: toggleCategory,
                 help: checkboxHelp
             )
             .disabled(!isInteractionEnabled || !state.isSelectable)
@@ -132,7 +137,8 @@ private struct DiskCleanCategoryCard: View {
                 size: 36
             )
 
-            VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.rowTitleDescription) {
+            Button(action: onToggleExpanded) {
+              VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.rowTitleDescription) {
                 Text(group.category.title(localization: localization))
                     .font(PluginSettingsTheme.Typography.emphasizedRowTitle)
                 Text(group.category.consequence(localization: localization))
@@ -142,7 +148,16 @@ private struct DiskCleanCategoryCard: View {
                 Text(countSummary)
                     .font(PluginSettingsTheme.Typography.statusBadge)
                     .foregroundStyle(.secondary)
+                if group.selectedCount == 0 && group.selectableCount > 0 {
+                    Text(localization.string("detail.category.reviewHint", defaultValue: "点击复选框可选择本类项目；需复核的内容会先列出供你确认。"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+              }
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
             Spacer(minLength: PluginSettingsTheme.Spacing.rowContentControl)
 
@@ -196,7 +211,72 @@ private struct DiskCleanCategoryCard: View {
     private var checkboxHelp: String {
         state.isChecked
             ? localization.string("detail.category.deselectAll", defaultValue: "取消选择本类全部项目")
-            : localization.string("detail.category.selectLowRisk", defaultValue: "选中本类所有可再生低风险项目")
+            : localization.string("detail.category.selectVisible", defaultValue: "选择本类可清理项目")
+    }
+
+    private var selectableCandidates: [DiskCleanCandidate] {
+        group.candidates.filter { selection.isSelectable($0.id) }
+    }
+
+    private func toggleCategory() {
+        if state.isChecked {
+            onToggleCategory(group.category, false)
+        } else if selectableCandidates.contains(where: { !DiskCleanSelectionModel.isSelectedByDefault($0) }) {
+            reviewedCandidates = selectableCandidates
+            if !isExpanded { onToggleExpanded() }
+            isReviewPresented = true
+        } else {
+            onToggleCategory(group.category, true)
+        }
+    }
+
+    private var categoryReview: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(localization.format("detail.category.reviewTitle", defaultValue: "复核 %@ 的 %d 项", group.category.title(localization: localization), reviewedCandidates.count))
+                .font(.headline)
+            Text(localization.string("detail.category.reviewMessage", defaultValue: "这些内容未被默认选中。请核对路径和影响，确认后只会勾选项目；删除仍由清理按钮执行。"))
+                .fixedSize(horizontal: false, vertical: true)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(reviewedCandidates) { candidate in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(candidate.path).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                            Text(DiskCleanFormat.approximateBytes(candidate.estimatedBytes, localization: localization))
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text(reviewConsequence(candidate))
+                                .font(.caption).foregroundStyle(candidate.recoveryClass == .originalData ? .red : .orange)
+                        }
+                        Divider()
+                    }
+                }
+            }
+            .frame(maxHeight: 320)
+            HStack {
+                Button(localization.string("detail.action.cancelClean", defaultValue: "取消")) { isReviewPresented = false }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button(localization.format("detail.category.confirmSelection", defaultValue: "选择这 %d 项", reviewedCandidates.count)) {
+                    guard reviewedCandidates == selectableCandidates else { isReviewPresented = false; return }
+                    onToggleCategory(group.category, true)
+                    isReviewPresented = false
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!isInteractionEnabled || reviewedCandidates != selectableCandidates)
+            }
+        }
+        .padding(24)
+        .frame(width: 580)
+    }
+
+    private func reviewConsequence(_ candidate: DiskCleanCandidate) -> String {
+        switch candidate.recoveryClass {
+        case .regenerable:
+            return localization.string("detail.category.reviewRegenerable", defaultValue: "可重新构建；可能近期仍在使用或所在仓库有未提交改动，请确认暂时不需要这些产物。")
+        case .downloadRequired:
+            return localization.string("detail.category.reviewDownload", defaultValue: "删除后需要重新下载或安装依赖，离线时可能无法恢复使用。")
+        case .originalData:
+            return localization.string("detail.category.reviewOriginal", defaultValue: "包含原始文件，不能靠重新构建恢复。请确认已有备份或确实不再需要。")
+        }
     }
 
     private var categoryTint: Color {

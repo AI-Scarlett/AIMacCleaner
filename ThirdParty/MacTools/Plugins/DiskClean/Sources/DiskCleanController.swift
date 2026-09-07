@@ -310,6 +310,7 @@ final class DiskCleanController: ObservableObject, DiskCleanControlling {
     }
 
     func setCandidateSelected(_ candidateID: DiskCleanCandidate.ID, isSelected: Bool) {
+        guard !snapshot.isBusy, snapshot.phase != .completed else { return }
         guard let index = liveCandidateIndexByID[candidateID] else { return }
         // Unselectable candidates are rejected by the model itself—UI disable is only a hint; the real gate is here.
         guard selection.setCandidate(liveCandidates[index], isSelected: isSelected) else { return }
@@ -317,7 +318,8 @@ final class DiskCleanController: ObservableObject, DiskCleanControlling {
     }
 
     func setCategorySelection(_ category: DiskCleanCategoryID, isSelected: Bool) {
-        selection.setCategory(category, isSelected: isSelected)
+        guard !snapshot.isBusy, snapshot.phase != .completed else { return }
+        selection.setCategory(category, isSelected: isSelected, candidates: liveCandidates)
         publishSelectionChange()
     }
 
@@ -357,6 +359,13 @@ final class DiskCleanController: ObservableObject, DiskCleanControlling {
             errorMessage: snapshot.errorMessage,
             scanLogEntries: snapshot.scanLogEntries
         )
+    }
+
+    /// A shared settings picker must update every independent cleanup section before
+    /// any section can create a plan. Refuse changes while any execution/scan is active.
+    static func setRemovalMode(_ mode: DiskCleanRemovalMode, for controllers: [DiskCleanController]) {
+        guard controllers.allSatisfy({ !$0.snapshot.isBusy }) else { return }
+        for controller in controllers { controller.setRemovalMode(mode) }
     }
 
     func scan() {

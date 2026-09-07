@@ -575,6 +575,26 @@ final class DiskCleanControllerTests: XCTestCase {
 
     // MARK: - Fixtures
 
+    func testSharedRemovalModeUpdatesAllIndependentCleanupSections() {
+        let controllers = (0..<5).map { _ in makeController(engine: ControlledDiskCleanScanEngine()) }
+        DiskCleanController.setRemovalMode(.permanent, for: controllers)
+        XCTAssertTrue(controllers.allSatisfy { $0.snapshot.removalMode == .permanent })
+        DiskCleanController.setRemovalMode(.trash, for: controllers)
+        XCTAssertTrue(controllers.allSatisfy { $0.snapshot.removalMode == .trash })
+    }
+
+    func testSharedRemovalModeDoesNotPartiallyChangeWhileASectionIsBusy() async {
+        let first = makeController(engine: ControlledDiskCleanScanEngine())
+        let second = makeController(engine: ControlledDiskCleanScanEngine())
+        DiskCleanController.setRemovalMode(.trash, for: [first, second])
+        second.scan()
+        await waitUntil("second section scanning") { second.snapshot.isBusy }
+        DiskCleanController.setRemovalMode(.permanent, for: [first, second])
+        XCTAssertEqual(first.snapshot.removalMode, .trash)
+        XCTAssertEqual(second.snapshot.removalMode, .trash)
+        second.cancelCurrentOperation()
+    }
+
     private func makeController(
         engine: any DiskCleanScanning,
         executor: any DiskCleanExecuting = FakeDiskCleanExecutor(),

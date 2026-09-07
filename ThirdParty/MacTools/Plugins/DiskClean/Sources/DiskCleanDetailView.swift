@@ -429,7 +429,7 @@ struct DiskCleanDetailView: View {
                     selection: snapshot.selection,
                     outcomesByCandidateID: outcomesByCandidateID,
                     localization: localization,
-                    isInteractionEnabled: !snapshot.isBusy,
+                    isInteractionEnabled: !snapshot.isBusy && snapshot.phase != .completed,
                     onToggleCandidate: { controller.setCandidateSelected($0, isSelected: $1) },
                     onToggleCategory: { controller.setCategorySelection($0, isSelected: $1) },
                     expandedCategories: $expandedCategories
@@ -450,107 +450,9 @@ struct DiskCleanDetailView: View {
 
     @ViewBuilder
     private var executionResultSection: some View {
-        if let executionResult = snapshot.executionResult {
-            VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.sectionHeaderContent) {
-                DiskCleanSectionHeader(
-                    title: localization.string("detail.result.title", defaultValue: "清理结果"),
-                    symbolName: "checkmark.seal"
-                )
-
-                VStack(spacing: 0) {
-                    // Pin attention-needed terminal statuses (design §7.5, §13-M4-6): they leave staged objects on disk;
-                    // burying them under dozens of successes is the same as not saying it.
-                    ForEach(executionResult.attentionResults, id: \.candidateID) { item in
-                        attentionRow(item)
-                        PluginSettingsListDivider()
-                    }
-                    summaryRow(executionResult)
-                }
-                .diskCleanSurface(.elevated)
-            }
+        if let result = snapshot.executionResult {
+            DiskCleanExecutionResultView(result: result, localization: localization, onRescan: { controller.scan() })
         }
-    }
-
-    private func attentionRow(_ item: DiskCleanExecutionItemResult) -> some View {
-        HStack(alignment: .top, spacing: PluginSettingsTheme.Spacing.rowContentControl) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-                .frame(width: PluginSettingsTheme.Size.rowIcon)
-
-            VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.rowTitleDescription) {
-                Text(DiskCleanFormat.attentionTitle(item.outcome, localization: localization))
-                    .font(PluginSettingsTheme.Typography.rowTitle)
-
-                Text(item.path)
-                    .font(PluginSettingsTheme.Typography.monospacedValue)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-
-                if let stagedName = DiskCleanFormat.stagedName(of: item.outcome) {
-                    Text(
-                        localization.format(
-                            "detail.result.stagedName",
-                            defaultValue: "暂存名：%@",
-                            stagedName
-                        )
-                    )
-                    .font(PluginSettingsTheme.Typography.monospacedValue)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-                }
-
-                Text(DiskCleanFormat.attentionGuidance(item.outcome, localization: localization))
-                    .font(PluginSettingsTheme.Typography.rowDescription)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .pluginSettingsListRowPadding()
-    }
-
-    private func summaryRow(_ result: DiskCleanExecutionResult) -> some View {
-        HStack(spacing: PluginSettingsTheme.Spacing.rowHorizontal) {
-            metric(
-                title: result.mode == .trash
-                    ? localization.string("detail.result.trashed", defaultValue: "已移到废纸篓")
-                    : localization.string("detail.result.removed", defaultValue: "已删除"),
-                value: DiskCleanFormat.itemCount(result.removedCount, localization: localization)
-            )
-            metric(
-                title: localization.string("detail.result.skipped", defaultValue: "已跳过"),
-                value: DiskCleanFormat.itemCount(result.skippedCount, localization: localization)
-            )
-            metric(
-                title: localization.string("detail.result.failed", defaultValue: "未完成"),
-                value: DiskCleanFormat.itemCount(result.failedCount, localization: localization)
-            )
-            metric(
-                // Trash mode must not say "reclaimed": objects are still in Trash, so space is not truly free yet (design §7.7).
-                title: result.mode == .trash
-                    ? localization.string("detail.result.trashedBytes", defaultValue: "已移到废纸篓")
-                    : localization.string("detail.result.reclaimedBytes", defaultValue: "已释放"),
-                value: DiskCleanFormat.approximateBytes(result.reclaimedBytes, localization: localization)
-            )
-            Spacer(minLength: 0)
-        }
-        .pluginSettingsListRowPadding()
-    }
-
-    private func metric(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: PluginSettingsTheme.Spacing.rowTitleDescription) {
-            Text(title)
-                .font(PluginSettingsTheme.Typography.statusBadge)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(PluginSettingsTheme.Typography.monospacedValue)
-        }
-        .frame(minWidth: 96, alignment: .leading)
     }
 
     // MARK: - P2 segments
@@ -618,7 +520,7 @@ struct DiskCleanDetailView: View {
                 "",
                 selection: Binding(
                     get: { snapshot.removalMode },
-                    set: { controller.setRemovalMode($0) }
+                    set: { DiskCleanController.setRemovalMode($0, for: cleanupControllers) }
                 )
             ) {
                 Text(localization.string("detail.removalMode.trash", defaultValue: "废纸篓"))
@@ -629,7 +531,7 @@ struct DiskCleanDetailView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .frame(width: 180)
-            .disabled(snapshot.isBusy)
+            .disabled(cleanupControllers.contains { $0.snapshot.isBusy })
         }
         .pluginSettingsListRowPadding(interactive: true)
     }
@@ -647,6 +549,10 @@ struct DiskCleanDetailView: View {
                 defaultValue: "直接删除，不进废纸篓，无法恢复。执行前需要再确认一次。"
             )
         }
+    }
+
+    private var cleanupControllers: [DiskCleanController] {
+        [controller, developerArtifactsController, installersController, userFilesController, advisorFindingsController]
     }
 
     // MARK: - Scan log
@@ -803,6 +709,9 @@ enum DiskCleanFormat {
     ) -> String {
         guard let result = snapshot.scanResult else {
             return localization.string("detail.selection.idle", defaultValue: "尚未扫描")
+        }
+        if snapshot.phase == .completed {
+            return localization.string("detail.selection.completed", defaultValue: "本轮已结束，请重新扫描确认剩余内容")
         }
         if snapshot.isResultExpired {
             return localization.string(

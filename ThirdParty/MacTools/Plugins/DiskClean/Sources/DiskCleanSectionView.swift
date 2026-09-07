@@ -242,10 +242,16 @@ struct DiskCleanActionBar: View {
     }
 
     private var actionRow: some View {
-        HStack(spacing: PluginSettingsTheme.Spacing.controlCluster) {
-            actionButtons
-            Spacer(minLength: 12)
-            selectionSummary
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: PluginSettingsTheme.Spacing.controlCluster) {
+                actionButtons
+                Spacer(minLength: 12)
+                selectionSummary
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                actionButtons
+                selectionSummary
+            }
         }
     }
 
@@ -253,7 +259,9 @@ struct DiskCleanActionBar: View {
         HStack(spacing: PluginSettingsTheme.Spacing.controlCluster) {
             Button(action: onScan) {
                 Label(
-                    localization.string("detail.action.scan", defaultValue: "扫描"),
+                    snapshot.isResultExpired || snapshot.isResultStale || snapshot.phase == .completed
+                        ? localization.string("detail.action.rescan", defaultValue: "重新扫描")
+                        : localization.string("detail.action.scan", defaultValue: "扫描"),
                     systemImage: "magnifyingglass"
                 )
                 .font(PluginSettingsTheme.Typography.controlLabel)
@@ -272,6 +280,7 @@ struct DiskCleanActionBar: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
             .disabled(!snapshot.canClean)
+            .help(DiskCleanFormat.selectionSummary(snapshot, localization: localization))
 
             if snapshot.isBusy {
                 Button(action: onCancel) {
@@ -297,7 +306,7 @@ struct DiskCleanActionBar: View {
         Text(DiskCleanFormat.selectionSummary(snapshot, localization: localization))
             .font(PluginSettingsTheme.Typography.rowDescription)
             .foregroundStyle(.secondary)
-            .lineLimit(1)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -347,6 +356,9 @@ struct DiskCleanCleanupSectionView<Configuration: View>: View {
                 )
             }
 
+            if let result = snapshot.executionResult {
+                DiskCleanExecutionResultView(result: result, localization: localization, onRescan: { controller.scan() })
+            }
             content
         }
         .confirmationDialog(
@@ -390,7 +402,7 @@ struct DiskCleanCleanupSectionView<Configuration: View>: View {
                 selection: snapshot.selection,
                 outcomesByCandidateID: outcomesByCandidateID,
                 localization: localization,
-                isInteractionEnabled: !snapshot.isBusy,
+                isInteractionEnabled: !snapshot.isBusy && snapshot.phase != .completed,
                 onToggleCandidate: { controller.setCandidateSelected($0, isSelected: $1) },
                 onToggleCategory: { controller.setCategorySelection($0, isSelected: $1) },
                 expandedCategories: $expandedCategories
