@@ -67,3 +67,5 @@ python3 scripts/verify_scan_rules.py
 编译器仍报告共享额度读取器已有的并发捕获警告及旧 SwiftUI API 弃用警告。对应读取器当前使用锁和 DispatchGroup/信号量同步；本轮未据此声称已经复现数据竞争，也未扩大到整个项目的 Swift 6 迁移。
 
 本地验证日志保存在 `build/review-evidence/`，不随源码发布。
+
+后续交付：用户授权发布后，已发布宿主 1.2.19 (140)、Quota Monitor 1.0.15、Disk Cleanup 3.5.1。详见 [正式发布记录](releases/1.2.19.md)。
