@@ -287,6 +287,7 @@ private final class QuotaTouchBarController {
     private var selectedProviderID: String?
     private var selectedMetricIndexByProviderID: [String: Int] = [:]
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var legacyCleanupTask: Task<Void, Never>?
     private var isActive = false
 
     private(set) var isUpdating = false
@@ -321,12 +322,15 @@ private final class QuotaTouchBarController {
         // A pre-1.0.9 widget is a visible remnant of this plugin, so make one
         // best-effort cleanup attempt during the migration. Failure stays
         // non-fatal and leaves the explicit panel action available.
-        LegacyBetterTouchToolWidgetCleanup.removeOwnedWidgetsIfPossible()
+        startLegacyCleanup(reportFailure: false)
         refreshDisplay()
     }
 
     func deactivate(disablePreference: Bool) {
         isActive = false
+        legacyCleanupTask?.cancel()
+        legacyCleanupTask = nil
+        isUpdating = false
         stopObserving()
         renderer.tearDown()
         if disablePreference {
@@ -373,13 +377,23 @@ private final class QuotaTouchBarController {
     }
 
     func removeLegacyBetterTouchToolWidgets() {
+        startLegacyCleanup(reportFailure: true)
+    }
+
+    private func startLegacyCleanup(reportFailure: Bool) {
+        guard legacyCleanupTask == nil, LegacyBetterTouchToolWidgetCleanup.hasOwnedWidgetState else { return }
         beginUpdate()
-        defer { finishUpdate() }
-        do {
-            try LegacyBetterTouchToolWidgetCleanup.removeOwnedWidgets()
-            errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
+        legacyCleanupTask = Task { [weak self] in
+            var failure: String?
+            do {
+                try await LegacyBetterTouchToolWidgetCleanup.removeOwnedWidgets()
+            } catch {
+                failure = error.localizedDescription
+            }
+            guard !Task.isCancelled, let self else { return }
+            self.legacyCleanupTask = nil
+            if reportFailure { self.errorMessage = failure }
+            self.finishUpdate()
         }
     }
 
@@ -1421,7 +1435,7 @@ private final class QuotaControlStripView: NSView {
 /// A one-time migration hook for controls created by plugin versions up to
 /// 1.0.8. It knows only UUIDs that this plugin persisted itself, validates the
 /// UUID syntax before acting, and never reads or alters any other BTT rule.
-private enum LegacyBetterTouchToolWidgetCleanup {
+enum LegacyBetterTouchToolWidgetCleanup {
     private struct State: Decodable {
         let schemaVersion: Int
         let previousUUID: String?
@@ -1452,20 +1466,26 @@ private enum LegacyBetterTouchToolWidgetCleanup {
 
     static var hasOwnedWidgetState: Bool { !(loadState()?.ownedUUIDs.isEmpty ?? true) }
 
-    static func removeOwnedWidgets() throws {
+    @MainActor
+    static func removeOwnedWidgets() async throws {
         guard let state = loadState(), !state.ownedUUIDs.isEmpty else { return }
         guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.hegenberg.BetterTouchTool") != nil else {
             try? FileManager.default.removeItem(at: stateURL)
             return
         }
-        for uuid in state.ownedUUIDs {
-            guard runDelete(uuid: uuid) else { throw CleanupError.automationUnavailable }
+        let worker = Task.detached(priority: .utility) {
+            for uuid in state.ownedUUIDs {
+                try Task.checkCancellation()
+                guard runDelete(uuid: uuid) else { throw CleanupError.automationUnavailable }
+            }
+            try Task.checkCancellation()
+            try? FileManager.default.removeItem(at: stateURL)
         }
-        try? FileManager.default.removeItem(at: stateURL)
-    }
-
-    static func removeOwnedWidgetsIfPossible() {
-        try? removeOwnedWidgets()
+        try await withTaskCancellationHandler {
+            try await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
     }
 
     private static func loadState() -> State? {
@@ -1479,16 +1499,45 @@ private enum LegacyBetterTouchToolWidgetCleanup {
     }
 
     private static func runDelete(uuid: String) -> Bool {
+        runProcess(
+            executable: URL(fileURLWithPath: "/usr/bin/osascript"),
+            arguments: ["-l", "AppleScript", "-e", deleteScript, uuid],
+            timeout: 8
+        )
+    }
+
+    static let deleteScript = """
+    on run argv
+        with timeout of 5 seconds
+            tell application id "com.hegenberg.BetterTouchTool" to delete_trigger (item 1 of argv)
+        end timeout
+    end run
+    """
+
+    /// Called on the migration worker, including while an Automation prompt is open.
+    static func runProcess(executable: URL, arguments: [String], timeout: TimeInterval) -> Bool {
+        guard !Task.isCancelled else { return false }
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = [
-            "-l", "AppleScript",
-            "-e", "on run argv\n tell application id \\\"com.hegenberg.BetterTouchTool\\\" to delete_trigger (item 1 of argv)\nend run",
-            uuid
-        ]
+        process.executableURL = executable
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        let finished = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in finished.signal() }
         do {
             try process.run()
-            process.waitUntilExit()
+            let deadline = ProcessInfo.processInfo.systemUptime + max(0, timeout)
+            while finished.wait(timeout: .now() + 0.05) == .timedOut {
+                if Task.isCancelled || ProcessInfo.processInfo.systemUptime >= deadline {
+                    if process.isRunning {
+                        process.terminate()
+                        if finished.wait(timeout: .now() + 0.2) == .timedOut, process.isRunning {
+                            kill(process.processIdentifier, SIGKILL)
+                        }
+                    }
+                    return false
+                }
+            }
             return process.terminationStatus == 0
         } catch {
             return false

@@ -207,6 +207,28 @@ struct ProviderQuotaResetCredit: Identifiable, Codable {
     }
 }
 
+/// Drops both subscriptions and already-enqueued callbacks when monitoring stops.
+@MainActor
+final class ProviderQuotaSubscriptions {
+    private var cancellables: Set<AnyCancellable> = []
+    private var generation = UUID()
+
+    func observe(_ publisher: ObservableObjectPublisher, action: @escaping @MainActor () -> Void) {
+        let generation = generation
+        publisher.sink { [weak self] _ in
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.generation == generation else { return }
+                action()
+            }
+        }.store(in: &cancellables)
+    }
+
+    func cancel() {
+        generation = UUID()
+        cancellables.removeAll()
+    }
+}
+
 @MainActor
 final class ProviderQuotaService: ObservableObject {
     static let pluginID = "tracefence.tools.quota-monitor"
@@ -232,7 +254,7 @@ final class ProviderQuotaService: ObservableObject {
     private var pluginMonitorIdentity: ObjectIdentifier?
     private var pluginMonitorStarted = false
     private var pluginBackendStarted = false
-    private var pluginCancellables: Set<AnyCancellable> = []
+    private let pluginSubscriptions = ProviderQuotaSubscriptions()
 #endif
 
     init(providerEngineURL: URL? = nil, requiresExplicitProviderEngine: Bool = false) {
@@ -638,11 +660,12 @@ final class ProviderQuotaService: ObservableObject {
     func stop() {
 #if !TRACEFENCE_QUOTA_PLUGIN
         if SandboxPaths.isDirectDistribution {
+            pluginBackendStarted = false
+            pluginSubscriptions.cancel()
             if pluginMonitorStarted {
                 pluginMonitor?.stopQuotaMonitoring()
             }
             pluginMonitorStarted = false
-            pluginBackendStarted = false
             return
         }
 #endif
@@ -715,29 +738,17 @@ final class ProviderQuotaService: ObservableObject {
         }
         pluginBackendStarted = true
 
-        pluginRuntimeHost.objectWillChange
-            .sink { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.synchronizePluginBackend(startMonitoring: true)
-                }
-            }
-            .store(in: &pluginCancellables)
-        pluginPackageManager.objectWillChange
-            .sink { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.synchronizePluginBackend(startMonitoring: true)
-                }
-            }
-            .store(in: &pluginCancellables)
-        pluginCatalogService.objectWillChange
-            .sink { [weak self] _ in
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    self.pluginPackageManager.refresh(catalog: self.pluginCatalogService.catalog)
-                    self.synchronizePluginBackend(startMonitoring: true)
-                }
-            }
-            .store(in: &pluginCancellables)
+        pluginSubscriptions.observe(pluginRuntimeHost.objectWillChange) { [weak self] in
+            self?.synchronizePluginBackend(startMonitoring: true)
+        }
+        pluginSubscriptions.observe(pluginPackageManager.objectWillChange) { [weak self] in
+            self?.synchronizePluginBackend(startMonitoring: true)
+        }
+        pluginSubscriptions.observe(pluginCatalogService.objectWillChange) { [weak self] in
+            guard let self else { return }
+            self.pluginPackageManager.refresh(catalog: self.pluginCatalogService.catalog)
+            self.synchronizePluginBackend(startMonitoring: true)
+        }
 
         pluginPackageManager.refresh(catalog: pluginCatalogService.catalog)
         synchronizePluginBackend(startMonitoring: true)

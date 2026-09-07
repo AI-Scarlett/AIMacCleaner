@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 
 /// Content-based duplicate detection built on the candidates collected by the
@@ -6,7 +7,7 @@ import Foundation
 /// head/tail fingerprint, and only streams the full file for real collisions.
 /// No file is ever loaded into memory in full.
 enum DiskCleanDuplicateScanner {
-    private static let cacheVersion = 1
+    private static let cacheVersion = 2
     private static let chunkBytes = 1 * 1_024 * 1_024
     private static let quickChunkBytes = 64 * 1_024
     private static let maximumCacheEntries = 6_000
@@ -15,6 +16,7 @@ enum DiskCleanDuplicateScanner {
     private struct CacheEntry: Codable, Sendable {
         let logicalSize: Int64
         let modifiedAt: TimeInterval
+        let changedAt: TimeInterval
         let fileIdentity: String
         let quickHash: String
         let fullHash: String
@@ -30,6 +32,7 @@ enum DiskCleanDuplicateScanner {
         let file: DiskFileRecord
         let identity: String
         let modifiedAt: TimeInterval
+        let changedAt: TimeInterval
         let quickHash: String
         var fullHash: String?
     }
@@ -38,6 +41,7 @@ enum DiskCleanDuplicateScanner {
         let identity: String
         let logicalSize: Int64
         let modifiedAt: TimeInterval
+        let changedAt: TimeInterval
     }
 
     static func scan(
@@ -48,12 +52,16 @@ enum DiskCleanDuplicateScanner {
         maximumDuration: TimeInterval = 25
     ) -> DiskDuplicateFileScanResult {
         let startedAt = Date()
-        let deadline = startedAt.addingTimeInterval(maximumDuration)
+        let deadline = ProcessInfo.processInfo.systemUptime + max(0, maximumDuration)
+        func canContinue() -> Bool {
+            !Task.isCancelled && ProcessInfo.processInfo.systemUptime < deadline
+        }
         var cache = loadCache(from: cacheURL)
         var unreadableFileCount = 0
         var hashedFileCount = 0
         var wasTruncated = candidateWasTruncated
         var quickGroups: [String: [FingerprintedFile]] = [:]
+        var seenIdentities = Set<String>()
 
         let sizeGroups = Dictionary(grouping: candidates) { $0.logicalSize }
             .filter { $0.key > 0 && $0.value.count > 1 }
@@ -61,7 +69,7 @@ enum DiskCleanDuplicateScanner {
 
         quickLoop: for (logicalSize, files) in sizeGroups {
             for file in files.sorted(by: { $0.path < $1.path }) {
-                guard !Task.isCancelled, Date() < deadline else {
+                guard canContinue() else {
                     wasTruncated = true
                     break quickLoop
                 }
@@ -70,10 +78,13 @@ enum DiskCleanDuplicateScanner {
                     unreadableFileCount += 1
                     continue
                 }
+                // Multiple directory entries can point to the same inode. Hash it once.
+                guard seenIdentities.insert(snapshot.identity).inserted else { continue }
 
                 let cached = cache.entries[file.path]
                 let cacheMatches = cached?.logicalSize == logicalSize
                     && cached?.modifiedAt == snapshot.modifiedAt
+                    && cached?.changedAt == snapshot.changedAt
                     && cached?.fileIdentity == snapshot.identity
                 let quickHash: String
                 let fullHash: String?
@@ -93,6 +104,7 @@ enum DiskCleanDuplicateScanner {
                         file: file,
                         identity: snapshot.identity,
                         modifiedAt: snapshot.modifiedAt,
+                        changedAt: snapshot.changedAt,
                         quickHash: quickHash,
                         fullHash: fullHash
                     )
@@ -100,51 +112,55 @@ enum DiskCleanDuplicateScanner {
             }
         }
 
-        var fullGroups: [String: [DiskFileRecord]] = [:]
+        var fullGroups: [String: [FingerprintedFile]] = [:]
         fullLoop: for files in quickGroups.values where files.count > 1 {
             for var value in files {
-                guard !Task.isCancelled, Date() < deadline else {
+                guard canContinue() else {
                     wasTruncated = true
                     break fullLoop
                 }
                 if value.fullHash == nil {
-                    guard let hash = fullFingerprint(path: value.file.path) else {
-                        unreadableFileCount += 1
-                        continue
-                    }
-                    guard fileSnapshot(path: value.file.path) == FileSnapshot(
-                        identity: value.identity,
-                        logicalSize: value.file.logicalSize,
-                        modifiedAt: value.modifiedAt
-                    ) else {
+                    guard let hash = fullFingerprint(path: value.file.path, shouldContinue: canContinue) else {
+                        if !canContinue() {
+                            wasTruncated = true
+                            break fullLoop
+                        }
                         unreadableFileCount += 1
                         continue
                     }
                     value.fullHash = hash
                     hashedFileCount += 1
                 }
+                // Validate cached hashes too: a file can change between the two passes.
+                guard matchesSnapshot(value) else {
+                    unreadableFileCount += 1
+                    continue
+                }
                 guard let fullHash = value.fullHash else { continue }
                 cache.entries[value.file.path] = CacheEntry(
                     logicalSize: value.file.logicalSize,
                     modifiedAt: value.modifiedAt,
+                    changedAt: value.changedAt,
                     fileIdentity: value.identity,
                     quickHash: value.quickHash,
                     fullHash: fullHash,
                     lastSeenAt: now.timeIntervalSince1970
                 )
-                fullGroups["\(value.file.logicalSize):\(fullHash)", default: []].append(value.file)
+                fullGroups["\(value.file.logicalSize):\(fullHash)", default: []].append(value)
             }
         }
 
         let groups = fullGroups.compactMap { key, rawFiles -> DiskDuplicateFileGroup? in
-            var seenIdentities = Set<String>()
             let files = rawFiles
-                .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-                .filter { file in
-                    guard let snapshot = fileSnapshot(path: file.path),
-                          snapshot.logicalSize == file.logicalSize else { return false }
-                    return seenIdentities.insert(snapshot.identity).inserted
+                .filter { value in
+                    guard matchesSnapshot(value) else {
+                        unreadableFileCount += 1
+                        return false
+                    }
+                    return true
                 }
+                .map(\.file)
+                .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
             guard files.count > 1, let first = files.first else { return nil }
             let allocatedSizes = files.map { max($0.size, 0) }.sorted()
             let reclaimableBytes = allocatedSizes.dropFirst().reduce(Int64(0), +)
@@ -204,13 +220,14 @@ enum DiskCleanDuplicateScanner {
         }
     }
 
-    private static func fullFingerprint(path: String) -> String? {
+    static func fullFingerprint(path: String, shouldContinue: () -> Bool) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return nil }
         defer { try? handle.close() }
         do {
             var hasher = SHA256()
-            while let data = try handle.read(upToCount: chunkBytes), !data.isEmpty {
-                if Task.isCancelled { return nil }
+            while true {
+                guard !Task.isCancelled, shouldContinue() else { return nil }
+                guard let data = try handle.read(upToCount: chunkBytes), !data.isEmpty else { break }
                 hasher.update(data: data)
             }
             return hex(hasher.finalize())
@@ -220,19 +237,22 @@ enum DiskCleanDuplicateScanner {
     }
 
     private static func fileSnapshot(path: String) -> FileSnapshot? {
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
-              let type = attributes[.type] as? FileAttributeType,
-              type == .typeRegular,
-              let systemNumber = attributes[.systemNumber] as? NSNumber,
-              let fileNumber = attributes[.systemFileNumber] as? NSNumber,
-              let logicalSize = attributes[.size] as? NSNumber,
-              let modifiedDate = attributes[.modificationDate] as? Date else {
-            return nil
-        }
+        var info = stat()
+        guard lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
         return FileSnapshot(
-            identity: "\(systemNumber.uint64Value):\(fileNumber.uint64Value)",
-            logicalSize: logicalSize.int64Value,
-            modifiedAt: modifiedDate.timeIntervalSince1970
+            identity: "\(info.st_dev):\(info.st_ino)",
+            logicalSize: Int64(info.st_size),
+            modifiedAt: TimeInterval(info.st_mtimespec.tv_sec) + TimeInterval(info.st_mtimespec.tv_nsec) / 1_000_000_000,
+            changedAt: TimeInterval(info.st_ctimespec.tv_sec) + TimeInterval(info.st_ctimespec.tv_nsec) / 1_000_000_000
+        )
+    }
+
+    private static func matchesSnapshot(_ value: FingerprintedFile) -> Bool {
+        fileSnapshot(path: value.file.path) == FileSnapshot(
+            identity: value.identity,
+            logicalSize: value.file.logicalSize,
+            modifiedAt: value.modifiedAt,
+            changedAt: value.changedAt
         )
     }
 

@@ -124,6 +124,19 @@ targets:
         SWIFT_STRICT_CONCURRENCY: minimal
         ARCHS: "arm64 x86_64"
         ONLY_ACTIVE_ARCH: false
+  QuotaMonitorPluginTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: QuotaMonitor/Tests
+    dependencies:
+      - target: QuotaMonitorPluginCore
+      - target: MacToolsPluginKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tracefence.plugin.quota-monitor.tests
+        GENERATE_INFOPLIST_FILE: true
   QuotaMonitorPlugin:
     type: bundle
     platform: macOS
@@ -224,6 +237,11 @@ schemes:
     build:
       targets:
         QuotaMonitorPlugin: all
+        QuotaMonitorPluginTests: [test]
+    test:
+      config: Debug
+      targets:
+        - QuotaMonitorPluginTests
     run:
       config: Debug
     archive:
