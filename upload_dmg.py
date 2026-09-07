@@ -13,17 +13,17 @@ import urllib.request
 
 REPO = "AI-Scarlett/TraceFence"
 APP_NAME = "TraceFence"
-VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.17")
+VERSION = os.environ.get("TRACEFENCE_VERSION", "1.2.19")
 TAG = f"v{VERSION}"
 DMG_PATH = f"/tmp/{APP_NAME}-{TAG}-arm64.dmg"
 RELEASE_NAME = f"{APP_NAME} {TAG}"
 MANIFEST_NAME = "tracefence-update.json"
 RELEASE_BODY = (
-    f"TraceFence {VERSION} adds an active-Agent quota surface for Touch Bar MacBook Pro models.\n\n"
-    "- Shows the current provider and two key remaining-quota windows on Touch Bar.\n"
-    "- Follows foreground apps and active Codex, Claude, Grok, or DeepSeek Harness sessions.\n"
-    "- Reuses the quota monitor plugin cache without extra credential reads or polling.\n"
-    "- Keeps persistent Touch Bar integration isolated to the direct website build.\n"
+    f"TraceFence {VERSION} fixes quota monitoring lifecycle behavior.\n\n"
+    "- Removes event subscriptions when monitoring stops.\n"
+    "- Discards queued callbacks from stopped monitoring sessions.\n"
+    "- Prevents subscription accumulation across repeated stop/start cycles.\n"
+    "- Quota Monitor 1.0.15 and Disk Cleanup 3.5.1 are delivered separately through the Plugin Center.\n"
 )
 
 
