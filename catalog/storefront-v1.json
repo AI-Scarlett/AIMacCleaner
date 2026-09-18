@@ -1,6 +1,6 @@
 {
   "businessID": "bus_0Nj3ve514BLr8z2wT3duj",
-  "expiresAt": "2027-09-07T08:59:31Z",
+  "expiresAt": "2027-09-18T06:23:23Z",
   "offers": [
     {
       "active": true,
@@ -1190,7 +1190,7 @@
         },
         "en": {
           "displayName": "Quota Monitor",
-          "summary": "Automatically follow the active Agent for five-hour and weekly quotas, with manual switching; BetterTouchTool is optional"
+          "summary": "Touch Bar and a screen-edge ring share one quota snapshot; local Kimi, MiniMax, Z.ai, Command Code, DeepSeek, Kiro, Factory, and Kilo installations are auto-discovered."
         },
         "es": {
           "displayName": "Monitor de cuota",
@@ -1218,7 +1218,7 @@
         },
         "zh-Hans": {
           "displayName": "额度监控",
-          "summary": "系统 Touch Bar 常驻额度入口；自动跟随当前 Agent 显示 5 小时和周额度，并可手动切换"
+          "summary": "Touch Bar 与屏幕边缘圆环共用同一份额度快照；自动发现本机已安装的 Kimi、MiniMax、Z.ai、Command Code、DeepSeek、Kiro、Factory、Kilo。"
         },
         "zh-Hant": {
           "displayName": "額度監控",
@@ -1231,10 +1231,10 @@
       "package": {
         "bundleIdentifier": "com.tracefence.plugin.quota-monitor",
         "entryPoint": "QuotaMonitor.bundle",
-        "sha256": "094607c1e3c0de51e6847028b375951a6201ba35d205e88365eeee361de1f253",
-        "sizeBytes": 15621351,
+        "sha256": "f44afb86c7edfbc886511d759cb140914d9672e9a84bdcee8ee31371eafef617",
+        "sizeBytes": 15624714,
         "teamIdentifier": "UQ87N2WZ76",
-        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-quota-monitor-v1.0.15/quota-monitor-1.0.15.mactoolsplugin.zip"
+        "url": "https://github.com/AI-Scarlett/TraceFence/releases/download/plugin-quota-monitor-v1.0.16/quota-monitor-1.0.16.mactoolsplugin.zip"
       },
       "permissions": [],
       "placements": {
@@ -1248,10 +1248,10 @@
         "workspaceDefault": "quick_control"
       },
       "standaloneOfferID": null,
-      "summary": "Automatically follow the active Agent for five-hour and weekly quotas, with manual switching; BetterTouchTool is optional.",
+      "summary": "Touch Bar and a screen-edge ring share one quota snapshot; local Kimi, MiniMax, Z.ai, Command Code, DeepSeek, Kiro, Factory, and Kilo installations are auto-discovered.",
       "systemImage": "waveform.path.ecg.rectangle",
       "trialHours": null,
-      "version": "1.0.15"
+      "version": "1.0.16"
     },
     {
       "capabilities": [
@@ -4278,7 +4278,7 @@
       "version": "1.1.1"
     }
   ],
-  "publishedAt": "2026-09-07T08:59:31Z",
-  "revision": 35,
+  "publishedAt": "2026-09-18T06:23:23Z",
+  "revision": 36,
   "schemaVersion": 1
 }
