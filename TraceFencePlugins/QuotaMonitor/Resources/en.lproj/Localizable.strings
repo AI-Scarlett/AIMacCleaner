@@ -1,5 +1,12 @@
 "metadata.title" = "Quota Monitor";
 "metadata.description" = "Follows the active Agent for five-hour and weekly quota, with manual switching and a return to automatic follow.";
+"rail.section" = "Screen-edge rings";
+"rail.action.show" = "Show screen-edge rings";
+"rail.action.hide" = "Hide screen-edge rings";
+"rail.edge.section" = "Docking edge";
+"rail.edge.left" = "Left";
+"rail.edge.right" = "Right";
+"rail.edge.top" = "Top";
 "panel.refreshing" = "Reading provider quotas…";
 "panel.waiting" = "Waiting for the first quota read";
 "panel.providersFormat" = "%lld providers updated";

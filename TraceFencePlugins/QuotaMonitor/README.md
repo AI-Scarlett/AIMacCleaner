@@ -3,6 +3,12 @@
 这是独立的额度监控插件。额度读取、前台 Agent 识别、手动切换和 Touch Bar 渲染都由插件自身完成；
 它不修改 TraceFence 的菜单栏、任务栏、窗口布局或发布包。
 
+## 屏幕边缘圆环
+
+圆环和 Touch Bar 共用同一份额度快照，不另开一套登录。默认停在屏幕右侧，可改到左侧或顶部；空闲几秒后收成细条，悬停再展开，刷新额度时如果指针还在圆环上不会被收起。每个已读取的 Agent 一个圆环，点圆环可锁定该 Agent，再点同一圆环循环额度窗口。颜色规则与 Touch Bar 相同。
+
+本机已安装时会自动发现 Kimi、MiniMax、Z.ai、Command Code、DeepSeek、Kiro、Factory、Kilo 的本地 CLI/配置额度。Cursor 网页 Cookie 和 GitHub Copilot 设备登录仍保持手动接入，不会在无人值守刷新里自动读取。
+
 ## 原生 Touch Bar
 
 `1.0.13` 在插件内注册一个常驻的系统 Control Strip **AI（sparkles）**入口，不依赖 BetterTouchTool、Node、Shell Script Widget 或自动化权限。入口在插件启动时就注册：即使用户点隐藏按钮收起额度显示、或随后重启 TraceFence，仍可直接在 Touch Bar 右侧 Control Strip 中点击 AI 图标重新打开。

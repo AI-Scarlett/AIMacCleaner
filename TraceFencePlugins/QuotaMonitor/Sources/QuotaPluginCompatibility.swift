@@ -56,6 +56,24 @@ enum AgentIntegrationCatalog {
             return commandExists("aider") || pathExists("~/.aider") || pathExists("~/.aider.conf.yml")
         case "openrouter":
             return ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"]?.isEmpty == false
+        case "kimi", "moonshot", "kimik2":
+            return commandExists("kimi") || pathExists("~/.kimi") || pathExists("~/.moonshot")
+        case "minimax":
+            return commandExists("minimax") || pathExists("~/.minimax")
+        case "zai", "zhipu", "glm":
+            return commandExists("zai") || pathExists("~/.zai") || pathExists("~/.bigmodel")
+        case "commandcode":
+            return commandExists("commandcode") || pathExists("~/.commandcode/auth.json")
+        case "deepseek":
+            return commandExists("deepseek") || pathExists("~/.deepseek") || pathExists("~/.dsh")
+        case "kiro":
+            return commandExists("kiro-cli") || commandExists("kiro") || pathExists("~/.kiro")
+        case "factory":
+            return commandExists("droid") || pathExists("/Applications/Droid.app") || pathExists("~/.factory")
+        case "kilo":
+            return commandExists("kilo") || pathExists("~/.kilo")
+        case "copilot":
+            return commandExists("gh") && pathExists("~/.config/gh")
         default:
             return false
         }

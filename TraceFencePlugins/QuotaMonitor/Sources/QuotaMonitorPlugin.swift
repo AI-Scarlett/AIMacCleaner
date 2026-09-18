@@ -36,6 +36,8 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
         static let nextProvider = "quota-monitor-next-provider"
         static let automaticProvider = "quota-monitor-automatic-provider"
         static let toggleTouchBar = "quota-monitor-toggle-touch-bar"
+        static let toggleEdgeRail = "quota-monitor-toggle-edge-rail"
+        static let edgeRailEdge = "quota-monitor-edge-rail-edge"
         static let cleanLegacyTouchBar = "quota-monitor-clean-legacy-touch-bar"
     }
 
@@ -52,6 +54,7 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
     private let service: ProviderQuotaService
     private let localization: PluginLocalization
     private let touchBarController: QuotaTouchBarController
+    private let edgeRailController: QuotaEdgeRailController
     private var serviceChangeCancellable: AnyCancellable?
     private var isExpanded = false
 
@@ -62,13 +65,31 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
         )
         self.localization = localization
         self.touchBarController = QuotaTouchBarController(localization: localization)
+        self.edgeRailController = QuotaEdgeRailController(localization: localization)
         self.metadata = Self.makeMetadata(localization: localization)
         touchBarController.onStateChange = { [weak self] in
+            self?.syncEdgeRail()
+            self?.onStateChange?()
+        }
+        edgeRailController.onSelectProvider = { [weak self] id in
+            self?.touchBarController.selectProvider(id)
+        }
+        edgeRailController.onCycleMetric = { [weak self] in
+            self?.touchBarController.cycleVisibleMetric()
+        }
+        edgeRailController.onResumeAutomatic = { [weak self] in
+            self?.touchBarController.resumeAutomaticSelection()
+        }
+        edgeRailController.onHide = { [weak self] in
+            self?.onStateChange?()
+        }
+        edgeRailController.onStateChange = { [weak self] in
             self?.onStateChange?()
         }
         serviceChangeCancellable = service.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async {
                 self?.touchBarController.receive(snapshots: self?.service.snapshots ?? [])
+                self?.syncEdgeRail()
                 self?.onStateChange?()
             }
         }
@@ -83,7 +104,7 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
             order: 30,
             defaultDescription: localization.string(
                 "metadata.description",
-                defaultValue: "读取 Codex、Claude、Grok 等 Provider 的额度与重置时间。Touch Bar 由此插件独立显示。"
+                defaultValue: "读取 Codex、Claude、Grok 等 Provider 的额度与重置时间。Touch Bar 与屏幕边缘圆环共用同一份快照。"
             )
         )
     }
@@ -91,6 +112,7 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
     func refreshLocalization() {
         metadata = Self.makeMetadata(localization: localization)
         touchBarController.refreshLocalization()
+        syncEdgeRail()
         onStateChange?()
     }
 
@@ -208,6 +230,50 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
             ))
         }
 
+        controls.append(contentsOf: [
+            PluginPanelControl(
+                id: ControlID.toggleEdgeRail,
+                kind: .actionRow,
+                options: [],
+                selectedOptionID: nil,
+                dateValue: nil,
+                minimumDate: nil,
+                displayedComponents: nil,
+                datePickerStyle: nil,
+                sectionTitle: localization.string("rail.section", defaultValue: "屏幕边缘圆环"),
+                actionTitle: edgeRailController.isVisible
+                    ? localization.string("rail.action.hide", defaultValue: "隐藏屏幕边缘圆环")
+                    : localization.string("rail.action.show", defaultValue: "显示屏幕边缘圆环"),
+                actionIconSystemName: edgeRailController.isVisible ? "eye.slash" : "circle.circle",
+                isEnabled: true
+            ),
+            PluginPanelControl(
+                id: ControlID.edgeRailEdge,
+                kind: .segmented,
+                options: [
+                    PluginPanelControlOption(
+                        id: QuotaEdgeRailController.Edge.left.rawValue,
+                        title: localization.string("rail.edge.left", defaultValue: "左侧")
+                    ),
+                    PluginPanelControlOption(
+                        id: QuotaEdgeRailController.Edge.right.rawValue,
+                        title: localization.string("rail.edge.right", defaultValue: "右侧")
+                    ),
+                    PluginPanelControlOption(
+                        id: QuotaEdgeRailController.Edge.top.rawValue,
+                        title: localization.string("rail.edge.top", defaultValue: "顶部")
+                    )
+                ],
+                selectedOptionID: edgeRailController.edge.rawValue,
+                dateValue: nil,
+                minimumDate: nil,
+                displayedComponents: nil,
+                datePickerStyle: nil,
+                sectionTitle: localization.string("rail.edge.section", defaultValue: "停靠位置"),
+                isEnabled: edgeRailController.isVisible
+            )
+        ])
+
         return PluginPanelState(
             subtitle: subtitle,
             isOn: service.isRefreshing,
@@ -221,11 +287,16 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
 
     func activate(context: PluginRuntimeContext) {
         touchBarController.activate(snapshots: service.snapshots)
+        edgeRailController.activate(
+            snapshots: service.snapshots,
+            state: touchBarController.currentDisplayState()
+        )
     }
 
     func deactivate(reason: PluginDeactivationReason) {
         service.stop()
         touchBarController.deactivate(disablePreference: reason == .disabled || reason == .uninstalling)
+        edgeRailController.deactivate()
     }
 
     func refresh() {
@@ -247,12 +318,25 @@ final class QuotaMonitorPlugin: MacToolsPlugin, PluginPrimaryPanel,
             touchBarController.resumeAutomaticSelection()
         case let .invokeAction(controlID) where controlID == ControlID.toggleTouchBar:
             touchBarController.toggleVisibility()
+        case let .invokeAction(controlID) where controlID == ControlID.toggleEdgeRail:
+            edgeRailController.toggleVisibility(state: touchBarController.currentDisplayState())
         case let .invokeAction(controlID) where controlID == ControlID.cleanLegacyTouchBar:
             touchBarController.removeLegacyBetterTouchToolWidgets()
+        case let .setSelection(controlID, optionID) where controlID == ControlID.edgeRailEdge:
+            if let edge = QuotaEdgeRailController.Edge(rawValue: optionID) {
+                edgeRailController.setEdge(edge, state: touchBarController.currentDisplayState())
+            }
         case .invokeAction, .setSwitch, .setSelection, .setNavigationSelection,
              .clearNavigationSelection, .setDate, .setSlider:
             break
         }
+    }
+
+    private func syncEdgeRail() {
+        edgeRailController.receive(
+            snapshots: service.snapshots,
+            state: touchBarController.currentDisplayState()
+        )
     }
 
     var quotaSnapshotPayload: Data? {
@@ -308,7 +392,8 @@ private final class QuotaTouchBarController {
         return defaults.bool(forKey: Preference.visibleKey)
     }
 
-    var hasQuotaProviders: Bool { !QuotaTouchBarDisplay.items(from: snapshots, localization: localization).isEmpty }
+    var hasQuotaProviders: Bool { !QuotaDisplay.items(from: snapshots, localization: localization).isEmpty }
+    func currentDisplayState() -> QuotaDisplay.State { displayState() }
     var hasLegacyBetterTouchToolWidgets: Bool { LegacyBetterTouchToolWidgetCleanup.hasOwnedWidgetState }
     var panelSummary: String? {
         guard hasQuotaProviders else { return nil }
@@ -369,10 +454,18 @@ private final class QuotaTouchBarController {
         refreshDisplay()
     }
 
-    private func cycleMetric() {
+    func cycleVisibleMetric() {
         let state = displayState()
         guard !state.isUnavailable, state.metricCount > 1 else { return }
         selectedMetricIndexByProviderID[state.providerID] = (state.selectedMetricIndex + 1) % state.metricCount
+        refreshDisplay()
+    }
+
+    func selectProvider(_ id: String) {
+        let items = QuotaDisplay.items(from: snapshots, localization: localization)
+        guard items.contains(where: { $0.id == id }) else { return }
+        selection = .manual(id)
+        selectedProviderID = id
         refreshDisplay()
     }
 
@@ -460,7 +553,7 @@ private final class QuotaTouchBarController {
     }
 
     private func cycleProvider(offset: Int) {
-        let items = QuotaTouchBarDisplay.items(from: snapshots, localization: localization)
+        let items = QuotaDisplay.items(from: snapshots, localization: localization)
         guard !items.isEmpty else { return }
         let currentIndex = selectedProviderID.flatMap { id in
             items.firstIndex(where: { $0.id == id })
@@ -498,7 +591,7 @@ private final class QuotaTouchBarController {
             try renderer.show(
                 display,
                 onProviderCycle: { [weak self] in self?.selectNextProvider() },
-                onMetricCycle: { [weak self] in self?.cycleMetric() },
+                onMetricCycle: { [weak self] in self?.cycleVisibleMetric() },
                 onAutomatic: { [weak self] in self?.resumeAutomaticSelection() },
                 onHide: { [weak self] in
                     self?.setVisible(false)
@@ -512,14 +605,14 @@ private final class QuotaTouchBarController {
         onStateChange?()
     }
 
-    private func displayState() -> QuotaTouchBarDisplay.State {
-        let items = QuotaTouchBarDisplay.items(from: snapshots, localization: localization)
+    private func displayState() -> QuotaDisplay.State {
+        let items = QuotaDisplay.items(from: snapshots, localization: localization)
         guard !items.isEmpty else {
             selectedProviderID = nil
             return .unavailable()
         }
 
-        let manuallySelected: QuotaTouchBarDisplay.Item?
+        let manuallySelected: QuotaDisplay.Item?
         switch selection {
         case let .manual(id):
             manuallySelected = items.first(where: { $0.id == id })
@@ -528,11 +621,11 @@ private final class QuotaTouchBarController {
             manuallySelected = nil
         }
 
-        let resolved: QuotaTouchBarDisplay.Item
+        let resolved: QuotaDisplay.Item
         if let manuallySelected {
             resolved = manuallySelected
         } else if let foreground = items.first(where: {
-            $0.providerKey == QuotaTouchBarDisplay.providerKey(for: frontmostApplicationText())
+            $0.providerKey == QuotaDisplay.providerKey(for: frontmostApplicationText())
         }) {
             resolved = foreground
         } else if let prior = selectedProviderID.flatMap({ id in items.first(where: { $0.id == id }) }) {
@@ -558,207 +651,6 @@ private final class QuotaTouchBarController {
         return [app?.localizedName, app?.bundleIdentifier]
             .compactMap { $0 }
             .joined(separator: " ")
-    }
-}
-
-private enum QuotaTouchBarDisplay {
-    struct Metric: Equatable {
-        let id: String
-        let title: String
-        let remaining: Int
-        let sortOrder: Int
-    }
-
-    struct Item: Equatable {
-        let id: String
-        let providerKey: String
-        let providerName: String
-        let metrics: [Metric]
-        let lowestRemaining: Int
-    }
-
-    struct State: Equatable {
-        let providerID: String
-        let providerName: String
-        let metrics: [Metric]
-        let selectedMetricIndex: Int
-        let isAutomatic: Bool
-        let isUnavailable: Bool
-
-        var currentMetric: Metric? {
-            guard metrics.indices.contains(selectedMetricIndex) else { return nil }
-            return metrics[selectedMetricIndex]
-        }
-
-        var metricCount: Int { metrics.count }
-        var metricPageText: String { "\(selectedMetricIndex + 1)/\(max(1, metricCount))" }
-        var lowestRemaining: Int? { metrics.map(\.remaining).min() }
-
-        func summary(localization: PluginLocalization) -> String {
-            guard !isUnavailable else {
-                return localization.string("touchbar.unavailable", defaultValue: "No quota data")
-            }
-            let mode = localization.string(
-                isAutomatic ? "touchbar.mode.automatic" : "touchbar.mode.manual",
-                defaultValue: isAutomatic ? "Automatic follow" : "Manual lock"
-            )
-            if let metric = currentMetric {
-                return localization.format(
-                    "touchbar.summary.metric",
-                    defaultValue: "%@ · %@ %lld%% · %@ · %@",
-                    providerName,
-                    metric.title,
-                    Int64(metric.remaining),
-                    metricPageText,
-                    mode
-                )
-            }
-            return localization.format(
-                "touchbar.summary.provider",
-                defaultValue: "%@ · %@",
-                providerName,
-                mode
-            )
-        }
-
-        static func unavailable() -> State {
-            State(
-                providerID: "",
-                providerName: "Quota",
-                metrics: [],
-                selectedMetricIndex: 0,
-                isAutomatic: true,
-                isUnavailable: true
-            )
-        }
-
-        static func quota(item: Item, metricIndex: Int, isAutomatic: Bool) -> State {
-            State(
-                providerID: item.id,
-                providerName: item.providerName,
-                metrics: item.metrics,
-                selectedMetricIndex: metricIndex,
-                isAutomatic: isAutomatic,
-                isUnavailable: false
-            )
-        }
-    }
-
-    static func items(from snapshots: [ProviderQuotaSnapshot], localization: PluginLocalization) -> [Item] {
-        snapshots.compactMap { snapshot in
-            guard !snapshot.isSetupNotice else { return nil }
-            let metrics = makeMetrics(from: snapshot.windows, localization: localization)
-            guard !metrics.isEmpty else { return nil }
-            let key = providerKey(for: snapshot.providerName)
-            return Item(
-                id: snapshot.id,
-                providerKey: key,
-                providerName: sanitizedProviderName(key),
-                metrics: metrics,
-                lowestRemaining: metrics.map(\.remaining).min() ?? 0
-            )
-        }
-        .sorted { lhs, rhs in
-            if lhs.providerName != rhs.providerName {
-                return lhs.providerName.localizedCaseInsensitiveCompare(rhs.providerName) == .orderedAscending
-            }
-            return lhs.id < rhs.id
-        }
-    }
-
-    static func providerKey(for text: String) -> String {
-        let normalized = text.lowercased()
-        if normalized.contains("codex") || normalized.contains("openai") { return "codex" }
-        if normalized.contains("claude") || normalized.contains("anthropic") { return "claude" }
-        if normalized.contains("grok") || normalized.contains("xai") { return "grok" }
-        if normalized.contains("deepseek") || normalized.contains("dsh") { return "deepseek" }
-        if normalized.contains("gemini") || normalized.contains("google") { return "gemini" }
-        if normalized.contains("cursor") { return "cursor" }
-        if normalized.contains("minimax") { return "minimax" }
-        if normalized.contains("antigravity") { return "antigravity" }
-        return normalized
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .first(where: { !$0.isEmpty }) ?? ""
-    }
-
-    static func meterColor(for remaining: Int?) -> NSColor {
-        guard let remaining else { return .systemGray }
-        switch remaining {
-        case ..<20: return NSColor(red: 0.93, green: 0.27, blue: 0.31, alpha: 1)
-        case ..<50: return NSColor(red: 0.96, green: 0.49, blue: 0.12, alpha: 1)
-        case ..<70: return NSColor(red: 0.98, green: 0.78, blue: 0.16, alpha: 1)
-        default: return NSColor(red: 0.24, green: 0.82, blue: 0.42, alpha: 1)
-        }
-    }
-
-    private static func makeMetrics(
-        from windows: [ProviderQuotaWindow],
-        localization: PluginLocalization
-    ) -> [Metric] {
-        // Keep the Provider's real window name intact. If several windows share
-        // the same kind, the page counter differentiates them; adding “2/3” to
-        // labels corrupts names such as “周额度”.
-        windows
-            .map { window in
-                Metric(
-                    id: window.id,
-                    title: metricTitle(for: window, localization: localization),
-                    remaining: Int(window.remainingPercent.rounded()),
-                    sortOrder: metricSortOrder(for: window.kind)
-                )
-            }
-            .sorted { lhs, rhs in
-                if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
-                if lhs.title != rhs.title { return lhs.title < rhs.title }
-                return lhs.id < rhs.id
-            }
-    }
-
-    private static func metricTitle(
-        for window: ProviderQuotaWindow,
-        localization: PluginLocalization
-    ) -> String {
-        // The source already supplies names such as “Current week (Opus)” and
-        // distinct five-hour windows. Use that exact title so Touch Bar pages
-        // match the detailed quota popup instead of flattening all of them to
-        // the generic “5小时额度”.
-        let providerTitle = window.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !providerTitle.isEmpty { return providerTitle }
-
-        // Fallbacks apply only to malformed/legacy payloads with no title.
-        switch window.kind {
-        case .fiveHour:
-            return localization.string("touchbar.metric.fiveHour", defaultValue: "5-hour quota")
-        case .weekly:
-            return localization.string("touchbar.metric.weekly", defaultValue: "Weekly quota")
-        case .monthly:
-            return localization.string("touchbar.metric.monthly", defaultValue: "Monthly quota")
-        case .extra:
-            return localization.string("touchbar.metric.extra", defaultValue: "Additional quota")
-        }
-    }
-
-    private static func metricSortOrder(for kind: ProviderQuotaWindow.Kind) -> Int {
-        switch kind {
-        case .fiveHour: return 0
-        case .weekly: return 1
-        case .monthly: return 2
-        case .extra: return 3
-        }
-    }
-
-    private static func sanitizedProviderName(_ key: String) -> String {
-        switch key {
-        case "codex": return "GPT"
-        case "claude": return "Claude"
-        case "grok": return "Grok"
-        case "cursor": return "Cursor"
-        case "gemini": return "Gemini"
-        case "deepseek": return "DeepSeek"
-        case "minimax": return "MiniMax"
-        case "antigravity": return "Antigravity"
-        default: return "Provider"
-        }
     }
 }
 
@@ -800,7 +692,7 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
     }
 
     func prepareControlStrip(
-        _ state: QuotaTouchBarDisplay.State,
+        _ state: QuotaDisplay.State,
         onControlStripToggle: @escaping () -> Void
     ) throws {
         if touchBar == nil { try register() }
@@ -817,7 +709,7 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
     }
 
     func show(
-        _ state: QuotaTouchBarDisplay.State,
+        _ state: QuotaDisplay.State,
         onProviderCycle: @escaping () -> Void,
         onMetricCycle: @escaping () -> Void,
         onAutomatic: @escaping () -> Void,
@@ -999,9 +891,9 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
         configure(0)
     }
 
-    private func updateControlStripButton(with state: QuotaTouchBarDisplay.State) {
+    private func updateControlStripButton(with state: QuotaDisplay.State) {
         guard let controlStripButton else { return }
-        controlStripButton.contentTintColor = QuotaTouchBarDisplay.meterColor(for: state.lowestRemaining)
+        controlStripButton.contentTintColor = QuotaDisplay.meterColor(for: state.lowestRemaining)
         let label: String
         if state.isUnavailable {
             label = t("touchbar.controlStrip.open", "Open AI quota monitor")
@@ -1039,7 +931,7 @@ private final class NativeQuotaTouchBarRenderer: NSObject, NSTouchBarDelegate {
 @MainActor
 private final class QuotaControlStripView: NSView {
     private let localization: PluginLocalization
-    private var state = QuotaTouchBarDisplay.State.unavailable()
+    private var state = QuotaDisplay.State.unavailable()
     private var onProviderCycle: (() -> Void)?
     private var onMetricCycle: (() -> Void)?
     private var onAutomatic: (() -> Void)?
@@ -1077,7 +969,7 @@ private final class QuotaControlStripView: NSView {
     }
 
     func update(
-        state: QuotaTouchBarDisplay.State,
+        state: QuotaDisplay.State,
         onProviderCycle: @escaping () -> Void,
         onMetricCycle: @escaping () -> Void,
         onAutomatic: @escaping () -> Void,
@@ -1243,7 +1135,7 @@ private final class QuotaControlStripView: NSView {
         NSBezierPath(rect: NSRect(x: x, y: 7, width: 1, height: 16)).fill()
     }
 
-    private func drawGauge(_ metric: QuotaTouchBarDisplay.Metric, in rect: NSRect, secondary: NSColor) {
+    private func drawGauge(_ metric: QuotaDisplay.Metric, in rect: NSRect, secondary: NSColor) {
         let valueWidth: CGFloat = 42
         let labelWidth = metricTitleWidth(
             for: metric.title,
@@ -1268,7 +1160,7 @@ private final class QuotaControlStripView: NSView {
         let ratio = min(1, max(0, CGFloat(metric.remaining) / 100))
         if ratio > 0 {
             let fill = NSRect(x: track.minX, y: track.minY, width: track.width * ratio, height: track.height)
-            QuotaTouchBarDisplay.meterColor(for: metric.remaining).setFill()
+            QuotaDisplay.meterColor(for: metric.remaining).setFill()
             NSBezierPath(roundedRect: fill, xRadius: 4, yRadius: 4).fill()
         }
         drawText(

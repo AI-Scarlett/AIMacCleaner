@@ -1,5 +1,13 @@
 "metadata.title" = "额度监控";
 "metadata.description" = "自动跟随当前 Agent 显示 5 小时和周额度；可手动切换，并可随时恢复自动跟随。";
+
+"rail.section" = "屏幕边缘圆环";
+"rail.action.show" = "显示屏幕边缘圆环";
+"rail.action.hide" = "隐藏屏幕边缘圆环";
+"rail.edge.section" = "停靠位置";
+"rail.edge.left" = "左侧";
+"rail.edge.right" = "右侧";
+"rail.edge.top" = "顶部";
 "panel.refreshing" = "正在读取 Provider 额度…";
 "panel.waiting" = "等待首次额度读取";
 "panel.providersFormat" = "%lld 个 Provider 已更新";

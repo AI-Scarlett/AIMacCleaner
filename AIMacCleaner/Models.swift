@@ -318,11 +318,25 @@ enum AgentIntegrationCatalog {
         case "copilot":
             return commandExists("gh") && pathExists("~/.config/gh")
         case "factory":
-            return pathExists("/Applications/Droid.app")
+            return pathExists("/Applications/Droid.app") || commandExists("droid") || pathExists("~/.factory")
         case "antigravity":
             return hasDesktopAgent(id: "antigravity")
         case "deepseek-harness", "dsh":
             return commandURL("dsh") != nil || pathExists("~/.dsh")
+        case "kimi", "moonshot", "kimik2":
+            return commandExists("kimi") || pathExists("~/.kimi") || pathExists("~/.moonshot")
+        case "minimax":
+            return commandExists("minimax") || pathExists("~/.minimax")
+        case "zai", "zhipu", "glm":
+            return commandExists("zai") || pathExists("~/.zai") || pathExists("~/.bigmodel")
+        case "commandcode":
+            return commandExists("commandcode") || pathExists("~/.commandcode/auth.json")
+        case "deepseek":
+            return commandExists("deepseek") || pathExists("~/.deepseek") || pathExists("~/.dsh")
+        case "kiro":
+            return commandExists("kiro-cli") || commandExists("kiro") || pathExists("~/.kiro")
+        case "kilo":
+            return commandExists("kilo") || pathExists("~/.kilo")
         default:
             return false
         }

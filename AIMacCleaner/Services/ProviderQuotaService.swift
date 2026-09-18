@@ -450,6 +450,22 @@ final class ProviderQuotaService: ObservableObject {
             ProviderQuotaFetchPolicy.autoDiscoveredProviderIDs(directDistribution: true).contains("antigravity"),
             "direct builds must auto-discover Google Antigravity quota windows"
         )
+        expect(
+            ProviderQuotaFetchPolicy.autoDiscoveredProviderIDs(directDistribution: true).contains("kimi"),
+            "direct builds must auto-discover local Kimi CLI quota when it is installed"
+        )
+        expect(
+            !ProviderQuotaFetchPolicy.autoDiscoveredProviderIDs(directDistribution: true).contains("copilot"),
+            "direct builds must not auto-discover GitHub Copilot without an explicit local login"
+        )
+        expect(
+            ProviderQuotaFetchPolicy.autoDiscoveredProviderIDs(directDistribution: true).contains("kiro"),
+            "direct builds must auto-discover local Kiro CLI quota when it is installed"
+        )
+        expect(
+            ProviderQuotaFetchPolicy.autoDiscoveredProviderIDs(directDistribution: true).contains("factory"),
+            "direct builds must auto-discover Factory Droid quota when it is installed"
+        )
         let protectedEnvironment = ProviderQuotaFetchPolicy.backgroundProcessEnvironment(
             [
                 "CODEXBAR_ALLOW_BROWSER_COOKIE_IMPORT": "1",
@@ -2252,7 +2268,13 @@ private struct CodexBarQuotaProvider {
             "factory": "Factory",
             "kiro": "Kiro",
             "bedrock": "Bedrock",
-            "vertexai": "Vertex AI"
+            "vertexai": "Vertex AI",
+            "kimi": "Kimi",
+            "minimax": "MiniMax",
+            "zai": "Z.ai",
+            "commandcode": "Command Code",
+            "kilo": "Kilo",
+            "copilot": "Copilot"
         ]
         if let name = names[provider.lowercased()] {
             return name
@@ -3228,12 +3250,16 @@ private enum ProviderQuotaFetchPolicy {
             // first-party Antigravity app quota source.
             return [
                 "claude", "antigravity", "grok", "gemini", "openrouter",
-                "qwen", "amp", "opencode", "goose", "aider"
+                "qwen", "amp", "opencode", "goose", "aider",
+                "kimi", "minimax", "zai", "commandcode", "deepseek",
+                "kiro", "factory", "kilo"
             ]
         }
         return [
             "codex", "claude", "cursor", "antigravity", "grok", "gemini", "openrouter",
-            "qwen", "amp", "opencode", "goose", "aider"
+            "qwen", "amp", "opencode", "goose", "aider",
+            "kimi", "minimax", "zai", "commandcode", "deepseek",
+            "kiro", "factory", "kilo"
         ]
     }
 }
